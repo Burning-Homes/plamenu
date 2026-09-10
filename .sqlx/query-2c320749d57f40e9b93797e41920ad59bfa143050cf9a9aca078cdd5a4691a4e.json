@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO account_aliases (id, account_id, acct, uri)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (account_id, uri) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2c320749d57f40e9b93797e41920ad59bfa143050cf9a9aca078cdd5a4691a4e"
+}

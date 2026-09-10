@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO bookmarks (id, account_id, status_id)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (account_id, status_id) DO UPDATE SET status_id = EXCLUDED.status_id\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "bookmarks",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b28f7e6f1a7710833bca645d5394e669c4788c8737ab578165321349b722bf19"
+}

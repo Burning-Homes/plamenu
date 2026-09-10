@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET discoverable = true, note = '<p>I build things</p>' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ecbe135197cc2780be3ba756094a44b2c20b20cae78ae07c3b04481135cd8939"
+}

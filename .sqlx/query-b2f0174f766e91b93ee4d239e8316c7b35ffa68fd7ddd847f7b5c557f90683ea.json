@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT j.id, j.origin\n           FROM remote_history_jobs j\n           WHERE j.state = 'pending' AND j.run_at <= now()\n             AND NOT EXISTS (\n                 SELECT 1 FROM remote_history_origin_leases l\n                 WHERE l.origin = j.origin AND l.leased_until > now()\n             )\n             AND NOT EXISTS (\n                 SELECT 1 FROM remote_history_jobs earlier\n                 WHERE earlier.origin = j.origin\n                   AND earlier.state = 'pending' AND earlier.run_at <= now()\n                   AND (earlier.run_at, earlier.created_at, earlier.id)\n                       < (j.run_at, j.created_at, j.id)\n             )\n           ORDER BY j.run_at, j.created_at\n           LIMIT $1\n           FOR UPDATE OF j SKIP LOCKED",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "remote_history_jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "origin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_history_jobs",
+            "name": "origin"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b2f0174f766e91b93ee4d239e8316c7b35ffa68fd7ddd847f7b5c557f90683ea"
+}

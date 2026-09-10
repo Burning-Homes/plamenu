@@ -1,0 +1,109 @@
+# Disposable Discourse + ActivityPub development peer.
+#
+# The application runs directly from ../discourse-source, including the
+# nested plugins/discourse-activity-pub checkout, in Discourse's matching
+# development image. Caddy in ../mastodon-test terminates local HTTPS.
+
+name: discourse-test
+
+services:
+  db:
+    image: pgvector/pgvector:pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a
+    restart: unless-stopped
+    command: postgres -c fsync=off -c full_page_writes=off
+    networks:
+      private:
+        aliases: [discourse-db]
+    environment:
+      POSTGRES_USER: discourse
+      POSTGRES_PASSWORD: discourse
+      POSTGRES_DB: discourse_development
+    volumes:
+      # PostgreSQL 18 stores clusters below a major-version directory and
+      # requires the volume at the parent path for pg_upgrade compatibility.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "discourse", "-d", "discourse_development"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
+    restart: unless-stopped
+    networks:
+      private:
+        aliases: [discourse-redis]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  discourse:
+    image: docker.io/discourse/discourse_dev:20260812-0036@sha256:ed44e808f7430432712745da7245d6e256c0c4171d4c874772ca5b1b3d311242
+    restart: unless-stopped
+    working_dir: /src
+    entrypoint: ["/bin/bash", "/opt/discourse-test/entrypoint.sh"]
+    environment:
+      RAILS_ENV: development
+      LOAD_PLUGINS: "1"
+      PGHOST: discourse-db
+      PGPORT: "5432"
+      PGUSER: discourse
+      PGPASSWORD: discourse
+      DISCOURSE_DEV_DB: discourse_development
+      DISCOURSE_REDIS_HOST: discourse-redis
+      DISCOURSE_REDIS_PORT: "6379"
+      DISCOURSE_HOSTNAME: discourse.local
+      RAILS_DEVELOPMENT_HOSTS: discourse.local
+      UNICORN_BIND_ALL: "true"
+      UNICORN_PORT: "3000"
+      DISCOURSE_DEV_ALLOW_HTTPS: "1"
+      DISCOURSE_ACTIVITY_PUB_DELIVERY_DELAY: "0"
+      ACTIVITY_PUB_DISABLE_DELIVERY_RETRIES: "1"
+      DISABLE_MINI_PROFILER: "1"
+      BUNDLE_PATH: /bundle
+      RUBYOPT: -r/opt/discourse-test/discourse_test_bootstrap.rb
+    networks:
+      private: {}
+      shared:
+        aliases: [discourse-web]
+    ports:
+      - "127.0.0.1:3300:3000"
+    volumes:
+      - ../discourse-source:/src
+      - ./entrypoint.sh:/opt/discourse-test/entrypoint.sh:ro
+      - ./seed.rb:/opt/discourse-test/seed.rb:ro
+      - ./discourse_test_bootstrap.rb:/opt/discourse-test/discourse_test_bootstrap.rb:ro
+      - ./allow_internal_activitypub_fetches.rb:/opt/discourse-test/allow_internal_activitypub_fetches.rb:ro
+      - ../mastodon-test/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro
+      - bundle:/bundle
+      - node_modules:/src/node_modules
+      - uploads:/src/public/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-H", "Host: discourse.local", "http://localhost:3000/srv/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 90
+      start_period: 5m
+
+networks:
+  private: {}
+  shared:
+    external: true
+    name: mastodon-test_internal
+
+volumes:
+  pgdata: {}
+  redisdata: {}
+  bundle: {}
+  node_modules: {}
+  uploads: {}

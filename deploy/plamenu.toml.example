@@ -1,0 +1,49 @@
+# Copy to plamenu.toml, chmod 600, and keep it out of version control.
+# The hosting domain is permanent after federation begins.
+domain = "social.example.com"
+# Optional: use short handles such as alice@example.com while keeping every
+# Plamenu URL on social.example.com. This is permanent too; before enabling,
+# configure example.com's three well-known redirects as documented in
+# docs/operators/configuration.md.
+# account_domain = "example.com"
+# Also configure DNS/TLS for webxdc.social.example.com. Webxdc packages are
+# isolated there and never receive the host's login cookie.
+bind = "0.0.0.0:8420"
+database_url = "postgres://plamenu:replace-with-the-same-password@db/plamenu"
+media_dir = "/var/lib/plamenu/media"
+# The Caddy container reaches Plamenu over this Compose subnet. If you override
+# PLAMENU_BACKEND_SUBNET in .env, update this value to exactly the same subnet.
+# Trusting only that subnet (not all private ranges) stops unrelated hosts from
+# forging client IPs.
+trusted_proxies = ["172.30.0.0/24"]
+authorized_fetch = true
+authorized_fetch_unsigned = "profile"
+# CSP violation reports can include browsed and blocked-resource URLs. Keep the
+# telemetry endpoint absent on live instances unless debugging it deliberately.
+csp_reporting = false
+encryption_secret = "replace-with-output-of-openssl-rand-hex-32"
+encryption_secret_version = 1
+# Keep old roots only while rewrapping/restoring older backups, as
+# "version:secret" entries. See docs/FEDERATION_KEY_OPERATIONS.md.
+# encryption_previous_secrets = []
+
+# Add SMTP before enabling public registrations or password reset.
+# [smtp]
+# server = "smtp.example.com"
+# port = 587
+# login = "username"
+# password = "replace-me"
+# from_address = "Plamenu <notifications@example.com>"
+# starttls = "always"
+
+# Outbound proxy routing — only needed to federate with .onion/.i2p
+# instances via a local Tor/I2P daemon. Proxy URLs must be socks5h://
+# (proxy-side name resolution) or http(s)://. See `plamenu config generate`
+# for the full commentary.
+# [federation]
+# Prefer these per-overlay routes: clearnet then keeps Plamenu's DNS/IP SSRF
+# checks. A global proxy_url requires a separately enforced egress ACL and
+# trust_proxy_destination_filtering = true; see docs/operators/configuration.md.
+# onion_proxy_url = "socks5h://127.0.0.1:9050"
+# i2p_proxy_url = "socks5h://127.0.0.1:4447"
+# no_proxy = []

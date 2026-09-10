@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET sign_up_ip = '203.0.113.1', current_sign_in_at = now() - make_interval(days => 400) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "77bffcee664ec1199f60cc7685ef077eafb4bbd0e968a65167305156b7eeca29"
+}

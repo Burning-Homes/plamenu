@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT abandoned_at IS NULL AND (retry_at IS NULL OR retry_at <= now()) AS \"allowed!\"\n           FROM remote_fetch_failures\n           WHERE scope = $1 AND failure_key = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "allowed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b3cf5ede8a25f329aa5ecc3e9a6657459037bac51a23534792069ef933ee2f92"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO preview_cards (id, url, updated_at) VALUES ($1, 'https://a/1', now() - make_interval(days => 40))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0bb869eefce8aba7be4584df881d4250a2e69d1db68990314c8241d65e081820"
+}

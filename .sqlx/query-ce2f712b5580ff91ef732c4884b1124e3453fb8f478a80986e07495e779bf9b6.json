@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM webxdc_sessions s\n         USING accounts coordinator\n         WHERE s.id = $1 AND coordinator.id = s.account_id\n           AND coordinator.domain IS NOT NULL\n         RETURNING s.account_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ce2f712b5580ff91ef732c4884b1124e3453fb8f478a80986e07495e779bf9b6"
+}

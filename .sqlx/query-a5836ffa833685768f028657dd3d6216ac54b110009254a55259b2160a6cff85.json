@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT in_reply_to_id AS \"sid!\", count(*) AS \"count!\"\n           FROM statuses\n           WHERE in_reply_to_id = ANY($1) AND deleted_at IS NULL -- STUBFILTER\n           GROUP BY 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sid!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "in_reply_to_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "a5836ffa833685768f028657dd3d6216ac54b110009254a55259b2160a6cff85"
+}

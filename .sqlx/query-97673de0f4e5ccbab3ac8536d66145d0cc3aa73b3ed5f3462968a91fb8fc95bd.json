@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT NOT EXISTS (\n            SELECT 1\n            FROM users\n            WHERE users.account_id = accounts.id\n              AND (NOT users.approved OR users.confirmed_at IS NULL)\n        ) AS \"available!\"\n        FROM accounts\n        WHERE accounts.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "available!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "97673de0f4e5ccbab3ac8536d66145d0cc3aa73b3ed5f3462968a91fb8fc95bd"
+}

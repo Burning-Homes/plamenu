@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, file_name AS \"file_name!\", small_file_name AS \"thumb_file_name\"\n        FROM media_attachments\n        WHERE file_name IS NOT NULL AND file_size IS NULL AND id > $1\n        ORDER BY id\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "thumb_file_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "small_file_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "543b661fa2d7cc4bc50af5aac3bda8ad8b8638b5a0925f843a3384078fb9dc1f"
+}

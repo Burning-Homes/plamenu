@@ -1,0 +1,117 @@
+# Disposable Lemmy instance for federation / e2e testing against Plamenu.
+#
+# The backend is built from the local checkout in ../lemmy-source (branch
+# 0.19.19-plamenu: v0.19.19 plus one Cargo.toml change adding reqwest's
+# rustls-tls-native-roots feature). Stock Lemmy images compile in webpki
+# roots ONLY, so they can never trust the Caddy local CA that terminates
+# TLS for the *.local fleet — federation would 'certificate unknown' on
+# every fetch/delivery. With native roots, SSL_CERT_FILE below does the
+# trick. lemmy-ui only talks plain HTTP to the backend, so the stock UI
+# image is fine.
+#
+# It joins the Mastodon stack's Caddy network so the same local CA
+# terminates TLS for https://lemmy.local and all instances can federate.
+# Caddy splits UI vs backend routing (see mastodon-test/Caddyfile).
+
+name: lemmy-test
+
+services:
+  db:
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    restart: unless-stopped
+    # Disposable data: trade durability for speed.
+    command: postgres -c fsync=off -c full_page_writes=off
+    # Distinct alias, following the sharkey-test convention: compose
+    # registers service names as DNS aliases on every attached network,
+    # so generic names like `db`/`web` must never leak onto the shared one.
+    # db only joins the private network, but the alias keeps configs
+    # unambiguous anyway.
+    networks:
+      lmy:
+        aliases: [lemmy-db]
+    environment:
+      POSTGRES_USER: lemmy
+      POSTGRES_PASSWORD: lemmy
+      POSTGRES_DB: lemmy
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "lemmy"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  pictrs:
+    image: asonix/pictrs:0.5@sha256:7c1cada5566fe729c2bd3c2e2c246d3ac031d95268edeed6670a70861d905e83
+    restart: unless-stopped
+    networks:
+      lmy:
+        aliases: [lemmy-pictrs]
+    environment:
+      PICTRS__SERVER__API_KEY: lemmy-pictrs-key
+    volumes:
+      - pictrs:/mnt
+
+  lemmy:
+    build:
+      context: ../lemmy-source
+      dockerfile: docker/Dockerfile
+      args:
+        RUST_RELEASE_MODE: release
+    image: lemmy-test:0.19.19
+    restart: unless-stopped
+    networks:
+      lmy: {}
+      shared:
+        aliases: [lemmy-web]
+    environment:
+      RUST_LOG: "warn,lemmy_server=info,lemmy_apub=info,lemmy_federate=info"
+      # Federation queue polls every 100ms instead of 30s+ — required for
+      # e2e wait_for timeouts (upstream uses the same flag in its own
+      # federation tests).
+      LEMMY_TEST_FAST_FEDERATION: "1"
+      # rustls-native-certs honors SSL_CERT_FILE (see header comment).
+      SSL_CERT_FILE: /etc/ssl/local/ca-bundle.crt
+      # The whole *.local fleet resolves to private IPs (Caddy on the
+      # shared docker network); without this Lemmy's SSRF guard rejects
+      # every peer with "points to local IP".
+      DANGER_FEDERATION_ALLOW_LOCAL_IP: "1"
+    volumes:
+      - ./lemmy.hjson:/config/config.hjson:ro
+      - ../mastodon-test/ca-bundle.crt:/etc/ssl/local/ca-bundle.crt:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      pictrs:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8536/api/v3/site"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  lemmy-ui:
+    image: dessalines/lemmy-ui:0.19.19@sha256:03e8a064c4d9dd8e8df2c3520998ac9ba90fd7a71af34af7315b2a8c9c6f86a5
+    restart: unless-stopped
+    init: true
+    networks:
+      lmy: {}
+      shared:
+        aliases: [lemmy-ui-web]
+    environment:
+      LEMMY_UI_LEMMY_INTERNAL_HOST: lemmy:8536
+      LEMMY_UI_LEMMY_EXTERNAL_HOST: lemmy.local
+      LEMMY_UI_HTTPS: "true"
+    depends_on:
+      lemmy:
+        condition: service_healthy
+
+networks:
+  lmy:
+  shared:
+    external: true
+    name: mastodon-test_internal
+
+volumes:
+  pgdata:
+  pictrs:

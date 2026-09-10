@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT target_account_id AS \"id!\", uri, pending, show_reblogs, with_replies,\n               notify, languages\n        FROM follows\n        WHERE account_id = $1 AND target_account_id = ANY($2)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "target_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "pending",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "pending"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "show_reblogs",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "show_reblogs"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "with_replies",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "with_replies"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "notify",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "notify"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "languages",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "languages"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "b801bf6d4725b82d7148e0b640a05e4a5f1baaa68d973a082f1cb188a9035c16"
+}

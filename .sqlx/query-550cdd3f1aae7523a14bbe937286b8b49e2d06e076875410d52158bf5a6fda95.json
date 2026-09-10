@@ -1,0 +1,268 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT status_id, start_time, end_time, location_name, timezone, event_status,\n                join_mode, participant_count, max_attendees, remaining_attendees,\n                external_participation_url, anonymous_participation, is_online,\n                comments_enabled, category, location_url, location_street,\n                location_locality, location_region, location_country,\n                location_postal_code\n         FROM status_events WHERE status_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "start_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "start_time"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "end_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "end_time"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "location_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "location_name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "timezone",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "timezone"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "event_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "event_status"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "join_mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "join_mode"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "participant_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "participant_count"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "max_attendees",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "max_attendees"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "remaining_attendees",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "remaining_attendees"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "external_participation_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "external_participation_url"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "anonymous_participation",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "anonymous_participation"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "is_online",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "is_online"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "comments_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "comments_enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "category"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "location_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "location_url"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "location_street",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "location_street"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "location_locality",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "location_locality"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "location_region",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "location_region"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "location_country",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "location_country"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "location_postal_code",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_events",
+            "name": "location_postal_code"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "550cdd3f1aae7523a14bbe937286b8b49e2d06e076875410d52158bf5a6fda95"
+}

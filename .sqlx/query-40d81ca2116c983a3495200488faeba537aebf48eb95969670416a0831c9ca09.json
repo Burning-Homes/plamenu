@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(sum(uses), 0)::bigint AS \"c!\" FROM tag_usages\n           WHERE tag_id = $1\n             AND day >= ($2 AT TIME ZONE 'UTC')::date\n             AND day <= ($3 AT TIME ZONE 'UTC')::date",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "c!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "40d81ca2116c983a3495200488faeba537aebf48eb95969670416a0831c9ca09"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET\n                   ingest_provenance = 'delivery',\n                   delivery_side_effects_at = now(),\n                   updated_at = now()\n               WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1591cfc828470809d45af233eff7d154e0634ed81a0a8d37404ed2550f5061d7"
+}

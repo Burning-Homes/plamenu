@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id AS \"row_id!\", status_id AS \"status_id!\"\n        FROM favourites\n        WHERE account_id = $1\n          AND ($2::bigint IS NULL OR id < $2)\n          AND ($3::bigint IS NULL OR id > $3)\n        ORDER BY id DESC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "row_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "favourites",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "favourites",
+            "name": "status_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "244f7e4180879f1d15d08074981efb3ee913e798c858e60a4dc00eba5ba582d2"
+}

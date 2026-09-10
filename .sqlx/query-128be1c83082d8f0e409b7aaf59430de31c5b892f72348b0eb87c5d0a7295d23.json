@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO account_conversations\n                (id, account_id, conversation_id, participant_account_ids,\n                 status_ids, last_status_id, unread)\n            SELECT g.id, $1, g.conversation_id,\n                   coalesce(p.participants, '{}'::bigint[]),\n                   s.status_ids, g.last_status_id, g.unread\n            FROM unnest($2::bigint[], $3::bigint[], $4::bigint[], $5::bool[], $6::bigint[])\n                 AS g(id, conversation_id, last_status_id, unread, ord)\n            LEFT JOIN (\n                SELECT p.ord, array_agg(p.participant ORDER BY p.participant) AS participants\n                FROM unnest($7::bigint[], $8::bigint[]) AS p(ord, participant)\n                GROUP BY p.ord\n            ) p ON p.ord = g.ord\n            JOIN (\n                SELECT s.ord, array_agg(s.status_id ORDER BY s.status_id) AS status_ids\n                FROM unnest($9::bigint[], $10::bigint[]) AS s(ord, status_id)\n                GROUP BY s.ord\n            ) s ON s.ord = g.ord\n            ON CONFLICT (account_id, conversation_id, participant_account_ids) DO UPDATE SET\n                status_ids = account_conversations.status_ids || (\n                    SELECT coalesce(array_agg(f.x ORDER BY f.ord), '{}'::bigint[])\n                    FROM unnest(excluded.status_ids) WITH ORDINALITY AS f(x, ord)\n                    WHERE NOT account_conversations.status_ids @> ARRAY[f.x]\n                ),\n                last_status_id = GREATEST(account_conversations.last_status_id,\n                                          excluded.last_status_id),\n                unread = CASE\n                    WHEN account_conversations.status_ids @> excluded.status_ids\n                    THEN account_conversations.unread\n                    ELSE excluded.unread END\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "BoolArray",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "128be1c83082d8f0e409b7aaf59430de31c5b892f72348b0eb87c5d0a7295d23"
+}

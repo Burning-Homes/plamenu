@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE quotes SET status_id = $2 WHERE id = $1 AND status_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a89e0034d7fe7a7460e95118afe815b58f006e4ecbfc67555c6df433b6d1feea"
+}

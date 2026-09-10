@@ -1,0 +1,107 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH RECURSIVE grouped AS (\n            (\n                SELECT n.id, n.account_id, n.from_account_id, n.kind, n.status_id,\n                       n.collection_id, n.emoji, n.created_at, n.group_key, n.filtered,\n                       n.account_warning_id, n.report_id,\n                       ARRAY[COALESCE(CASE WHEN $5::text[] IS NULL OR n.kind = ANY($5)\n                                           THEN n.group_key END,\n                                      'ungrouped-' || n.id)] AS seen\n                FROM notifications n\n                WHERE n.account_id = $1 AND n.id > $2\n                  AND ($3::bigint IS NULL OR n.id < $3)\n                  AND ($6::text[] IS NULL OR n.kind = ANY($6))\n                  AND ($7::bigint IS NULL OR n.from_account_id = $7)\n                  AND ($8 OR NOT n.filtered)\n                  AND NOT sender_filtered($1, n.from_account_id)\n                ORDER BY n.id ASC\n                LIMIT 1\n            )\n            UNION ALL\n            SELECT step.id, step.account_id, step.from_account_id, step.kind,\n                   step.status_id, step.collection_id, step.emoji, step.created_at, step.group_key,\n                   step.filtered, step.account_warning_id, step.report_id, wt.seen || step.gkey\n            FROM (SELECT id, seen FROM grouped WHERE cardinality(seen) < $4::bigint) AS wt\n            CROSS JOIN LATERAL (\n                SELECT n.id, n.account_id, n.from_account_id, n.kind, n.status_id,\n                       n.collection_id, n.emoji, n.created_at, n.group_key, n.filtered,\n                       n.account_warning_id, n.report_id,\n                       COALESCE(CASE WHEN $5::text[] IS NULL OR n.kind = ANY($5)\n                                     THEN n.group_key END,\n                                'ungrouped-' || n.id) AS gkey\n                FROM notifications n\n                WHERE n.account_id = $1 AND n.id > wt.id\n                  AND ($3::bigint IS NULL OR n.id < $3)\n                  AND ($6::text[] IS NULL OR n.kind = ANY($6))\n                  AND ($7::bigint IS NULL OR n.from_account_id = $7)\n                  AND ($8 OR NOT n.filtered)\n                  AND NOT sender_filtered($1, n.from_account_id)\n                  AND COALESCE(CASE WHEN $5::text[] IS NULL OR n.kind = ANY($5)\n                                    THEN n.group_key END,\n                               'ungrouped-' || n.id) <> ALL(wt.seen)\n                ORDER BY n.id ASC\n                LIMIT 1\n            ) AS step\n        )\n        SELECT id AS \"id!\", account_id AS \"account_id!\",\n               from_account_id AS \"from_account_id!\", kind AS \"kind!\",\n               status_id, collection_id, emoji, created_at AS \"created_at!\", group_key,\n               filtered AS \"filtered!\", account_warning_id, report_id\n        FROM grouped\n        ORDER BY id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "from_account_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "collection_id",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "emoji",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "group_key",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "filtered!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "account_warning_id",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "report_id",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "TextArray",
+        "TextArray",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "aca698feeee66586c7b8bee58238280dc108417e55a255093ed000a05bf8ddd6"
+}

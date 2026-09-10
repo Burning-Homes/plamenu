@@ -1,0 +1,148 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE polls SET expiry_processed_at = now()\n        WHERE id IN (\n            SELECT id FROM polls\n            WHERE expires_at IS NOT NULL AND expires_at <= now()\n              AND expiry_processed_at IS NULL\n            ORDER BY expires_at\n            LIMIT $1\n            FOR UPDATE SKIP LOCKED\n        )\n        RETURNING id, status_id, account_id, options, cached_tallies, multiple,\n                  hide_totals, voters_count, expires_at, created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "options",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "options"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "cached_tallies",
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "cached_tallies"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "multiple",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "multiple"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "hide_totals",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "hide_totals"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "voters_count",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "voters_count"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "fdb79d6e09076e91db313678bed5bedbdb339d8c6358ccdf712cfcc7c4578e25"
+}

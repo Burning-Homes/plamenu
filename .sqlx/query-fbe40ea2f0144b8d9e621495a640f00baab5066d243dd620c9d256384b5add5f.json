@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(DISTINCT accounts.domain) AS \"c!\"\n           FROM statuses -- STUBKEEP: usage aggregate\n           INNER JOIN status_tags ON statuses.id = status_tags.status_id\n           INNER JOIN accounts ON statuses.account_id = accounts.id\n           WHERE status_tags.tag_id = $1 AND statuses.id BETWEEN $2 AND $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "c!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "fbe40ea2f0144b8d9e621495a640f00baab5066d243dd620c9d256384b5add5f"
+}

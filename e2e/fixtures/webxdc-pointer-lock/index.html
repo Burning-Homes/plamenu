@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Webxdc pointer lock checks</title>
+<script src="webxdc.js"></script>
+<h1>Webxdc pointer lock checks</h1>
+<p>Click Capture mouse. Move the mouse, then press Escape to release it.
+Repeat with the host's Fullscreen button enabled.</p>
+<button id="capture">Capture mouse</button>
+<p id="status" role="status">Ready</p>
+<p>Captured movements: <output id="movements">0</output></p>
+<pre id="events"></pre>
+<script>
+const capture = document.getElementById('capture');
+const status = document.getElementById('status');
+const movements = document.getElementById('movements');
+let count = 0;
+const events = document.getElementById('events');
+const record = message => { events.textContent += message + '\n'; };
+capture.addEventListener('click', async () => {
+  record('Capture requested: focused=' + document.hasFocus() + ', visibility=' + document.visibilityState);
+  try {
+    await capture.requestPointerLock();
+  } catch (error) {
+    status.textContent = 'FAIL: ' + error.name + ' — ' + error.message;
+    record(status.textContent);
+  }
+});
+document.addEventListener('pointerlockchange', () => {
+  status.textContent = document.pointerLockElement === capture
+    ? 'PASS: mouse captured' : 'PASS: mouse released';
+  record(status.textContent);
+});
+document.addEventListener('pointerlockerror', () => {
+  status.textContent = 'FAIL: pointer lock rejected';
+  record(status.textContent);
+});
+document.addEventListener('mousemove', event => {
+  if (document.pointerLockElement === capture && (event.movementX || event.movementY)) {
+    movements.textContent = String(++count);
+  }
+});
+</script>

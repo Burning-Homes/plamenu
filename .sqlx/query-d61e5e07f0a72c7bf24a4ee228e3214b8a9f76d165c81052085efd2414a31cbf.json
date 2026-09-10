@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO notification_requests\n            (id, account_id, from_account_id, last_status_id, notifications_count)\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (account_id, from_account_id) DO UPDATE SET\n            last_status_id = EXCLUDED.last_status_id,\n            notifications_count = EXCLUDED.notifications_count,\n            updated_at = now()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d61e5e07f0a72c7bf24a4ee228e3214b8a9f76d165c81052085efd2414a31cbf"
+}

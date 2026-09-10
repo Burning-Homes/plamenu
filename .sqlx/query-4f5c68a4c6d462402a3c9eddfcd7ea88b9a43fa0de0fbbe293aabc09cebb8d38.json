@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO blocks (id, account_id, target_account_id, uri)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (account_id, target_account_id)\n            DO UPDATE SET uri = COALESCE(EXCLUDED.uri, blocks.uri)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "blocks",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4f5c68a4c6d462402a3c9eddfcd7ea88b9a43fa0de0fbbe293aabc09cebb8d38"
+}

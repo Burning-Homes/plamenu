@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT id, file_name, small_file_name\n            FROM media_attachments\n            WHERE status_id IS NULL AND scheduled_status_id IS NULL AND remote_url IS NULL\n              AND created_at < now() - ($1 * interval '1 second')\n            ORDER BY created_at\n            LIMIT $2\n        )\n        DELETE FROM media_attachments m\n        USING due\n        WHERE m.id = due.id\n        RETURNING due.file_name AS \"file_name?\", due.small_file_name AS \"small_file_name?\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "small_file_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "small_file_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "224630d5e6cfa21443e20cbe7834e0085657d8f48f1cab2e734e08ae5d1cf31a"
+}

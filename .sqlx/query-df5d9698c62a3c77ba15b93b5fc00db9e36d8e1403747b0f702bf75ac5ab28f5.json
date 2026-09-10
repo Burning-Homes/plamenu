@@ -1,0 +1,103 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT c.id AS \"preview_card_id!\", c.url AS \"url!\", c.language, c.trendable,\n               (SELECT count(*) FROM preview_card_usages u\n                    WHERE u.preview_card_id = c.id AND u.day = $1) AS \"observed!\",\n               (SELECT count(*) FROM preview_card_usages u\n                    WHERE u.preview_card_id = c.id AND u.day = $2) AS \"expected!\",\n               c.max_score, c.max_score_at\n        FROM preview_cards c\n        WHERE c.id IN (\n            SELECT preview_card_id FROM preview_card_trends\n            UNION\n            SELECT preview_card_id FROM preview_card_usages WHERE day = $1\n        )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "preview_card_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "url!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "trendable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "trendable"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "observed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "expected!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "max_score",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "max_score"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "max_score_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "max_score_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      null,
+      null,
+      true,
+      true
+    ]
+  },
+  "hash": "df5d9698c62a3c77ba15b93b5fc00db9e36d8e1403747b0f702bf75ac5ab28f5"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT s.account_id\n        FROM statuses s -- STUBKEEP: a boost wrapper never stubs\n        JOIN accounts a ON a.id = s.account_id\n        WHERE s.reblog_of_id = $1 AND a.domain IS NULL\n        ORDER BY s.account_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2ef8d8133a951da9c339451f19eef62a63288d2463f750c293f8c646329e7512"
+}

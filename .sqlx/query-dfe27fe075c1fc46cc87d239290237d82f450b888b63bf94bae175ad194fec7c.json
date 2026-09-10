@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (in_reply_to_id IS NOT NULL OR in_reply_to_uri IS NOT NULL) AS \"is_reply!\"\n           FROM statuses WHERE id = $1 -- STUBKEEP: a stub edge still threads",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_reply!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "dfe27fe075c1fc46cc87d239290237d82f450b888b63bf94bae175ad194fec7c"
+}

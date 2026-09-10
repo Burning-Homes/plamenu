@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO follows (id, account_id, target_account_id, uri, pending)\n        SELECT v.id, v.account_id, $4, v.uri, $5\n        FROM unnest($1::bigint[], $2::bigint[], $3::text[]) AS v(id, account_id, uri)\n        ON CONFLICT (account_id, target_account_id)\n            DO UPDATE SET uri = EXCLUDED.uri, pending = EXCLUDED.pending\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array",
+        "TextArray",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "530022de541dcf485be6a2d204ce551a9402ea79e2a218e91d5ecef0a7269543"
+}

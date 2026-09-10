@@ -1,0 +1,1583 @@
+#!/usr/bin/env bash
+# ActivityPub dev environment manager.
+#
+#   ./dev up [mastodon|plamenu|pleroma|plup|sharkey|gotosocial|mitra|lemmy|peertube|owncast|mobilizon|discourse|hubzilla|funkwhale|onion|all]   start services
+#   ./dev down [mastodon|plamenu|pleroma|plup|sharkey|gotosocial|mitra|lemmy|peertube|owncast|mobilizon|discourse|hubzilla|funkwhale|onion|all] stop services
+#   (`onion` = Tor + hidden-service Mitra; needs the real Tor network, so it
+#   is not part of `all`.)
+#   ./dev status                                                 show status of everything
+#   ./dev logs [mastodon|plamenu|pleroma|plup|sharkey|gotosocial]     tail logs
+#   ./dev creds                                                  print test account credentials
+#
+# Default target is "all" when omitted.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+PLAMENU_DIR=$(CDPATH='' cd -- ../.. && pwd)
+MASTO_DIR="$PWD/mastodon-test"
+PLEROMA_DIR="$PWD/pleroma-test"
+SHARKEY_DIR="$PWD/sharkey-test"
+GTS_DIR="$PWD/gotosocial-test"
+MITRA_DIR="$PWD/mitra-test"
+MITRA_SOURCE_DIR="$PWD/mitra-source"
+LEMMY_DIR="$PWD/lemmy-test"
+PEERTUBE_DIR="$PWD/peertube-test"
+OWNCAST_DIR="$PWD/owncast-test"
+MOBILIZON_DIR="$PWD/mobilizon-test"
+DISCOURSE_DIR="$PWD/discourse-test"
+HUBZILLA_DIR="$PWD/hubzilla-test"
+HUBZILLA_SOURCE_DIR="$PWD/hubzilla-source"
+FUNKWHALE_DIR="$PWD/funkwhale-test"
+PLUP_DIR="$PWD/pleroma-upstream-test"
+TOR_DIR="$PWD/tor-test"
+PLAMENU_PID_FILE="$PWD/.plamenu.pid"
+MITRA_PID_FILE="$PWD/.mitra.pid"
+ONION_MITRA_PID_FILE="$PWD/.mitra-onion.pid"
+
+# Plamenu now reads all settings from a TOML file (env vars were removed). The
+# dev stack regenerates this throwaway config on every `up`; it is gitignored
+# and separate from a hand-made ./plamenu/plamenu.toml.
+PLAMENU_CONFIG="$PLAMENU_DIR/plamenu.dev.toml"
+PLAMENU_DB_URL="${DATABASE_URL:-postgres://plamenu:plamenu@127.0.0.1:5433/plamenu_dev}"
+
+# Standing manual-testing login for Plamenu; (re)applied on every `up`.
+PLAMENU_DEV_USER="developer"
+PLAMENU_DEV_EMAIL="developer@plamenu.local"
+PLAMENU_DEV_PASSWORD="plamenu-development-only"
+
+# Standing manual-testing login for Pleroma (interop instance).
+PLEROMA_DEV_USER="bob"
+PLEROMA_DEV_PASSWORD="plrpass123"
+
+# Standing manual-testing login for upstream Pleroma (plup — a SEPARATE peer
+# from the Akkoma "pleroma" one above, running real Pleroma 2.10.2 so we test
+# against the actual upstream software, not the Akkoma fork). `mari` is an
+# admin so the custom-emoji reaction tests can manage emoji packs.
+PLUP_DEV_USER="mari"
+PLUP_DEV_PASSWORD="plup-testpass-123"
+
+# Standing manual-testing login for Sharkey (interop instance). Created as the
+# instance's first (root/admin) account; its API token lands in
+# sharkey-test/.admin-token.
+SHARKEY_DEV_USER="carol"
+SHARKEY_DEV_PASSWORD="shrkpass123"
+
+# Standing manual-testing login for GoToSocial (interop instance). GtS
+# rejects weak passwords (zxcvbn), hence the longer one.
+GTS_DEV_USER="dave"
+GTS_DEV_PASSWORD="gots-dave-pass-123"
+
+# Standing manual-testing login for Mitra (interop instance).
+MITRA_DEV_USER="erin"
+MITRA_DEV_PASSWORD="mitra-erin-pass-123"
+
+# Standing manual-testing login for the SECOND Mitra instance, the one with
+# an onion identity behind the tor-test rig (`./dev up onion`). Its instance
+# URL is http://<generated>.onion, so it is only dialable through Tor;
+# Plamenu reaches it via the socks5h onion lane (tor-test port 9350).
+ONION_MITRA_USER="nina"
+ONION_MITRA_PASSWORD="mitra-nina-pass-123"
+
+# Standing manual-testing login for Lemmy (interop instance). Created as
+# the instance admin by the `setup` block in lemmy-test/lemmy.hjson on
+# first boot; changing it here does NOT change an existing database.
+LEMMY_DEV_USER="frank"
+LEMMY_DEV_PASSWORD="lemmy-frank-pass-123"
+
+# Standing manual-testing login for PeerTube (interop instance). PeerTube
+# fixes the admin username to `root`; PT_INITIAL_ROOT_PASSWORD in
+# peertube-test/compose.dev.yml seeds this password on first boot only —
+# changing it here does NOT change an existing database.
+PEERTUBE_DEV_USER="root"
+PEERTUBE_DEV_PASSWORD="peertube-root-pass-123"
+
+# Owncast has no viewer login in the ordinary sense. These standing secrets
+# configure the admin API and RTMP publisher for the disposable peer.
+OWNCAST_ADMIN_PASSWORD="owncast-admin-pass-123"
+OWNCAST_STREAM_KEY="owncast-stream-key-123"
+
+# Standing manual-testing login for Mobilizon (interop instance). Mobilizon
+# separates the login (an e-mail) from the profile (an actor), so both are
+# named here: `grace` is the profile whose actor federates as
+# @grace@mobilizon.local. Created pre-confirmed by mobilizon_ctl on `up`;
+# changing the password here does NOT change an existing database.
+MOBILIZON_DEV_USER="grace"
+MOBILIZON_DEV_EMAIL="grace@mobilizon.local"
+MOBILIZON_DEV_PASSWORD="mobilizon-grace-pass-123"
+
+# Standing manual-testing login for Discourse. Its federated fixture is a
+# category Group actor, @federation@discourse.local.
+DISCOURSE_DEV_USER="diana"
+DISCOURSE_DEV_EMAIL="diana@discourse.local"
+DISCOURSE_DEV_PASSWORD="discourse-diana-pass-123"
+
+# Standing Hubzilla account + public channel. Hubzilla uses one account login
+# to own one or more federated channels; Hazel's channel is the file-object
+# producer used by the non-Note ingestion tests.
+HUBZILLA_DEV_USER="hazel"
+HUBZILLA_DEV_EMAIL="hazel@hubzilla.local"
+HUBZILLA_DEV_PASSWORD="hubzilla-hazel-pass-123"
+
+# Standing Funkwhale administrator. Its separately seeded podcast channel,
+# @plamenu_audio@funkwhale.local, is the followable Audio producer.
+FUNKWHALE_DEV_USER="fiona"
+FUNKWHALE_DEV_EMAIL="fiona@funkwhale.local"
+FUNKWHALE_DEV_PASSWORD="funkwhale-fiona-pass-123"
+
+if docker info >/dev/null 2>&1; then
+  compose() { docker compose "$@"; }
+  docker_cmd() { docker "$@"; }
+elif sg docker -c "docker info" >/dev/null 2>&1; then
+  compose() { sg docker -c "docker compose $(printf '%q ' "$@")"; }
+  docker_cmd() { sg docker -c "docker $(printf '%q ' "$@")"; }
+else
+  compose() { sudo docker compose "$@"; }
+  docker_cmd() { sudo docker "$@"; }
+fi
+
+masto_compose() { compose --project-directory "$MASTO_DIR" "$@"; }
+plamenu_compose() { compose -f "$PLAMENU_DIR/compose.dev.yml" "$@"; }
+pleroma_compose() { compose -f "$PLEROMA_DIR/compose.dev.yml" "$@"; }
+sharkey_compose() { compose -f "$SHARKEY_DIR/compose.dev.yml" "$@"; }
+gts_compose() { compose -f "$GTS_DIR/compose.dev.yml" "$@"; }
+mitra_compose() { compose -f "$MITRA_DIR/compose.dev.yml" "$@"; }
+lemmy_compose() { compose -f "$LEMMY_DIR/compose.dev.yml" "$@"; }
+peertube_compose() { compose -f "$PEERTUBE_DIR/compose.dev.yml" "$@"; }
+owncast_compose() { compose -f "$OWNCAST_DIR/compose.dev.yml" "$@"; }
+mobilizon_compose() { compose -f "$MOBILIZON_DIR/compose.dev.yml" "$@"; }
+discourse_compose() { compose -f "$DISCOURSE_DIR/compose.dev.yml" "$@"; }
+hubzilla_compose() { compose -f "$HUBZILLA_DIR/compose.dev.yml" "$@"; }
+funkwhale_compose() { compose -f "$FUNKWHALE_DIR/compose.dev.yml" "$@"; }
+plup_compose() { compose -f "$PLUP_DIR/compose.dev.yml" "$@"; }
+onion_compose() { compose -f "$TOR_DIR/compose.dev.yml" "$@"; }
+
+# ── Mastodon ──────────────────────────────────────────────────────────
+
+masto_up() {
+  echo ">> Starting Mastodon test stack…"
+  masto_compose up -d
+  echo "   https://mastodon.local"
+  masto_creds
+}
+
+masto_creds() {
+  if [ -s "$MASTO_DIR/.credentials" ]; then
+    echo "   accounts (username / email / password):"
+    sed 's/^/     /' "$MASTO_DIR/.credentials"
+  else
+    echo "   no recorded credentials — run: (cd mastodon-test && ./masto passwd admin)"
+  fi
+}
+
+masto_down() {
+  echo ">> Stopping Mastodon test stack…"
+  masto_compose down
+}
+
+masto_status() {
+  if masto_compose ps --status running 2>/dev/null | grep -q '('; then
+    echo "mastodon   running   https://mastodon.local"
+  else
+    echo "mastodon   stopped"
+  fi
+}
+
+masto_logs() {
+  masto_compose logs -f "${@:-}"
+}
+
+# ── Plamenu ───────────────────────────────────────────────────────────
+
+plamenu_up() {
+  echo ">> Starting Plamenu dev database…"
+  plamenu_compose up -d
+
+  plamenu_write_config
+  plamenu_ensure_login
+
+  echo ">> Starting Plamenu server on http://plamenu.local:8420 (via Caddy TLS at https://plamenu.local)…"
+  if [ -f "$PLAMENU_PID_FILE" ] && kill -0 "$(cat "$PLAMENU_PID_FILE")" 2>/dev/null; then
+    echo "   already running (pid $(cat "$PLAMENU_PID_FILE"))"
+    plamenu_creds
+    return 0
+  fi
+
+  (
+    cd "$PLAMENU_DIR"
+    cargo run -- --config "$PLAMENU_CONFIG" serve >> "$PWD/../plamenu.log" 2>&1 &
+    echo $! > "$PLAMENU_PID_FILE"
+  )
+  sleep 2
+  if kill -0 "$(cat "$PLAMENU_PID_FILE")" 2>/dev/null; then
+    echo "   pid $(cat "$PLAMENU_PID_FILE")"
+    plamenu_creds
+  else
+    echo "   FAILED — check plamenu.log"
+    rm -f "$PLAMENU_PID_FILE"
+    return 1
+  fi
+}
+
+# (Re)write the throwaway dev config. authorized_fetch +
+# authorized_fetch_unsigned are left at their built-in defaults (on /
+# "profile"), matching the posture the e2e suite runs under. The old
+# timeline_preview_*/public_search/emit_* keys moved to live settings
+# (migration 0013) and are no longer valid toml.
+plamenu_write_config() {
+  cat > "$PLAMENU_CONFIG" <<EOF
+domain = "plamenu.local"
+database_url = "$PLAMENU_DB_URL"
+bind = "0.0.0.0:8420"
+allow_private_fetch = true
+conversation_containers = true
+
+[smtp]
+server = "127.0.0.1"
+port = 1025
+from_address = "Plamenu <notifications@plamenu.local>"
+
+# The tor-test rig's SOCKS port (\`./dev up onion\`). Harmless while that rig
+# is down: only .onion destinations ever dial it.
+[federation]
+onion_proxy_url = "socks5h://127.0.0.1:9350"
+EOF
+}
+
+# Make sure the standing dev account exists and has known login credentials
+# (idempotent; only needs the dev database). Requires the dev config on disk.
+plamenu_ensure_login() {
+  (
+    cd "$PLAMENU_DIR"
+    cargo run -q -- --config "$PLAMENU_CONFIG" account add "$PLAMENU_DEV_USER" >/dev/null 2>&1 || true
+    cargo run -q -- --config "$PLAMENU_CONFIG" account passwd "$PLAMENU_DEV_USER" \
+      --email "$PLAMENU_DEV_EMAIL" --password "$PLAMENU_DEV_PASSWORD" >/dev/null
+  )
+}
+
+plamenu_creds() {
+  echo "   account (username / email / password):"
+  echo "     $PLAMENU_DEV_USER $PLAMENU_DEV_EMAIL $PLAMENU_DEV_PASSWORD"
+}
+
+plamenu_down() {
+  if [ -f "$PLAMENU_PID_FILE" ]; then
+    local pid
+    pid=$(cat "$PLAMENU_PID_FILE")
+    if kill -0 "$pid" 2>/dev/null; then
+      echo ">> Stopping Plamenu server (pid $pid)…"
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PLAMENU_PID_FILE"
+  fi
+
+  echo ">> Stopping Plamenu dev database…"
+  plamenu_compose down
+}
+
+plamenu_status() {
+  local db_ok=""
+  local srv_ok=""
+
+  if plamenu_compose ps --status running 2>/dev/null | grep -q '('; then
+    db_ok="1"
+  fi
+
+  if [ -f "$PLAMENU_PID_FILE" ] && kill -0 "$(cat "$PLAMENU_PID_FILE")" 2>/dev/null; then
+    srv_ok="1"
+  fi
+
+  if [ -n "$db_ok" ] && [ -n "$srv_ok" ]; then
+    echo "plamenu    running   http://plamenu.local:8420 (pid $(cat "$PLAMENU_PID_FILE"))"
+  elif [ -n "$db_ok" ]; then
+    echo "plamenu    partial   db up, server down"
+  elif [ -n "$srv_ok" ]; then
+    echo "plamenu    partial   server up (pid $(cat "$PLAMENU_PID_FILE")), db down"
+  else
+    echo "plamenu    stopped"
+  fi
+}
+
+plamenu_logs() {
+  if [ -f "$PWD/plamenu.log" ]; then
+    tail -f "$PWD/plamenu.log"
+  else
+    echo "No plamenu.log found."
+    return 1
+  fi
+}
+
+# ── Pleroma (disposable interop instance) ─────────────────────────────
+
+pleroma_up() {
+  echo ">> Starting Pleroma-family (Akkoma) interop stack…"
+  echo "   (first run builds the Akkoma release image — several minutes)"
+  pleroma_compose up -d --build
+  pleroma_ensure_login
+  echo "   https://pleroma.local"
+  pleroma_creds
+}
+
+# Create the standing account if it isn't there yet (idempotent; needs the web
+# container running, so retry briefly while it boots). Akkoma (like Pleroma) has
+# no `user show`, so we just (re)run `user new` — an "already been taken" error
+# means it exists, which is the success we want.
+pleroma_ensure_login() {
+  local ctl="/opt/akkoma/bin/pleroma_ctl" out
+  for _ in $(seq 1 30); do
+    out=$(pleroma_compose exec -T pleroma "$ctl" user new "$PLEROMA_DEV_USER" \
+      "$PLEROMA_DEV_USER@pleroma.local" --password "$PLEROMA_DEV_PASSWORD" \
+      --assume-yes 2>&1 || true)
+    case "$out" in
+      *"created"*|*"already been taken"*) return 0 ;;
+    esac
+    sleep 2
+  done
+  echo "   (could not create $PLEROMA_DEV_USER yet — Pleroma may still be booting)"
+}
+
+pleroma_creds() {
+  echo "   account (username / email / password):"
+  echo "     $PLEROMA_DEV_USER $PLEROMA_DEV_USER@pleroma.local $PLEROMA_DEV_PASSWORD"
+}
+
+pleroma_down() {
+  echo ">> Stopping Pleroma interop stack…"
+  pleroma_compose down
+}
+
+pleroma_status() {
+  if pleroma_compose ps --status running 2>/dev/null | grep -q '('; then
+    echo "pleroma    running   https://pleroma.local"
+  else
+    echo "pleroma    stopped"
+  fi
+}
+
+pleroma_logs() {
+  pleroma_compose logs -f "${@:-}"
+}
+
+# ── Upstream Pleroma (plup — real Pleroma 2.10.2, disposable) ──────────
+#
+# A SEPARATE peer from the Akkoma "pleroma" instance above, on its own domain
+# https://plup.local. Akkoma (a Pleroma fork) tolerates our RFC 9421 request
+# signatures; real upstream Pleroma 2.10 does not — it 200s the inbox POST then
+# asynchronously drops the activity. The plup peer exists to test against that
+# actual upstream behavior (see plamenu/RFC9421_PLEROMA_FIX_PLAN.md). Its image
+# is built from ../pleroma-source; goes through Caddy, so the mastodon stack
+# must be up first.
+
+plup_up() {
+  echo ">> Starting upstream-Pleroma (plup) interop stack…"
+  # Reaches the seed user through Caddy at https://plup.local, so the shared
+  # mastodon-test Caddy must be up first (same dependency as PeerTube).
+  if ! docker_cmd network inspect mastodon-test_internal >/dev/null 2>&1; then
+    echo "   the shared 'mastodon-test_internal' network is missing."
+    echo "   Start the Mastodon stack first:  ./dev up mastodon"
+    return 1
+  fi
+  echo "   (first run builds the upstream Pleroma release image from ../pleroma-source — several minutes)"
+  plup_compose up -d --build
+  plup_ensure_login
+  echo "   https://plup.local"
+  plup_creds
+}
+
+# Create the standing admin account if it isn't there yet (idempotent; needs
+# the web container running, so retry briefly while it boots). Upstream Pleroma
+# has no `user show`, so we just (re)run `user new`; an "already been taken"
+# error means it exists. Note the ctl path is /opt/pleroma (upstream), NOT
+# Akkoma's /opt/akkoma.
+plup_ensure_login() {
+  local ctl="/opt/pleroma/bin/pleroma_ctl" out
+  for _ in $(seq 1 30); do
+    out=$(plup_compose exec -T pleroma "$ctl" user new "$PLUP_DEV_USER" \
+      "$PLUP_DEV_USER@plup.local" --password "$PLUP_DEV_PASSWORD" \
+      --admin --assume-yes 2>&1 || true)
+    case "$out" in
+      *"created"*|*"already been taken"*) return 0 ;;
+    esac
+    sleep 2
+  done
+  echo "   (could not create $PLUP_DEV_USER yet — upstream Pleroma may still be booting)"
+}
+
+plup_creds() {
+  echo "   account (username / email / password):"
+  echo "     $PLUP_DEV_USER $PLUP_DEV_USER@plup.local $PLUP_DEV_PASSWORD"
+}
+
+plup_down() {
+  echo ">> Stopping upstream-Pleroma (plup) interop stack…"
+  plup_compose down
+}
+
+plup_status() {
+  if plup_compose ps --status running 2>/dev/null | grep -q '('; then
+    echo "plup       running   https://plup.local"
+  else
+    echo "plup       stopped"
+  fi
+}
+
+plup_logs() {
+  plup_compose logs -f "${@:-}"
+}
+
+# ── Sharkey (disposable interop instance) ─────────────────────────────
+
+sharkey_up() {
+  echo ">> Starting Sharkey interop stack…"
+  echo "   (first run builds the Sharkey image from ../sharkey-source — a long while)"
+  sharkey_compose up -d --wait --build
+  sharkey_ensure_login
+  echo "   https://sharkey.local"
+  sharkey_creds
+}
+
+# Create the standing admin account if the instance is fresh (idempotent).
+# Sharkey's admin/accounts/create endpoint works unauthenticated only while
+# the instance has no root user and returns that account's API token. On later
+# boots the standing account and its token are recovered from the disposable
+# database before the now-authenticated endpoint is considered.
+# Goes through Caddy (https://sharkey.local), so the mastodon stack must be up.
+sharkey_ensure_login() {
+  local out token
+  token=$(sharkey_compose exec -T db psql -U sharkey -d sharkey -tA \
+    -c "select token from \"user\" where \"usernameLower\" = '$SHARKEY_DEV_USER'" \
+    | tr -d '[:space:]')
+  if [[ -n "$token" ]]; then
+    printf '%s\n' "$token" > "$SHARKEY_DIR/.admin-token"
+    return 0
+  fi
+
+  for _ in $(seq 1 90); do
+    out=$(curl -sk --max-time 5 https://sharkey.local/api/admin/accounts/create \
+      -H 'Content-Type: application/json' \
+      -d "{\"username\":\"$SHARKEY_DEV_USER\",\"password\":\"$SHARKEY_DEV_PASSWORD\"}" || true)
+    case "$out" in
+      *'"token"'*)
+        token=$(printf '%s' "$out" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+        printf '%s\n' "$token" > "$SHARKEY_DIR/.admin-token"
+        echo "   created admin $SHARKEY_DEV_USER (API token in sharkey-test/.admin-token)"
+        return 0 ;;
+      *ACCESS_DENIED*|*CREDENTIAL_REQUIRED*)
+        echo "Sharkey has a root account, but the required $SHARKEY_DEV_USER fixture is missing" >&2
+        return 1 ;;
+    esac
+    sleep 2
+  done
+  echo "could not create the required Sharkey account $SHARKEY_DEV_USER" >&2
+  return 1
+}
+
+sharkey_creds() {
+  echo "   account (username / password):"
+  echo "     $SHARKEY_DEV_USER $SHARKEY_DEV_PASSWORD"
+  if [ -s "$SHARKEY_DIR/.admin-token" ]; then
+    echo "   admin API token: sharkey-test/.admin-token"
+  fi
+}
+
+sharkey_down() {
+  echo ">> Stopping Sharkey interop stack…"
+  sharkey_compose down
+}
+
+sharkey_status() {
+  if sharkey_compose ps --status running 2>/dev/null | grep -q '('; then
+    echo "sharkey    running   https://sharkey.local"
+  else
+    echo "sharkey    stopped"
+  fi
+}
+
+sharkey_logs() {
+  sharkey_compose logs -f "${@:-}"
+}
+
+# ── GoToSocial (disposable interop instance) ──────────────────────────
+
+gts_up() {
+  echo ">> Starting GoToSocial interop stack…"
+  gts_compose up -d --wait
+  gts_ensure_login
+  echo "   https://gotosocial.local"
+  gts_creds
+}
+
+gts_wait_ready() {
+  local ready=false
+  for _ in $(seq 1 60); do
+    if curl -sk --max-time 5 https://gotosocial.local/nodeinfo/2.0 | grep -q gotosocial; then
+      ready=true
+      break
+    fi
+    sleep 2
+  done
+
+  [[ "$ready" == true ]] || {
+    echo "GoToSocial did not become reachable through the shared TLS endpoint" >&2
+    return 1
+  }
+}
+
+# Create the standing admin account if it isn't there yet (idempotent).
+# GtS uses in-memory caches, so after actually creating the account the
+# server is restarted to make it visible; "already exists" needs nothing.
+gts_ensure_login() {
+  local cli=/gotosocial/gotosocial out
+  gts_wait_ready
+
+  out=$(gts_compose exec -T gotosocial "$cli" --config-path /gotosocial/config.yaml \
+    admin account create \
+    --username "$GTS_DEV_USER" --email "$GTS_DEV_USER@gotosocial.local" \
+    --password "$GTS_DEV_PASSWORD" 2>&1) || {
+    case "$out" in
+      *"already"*|*"in use"*|*"unavailable"*) return 0 ;;
+      *) echo "could not create $GTS_DEV_USER: $out" >&2; return 1 ;;
+    esac
+  }
+  gts_compose exec -T gotosocial "$cli" --config-path /gotosocial/config.yaml \
+    admin account confirm --username "$GTS_DEV_USER" >/dev/null
+  gts_compose exec -T gotosocial "$cli" --config-path /gotosocial/config.yaml \
+    admin account promote --username "$GTS_DEV_USER" >/dev/null
+  gts_compose restart gotosocial >/dev/null 2>&1
+  gts_wait_ready
+  echo "   created admin $GTS_DEV_USER"
+}
+
+gts_creds() {
+  echo "   account (username / email / password):"
+  echo "     $GTS_DEV_USER $GTS_DEV_USER@gotosocial.local $GTS_DEV_PASSWORD"
+}
+
+gts_down() {
+  echo ">> Stopping GoToSocial interop stack…"
+  gts_compose down
+}
+
+gts_status() {
+  if gts_compose ps --status running 2>/dev/null | grep -q '('; then
+    echo "gotosocial running   https://gotosocial.local"
+  else
+    echo "gotosocial stopped"
+  fi
+}
+
+gts_logs() {
+  gts_compose logs -f "${@:-}"
+}
+
+# ── Mitra (disposable interop instance) ──────────────────────────────
+
+mitra_up() {
+  echo ">> Starting Mitra interop database…"
+  mitra_compose up -d --wait
+  mkdir -p "$MITRA_DIR/storage"
+
+  echo ">> Building Mitra reference binary…"
+  (cd "$MITRA_SOURCE_DIR" && cargo build -q -p mitra)
+  mitra_ensure_login
+
+  echo ">> Starting Mitra on http://0.0.0.0:8380 (Caddy TLS: https://mitra.local)…"
+  if [ -f "$MITRA_PID_FILE" ] && kill -0 "$(cat "$MITRA_PID_FILE")" 2>/dev/null; then
+    echo "   already running (pid $(cat "$MITRA_PID_FILE"))"
+    mitra_creds
+    return 0
+  fi
+  (
+    cd "$MITRA_SOURCE_DIR"
+    # A separate session keeps the long-lived peer out of the invoking
+    # terminal/job's process group; CI shells commonly reap ordinary
+    # background children as soon as `up` returns.
+    setsid env CONFIG_PATH="$MITRA_DIR/config.yaml" \
+      ENVIRONMENT=production \
+      RUST_LOG=info \
+      target/debug/mitra server </dev/null >> "$MITRA_DIR/mitra.log" 2>&1 &
+    echo $! > "$MITRA_PID_FILE"
+  )
+  for _ in $(seq 1 60); do
+    if curl -sk --max-time 3 https://mitra.local/api/v1/instance >/dev/null 2>&1; then
+      echo "   pid $(cat "$MITRA_PID_FILE")"
+      mitra_creds
+      return 0
+    fi
+    sleep 1
+  done
+  echo "   FAILED — check mitra-test/mitra.log"
+  return 1
+}
+
+mitra_ensure_login() {
+  local out
+  out=$(
+    cd "$MITRA_SOURCE_DIR"
+    CONFIG_PATH="$MITRA_DIR/config.yaml" ENVIRONMENT=production target/debug/mitra \
+      create-account "$MITRA_DEV_USER" "$MITRA_DEV_PASSWORD" 2>&1
+  ) || {
+    case "$out" in
+      *"already exists"*|*"already taken"*|*"duplicate key"*) return 0 ;;
+      *) echo "   (could not create $MITRA_DEV_USER: $out)"; return 1 ;;
+    esac
+  }
+  echo "   created account $MITRA_DEV_USER"
+}
+
+mitra_creds() {
+  echo "   account (username / password):"
+  echo "     $MITRA_DEV_USER $MITRA_DEV_PASSWORD"
+}
+
+mitra_down() {
+  if [ -f "$MITRA_PID_FILE" ]; then
+    local pid
+    pid=$(cat "$MITRA_PID_FILE")
+    if kill -0 "$pid" 2>/dev/null; then
+      echo ">> Stopping Mitra server (pid $pid)…"
+      kill "$pid" 2>/dev/null || true
+    fi
+    rm -f "$MITRA_PID_FILE"
+  fi
+  echo ">> Stopping Mitra interop database…"
+  mitra_compose down
+}
+
+mitra_status() {
+  local db_ok="" srv_ok=""
+  if mitra_compose ps --status running 2>/dev/null | grep -q '('; then db_ok=1; fi
+  if [ -f "$MITRA_PID_FILE" ] && kill -0 "$(cat "$MITRA_PID_FILE")" 2>/dev/null; then srv_ok=1; fi
+  if [ -n "$db_ok" ] && [ -n "$srv_ok" ]; then
+    echo "mitra       running   https://mitra.local (pid $(cat "$MITRA_PID_FILE"))"
+  elif [ -n "$db_ok" ]; then
+    echo "mitra       partial   db up, server down"
+  elif [ -n "$srv_ok" ]; then
+    echo "mitra       partial   server up, db down"
+  else
+    echo "mitra       stopped"
+  fi
+}
+
+mitra_logs() { tail -f "$MITRA_DIR/mitra.log"; }
+
+# ── Onion Mitra (Tor hidden-service interop rig) ─────────────────────
+#
+# A SECOND Mitra whose identity is http://<generated>.onion, fronted by the
+# tor-test Tor daemon; the same daemon's SOCKS port (9350) is Plamenu's
+# outbound onion lane. Needs the real Tor network, so it is not part of
+# `./dev up all`.
+
+onion_hostname() {
+  onion_compose exec -T tor cat /var/lib/tor/hs/hostname 2>/dev/null | tr -d '[:space:]'
+}
+
+onion_write_config() {
+  local onion_host="$1"
+  cat > "$TOR_DIR/config.yaml" <<EOF
+# GENERATED by ./dev on every \`up onion\` — edit onion_write_config instead.
+database_url: postgres://mitra:mitra@127.0.0.1:55433/mitra
+storage_dir: ../tor-test/storage
+web_client_dir: null
+
+http_host: 0.0.0.0
+http_port: 8381
+instance_url: http://$onion_host
+
+instance_title: Onion Mitra interop test
+instance_short_description: Disposable hidden-service Plamenu interoperability peer
+instance_description: Disposable hidden-service Plamenu interoperability peer
+instance_timeline_public: true
+
+registration:
+  type: open
+
+federation:
+  # Outbound from this Mitra to the dev peers is plain clearnet (they all
+  # resolve to loopback/RFC1918 here) — only its INBOUND identity is onion.
+  ssrf_protection_enabled: false
+
+retention:
+  extraneous_posts: null
+  empty_profiles: null
+  activitypub_objects: null
+EOF
+}
+
+onion_ensure_login() {
+  local out
+  out=$(
+    cd "$MITRA_SOURCE_DIR"
+    CONFIG_PATH="$TOR_DIR/config.yaml" ENVIRONMENT=production target/debug/mitra \
+      create-account "$ONION_MITRA_USER" "$ONION_MITRA_PASSWORD" 2>&1
+  ) || {
+    case "$out" in
+      *"already exists"*|*"already taken"*|*"duplicate key"*) return 0 ;;
+      *) echo "   (could not create $ONION_MITRA_USER: $out)"; return 1 ;;
+    esac
+  }
+  echo "   created account $ONION_MITRA_USER"
+}
+
+onion_up() {
+  echo ">> Starting Tor daemon + onion-Mitra database…"
+  onion_compose up -d --wait
+  mkdir -p "$TOR_DIR/storage"
+
+  local onion_host
+  onion_host=$(onion_hostname)
+  if [ -z "$onion_host" ]; then
+    echo "   FAILED — tor produced no hidden-service hostname (docker compose -f tor-test/compose.dev.yml logs tor)"
+    return 1
+  fi
+  echo "   hidden service: http://$onion_host"
+
+  echo ">> Building Mitra reference binary…"
+  (cd "$MITRA_SOURCE_DIR" && cargo build -q -p mitra)
+  onion_write_config "$onion_host"
+  onion_ensure_login
+
+  echo ">> Starting onion Mitra on http://127.0.0.1:8381 (identity http://$onion_host)…"
+  if [ -f "$ONION_MITRA_PID_FILE" ] && kill -0 "$(cat "$ONION_MITRA_PID_FILE")" 2>/dev/null; then
+    echo "   already running (pid $(cat "$ONION_MITRA_PID_FILE"))"
+    onion_creds
+    return 0
+  fi
+  (
+    cd "$MITRA_SOURCE_DIR"
+    setsid env CONFIG_PATH="$TOR_DIR/config.yaml" \
+      ENVIRONMENT=production \
+      RUST_LOG=info \
+      target/debug/mitra server </dev/null >> "$TOR_DIR/mitra.log" 2>&1 &
+    echo $! > "$ONION_MITRA_PID_FILE"
+  )
+  for _ in $(seq 1 60); do
+    if curl -s --max-time 3 http://127.0.0.1:8381/api/v1/instance >/dev/null 2>&1; then
+      echo "   pid $(cat "$ONION_MITRA_PID_FILE")"
+      onion_creds
+      return 0
+    fi
+    sleep 1
+  done
+  echo "   FAILED — check tor-test/mitra.log"
+  return 1
+}
+
+onion_creds() {
+  echo "   account (username / password):"
+  echo "     $ONION_MITRA_USER $ONION_MITRA_PASSWORD"
+  echo "   Plamenu onion lane: socks5h://127.0.0.1:9350 (plamenu.dev.toml [federation])"
+}
+
+onion_down() {
+  if [ -f "$ONION_MITRA_PID_FILE" ]; then
+    local pid
+    pid=$(cat "$ONION_MITRA_PID_FILE")
+    if kill -0 "$pid" 2>/dev/null; then
+      echo ">> Stopping onion Mitra server (pid $pid)…"
+      kill "$pid" 2>/dev/null || true
+    fi
+    rm -f "$ONION_MITRA_PID_FILE"
+  fi
+  echo ">> Stopping Tor daemon + onion-Mitra database…"
+  onion_compose down
+}
+
+onion_status() {
+  local db_ok=0 tor_ok=0
+  if onion_compose ps --status running 2>/dev/null | grep -q 'db'; then db_ok=1; fi
+  if onion_compose ps --status running 2>/dev/null | grep -q 'tor'; then tor_ok=1; fi
+  if [ -f "$ONION_MITRA_PID_FILE" ] && kill -0 "$(cat "$ONION_MITRA_PID_FILE")" 2>/dev/null \
+     && [ "$db_ok" = 1 ] && [ "$tor_ok" = 1 ]; then
+    echo "onion       running   http://$(onion_hostname) (pid $(cat "$ONION_MITRA_PID_FILE"))"
+  elif [ "$db_ok" = 1 ] || [ "$tor_ok" = 1 ] \
+       || { [ -f "$ONION_MITRA_PID_FILE" ] && kill -0 "$(cat "$ONION_MITRA_PID_FILE")" 2>/dev/null; }; then
+    echo "onion       partial   (tor: $tor_ok, db: $db_ok, mitra pid file: $([ -f "$ONION_MITRA_PID_FILE" ] && echo yes || echo no))"
+  else
+    echo "onion       stopped"
+  fi
+}
+
+onion_logs() { tail -f "$TOR_DIR/mitra.log"; }
+
+# ── Lemmy (disposable interop instance) ──────────────────────────────
+
+lemmy_up() {
+  echo ">> Starting Lemmy interop stack…"
+  # The backend image builds from ../lemmy-source (branch 0.19.19-plamenu);
+  # the first build is a full Rust release build and takes a while.
+  lemmy_compose up -d --wait --build
+  lemmy_relax_settings
+  echo "   https://lemmy.local"
+  lemmy_creds
+}
+
+# Test-friendly site settings, applied idempotently on every up: Lemmy's
+# stock rate limits (6 posts / 10 min!) would throttle any e2e run, and
+# admin-only community creation would block group fixtures. A disposable peer
+# can also retain hours of exponential federation backoff after Plamenu was
+# stopped, so clear failed queue state when bringing the fixture back up.
+# Settings and queue state are cached in-process — restart when either changed.
+lemmy_relax_settings() {
+  local changed
+  changed=$(lemmy_compose exec -T db psql -U lemmy -d lemmy -tA -c "
+    WITH site_settings AS (
+      UPDATE local_site SET
+        federation_enabled = true,
+        community_creation_admin_only = false,
+        private_instance = false,
+        registration_mode = 'Open',
+        require_email_verification = false
+      WHERE federation_enabled IS DISTINCT FROM true
+         OR community_creation_admin_only IS DISTINCT FROM false
+         OR private_instance IS DISTINCT FROM false
+         OR registration_mode IS DISTINCT FROM 'Open'::registration_mode_enum
+         OR require_email_verification IS DISTINCT FROM false
+      RETURNING 1
+    ), rates AS (
+      UPDATE local_site_rate_limit SET
+        message = 9999, post = 9999, register = 9999,
+        image = 9999, comment = 9999, search = 9999
+      WHERE post <> 9999
+      RETURNING 1
+    ), queues AS (
+      UPDATE federation_queue_state SET
+        fail_count = 0,
+        last_retry = NULL
+      WHERE fail_count <> 0 OR last_retry IS NOT NULL
+      RETURNING 1
+    ), instances AS (
+      UPDATE instance SET updated = now()
+      WHERE id NOT IN (SELECT instance_id FROM site)
+        AND coalesce(updated, published) < now() - interval '3 days'
+      RETURNING 1
+    )
+    SELECT
+      (SELECT count(*) FROM site_settings)
+      + (SELECT count(*) FROM rates)
+      + (SELECT count(*) FROM queues)
+      + (SELECT count(*) FROM instances);
+  " 2>/dev/null) || { echo "   (could not relax Lemmy site settings — is the db up?)"; return 0; }
+  if [ -n "$changed" ] && [ "$changed" != "0" ]; then
+    echo "   refreshed test settings + federation queue (restarting lemmy)"
+    lemmy_compose restart lemmy >/dev/null 2>&1
+  fi
+}
+
+lemmy_creds() {
+  echo "   account (username / password):"
+  echo "     $LEMMY_DEV_USER $LEMMY_DEV_PASSWORD (instance admin)"
+}
+
+lemmy_down() {
+  echo ">> Stopping Lemmy interop stack…"
+  lemmy_compose down
+}
+
+lemmy_status() {
+  if lemmy_compose ps --status running 2>/dev/null | grep -q '('; then
+    echo "lemmy      running   https://lemmy.local"
+  else
+    echo "lemmy      stopped"
+  fi
+}
+
+lemmy_logs() {
+  lemmy_compose logs -f "${@:-}"
+}
+
+# ── PeerTube (disposable interop instance) ────────────────────────────
+
+peertube_up() {
+  echo ">> Starting PeerTube interop stack…"
+  # The compose file references the shared mastodon-test_internal network as
+  # external; if the Mastodon stack is down that network doesn't exist and
+  # `up` would fail with a confusing error. Fail early with a clear hint —
+  # never create the network ourselves (it belongs to the mastodon stack).
+  if ! docker_cmd network inspect mastodon-test_internal >/dev/null 2>&1; then
+    echo "   the shared 'mastodon-test_internal' network is missing."
+    echo "   Start the Mastodon stack first:  ./dev up mastodon"
+    return 1
+  fi
+  peertube_compose up -d --wait
+  peertube_wait_ready
+  peertube_ensure_video
+  echo "   https://peertube.local"
+  peertube_creds
+}
+
+# Wait until the vhost answers through Caddy (the container healthcheck only
+# proves the Node app is up on :9000; this also confirms TLS routing).
+peertube_wait_ready() {
+  echo ">> Waiting for https://peertube.local/api/v1/config …"
+  for _ in $(seq 1 60); do
+    if curl -sk --max-time 5 https://peertube.local/api/v1/config >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "   (peertube.local not answering through Caddy yet — is the mastodon stack up?)"
+  return 0
+}
+
+# Ensure at least one public, HLS-transcoded video exists so federation e2e
+# has real content. Idempotent (skips upload when a local public video is
+# already present) and resilient (any hiccup leaves the instance running and
+# prints manual instructions rather than failing the whole `up`).
+peertube_ensure_video() {
+  local base="https://peertube.local"
+  command -v jq >/dev/null 2>&1 || { echo "   (jq not found — skipping test-video seed)"; return 0; }
+
+  local list total
+  list=$(curl -sk --max-time 10 "$base/api/v1/videos?count=1&isLocal=true&sort=-publishedAt" 2>/dev/null || echo '')
+  total=$(printf '%s' "$list" | jq -r '.total // 0' 2>/dev/null || echo 0)
+  if [ "${total:-0}" -ge 1 ] 2>/dev/null; then
+    echo "   test video already present (uuid $(printf '%s' "$list" | jq -r '.data[0].uuid'))"
+    return 0
+  fi
+
+  # OAuth password grant: fetch the local client, then a bearer token for root.
+  local oc cid csecret token
+  oc=$(curl -sk --max-time 10 "$base/api/v1/oauth-clients/local" 2>/dev/null || echo '')
+  cid=$(printf '%s' "$oc" | jq -r '.client_id // empty' 2>/dev/null)
+  csecret=$(printf '%s' "$oc" | jq -r '.client_secret // empty' 2>/dev/null)
+  if [ -z "$cid" ] || [ -z "$csecret" ]; then
+    echo "   (could not read OAuth client — leaving instance up; see peertube-test/README.md)"
+    return 0
+  fi
+  token=$(curl -sk --max-time 10 "$base/api/v1/users/token" \
+    --data-urlencode "client_id=$cid" \
+    --data-urlencode "client_secret=$csecret" \
+    --data-urlencode "grant_type=password" \
+    --data-urlencode "username=$PEERTUBE_DEV_USER" \
+    --data-urlencode "password=$PEERTUBE_DEV_PASSWORD" 2>/dev/null \
+    | jq -r '.access_token // empty' 2>/dev/null)
+  if [ -z "$token" ]; then
+    echo "   (could not obtain root token — leaving instance up; see peertube-test/README.md)"
+    return 0
+  fi
+
+  local channel
+  channel=$(curl -sk --max-time 10 -H "Authorization: Bearer $token" "$base/api/v1/users/me" \
+    | jq -r '.videoChannels[0].id // empty' 2>/dev/null)
+  if [ -z "$channel" ]; then
+    echo "   (could not read root's default channel — leaving instance up)"
+    return 0
+  fi
+
+  # Tiny 5s test clip via the host ffmpeg.
+  local sample="$PEERTUBE_DIR/.sample.mp4"
+  if [ ! -s "$sample" ]; then
+    ffmpeg -hide_banner -loglevel error \
+      -f lavfi -i testsrc=duration=5:size=320x240:rate=30 \
+      -f lavfi -i sine=frequency=440:duration=5 \
+      -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -y "$sample" 2>/dev/null \
+      || { echo "   (ffmpeg failed — skipping upload; see peertube-test/README.md)"; return 0; }
+  fi
+
+  echo ">> Uploading a test video (privacy=public) …"
+  local resp uuid
+  resp=$(curl -sk --max-time 120 -H "Authorization: Bearer $token" \
+    -F "name=Plamenu e2e test video" \
+    -F "channelId=$channel" \
+    -F "privacy=1" \
+    -F "videofile=@$sample;type=video/mp4" \
+    "$base/api/v1/videos/upload" 2>/dev/null || echo '')
+  uuid=$(printf '%s' "$resp" | jq -r '.video.uuid // empty' 2>/dev/null)
+  if [ -z "$uuid" ]; then
+    echo "   (upload failed: $(printf '%s' "$resp" | head -c 200))"
+    echo "   Upload one by hand later — see peertube-test/README.md."
+    return 0
+  fi
+  echo "   uploaded uuid $uuid — waiting for HLS transcode…"
+
+  local n
+  for _ in $(seq 1 60); do
+    n=$(curl -sk --max-time 10 -H "Authorization: Bearer $token" "$base/api/v1/videos/$uuid" \
+      | jq -r '.streamingPlaylists | length' 2>/dev/null || echo 0)
+    if [ "${n:-0}" -ge 1 ] 2>/dev/null; then
+      echo "   HLS ready — https://peertube.local/w/$uuid  (AP id: $base/videos/watch/$uuid)"
+      return 0
+    fi
+    sleep 3
+  done
+  echo "   (HLS not ready yet for $uuid — transcode may still be running; re-run ./dev up peertube)"
+}
+
+peertube_creds() {
+  echo "   account (username / password):"
+  echo "     $PEERTUBE_DEV_USER $PEERTUBE_DEV_PASSWORD (instance admin; email root@peertube.local)"
+  echo "   live: RTMP ingest on rtmp://peertube.local:1935/live/<streamKey>"
+  echo "     (port published to the host; see plamenu_e2e.peertube.broadcast)"
+}
+
+peertube_down() {
+  echo ">> Stopping PeerTube interop stack…"
+  peertube_compose down
+}
+
+peertube_status() {
+  if peertube_compose ps --status running 2>/dev/null | grep -q '('; then
+    echo "peertube   running   https://peertube.local"
+  else
+    echo "peertube   stopped"
+  fi
+}
+
+peertube_logs() {
+  peertube_compose logs -f "${@:-}"
+}
+
+# ── Owncast (source-built live-stream interop instance) ──────────────
+
+owncast_config_value() {
+  local path=$1 value=$2
+  curl -skf --max-time 20 -u "admin:$OWNCAST_ADMIN_PASSWORD" \
+    -H 'Content-Type: application/json' \
+    -d "{\"value\":$value}" \
+    "https://owncast.local/api/admin/config/$path" >/dev/null
+}
+
+owncast_up() {
+  echo ">> Starting source-built Owncast interop peer…"
+  if ! docker_cmd network inspect mastodon-test_internal >/dev/null 2>&1; then
+    echo "   the shared 'mastodon-test_internal' network is missing."
+    echo "   Start the Mastodon stack first:  ./dev up mastodon"
+    return 1
+  fi
+  masto_compose up -d --no-deps caddy >/dev/null
+  masto_compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null
+  owncast_compose up -d --wait --build
+
+  # Idempotently establish the public identity used by WebFinger, NodeInfo,
+  # AP ids, HLS and the public status endpoint. Federation is enabled last.
+  owncast_config_value serverurl '"https://owncast.local"'
+  owncast_config_value name '"Plamenu Owncast e2e"'
+  owncast_config_value streamtitle '"Plamenu Owncast live test"'
+  owncast_config_value federation/username '"streamer"'
+  owncast_config_value federation/livemessage '"Plamenu Owncast is live"'
+  owncast_config_value federation/private false
+  owncast_config_value federation/enable true
+  owncast_wait_ready
+  echo "   https://owncast.local"
+  owncast_creds
+}
+
+owncast_wait_ready() {
+  echo ">> Waiting for @streamer@owncast.local WebFinger…"
+  for _ in $(seq 1 60); do
+    if curl -sk --max-time 5 \
+      'https://owncast.local/.well-known/webfinger?resource=acct:streamer@owncast.local' \
+      | grep -q 'application/x-mpegURL'; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "   Owncast did not become federation-ready; inspect: ./dev logs owncast"
+  return 1
+}
+
+owncast_creds() {
+  echo "   federated actor: @streamer@owncast.local"
+  echo "   admin: admin / $OWNCAST_ADMIN_PASSWORD"
+  echo "   RTMP: rtmp://127.0.0.1:1937/live/$OWNCAST_STREAM_KEY"
+}
+
+owncast_down() {
+  echo ">> Stopping Owncast interop peer…"
+  owncast_compose down
+}
+
+owncast_status() {
+  if owncast_compose ps --status running --services 2>/dev/null | grep -qx 'owncast'; then
+    echo "owncast    running   https://owncast.local"
+  else
+    echo "owncast    stopped"
+  fi
+}
+
+owncast_logs() {
+  owncast_compose logs -f "${@:-}"
+}
+
+# ── Mobilizon (disposable interop instance) ───────────────────────────
+
+mobilizon_up() {
+  echo ">> Starting Mobilizon interop stack…"
+  # Same guard as the other peers: the compose file joins the shared
+  # mastodon-test_internal network as external, so the Mastodon stack (which
+  # owns it, and runs the Caddy that terminates TLS for mobilizon.local) has
+  # to be up first. Never create the network ourselves.
+  if ! docker_cmd network inspect mastodon-test_internal >/dev/null 2>&1; then
+    echo "   the shared 'mastodon-test_internal' network is missing."
+    echo "   Start the Mastodon stack first:  ./dev up mastodon"
+    return 1
+  fi
+  mobilizon_compose up -d --wait
+  mobilizon_wait_ready
+  mobilizon_ensure_account
+  mobilizon_ensure_group
+  echo "   https://mobilizon.local"
+  mobilizon_creds
+}
+
+# Wait until the vhost answers through Caddy (the container healthcheck only
+# proves Phoenix is up on :4000; this also confirms TLS routing).
+mobilizon_wait_ready() {
+  echo ">> Waiting for https://mobilizon.local/.well-known/nodeinfo …"
+  for _ in $(seq 1 60); do
+    if curl -sk --max-time 5 https://mobilizon.local/.well-known/nodeinfo >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "   (mobilizon.local not answering through Caddy yet — is the mastodon stack up?)"
+  return 0
+}
+
+# Ensure the standing `grace` account exists, pre-confirmed and with a
+# profile. Mobilizon's data model splits user (login) from actor (profile):
+# `users.new` without --profile_username creates a user that must pick a
+# profile interactively at first login, which is useless to a test harness —
+# so both are passed and the actor @grace@mobilizon.local exists immediately.
+# NB the flags are DASHED (--profile-username): Elixir's OptionParser rejects
+# switches spelled with underscores even though the strict key is
+# :profile_username, and the task dies with a MatchError on the leftovers.
+# Idempotent: a second run just reports the user already exists.
+mobilizon_ensure_account() {
+  if mobilizon_compose exec -T mobilizon /bin/mobilizon_ctl users.show \
+      "$MOBILIZON_DEV_EMAIL" >/dev/null 2>&1; then
+    echo "   account $MOBILIZON_DEV_EMAIL already present"
+    return 0
+  fi
+  echo ">> Creating $MOBILIZON_DEV_EMAIL (profile $MOBILIZON_DEV_USER, administrator)…"
+  if ! mobilizon_compose exec -T mobilizon /bin/mobilizon_ctl users.new \
+      "$MOBILIZON_DEV_EMAIL" \
+      --password "$MOBILIZON_DEV_PASSWORD" \
+      --profile-username "$MOBILIZON_DEV_USER" \
+      --profile-display-name "Grace" \
+      --admin >/dev/null 2>&1; then
+    echo "   (user creation failed — instance is up; see mobilizon-test/README.md)"
+  fi
+}
+
+# Ensure the standing `plamenu_events` group exists.
+#
+# This is not cosmetic seeding like PeerTube's test video: Mobilizon REFUSES
+# to be followed as a Person ("Only group and instances can be followed",
+# actors.ex `follow(_, _, _, _), do: {:error, :person_no_follow}` — only
+# :Group and the :Application relay actor pass). So a followable Group is the
+# ONLY way a peer can receive this instance's events, and every e2e scenario
+# needs one. Idempotent: existence is probed over ActivityPub.
+mobilizon_ensure_group() {
+  local base="https://mobilizon.local" group="plamenu_events"
+  command -v jq >/dev/null 2>&1 || { echo "   (jq not found — skipping group seed)"; return 0; }
+
+  if curl -sk --max-time 10 -H 'Accept: application/activity+json' \
+      "$base/@$group" | jq -e '.type == "Group"' >/dev/null 2>&1; then
+    echo "   group !$group@mobilizon.local already present"
+    return 0
+  fi
+
+  local token actor
+  # shellcheck disable=SC2016 # GraphQL variables are literal; shell values are spliced into JSON.
+  token=$(mobilizon_graphql '{"query":"mutation($e:String!,$p:String!){ login(email:$e, password:$p){ accessToken } }","variables":{"e":"'"$MOBILIZON_DEV_EMAIL"'","p":"'"$MOBILIZON_DEV_PASSWORD"'"}}' \
+    | jq -r '.data.login.accessToken // empty')
+  if [ -z "$token" ]; then
+    echo "   (could not log in as $MOBILIZON_DEV_EMAIL — see mobilizon-test/README.md)"
+    return 0
+  fi
+  # Cache the token: the e2e helper reuses it rather than logging in again.
+  printf '%s\n' "$token" > "$MOBILIZON_DIR/.grace-token"
+
+  echo ">> Creating group !$group@mobilizon.local …"
+  actor=$(mobilizon_graphql '{"query":"mutation{ createGroup(preferredUsername:\"'"$group"'\", name:\"Plamenu e2e events\", summary:\"Events for federation tests\", visibility: PUBLIC, openness: OPEN){ url } }"}' "$token" \
+    | jq -r '.data.createGroup.url // empty')
+  if [ -z "$actor" ]; then
+    echo "   (group creation failed — instance is up; see mobilizon-test/README.md)"
+  fi
+}
+
+# POST a GraphQL document to Mobilizon's single /api endpoint. $2 is an
+# optional bearer token. Mobilizon has no REST API — everything a test
+# harness does (login, groups, events, participation) goes through here.
+mobilizon_graphql() {
+  if [ -n "${2:-}" ]; then
+    curl -sk --max-time 15 https://mobilizon.local/api \
+      -H 'Content-Type: application/json' -H "Authorization: Bearer $2" -d "$1"
+  else
+    curl -sk --max-time 15 https://mobilizon.local/api \
+      -H 'Content-Type: application/json' -d "$1"
+  fi
+}
+
+mobilizon_creds() {
+  echo "   account (login e-mail / password → profile):"
+  echo "     $MOBILIZON_DEV_EMAIL $MOBILIZON_DEV_PASSWORD → @$MOBILIZON_DEV_USER@mobilizon.local (administrator)"
+  echo "   followable group: !plamenu_events@mobilizon.local"
+  echo "     (Person actors CANNOT be followed — Mobilizon only allows Groups"
+  echo "      and the instance relay actor, so events reach peers via the group)"
+}
+
+mobilizon_down() {
+  echo ">> Stopping Mobilizon interop stack…"
+  mobilizon_compose down
+}
+
+mobilizon_status() {
+  if mobilizon_compose ps --status running 2>/dev/null | grep -q '('; then
+    echo "mobilizon  running   https://mobilizon.local"
+  else
+    echo "mobilizon  stopped"
+  fi
+}
+
+mobilizon_logs() {
+  mobilizon_compose logs -f "${@:-}"
+}
+
+# ── Discourse (source-backed ActivityPub interop peer) ────────────────
+
+discourse_up() {
+  echo ">> Starting source-backed Discourse ActivityPub peer…"
+  if ! docker_cmd network inspect mastodon-test_internal >/dev/null 2>&1; then
+    echo "   the shared 'mastodon-test_internal' network is missing."
+    echo "   Start the Mastodon stack first:  ./dev up mastodon"
+    return 1
+  fi
+
+  # Reconcile the Caddy aliases after a fresh checkout and reload the edited
+  # Caddyfile without bouncing the rest of the peer fleet.
+  masto_compose up -d caddy >/dev/null
+  masto_compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null
+
+  discourse_compose up -d
+  discourse_wait_ready
+  echo "   https://discourse.local"
+  discourse_creds
+}
+
+discourse_wait_ready() {
+  echo ">> Waiting for https://discourse.local/about.json …"
+  for _ in $(seq 1 240); do
+    if curl -sk --max-time 5 https://discourse.local/about.json \
+        | grep -q 'Discourse ActivityPub interop test'; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "   Discourse did not become ready; inspect: ./dev logs discourse"
+  return 1
+}
+
+discourse_creds() {
+  echo "   account (username / email / password):"
+  echo "     $DISCOURSE_DEV_USER $DISCOURSE_DEV_EMAIL $DISCOURSE_DEV_PASSWORD (administrator)"
+  echo "   followable category: @federation@discourse.local"
+}
+
+discourse_down() {
+  echo ">> Stopping Discourse ActivityPub peer…"
+  discourse_compose down
+}
+
+discourse_status() {
+  if discourse_compose ps --status running --services 2>/dev/null | grep -qx 'discourse'; then
+    echo "discourse  running   https://discourse.local"
+  else
+    echo "discourse  stopped"
+  fi
+}
+
+discourse_logs() {
+  discourse_compose logs -f "$@"
+}
+
+# ── Hubzilla (source-backed native file-object peer) ──────────────────
+
+hubzilla_up() {
+  echo ">> Starting source-backed Hubzilla 11.4 + PubCrawl peer…"
+  if ! docker_cmd network inspect mastodon-test_internal >/dev/null 2>&1; then
+    echo "   the shared 'mastodon-test_internal' network is missing."
+    echo "   Start the Mastodon stack first:  ./dev up mastodon"
+    return 1
+  fi
+
+  # Docker cannot create nested mount targets below the read-only core-source
+  # bind. A freshly cloned Hubzilla tree intentionally lacks these generated
+  # paths, so prepare all three targets on the host before Compose starts it.
+  [[ -f "$HUBZILLA_SOURCE_DIR/index.php" ]] || {
+    echo "   pinned Hubzilla source is missing; run ./dev provision-peers"
+    return 1
+  }
+  mkdir -p "$HUBZILLA_SOURCE_DIR/addon" "$HUBZILLA_SOURCE_DIR/store"
+  touch "$HUBZILLA_SOURCE_DIR/.htconfig.php"
+
+  masto_compose up -d caddy >/dev/null
+  masto_compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null
+  hubzilla_compose up -d --wait --build db hubzilla
+
+  echo ">> Enabling PubCrawl and seeding @hazel@hubzilla.local …"
+  hubzilla_compose exec -T hubzilla php util/init_sys_channel >/dev/null
+  hubzilla_compose exec -T hubzilla php util/config system activitypub_allowed 1 >/dev/null
+  hubzilla_compose exec -T hubzilla php util/addons install pubcrawl >/dev/null
+  hubzilla_compose exec -T hubzilla php /opt/hubzilla-test/seed.php
+  hubzilla_compose up -d cron >/dev/null
+  hubzilla_wait_ready
+  echo "   https://hubzilla.local"
+  hubzilla_creds
+}
+
+hubzilla_wait_ready() {
+  echo ">> Waiting for https://hubzilla.local/.well-known/webfinger …"
+  for _ in $(seq 1 60); do
+    if curl -sk --max-time 5 \
+        'https://hubzilla.local/.well-known/webfinger?resource=acct:hazel@hubzilla.local' \
+        | grep -q 'hazel@hubzilla.local'; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "   Hubzilla did not become ready; inspect: ./dev logs hubzilla"
+  return 1
+}
+
+hubzilla_creds() {
+  echo "   account (channel / email / password):"
+  echo "     $HUBZILLA_DEV_USER $HUBZILLA_DEV_EMAIL $HUBZILLA_DEV_PASSWORD (administrator)"
+  echo "   followable file-object producer: @$HUBZILLA_DEV_USER@hubzilla.local"
+}
+
+hubzilla_down() {
+  echo ">> Stopping Hubzilla interop stack…"
+  hubzilla_compose down
+}
+
+hubzilla_status() {
+  if hubzilla_compose ps --status running --services 2>/dev/null | grep -qx 'hubzilla'; then
+    echo "hubzilla   running   https://hubzilla.local"
+  else
+    echo "hubzilla   stopped"
+  fi
+}
+
+hubzilla_logs() {
+  hubzilla_compose logs -f "$@"
+}
+
+# ── Funkwhale (official-image native Audio peer) ─────────────────────
+
+funkwhale_up() {
+  echo ">> Starting Funkwhale 2.0.8 Audio peer…"
+  if ! docker_cmd network inspect mastodon-test_internal >/dev/null 2>&1; then
+    echo "   the shared 'mastodon-test_internal' network is missing."
+    echo "   Start the Mastodon stack first:  ./dev up mastodon"
+    return 1
+  fi
+
+  masto_compose up -d caddy >/dev/null
+  masto_compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null
+  funkwhale_compose up -d --wait postgres redis
+
+  echo ">> Migrating Funkwhale database…"
+  funkwhale_compose run --rm api funkwhale-manage migrate --noinput
+  funkwhale_ensure_account
+
+  funkwhale_compose up -d --wait api celeryworker celerybeat front
+  echo ">> Seeding @plamenu_audio@funkwhale.local …"
+  funkwhale_compose exec -T api funkwhale-manage shell \
+    < "$FUNKWHALE_DIR/seed-channel.py"
+  funkwhale_wait_ready
+  echo "   https://funkwhale.local"
+  funkwhale_creds
+}
+
+funkwhale_ensure_account() {
+  local exists=0
+  if funkwhale_compose run --rm api funkwhale-manage shell -c \
+      "from funkwhale_api.users.models import User; raise SystemExit(0 if User.objects.filter(username='$FUNKWHALE_DEV_USER').exists() else 1)" \
+      >/dev/null 2>&1; then
+    exists=1
+  fi
+
+  if [ "$exists" = 1 ]; then
+    echo ">> Refreshing standing Funkwhale account credentials…"
+    funkwhale_compose run --rm api funkwhale-manage fw users set \
+      --no-input --password "$FUNKWHALE_DEV_PASSWORD" \
+      --superuser --staff --upload-quota 1000000000 \
+      "$FUNKWHALE_DEV_USER" >/dev/null
+  else
+    echo ">> Creating standing Funkwhale administrator…"
+    funkwhale_compose run --rm \
+      -e FUNKWHALE_CLI_USER_PASSWORD="$FUNKWHALE_DEV_PASSWORD" \
+      api funkwhale-manage fw users create \
+      --username "$FUNKWHALE_DEV_USER" \
+      --email "$FUNKWHALE_DEV_EMAIL" \
+      --superuser --upload-quota 1000000000 >/dev/null
+  fi
+}
+
+funkwhale_wait_ready() {
+  echo ">> Waiting for https://funkwhale.local/.well-known/webfinger …"
+  for _ in $(seq 1 60); do
+    if curl -sk --max-time 5 \
+        'https://funkwhale.local/.well-known/webfinger?resource=acct:plamenu_audio@funkwhale.local' \
+        | grep -q 'plamenu_audio'; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "   Funkwhale did not become ready; inspect: ./dev logs funkwhale"
+  return 1
+}
+
+funkwhale_creds() {
+  echo "   account (username / email / password):"
+  echo "     $FUNKWHALE_DEV_USER $FUNKWHALE_DEV_EMAIL $FUNKWHALE_DEV_PASSWORD (administrator)"
+  echo "   followable Audio producer: @plamenu_audio@funkwhale.local"
+}
+
+funkwhale_down() {
+  echo ">> Stopping Funkwhale interop stack…"
+  funkwhale_compose down
+}
+
+funkwhale_status() {
+  if funkwhale_compose ps --status running --services 2>/dev/null | grep -qx 'front'; then
+    echo "funkwhale  running   https://funkwhale.local"
+  else
+    echo "funkwhale  stopped"
+  fi
+}
+
+funkwhale_logs() {
+  funkwhale_compose logs -f "$@"
+}
+
+# ── Dispatch ──────────────────────────────────────────────────────────
+
+action="${1:-status}"
+target="${2:-all}"
+
+case "$action" in
+  up)
+    case "$target" in
+      mastodon)   masto_up ;;
+      plamenu)    plamenu_up ;;
+      pleroma)    pleroma_up ;;
+      sharkey)    sharkey_up ;;
+      gotosocial) gts_up ;;
+      mitra)      mitra_up ;;
+      lemmy)      lemmy_up ;;
+      peertube)   peertube_up ;;
+      owncast)    owncast_up ;;
+      mobilizon)  mobilizon_up ;;
+      discourse)  discourse_up ;;
+      hubzilla)   hubzilla_up ;;
+      funkwhale)  funkwhale_up ;;
+      plup)       plup_up ;;
+      onion)      onion_up ;;
+      # `onion` is deliberately not in `all`: it is the only rig that needs
+      # the real Tor network, and full-stack boots must stay offline-safe.
+      all)        masto_up; discourse_up; hubzilla_up; funkwhale_up; plamenu_up; pleroma_up; sharkey_up; gts_up; mitra_up; lemmy_up; peertube_up; owncast_up; mobilizon_up; plup_up ;;
+      *)          echo "unknown target: $target (use mastodon, plamenu, pleroma, plup, sharkey, gotosocial, mitra, lemmy, peertube, owncast, mobilizon, discourse, hubzilla, funkwhale, onion, or all)"; exit 1 ;;
+    esac
+    ;;
+
+  down)
+    case "$target" in
+      mastodon)   masto_down ;;
+      plamenu)    plamenu_down ;;
+      pleroma)    pleroma_down ;;
+      sharkey)    sharkey_down ;;
+      gotosocial) gts_down ;;
+      mitra)      mitra_down ;;
+      lemmy)      lemmy_down ;;
+      peertube)   peertube_down ;;
+      owncast)    owncast_down ;;
+      mobilizon)  mobilizon_down ;;
+      discourse)  discourse_down ;;
+      hubzilla)   hubzilla_down ;;
+      funkwhale)  funkwhale_down ;;
+      plup)       plup_down ;;
+      onion)      onion_down ;;
+      all)        onion_down; plup_down; mobilizon_down; owncast_down; peertube_down; lemmy_down; mitra_down; gts_down; sharkey_down; pleroma_down; plamenu_down; funkwhale_down; hubzilla_down; discourse_down; masto_down ;;
+      *)          echo "unknown target: $target (use mastodon, plamenu, pleroma, plup, sharkey, gotosocial, mitra, lemmy, peertube, owncast, mobilizon, discourse, hubzilla, funkwhale, onion, or all)"; exit 1 ;;
+    esac
+    ;;
+
+  status)
+    masto_status
+    plamenu_status
+    pleroma_status
+    sharkey_status
+    gts_status
+    mitra_status
+    lemmy_status
+    peertube_status
+    owncast_status
+    mobilizon_status
+    discourse_status
+    hubzilla_status
+    funkwhale_status
+    plup_status
+    onion_status
+    ;;
+
+  creds)
+    echo "mastodon   https://mastodon.local"
+    masto_creds
+    echo "plamenu    https://plamenu.local"
+    plamenu_creds
+    echo "pleroma    https://pleroma.local"
+    pleroma_creds
+    echo "sharkey    https://sharkey.local"
+    sharkey_creds
+    echo "gotosocial https://gotosocial.local"
+    gts_creds
+    echo "mitra      https://mitra.local"
+    mitra_creds
+    echo "lemmy      https://lemmy.local"
+    lemmy_creds
+    echo "peertube   https://peertube.local"
+    peertube_creds
+    echo "owncast    https://owncast.local"
+    owncast_creds
+    echo "mobilizon  https://mobilizon.local"
+    mobilizon_creds
+    echo "discourse  https://discourse.local"
+    discourse_creds
+    echo "hubzilla   https://hubzilla.local"
+    hubzilla_creds
+    echo "funkwhale  https://funkwhale.local"
+    funkwhale_creds
+    echo "plup       https://plup.local"
+    plup_creds
+    ;;
+
+  logs)
+    case "$target" in
+      mastodon)   shift 1; masto_logs "$@" ;;
+      plamenu)    plamenu_logs ;;
+      pleroma)    shift 1; pleroma_logs "$@" ;;
+      sharkey)    shift 1; sharkey_logs "$@" ;;
+      gotosocial) shift 1; gts_logs "$@" ;;
+      mitra)      mitra_logs ;;
+      lemmy)      shift 1; lemmy_logs "$@" ;;
+      peertube)   shift 1; peertube_logs "$@" ;;
+      owncast)    shift 1; owncast_logs "$@" ;;
+      mobilizon)  shift 1; mobilizon_logs "$@" ;;
+      discourse)  shift 1; discourse_logs "$@" ;;
+      hubzilla)   shift 1; hubzilla_logs "$@" ;;
+      funkwhale)  shift 1; funkwhale_logs "$@" ;;
+      plup)       shift 1; plup_logs "$@" ;;
+      onion)      onion_logs ;;
+      *)          echo "usage: ./dev logs [mastodon|plamenu|pleroma|plup|sharkey|gotosocial|mitra|lemmy|peertube|owncast|mobilizon|discourse|hubzilla|funkwhale|onion]"; exit 1 ;;
+    esac
+    ;;
+
+  *)
+    echo "usage: ./dev {up|down|status|logs|creds} [mastodon|plamenu|pleroma|plup|sharkey|gotosocial|mitra|lemmy|peertube|owncast|mobilizon|discourse|hubzilla|funkwhale|all]"
+    exit 1
+    ;;
+esac

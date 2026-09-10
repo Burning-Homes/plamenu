@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM accounts\n             WHERE id = $1 AND domain IS NOT NULL AND is_internal\n               AND NOT EXISTS (\n                   SELECT 1 FROM webxdc_sessions WHERE account_id = $1\n               )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "03e6adad118bbfa4f98c6e7a0761afc08c21f057e32fdf16f0f5f9bb9e6769ff"
+}

@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, authentication_method, success, failure_reason, ip, user_agent,\n               created_at\n        FROM login_activities\n        WHERE user_id = $1\n        ORDER BY created_at DESC, id DESC\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "authentication_method",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "authentication_method"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "success",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "success"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "failure_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "failure_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "ip",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "ip"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "user_agent",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "user_agent"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "login_activities",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "9e8b3ab86913f02c994447ee6019bd1b1b8cf2b4a72c82b3a7e7464497743d18"
+}

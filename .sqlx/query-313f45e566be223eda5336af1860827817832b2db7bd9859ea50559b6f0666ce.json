@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n               count(*) FILTER (WHERE state = 'pending') AS \"pending!\",\n               count(*) FILTER (WHERE state = 'leased') AS \"leased!\"\n           FROM remote_history_jobs",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "leased!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "313f45e566be223eda5336af1860827817832b2db7bd9859ea50559b6f0666ce"
+}

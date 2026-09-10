@@ -1,0 +1,18 @@
+[book]
+authors = ["Plamenu contributors"]
+description = "User, operator, API, federation, and contributor documentation for Plamenu"
+language = "en"
+src = "."
+title = "Plamenu documentation"
+
+[build]
+build-dir = "../target/docs/book"
+create-missing = false
+
+[output.html]
+git-repository-url = "https://codefloe.com/plamenu/plamenu"
+
+[output.html.search]
+enable = true
+limit-results = 30
+use-boolean-and = true

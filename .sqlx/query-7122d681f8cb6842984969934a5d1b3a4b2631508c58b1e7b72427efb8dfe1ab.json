@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO follow_recommendation_mutes (account_id, target_account_id)\n        VALUES ($1, $2)\n        ON CONFLICT (account_id, target_account_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7122d681f8cb6842984969934a5d1b3a4b2631508c58b1e7b72427efb8dfe1ab"
+}

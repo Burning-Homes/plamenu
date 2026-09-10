@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET edited_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "941c12a0871611f79f4164f5ed6f3828ab75f528196212d960ecb350c46971ad"
+}

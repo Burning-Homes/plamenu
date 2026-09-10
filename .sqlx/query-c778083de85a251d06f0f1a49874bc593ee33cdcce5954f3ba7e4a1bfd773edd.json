@@ -1,0 +1,205 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO reports\n            (id, account_id, target_account_id, status_ids, comment, category,\n             forwarded, rule_ids, uri, group_account_id)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n        RETURNING id, account_id, target_account_id,\n                  status_ids AS \"status_ids!\", comment, category, forwarded,\n                  rule_ids, uri, action_taken_at, assigned_account_id,\n                  action_taken_by_account_id, group_account_id, created_at,\n                  updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "target_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "target_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "status_ids!",
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "status_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "comment",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "comment"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "category"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "forwarded",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "forwarded"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "rule_ids",
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "rule_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "action_taken_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "action_taken_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "assigned_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "assigned_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "action_taken_by_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "action_taken_by_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "group_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "group_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8Array",
+        "Text",
+        "Text",
+        "Bool",
+        "Int8Array",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "c778083de85a251d06f0f1a49874bc593ee33cdcce5954f3ba7e4a1bfd773edd"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE preview_card_trends SET rank = ordered.calculated\n        FROM (\n            SELECT preview_card_id,\n                   row_number() OVER (PARTITION BY language ORDER BY score DESC) AS calculated\n            FROM preview_card_trends\n        ) AS ordered\n        WHERE preview_card_trends.preview_card_id = ordered.preview_card_id\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "1d08250d74784348c9cccbf244e9637f2d8ff7007b44244cac8d51790404930b"
+}

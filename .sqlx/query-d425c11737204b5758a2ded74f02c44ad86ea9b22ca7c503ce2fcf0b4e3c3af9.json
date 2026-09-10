@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM status_tombstones WHERE deleted_at < now() - make_interval(days => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d425c11737204b5758a2ded74f02c44ad86ea9b22ca7c503ce2fcf0b4e3c3af9"
+}

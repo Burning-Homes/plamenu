@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT activity AS \"activity!\" FROM delivery_jobs\n           WHERE account_id = $1 ORDER BY id DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "activity!",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "delivery_jobs",
+            "name": "activity"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8e0e7fd9ee3da786cf573a8b3f62e9bb16f9e3edd423c1d2be7536c7662577bf"
+}

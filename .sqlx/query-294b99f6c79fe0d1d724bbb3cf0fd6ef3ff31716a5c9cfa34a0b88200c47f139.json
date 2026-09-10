@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT NOT EXISTS (\n            SELECT 1 FROM accounts a\n            WHERE a.suspended_at IS NOT NULL\n              AND (a.avatar_file_name = $1 OR a.header_file_name = $1)\n            UNION ALL\n            SELECT 1 FROM media_attachments m\n            JOIN accounts a ON a.id = m.account_id\n            WHERE a.suspended_at IS NOT NULL\n              AND (m.file_name = $1 OR m.small_file_name = $1)\n            UNION ALL\n            SELECT 1 FROM media_hls_segments seg\n            JOIN media_attachments m ON m.id = seg.media_id\n            JOIN accounts a ON a.id = m.account_id\n            WHERE a.suspended_at IS NOT NULL AND seg.cache_file = $1\n        ) AS \"allowed!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "allowed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "294b99f6c79fe0d1d724bbb3cf0fd6ef3ff31716a5c9cfa34a0b88200c47f139"
+}

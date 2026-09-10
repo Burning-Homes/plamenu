@@ -1,0 +1,160 @@
+# Disposable PeerTube instance for federation / e2e testing against Plamenu.
+#
+# PeerTube is the reference host for federated *video* (ActivityPub `Video`
+# objects with HLS `application/x-mpegURL` streaming playlists in their `url`
+# array). This peer lets Plamenu exercise inbound video actors/objects over
+# real HTTPS on the same local CA as the rest of the fleet.
+#
+# Unlike Lemmy, no source rebuild is needed: the official Node image trusts
+# extra CAs at runtime via NODE_EXTRA_CA_CERTS, so it accepts the Caddy local
+# CA that terminates TLS for the *.local fleet — federation fetches/deliveries
+# to https://*.local then validate instead of throwing "self-signed cert".
+#
+# It joins the Mastodon stack's Caddy network (external `mastodon-test_internal`)
+# so the same local CA terminates TLS for https://peertube.local and every
+# instance can federate. Caddy reverse-proxies the vhost to peertube-web:9000
+# (see mastodon-test/Caddyfile). PeerTube here runs WITHOUT its bundled nginx:
+# the Node app on :9000 serves the client, REST API, ActivityPub, HLS
+# playlists and static media alike — fine for a disposable test peer.
+
+name: peertube-test
+
+services:
+  db:
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    restart: unless-stopped
+    # Disposable data: trade durability for speed.
+    command: postgres -c fsync=off -c full_page_writes=off
+    # Distinct alias, following the sharkey-/lemmy-test convention: compose
+    # registers service names as DNS aliases on every attached network, so
+    # generic names like `db`/`web` must never leak onto the shared one. db
+    # only joins the private network, but the alias keeps configs unambiguous.
+    # NB: POSTGRES_USER=peertube becomes this cluster's superuser, which
+    # PeerTube's installer needs to CREATE EXTENSION (pg_trgm, unaccent).
+    networks:
+      ptn:
+        aliases: [peertube-db]
+    environment:
+      POSTGRES_USER: peertube
+      POSTGRES_PASSWORD: peertube
+      POSTGRES_DB: peertube
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "peertube"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    restart: unless-stopped
+    networks:
+      ptn:
+        aliases: [peertube-redis]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  peertube:
+    # Pinned, and deliberately NOT a rolling tag: upstream moved its Docker
+    # base from bookworm to trixie at 8.x, so `production-bookworm` silently
+    # froze at 7.3.0 and `docker compose pull` became a no-op. An explicit
+    # version keeps the peer honest about what it is and makes the drift
+    # visible when it is time to bump. Matches ../peertube-source.
+    image: chocobozzz/peertube:v8.2.4@sha256:cd1ecb6c529eeb342ddd71e6748cd4b08ffccb02fef747e7eb0e2ecbb43c1a5f
+    restart: unless-stopped
+    networks:
+      ptn: {}
+      shared:
+        aliases: [peertube-web]
+    environment:
+      # ── identity / public URLs (drive the AP actor + object ids) ──────
+      PEERTUBE_WEBSERVER_HOSTNAME: peertube.local
+      PEERTUBE_WEBSERVER_PORT: "443"
+      PEERTUBE_WEBSERVER_HTTPS: "true"
+      # Honour Caddy's X-Forwarded-Proto=https / X-Forwarded-For across the
+      # docker network (shared net is 172.19/16 ⊂ 172.16/12); without a
+      # trusted proxy PeerTube builds http:// URLs and rejects the forwarded
+      # client IP.
+      PEERTUBE_TRUST_PROXY: '["127.0.0.1","loopback","172.16.0.0/12","10.0.0.0/8","::1"]'
+      # Any fixed dev secret (prod wants `openssl rand -hex 32`).
+      PEERTUBE_SECRET: a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1
+      # ── database (peertube-db on the private net) ─────────────────────
+      PEERTUBE_DB_HOSTNAME: peertube-db
+      PEERTUBE_DB_PORT: "5432"
+      PEERTUBE_DB_USERNAME: peertube
+      PEERTUBE_DB_PASSWORD: peertube
+      PEERTUBE_DB_NAME: peertube
+      PEERTUBE_DB_SSL: "false"
+      # ── redis (peertube-redis on the private net) ─────────────────────
+      PEERTUBE_REDIS_HOSTNAME: peertube-redis
+      PEERTUBE_REDIS_PORT: "6379"
+      # ── admin / initial root account ──────────────────────────────────
+      # Username is fixed to `root`; PT_INITIAL_ROOT_PASSWORD seeds its
+      # password on first boot, PEERTUBE_ADMIN_EMAIL its e-mail.
+      PEERTUBE_ADMIN_EMAIL: root@peertube.local
+      PT_INITIAL_ROOT_PASSWORD: peertube-root-pass-123
+      # ── federation to private-IP .local peers ─────────────────────────
+      PEERTUBE_FEDERATION_ENABLED: "true"
+      # The whole *.local fleet resolves to private IPs behind Caddy; the
+      # default SSRF guard would refuse every peer, so disable it (dev only).
+      PEERTUBE_FEDERATION_PREVENT_SSRF: "false"
+      # ── live streaming (RTMP ingest + HLS output) ─────────────────────
+      # Off by default upstream. Plamenu's live-playback lane needs a real
+      # PeerTube live to test against, so enable it here: `live.enabled` also
+      # starts the RTMP server, whose port is published to the host below so
+      # the e2e harness can push a stream with the host ffmpeg. Replay is
+      # allowed so the live→VOD transition is exercisable too.
+      PEERTUBE_LIVE_ENABLED: "true"
+      PEERTUBE_LIVE_ALLOW_REPLAY: "true"
+      # Upstream allows 3 concurrent lives per user, which a test run doing
+      # announce/air/end cycles exhausts quickly (an announced-but-never-
+      # started live counts against it until deleted).
+      PEERTUBE_LIVE_MAX_USER_LIVES: "50"
+      PEERTUBE_LIVE_MAX_INSTANCE_LIVES: "50"
+      PEERTUBE_LIVE_RTMP_ENABLED: "true"
+      PEERTUBE_LIVE_RTMP_PORT: "1935"
+      PEERTUBE_LIVE_LATENCY_SETTING_ENABLED: "true"
+      # ── trust the fleet's local Caddy CA (Node reads this at startup) ──
+      NODE_EXTRA_CA_CERTS: /etc/ssl/local/ca-bundle.crt
+      # No SMTP: leaving PEERTUBE_SMTP_HOSTNAME unset disables outbound mail
+      # (PeerTube just logs "emails will not be sent"), which is what we want.
+      PEERTUBE_LOG_LEVEL: info
+    # RTMP is raw TCP, so it cannot ride the shared Caddy vhost like every
+    # other peer endpoint. Publishing it is what lets the host's ffmpeg push
+    # a test stream at rtmp://localhost:1935/live/<streamKey>.
+    ports:
+      - "1935:1935"
+    volumes:
+      - ../mastodon-test/ca-bundle.crt:/etc/ssl/local/ca-bundle.crt:ro
+      - ptdata:/data
+      - ptconfig:/config
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # curl ships in the official image; /api/v1/config is unauthenticated.
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/api/v1/config"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+networks:
+  ptn:
+  shared:
+    external: true
+    name: mastodon-test_internal
+
+volumes:
+  pgdata:
+  redisdata:
+  ptdata:
+  ptconfig:

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET avatar_file_name = 'ava.png' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "523546ab64307ad3e9bab86045ad7a2e59402ea84e964a04229c2d0e1684794c"
+}

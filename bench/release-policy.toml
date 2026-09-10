@@ -1,0 +1,30 @@
+# Optional release timing checks use this calibration machine and full workload.
+# Recalibration changes require a reviewed policy/budget change and fresh records.
+[machine]
+cpu = "11th Gen Intel(R) Core(TM) i7-11700F @ 2.50GHz"
+cores = 16
+platform = "linux"
+
+[hot_paths]
+minimum_warm_up_secs = 1.0
+minimum_measurement_secs = 2.0
+
+[hot_paths.minimum_samples]
+ap = 20
+api = 20
+web = 20
+db = 100
+micro = 100
+db_jobs = 10
+stream = 10
+write = 10
+
+[contention]
+workers = 8
+fanout_width = 1850
+ratio_budget = 2.96
+
+[contention.requests]
+"mixed read/write" = 64
+"fan-out contention" = 128
+"credential burst" = 32

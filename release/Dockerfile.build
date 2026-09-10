@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1.7
+# Build on the target platform, natively or through Docker's local emulation.
+# The same recipe runs on native AMD64 and ARM64 workers.
+FROM rust:1.98.0-slim-bookworm@sha256:1469a27c125cb5a3aebfa4f4e4665d935b02fb72cc093b2c974b3d740e43f157 AS builder
+ARG TARGETARCH
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+    build-essential musl-tools perl && rm -rf /var/lib/apt/lists/* \
+    && case "$TARGETARCH" in \
+         amd64) echo x86_64-unknown-linux-musl > /target ;; \
+         arm64) echo aarch64-unknown-linux-musl > /target ;; \
+         *) exit 1 ;; \
+       esac \
+    && rustup target add "$(cat /target)"
+ARG PLAMENU_VERSION
+ARG PLAMENU_GIT_SHA
+ARG PLAMENU_BUILD_NUMBER
+ARG PLAMENU_BUILD_JOBS=2
+WORKDIR /src
+COPY . .
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/src/target,id=plamenu-release-${TARGETARCH},sharing=locked \
+    target=$(cat /target) \
+    && test "$(awk -F'"' '/^version = / { print $2; exit }' Cargo.toml)" = "$PLAMENU_VERSION" \
+    && SQLX_OFFLINE=true CC_x86_64_unknown_linux_musl=musl-gcc \
+    CC_aarch64_unknown_linux_musl=musl-gcc \
+    CARGO_BUILD_JOBS="$PLAMENU_BUILD_JOBS" PLAMENU_BUILD_CHANNEL=release \
+    PLAMENU_VERSION="$PLAMENU_VERSION" PLAMENU_GIT_SHA="$PLAMENU_GIT_SHA" \
+    PLAMENU_BUILD_NUMBER="$PLAMENU_BUILD_NUMBER" PLAMENU_GIT_DIRTY=false \
+    cargo build --locked --profile deploy --target "$target" -p plamenu --bin plamenu \
+    && mkdir /out \
+    && strip --strip-all -o /out/plamenu "target/$target/deploy/plamenu" \
+    && readelf -hl /out/plamenu > /out/elf.txt \
+    && ! grep -q INTERP /out/elf.txt
+FROM scratch AS output
+COPY --from=builder /out/ /

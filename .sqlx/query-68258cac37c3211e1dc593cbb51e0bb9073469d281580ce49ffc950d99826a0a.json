@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO status_translations\n                (status_id, target_language, source_hash, provider,\n                 detected_source_language, title, content, spoiler_text,\n                 poll_options, media_ids, media_descriptions)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n            ON CONFLICT (status_id, target_language) DO UPDATE\n            SET source_hash = EXCLUDED.source_hash,\n                provider = EXCLUDED.provider,\n                detected_source_language = EXCLUDED.detected_source_language,\n                title = EXCLUDED.title,\n                content = EXCLUDED.content,\n                spoiler_text = EXCLUDED.spoiler_text,\n                poll_options = EXCLUDED.poll_options,\n                media_ids = EXCLUDED.media_ids,\n                media_descriptions = EXCLUDED.media_descriptions,\n                created_at = now(),\n                last_used_at = now()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Bytea",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray",
+        "Int8Array",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "68258cac37c3211e1dc593cbb51e0bb9073469d281580ce49ffc950d99826a0a"
+}

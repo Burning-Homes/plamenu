@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT account_id, poll_id, choice FROM poll_votes\n        WHERE account_id = ANY($1) AND poll_id = ANY($2)\n        ORDER BY account_id, poll_id, choice\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "poll_votes",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "poll_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "poll_votes",
+            "name": "poll_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "choice",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "poll_votes",
+            "name": "choice"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "187f5e72872ad1cb3027b17baaa3cf228955dde5e509c9a782746ec3cf2c5c62"
+}

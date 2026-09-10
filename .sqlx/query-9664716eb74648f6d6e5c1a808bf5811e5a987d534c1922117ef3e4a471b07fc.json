@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM lists WHERE account_id = $1 AND title <> ALL($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9664716eb74648f6d6e5c1a808bf5811e5a987d534c1922117ef3e4a471b07fc"
+}

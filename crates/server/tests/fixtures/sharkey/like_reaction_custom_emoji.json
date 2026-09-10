@@ -1,0 +1,31 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    {
+      "toot": "http://joinmastodon.org/ns#",
+      "Emoji": "toot:Emoji",
+      "misskey": "https://misskey-hub.net/ns#",
+      "_misskey_reaction": "misskey:_misskey_reaction"
+    }
+  ],
+  "type": "Like",
+  "id": "https://remote.example/likes/9sh4rklike0001",
+  "actor": "https://remote.example/users/bob",
+  "object": "https://remote.example/notes/9sh4rkbase0001",
+  "content": ":sharkfire:",
+  "_misskey_reaction": ":sharkfire:",
+  "tag": [
+    {
+      "id": "https://remote.example/emojis/sharkfire",
+      "type": "Emoji",
+      "name": ":sharkfire:",
+      "updated": "2026-07-01T00:00:00.000Z",
+      "icon": {
+        "type": "Image",
+        "mediaType": "image/png",
+        "url": "https://remote.example/files/sharkfire.png"
+      }
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            axis.cohort_period AS \"cohort_period!\",\n            axis.retention_period AS \"retention_period!\",\n            cnt.value AS \"value!\",\n            cnt.rate AS \"rate!\"\n        FROM (\n            WITH cohort_periods AS (\n                SELECT generate_series(\n                    date_trunc($3, ($1::date)::timestamp)::date,\n                    date_trunc($3, ($2::date)::timestamp)::date,\n                    ('1 ' || $3)::interval\n                )::date AS cohort_period\n            ),\n            retention_periods AS (\n                SELECT cohort_period AS retention_period FROM cohort_periods\n            )\n            SELECT cohort_period, retention_period\n            FROM cohort_periods, retention_periods\n            WHERE retention_period >= cohort_period\n        ) AS axis\n        CROSS JOIN LATERAL (\n            WITH new_users AS (\n                SELECT users.id FROM users\n                WHERE date_trunc($3, users.created_at AT TIME ZONE 'UTC')::date = axis.cohort_period\n            ),\n            retained_users AS (\n                SELECT users.id FROM users\n                INNER JOIN new_users ON new_users.id = users.id\n                WHERE date_trunc($3, users.current_sign_in_at AT TIME ZONE 'UTC') >= axis.retention_period\n            )\n            SELECT\n                count(*) AS value,\n                (count(*))::float / (SELECT GREATEST(count(*), 1) FROM new_users) AS rate\n            FROM retained_users\n        ) AS cnt\n        ORDER BY axis.cohort_period, axis.retention_period\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cohort_period!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "retention_period!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "value!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "rate!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date",
+        "Date",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "8a0453497d2c417f79e067a6825161e262f29f409c3d471f3785c25f54a0985e"
+}

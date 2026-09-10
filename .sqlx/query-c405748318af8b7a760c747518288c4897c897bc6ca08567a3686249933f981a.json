@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO account_endorsements (id, account_id, target_account_id)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (account_id, target_account_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c405748318af8b7a760c747518288c4897c897bc6ca08567a3686249933f981a"
+}

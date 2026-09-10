@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE status_trends SET rank = ordered.calculated\n        FROM (\n            SELECT status_id,\n                   row_number() OVER (PARTITION BY language ORDER BY score DESC) AS calculated\n            FROM status_trends\n        ) AS ordered\n        WHERE status_trends.status_id = ordered.status_id\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "4038cd28c5ed35472175e47a32625f2695e0988ad67d144aa80e514b7350590e"
+}

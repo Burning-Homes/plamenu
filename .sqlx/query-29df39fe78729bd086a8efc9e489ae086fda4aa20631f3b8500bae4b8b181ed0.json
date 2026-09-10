@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO conversations (id, uri, history_uri) VALUES ($1, $2, $3)\n             ON CONFLICT (uri) WHERE uri IS NOT NULL DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "29df39fe78729bd086a8efc9e489ae086fda4aa20631f3b8500bae4b8b181ed0"
+}

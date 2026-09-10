@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE accounts\n        SET display_name = '',\n            note = '',\n            note_source = '',\n            avatar_file_name = NULL,\n            header_file_name = NULL,\n            avatar_remote_url = NULL,\n            header_remote_url = NULL,\n            avatar_description = '',\n            header_description = '',\n            also_known_as = '{}',\n            moved_to_uri = NULL,\n            discoverable = false,\n            updated_at = now()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "18934e34f2ce845da3cc9ef1fff065f50249ca3590e5b09d645e63d07236b9b9"
+}

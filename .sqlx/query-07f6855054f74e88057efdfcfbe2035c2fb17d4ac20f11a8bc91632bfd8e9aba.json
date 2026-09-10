@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT status_id AS \"status_id!\",\n               name AS \"name!\",\n               max(custom_emoji_url) AS custom_emoji_url,\n               max(custom_emoji_id) AS custom_emoji_id,\n               custom_emoji_origin_id,\n               count(*) AS \"count!\",\n               array_agg(account_id ORDER BY id) AS \"account_ids!\"\n        FROM status_reactions\n        WHERE status_id = ANY($1)\n        GROUP BY status_id, name, custom_emoji_origin_id\n        ORDER BY status_id, min(id)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_reactions",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_reactions",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "custom_emoji_url",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "custom_emoji_id",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "custom_emoji_origin_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_reactions",
+            "name": "custom_emoji_origin_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "account_ids!",
+        "type_info": "Int8Array",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "07f6855054f74e88057efdfcfbe2035c2fb17d4ac20f11a8bc91632bfd8e9aba"
+}

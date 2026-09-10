@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_attachments m\n         SET file_size = v.file_size, thumbnail_file_size = v.thumbnail_file_size\n         FROM unnest($1::bigint[], $2::bigint[], $3::bigint[])\n              AS v(id, file_size, thumbnail_file_size)\n         WHERE m.id = v.id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f2305a73802151d60ebb74e84431cce84d25d3860dd4e8401e95d8c884143e4e"
+}

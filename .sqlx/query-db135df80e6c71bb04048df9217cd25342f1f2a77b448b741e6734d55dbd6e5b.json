@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f.account_id\n        FROM follows f\n        WHERE f.target_account_id = $1 AND NOT f.pending\n          AND ($2::bigint IS NULL OR f.id < $2)\n        ORDER BY f.id DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "db135df80e6c71bb04048df9217cd25342f1f2a77b448b741e6734d55dbd6e5b"
+}

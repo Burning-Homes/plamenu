@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE host_reachability SET unreachable_since = now(),\n                 next_probe_at = now() + interval '6 hours',\n                 consecutive_failures = 20\n             WHERE host = 'flaky.example'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "d966f45e0b63c149770650b038cba35a4e5a5316145007c6c83ec7ea88fec100"
+}

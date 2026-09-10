@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE oauth_tokens SET last_used_ip = NULL\n        WHERE last_used_ip IS NOT NULL\n          AND last_used_at IS NOT NULL\n          AND last_used_at < now() - make_interval(days => $1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "373e211c58cfe852afcecebae2e61865ff2cb396f1cd956e87c5e60f8bc5576a"
+}

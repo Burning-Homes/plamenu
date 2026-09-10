@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET attribution_domains = $2\n         WHERE id = $1 AND attribution_domains IS DISTINCT FROM $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0e9fbeec19f258ee0752a13aacaa7a902d7f63145d033eb1cf2aea73de2f4667"
+}

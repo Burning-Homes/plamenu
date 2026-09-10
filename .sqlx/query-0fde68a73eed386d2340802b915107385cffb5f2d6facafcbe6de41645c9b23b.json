@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"c!\"\n           FROM follows\n           INNER JOIN accounts ON accounts.id = follows.target_account_id\n           WHERE accounts.domain = $1 OR ($2 AND accounts.domain LIKE '%.' || $1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "c!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0fde68a73eed386d2340802b915107385cffb5f2d6facafcbe6de41645c9b23b"
+}

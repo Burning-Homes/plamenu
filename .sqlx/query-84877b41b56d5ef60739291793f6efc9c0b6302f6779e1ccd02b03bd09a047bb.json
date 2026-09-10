@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT origin, count(*) AS \"queued!\", min(created_at) AS \"oldest_job_at!\"\n           FROM remote_history_jobs GROUP BY origin\n           ORDER BY count(*) DESC, min(created_at) LIMIT 10",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "origin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_history_jobs",
+            "name": "origin"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "queued!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "oldest_job_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "84877b41b56d5ef60739291793f6efc9c0b6302f6779e1ccd02b03bd09a047bb"
+}

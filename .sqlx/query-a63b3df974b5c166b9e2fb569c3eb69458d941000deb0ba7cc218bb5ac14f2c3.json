@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE status_tombstones SET deleted_at = now() - interval '10 days' WHERE status_id = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "a63b3df974b5c166b9e2fb569c3eb69458d941000deb0ba7cc218bb5ac14f2c3"
+}

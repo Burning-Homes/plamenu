@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE follows SET pending = FALSE WHERE account_id = $1 AND target_account_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8bd246a4303375c001d7a007ce485931be83171dddf1dc9fefaa8327080df3cb"
+}

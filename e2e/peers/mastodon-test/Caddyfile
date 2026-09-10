@@ -1,0 +1,166 @@
+# TLS terminator for the test instance. `tls internal` makes Caddy mint a
+# local CA + cert for mastodon.local so federation runs over real HTTPS.
+mastodon.local {
+	tls internal
+
+	# ActivityStreams / streaming websocket
+	handle_path /api/v1/streaming* {
+		reverse_proxy streaming:4000
+	}
+
+	reverse_proxy web:3000
+
+	encode gzip
+}
+
+# Plamenu (ActivityPub server under development) runs on the docker host;
+# terminating its TLS here puts it on the same local CA and docker network,
+# so the Mastodon containers can federate with https://plamenu.local.
+plamenu.local {
+	tls internal
+	reverse_proxy host.docker.internal:8420
+}
+
+# Plamenu's uncredentialed Webxdc runtime origin for browser E2E coverage.
+webxdc.plamenu.local, *.webxdc.plamenu.local {
+	tls internal
+	reverse_proxy host.docker.internal:8420
+}
+
+# Pleroma-family interop peer (disposable, ../pleroma-test). Now runs Akkoma —
+# real-world "Pleroma" servers do, and Akkoma mirrors a status' emoji_reactions
+# at the top level (upstream Pleroma only nests them under `pleroma`). Kept on
+# the pleroma.local domain / pleroma-web alias so nothing else in the stack
+# changes. Same local CA so it federates with Mastodon and Plamenu over HTTPS.
+pleroma.local {
+	tls internal
+	reverse_proxy pleroma-web:4000
+}
+
+# Upstream Pleroma interop peer (disposable, ../pleroma-upstream-test) — real
+# git.pleroma.social develop (~2.10.2), distinct from the Akkoma peer above.
+# Stood up to reproduce lain.com (upstream Pleroma) and verify the Plamenu ->
+# Pleroma Follow/Accept handshake. Same local CA so it federates over HTTPS.
+plup.local {
+	tls internal
+	reverse_proxy plup-web:4000
+}
+
+# Sharkey (Misskey-family) interop peer (disposable, ../sharkey-test).
+# Same local CA so it federates with Mastodon, Plamenu and Pleroma over HTTPS.
+sharkey.local {
+	tls internal
+	reverse_proxy sharkey-web:3000
+}
+
+# GoToSocial interop peer (disposable, ../gotosocial-test).
+# Same local CA so it federates with the other peers over HTTPS.
+gotosocial.local {
+	tls internal
+	reverse_proxy gotosocial-web:8080
+}
+
+# Mitra reference peer runs from ../mitra-source on the docker host; its
+# disposable config/database live in ../mitra-test.
+mitra.local {
+	tls internal
+	reverse_proxy host.docker.internal:8380
+}
+
+# Lemmy interop peer (disposable, ../lemmy-test). Same local CA. Lemmy
+# ships as two services — lemmy-ui (SSR frontend) and the lemmy backend —
+# and expects the reverse proxy to split traffic the way its reference
+# nginx.conf does: API/federation/well-known paths, POSTs, and anything
+# asking for ActivityPub JSON go to the backend; the rest is the UI.
+lemmy.local {
+	tls internal
+
+	@backend path /api/* /pictrs/* /feeds/* /nodeinfo/* /version /.well-known/*
+	handle @backend {
+		reverse_proxy lemmy-web:8536
+	}
+
+	@activitypub header_regexp Accept application/(activity|ld)\+json
+	handle @activitypub {
+		reverse_proxy lemmy-web:8536
+	}
+
+	@post method POST
+	handle @post {
+		reverse_proxy lemmy-web:8536
+	}
+
+	handle {
+		reverse_proxy lemmy-ui-web:1234
+	}
+}
+
+# PeerTube (federated video) interop peer (disposable, ../peertube-test).
+# Same local CA so it federates with the other peers over HTTPS. Runs behind
+# this single reverse proxy (no bundled nginx): the Node app on :9000 serves
+# the client, REST API, ActivityPub, HLS playlists and static media alike.
+peertube.local {
+	tls internal
+	reverse_proxy peertube-web:9000
+}
+
+# Owncast source-built live-stream peer. HTTPS serves its web UI, ActivityPub,
+# public status API and HLS; RTMP ingest is published separately on host 1937.
+owncast.local {
+	tls internal
+	reverse_proxy owncast-web:8080
+}
+
+# Mobilizon (federated events) interop peer (disposable, ../mobilizon-test).
+# Same local CA so it federates with the other peers over HTTPS. One Phoenix
+# app on :4000 serves the SPA, the GraphQL API and ActivityPub alike, so a
+# single reverse proxy is enough (websockets upgrade through it unchanged).
+mobilizon.local {
+	tls internal
+	reverse_proxy mobilizon-web:4000
+}
+
+# Discourse with the official discourse-activity-pub plugin. The backend runs
+# directly from ../discourse-source in the disposable ../discourse-test rig.
+discourse.local {
+	tls internal
+	reverse_proxy discourse-web:3000
+}
+
+# Hubzilla 11.4 + PubCrawl, running directly from the pinned core/addons
+# checkouts in the disposable ../hubzilla-test rig.
+hubzilla.local {
+	tls internal
+	reverse_proxy hubzilla-web:80
+}
+
+# Funkwhale 2.0.8 federated-audio peer. Its own frontend nginx routes browser,
+# API, media, and ActivityPub paths to the correct Funkwhale service.
+funkwhale.local {
+	tls internal
+	reverse_proxy funkwhale-web:80
+}
+
+# Ephemeral second Plamenu instance, started (and destroyed) by the e2e
+# self-destruct test on host port 8421. Nothing answers here outside that
+# test's runtime.
+doomed.local {
+	tls internal
+	reverse_proxy host.docker.internal:8421
+}
+
+# Second standing Plamenu instance on host port 8422 — the peer for the
+# Plamenu-against-Plamenu federation tests (e2e/plamenu_e2e/ephemeral.py
+# starts it for the test session and tears it down after). Same local CA, so
+# the two instances federate with each other over real HTTPS exactly as they
+# do with every foreign peer.
+plamenu2.local {
+	tls internal
+	reverse_proxy host.docker.internal:8422
+}
+
+# The second Plamenu host needs the same isolated per-session origins.
+webxdc.plamenu2.local, *.webxdc.plamenu2.local {
+	tls internal
+	reverse_proxy host.docker.internal:8422
+}

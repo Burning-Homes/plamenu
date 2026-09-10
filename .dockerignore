@@ -1,0 +1,51 @@
+# Keep the Docker build context free of secrets and local state. `Dockerfile`
+# copies the whole context into the builder with `COPY . .`, so this file is the
+# only thing that stops a local or remote `docker build`/`buildx --push` from
+# uploading and layer-caching credentials. It MUST stay at least as strict as
+# the security-relevant entries in `.gitignore` (QC audit #17); the
+# `build_context` integration test enforces that security-sensitive subset.
+
+# VCS metadata
+.git
+
+# Secrets and operator configuration (mirror .gitignore)
+.env
+.staging.env
+.staging*.env
+plamenu.toml
+plamenu.dev.toml
+deploy/.env
+deploy/plamenu.toml
+DEPLOY_RUNBOOK.md
+image-digest.txt
+
+# Local developer / editor state
+.dev/
+.idea/
+.vscode/
+
+# Build output and cached media
+target
+media
+release-artifacts
+release-diagnostics
+
+# Python E2E tooling and caches
+e2e/.venv
+e2e/.pytest_cache
+e2e/.ruff_cache
+e2e/peers/*-source/
+e2e/peers/*-test/.env
+e2e/peers/*-test/.*-token
+e2e/peers/*-test/.credentials
+e2e/peers/*-test/ca-bundle.crt
+e2e/peers/*-test/.sample.mp4
+e2e/peers/*-test/storage/
+**/__pycache__
+
+# Logs and profiling artifacts
+*.log
+*.profraw
+
+# Hosted CI caches, evidence and private candidate outputs
+/.ci/

@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT target_account_id AS \"id!\", comment\n           FROM account_notes\n           WHERE account_id = $1 AND target_account_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_notes",
+            "name": "target_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "comment",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "account_notes",
+            "name": "comment"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "ccd99a26542d4a241721ce9588bbbde704a7a98a7db05af5b7eab7934bdfb9be"
+}

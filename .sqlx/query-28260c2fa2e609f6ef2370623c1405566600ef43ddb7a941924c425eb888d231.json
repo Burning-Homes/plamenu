@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT var, file_name, content_type, file_size, width, height, blurhash,\n               description, created_at, updated_at\n        FROM site_uploads\n        ORDER BY array_position($1::text[], var)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "var",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "site_uploads",
+            "name": "var"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "site_uploads",
+            "name": "file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "content_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "site_uploads",
+            "name": "content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "file_size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "site_uploads",
+            "name": "file_size"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "site_uploads",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "site_uploads",
+            "name": "height"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "blurhash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "site_uploads",
+            "name": "blurhash"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "site_uploads",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "site_uploads",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "site_uploads",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "28260c2fa2e609f6ef2370623c1405566600ef43ddb7a941924c425eb888d231"
+}

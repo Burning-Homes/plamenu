@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM statuses WHERE account_id = $1 AND reblog_of_id IS NULL -- STUBKEEP: an account-data purge removes soft-delete stubs too",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a194c1060ead145e945e7846f1bbf8dc8146716cadee967d1b9c0d1bf0b788c0"
+}

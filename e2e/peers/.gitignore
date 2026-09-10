@@ -1,0 +1,12 @@
+# Pinned upstream checkouts created by ./provision.sh.
+/*-source/
+
+# Generated peer state and credentials.
+/*-test/.env
+/*-test/.*-token
+/*-test/.credentials
+/*-test/ca-bundle.crt
+/*-test/.sample.mp4
+/*-test/storage/
+/*.pid
+/**/*.log

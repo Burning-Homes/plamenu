@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT count(*) FILTER (WHERE NOT is_bot) AS \"people!\",\n               count(*) FILTER (WHERE is_bot) AS \"bots!\"\n        FROM accounts\n        LEFT JOIN users ON users.account_id = accounts.id\n        WHERE (accounts.domain IS NULL OR accounts.portable)\n          AND accounts.actor_type IS DISTINCT FROM 'Group'\n          AND (users.id IS NULL OR (users.approved AND users.confirmed_at IS NOT NULL))\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "people!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "bots!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "7d44dd53772f638b08fcb80b6d085d2b49154abcb6dc63ea0942a416e1138e67"
+}

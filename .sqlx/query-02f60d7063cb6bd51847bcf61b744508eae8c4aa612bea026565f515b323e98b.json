@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM media_hls_segments\n        WHERE origin_url = $1 AND range_start = $2 AND range_len = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "02f60d7063cb6bd51847bcf61b744508eae8c4aa612bea026565f515b323e98b"
+}

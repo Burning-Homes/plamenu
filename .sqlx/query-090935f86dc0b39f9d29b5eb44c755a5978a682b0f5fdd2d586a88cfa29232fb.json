@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO notification_permissions (id, account_id, from_account_id)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (account_id, from_account_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "090935f86dc0b39f9d29b5eb44c755a5978a682b0f5fdd2d586a88cfa29232fb"
+}

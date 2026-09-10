@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO preview_card_usages (preview_card_id, day, account_id, uses)\n        SELECT $1, $3, s.account_id, 1\n        FROM statuses s\n        JOIN accounts a ON a.id = s.account_id\n        JOIN preview_cards c ON c.id = $1\n        WHERE s.id = $2\n          AND s.reblog_of_id IS NULL\n          AND s.visibility = 'public'\n          AND NOT account_silenced(a.id)\n          AND s.sensitive = false\n          AND (s.spoiler_text IS NULL OR s.spoiler_text = '')\n          AND c.kind = 'link'\n          AND c.title <> '' AND c.description <> ''\n          AND c.image_url IS NOT NULL AND c.provider_name <> ''\n        ON CONFLICT (preview_card_id, day, account_id)\n        DO UPDATE SET uses = preview_card_usages.uses + 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Date"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "245f5fe9b209088242075aa489b4794e19e83fab56711c348e5d659d7e7a8237"
+}

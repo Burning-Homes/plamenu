@@ -1,0 +1,7222 @@
+/*
+ * Plamenu web UI — modern vanilla CSS, no build step.
+ *
+ * Conventions: design tokens as custom properties, `light-dark()` for theming
+ * (the document opts in with `color-scheme: light dark`), native nesting, and
+ * logical properties throughout. No magic numbers — spacing, sizing, type and
+ * colour all come from the tokens below.
+ *
+ * Theming: every rule in this file lives in the `app` cascade layer (the
+ * whole file is wrapped in `@layer app { … }`, un-reindented to keep diffs
+ * readable). The operator stylesheet — /custom.css, loaded after this one —
+ * is unlayered, so ANY selector in it outranks ANY rule here, no specificity
+ * fights. A theme therefore starts by overriding the `:root` tokens below
+ * (palette, spacing, radii, type scale) and only reaches for component
+ * selectors when a token can't express the change. Class names follow
+ * BEM-ish `block__element--modifier` and are part of that theme surface —
+ * rename only with care.
+ *
+ * Width invariant: nothing may make the page wider than the viewport. This is
+ * enforced STRUCTURALLY, not by clipping — on mobile a single un-shrinkable
+ * element (a <select> sized to its longest option, a grid column sized to its
+ * widest child) grows the layout viewport itself, and no `overflow` guard can
+ * shrink an ICB that already grew. So the real rules are:
+ *   1. Every grid/flex track that holds content uses `minmax(0, …)` / can shrink
+ *      (see the single-column-grid rule below and `.app-shell`).
+ *   2. Controls with an intrinsic width (<select>, the language combo) are
+ *      capped with `max-inline-size: 100%` and allowed to shrink.
+ *   3. Anything holding arbitrary-width content (a code block, a wide table, a
+ *      long token) wraps or scrolls *inside its own box*.
+ * `html { overflow-x: clip }` below only tidies stray painting overflow (a
+ * shadow, a sub-pixel rounding); it is NOT what keeps the page in bounds.
+ */
+
+/* Everything below is layered (see the theming note above). The block is not
+   re-indented; it closes at the very end of the file. */
+@layer app {
+
+:root {
+  color-scheme: light dark;
+
+  /* Spacing scale (rem). */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+
+  /* Type scale. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.85rem;
+  --text-base: 0.975rem;
+  --text-lg: 1.15rem;
+  --text-xl: 1.5rem;
+
+  --radius: 0.625rem;
+  --radius-lg: 1rem;
+  --radius-pill: 999px;
+
+  --measure: 40rem; /* main column width */
+  --sidebar: 15rem; /* desktop nav width */
+
+  /* Navigation density. The whole sidebar/drawer chrome sizes itself from
+     these seven tokens and nothing else, so the short-viewport breakpoints at
+     the end of this file can retune the column's vertical footprint by
+     overriding them — no duplicated component rules, and a theme can retune
+     the density the same way. Values here are the comfortable default. */
+  --nav-edge: var(--space-5); /* the column's own top/bottom padding */
+  --nav-gap: var(--space-1); /* between nav links, and between chrome blocks */
+  --nav-section: var(--space-3); /* around the nav list and compose button */
+  --nav-pad: var(--space-3); /* vertical padding inside a link/button */
+  --nav-icon: 1.5rem;
+  --nav-brand: 2rem; /* the square brand mark */
+  --nav-avatar: 2rem; /* the account row's avatar */
+
+  /* Palette resolves per active colour scheme. */
+  --bg: light-dark(#f4f6f9, #0f1419);
+  --surface: light-dark(#ffffff, #1a1f27);
+  --surface-2: light-dark(#eef1f5, #232a34);
+  --surface-hover: light-dark(#e7ebf1, #2a313c);
+  --border: light-dark(#e0e4ea, #2c333d);
+  --text: light-dark(#15191e, #e9edf2);
+  --text-muted: light-dark(#5c6672, #93a0ad);
+  --accent: light-dark(#3550d6, #7c97f6);
+  --accent-soft: light-dark(#eaeefc, #1f2740);
+  --accent-contrast: #ffffff;
+  --danger: light-dark(#c93a2b, #ec7064);
+  --danger-soft: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  --boost: light-dark(#179a63, #41c98c);
+  --favourite: light-dark(#d4892b, #f0b45c);
+
+  /* The edge shadow a horizontally scrolled data table paints on the side
+     that still has content off-screen (see `.table-scroll`). */
+  --table-shadow: light-dark(rgba(20, 30, 50, 0.18), rgba(0, 0, 0, 0.55));
+
+  --shadow-sm: 0 1px 2px light-dark(rgba(20, 30, 50, 0.06), rgba(0, 0, 0, 0.4));
+  --shadow: 0 4px 20px light-dark(rgba(20, 30, 50, 0.08), rgba(0, 0, 0, 0.5));
+
+  --transition: 140ms ease;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  background: var(--bg);
+  /* Tidies stray painting overflow only (shadows, sub-pixel rounding). It does
+     NOT clamp a layout viewport that already grew to fit un-shrinkable content
+     — that is prevented structurally (see the width-invariant note above).
+     `clip` (not `hidden`) doesn't establish a scroll container, so the sticky
+     sidebar keeps sticking to the viewport. */
+  overflow-x: clip;
+}
+
+body {
+  margin: 0;
+  min-block-size: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: var(--text-base);
+  line-height: 1.55;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+h1 {
+  font-size: var(--text-xl);
+  line-height: 1.2;
+}
+
+h2 {
+  font-size: var(--text-lg);
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  padding: var(--space-2) var(--space-5);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+  transition:
+    filter var(--transition),
+    background var(--transition);
+
+  &:hover {
+    filter: brightness(1.06);
+  }
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+}
+
+select {
+  width: auto;
+  /* A native <select> sizes to its longest option and, by default, refuses to
+     shrink (`min-width: auto`). Inside an auto-sized grid/flex column that
+     max-content drags the column — and, on mobile, the whole layout viewport —
+     past the screen. Let it shrink and cap it to its container so it never can.
+     This is the load-bearing width fix: an overflow guard can't undo an ICB
+     that already grew to fit an un-shrinkable control. */
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  border-radius: var(--radius-pill);
+  padding-inline: var(--space-3);
+}
+
+/* The pill radius reads as a dropdown; a multi-line list box is a block. */
+select[multiple] {
+  border-radius: var(--radius);
+}
+
+/* Checkboxes and radios are inline controls — exempt them from the 100%
+   width above, everywhere, instead of re-overriding per component.
+   `justify-self` keeps them from stretching inside `display: grid` labels. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  justify-self: start;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.icon {
+  inline-size: 1.3em;
+  block-size: 1.3em;
+  flex: none;
+  vertical-align: -0.2em;
+}
+
+/* Custom emoji images swapped in for :shortcode: references. */
+img.emoji {
+  inline-size: auto;
+  block-size: 1.3em;
+  vertical-align: -0.3em;
+  object-fit: contain;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.muted,
+.empty {
+  color: var(--text-muted);
+}
+
+.empty {
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* ---- App shell -------------------------------------------------------- */
+
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar) minmax(0, var(--measure));
+  justify-content: center;
+  gap: var(--space-6);
+  max-width: calc(var(--sidebar) + var(--measure) + var(--space-6));
+  margin-inline: auto;
+  padding-inline: var(--space-4);
+}
+
+.app-main {
+  min-width: 0;
+  padding-block: var(--space-5) var(--space-8);
+}
+
+/* Chrome-free pages (OAuth consent): a single centered column, no nav. */
+.focused-main {
+  width: 100%;
+  max-width: 26rem;
+  margin-inline: auto;
+  padding: var(--space-4);
+}
+
+/* Branded, deliberately small network-failure destination cached by the PWA
+   worker. It uses the ordinary theme tokens, so the page matches the launch
+   screen and current colour scheme without shipping a second inline style. */
+.offline-card {
+  text-align: center;
+
+  .offline-card__icon {
+    display: block;
+    inline-size: 6rem;
+    block-size: 6rem;
+    margin: 0 auto var(--space-5);
+    border-radius: 1.35rem;
+  }
+
+  p {
+    margin-block-end: var(--space-6);
+  }
+
+  .offline-card__retry {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-block-size: 2.75rem;
+    padding-inline: var(--space-6);
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-weight: 700;
+
+    &:hover {
+      text-decoration: none;
+      filter: brightness(1.06);
+    }
+  }
+}
+
+.column {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* Width invariant, structural half: single-column content grids pin their track
+   to `minmax(0, 1fr)` so it sizes to the container, never to a child's
+   max-content. A grid's default implicit `auto` column grows to its widest item
+   (a status card with a code block, a search result with a long handle), which
+   drags the list — and, on mobile, the whole layout viewport — past the screen.
+   `.app-shell`'s minmax tracks can't help once an inner grid re-introduces an
+   `auto` column, and no `overflow` guard can shrink an ICB that already grew to
+   fit un-shrinkable content. Pair with the <select>/combo caps above. */
+.feed,
+.notifications,
+.conversations,
+.thread__ancestors,
+.column,
+.results,
+.account-list,
+.relationships-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* ---- Sidebar ---------------------------------------------------------- */
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  /* Fixed to the viewport height so the account row's `margin-block-start:auto`
+     can pin it to the bottom (a bare `max-block-size` would collapse to content
+     height and drop that anchor). `overflow-y:auto` then lets the column scroll
+     on its own whenever its content is taller than the viewport — a short or
+     zoomed screen, a large font, or the extra staff "Admin" row — so the
+     compose button and the account/sign-out row can never become unreachable.
+     It is the floor, not the first answer: the short-viewport steps at the end
+     of this file tighten the column's density first, and this catches whatever
+     is still too tall for the screen after that.
+     `overscroll-behavior:contain` stops that scroll from chaining to the feed.
+     `padding-inline` is required BECAUSE of the scroll: with `overflow-x`
+     defaulting to `visible`, setting `overflow-y:auto` promotes the used
+     `overflow-x` to `auto` too (CSS Overflow 3), so the flush-to-edge nav
+     links / brand / compose button would otherwise have their 2px+2px
+     `:focus-visible` outline (and the compose pill's shadow) clipped at the
+     scrollport edge. The inset keeps the full focus ring visible and clears
+     the scrollbar gutter — the same reason the drawer panel carries it. */
+  block-size: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nav-gap);
+  padding-block: var(--nav-edge);
+  padding-inline: var(--space-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text);
+  font-weight: 800;
+  font-size: var(--text-lg);
+
+  &:hover {
+    text-decoration: none;
+  }
+
+  .brand__mark {
+    display: grid;
+    place-items: center;
+    inline-size: var(--nav-brand);
+    block-size: var(--nav-brand);
+    border-radius: var(--radius);
+    background: var(--accent);
+    color: var(--accent-contrast);
+  }
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nav-gap);
+  margin-block-start: var(--nav-section);
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  /* Vertical padding is the density knob; the horizontal inset stays put so
+     the hover pill keeps its shape as the column tightens. */
+  padding: var(--nav-pad) var(--space-3);
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  font-weight: 600;
+  transition: background var(--transition);
+
+  &:hover {
+    background: var(--surface-2);
+    text-decoration: none;
+  }
+
+  .icon {
+    inline-size: var(--nav-icon);
+    block-size: var(--nav-icon);
+  }
+}
+
+/* The notifications bell in the nav and tab bar: a wrapper the unread dot
+   anchors to. The dot is pure chrome — screen readers get the hidden "(new)"
+   text / title on the link instead. */
+.bell {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.bell__dot {
+  position: absolute;
+  inset-block-start: -0.1rem;
+  inset-inline-end: -0.1rem;
+  inline-size: 0.55rem;
+  block-size: 0.55rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.compose-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-block: var(--nav-section);
+  padding: var(--nav-pad) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+
+  &:hover {
+    text-decoration: none;
+    filter: brightness(1.06);
+  }
+}
+
+/* The row runs avatar → name/handle → switch → sign-out inside a 15rem column,
+   so its gaps and its two icon buttons are inset tighter than the rest of the
+   chrome: the name is the part worth spending width on, and every rem the
+   furniture gives up is a rem of it that escapes the ellipsis. The buttons keep
+   their full block padding, so both stay comfortably past the 24px minimum
+   target — and the whole row is hidden on the icon rail (≤56rem wide), which is
+   where touch actually happens. */
+.account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-block-start: auto;
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius);
+
+  &:hover {
+    background: var(--surface-2);
+  }
+
+  /* Avatar in its own column, spanning both text rows — the arrangement the
+     status header and the account card already use, so the chrome reads as the
+     same "this is a person" unit everywhere. Named areas rather than
+     auto-placement: the image is a sibling of the two spans, not a wrapper, so
+     without them the rows would flow around it. */
+  .account__link {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "avatar name"
+      "avatar handle";
+    align-items: center;
+    column-gap: var(--space-2);
+    flex: 1;
+    min-width: 0;
+    color: var(--text);
+    line-height: 1.3;
+
+    &:hover {
+      text-decoration: none;
+    }
+  }
+
+  .account__avatar {
+    grid-area: avatar;
+    inline-size: var(--nav-avatar);
+    block-size: var(--nav-avatar);
+    border-radius: var(--radius-pill);
+    object-fit: cover;
+  }
+
+  .account__switch {
+    display: inline-flex;
+    padding: var(--space-2) var(--space-1);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+
+    &:hover {
+      background: var(--surface-hover);
+      color: var(--text);
+      text-decoration: none;
+    }
+  }
+
+  .account__name {
+    grid-area: name;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .account__handle {
+    grid-area: handle;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.logout__btn {
+  margin-inline-start: auto;
+  padding: var(--space-2) var(--space-1);
+  background: transparent;
+  color: var(--text-muted);
+
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+    filter: none;
+  }
+}
+
+/* ---- Mobile tab bar --------------------------------------------------- */
+
+.tabbar {
+  display: none;
+}
+
+/* ---- Landing (the anonymous welcome page at `/`, plus /rules) ---------- */
+
+.landing {
+  display: grid;
+  gap: var(--space-5);
+  margin-block-start: var(--space-6);
+}
+
+.landing__hero {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+  text-align: center;
+}
+
+.landing__title {
+  margin: 0;
+}
+
+.landing__domain {
+  margin: 0;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.landing__tagline {
+  margin: 0;
+  max-inline-size: 48ch;
+}
+
+.landing__cta {
+  display: flex;
+  gap: var(--space-3);
+  margin-block-start: var(--space-2);
+
+  .pill-button {
+    margin-block-end: 0;
+  }
+}
+
+.landing__cta-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* The stats block: one quiet card of labelled lines ("This server ·
+   12 users · 3 bots · …"), not a tile per number. */
+.landing__stats {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.landing__stat-row {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  align-items: baseline;
+  font-size: var(--text-sm);
+}
+
+.landing__stat-scope {
+  min-inline-size: 6.5rem;
+  font-weight: 600;
+}
+
+.landing__stat-figures {
+  display: inline-flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+  align-items: baseline;
+  color: var(--text-muted);
+}
+
+.landing__stat-sep {
+  color: var(--text-muted);
+}
+
+.landing__stat-value {
+  color: var(--text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.landing__section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+
+  /* Later h2s (e.g. /staff's "Moderators" under "Administered by") keep
+     their breathing room; only a section-opening heading hugs the top. */
+  h2:first-child {
+    margin-block-start: 0;
+  }
+}
+
+.landing__rules {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+  display: grid;
+  gap: var(--space-2);
+
+  li::marker {
+    font-weight: 700;
+  }
+}
+
+.landing__rule-hint {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+
+/* The operator's extended description: markdown in a card, no heading. */
+.landing__about {
+  > :first-child {
+    margin-block-start: 0;
+  }
+
+  > :last-child {
+    margin-block-end: 0;
+  }
+}
+
+.landing__footer {
+  text-align: center;
+  font-size: var(--text-sm);
+
+  a {
+    color: var(--text-muted);
+
+    &:hover {
+      color: var(--text);
+    }
+  }
+}
+
+.landing--page {
+  margin-block-start: var(--space-6);
+}
+
+/* ---- Auth ------------------------------------------------------------- */
+
+.auth-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8);
+  box-shadow: var(--shadow-sm);
+  margin-block-start: var(--space-8);
+
+  h1 {
+    margin-block-start: 0;
+  }
+
+  .auth-form {
+    display: grid;
+    gap: var(--space-4);
+
+    label {
+      display: grid;
+      gap: var(--space-2);
+      font-weight: 600;
+    }
+
+    /* The agreement checkbox sits inline with its text, not stacked. */
+    label.form-check {
+      display: flex;
+      align-items: baseline;
+    }
+
+    button {
+      justify-self: start;
+    }
+  }
+
+  .form-error {
+    color: var(--danger);
+    font-weight: 600;
+  }
+
+  .consent-lead {
+    margin-block-start: 0;
+    color: var(--text-muted);
+  }
+
+  .consent-scopes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-block: var(--space-4);
+    padding: 0;
+    list-style: none;
+
+    code {
+      display: inline-block;
+      padding: var(--space-1) var(--space-3);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      font-size: 0.85em;
+    }
+  }
+
+  .consent-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    margin-block-start: var(--space-4);
+  }
+
+  .oob-code {
+    margin-block: var(--space-4) 0;
+    padding: var(--space-4);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    user-select: all;
+  }
+
+  /* The "other paths" footer links (sign in ↔ register, forgot password). */
+  .auth-card__alt {
+    margin-block: var(--space-4) 0;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  /* ---- Account chooser (multi-account switch) ------------------------- */
+
+  .account-chooser {
+    display: grid;
+    gap: var(--space-3);
+    margin-block: var(--space-4);
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Each entry is a full-width .account-card (an <a> for the current account,
+     a submit <button> for the ones to switch into). */
+  .account-card--button {
+    inline-size: 100%;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .account-card--current {
+    border-color: var(--accent);
+  }
+
+  .account-chooser__badge {
+    margin-inline-start: auto;
+    padding: var(--space-1) var(--space-3);
+    background: var(--surface-2);
+    border-radius: var(--radius-pill);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+  }
+
+  .auth-add-account {
+    margin-block-start: var(--space-4);
+
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .auth-form {
+      margin-block-start: var(--space-4);
+    }
+  }
+}
+
+/* ---- Section selector (view::tab_strip) ------------------------------- *
+ * Replaces the old horizontally-scrolling tab strip. A <details> disclosure
+ * whose summary shows the current section and whose panel lists the rest —
+ * one control for the two-item timeline switch and the twenty-item admin nav
+ * alike, with no sideways scrolling and no width blowout. Works with no JS
+ * (the browser toggles the disclosure); app.js adds outside-click / Escape
+ * closing and viewport-aware placement, reusing the status-menu machinery. */
+
+.nav-select {
+  margin-block-end: var(--space-4);
+  padding-block-end: var(--space-3);
+  border-block-end: 1px solid var(--border);
+}
+
+.nav-select__menu {
+  position: relative;
+  display: inline-block;
+  max-inline-size: 100%;
+}
+
+/* The summary reads as a select trigger: current value + caret. */
+.nav-select__current {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-inline-size: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  transition:
+    background var(--transition),
+    border-color var(--transition);
+}
+
+.nav-select__current::-webkit-details-marker {
+  display: none;
+}
+
+.nav-select__current:hover {
+  background: var(--surface-2);
+}
+
+.nav-select__menu[open] > .nav-select__current {
+  background: var(--surface-2);
+  border-color: var(--accent);
+}
+
+.nav-select__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-select__caret {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.6;
+  transition: transform var(--transition);
+
+  .icon {
+    inline-size: 1.1rem;
+    block-size: 1.1rem;
+  }
+}
+
+.nav-select__menu[open] > .nav-select__current .nav-select__caret {
+  transform: rotate(180deg);
+}
+
+/* Self-contained popup shell (the shared one right-aligns for the status "…"
+   menu; this opens from the start edge). JS may add is-above / is-end. */
+.nav-select__pop {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: calc(100% + var(--space-1));
+  z-index: 20;
+  min-inline-size: 14rem;
+  max-inline-size: min(22rem, 92vw);
+  max-block-size: min(70vh, 28rem);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.nav-select__pop.is-above {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + var(--space-1));
+}
+
+.nav-select__pop.is-end {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+}
+
+.nav-select__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-weight: 600;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--surface-hover);
+    text-decoration: none;
+  }
+}
+
+.nav-select__option-label {
+  flex: 1;
+}
+
+.nav-select__option-check {
+  display: inline-flex;
+  flex: none;
+  opacity: 0;
+  color: var(--accent);
+
+  .icon {
+    inline-size: 1.1rem;
+    block-size: 1.1rem;
+  }
+}
+
+.nav-select__option.is-active {
+  color: var(--accent);
+
+  .nav-select__option-check {
+    opacity: 1;
+  }
+}
+
+/* ---- Compose ---------------------------------------------------------- */
+
+.compose-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.compose {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+
+  textarea {
+    resize: vertical;
+    min-block-size: 3.5rem;
+    background: var(--bg);
+    border-radius: var(--radius);
+  }
+
+  .compose__field {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .compose__legend {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .compose__count {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+
+    &[data-over] {
+      color: var(--danger);
+      font-weight: 700;
+    }
+  }
+}
+
+/* The footer toolbar: icon toggles + selectors on the left, the
+   character count and publish button pinned to the right. */
+.compose__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding-block-start: var(--space-2);
+  border-block-start: 1px solid var(--border);
+}
+
+.compose__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.compose__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-inline-start: auto;
+}
+
+/* Preview sits next to Publish as the secondary action. */
+.compose__preview-btn {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+
+  &:hover {
+    filter: none;
+    background: var(--surface);
+  }
+}
+
+/* The server-rendered draft preview below the composer. Empty (no preview yet)
+   it collapses away, so the border/spacing only show once there's a card. */
+.compose__preview:not(:empty) {
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-4);
+  border-block-start: 1px solid var(--border);
+}
+
+.compose__preview-heading {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-block-end: var(--space-3);
+}
+
+/* Validation banner shown when a submit fails and the composer re-renders. */
+.compose__error {
+  margin-block-end: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* "Posting to !group" note above the composer for a group submission. */
+.compose__group-note {
+  margin-block-end: var(--space-3);
+  color: var(--text-muted);
+}
+
+/* The group composer's Title / Link fields, above the body. */
+.compose__group-fields {
+  display: grid;
+  gap: var(--space-3);
+  margin-block-end: var(--space-3);
+}
+
+/* A one-line hint under a composer field (e.g. "a link needs a title"). */
+.compose__hint {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* A compact icon button in the toolbar (media / poll / CW toggles). Hidden
+   until the `.js` root reveals it — without JS its section is always open, so
+   a toggle would do nothing. */
+.compose__tool {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background var(--transition),
+    color var(--transition);
+
+  &:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+
+  &.is-active {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+}
+
+.js .compose__tool {
+  display: inline-flex;
+}
+
+/* Toolbar sections open through their buttons. */
+.js .compose__section {
+  display: none;
+}
+
+.js .compose__section.is-open {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* ---- Composer selectors ---------------------------------------------- *
+ * Visibility, quote policy and language each render a native <select> (the
+ * submitted value + no-JS fallback) plus a custom trigger and popup that can
+ * show per-option icons — impossible in a native <select>. Without JS the
+ * select shows and the custom chrome is hidden; the `.js` root flips that.
+ * The language combo also serves the settings forms' language fields. */
+.compose__menu,
+.compose__combo,
+.compose__emoji {
+  position: relative;
+  display: inline-flex;
+  /* Same rule as native selects: these wrap a control (and, for the combo, a
+     long language name) whose intrinsic width must not inflate an auto-sized
+     column past the viewport. */
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+/* The native selects inside the combo/menu fallbacks size to their longest
+   option too — cap them so they can't spill their (now capped) wrapper. */
+.compose__menu-native select,
+.compose__combo-native select {
+  max-inline-size: 100%;
+}
+
+/* Native selects: styled so the no-JS fallback still reads as a control,
+   hidden once JS swaps in the custom trigger. */
+.compose__menu-native select,
+.compose__combo-native select {
+  appearance: none;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.js .compose__menu-native,
+.js .compose__combo-native {
+  display: none;
+}
+
+/* Triggers are the JS-only replacements: hidden until the `.js` root reveals
+   them (the native select is shown otherwise). */
+.compose__menu-trigger,
+.compose__combo-trigger {
+  display: none;
+}
+
+.js .compose__menu-trigger,
+.js .compose__combo-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background var(--transition),
+    color var(--transition),
+    border-color var(--transition);
+}
+
+.js .compose__menu-trigger:hover,
+.js .compose__combo-trigger:hover,
+.compose__menu-trigger[aria-expanded="true"],
+.compose__combo-trigger[aria-expanded="true"] {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.compose__menu-icon {
+  display: inline-flex;
+  color: var(--text);
+}
+
+.compose__menu-caret,
+.compose__combo-caret {
+  display: inline-flex;
+  opacity: 0.55;
+}
+
+.compose__menu-caret .icon,
+.compose__combo-caret .icon {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+/* The language pill shows the current label, clipped so a long name can't
+   stretch the toolbar (the full name still shows in the popup). */
+.compose__combo-label {
+  max-inline-size: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Shared floating popup shell. Opens downward from the start edge by default
+   (before JS measures, or with JS absent); JS adds `is-above` when the space
+   over the trigger is the roomier side, and `is-end` to right-align when a
+   start-aligned popup would spill past the viewport. (JS also stamps
+   `is-below` for symmetry, but downward is the default so it needs no rule.) */
+.compose__menu-pop,
+.compose__combo-pop,
+.compose__emoji-pop,
+.status__menu-pop {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: calc(100% + var(--space-1));
+  z-index: 20;
+  min-inline-size: 15rem;
+  max-inline-size: min(21rem, 92vw);
+  padding: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+/* The visibility/quote menus are short, fixed lists — they should never
+   scroll; they size to their content and the flip logic keeps them on screen.
+   (The language combo scrolls inside its own list, which holds 200+ entries.) */
+.compose__menu-pop {
+  max-block-size: none;
+}
+
+.compose__menu-pop.is-above,
+.compose__combo-pop.is-above,
+.compose__emoji-pop.is-above,
+.status__menu-pop.is-above {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + var(--space-1));
+}
+
+.compose__menu-pop.is-end,
+.compose__combo-pop.is-end,
+.compose__emoji-pop.is-end,
+.status__menu-pop.is-end {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+}
+
+.compose__menu-pop[hidden],
+.compose__combo-pop[hidden],
+.compose__emoji-pop[hidden] {
+  display: none;
+}
+
+/* A visibility/quote option: icon, label + description stack, trailing check. */
+.compose__menu-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  inline-size: 100%;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.compose__menu-option:hover,
+.compose__menu-option:focus-visible {
+  background: var(--surface-hover);
+}
+
+.compose__menu-option-icon {
+  display: inline-flex;
+  margin-block-start: 0.1rem;
+  color: var(--text-muted);
+}
+
+.compose__menu-option-text {
+  display: grid;
+  gap: 0.1rem;
+  flex: 1;
+}
+
+.compose__menu-option-label {
+  font-weight: 600;
+}
+
+.compose__menu-option-desc {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.compose__menu-option-check {
+  display: inline-flex;
+  margin-block-start: 0.1rem;
+  color: var(--accent);
+  opacity: 0;
+}
+
+.compose__menu-option[aria-selected="true"] {
+  color: var(--accent);
+}
+
+.compose__menu-option[aria-selected="true"] .compose__menu-option-icon,
+.compose__menu-option[aria-selected="true"] .compose__menu-option-check {
+  color: var(--accent);
+  opacity: 1;
+}
+
+/* Language/emoji popups: a search box (moved inside, not sitting beside the
+   control) over a scrolling list built by JS. */
+.compose__combo-search,
+.compose__emoji-search {
+  inline-size: 100%;
+  margin-block-end: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.compose__combo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-block-size: 15rem;
+  overflow-y: auto;
+}
+
+.compose__combo-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: 100%;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.compose__combo-option:hover,
+.compose__combo-option:focus-visible {
+  background: var(--surface-hover);
+}
+
+.compose__combo-option[aria-selected="true"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.compose__combo-empty {
+  padding: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ---- Custom emoji picker (JS only) ----------------------------------- *
+ * The popup body under the search box: category headings over grids of
+ * image-only emoji buttons, scrolling as one list. */
+.compose__emoji-list {
+  max-block-size: 15rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.compose__emoji-heading {
+  padding: var(--space-2) var(--space-1) var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.compose__emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2.4rem, 1fr));
+}
+
+.compose__emoji-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.compose__emoji-option:hover,
+.compose__emoji-option:focus-visible {
+  background: var(--surface-hover);
+}
+
+.compose__emoji-option img {
+  inline-size: 1.6rem;
+  block-size: 1.6rem;
+  object-fit: contain;
+}
+
+/* Loading / error / empty message rows. */
+.compose__emoji-note {
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.compose__emoji-fallback {
+  display: block;
+  padding: 0 var(--space-2) var(--space-2);
+  font-size: var(--text-sm);
+}
+
+/* A reaction picker is anchored to a compact status action. On phones that
+   anchor can sit anywhere across the row, so either left- or right-aligning a
+   desktop-width popup can still push its opposite edge outside the viewport.
+   Use a contained panel above the fixed tab bar instead. The search stays at
+   the top while every category and emoji shares one vertical scroll region. */
+@media (max-width: 40rem) {
+  .reaction-picker > .compose__emoji-pop {
+    position: fixed;
+    inset-inline: var(--space-2);
+    inset-block-start: auto;
+    inset-block-end: calc(
+      3.5rem + var(--space-2) + env(safe-area-inset-bottom, 0px)
+    );
+    min-inline-size: 0;
+    inline-size: auto;
+    max-inline-size: none;
+    max-block-size: min(70dvh, 32rem);
+  }
+
+  .reaction-picker > .compose__emoji-pop:not([hidden]) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .reaction-picker > .compose__emoji-pop .compose__emoji-list {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    max-block-size: none;
+  }
+}
+
+/* ---- Autocomplete suggestions (JS only) ------------------------------ */
+
+/* The panel anchors to the field's label, right under the field (JS inserts
+   it as the field's next sibling, so `top: 100%` of the label is the field's
+   bottom edge — the field is the label's last child). Positioning the labels
+   only under `.js` keeps the no-JS layout untouched. */
+.js .compose .compose__field {
+  position: relative;
+}
+
+.compose__suggest {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-start: 0;
+  z-index: 20;
+  min-inline-size: 15rem;
+  max-inline-size: min(24rem, 92vw);
+  padding: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.compose__suggest[hidden] {
+  display: none;
+}
+
+.compose__suggest-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: 100%;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.compose__suggest-option:hover,
+.compose__suggest-option.is-active {
+  background: var(--surface-hover);
+}
+
+.compose__suggest-avatar {
+  inline-size: 1.8rem;
+  block-size: 1.8rem;
+  border-radius: var(--radius);
+  object-fit: cover;
+  background: var(--bg);
+}
+
+.compose__suggest-emoji {
+  inline-size: 1.6rem;
+  block-size: 1.6rem;
+  object-fit: contain;
+}
+
+.compose__suggest-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compose__suggest-detail {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The inline composer's file input sits between the textarea and controls. */
+.compose__media-slot input[type="file"] {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* One attachment slot: a file picker paired with its own alt-text input
+   (the no-JS fallback stack). */
+.compose__media-slot {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+/* ---- Edit mode ------------------------------------------------------- */
+
+/* The locked visibility chip on the edit composer's toolbar: same footprint
+   as a tool button, but inert — visibility can't change after posting. */
+.compose__static-vis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  color: var(--text-muted);
+
+  .icon {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+  }
+}
+
+/* The kept-attachments block on the edit composer. Deliberately not a
+   `compose__section`: it has no toolbar toggle and must stay visible. */
+.compose__edit-media {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* One kept attachment on the edit composer: thumbnail beside the keep
+   checkbox and its alt-text input. */
+.edit-media__row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+
+  & + & {
+    margin-block-start: var(--space-2);
+  }
+}
+
+.edit-media__thumb {
+  flex: none;
+  inline-size: 4rem;
+  block-size: 4rem;
+  border-radius: var(--radius);
+  object-fit: cover;
+  background: var(--surface-2);
+}
+
+a.edit-media__thumb--file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.edit-media__fields {
+  display: grid;
+  flex: 1;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+/* ---- Dynamic media attachments (JS only) ----------------------------- */
+
+/* The click/drag/paste target the media manager injects in place of the
+   static slots. It's a full-width dashed well; hidden once the attachment
+   cap is reached (its `hidden` attribute). */
+.compose__dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  inline-size: 100%;
+  padding: var(--space-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color var(--transition),
+    background var(--transition),
+    color var(--transition);
+
+  &:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  small {
+    color: var(--text-muted);
+  }
+
+  .icon {
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+  }
+}
+
+/* While files are dragged over the composer the whole form highlights. */
+.compose.is-dragover,
+.compose-form.is-dragover > .compose {
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
+}
+
+.compose__media-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One attached file: thumbnail, alt-text editor and a remove button. */
+.compose__attachment {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.compose__thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 4rem;
+  block-size: 4rem;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text-muted);
+
+  img {
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+}
+
+.compose__attachment-body {
+  min-inline-size: 0;
+}
+
+.compose__alt {
+  inline-size: 100%;
+  resize: vertical;
+  min-block-size: 3rem;
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.compose__attachment-remove,
+.compose__poll-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2rem;
+  block-size: 2rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background var(--transition),
+    color var(--transition);
+
+  &:hover {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+    background: transparent;
+    color: var(--text-muted);
+  }
+}
+
+/* Dynamic poll builder: a list of choice rows the JS grows/shrinks up
+   to the instance `max_options`, plus an "Add option" button. The no-JS
+   fallback (.compose__poll-static) renders every row at once instead. */
+.compose__poll-list {
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+}
+
+.compose__poll-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.compose__poll-input {
+  flex: 1;
+}
+
+.compose__poll-add {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    color var(--transition),
+    border-color var(--transition);
+
+  &:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+/* A collapsible group (content warning, media, poll). `display: grid` is the
+   open state; `.js` collapses it to `display: none` until its toggle adds
+   `.is-open` (see the toolbar rules above). */
+.compose__section {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.compose__poll-body,
+.compose__media-body,
+.compose__schedule-body,
+.compose__long-form-body,
+.compose__event-body {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* "Publish at" must not wrap mid-label beside the wide datetime input. */
+.compose__schedule-body .compose__inline > span {
+  white-space: nowrap;
+}
+
+.compose__poll-controls {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.compose__inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* The reply/quote target above the composer renders as a full live card —
+   no dimming: opacity would open a stacking context that traps the card's
+   "…" popover underneath the composer that follows it. */
+
+/* ---- Server announcements --------------------------------------------- */
+
+.announcements-banner {
+  display: grid;
+  gap: var(--space-3);
+  margin-block-end: var(--space-3);
+}
+
+.announcement {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.announcement.is-unread {
+  border-color: var(--accent);
+}
+
+.announcement__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.announcement__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.announcement__unread {
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-pill);
+}
+
+.announcement__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The chip row rides inside the flex foot; the action bar's top margin
+   doesn't apply here. */
+.announcement__foot .status__reactions {
+  margin-block-start: 0;
+}
+
+.announcement__error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.announcements-link {
+  margin: 0;
+}
+
+/* ---- Feed & status cards ---------------------------------------------- */
+
+.feed {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* An exchange the page already carried, drawn as one unit: a reply and
+   the post it answers, parent first. The rail down the inline-start edge is
+   the only visual — the cards keep their own width, so nothing here can grow
+   the page (the track is minmax(0, 1fr) like every other content grid). */
+.thread-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  padding-inline-start: var(--space-1);
+  border-inline-start: 1px solid var(--border);
+  border-start-start-radius: var(--radius);
+  border-end-start-radius: var(--radius);
+}
+
+/* Several people talking rather than one person continuing: same shape, warmer
+   rail, so the two read as different kinds of grouping at a glance. */
+.thread-group--conversation {
+  border-inline-start-color: var(--accent);
+}
+
+/* The middle of a long exchange, folded away so it can't push the rest of the
+   feed off the screen. A plain <details>, open-able with no JavaScript. */
+.thread-group__folded {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+
+  summary {
+    cursor: pointer;
+    padding: var(--space-1) 0;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+
+  summary:hover {
+    color: var(--text);
+  }
+}
+
+.status {
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+
+  /* Every post carries id="post-{id}"; a `#post-id` permalink makes the browser
+     scroll it into view. Leave breathing room above so it doesn't land flush
+     against the viewport top (and clears any sticky chrome). Pure HTML anchor,
+     no scripting. */
+  scroll-margin-block-start: var(--space-4);
+}
+
+/* The post a deep-link landed on — highlighted so it's obvious which reply the
+   user opened after the auto-scroll. */
+.status:target {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* A soft-deleted thread stub: kept so tree mode preserves the subtree, but
+   visually a placeholder, not a post — muted, one line, no affordances. */
+.status--tombstone {
+  border-style: dashed;
+}
+
+.status__tombstone {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.status__boost {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--boost);
+  font-weight: 600;
+  min-width: 0;
+
+  /* The booster's name link must ellipsize, not push the row past the card. */
+  a {
+    color: inherit;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .icon {
+    flex-shrink: 0;
+    inline-size: 1em;
+    block-size: 1em;
+  }
+}
+
+/* Several boosts of one post merged into a single card: the names read as
+   one sentence and wrap, rather than each link being its own flex item that
+   ellipsizes on its own. */
+.status__boosters {
+  min-width: 0;
+  overflow-wrap: anywhere;
+
+  a {
+    /* Overrides the single-booster ellipsis above: inside the sentence a name
+       wraps with it. */
+    display: inline;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  /* One booster of several muted or blocked in place: the name dims, the card
+     does not — its post is in the feed on everyone else's account too. */
+  a.is-moderated {
+    opacity: 0.45;
+    text-decoration: line-through;
+  }
+}
+
+/* A followed-hashtag attribution above a home-timeline card: the post is
+   here because the viewer follows the named tag(s), each linking to its own
+   timeline. Sits where the boost line does, but muted so it reads as context. */
+.status__tag-source {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  min-width: 0;
+
+  .icon {
+    flex-shrink: 0;
+    inline-size: 1em;
+    block-size: 1em;
+  }
+
+  /* Let a long run of tag links wrap instead of overflowing the card. */
+  span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.status__tag-source-link {
+  color: var(--accent);
+  font-weight: 600;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.status__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.status__avatar img {
+  display: block;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: var(--radius-pill);
+  object-fit: cover;
+}
+
+.status__author {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.32;
+
+  .status__name {
+    font-weight: 700;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .status__acct {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.status__time {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.status__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: start;
+  color: var(--text-muted);
+}
+
+.status__handle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* Account flags (bot, follows-need-approval) beside the handle. */
+.status__flag {
+  display: inline-flex;
+  color: var(--text-muted);
+
+  .icon {
+    inline-size: 1em;
+    block-size: 1em;
+  }
+}
+
+/* Visibility glyph in the card corner; the label lives in its title. */
+.status__vis {
+  display: inline-flex;
+
+  .icon {
+    inline-size: 1.1em;
+    block-size: 1.1em;
+  }
+}
+
+/* Post-language chip ("en"), full name in its title. */
+.status__lang {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status__edited {
+  font-size: var(--text-xs);
+  font-style: italic;
+  white-space: nowrap;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.status__edited:hover {
+  text-decoration: underline;
+}
+
+/* "Replying to @…" context line under the header. */
+.status__reply-to {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+
+  a {
+    color: inherit;
+    /* "Replying to @…" carries a raw handle; break it rather than let one
+       long token push the card past the viewport. */
+    min-width: 0;
+    overflow-wrap: anywhere;
+
+    &:hover {
+      color: var(--text);
+    }
+  }
+
+  .icon {
+    inline-size: 1em;
+    block-size: 1em;
+  }
+}
+
+/* Thread detail view: full timestamp plus compact metadata chips. */
+.status__detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-block-start: var(--space-3);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+
+  > * {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: 1.5em;
+    white-space: nowrap;
+  }
+
+  > * + *::before {
+    content: "·";
+    align-self: center;
+    margin-inline: var(--space-2);
+    font-size: var(--text-sm);
+    line-height: 1;
+  }
+}
+
+/* Metadata combines visibility and quote-policy artwork whose source paths
+   occupy very different fractions of the shared 24px viewBox. Give every
+   glyph the same physical box, then normalize optical height around its
+   centre so the row reads as one icon family beside the text. */
+.status__detail-icon {
+  justify-content: center;
+  line-height: 1;
+
+  .icon {
+    inline-size: 1rem;
+    block-size: 1rem;
+    vertical-align: 0;
+    transform-origin: center;
+  }
+
+  &[data-detail-icon="vis-unlisted"] .icon,
+  &[data-detail-icon="vis-private"] .icon {
+    transform: scale(1.06);
+  }
+
+  &[data-detail-icon="vis-direct"] .icon {
+    transform: scale(1.28);
+  }
+
+  &[data-detail-icon="vis-local"] .icon {
+    transform: scale(1.125);
+  }
+
+  &[data-detail-icon="quote-any"] .icon {
+    transform: translateY(0.03rem) scale(1.2);
+  }
+
+  &[data-detail-icon="quote-followers"] .icon,
+  &[data-detail-icon="quote-none"] .icon {
+    transform: scale(1.125);
+  }
+}
+
+/* The detail view's "Edited …" link into the history page. */
+.status__detail-edited {
+  color: inherit;
+  text-decoration: none;
+}
+
+.status__detail-edited:hover {
+  text-decoration: underline;
+}
+
+/* ---- Edit history ---------------------------------------------------- */
+
+/* One version card on the /history page, newest first. */
+.history__version {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+
+  & + & {
+    margin-block-start: var(--space-3);
+  }
+}
+
+.history__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.history__label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.history__spoiler {
+  margin: var(--space-3) 0 0;
+  font-weight: 600;
+}
+
+.history__media {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
+.history__thumb {
+  inline-size: 4rem;
+  block-size: 4rem;
+  border-radius: var(--radius);
+  object-fit: cover;
+  background: var(--surface-2);
+}
+
+span.history__thumb--file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+/* The owner's per-quote revoke control on the quotes engagement list. */
+.quote-revoke {
+  display: flex;
+  justify-content: flex-end;
+  margin-block: calc(-1 * var(--space-2)) var(--space-2);
+}
+
+.quote-revoke__btn {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--danger);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.quote-revoke__btn:hover {
+  background: var(--surface-2);
+}
+
+/* ---- Content-universe extras: title, external link, event facts -------- */
+
+/* The post's real title (Lemmy/PeerTube/Article/Event `name`). Deliberately
+   body-sized bold text, not a heading — heading-scale titles read as
+   excessive next to ordinary posts (the markup is a bold `<p>` for the same
+   reason). */
+.status__title {
+  margin-block: var(--space-3) 0;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+/* A link post's target URL — a bordered pill under the body. */
+.status__external-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  color: var(--accent);
+
+  &:hover {
+    background: var(--surface-2);
+  }
+
+  span {
+    overflow-wrap: anywhere;
+  }
+
+  svg {
+    flex-shrink: 0;
+  }
+}
+
+/* Event facts: date span, place and ical status. */
+.status__event {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+
+  svg {
+    flex-shrink: 0;
+    margin-block-start: 2px;
+  }
+}
+
+.status__event-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+
+  span {
+    overflow-wrap: anywhere;
+  }
+}
+
+/* The venue's own zone, subdued so it reads as a footnote to the event rather
+   than as a qualifier on the (viewer-local) start/end readings above it. The
+   origin's category vocabulary is subdued for a different reason: it is an open
+   set we only pass through, so it must not read as a fact we stand behind. */
+.status__event-zone,
+.status__event-category {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.status__event-cancelled {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* Attendance count / capacity — a fact about the event, so it reads at the
+   same weight as the date rather than as the subdued venue-zone footnote. */
+.status__event-attendance {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The RSVP cluster. A row rather than a stack: the state and its one control
+   ("Awaiting approval — Withdraw") are a single statement. */
+.status__event-rsvp {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-1);
+
+  &:empty {
+    display: none;
+  }
+}
+
+/* Going is the only affirmative state, so it is the only one that gets colour.
+   Pending is deliberately subdued *without* a spinner or an ellipsis: it may
+   stay this way for days (a moderated event) or forever (a full one), and
+   anything suggesting progress would be a lie. */
+.status__event-going {
+  color: var(--success, var(--accent));
+  font-weight: 600;
+}
+
+.status__event-pending,
+.status__event-invited,
+.status__event-closed {
+  color: var(--text-muted);
+}
+
+.status__event-refused {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.status__event-rsvp-error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+/* The organizer's attendee panel. Pending rows carry the only controls, so the
+   row is a grid that lets the verdict buttons sit at the end without the
+   settled rows leaving a ragged gap where buttons would have been. */
+.event-attendees {
+  margin-block-start: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+
+  & h2 {
+    font-size: var(--text-base);
+    margin-block-end: var(--space-1);
+  }
+}
+
+.event-attendees__summary {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  margin-block-end: var(--space-2);
+}
+
+.event-attendees__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.event-attendees__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.event-attendees__account {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.event-attendees__avatar {
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+.event-attendees__handle,
+.event-attendees__state {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* The request's note to the organizer is usually the whole basis for the
+   decision, so it takes the full row width rather than being clipped inline. */
+.event-attendees__message {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.event-attendees__actions {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-inline-start: auto;
+}
+
+.status__content {
+  margin-block-start: var(--space-3);
+  overflow-wrap: anywhere;
+
+  & :is(p, ul, ol, pre, blockquote) {
+    margin-block: var(--space-2);
+  }
+
+  /* A text quote: a modest indent with a line down the left, instead of the
+     browser default's bare 40px shove to the right (the Phanpy treatment). */
+  & blockquote {
+    margin-inline: 0;
+    padding-inline-start: var(--space-3);
+    border-inline-start: 3px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+
+  & :first-child {
+    margin-block-start: 0;
+  }
+
+  & :last-child {
+    margin-block-end: 0;
+  }
+
+  a {
+    overflow-wrap: anywhere;
+  }
+
+  /* A code block keeps its formatting (`white-space: pre` never wraps), so it
+     scrolls inside its own box instead of stretching the card — the classic
+     "a post with a wide code block widened the whole feed" bug. */
+  pre {
+    max-inline-size: 100%;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    padding: var(--space-3);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+  }
+
+  /* Any embedded block that can carry its own width shrinks to the card and
+     scrolls rather than overflow it. */
+  :is(img, video, table) {
+    max-inline-size: 100%;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+}
+
+.status__cw {
+  margin-block-start: var(--space-3);
+
+  summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-2);
+    border-radius: var(--radius);
+  }
+
+  .status__content {
+    margin-block-start: var(--space-2);
+  }
+}
+
+/* ---- Media ------------------------------------------------------------ */
+
+.status__media {
+  display: grid;
+  gap: var(--space-1);
+  margin-block-start: var(--space-3);
+  border-radius: var(--radius);
+  overflow: hidden;
+  /* minmax(0, …): a bare 1fr is minmax(auto, 1fr), and the images' intrinsic
+     widths would blow the first track past half and collapse the second. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+
+  &[data-count="1"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .media {
+    margin: 0;
+    aspect-ratio: 16 / 10;
+    /* Anchors the ALT/GIF badge overlay. */
+    position: relative;
+
+    /* The thumbnail link must span the figure, or the img's percentage
+       height resolves against an auto-height anchor and collapses. */
+    .media__link {
+      block-size: 100%;
+    }
+
+    & :is(img, video) {
+      inline-size: 100%;
+      block-size: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* Blurhash placeholder painted by JS behind the lazy thumbnail. */
+    & img[data-blurhash] {
+      background-size: cover;
+      background-position: center;
+    }
+  }
+
+  /* Audio has no visual to tile: the player spans the full row at its
+     natural height. */
+  .media--audio {
+    aspect-ratio: auto;
+    grid-column: 1 / -1;
+    display: grid;
+    align-content: center;
+    padding: var(--space-2);
+    background: var(--surface-2);
+
+    & audio {
+      inline-size: 100%;
+      display: block;
+    }
+  }
+
+  &[data-count="1"] .media {
+    aspect-ratio: auto;
+    max-block-size: 32rem;
+
+    /* Let height follow the intrinsic width/height ratio (rather than filling
+       the parent) so the reserved box matches the loaded image — no CLS. */
+    & :is(img, video) {
+      block-size: auto;
+      max-block-size: 32rem;
+      object-fit: contain;
+      /* Longhand: the `background` shorthand would reset background-size back
+         to `auto` (and repeat), tiling the 32px blurhash placeholder painted
+         by the img[data-blurhash] rule instead of letting it cover. */
+      background-color: var(--surface-2);
+    }
+  }
+
+  &[data-count="3"] .media:first-child {
+    grid-row: span 2;
+  }
+}
+
+/* ---- Quote card ------------------------------------------------------- */
+
+.quote-card {
+  margin-block-start: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+
+  .quote-card__head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--text);
+    font-size: var(--text-sm);
+    /* Let the name/handle shrink instead of a long remote handle growing the
+       card (and, on mobile, the whole layout viewport). */
+    min-width: 0;
+
+    &:hover {
+      text-decoration: none;
+    }
+  }
+
+  .quote-card__avatar {
+    flex: 0 0 auto;
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    border-radius: var(--radius-pill);
+  }
+
+  /* Both sit on one flex row; each shrinks and ellipsizes like the main
+     card's byline (.status__name / .status__acct) so neither can overflow. */
+  .quote-card__name,
+  .quote-card__acct {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .quote-card__name {
+    font-weight: 700;
+  }
+
+  .quote-card__acct {
+    color: var(--text-muted);
+  }
+
+  .status__content {
+    margin-block-start: var(--space-2);
+    font-size: var(--text-sm);
+  }
+}
+
+/* Non-embedded quote states: pending / deleted / revoked, or a bare link. */
+.quote-card--placeholder {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-style: italic;
+}
+
+/* A reply whose parent couldn't be fetched: a muted, post-shaped card that
+   stands in for the missing ancestor above the focus in the thread view. */
+.status--placeholder {
+  border-style: dashed;
+  background: var(--surface-2);
+  box-shadow: none;
+}
+
+.unfetched-parent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.unfetched-parent__notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+
+  .icon {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+  }
+}
+
+.unfetched-parent__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  align-self: flex-start;
+  font-size: var(--text-sm);
+  font-weight: 600;
+
+  .icon {
+    inline-size: 1em;
+    block-size: 1em;
+  }
+}
+
+/* Timeline/card reply line when the parent is unfetched: same muted line as a
+   normal reply context, but its link opens the remote original. */
+.status__reply-to--unfetched a {
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+/* A look at the post being replied to, when it is not itself on the page.
+   Occupies the same slot as "Replying to @…" and answers the other half of the
+   question. One line: the excerpt ellipsizes rather than wrapping, so a long
+   parent can never make the card taller than the post it belongs to. */
+.status__reply-peek {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-1) var(--space-2);
+  min-width: 0;
+  border-inline-start: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-decoration: none;
+
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+
+.status__reply-peek > .icon {
+  flex: none;
+  inline-size: 1em;
+  block-size: 1em;
+}
+
+.status__reply-peek-avatar {
+  flex-shrink: 0;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  border-radius: var(--radius-pill);
+  object-fit: cover;
+}
+
+.status__reply-peek-author {
+  flex-shrink: 0;
+  font-weight: 600;
+  max-inline-size: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The handle is the first thing to go when the line is tight — the name above
+   it already identifies the author. */
+.status__reply-peek-handle {
+  flex-shrink: 1000;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status__reply-peek-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Link preview card ----------------------------------------------- */
+
+/* The whole card is one external link; spans inside stay valid phrasing
+   content and are laid out as blocks here. */
+.preview-card {
+  display: flex;
+  align-items: stretch;
+  margin-block-start: var(--space-3);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+
+  &:hover {
+    text-decoration: none;
+    background: var(--surface-hover);
+  }
+
+  .preview-card__image {
+    flex: none;
+    inline-size: 6.5rem;
+    min-block-size: 6.5rem;
+    object-fit: cover;
+    background: var(--surface-2);
+  }
+
+  .preview-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-inline-size: 0;
+    padding: var(--space-3);
+    font-size: var(--text-sm);
+  }
+
+  .preview-card__provider {
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .preview-card__title {
+    font-weight: 700;
+  }
+
+  .preview-card__title,
+  .preview-card__desc {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .preview-card__desc {
+    color: var(--text-muted);
+  }
+
+  .preview-card__author {
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Video/photo cards: the thumbnail spans the card on top (Mastodon's large
+   layout) instead of the side strip. */
+.preview-card--large {
+  flex-direction: column;
+
+  .preview-card__image {
+    inline-size: 100%;
+    aspect-ratio: 16 / 9;
+    min-block-size: 0;
+  }
+}
+
+/* ---- Poll ------------------------------------------------------------- */
+
+.poll {
+  display: grid;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
+.poll__choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--surface-2);
+  }
+}
+
+.poll__vote {
+  justify-self: start;
+}
+
+.poll__result {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--surface-2);
+
+  .poll__bar {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    inline-size: var(--pct, 0%);
+    background: var(--accent-soft);
+    z-index: -1;
+    transition: inline-size var(--transition);
+  }
+
+  &.is-own .poll__bar {
+    background: color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+
+  .poll__title {
+    flex: 1;
+  }
+
+  .poll__pct {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+}
+
+.poll__footer {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.poll__error {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+/* ---- Action row ------------------------------------------------------ *
+ * One coherent row in Mastodon's order — reply / boost / quote / favourite /
+ * bookmark / privileged tools / "…" — spread evenly up to a cap so the controls don't drift
+ * apart on wide cards. Every counter rides inside its control. */
+
+.status__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  max-inline-size: 28rem;
+  margin-block-start: var(--space-3);
+  color: var(--text-muted);
+}
+
+.action-form {
+  margin: 0;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-inline-size: 2.25rem;
+  min-block-size: 2.25rem;
+  padding: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  transition:
+    background var(--transition),
+    color var(--transition);
+
+  &:hover {
+    background: var(--surface-2);
+    color: var(--text);
+    text-decoration: none;
+    filter: none;
+  }
+}
+
+/* Finger-sized targets where there's no pointer precision. */
+@media (pointer: coarse) {
+  .action {
+    min-inline-size: 2.75rem;
+    min-block-size: 2.75rem;
+  }
+}
+
+/* Eight controls can share one narrow card, and flex items never shrink below
+   their min-inline-size — on a phone-width viewport the pill padding and
+   width floors would push the trailing "…" past the card edge. Trade them
+   for the row's own space-between spacing; target height stays full-size. */
+@media (max-width: 26rem) {
+  .action {
+    min-inline-size: 0;
+    padding-inline: var(--space-1);
+  }
+}
+
+.action__count {
+  font-variant-numeric: tabular-nums;
+  min-inline-size: 1ch;
+}
+
+.action--quote:hover,
+[data-action="reblog"] .is-active {
+  color: var(--boost);
+}
+
+[data-action="favourite"] .is-active {
+  color: var(--favourite);
+}
+
+[data-action="bookmark"] .is-active {
+  color: var(--accent);
+}
+
+.action.is-disabled {
+  opacity: 0.4;
+}
+
+/* ---- Group-post vote cluster ------------------------------------------ *
+ * Lemmy's ▲ n ▼ in place of the favourite star on group posts: two toggle
+ * forms around the score. Upvote rides the favourite store and colour;
+ * downvote gets its own. */
+
+.status__votes {
+  display: inline-flex;
+  align-items: center;
+}
+
+.status__score {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-inline-size: 1ch;
+  text-align: center;
+}
+
+[data-action="upvote"] .is-active {
+  color: var(--favourite);
+}
+
+[data-action="downvote"] .is-active {
+  color: var(--danger);
+}
+
+/* ---- Emoji reaction chips -------------------------------------------- *
+ * Pleroma-style reaction chips under the action bar: emoji + count pills,
+ * the viewer's own reactions highlighted. Each chip is a plain POST form;
+ * the row only renders once a post has reactions. The picker button in the
+ * action bar is JS-only and reuses the composer picker's popup. */
+
+.status__reactions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-block-start: var(--space-1);
+}
+
+.status__reactions:empty {
+  display: none;
+}
+
+.reaction-form {
+  margin: 0;
+  display: inline-flex;
+}
+
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.15rem var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+button.reaction {
+  cursor: pointer;
+  transition:
+    background var(--transition),
+    border-color var(--transition),
+    color var(--transition);
+}
+
+button.reaction:hover,
+button.reaction:focus-visible {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.reaction.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface);
+}
+
+.reaction__emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 1.2rem;
+}
+
+img.reaction__emoji {
+  inline-size: 1.2rem;
+  block-size: 1.2rem;
+  object-fit: contain;
+}
+
+.reaction__count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* The "add a reaction" picker rides in the action bar between favourite and
+   bookmark. Its trigger is a normal link to the full picker; JS uses this
+   wrapper to anchor the shared emoji popup shell. */
+.reaction-picker {
+  display: inline-flex;
+  position: relative;
+}
+
+.action--react[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+/* ---- Full emoji reaction catalog (no-JS path) ------------------------- */
+
+.reaction-catalog-page {
+  gap: var(--space-3);
+}
+
+.reaction-catalog-page__back {
+  align-self: flex-start;
+}
+
+.reaction-catalog-page > h1,
+.reaction-catalog-page > p {
+  margin: 0;
+}
+
+.reaction-catalog {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.reaction-catalog h2 {
+  margin: 0 0 var(--space-2);
+}
+
+.reaction-catalog h3 {
+  margin: var(--space-3) 0 var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.reaction-catalog__category {
+  margin-block-end: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.reaction-catalog__category > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.reaction-catalog__category[open] {
+  padding-block-end: var(--space-3);
+}
+
+.reaction-catalog__category[open] > summary {
+  border-block-end: 1px solid var(--border);
+}
+
+.reaction-catalog__category > h3,
+.reaction-catalog__category > .reaction-catalog__grid {
+  margin-inline: var(--space-3);
+}
+
+.reaction-catalog__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2.75rem, 1fr));
+  gap: var(--space-1);
+}
+
+.reaction-catalog__choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 2.75rem;
+  padding: var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 1.65rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.reaction-catalog__choice:hover,
+.reaction-catalog__choice:focus-visible {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.reaction-catalog__choice img {
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  object-fit: contain;
+}
+
+/* ---- Overflow menu --------------------------------------------------- *
+ * A <details> disclosure styled as a floating menu, so the secondary verbs
+ * open without JavaScript too; JS adds outside-click/Escape closing and
+ * viewport-aware placement (the shared popup-shell rules above). */
+
+.status__menu {
+  position: relative;
+}
+
+.status__menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.status__menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.status__menu[open] > summary {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* The shield is a privileged context rather than another generic action.
+   A restrained accent while open makes adjacent shield / overflow triggers
+   easy to distinguish without making staff controls visually dominant. */
+.privileged-menu[open] > summary {
+  color: var(--accent);
+}
+
+/* The trigger sits at the row's end, so the panel right-aligns by default
+   (the shared shell left-aligns; JS placement may still flip it). */
+.status__menu-pop {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  min-inline-size: 16rem;
+}
+
+.status__menu-form {
+  margin: 0;
+}
+
+/* The engagement lists (boosts / quotes / favs) as one horizontal menu row. */
+.status__menu-row {
+  display: flex;
+
+  .status__menu-item {
+    flex: 1 1 0;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+/* A section heading inside the menu (e.g. "Moderate"), set off by a rule. */
+.status__menu-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  border-block-start: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+
+  svg {
+    inline-size: 1em;
+    block-size: 1em;
+  }
+}
+
+/* When group moderation is the only privileged section, its label starts the
+   popup and needs no separator from nonexistent author/admin links. */
+.status__menu-pop > .status__menu-label:first-child {
+  margin-block-start: 0;
+  border-block-start: none;
+}
+
+.status__menu-item {
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: start;
+  cursor: pointer;
+  /* "Mute @…" entries quote raw handles; the popup is width-capped, so a
+     long handle must wrap inside the item instead of spilling out of it. */
+  overflow-wrap: anywhere;
+}
+
+.status__menu-item:hover,
+.status__menu-item:focus-visible {
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+
+.status__menu-item.is-danger {
+  color: var(--danger);
+}
+
+.status__menu-item.is-disabled {
+  color: var(--text-muted);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.status__menu-item.is-disabled:hover {
+  background: transparent;
+}
+
+/* Inherently scripted entries (copy link) stay hidden until JS is running. */
+.status__menu-item--js {
+  display: none;
+}
+
+.js .status__menu-item--js {
+  display: flex;
+}
+
+/* The owner's "who can quote" row: label + select stacked, apply beside. */
+.status__menu-policy {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.status__menu-policy-label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.status__menu-policy-apply {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.status__menu-policy-apply:hover {
+  background: var(--surface-2);
+}
+
+/* A card whose author (or server) the reader just muted or blocked in
+   place: dimmed as feedback, but still fully interactable so the verb is
+   one click to take back. Hover / focus mostly restores it for reading. */
+.status.is-moderated {
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+
+.status.is-moderated:hover,
+.status.is-moderated:focus-within {
+  opacity: 0.85;
+}
+
+/* ---- Pager ------------------------------------------------------------ */
+
+.pager {
+  text-align: center;
+  padding-block: var(--space-2);
+}
+
+.pager__more {
+  display: inline-block;
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  background: var(--surface);
+  font-weight: 600;
+
+  &:hover {
+    background: var(--surface-2);
+    text-decoration: none;
+  }
+}
+
+/* ---- Profile ---------------------------------------------------------- */
+
+/* The section selector and the Activity filter selector side by side on one
+   row. The nav-selects drop their usual underline delimiter here — the
+   column gap already separates the row from the feed below. */
+.profile-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+
+  &:empty {
+    display: none;
+  }
+
+  .nav-select {
+    margin-block-end: 0;
+    padding-block-end: 0;
+    border-block-end: none;
+  }
+}
+
+/* An account-level live player (Owncast root discovery). It uses the exact
+   same media gallery/player as a status, but has no status card to supply the
+   surrounding inset. */
+.profile-live {
+  margin-block-start: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+
+  .status__media {
+    margin-block-start: 0;
+  }
+}
+
+.remote-history {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-block: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: var(--text-sm);
+}
+
+.remote-history__copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  min-inline-size: 0;
+}
+
+.remote-history__state {
+  min-inline-size: min(100%, 12rem);
+}
+
+.remote-history__meta,
+.remote-history__time {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.remote-history__form {
+  flex: none;
+
+  & button {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-sm);
+  }
+}
+
+@media (max-width: 34rem) {
+  .remote-history {
+    align-items: center;
+  }
+
+  .remote-history__state {
+    min-inline-size: 0;
+  }
+
+  .remote-history__time {
+    display: none;
+  }
+}
+
+.profile {
+  min-inline-size: 0;
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+
+  .profile__header {
+    display: block;
+    inline-size: calc(100% + 2 * var(--space-5));
+    max-inline-size: none;
+    block-size: clamp(7rem, 20vw, 11rem);
+    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-5)) 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: var(--surface-2);
+    object-fit: cover;
+  }
+
+  /* Avatar beside the name/handle block, not stacked above it. */
+  .profile__top {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  /* A banner is a cover area, not a separate content block. Pull the avatar
+     into it while keeping all text below the image, where contrast remains
+     predictable regardless of the artwork. */
+  &.has-header {
+    .profile__top {
+      align-items: flex-start;
+      margin-block-start: calc(-1 * var(--space-8));
+    }
+
+    .profile__id {
+      padding-block-start: calc(var(--space-8) + var(--space-2));
+    }
+
+    .profile__avatar {
+      inline-size: 5rem;
+      block-size: 5rem;
+      border: 0.25rem solid var(--surface);
+      box-shadow: var(--shadow-sm);
+    }
+  }
+
+  .profile__id {
+    flex: 1;
+    min-inline-size: 0;
+  }
+
+  .profile__avatar {
+    inline-size: 4.5rem;
+    block-size: 4.5rem;
+    border-radius: var(--radius-pill);
+    object-fit: cover;
+  }
+
+  /* Handle and join date share one muted line under the name. A remote
+     handle is one unbreakable token that can outgrow any viewport — it must
+     wrap here, not widen the page (the mobile layout-viewport bug). */
+  .profile__meta {
+    margin-block: var(--space-1) 0;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  .profile__joined {
+    font-size: var(--text-sm);
+  }
+
+  /* The overflow menu sits at the far end of the name row. */
+  .profile__menu {
+    margin-inline-start: auto;
+  }
+
+  .profile__note {
+    margin-block-start: var(--space-3);
+    overflow-wrap: anywhere;
+  }
+
+  .profile__name-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+
+    .profile__name {
+      margin: 0;
+      /* A single unbreakable display-name token must wrap within the row
+         rather than stretch the profile header past the viewport. */
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .profile__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    line-height: 1.6;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+
+  .profile__badge--locked {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: transparent;
+  }
+
+  /* An admin-defined role badge; --role-color arrives inline from the role's
+   * configured color, falling back to the accent when unset. */
+  .profile__badge--role {
+    background: color-mix(in srgb, var(--role-color, var(--accent)) 12%, transparent);
+    color: var(--role-color, var(--accent));
+    border-color: color-mix(in srgb, var(--role-color, var(--accent)) 40%, transparent);
+  }
+
+  .profile__badge--warn {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: transparent;
+  }
+
+  .profile__badge--danger {
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-color: transparent;
+  }
+
+  /* The moderation-state row: viewer sanctions (muted/blocked/…) and admin
+     sanctions (suspended/limited/…) as compact badges under the handle. */
+  .profile__moderation {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-block-start: var(--space-2);
+  }
+
+  .profile__fields {
+    display: grid;
+    gap: 1px;
+    margin: var(--space-3) 0 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--border);
+  }
+
+  .profile__field {
+    display: grid;
+    grid-template-columns: minmax(6rem, 0.4fr) 1fr;
+    gap: 1px;
+  }
+
+  .profile__field-name,
+  .profile__field-value {
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface);
+    overflow-wrap: anywhere;
+  }
+
+  .profile__field-name {
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+
+  /* A rel="me"-verified profile link. */
+  .profile__field.is-verified {
+    .profile__field-value {
+      background: color-mix(in srgb, var(--boost) 10%, var(--surface));
+    }
+  }
+
+  .profile__field-verified,
+  .settings-field__verified {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--boost);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    white-space: nowrap;
+
+    svg {
+      width: 1em;
+      height: 1em;
+    }
+  }
+
+  /* Stats and the follow button share one shallow row; the follow-settings
+     disclosure wraps to a full-width line of its own. */
+  .profile__footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    margin-block-start: var(--space-3);
+  }
+
+  .profile__stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2);
+    margin: 0;
+  }
+
+  .profile__stat {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius);
+    color: inherit;
+
+    .profile__stat-value {
+      font-weight: 700;
+    }
+
+    .profile__stat-label {
+      color: var(--text-muted);
+      font-size: var(--text-sm);
+    }
+  }
+
+  a.profile__stat--link:hover {
+    background: var(--surface-2);
+    text-decoration: none;
+
+    .profile__stat-label {
+      color: var(--accent);
+    }
+  }
+
+  /* The action cluster (privileged tools, Follow) sits opposite the stats. */
+  .profile__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-inline-start: auto;
+  }
+
+  .follow {
+    button {
+      width: auto;
+    }
+  }
+
+  /* The logged-out Follow affordance: an anchor to /interact styled
+     like the accent Follow button it stands in for. */
+  .follow-remote {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-2) var(--space-5);
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-weight: 600;
+
+    &:hover {
+      filter: brightness(1.06);
+      text-decoration: none;
+    }
+  }
+
+  .follow-settings {
+    flex-basis: 100%;
+
+    summary {
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+
+    .follow-settings__form {
+      display: grid;
+      gap: var(--space-2);
+      margin-block-start: var(--space-2);
+
+      button {
+        width: auto;
+        justify-self: start;
+      }
+    }
+
+    .follow-settings__toggle {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+
+    .follow-settings__languages,
+    /* A control and the hint that explains it, tied together with the tighter
+       gap so the hint reads as belonging to the box above it rather than
+       floating between two controls. */
+    .follow-settings__field {
+      display: grid;
+      gap: var(--space-1);
+    }
+
+    .follow-settings__hint {
+      color: var(--text-muted);
+      font-size: var(--text-sm);
+    }
+  }
+}
+
+@media (max-width: 34rem) {
+  .profile {
+    padding-inline: var(--space-4);
+
+    .profile__header {
+      inline-size: calc(100% + 2 * var(--space-4));
+      block-size: clamp(6.5rem, 32vw, 8rem);
+      margin-inline: calc(-1 * var(--space-4));
+    }
+
+    .profile__name {
+      font-size: clamp(var(--text-lg), 6vw, var(--text-xl));
+    }
+
+    .profile__footer {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .profile__stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      inline-size: 100%;
+      gap: var(--space-1);
+    }
+
+    .profile__stat {
+      min-inline-size: 0;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0;
+      padding-inline: var(--space-1);
+    }
+
+    .profile__actions {
+      inline-size: 100%;
+      justify-content: flex-end;
+      margin-inline-start: 0;
+    }
+  }
+}
+
+/* ---- Thread ----------------------------------------------------------- */
+
+.thread__ancestors {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.thread__focus .status {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+/* The Translate control / "Translated from …" attribution under a post's
+   body. The control is a form-wrapped button styled as a link so the
+   no-JS fallback (POST → translated permalink) and the JS in-place swap share
+   one look. */
+.status__translation {
+  margin-block-start: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.status__translation .translate-form {
+  display: inline;
+}
+
+/* `display: inline` above outspecifies the UA's `[hidden] { display: none }`,
+   so the hidden state needs restating — without this the control stays
+   clickable after a translation. */
+.status__translation .translate-form[hidden] {
+  display: none;
+}
+
+.status__translation-link.is-pending {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.status__translation-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.status__translation-link:hover {
+  text-decoration: underline;
+}
+
+.status__translation-error {
+  color: var(--danger);
+}
+
+.thread__translate-error {
+  margin-block-end: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ---- Notifications ---------------------------------------------------- */
+
+.notifications {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.notification {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.notification__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-muted);
+  min-width: 0;
+
+  .notification__icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--accent);
+  }
+
+  /* Long actor names ellipsize instead of overflowing the label row. */
+  .notification__actor {
+    color: var(--text);
+    font-weight: 700;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.notification .status {
+  border: none;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* A moderation warning's strike text and the strikes-page link. */
+.notification__warning-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.notification__warning-link {
+  margin: 0;
+  font-size: 0.9em;
+}
+
+/* ---- Private mentions (conversations) --------------------------------- */
+
+.conversations {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.conversations__hint {
+  margin: 0 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.conversations__new {
+  margin: 0 0 var(--space-3);
+}
+
+.conversation {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Unread emphasis: accent edge + a dot beside the participants line. */
+.conversation.is-unread {
+  border-inline-start: 3px solid var(--accent);
+}
+
+.conversation__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.conversation__avatars {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.conversation__avatar {
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--surface);
+}
+
+/* Overlap every avatar after the first, latest sender on top. */
+.conversation__avatar + .conversation__avatar {
+  margin-inline-start: -0.6rem;
+}
+
+.conversation__with {
+  margin: 0;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  .conversation__participant {
+    color: var(--text);
+    font-weight: 700;
+  }
+}
+
+.conversation__dot {
+  display: inline-block;
+  inline-size: 0.55rem;
+  block-size: 0.55rem;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-inline-end: var(--space-2);
+}
+
+.conversation__menu {
+  margin-inline-start: auto;
+}
+
+.conversation .status {
+  border: none;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.conversation__actions {
+  display: flex;
+  gap: var(--space-4);
+  font-size: 0.9rem;
+}
+
+/* ---- Direct-locked composer ------------------------------------------- */
+
+.compose--direct {
+  border-inline-start: 3px solid var(--accent);
+}
+
+.compose__direct {
+  margin-block-end: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+
+  p {
+    margin: 0;
+  }
+
+  .compose__direct-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 700;
+  }
+
+  .compose__direct-participants {
+    margin-block-start: var(--space-1);
+    /* Participant handles are unbreakable tokens; wrap them in place. */
+    overflow-wrap: anywhere;
+  }
+
+  .compose__direct-handle {
+    font-weight: 700;
+  }
+
+  .compose__direct-hint {
+    margin-block-start: var(--space-1);
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+}
+
+/* ---- Search & results ------------------------------------------------- */
+
+.search {
+  display: flex;
+  gap: var(--space-2);
+
+  input {
+    flex: 1;
+    border-radius: var(--radius-pill);
+  }
+}
+
+.results {
+  display: grid;
+  gap: var(--space-3);
+
+  h2 {
+    margin: 0;
+    font-size: var(--text-base);
+    color: var(--text-muted);
+  }
+}
+
+.account-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* Relationships manager: a checkbox next to each account card. */
+.relationships-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.relationships-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+
+  .account-card {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.relationships-list__check {
+  display: flex;
+  align-items: center;
+
+  input {
+    inline-size: 1.1rem;
+    block-size: 1.1rem;
+  }
+}
+
+/* A collection member's trailing controls: a pending badge plus Remove. */
+.relationships-list__aside {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* A blocked domain shown as plain text beside its unblock checkbox. */
+.relationships-list__domain {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+/* A remote collection member whose actor we haven't resolved yet. */
+.relationships-list__unresolved {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* Featured-hashtag suggestions: a row of one-click feature buttons. */
+.featured-tags__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+
+  button {
+    background: var(--surface-2);
+    color: inherit;
+    border: 1px solid var(--border);
+  }
+}
+
+.account-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: inherit;
+  box-shadow: var(--shadow-sm);
+
+  &:hover {
+    background: var(--surface-2);
+    text-decoration: none;
+  }
+
+  .account-card__avatar {
+    inline-size: 2.75rem;
+    block-size: 2.75rem;
+    border-radius: var(--radius-pill);
+    object-fit: cover;
+  }
+
+  .account-card__body {
+    display: grid;
+    min-width: 0;
+    line-height: 1.3;
+  }
+
+  .account-card__name {
+    font-weight: 700;
+    /* Match __acct: a long display name must ellipsize inside the card body
+       (which is min-width:0), not widen the list. */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .account-card__acct {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.hashtag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  .hashtag {
+    display: inline-block;
+    padding: var(--space-2) var(--space-4);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    font-weight: 600;
+
+    &:hover {
+      background: var(--surface-2);
+      text-decoration: none;
+    }
+  }
+}
+
+.tag-title {
+  margin-block: 0 var(--space-2);
+}
+
+/* The hashtag page header: title on the left, the follow control on
+   the right. */
+.tag-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-block-end: var(--space-2);
+
+  .tag-title {
+    margin-block: 0;
+  }
+}
+
+/* ---- Explore ---------------------------------------------------------- */
+
+.explore-heading {
+  font-size: var(--text-lg);
+  margin-block: var(--space-4) var(--space-2);
+}
+
+/* Shared muted usage blurb: trending-hashtag rows and News cards. */
+.trend-row__meta {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.trend-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One trending hashtag: name + blurb on the left, the follow control on the
+   right, dressed like an account card. */
+.trend-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+
+  .trend-row__main {
+    flex: 1;
+    display: grid;
+    min-width: 0;
+    line-height: 1.3;
+  }
+
+  .trend-row__name {
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+
+  .trend-row__follow {
+    flex-shrink: 0;
+  }
+}
+
+/* The News tab: each trending link is the standard preview card plus a
+   usage blurb. */
+.trend-links {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.trend-link {
+  display: grid;
+  gap: var(--space-1);
+}
+
+/* "Suggested for you": account card, Follow/Dismiss, and the source
+   reason as a caption line under the row. */
+.suggestion-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+.suggestion-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+
+  .account-card {
+    flex: 1;
+    min-width: 0;
+    min-inline-size: min(14rem, 100%);
+  }
+
+  .suggestion-row__actions {
+    display: flex;
+    gap: var(--space-2);
+    flex-shrink: 0;
+  }
+
+  .suggestion-row__dismiss {
+    background: var(--surface-2);
+    color: inherit;
+    border: 1px solid var(--border);
+  }
+
+  .suggestion-row__why {
+    flex-basis: 100%;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+}
+
+/* The profile directory: a responsive card wall. */
+.directory-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.directory-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+
+  /* The inner account card inherits the tile's chrome instead of nesting
+     its own. */
+  .account-card {
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .directory-card__note {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+
+    p {
+      margin: 0;
+    }
+  }
+
+  .directory-card__stats {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+}
+
+/* ---- JS-enhanced niceties --------------------------------------------- */
+
+/* A row injected by infinite scroll fades in — including the cards of a thread
+   group, which are one level deeper but arrive in the same append. */
+.feed > .status,
+.feed > .thread-group > .status {
+  animation: rise var(--transition);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-2));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ---- Responsive: tablet & phone --------------------------------------- */
+
+@media (max-width: 56rem) {
+  :root {
+    --sidebar: 4.5rem;
+  }
+
+  .brand__name,
+  .nav-link__label,
+  .compose-btn span,
+  .account {
+    display: none;
+  }
+
+  .brand,
+  .nav-link,
+  .compose-btn {
+    justify-content: center;
+  }
+}
+
+/* ---- Responsive: short viewports -------------------------------------- */
+
+/* The nav column is a fixed list of destinations, so its height is nearly
+   constant while the viewport's is not: at the comfortable spacing above it
+   measures 57rem signed in with the staff row, more than a laptop, a split
+   window or a zoomed page usually has. Rather than let the column silently
+   scroll the compose button and the account row out of reach, it tightens in
+   two steps as the viewport gets shorter, retuning only the density tokens —
+   every link keeps its icon, its label, its order and its position, so the
+   muscle memory of anyone already fluent with the full-height column survives
+   the switch intact.
+
+   Each step engages just before the previous one stops fitting, so a step is
+   never taken for nothing and never taken too late: 57rem of content at the
+   comfortable default, 47rem at step one, 39rem at step two (all measured
+   signed in, staff row present — the tallest the column gets). Below 39rem it
+   scrolls, exactly as it did before (see `.sidebar`); so does a large font,
+   which scales these rem tokens along with everything else.
+
+   Step one also applies to the drawer panel, which a phone held sideways
+   otherwise reads about seven links deep. Step two does not: the drawer is a
+   touch surface, so it stops at the roomier of the two densities. */
+@media (max-height: 58rem) {
+  .sidebar,
+  .drawer__panel {
+    --nav-edge: var(--space-3);
+    --nav-gap: 0.125rem;
+    --nav-section: var(--space-2);
+    --nav-pad: var(--space-2); /* 2.5rem rows — still a comfortable target */
+  }
+}
+
+@media (max-height: 47rem) {
+  .sidebar {
+    --nav-edge: var(--space-2);
+    --nav-gap: 0;
+    --nav-section: 0.375rem;
+    --nav-pad: 0.35rem; /* ~2.2rem rows */
+    --nav-icon: 1.35rem;
+    --nav-brand: 1.75rem;
+    --nav-avatar: 1.75rem;
+  }
+
+  /* The one size the tokens can't carry: the wordmark's own type, which would
+     otherwise out-measure the shrunken mark beside it. */
+  .sidebar .brand {
+    padding-block: var(--space-1);
+    font-size: var(--text-base);
+  }
+}
+
+/* ---- Settings --------------------------------------------------------- */
+
+.settings__title {
+  margin-block: var(--space-2) var(--space-4);
+}
+
+.settings__saved {
+  padding: var(--space-3) var(--space-4);
+  margin-block-end: var(--space-4);
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.settings__error {
+  padding: var(--space-3) var(--space-4);
+  margin-block-end: var(--space-4);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+  border-radius: var(--radius);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* ---- Pill link-buttons -------------------------------------------------- *
+ * A link styled as the profile header's pill button: the group "New post"
+ * entry and the index pages' "Create …" links to their dedicated
+ * creation pages (/lists/new and friends). Not `.link-button` — that's the
+ * red text-styled submit used by revoke rows. */
+
+.pill-button,
+.group-post-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-end: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+
+  &:hover {
+    background: var(--surface-2);
+    text-decoration: none;
+  }
+}
+
+/* What a community states about itself, under any group profile header: its
+   sensitive marking, who may start threads, and the moderator roster. Hosted
+   and consumed communities render through the same block, so a Lemmy
+   community reads the way one of ours does. */
+.community-facts {
+  display: grid;
+  gap: var(--space-2);
+  margin-block-end: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.community-facts__flag {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--danger);
+  font-weight: 600;
+
+  svg {
+    flex: none;
+  }
+}
+
+/* The roster is a disclosure: a community with a dozen moderators must not
+   push its own posts below the fold. */
+.community-facts__mods {
+  summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .relationships-list {
+    margin-block-end: 0;
+  }
+}
+
+.settings-form {
+  display: grid;
+  gap: var(--space-5);
+}
+
+/* A vertical stack of otherwise-independent settings blocks (the Security page:
+   password form, two-factor, sign-in alerts, and the account-access cards). The
+   plain settings body sets no gap, so a page with several sibling forms/sections
+   would have them touch — this gives one even rhythm between them. */
+.settings-stack {
+  display: grid;
+  gap: var(--space-5);
+}
+
+/* A heading-led unit inside the stack: the subheading sits tight above the
+   form/notice it introduces, and the stack's own gap separates whole units. */
+.settings-stack__item {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.settings-subhead {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+/* The push page toggles its alerts form via the hidden attribute; the
+   grid display above would beat the UA's [hidden] rule without this. */
+.settings-form[hidden] {
+  display: none;
+}
+
+.settings-form__group {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+
+  legend {
+    padding-inline: var(--space-2);
+    font-weight: 700;
+  }
+
+  &:disabled {
+    opacity: 0.65;
+  }
+}
+
+.settings-form__group--danger {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border));
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+}
+
+.settings-field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.settings-field__label {
+  font-weight: 600;
+}
+
+.settings-field__hint {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.settings-field__pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--space-3);
+}
+
+/* The standing "times are shown in <zone>" statement, on pages dense in
+   timestamps or carrying a time input. Reads as a hint, not a banner. */
+.zone-chip {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.zone-chip__icon {
+  opacity: 0.7;
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: start;
+  gap: var(--space-3);
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    margin-block-start: 0.2em;
+  }
+
+  &.is-disabled {
+    opacity: 0.65;
+  }
+}
+
+.settings-toggle__text {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.settings-toggle__label {
+  font-weight: 600;
+}
+
+.settings-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.settings-button--danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: white;
+
+  &:hover {
+    background: color-mix(in srgb, var(--danger) 88%, black);
+    border-color: color-mix(in srgb, var(--danger) 88%, black);
+  }
+}
+
+.settings-button--plain {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+
+  &:hover {
+    background: var(--surface-2);
+    text-decoration: none;
+  }
+}
+
+/* ---- Webxdc app sessions --------------------------------------------- */
+
+.webxdc-page { gap: var(--space-4); }
+.webxdc-page__head, .webxdc-player__head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  h1 { margin: 0; overflow-wrap: anywhere; }
+  p { margin-block: var(--space-2) 0; color: var(--text-muted); }
+}
+.webxdc-back { width: fit-content; color: var(--text-muted); font-size: var(--text-sm); }
+.webxdc-eyebrow { margin: 0 0 var(--space-1); color: var(--text-muted); font-size: var(--text-sm); }
+.webxdc-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.webxdc-actions .pill-button { margin: 0; }
+.webxdc-actions .js-only { display: none; }
+.js .webxdc-actions .js-only { display: inline-flex; }
+.webxdc-grid { display: grid; gap: var(--space-3); }
+.webxdc-card, .webxdc-panel, .webxdc-empty {
+  min-width: 0; padding: var(--space-5); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); background: var(--surface);
+}
+.webxdc-card { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.webxdc-card__body { min-width: 0; display: grid; gap: var(--space-2); }
+.webxdc-card__title { font-size: var(--text-lg); overflow-wrap: anywhere; }
+.webxdc-card__title, .webxdc-card__summary, .webxdc-card__meta,
+.webxdc-panel h2, .webxdc-panel p, .webxdc-empty h2, .webxdc-empty p { margin: 0; }
+.webxdc-card__summary, .webxdc-card__meta, .webxdc-muted { color: var(--text-muted); }
+.webxdc-card__meta { font-size: var(--text-sm); }
+.webxdc-badge { display: inline-flex; width: fit-content; padding: 0.2rem var(--space-2); border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent); font-size: var(--text-sm); font-weight: 600; }
+.webxdc-badge--ended { background: var(--surface-2); color: var(--text-muted); }
+.webxdc-panel, .webxdc-empty { display: grid; gap: var(--space-3); }
+.webxdc-empty { padding-block: var(--space-8); text-align: center; }
+.webxdc-launch { justify-items: start; }
+.webxdc-launch .settings-form { width: 100%; }
+a.webxdc-open { background: var(--accent); color: light-dark(#fff, #15191e); border-color: var(--accent); }
+.webxdc-details, .webxdc-advanced { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); min-width: 0; }
+.webxdc-details > summary, .webxdc-advanced > summary { padding: var(--space-4) var(--space-5); cursor: pointer; font-weight: 600; }
+.webxdc-details[open] > summary { border-bottom: 1px solid var(--border); }
+.webxdc-details__body { padding: var(--space-4) var(--space-5); display: grid; gap: var(--space-4); }
+.webxdc-details__body p, .webxdc-details__body h3 { margin: 0; }
+.webxdc-advanced .settings-form__group { border: 0; border-block-start: 1px solid var(--border); }
+.webxdc-facts { display: grid; gap: var(--space-3); margin: 0; }
+.webxdc-facts > div { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: var(--space-3); }
+.webxdc-facts dt { color: var(--text-muted); }
+.webxdc-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.webxdc-share-link { width: 100%; font-size: var(--text-sm); }
+.webxdc-inline-form { display: inline-flex; margin: 0; }
+.webxdc-participant { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; overflow-wrap: anywhere; }
+.webxdc-participant + .webxdc-participant { padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.webxdc-consent { display: flex; align-items: start; gap: var(--space-2); }
+.webxdc-consent input { width: auto; margin-top: .25rem; }
+.webxdc-danger-zone { display: grid; gap: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.webxdc-player { width: min(100%, 75rem); max-width: none; }
+.webxdc-player__head { flex-wrap: wrap; }
+.webxdc-player [hidden] { display: none !important; }
+.webxdc-frame:fullscreen {
+  width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 0;
+}
+.webxdc-player__notice { margin: 0; padding: var(--space-4); border-radius: var(--radius-lg); background: var(--surface-2); }
+.webxdc-frame { display: block; width: 100%; min-height: 75vh; border: 1px solid var(--border); border-radius: var(--radius-lg); background: white; }
+.webxdc-invitation { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2); color: var(--text); text-decoration: none; min-width: 0; }
+.webxdc-invitation:hover { border-color: var(--accent); }
+.webxdc-invitation > span:nth-child(2) { min-width: 0; display: grid; gap: var(--space-1); overflow-wrap: anywhere; }
+.webxdc-invitation__icon { display: grid; place-items: center; padding: var(--space-3); border-radius: var(--radius); background: var(--accent-soft); color: var(--accent); flex-shrink: 0; }
+.webxdc-invitation__arrow { margin-inline-start: auto; }
+.webxdc-invitation .webxdc-muted { font-size: var(--text-sm); }
+@media (max-width: 46rem) {
+  .webxdc-page__head, .webxdc-card { align-items: start; flex-wrap: wrap; }
+  .webxdc-facts > div { grid-template-columns: 1fr; gap: var(--space-1); }
+  .webxdc-frame { min-height: 70vh; }
+  .webxdc-details > summary, .webxdc-details__body { padding: var(--space-4); }
+}
+
+/* On a link (a form row's Cancel/Back secondary action) the plain modifier
+ * also has to supply the box the `button` element rule would give. */
+a.settings-button--plain {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* User lists (web UI): the index of a viewer's lists and each list's header. */
+.list-head {
+  margin-block-end: var(--space-3);
+
+  h1 {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+}
+
+.list-index {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.list-index__item {
+  display: flex;
+  /* A row can carry several controls — the scheduled queue's entry is a label,
+     an excerpt, a reschedule form with a datetime input, and a cancel button.
+     Without wrapping, that line's min-content pushed the card (and the page)
+     past a phone viewport; the inputs have an intrinsic width that will not
+     shrink. */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+
+  /* Flex items refuse to shrink below min-content unless told to. */
+  & > * {
+    min-inline-size: 0;
+  }
+}
+
+.list-index__link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  color: inherit;
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.list-index__manage {
+  flex: none;
+  font-size: 0.9rem;
+}
+
+/* The "add to lists" panel reached from a profile: a column of list toggles. */
+.list-membership {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+/* The "Featured" account collection (endorsements) shown on a profile. */
+/* A silenced account's stripped anonymous profile: handle + notice only. */
+.profile-silenced {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: var(--space-5) var(--space-4);
+}
+
+.profile-silenced__handle {
+  font-size: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.profile-silenced__notice {
+  color: var(--text-muted);
+  max-inline-size: 40rem;
+}
+
+.profile-silenced__link {
+  font-weight: 600;
+}
+
+/* The notice above a silenced account's full profile for logged-in viewers. */
+.profile-silenced-banner {
+  padding: var(--space-3) var(--space-4);
+  margin-block-end: var(--space-4);
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, var(--border));
+  border-radius: var(--radius);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.profile-featured {
+  margin-block: var(--space-4);
+}
+
+.profile-featured__title {
+  font-size: 1rem;
+  margin-block-end: var(--space-2);
+}
+
+.profile-featured__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-2);
+}
+
+/* The profile Media tab: attachments as a tightly packed square-tile wall.
+   A tile is a link to the containing post; JS upgrades image/gifv tiles into
+   the lightbox. */
+.media-wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(9rem, 28vw), 1fr));
+  gap: var(--space-1);
+}
+
+.media-wall__tile {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+
+  img {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+
+  /* A sensitive (or blur-filtered) post's thumbnails stay but blur out;
+     scaling hides the blur's translucent edges. */
+  &.is-sensitive img {
+    filter: blur(24px);
+    transform: scale(1.15);
+  }
+}
+
+/* An attachment with nothing to thumbnail (audio, unknown types). */
+.media-wall__placeholder {
+  display: grid;
+  place-items: center;
+  block-size: 100%;
+  color: var(--text-muted);
+
+  .icon {
+    inline-size: 2rem;
+    block-size: 2rem;
+  }
+}
+
+/* A per-row revoke control sitting inside a table cell — no block margins, and
+   its submit reads as a text link rather than a full button. */
+.settings-inline-form {
+  margin: 0;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--danger);
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+/* The report form rides the settings-form classes; these cover its
+   post picker rows and the cancel/submit footer. */
+.report-form__status-time {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.report-form__status-excerpt {
+  overflow-wrap: anywhere;
+}
+
+.report-form__actions {
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* The post-submission "take action" shortcuts. */
+.report-done__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-block: var(--space-4);
+}
+
+/* The two language checklists on /settings/languages run the whole ~200-entry
+   inventory, so each is folded into a disclosure: closed, the page reads as
+   three short language settings; open, the dense grid below appears. */
+.settings-langs__disclosure {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+
+  &[open] .settings-langs__summary {
+    border-block-end: 1px solid var(--border);
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+  }
+}
+
+/* Flex layout drops the native disclosure marker (it needs `display:
+   list-item`), so the caret is drawn explicitly — same pattern as the nav
+   selector's summary. */
+.settings-langs__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+
+  &:hover {
+    background: var(--surface-hover);
+  }
+}
+
+.settings-langs__summary-text {
+  margin-inline-end: auto;
+}
+
+.settings-langs__caret {
+  display: inline-flex;
+  flex: none;
+  opacity: 0.6;
+  transition: transform var(--transition);
+
+  .icon {
+    inline-size: 1.1rem;
+    block-size: 1.1rem;
+  }
+}
+
+.settings-langs__disclosure[open] .settings-langs__caret {
+  transform: rotate(180deg);
+}
+
+/* "12 selected" / "All languages" — the state you'd otherwise have to open the
+   disclosure to read. */
+.settings-langs__count {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+/* The disclosure's body: the select-all controls and the checklist grid. The
+   list is long enough to bury the Save button, so it scrolls in its own box. */
+.settings-langs__panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  max-block-size: 24rem;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+}
+
+/* The posting-languages checklist: a dense multi-column grid. */
+.settings-langs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: var(--space-2) var(--space-4);
+}
+
+.settings-langs__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+/* The JS-only select-all / deselect-all pair above the checklist. */
+.settings-langs__controls {
+  display: flex;
+  gap: var(--space-2);
+
+  button {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-sm);
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--border);
+  }
+}
+
+/* Data export download list. */
+.export-list {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.export-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.export-list__meta {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.export-list__label {
+  font-weight: 600;
+}
+
+.export-list__download {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+  text-decoration: none;
+  transition: filter var(--transition);
+
+  &:hover {
+    filter: brightness(1.06);
+  }
+
+  & svg {
+    width: 1em;
+    height: 1em;
+  }
+}
+
+/* Data import controls: section headings, the recent-imports action
+   buttons, the review summary and merge/overwrite choices. */
+.settings__subtitle {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+}
+
+.export-list__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.settings-summary {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: var(--space-4) 0;
+
+  & dt {
+    font-weight: 600;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  & dd {
+    margin: 0;
+  }
+}
+
+.settings-field__choice {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+/* The TOTP enrolment QR (its SVG carries a white quiet zone of its own, so it
+   stays scannable in dark mode) and the one-time recovery-code sheet. */
+.two-factor__qr svg {
+  display: block;
+  border-radius: var(--radius);
+}
+
+.two-factor__codes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Security-key list and the JS-revealed add/authenticate controls. */
+.two-factor__keys {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.two-factor__key {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.two-factor__key-name {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.settings-form--inline {
+  margin: 0;
+}
+
+.webauthn-register {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.auth-webauthn {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+@media (max-width: 40rem) {
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding-inline: 0;
+  }
+
+  .settings-field__pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .app-main {
+    padding: var(--space-3) var(--space-3) calc(var(--space-8) + 3.5rem);
+  }
+
+  .status,
+  .notification,
+  .account-card,
+  .compose,
+  .profile,
+  .auth-card {
+    border-radius: var(--radius);
+  }
+
+  .tabbar {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: 0;
+    display: flex;
+    /* `stretch`, not `center`: every slot runs the full height of the bar. */
+    align-items: stretch;
+    /* The bar itself keeps only the safe-area strip below the row (the home
+       indicator). Every other pixel belongs to a tap target — see below. */
+    padding-block-end: env(safe-area-inset-bottom, 0px);
+    /* No backdrop-filter: it would establish a containing block for the
+       drawer's position:fixed scrim, trapping the overlay inside this thin
+       bar. A near-opaque background stands in for the blur. */
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+    border-block-start: 1px solid var(--border);
+    z-index: 10;
+  }
+
+  /* A phone tap is a fingertip, not a cursor: the target is the whole slot,
+     not the icon inside it. Each destination claims an equal share of the bar
+     and its link fills that share edge to edge. The drawer needs both halves
+     of this rule — the <details> claims the slot, its `.tabbar__link` summary
+     fills it. */
+  .tabbar__link,
+  .tabbar .drawer {
+    flex: 1 1 0;
+    min-inline-size: 0;
+  }
+
+  .tabbar .drawer {
+    display: flex;
+  }
+
+  .tabbar__link {
+    display: grid;
+    place-items: center;
+    /* Padding rather than a fixed height, so the row still sizes to the icon.
+       `--space-4` reproduces the bar height the old bar-padding + link-padding
+       pair produced, now entirely inside the target. */
+    padding-block: var(--space-4);
+    color: var(--text-muted);
+    /* The default `+2px` offset would draw the ring outside the bar. */
+    outline-offset: -2px;
+
+    .icon {
+      inline-size: 1.6rem;
+      block-size: 1.6rem;
+    }
+
+    &:hover {
+      color: var(--text);
+    }
+
+    &.tabbar__link--accent {
+      color: var(--accent-contrast);
+      position: relative;
+      isolation: isolate;
+
+      /* The accent pill is painted by a pseudo-element inset from the slot
+         edges, so the highlight keeps its floating-pill shape while the <a>
+         itself still covers the slot corner to corner. */
+      &::before {
+        content: "";
+        position: absolute;
+        inset: var(--space-2);
+        background: var(--accent);
+        border-radius: var(--radius-pill);
+        z-index: -1;
+      }
+    }
+  }
+}
+
+/* ---- Mobile drawer ---------------------------------------------------- */
+
+/* The drawer only ever renders inside the tab bar, which is mobile-only, so
+   these rules are inert on desktop. `<details>` hides the scrim until open. */
+.drawer__toggle {
+  list-style: none;
+  cursor: pointer;
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+}
+
+.drawer__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  background: color-mix(in srgb, var(--text) 45%, transparent);
+  animation: drawer-fade var(--transition) ease;
+}
+
+.drawer__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  inline-size: min(20rem, 82vw);
+  block-size: 100%;
+  max-block-size: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-5) var(--space-4)
+    calc(var(--space-5) + env(safe-area-inset-bottom, 0px));
+  background: var(--surface);
+  border-inline-end: 1px solid var(--border);
+  box-shadow: 0 0 40px rgb(0 0 0 / 0.3);
+  animation: drawer-slide var(--transition) ease;
+
+  /* The ≤56rem breakpoint collapses the desktop sidebar to an icon-only rail —
+     hiding labels and the account block and centering the icons. The drawer is
+     a full menu, so it opts back into labels, left alignment and the account
+     row (these two-class selectors outrank the breakpoint's one-class rules). */
+  .brand__name,
+  .nav-link__label,
+  .compose-btn span {
+    display: inline;
+  }
+
+  .brand,
+  .nav-link,
+  .compose-btn {
+    justify-content: flex-start;
+  }
+
+  /* Unlike the desktop sidebar, the account row sits directly under the nav —
+     no auto-spacer pushing it to the bottom, so no big empty gap. */
+  .account {
+    display: flex;
+    margin-block-start: var(--space-2);
+  }
+}
+
+@keyframes drawer-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes drawer-slide {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+/* ---- Admin dashboard -------------------------------------------------- */
+
+.admin__title {
+  margin-block: var(--space-2) var(--space-4);
+}
+
+.admin__lead {
+  color: var(--text-muted);
+  margin-block-end: var(--space-4);
+}
+
+.admin__stats {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.admin-update {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.admin-update--urgent {
+  border-color: var(--danger, #b3261e);
+}
+
+.admin-update__label {
+  font-weight: 600;
+}
+
+.admin-update__link {
+  font-size: var(--text-sm);
+}
+
+.admin-stat {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: inherit;
+}
+
+.admin-stat__value {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  /* Version strings ("6.1.1-3ubuntu5") can outgrow the narrowest tile track:
+     break rather than overflow the card. */
+  overflow-wrap: anywhere;
+}
+
+.admin-stat__label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.admin-stat--link:hover {
+  text-decoration: none;
+  border-color: var(--accent);
+}
+
+.admin-stat__delta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-dashboard__heading {
+  margin-block-start: var(--space-5);
+}
+
+.admin-dashboard__dimensions {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-block-start: var(--space-4);
+}
+
+/* Remote-history operations: a compact health summary, two clear controls,
+   then diagnostics that stay readable as the origin lists grow. */
+.admin-history__intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-block-end: var(--space-4);
+
+  & .admin__lead {
+    margin-block-end: var(--space-1);
+  }
+}
+
+.admin-history__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(15rem, 1fr);
+  gap: var(--space-3);
+  margin-block-start: var(--space-4);
+}
+
+.admin-history__card,
+.admin-history__section {
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+
+  & h3 {
+    margin-block: 0 var(--space-3);
+  }
+}
+
+.admin-history__card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+
+  & > label:not(.admin-check) {
+    display: grid;
+    gap: var(--space-1);
+    margin-block-start: var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  & > .admin-check {
+    align-self: flex-start;
+  }
+
+  & .admin-actions {
+    margin-block: auto 0;
+    padding-block-start: var(--space-3);
+  }
+}
+
+.admin-history__number {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+
+  & input {
+    inline-size: 7rem;
+  }
+}
+
+.admin-history__section {
+  margin-block-start: var(--space-4);
+
+  & > .table-scroll:last-child,
+  & > .admin-history__reasons:last-child {
+    margin-block-end: 0;
+  }
+}
+
+.admin-history__metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+
+  & > div {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-2);
+    border-radius: var(--radius);
+  }
+
+  & dt {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+
+  & dd {
+    margin: 0;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.admin-history__reasons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  & li {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-2);
+    border-radius: var(--radius);
+  }
+
+  & strong {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (max-width: 44rem) {
+  .admin-history__controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-dimension__value {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The dashboard "Server" facts (build/version/storage): a key–value text list
+   rather than headline stat tiles — long version strings and target triples
+   read badly as big numbers. */
+.admin-meta {
+  margin-block-start: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.admin-meta__row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 12rem) 1fr;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-4);
+
+  & + & {
+    border-block-start: 1px solid var(--border);
+  }
+}
+
+.admin-meta dt {
+  color: var(--text-muted);
+}
+
+.admin-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.role-swatch {
+  display: inline-block;
+  inline-size: 0.75em;
+  block-size: 0.75em;
+  border-radius: 50%;
+}
+
+.admin-tos__text,
+.static-page__text {
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.static-page__text {
+  white-space: normal;
+}
+
+.admin-flash {
+  padding: var(--space-3) var(--space-4);
+  margin-block-end: var(--space-4);
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  color: var(--accent);
+  font-weight: 600;
+
+  &.is-error {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+}
+
+/* The federation-debug fetch dump: a fetched actor/thread can be thousands of
+   lines, so it scrolls both ways inside its own box (width invariant). */
+.admin-debug__json {
+  max-inline-size: 100%;
+  max-block-size: 32rem;
+  overflow: auto;
+  scrollbar-width: thin;
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: 0.85em;
+}
+
+.admin-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-block: var(--space-4);
+
+  /* Inline checkboxes keep their own `.admin-check` row layout — the grid
+     here would stack the box on top of its text. */
+  & label:not(.admin-check) {
+    display: grid;
+    gap: var(--space-1);
+    font-size: 0.85em;
+    color: var(--text-muted);
+  }
+}
+
+/* The scroll container every data table is wrapped in (`view::data_table`).
+   It is the ONE place a table's horizontal overflow is resolved: the table
+   below keeps its natural column widths and this box scrolls. Being an
+   `overflow-x: auto` box its own min-content width is zero, so it can never
+   push the page past the viewport (width invariant) no matter how wide the
+   table inside gets.
+
+   The scroll affordance is pure CSS: the two `local` gradients scroll with the
+   content and cover the two `scroll` shadow gradients pinned to the box edges,
+   so a shadow only shows on a side that still has content off-screen. The
+   cover colour must match the box's own background for the trick to read. The
+   shadows are linear, not the usual `radial-gradient(farthest-side …)`: a
+   radial gradient's vertical radius grows with the box, so on a table a few
+   thousand pixels tall it faded to nothing everywhere except the vertical
+   middle (measured — the edge pixel differed from the background by 1/255). */
+.table-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(to right, var(--surface) 45%, transparent),
+    linear-gradient(to left, var(--surface) 45%, transparent),
+    linear-gradient(to right, var(--table-shadow), transparent),
+    linear-gradient(to left, var(--table-shadow), transparent);
+  background-position:
+    left center,
+    right center,
+    left center,
+    right center;
+  background-size:
+    2.5rem 100%,
+    2.5rem 100%,
+    1rem 100%,
+    1rem 100%;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* The generic data table — despite the name it's shared by the user-facing
+   settings pages (sessions, invites, aliases, featured hashtags) too. Always
+   rendered inside `.table-scroll` above; never style it to fit a narrow box. */
+.admin-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  /* The table is the scroller's content, so it may exceed the box — but it
+     should still fill it when the columns are narrow. */
+  background: transparent;
+
+  & th,
+  & td {
+    padding: var(--space-2) var(--space-3);
+    text-align: start;
+    border-block-end: 1px solid var(--border);
+    vertical-align: top;
+    /* `break-word`, deliberately NOT `anywhere`: only `anywhere` counts
+       toward a column's min-content width, which let a crowded table be
+       squeezed to nothing and wrap cell text one letter per line. With
+       `break-word` the columns keep their natural width, the table overflows,
+       and `.table-scroll` scrolls it — while a single word too long for its
+       line still breaks instead of stretching the table forever. */
+    overflow-wrap: break-word;
+  }
+
+  & thead th {
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    /* Headers are short labels ("Role", "Signed up"). Wrapping them makes the
+       header band taller than the rows it labels for no gain — let them set
+       the column width and scroll with everything else. */
+    white-space: nowrap;
+  }
+
+  /* The wrapper already draws the bottom edge; a border here would double it. */
+  & tbody tr:last-child :is(th, td) {
+    border-block-end: 0;
+  }
+
+  & tbody tr:hover {
+    background: var(--surface-hover);
+  }
+
+  /* Machine values — handles, domains, URLs, client secrets — have no length
+     limit worth trusting, and `break-word` above keeps a whole unbroken token
+     in the column's min-content width. One 100-character handle would
+     therefore set its column to 100 characters and push every other column
+     off several screens. Capping the value's own box bounds that: the column
+     never demands more than this, and the token wraps inside it. Measured on
+     /admin/accounts with such a handle: the table goes from 1085px to 534px
+     at 390px wide, and from 1259px to fitting exactly on desktop, with no
+     other table's width changed at all. */
+  & :is(a, code, samp) {
+    display: inline-block;
+    max-inline-size: 18rem;
+  }
+
+  /* Short label cells (Local/Remote, status badges, role names, timestamps):
+     never wrap at all. */
+  & td.is-tight,
+  & th.is-tight {
+    white-space: nowrap;
+  }
+
+  /* Counts and other figures read as columns when they share a digit width. */
+  & td.is-num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* Phone-sized: tighter cells and smaller type fit more columns before the
+     wrapper has to scroll. */
+  @media (max-width: 40rem) {
+    font-size: var(--text-sm);
+
+    & th,
+    & td {
+      padding: var(--space-2);
+    }
+  }
+}
+
+.admin-table__sub {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.admin-table__account {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.admin-table__avatar {
+  inline-size: 2rem;
+  block-size: 2rem;
+  border-radius: var(--radius-pill);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.admin-table__links {
+  display: block;
+  font-size: 0.85em;
+
+  & a {
+    color: var(--text-muted);
+  }
+}
+
+.admin-pager {
+  margin-block: var(--space-4);
+}
+
+.admin-badge {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 0.75em;
+  font-weight: 700;
+  white-space: nowrap;
+
+  &.is-suspended,
+  &.is-disabled {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  }
+
+  &.is-silenced,
+  &.is-pending {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  }
+}
+
+.admin-back {
+  margin-block-end: var(--space-3);
+}
+
+.admin-detail__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+
+  & h3 {
+    margin: 0;
+  }
+}
+
+.admin-detail__avatar {
+  inline-size: 3rem;
+  block-size: 3rem;
+  border-radius: var(--radius-pill);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.admin-detail__grid {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin-block: var(--space-3);
+
+  & dt {
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  & dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.admin-signup {
+  margin-block: var(--space-5);
+}
+
+.admin-signup__reason {
+  white-space: pre-wrap;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block: var(--space-4);
+
+  & > .pill-button {
+    margin-block-end: 0;
+  }
+}
+
+.admin-form,
+.admin-notes,
+.admin-strikes,
+.admin-list {
+  margin-block: var(--space-5);
+}
+
+.admin-form textarea,
+.admin-notes textarea {
+  width: 100%;
+  margin-block: var(--space-2);
+}
+
+/* Stack each field's label text above its control so the label and value don't
+   run together (the "All day" / "Status ids" mash). Inline checkboxes keep
+   their own `.admin-check` layout. */
+.admin-form label:not(.admin-check) {
+  display: grid;
+  gap: var(--space-1);
+  margin-block: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.admin-form__grid label:not(.admin-check) {
+  /* The grid's own gap spaces these; drop the per-label block margin. */
+  margin-block: 0;
+
+  /* Cells in one row are as tall as the tallest hint, and a stretched label
+     would spread its own label/control/hint rows over that height — leaving
+     the inputs of a row at different heights. Pack each cell from the top so
+     a control always sits directly under its own label. */
+  align-content: start;
+}
+
+.admin-form label:not(.admin-check) input:not([type="checkbox"], [type="radio"]),
+.admin-form label:not(.admin-check) select {
+  inline-size: 100%;
+}
+
+.admin-form__group {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  margin-block: var(--space-3);
+  border: 0;
+}
+
+.admin-form__grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.admin-form__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.admin-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: fit-content;
+  color: var(--text-muted);
+}
+
+.admin-record {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin-block: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+
+  /* The record's grid gap spaces its children; the page-level block margins
+     these classes carry would otherwise pile on top of it (a huge void above
+     the heading and between Save and Delete). */
+  & :is(.admin-form, .admin-filter, .admin-actions) {
+    margin-block: 0;
+  }
+}
+
+.admin-record__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+
+  /* A record head leads with a machine value — a relay inbox URL, an audit
+     target — that has no break opportunity, next to a `nowrap` badge. Let the
+     value shrink and break so the pair wraps instead of pushing the card past
+     the viewport. */
+  & > :first-child {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* A one-line stats readout under a record head (relay activity counters). */
+.admin-record__stats {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+/* The "Open in Plamenu" jump on a trends review record's head. */
+.admin-record__open {
+  flex-shrink: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* ---- Collapsible settings groups (admin/settings.rs) ------------------ *
+ * The instance settings page is ~90 knobs. Each group is a <details> with its
+ * own form and Save button, so the page opens as a short index of headings
+ * and a submit only ever writes the group it belongs to. Everything is
+ * collapsed by default; the save redirect re-expands the group it wrote. */
+
+.admin-sections__intro {
+  margin-block-end: var(--space-4);
+}
+
+.admin-sections {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.admin-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.admin-section__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  list-style: none;
+  border-radius: var(--radius);
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+
+  &:hover {
+    background: var(--surface-2);
+  }
+}
+
+.admin-section[open] > .admin-section__summary {
+  border-block-end: 1px solid var(--border);
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.admin-section__heading {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+.admin-section__title {
+  font-weight: 600;
+}
+
+.admin-section__blurb {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.admin-section__caret {
+  display: inline-flex;
+  flex: none;
+  margin-inline-start: auto;
+  opacity: 0.6;
+  transition: transform var(--transition);
+
+  .icon {
+    inline-size: 1.1rem;
+    block-size: 1.1rem;
+  }
+}
+
+.admin-section[open] > .admin-section__summary .admin-section__caret {
+  transform: rotate(180deg);
+}
+
+.admin-section__body {
+  padding: 0 var(--space-4) var(--space-4);
+
+  /* The panel's own padding spaces the first control; the form's page-level
+     block margin would pile a void on top of it. */
+  & > .admin-form:first-child,
+  & > .admin-list:first-child {
+    margin-block-start: var(--space-4);
+  }
+}
+
+/* A sub-heading grouping fields inside one section (an encoder's parameters,
+   the remote-video knobs) — quieter than the page's own headings. */
+.admin-section__label {
+  margin-block: var(--space-4) 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* A control that only qualifies the one directly above it (the landing page's
+   statistics block, the People directory's remote scope). Indented so the pair
+   reads as one decision — the only cue there is with JS off, where nothing is
+   ever hidden. */
+.admin-form__nested {
+  padding-inline-start: var(--space-4);
+  border-inline-start: 2px solid var(--border);
+}
+
+/* JS-only: a field whose governing option is not selected (`data-show-when`
+   in app.js). It stays in the form — hidden, not disabled — so its stored
+   value still round-trips through a save. The selector matches
+   `.admin-form label:not(.admin-check)`'s weight and comes later in the
+   sheet, so it wins the display race; with JS off nothing carries the class
+   and every field is visible. */
+.admin-form label.is-collapsed,
+.admin-form .is-collapsed {
+  display: none;
+}
+
+/* A read-only post preview inside a trends review record: shed the card chrome
+   so it reads as the record's body rather than a card nested inside a card. */
+.admin-trend-preview .status {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.admin-emoji__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+
+  & > div {
+    min-inline-size: 0;
+  }
+
+  & strong {
+    overflow-wrap: anywhere;
+  }
+}
+
+.admin-emoji__preview {
+  inline-size: 3rem;
+  block-size: 3rem;
+  object-fit: contain;
+  image-rendering: auto;
+  flex: none;
+}
+
+/* Keep the custom-emoji overview's title aligned with its action row. */
+.admin-emoji-overview > .admin-record__head h3 {
+  margin: 0;
+}
+
+/* Editable emoji cards share one responsive form grammar: controls are
+   aligned in columns while there is room, then become an ordinary vertical
+   form before labels or buttons can be squeezed. */
+.admin-emoji__edit,
+.admin-emoji__moderation {
+  display: grid;
+  align-items: end;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.admin-emoji__edit {
+  grid-template-columns: minmax(0, 1fr) minmax(min(14rem, 100%), 0.8fr);
+}
+
+.admin-emoji__moderation {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) max-content;
+
+  & > .admin-check {
+    align-self: center;
+    padding-block: var(--space-2);
+  }
+}
+
+.admin-emoji__field {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+
+  & input {
+    min-inline-size: 0;
+  }
+}
+
+.admin-emoji__badges,
+.admin-emoji__actions {
+  margin-block: 0;
+}
+
+.admin-emoji__actions {
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.admin-emoji__promotion {
+  display: grid;
+  gap: var(--space-2);
+  padding-block-start: var(--space-3);
+  border-block-start: 1px solid var(--border);
+}
+
+.admin-emoji__promote {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) max-content;
+  align-items: end;
+  gap: var(--space-3);
+  min-inline-size: 0;
+
+  & button {
+    white-space: nowrap;
+  }
+}
+
+.custom-emoji__lead {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.custom-emoji__collection > .admin-record,
+.custom-emoji__candidates > .admin-record {
+  margin-block: 0;
+}
+
+@media (max-width: 40rem) {
+  .admin-emoji__edit,
+  .admin-emoji__moderation,
+  .admin-emoji__promote {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .admin-emoji__moderation > .admin-check {
+    justify-self: start;
+  }
+
+  .admin-emoji__promote button {
+    justify-self: start;
+    white-space: normal;
+  }
+
+  .admin-emoji__actions {
+    justify-content: flex-start;
+  }
+}
+
+/* Category headings between emoji groups in the admin listing. */
+.admin-emoji__category {
+  margin-block: var(--space-4) var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* The borrow review is a selectable gallery rather than the one-row-per-emoji
+   maintenance list. Cards collapse to one column before their category input
+   or long shortcode can create horizontal overflow. */
+.admin-borrow-emojis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+  gap: var(--space-3);
+}
+
+.admin-borrow-emoji {
+  align-content: start;
+  margin-block: 0;
+}
+
+.admin-borrow-emoji__choice {
+  inline-size: 100%;
+  min-inline-size: 0;
+  color: var(--text);
+  cursor: pointer;
+
+  & > input {
+    flex: none;
+  }
+}
+
+.admin-upload__current {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.admin-upload__preview {
+  max-inline-size: 12rem;
+  max-block-size: 6rem;
+  object-fit: contain;
+}
+
+.auth-card__mascot {
+  display: block;
+  margin-inline: auto;
+  max-block-size: 8rem;
+  object-fit: contain;
+}
+
+.admin-danger {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+.admin-notes__list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.admin-note {
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.admin-note__body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-note__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-block-start: var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.admin-strikes__list {
+  display: grid;
+  gap: var(--space-2);
+  padding-inline-start: var(--space-4);
+}
+
+.admin-report__comment p,
+.admin-report__cw {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.admin-report__cw {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.admin-report__statuses {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.admin-report__status {
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.admin-report__statuslink {
+  margin-block-end: 0;
+  font-size: 0.85em;
+}
+
+.admin-report__hint {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+/* ---- M28: media preview, sensitive gating, follow lists -------------- */
+
+/* Image thumbnails link to the full-size file; keep them block so the link
+   wraps the picture cleanly. */
+.media__link {
+  display: block;
+}
+
+/* Sensitive media is collapsed behind a toggle until the viewer opens it. */
+.status__media-sensitive {
+  margin-block: var(--space-2);
+}
+
+.status__media-sensitive > summary {
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-weight: 600;
+  list-style: none;
+}
+
+.status__media-sensitive > summary::-webkit-details-marker {
+  display: none;
+}
+
+.status__media-sensitive[open] > summary {
+  margin-block-end: var(--space-2);
+}
+
+/* ---- Filters --------------------------------------------------------- */
+
+/* A warn-filter match collapses the post body behind this bar; the whole
+   summary is the no-JS "show anyway" toggle. */
+.status__filtered {
+  margin-block-start: var(--space-3);
+}
+
+.status__filtered > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-weight: 600;
+  list-style: none;
+}
+
+.status__filtered > summary::-webkit-details-marker {
+  display: none;
+}
+
+.status__filtered-show {
+  font-weight: 400;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.status__filtered[open] > summary {
+  margin-block-end: var(--space-2);
+}
+
+.status__filtered[open] > summary .status__filtered-show {
+  display: none;
+}
+
+/* ---- Media badges + lightbox ----------------------------------------- */
+
+/* Media chips sit in the top-left, away from playback controls. */
+.media__badges {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  display: flex;
+  gap: var(--space-1);
+  pointer-events: none;
+}
+
+.media__badge {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius);
+  background: rgb(0 0 0 / 0.65);
+  color: #fff;
+  pointer-events: auto;
+  cursor: default;
+}
+
+/* A broadcast that is on air right now. Red rather than the neutral chip so
+   it reads at a glance as the one badge that is about *time*, not content. */
+.media__badge--live {
+  /* A fixed red, not the themed --danger: this chip always sits on video, so
+     it needs the same contrast against white text in either colour scheme. */
+  background: #c8102e;
+  color: #fff;
+}
+
+.media__badge--live::before {
+  content: "";
+  display: inline-block;
+  inline-size: 0.45em;
+  block-size: 0.45em;
+  margin-inline-end: 0.35em;
+  border-radius: 50%;
+  background: currentcolor;
+  vertical-align: baseline;
+}
+
+/* A live that is not on air: the poster, dimmed, with the reason over it.
+   No player element at all — there is nothing it could play. */
+.media--live-offline img {
+  filter: brightness(0.55);
+}
+
+.media__live-state {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  padding: var(--space-2);
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.75), transparent);
+}
+
+/* An autoplaying gifv tile opens the lightbox under JS. */
+.js .media__gifv {
+  cursor: pointer;
+}
+
+/* Overlaid while a remote video warms up (first play triggers the download;
+   script swaps the source in when the cached copy lands). */
+.media__preparing {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius);
+  background: rgb(0 0 0 / 0.65);
+  color: #fff;
+  pointer-events: none;
+}
+
+/* When a video also has badges, keep its transient preparation notice on the
+   next line instead of stacking both overlays in the same top-left spot. */
+.media__badges ~ .media__preparing {
+  inset-block-start: var(--space-8);
+}
+
+/* HLS video (PeerTube): app.js appends the quality <select> over the player's
+   top-right corner once hls.js reports more than one rendition. */
+.media--video {
+  position: relative;
+}
+.video-quality {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
+  max-inline-size: 7rem;
+  font-size: 0.8125rem;
+  padding: 0.1rem 0.35rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: rgb(0 0 0 / 0.65);
+  color: #fff;
+  opacity: 0.85;
+  cursor: pointer;
+}
+
+/* The JS lightbox: a full-viewport dialog over a near-black backdrop. It is
+   built and shown by script only, so no no-JS state needs styling. */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: rgb(0 0 0 / 0.92);
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.lightbox__stage {
+  position: relative;
+  flex: 1;
+  min-block-size: 0;
+  overflow: hidden;
+  /* All panning/pinching is handled in script. */
+  touch-action: none;
+}
+
+/* Three viewport-width slides keep the previous/current/next media under one
+   pointer-controlled track. Only those neighbours are loaded, even when the
+   source is a long profile media wall. */
+.lightbox__track {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  inline-size: 100%;
+  block-size: 100%;
+  transform: translate3d(-100%, 0, 0);
+  will-change: transform;
+
+  &.is-animating {
+    transition: transform 220ms cubic-bezier(0.22, 0.75, 0.25, 1);
+  }
+}
+
+.lightbox__slide {
+  flex: 0 0 100%;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* The displayed image or gifv clip. A plain click closes the dialog, so no
+   zoom cursor — zooming is wheel/pinch; grab signals panning once zoomed. */
+.lightbox__media {
+  max-inline-size: 100%;
+  max-block-size: 100%;
+  user-select: none;
+  -webkit-user-drag: none;
+
+  &.is-zoomed {
+    cursor: grab;
+  }
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+/* gifv clips are small by nature: letterbox them up to the stage instead of
+   floating at intrinsic size. */
+.lightbox__media--video {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+}
+
+.lightbox__button {
+  position: absolute;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  opacity: 0.78;
+  cursor: pointer;
+  filter: drop-shadow(0 1px 3px rgb(0 0 0 / 0.85));
+  transition: background-color 120ms ease, opacity 120ms ease;
+
+  svg {
+    display: block;
+    inline-size: 1.6rem;
+    block-size: 1.6rem;
+    fill: none;
+    stroke: currentcolor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: rgb(0 0 0 / 0.38);
+    opacity: 1;
+  }
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.lightbox__close {
+  inset-block-start: var(--space-3);
+  inset-inline-end: var(--space-3);
+  background: rgb(0 0 0 / 0.34);
+  opacity: 0.9;
+
+  svg {
+    inline-size: 1.35rem;
+    block-size: 1.35rem;
+  }
+}
+
+.lightbox__nav--prev {
+  inset-inline-start: var(--space-3);
+  inset-block-start: 50%;
+  translate: 0 -50%;
+}
+
+.lightbox__nav--next {
+  inset-inline-end: var(--space-3);
+  inset-block-start: 50%;
+  translate: 0 -50%;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .lightbox__nav {
+    opacity: 0.58;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lightbox__track.is-animating {
+    transition: none;
+  }
+}
+
+.lightbox__meta {
+  padding: var(--space-3) var(--space-4);
+  text-align: center;
+  color: #ccc;
+
+  .lightbox__counter {
+    display: block;
+    font-size: 0.8125rem;
+    color: #999;
+  }
+
+  /* Collapsed to a couple of lines so a long description can never squeeze
+     the image out of the stage; the toggle below expands it into a
+     scrollable panel capped well short of the viewport. */
+  .lightbox__alt {
+    margin: var(--space-1) 0 0;
+    max-inline-size: 60ch;
+    margin-inline: auto;
+    font-size: 0.9375rem;
+    overflow-wrap: break-word;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+
+    &.is-expanded {
+      display: block;
+      -webkit-line-clamp: none;
+      line-clamp: none;
+      max-block-size: 40vh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      text-align: start;
+    }
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  .lightbox__alt-toggle {
+    display: inline-block;
+    margin-block-start: var(--space-1);
+    padding: 0;
+    border: none;
+    background: none;
+    color: #fff;
+    font-size: 0.8125rem;
+    text-decoration: underline;
+    cursor: pointer;
+
+    &[hidden] {
+      display: none;
+    }
+  }
+
+  /* Media-wall tiles carry the containing post's URL through the lightbox. */
+  .lightbox__post {
+    display: inline-block;
+    margin-block-start: var(--space-1);
+    color: #fff;
+    font-weight: 600;
+    text-decoration: underline;
+
+    &[hidden] {
+      display: none;
+    }
+  }
+}
+
+/* The reacted emoji shown inline in an emoji-reaction notification. */
+.notification__emoji {
+  font-size: 1.1em;
+}
+
+/* Back-to-profile link above the follow lists. */
+.profile__back {
+  margin-block-end: var(--space-3);
+}
+
+.profile__back a {
+  color: var(--text-muted);
+  font-weight: 600;
+  /* "← <display name>" must ellipsize rather than stretch the page. */
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* In standalone mode `viewport-fit=cover` lets the app paint through device
+   cutouts and home-indicator areas. Keep actual controls/content inside those
+   insets while preserving the ordinary browser layout when not installed. */
+@media (display-mode: standalone) {
+  .sidebar {
+    padding-block-start: calc(var(--nav-edge) + env(safe-area-inset-top, 0px));
+  }
+
+  .focused-main {
+    padding-block-start: calc(var(--space-4) + env(safe-area-inset-top, 0px));
+    padding-block-end: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .drawer__panel {
+    padding-block-start: calc(var(--space-5) + env(safe-area-inset-top, 0px));
+  }
+}
+
+@media (display-mode: standalone) and (max-width: 40rem) {
+  .app-main {
+    padding-block-start: calc(var(--space-3) + env(safe-area-inset-top, 0px));
+    padding-block-end: calc(
+      var(--space-8) + 3.5rem + env(safe-area-inset-bottom, 0px)
+    );
+  }
+}
+
+/* Typed composer fields remain visible outside toolbar sections. */
+.compose__type-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.compose__kind { flex: 0 0 auto; }
+.compose__kind select {
+  width: 9rem;
+  max-width: 100%;
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+.compose__compatibility {
+  min-width: 0;
+  padding-block-start: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.compose__compatibility summary { cursor: pointer; }
+.compose__compatibility ul {
+  margin-block: var(--space-2) 0;
+  padding-inline-start: 1.2em;
+}
+.compose__compatibility li + li { margin-block-start: var(--space-2); }
+.compose__type-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.compose__event-dates,
+.compose__event-address {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.compose__event-dates > :last-child {
+  grid-column: 1 / -1;
+}
+.compose__event-body {
+  padding-block: var(--space-3);
+  border-block-start: 1px solid var(--border);
+}
+.compose [hidden],
+.compose-form [hidden] {
+  display: none !important;
+}
+@media (max-width: 480px) {
+  .compose__event-dates,
+  .compose__event-address {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+} /* @layer app */
+
+.profile-identity-proofs { padding: 1rem; overflow-wrap: anywhere; }

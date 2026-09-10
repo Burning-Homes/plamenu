@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1 FROM username_blocks\n            WHERE allow_with_approval = $2\n              AND ((exact AND normalized_username = $1)\n                   OR (NOT exact AND $1 LIKE '%' || normalized_username || '%'))\n        ) AS \"hit!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hit!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "90d230793dadcbabbd3e29ed7b03de3eddf5b7f79afa6d7dad19fd3d578a8dbc"
+}

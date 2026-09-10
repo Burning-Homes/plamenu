@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE site_uploads SET description = $2, updated_at = now() WHERE var = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0d74a7fba9825ce5490908cb6d5c995765e6fc6f29ffd6ed1e0965c39d19ca38"
+}

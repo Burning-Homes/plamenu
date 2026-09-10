@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE remote_history_settings SET\n               enabled = $1, retention_days = $2, bare_iri_enabled = $3,\n               updated_at = now()\n           WHERE singleton\n           RETURNING enabled, retention_days, bare_iri_enabled, updated_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "remote_history_settings",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "retention_days",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "remote_history_settings",
+            "name": "retention_days"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "bare_iri_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "remote_history_settings",
+            "name": "bare_iri_enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_history_settings",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Int4",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "173a2a65311ab23203a2fcf5b6acfeb26c9dda1f8198e319f98d45fd88d4228d"
+}

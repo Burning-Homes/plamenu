@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO markers (user_id, timeline, last_read_id, version)\n        VALUES ($1, $2, $3, 1)\n        ON CONFLICT (user_id, timeline) DO UPDATE\n        SET last_read_id = EXCLUDED.last_read_id,\n            version = markers.version + 1,\n            updated_at = now()\n        WHERE markers.last_read_id < EXCLUDED.last_read_id\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a08dbb467578df67f7da5feacdf32890da00b8467bf2c72d8a25f20947ed9091"
+}

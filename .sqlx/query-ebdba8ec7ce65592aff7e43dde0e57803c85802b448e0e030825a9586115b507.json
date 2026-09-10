@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT l.id AS \"list_id!\", l.account_id AS \"owner_id!\"\n        FROM lists l\n        JOIN statuses s ON s.id = $2\n        JOIN list_accounts la ON la.list_id = l.id AND la.account_id = s.account_id\n        LEFT JOIN follows mf ON mf.id = la.follow_id\n        WHERE l.id = ANY($1)\n          AND (la.follow_id IS NULL OR NOT mf.pending)\n          AND s.deleted_at IS NULL -- STUBFILTER (a stub is never a newly-delivered status; kept for the marker census)\n          AND s.ingest_provenance = 'delivery'\n          AND s.visibility <> 'direct'\n          AND NOT account_hidden(l.account_id, s.account_id)\n          AND (s.reblog_of_id IS NULL OR NOT account_hidden(\n                 l.account_id,\n                 (SELECT t.account_id FROM statuses t WHERE t.id = s.reblog_of_id)))\n          AND (s.in_reply_to_id IS NULL OR EXISTS (\n                 SELECT 1 FROM statuses p\n                 WHERE p.id = s.in_reply_to_id\n                   AND (p.account_id = s.account_id\n                        OR p.account_id = l.account_id\n                        OR (l.replies_policy = 'followed' AND EXISTS (\n                              SELECT 1 FROM follows rf\n                              WHERE rf.account_id = l.account_id\n                                AND rf.target_account_id = p.account_id\n                                AND NOT rf.pending))\n                        OR (l.replies_policy = 'list' AND EXISTS (\n                              SELECT 1 FROM list_accounts ra\n                              WHERE ra.list_id = l.id\n                                AND ra.account_id = p.account_id)))))\n          AND (mf.id IS NULL OR ((s.reblog_of_id IS NULL OR mf.show_reblogs)\n               AND (s.language IS NULL OR mf.languages IS NULL\n                    OR s.language = ANY(mf.languages))))\n          -- Per-follow `with_replies`; the live half of the\n          -- timeline queries' copy above.\n          AND (mf.id IS NULL OR mf.with_replies\n               OR ((s.in_reply_to_id IS NULL\n                    OR s.in_reply_to_account_id = s.account_id\n                    OR s.in_reply_to_account_id = l.account_id\n                    OR EXISTS (SELECT 1 FROM follows rf\n                               WHERE rf.account_id = l.account_id\n                                 AND rf.target_account_id = s.in_reply_to_account_id\n                                 AND NOT rf.pending))\n                   AND (s.reblog_of_id IS NULL OR NOT EXISTS (\n                          SELECT 1 FROM statuses bt\n                          WHERE bt.id = s.reblog_of_id\n                            AND bt.in_reply_to_id IS NOT NULL))))\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "list_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "lists",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "owner_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "lists",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "ebdba8ec7ce65592aff7e43dde0e57803c85802b448e0e030825a9586115b507"
+}

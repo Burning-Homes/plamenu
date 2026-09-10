@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO remote_group_moderators (group_account_id, account_id, ordinal)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (group_account_id, account_id) DO UPDATE SET ordinal = excluded.ordinal\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ef6401e7a75ea9c941c33380e9f50d5631c4b02d41352f306a06ed44d5337b35"
+}

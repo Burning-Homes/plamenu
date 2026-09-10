@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE follows f\n            SET with_replies = false\n            FROM accounts a\n            WHERE a.id = f.target_account_id\n              AND (a.actor_type = 'Group' OR a.is_bot)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "47c2609c1fc67702e58e55c66c022403e5bd70ecb9ad7c78ee387f141e6d7ed5"
+}

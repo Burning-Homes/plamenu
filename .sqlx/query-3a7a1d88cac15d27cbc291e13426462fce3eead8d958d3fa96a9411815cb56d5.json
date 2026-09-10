@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT v.viewer AS \"viewer!\"\n        FROM unnest($1::bigint[]) AS v(viewer)\n        WHERE (v.viewer = $2 OR EXISTS (\n                  SELECT 1 FROM follows f\n                  WHERE f.account_id = v.viewer\n                    AND f.target_account_id = $2 AND NOT f.pending))\n          AND NOT account_hidden(v.viewer, $2)\n          AND ($3::bigint IS NULL OR NOT account_hidden(v.viewer, $3))\n          AND (v.viewer = $2 OR NOT EXISTS (\n                  SELECT 1 FROM list_accounts la\n                  JOIN lists l ON l.id = la.list_id\n                  WHERE l.account_id = v.viewer AND l.exclusive\n                    AND la.account_id = $2))\n          AND (v.viewer = $2 OR NOT EXISTS (\n                  SELECT 1 FROM follows sf\n                  WHERE sf.account_id = v.viewer AND sf.target_account_id = $2\n                    AND NOT sf.pending\n                    AND (($3::bigint IS NOT NULL AND NOT sf.show_reblogs)\n                         OR ($4::text IS NOT NULL AND sf.languages IS NOT NULL\n                             AND $4 <> ALL (sf.languages))\n                         -- Per-follow `with_replies`, in the same\n                         -- follow probe rather than a second one. Kept in step\n                         -- with home arm A's row filter: the boost arm first,\n                         -- then the three exemptions.\n                         OR (NOT sf.with_replies\n                             AND ($6\n                                  OR ($5::bigint IS NOT NULL AND NOT EXISTS (\n                                        SELECT 1 FROM statuses p -- STUBKEEP: delivery-time probe on a live post\n                                        WHERE p.id = $5\n                                          AND (p.account_id = $2\n                                               OR p.account_id = v.viewer\n                                               OR EXISTS (\n                                                   SELECT 1 FROM follows rf\n                                                   WHERE rf.account_id = v.viewer\n                                                     AND rf.target_account_id = p.account_id\n                                                     AND NOT rf.pending)))))))))\n          -- Reading-side language filter: mirrors home_timeline's\n          -- `chosen_languages` gate. Own posts and boosts (no language) pass.\n          AND (v.viewer = $2 OR $4::text IS NULL OR NOT EXISTS (\n                  SELECT 1 FROM users u\n                  WHERE u.account_id = v.viewer AND u.chosen_languages IS NOT NULL\n                    AND $4 <> ALL (u.chosen_languages)))\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "viewer!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8",
+        "Int8",
+        "Text",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3a7a1d88cac15d27cbc291e13426462fce3eead8d958d3fa96a9411815cb56d5"
+}

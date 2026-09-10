@@ -1,0 +1,49 @@
+# Disposable source-built Owncast peer for live ActivityPub/HLS interop.
+
+name: owncast-test
+
+services:
+  owncast:
+    build:
+      context: ../owncast-source
+      dockerfile: Dockerfile
+      args:
+        VERSION: 0.3.0-dev
+        GIT_COMMIT: b0de2e462058b34aa3fa2e68e1939ff416b69de5
+        NAME: plamenu-e2e
+    restart: unless-stopped
+    environment:
+      # The peer fleet deliberately resolves through a private Docker network.
+      # Owncast keeps its production SSRF guard on by default and exposes this
+      # test-only escape hatch specifically for local federation fixtures.
+      OWNCAST_ALLOW_INTERNAL_FEDERATION: "true"
+    command:
+      - -adminpassword
+      - owncast-admin-pass-123
+      - -streamkey
+      - owncast-stream-key-123
+      - -enableVerboseLogging
+    networks:
+      shared:
+        aliases: [owncast-web]
+    # Raw RTMP cannot ride the HTTPS Caddy vhost. Use a non-PeerTube host port
+    # so both live peers can run concurrently.
+    ports:
+      - "1937:1935"
+    volumes:
+      - data:/app/data
+      - ../mastodon-test/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+
+networks:
+  shared:
+    external: true
+    name: mastodon-test_internal
+
+volumes:
+  data:

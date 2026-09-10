@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f.account_id AS \"id!\"\n        FROM follows f\n        JOIN accounts a ON a.id = f.account_id\n        WHERE f.target_account_id = $1 AND f.notify AND NOT f.pending\n          AND a.domain IS NULL\n          AND ($2::text IS NULL OR f.languages IS NULL OR $2 = ANY(f.languages))\n          AND NOT account_hidden(f.account_id, $1)\n        ORDER BY f.account_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8b42ab080b0ac1b9160b2905063207177bbdd850ba7962e83a8e6537a2fbf2b9"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM tag_trends WHERE tag_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "87cac257721daaa4ee6e6d6619de6f67368eb2dc55ebc21bd86f73a70ec58462"
+}

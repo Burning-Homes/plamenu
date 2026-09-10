@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT axis.period AS \"period!\", (\n            SELECT count(*) FROM users\n            WHERE date_trunc('day', users.created_at AT TIME ZONE 'UTC')::date = axis.period\n        ) AS \"value!\"\n        FROM (\n            SELECT generate_series(\n                ($1 AT TIME ZONE 'UTC')::date::timestamp,\n                ($2 AT TIME ZONE 'UTC')::date::timestamp,\n                '1 day'\n            )::date AS period\n        ) AS axis\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "period!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "value!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "915feff5a752d12f3d0c45ae0a1b534d44f152676a529b0d02aad9a058e12f54"
+}

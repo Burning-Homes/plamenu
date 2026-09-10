@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT failed_attempts, locked_at, current_sign_in_ip, sign_in_count, locale\n            FROM users\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "failed_attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "failed_attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "locked_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "locked_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "current_sign_in_ip",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "current_sign_in_ip"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "sign_in_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "sign_in_count"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "locale",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "locale"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "388050ada6e46620a8809aa7a2d45c76533af9e525d49cc30e89cef8a946b9fa"
+}

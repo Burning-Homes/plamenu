@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f2.target_account_id AS \"id!\"\n        FROM follows f1\n        JOIN follows f2 ON f2.account_id = f1.target_account_id\n        JOIN accounts a ON a.id = f2.target_account_id\n        WHERE f1.account_id = $1\n          AND f2.target_account_id <> $1\n          AND a.discoverable IS TRUE\n          AND a.actor_type IS DISTINCT FROM 'Group'\n          AND a.suspended_at IS NULL AND a.silenced_at IS NULL\n          AND NOT account_hidden($1, f2.target_account_id)\n          AND NOT EXISTS (\n              SELECT 1 FROM follows me\n              WHERE me.account_id = $1 AND me.target_account_id = f2.target_account_id)\n          AND NOT EXISTS (\n              SELECT 1 FROM follow_recommendation_mutes s\n              WHERE s.account_id = $1 AND s.target_account_id = f2.target_account_id)\n        GROUP BY f2.target_account_id\n        ORDER BY count(*) DESC, f2.target_account_id DESC\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "target_account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2199b6596d4042e3880380bda0fa0d509053d4d532cd91b64ba6be46887c8d02"
+}

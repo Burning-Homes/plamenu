@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT q.id AS \"quote_id!\", q.status_id AS \"status_id!\"\n        FROM quotes q\n        WHERE q.quoted_status_id = $1 AND q.state = 'accepted'\n          AND q.status_id IS NOT NULL\n          AND ($2::bigint IS NULL OR q.id < $2)\n          AND ($3::bigint IS NULL OR q.id > $3)\n        ORDER BY q.id DESC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "quote_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "status_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "bb527b2243d9546646a72969eb32c8b5784a25371f9ff5f8aeeeb35feea26f6f"
+}

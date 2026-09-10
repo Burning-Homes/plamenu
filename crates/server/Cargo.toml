@@ -1,0 +1,108 @@
+[package]
+name = "plamenu"
+description = "Plamenu: a fast, small ActivityPub server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+# `bench = false` on the lib/bin targets keeps `cargo bench` from handing
+# criterion CLI flags (--save-baseline etc.) to libtest, which rejects them.
+[lib]
+bench = false
+
+[[bin]]
+name = "plamenu"
+path = "src/main.rs"
+bench = false
+
+[dependencies]
+aes-gcm = { workspace = true }
+argon2 = { workspace = true }
+axum = { workspace = true }
+base32 = { workspace = true }
+base64 = { workspace = true }
+blurhash = { workspace = true }
+clap = { workspace = true }
+csv = { workspace = true }
+fluent-bundle = { workspace = true }
+futures-util = { workspace = true }
+getrandom = { workspace = true }
+hkdf = { workspace = true }
+hmac = { workspace = true }
+html5ever = { workspace = true }
+image = { workspace = true }
+jiff = { workspace = true }
+jxl-oxide = { workspace = true }
+lettre = { workspace = true }
+maud = { workspace = true }
+mimalloc = { workspace = true }
+p256 = { workspace = true }
+plamenu-ap = { workspace = true }
+plamenu-db = { workspace = true }
+plamenu-federation = { workspace = true }
+pulldown-cmark = { workspace = true }
+qrcode = { workspace = true }
+quick_html2md = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_urlencoded = { workspace = true }
+sqlx = { workspace = true }
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+http-body-util = { workspace = true }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+toml = { workspace = true }
+unicode-segmentation = { workspace = true }
+unicode-normalization = { workspace = true }
+unic-langid = { workspace = true }
+url = { workspace = true }
+webauthn-rs = { workspace = true }
+zip = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+ml-dsa = { workspace = true }
+# The RFC 9421 inbox tests hand-sign requests with an actor's Ed25519 key.
+ed25519-dalek = { workspace = true }
+# The delivery failure-attribution tests need a real transport error;
+# `reqwest::Error` has no public constructor.
+reqwest = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tower = { workspace = true }
+# aes-gcm, hkdf, p256, and zip are already normal dependencies (used by the
+# push and archive workers) and so are available to tests without repeating
+# them here: the push tests decrypt deliveries client-side and the archive
+# tests unzip the worker's output to inspect its entries.
+
+[lints]
+workspace = true
+
+# Hot-path latency benches against the persistent seeded plamenu_bench
+# database; budgets checked by bench/bench_budgets.py (see bench/README.md).
+[[bench]]
+name = "hot_paths"
+path = "benches/hot_paths/main.rs"
+harness = false
+# Never run under `cargo test` — the bench seeds and drives a large persistent
+# database and is only meaningful via `cargo bench`.
+test = false
+
+# Concurrency/contention tripwire over the same plamenu_bench database: a custom
+# closed-loop driver (not criterion), self-checking its own invariant + ratio
+# budget. Run via `./dev bench-concurrency`.
+[[bench]]
+name = "contention"
+path = "benches/contention/main.rs"
+harness = false
+test = false

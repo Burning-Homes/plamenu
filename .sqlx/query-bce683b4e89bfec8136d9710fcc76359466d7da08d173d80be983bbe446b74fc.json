@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT m.account_id AS \"account_id!\", m.hide_notifications, m.expires_at\n        FROM mutes m\n        JOIN accounts a ON a.id = m.account_id\n        WHERE m.target_account_id = $1 AND a.domain IS NULL\n          AND (m.expires_at IS NULL OR m.expires_at > now())\n          AND m.account_id <> $2\n          AND NOT EXISTS (SELECT 1 FROM mutes t\n                          WHERE t.account_id = m.account_id\n                            AND t.target_account_id = $2\n                            AND (t.expires_at IS NULL OR t.expires_at > now()))\n          AND NOT EXISTS (SELECT 1 FROM follows f\n                          WHERE f.account_id = m.account_id\n                            AND f.target_account_id = $2)\n        ORDER BY m.account_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "hide_notifications",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "hide_notifications"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "bce683b4e89bfec8136d9710fcc76359466d7da08d173d80be983bbe446b74fc"
+}

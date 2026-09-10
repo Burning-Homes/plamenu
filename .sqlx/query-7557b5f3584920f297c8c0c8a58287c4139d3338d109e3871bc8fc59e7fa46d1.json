@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE domain_severance_jobs SET run_at = now() + make_interval(secs => $2) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7557b5f3584920f297c8c0c8a58287c4139d3338d109e3871bc8fc59e7fa46d1"
+}

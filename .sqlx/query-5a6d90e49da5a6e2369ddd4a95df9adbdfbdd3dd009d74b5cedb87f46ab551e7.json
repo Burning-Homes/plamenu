@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT enabled AS \"enabled!\" FROM remote_history_settings\n           WHERE singleton FOR SHARE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enabled!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "remote_history_settings",
+            "name": "enabled"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5a6d90e49da5a6e2369ddd4a95df9adbdfbdd3dd009d74b5cedb87f46ab551e7"
+}

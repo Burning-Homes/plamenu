@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM remote_group_moderators\n         WHERE group_account_id = $1 AND NOT (account_id = ANY($2))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "719ddecf0176f2eae8e7252554421c4c7d928a660b21087ddca42681d25a4792"
+}

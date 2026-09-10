@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_attachments SET live_state = $2, content_type = 'application/x-mpegURL' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "60874f62987e077f8dffac4326a478d00a0bebc041b9936ef63621521091e566"
+}

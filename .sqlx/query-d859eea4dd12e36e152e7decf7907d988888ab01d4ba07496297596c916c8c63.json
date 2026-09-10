@@ -1,0 +1,127 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO appeals (id, account_id, account_warning_id, text)\n        VALUES ($1, $2, $3, $4)\n        RETURNING id, account_id, account_warning_id, text,\n                  approved_at, approved_by_account_id,\n                  rejected_at, rejected_by_account_id, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_warning_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "account_warning_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "text"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "approved_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "approved_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "approved_by_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "approved_by_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "rejected_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "rejected_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "rejected_by_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "rejected_by_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "d859eea4dd12e36e152e7decf7907d988888ab01d4ba07496297596c916c8c63"
+}

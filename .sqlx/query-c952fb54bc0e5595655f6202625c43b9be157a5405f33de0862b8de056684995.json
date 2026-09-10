@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE accounts\n        SET remote_statuses_count = $2\n        WHERE id = $1 AND domain IS NOT NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c952fb54bc0e5595655f6202625c43b9be157a5405f33de0862b8de056684995"
+}

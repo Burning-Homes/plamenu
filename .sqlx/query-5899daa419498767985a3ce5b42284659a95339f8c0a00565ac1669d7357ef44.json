@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT account_id AS \"account_id!\"\n        FROM list_accounts\n        WHERE list_id = $1\n          AND ($2::bigint IS NULL OR account_id < $2)\n          AND ($3::bigint IS NULL OR account_id > $3)\n        ORDER BY account_id DESC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "list_accounts",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5899daa419498767985a3ce5b42284659a95339f8c0a00565ac1669d7357ef44"
+}

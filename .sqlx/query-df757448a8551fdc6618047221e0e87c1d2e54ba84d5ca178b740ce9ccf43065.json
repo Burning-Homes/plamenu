@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT b.account_id AS \"id!\"\n        FROM blocks b\n        JOIN accounts a ON a.id = b.account_id\n        WHERE b.target_account_id = $1 AND a.domain IS NULL\n        ORDER BY b.account_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "blocks",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "df757448a8551fdc6618047221e0e87c1d2e54ba84d5ca178b740ce9ccf43065"
+}

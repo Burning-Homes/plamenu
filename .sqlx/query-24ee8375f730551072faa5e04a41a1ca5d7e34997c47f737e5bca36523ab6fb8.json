@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.account_id AS \"id!\"\n           FROM status_participations p\n           JOIN accounts a ON a.id = p.account_id\n           WHERE p.status_id = $1\n             AND p.state IN ('accepted', 'pending')\n             AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_participations",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "24ee8375f730551072faa5e04a41a1ca5d7e34997c47f737e5bca36523ab6fb8"
+}

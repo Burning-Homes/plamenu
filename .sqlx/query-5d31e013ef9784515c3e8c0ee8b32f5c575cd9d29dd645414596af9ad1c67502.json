@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXTRACT(EPOCH FROM now() - min(created_at))::bigint AS \"age\" FROM account_archives",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "age",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5d31e013ef9784515c3e8c0ee8b32f5c575cd9d29dd645414596af9ad1c67502"
+}

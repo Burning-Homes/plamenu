@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO status_trends (status_id, account_id, score, language, allowed)\n        SELECT * FROM unnest($1::bigint[], $2::bigint[], $3::float8[], $4::text[], $5::boolean[])\n        ON CONFLICT (status_id)\n        DO UPDATE SET account_id = EXCLUDED.account_id, score = EXCLUDED.score,\n                      language = EXCLUDED.language, allowed = EXCLUDED.allowed\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array",
+        "Float8Array",
+        "TextArray",
+        "BoolArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ae344fd17f94586053e14c2ba2c1475774f439fb2a396e8004eca67d895c348c"
+}

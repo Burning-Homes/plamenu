@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE host_reachability SET first_failure_at = now() - interval '25 hours'\n             WHERE host = 'down.example'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "e5bd0c20b43b85cc55d6b8caeeb0f11013c997a6d85ed95e13f63054a8bbd006"
+}

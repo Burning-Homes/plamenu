@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT private_key, public_key FROM vapid_keys WHERE id = 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "private_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "vapid_keys",
+            "name": "private_key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "public_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "vapid_keys",
+            "name": "public_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d16614d41118bb39029a07de0faaa251b3406b0a744b15b1d0e2f09529055d71"
+}

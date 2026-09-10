@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE custom_emojis SET visible_in_picker = FALSE WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c452a9b144905c43f7297b2b8830e917e5b0d7ed1ec9cefa04d1dc9effe3aba7"
+}

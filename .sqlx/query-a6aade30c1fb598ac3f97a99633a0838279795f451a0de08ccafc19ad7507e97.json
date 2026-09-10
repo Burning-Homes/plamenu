@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) AS \"requests!\",\n               COALESCE(SUM(notifications_count), 0)::bigint AS \"notifications!\"\n        FROM (\n            SELECT notifications_count FROM notification_requests\n            WHERE account_id = $1\n            LIMIT 100\n        ) capped\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "requests!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "notifications!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "a6aade30c1fb598ac3f97a99633a0838279795f451a0de08ccafc19ad7507e97"
+}

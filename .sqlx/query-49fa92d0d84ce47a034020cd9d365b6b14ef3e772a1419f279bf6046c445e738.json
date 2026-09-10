@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO polls (id, status_id, account_id, options, cached_tallies)\n             VALUES ($1, $2, $3, '{\"a\",\"b\"}', '{0,0}')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "49fa92d0d84ce47a034020cd9d365b6b14ef3e772a1419f279bf6046c445e738"
+}

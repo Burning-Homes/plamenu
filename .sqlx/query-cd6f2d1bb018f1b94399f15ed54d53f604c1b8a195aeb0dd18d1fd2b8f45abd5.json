@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f.id AS \"row_id!\", f.account_id AS \"account_id!\"\n        FROM favourites f\n        WHERE f.status_id = $1\n          AND ($2::bigint IS NULL OR f.id < $2)\n          AND ($3::bigint IS NULL OR f.id > $3)\n          AND NOT account_hidden($4, f.account_id)\n        ORDER BY f.id DESC\n        LIMIT $5\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "row_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "favourites",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "favourites",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "cd6f2d1bb018f1b94399f15ed54d53f604c1b8a195aeb0dd18d1fd2b8f45abd5"
+}

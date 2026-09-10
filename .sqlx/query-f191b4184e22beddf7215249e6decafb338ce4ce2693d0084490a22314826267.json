@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bulk_imports SET state = 'scheduled'\n         WHERE id = $1 AND account_id = $2 AND state = 'unconfirmed'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f191b4184e22beddf7215249e6decafb338ce4ce2693d0084490a22314826267"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE two_factor_challenges SET webauthn_state = $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bdccdd80345c8319ee573d8b4b6525d80fde76a0fe7c9c3d31d91be9dbfbb383"
+}

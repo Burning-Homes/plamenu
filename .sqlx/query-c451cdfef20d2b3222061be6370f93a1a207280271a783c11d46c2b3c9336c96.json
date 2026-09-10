@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM account_endorsements WHERE account_id = $1 OR target_account_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c451cdfef20d2b3222061be6370f93a1a207280271a783c11d46c2b3c9336c96"
+}

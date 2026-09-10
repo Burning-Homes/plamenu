@@ -1,0 +1,249 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH attributed AS MATERIALIZED (\n            SELECT sm.status_id\n            FROM status_mentions sm\n            WHERE sm.account_id = $1\n            UNION\n            SELECT b.reblog_of_id\n            FROM statuses b -- STUBKEEP: group Announce wrappers never stub\n            WHERE b.account_id = $1 AND b.reblog_of_id IS NOT NULL\n        ), candidates AS MATERIALIZED (\n            -- The lateral boundaries keep the small attribution set driving\n            -- primary-key lookups. Without them PostgreSQL may hash-join it\n            -- against all statuses/accounts, which turns a 2,000-post group\n            -- page into two full-table scans. Account memoization still\n            -- deduplicates repeated authors inside the materialized CTE.\n            SELECT s.*, author.domain AS author_domain,\n                   author.portable AS author_portable,\n                   author.suspended_at AS author_suspended_at\n            FROM attributed gp\n            CROSS JOIN LATERAL (\n                SELECT * FROM statuses s0 WHERE s0.id = gp.status_id OFFSET 0\n            ) s\n            CROSS JOIN LATERAL (\n                SELECT a.domain, a.portable, a.suspended_at\n                FROM accounts a WHERE a.id = s.account_id OFFSET 0\n            ) author\n        )\n        SELECT s.id, s.uri, s.account_id, s.content, s.created_at, s.updated_at,\n               s.visibility, s.in_reply_to_id, s.reblog_of_id, s.edited_at,\n               s.spoiler_text, s.sensitive, s.language, s.url,\n               s.quote_approval_policy, s.application_id, s.title, s.object_type,\n               s.external_url\n        FROM candidates s\n        LEFT JOIN LATERAL (\n            SELECT\n                (SELECT count(*) FROM favourites f WHERE f.status_id = s.id)\n                  - (SELECT count(*) FROM status_dislikes d WHERE d.status_id = s.id) AS score,\n                greatest(\n                    s.created_at,\n                    coalesce(\n                        (SELECT max(reply.created_at) FROM statuses reply\n                         WHERE reply.in_reply_to_id = s.id AND reply.deleted_at IS NULL),\n                        s.created_at\n                    )\n                ) AS active_at\n            WHERE $3 IN ('top', 'hot', 'active')\n        ) rank ON true\n        WHERE s.reblog_of_id IS NULL\n          AND s.in_reply_to_id IS NULL\n          AND s.in_reply_to_uri IS NULL\n          AND s.deleted_at IS NULL -- STUBFILTER\n          AND s.visibility = 'public'\n          AND s.author_suspended_at IS NULL\n          -- Inline the instance-domain policy as fixed hashed sets. Calling\n          -- instance_domain_allowed once per candidate inflates the estimated\n          -- plan above PostgreSQL's JIT threshold even when the tables are\n          -- empty, adding compilation work to every page request.\n          AND (s.author_portable OR s.author_domain IS NULL OR (\n                s.author_domain NOT IN (\n                    SELECT db.domain FROM domain_blocks db\n                    WHERE db.severity = 'suspend')\n                AND (NOT EXISTS (SELECT 1 FROM domain_allows)\n                     OR s.author_domain IN (SELECT da.domain FROM domain_allows da))))\n          -- Authenticated viewers are local accounts, so an author's\n          -- account-domain block against the viewer's NULL domain can never\n          -- match. Inline the remaining relationship arms so PostgreSQL\n          -- builds each sparse set once instead of invoking account_hidden\n          -- for every attributed candidate.\n          AND ($2::bigint IS NULL OR $2 = s.account_id OR (\n                s.account_id NOT IN (\n                    SELECT b.target_account_id FROM blocks b WHERE b.account_id = $2)\n                AND s.account_id NOT IN (\n                    SELECT b.account_id FROM blocks b WHERE b.target_account_id = $2)\n                AND s.account_id NOT IN (\n                    SELECT m.target_account_id FROM mutes m\n                    WHERE m.account_id = $2\n                      AND (m.expires_at IS NULL OR m.expires_at > now()))\n                AND (s.author_portable OR s.author_domain IS NULL OR s.author_domain NOT IN (\n                    SELECT adb.domain FROM account_domain_blocks adb\n                    WHERE adb.account_id = $2))))\n          AND ($4::float8 IS NULL OR s.created_at >= now() - make_interval(secs => $4))\n        ORDER BY\n          CASE WHEN $3 = 'old' THEN s.created_at END ASC,\n          CASE WHEN $3 = 'top' THEN rank.score END DESC,\n          CASE WHEN $3 = 'hot' THEN\n            ln(greatest(1.0, 3.0 + rank.score)::float8)\n              / power((extract(epoch FROM now() - s.created_at) / 3600.0)::float8 + 2.0, 1.8)\n          END DESC,\n          CASE WHEN $3 = 'active' THEN rank.active_at END DESC,\n          CASE WHEN $3 = 'new' THEN s.created_at END DESC,\n          s.id DESC\n        LIMIT $5 OFFSET $6\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "content",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "in_reply_to_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "in_reply_to_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "reblog_of_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "reblog_of_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "edited_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "edited_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "spoiler_text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "spoiler_text"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "sensitive",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "sensitive"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "quote_approval_policy",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "quote_approval_policy"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "application_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "application_id"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "object_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "object_type"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "external_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "external_url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Float8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "01c55dc37cd18faa529f2d7eb360359037a692f18834b817d3fa822d893a79f6"
+}

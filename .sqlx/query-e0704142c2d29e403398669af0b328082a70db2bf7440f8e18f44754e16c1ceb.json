@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webxdc_memberships SET last_submitted_at = now()\n         WHERE session_id = $1 AND participant_account_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e0704142c2d29e403398669af0b328082a70db2bf7440f8e18f44754e16c1ceb"
+}

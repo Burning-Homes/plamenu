@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO group_affiliations (group_account_id, account_id, affiliation, expires_at)\n         VALUES ($1, $2, $3, $4)\n         ON CONFLICT (group_account_id, account_id)\n         DO UPDATE SET affiliation = EXCLUDED.affiliation, expires_at = EXCLUDED.expires_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6095b37d3d48de732290252858f3b11b6823ecdcb196b61d272940048f33f2f8"
+}

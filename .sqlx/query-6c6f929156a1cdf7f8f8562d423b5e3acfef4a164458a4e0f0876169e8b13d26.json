@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"statuses!\",\n                  COALESCE(sum(octet_length(content) + octet_length(spoiler_text)), 0)::bigint\n                      AS \"bytes!\"\n           FROM statuses WHERE ingest_provenance = 'history'\n             AND deleted_at IS NULL -- STUBFILTER",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "statuses!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "6c6f929156a1cdf7f8f8562d423b5e3acfef4a164458a4e0f0876169e8b13d26"
+}

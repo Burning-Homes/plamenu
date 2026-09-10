@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET current_sign_in_at = now() - make_interval(days => 10) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4f1b5e051ef896b3588216e8e3806c2f7021d227e97af83f4a3bd50afde1c877"
+}

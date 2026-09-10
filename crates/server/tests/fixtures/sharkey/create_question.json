@@ -1,0 +1,47 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    {
+      "misskey": "https://misskey-hub.net/ns#",
+      "_misskey_content": "misskey:_misskey_content"
+    }
+  ],
+  "id": "https://remote.example/notes/9sh4rkpoll0001/activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "published": "2026-07-10T10:45:00.000Z",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "object": {
+    "id": "https://remote.example/notes/9sh4rkpoll0001",
+    "type": "Question",
+    "attributedTo": "https://remote.example/users/bob",
+    "content": "<p>sharkey poll</p>",
+    "_misskey_content": "sharkey poll",
+    "source": {
+      "content": "sharkey poll",
+      "mediaType": "text/x.misskeymarkdown"
+    },
+    "published": "2026-07-10T10:45:00.000Z",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://remote.example/users/bob/followers"],
+    "inReplyTo": null,
+    "attachment": [],
+    "sensitive": false,
+    "tag": [],
+    "endTime": "2027-01-01T00:00:00.000Z",
+    "oneOf": [
+      {
+        "type": "Note",
+        "name": "sharks",
+        "replies": { "type": "Collection", "totalItems": 4 }
+      },
+      {
+        "type": "Note",
+        "name": "rays",
+        "replies": { "type": "Collection", "totalItems": 1 }
+      }
+    ]
+  }
+}

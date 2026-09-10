@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM conversation_mutes WHERE account_id = $1 AND conversation_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d6347ecb88abda8a6e4d34fd5004849e7d835b5e87c7ed00f432902d3fa586fa"
+}

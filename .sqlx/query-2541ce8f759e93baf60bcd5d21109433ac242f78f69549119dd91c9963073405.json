@@ -1,0 +1,151 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id AS \"id!\", uri, account_id AS \"account_id!\", content AS \"content!\",\n               created_at AS \"created_at!\", updated_at AS \"updated_at!\",\n               visibility AS \"visibility!\", in_reply_to_id, reblog_of_id, edited_at,\n               spoiler_text AS \"spoiler_text!\", sensitive AS \"sensitive!\", language, url,\n               quote_approval_policy AS \"quote_approval_policy!\", application_id,\n               title, object_type, external_url\n        FROM (\n            -- Arm A — self plus accepted follows. Driven per author: for each\n            -- followed account (and self) take that author's own newest slice\n            -- via `idx_statuses_account`, capped at `$3`, so the candidate set\n            -- is bounded by (#follows + 1) * limit regardless of how prolific\n            -- any author is or how deep the cursor has paged.\n            (SELECT af.id, af.uri, af.account_id, af.content, af.created_at, af.updated_at,\n                    af.visibility, af.in_reply_to_id, af.reblog_of_id, af.edited_at,\n                    af.spoiler_text, af.sensitive, af.language, af.url, af.quote_approval_policy,\n                    af.application_id,\n                    af.title, af.object_type, af.external_url\n             FROM (SELECT aid, show_reblogs, with_replies, languages\n                   FROM (SELECT target_account_id AS aid, show_reblogs, with_replies, languages\n                         FROM follows\n                         WHERE account_id = $1 AND NOT pending\n                         UNION ALL SELECT $1, TRUE, TRUE, NULL) all_authors\n                   -- Author-level home filters, hoisted out of the per-status\n                   -- LATERAL: they depend only on (viewer, author), so they\n                   -- run once per author instead of once per candidate row\n                   -- ((#follows + 1) x limit times — the dense-home\n                   -- pathology). The block/mute/domain arms inline\n                   -- account_hidden($1, aid) so each becomes a hashed subplan\n                   -- built once per query; account_hidden() stays the source\n                   -- of truth for those semantics (as with the local\n                   -- timeline's inlined copy). MUST stay in sync with the\n                   -- other ordering's copy. Arm B below keeps the full\n                   -- per-row filter because its author varies per row.\n                   WHERE (aid = $1 OR (\n                          aid NOT IN (SELECT b.target_account_id FROM blocks b\n                                      WHERE b.account_id = $1)\n                      AND aid NOT IN (SELECT b.account_id FROM blocks b\n                                      WHERE b.target_account_id = $1)\n                      AND aid NOT IN (SELECT m.target_account_id FROM mutes m\n                                      WHERE m.account_id = $1\n                                        AND (m.expires_at IS NULL OR m.expires_at > now()))\n                      AND aid NOT IN (SELECT adb.account_id\n                                      FROM account_domain_blocks adb\n                                      JOIN accounts v ON v.id = $1 AND adb.domain = v.domain)))\n                     AND EXISTS (SELECT 1 FROM accounts a\n                                 WHERE a.id = aid AND a.suspended_at IS NULL\n                                   AND (a.portable OR instance_domain_allowed(a.domain))\n                                   AND (aid = $1 OR a.portable OR a.domain IS NULL OR a.domain NOT IN (\n                                        SELECT adb.domain FROM account_domain_blocks adb\n                                        WHERE adb.account_id = $1)))\n                     AND (aid = $1 OR NOT EXISTS (\n                            SELECT 1 FROM list_accounts la JOIN lists l ON l.id = la.list_id\n                            WHERE l.account_id = $1 AND l.exclusive AND la.account_id = aid))\n                  ) authors\n             CROSS JOIN LATERAL (\n                 SELECT s.id, s.uri, s.account_id, s.content, s.created_at, s.updated_at,\n                        s.visibility, s.in_reply_to_id, s.reblog_of_id, s.edited_at,\n                        s.spoiler_text, s.sensitive, s.language, s.url, s.quote_approval_policy,\n                        s.application_id,\n                        s.title, s.object_type, s.external_url\n                 FROM statuses s\n                 WHERE s.account_id = authors.aid\n                   AND s.deleted_at IS NULL -- STUBFILTER\n                   AND s.ingest_provenance = 'delivery'\n                   -- Row-level home filters (author-level ones are hoisted\n                   -- above; the show_reblogs/with_replies/languages follow columns carried\n                   -- from the driving scan replace the M32 sf-subquery — the\n                   -- driving row IS that follow row). MUST stay in sync with\n                   -- the other ordering's copy and, semantically, with the\n                   -- arm-B full filter below.\n                   AND s.visibility <> 'direct'\n                   -- The boost target's account_hidden($1, target_author),\n                   -- inlined: as a function call it ran per boost row\n                   -- (~0.1ms each, the dominant dense-home cost — ~2.4k\n                   -- calls/page at 1.5k follows). One probe into the target\n                   -- status, block/mute arms as hashed subplans, the domain\n                   -- arms as in the hoisted author filter. MUST stay in sync\n                   -- with the other ordering's copy and, semantically, with\n                   -- account_hidden().\n                   AND (s.reblog_of_id IS NULL OR NOT EXISTS (\n                          SELECT 1 FROM statuses t\n                          WHERE t.id = s.reblog_of_id\n                            AND t.account_id <> $1\n                            AND (t.account_id IN (SELECT b.target_account_id FROM blocks b\n                                                  WHERE b.account_id = $1)\n                              OR t.account_id IN (SELECT b.account_id FROM blocks b\n                                                  WHERE b.target_account_id = $1)\n                              OR t.account_id IN (SELECT m.target_account_id FROM mutes m\n                                                  WHERE m.account_id = $1\n                                                    AND (m.expires_at IS NULL\n                                                         OR m.expires_at > now()))\n                              OR t.account_id IN (SELECT adb.account_id\n                                                  FROM account_domain_blocks adb\n                                                  JOIN accounts v2\n                                                    ON v2.id = $1 AND adb.domain = v2.domain)\n                              OR EXISTS (SELECT 1 FROM accounts ta\n                                         WHERE ta.id = t.account_id\n                                           AND NOT ta.portable\n                                           AND ta.domain IN (SELECT adb.domain\n                                                             FROM account_domain_blocks adb\n                                                             WHERE adb.account_id = $1)))))\n                   -- The boost target's instance policy, plus the rule that with the\n                   -- per-follow reply switch off, an Announce is judged by what\n                   -- it announces, because a wrapper's own in_reply_to_id is\n                   -- always NULL and the reply conjunct below would let every\n                   -- announced comment through (for a community follow, that is\n                   -- all of them). Folded into this probe rather than added as a\n                   -- third one — arm A already reads the target twice, and\n                   -- inlining those is what took dense home 194ms -> ~70ms.\n                   -- Deliberately tests `in_reply_to_id` alone: an announce of a\n                   -- reply whose parent never arrived is unclassifiable, and\n                   -- home's standing choice for that state is to keep it.\n                   AND (s.reblog_of_id IS NULL OR EXISTS (\n                          SELECT 1 FROM statuses target\n                          JOIN accounts target_author ON target_author.id = target.account_id\n                          WHERE target.id = s.reblog_of_id\n                            AND target_author.suspended_at IS NULL\n                            AND (target_author.portable OR instance_domain_allowed(target_author.domain))\n                            AND (authors.with_replies OR target.in_reply_to_id IS NULL)))\n                   -- PeerTube delivers one Video twice when the viewer follows\n                   -- both its owning Person and its channel Group: the Person's\n                   -- Create plus the channel's Announce. If the target author\n                   -- is itself followed, the original already occupies home;\n                   -- suppress only that Video-shaped Group wrapper. Ordinary\n                   -- community announces remain distinct facts, and following\n                   -- only the channel still yields its wrapper.\n                   AND (s.reblog_of_id IS NULL OR NOT EXISTS (\n                          SELECT 1\n                          FROM statuses video\n                          JOIN accounts wrapper_author ON wrapper_author.id = s.account_id\n                          JOIN follows video_author_follow\n                            ON video_author_follow.account_id = $1\n                           AND video_author_follow.target_account_id = video.account_id\n                           AND NOT video_author_follow.pending\n                          WHERE video.id = s.reblog_of_id\n                            AND video.object_type = 'Video'\n                            AND wrapper_author.actor_type = 'Group'))\n                   AND (authors.aid = $1 OR (\n                          (s.reblog_of_id IS NULL OR authors.show_reblogs)\n                          AND (s.language IS NULL OR authors.languages IS NULL\n                               OR s.language = ANY (authors.languages))))\n                   -- Per-follow `with_replies`. Off, the row-level\n                   -- fallback keeps the three exemptions Mastodon, Sharkey and\n                   -- GoToSocial all agree on. The `EXISTS` is the expensive arm\n                   -- and evaluates only for reply rows of flag-off follows; it\n                   -- is a follow-set probe rather than a `statuses` probe, which\n                   -- is what the denormalized author column bought. A reply\n                   -- whose parent never arrived has in_reply_to_id NULL and so\n                   -- stays visible — deliberate, and a divergence from Mastodon\n                   -- (see FEEDS_DESIGN). MUST stay in sync with the other\n                   -- ordering's copy and with the list timeline's equivalent.\n                   AND (authors.aid = $1 OR authors.with_replies\n                        OR s.in_reply_to_id IS NULL\n                        OR s.in_reply_to_account_id = s.account_id\n                        OR s.in_reply_to_account_id = $1\n                        OR EXISTS (SELECT 1 FROM follows rf\n                                   WHERE rf.account_id = $1\n                                     AND rf.target_account_id = s.in_reply_to_account_id\n                                     AND NOT rf.pending))\n                   AND (authors.aid = $1 OR s.language IS NULL OR NOT EXISTS (\n                          SELECT 1 FROM users u\n                          WHERE u.account_id = $1 AND u.chosen_languages IS NOT NULL\n                            AND s.language <> ALL (u.chosen_languages)))\n                   AND ($2::bigint IS NULL OR s.id < $2)\n                 ORDER BY s.id DESC\n                 LIMIT $3) af)\n            UNION\n            -- Arm B — followed hashtags inject public, non-reblog statuses,\n            -- like Mastodon's hashtag-follower delivery (broadcastable only).\n            -- A reply is injected only when its parent is known and authored by\n            -- the viewer, the poster (self-reply), or someone the viewer\n            -- follows — Mastodon's home-feed filter applies the same rule.\n            (SELECT tagged.id, tagged.uri, tagged.account_id, tagged.content,\n                    tagged.created_at, tagged.updated_at, tagged.visibility,\n                    tagged.in_reply_to_id, tagged.reblog_of_id, tagged.edited_at,\n                    tagged.spoiler_text, tagged.sensitive, tagged.language, tagged.url,\n                    tagged.quote_approval_policy, tagged.application_id,\n                    tagged.title, tagged.object_type, tagged.external_url\n             FROM tag_follows tf\n             CROSS JOIN LATERAL (\n                 -- Drive each followed tag down its feed-order membership and\n                 -- stop after one page. Previously the semijoin gathered every\n                 -- status for every followed tag before this arm's LIMIT.\n                 SELECT s.id, s.uri, s.account_id, s.content, s.created_at, s.updated_at,\n                        s.visibility, s.in_reply_to_id, s.reblog_of_id, s.edited_at,\n                        s.spoiler_text, s.sensitive, s.language, s.url,\n                        s.quote_approval_policy, s.application_id,\n                        s.title, s.object_type, s.external_url\n                 FROM (\n                     SELECT status_id\n                     FROM status_tags\n                     WHERE tag_id = tf.tag_id\n                     ORDER BY status_id DESC\n                     OFFSET 0\n                 ) st\n                 JOIN statuses s ON s.id = st.status_id\n                 WHERE s.reblog_of_id IS NULL\n                   AND s.deleted_at IS NULL -- STUBFILTER\n                   AND s.ingest_provenance = 'delivery'\n                   AND s.visibility = 'public'\n                   AND (s.in_reply_to_id IS NULL\n                        OR EXISTS (\n                            SELECT 1 FROM statuses p\n                            WHERE p.id = s.in_reply_to_id\n                              AND (p.account_id = $1\n                                   OR p.account_id = s.account_id\n                                   OR EXISTS (\n                                       SELECT 1 FROM follows rf\n                                       WHERE rf.account_id = $1\n                                         AND rf.target_account_id = p.account_id\n                                         AND NOT rf.pending))))\n                   -- Full home visibility filter, per row (arm B's author\n                   -- varies per row, so nothing can hoist). MUST stay in sync\n                   -- with the other ordering's arm-B copy and, semantically,\n                   -- with arm A's hoisted + row-level split.\n                   AND s.visibility <> 'direct'\n                   AND NOT account_hidden($1, s.account_id)\n                   AND (s.reblog_of_id IS NULL OR NOT account_hidden(\n                          $1, (SELECT t.account_id FROM statuses t WHERE t.id = s.reblog_of_id)))\n                   AND EXISTS (SELECT 1 FROM accounts a\n                               WHERE a.id = s.account_id\n                                 AND (a.portable OR instance_domain_allowed(a.domain)))\n                   AND (s.reblog_of_id IS NULL OR EXISTS (\n                          SELECT 1 FROM statuses target\n                          JOIN accounts target_author ON target_author.id = target.account_id\n                          WHERE target.id = s.reblog_of_id\n                            AND target_author.suspended_at IS NULL\n                            AND (target_author.portable OR instance_domain_allowed(target_author.domain))))\n                   AND (s.account_id = $1 OR NOT EXISTS (\n                          SELECT 1 FROM list_accounts la JOIN lists l ON l.id = la.list_id\n                          WHERE l.account_id = $1 AND l.exclusive AND la.account_id = s.account_id))\n                   AND (s.account_id = $1 OR NOT EXISTS (\n                          SELECT 1 FROM follows sf\n                          WHERE sf.account_id = $1 AND sf.target_account_id = s.account_id\n                            AND NOT sf.pending\n                            AND ((s.reblog_of_id IS NOT NULL AND NOT sf.show_reblogs)\n                                 OR (s.language IS NOT NULL AND sf.languages IS NOT NULL\n                                     AND s.language <> ALL (sf.languages)))))\n                   AND (s.account_id = $1 OR s.language IS NULL OR NOT EXISTS (\n                          SELECT 1 FROM users u\n                          WHERE u.account_id = $1 AND u.chosen_languages IS NOT NULL\n                            AND s.language <> ALL (u.chosen_languages)))\n                   AND ($2::bigint IS NULL OR s.id < $2)\n                 ORDER BY st.status_id DESC\n                 LIMIT $3\n             ) tagged\n             WHERE tf.account_id = $1)\n        ) merged\n        ORDER BY id DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "content!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "visibility!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "in_reply_to_id",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "reblog_of_id",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "edited_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "spoiler_text!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "sensitive!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "language",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "url",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "quote_approval_policy!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "application_id",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 16,
+        "name": "title",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 17,
+        "name": "object_type",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 18,
+        "name": "external_url",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2541ce8f759e93baf60bcd5d21109433ac242f78f69549119dd91c9963073405"
+}

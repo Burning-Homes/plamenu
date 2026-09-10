@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(DISTINCT name) AS \"count!\" FROM announcement_reactions\n           WHERE announcement_id = $1 AND name <> $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2e38ea8af9bb41ec9d23ae033b4fd71324586a785986d3dcb68fbc0085c8c7a5"
+}

@@ -1,0 +1,61 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT m.id AS cursor, a.username,\n               CASE WHEN a.portable THEN NULL ELSE a.domain END AS domain,\n               m.hide_notifications\n        FROM mutes m\n        JOIN accounts a ON a.id = m.target_account_id\n        WHERE m.account_id = $1\n          AND (m.expires_at IS NULL OR m.expires_at > now())\n          AND ($2::bigint IS NULL OR m.id < $2)\n        ORDER BY m.id DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cursor",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "domain",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "hide_notifications",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "hide_notifications"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "1676b79231d6640cc7a787d249694ef84e0dbda1b6bceebb77812c4af14b157b"
+}

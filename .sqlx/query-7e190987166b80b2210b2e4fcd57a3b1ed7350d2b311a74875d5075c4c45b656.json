@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ((in_reply_to_id IS NOT NULL OR in_reply_to_uri IS NOT NULL)\n                   AND (in_reply_to_account_id IS NULL\n                        OR in_reply_to_account_id <> account_id)) AS \"hidden!\"\n           FROM statuses WHERE id = $1 -- STUBKEEP: a stub edge still threads",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hidden!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7e190987166b80b2210b2e4fcd57a3b1ed7350d2b311a74875d5075c4c45b656"
+}

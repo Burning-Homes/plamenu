@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO vapid_keys (id, private_key, public_key)\n        VALUES (1, $1, $2)\n        ON CONFLICT (id) DO UPDATE SET id = vapid_keys.id\n        RETURNING private_key, public_key\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "private_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "vapid_keys",
+            "name": "private_key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "public_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "vapid_keys",
+            "name": "public_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "cd93a9f88d1d9b8e406ec40ac59d62428be7c41edf4cd0fc45b4388150ae2fe3"
+}

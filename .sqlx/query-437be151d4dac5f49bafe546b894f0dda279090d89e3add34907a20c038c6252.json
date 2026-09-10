@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_media_jobs (id, account_id, which, run_at, attempts)\n         VALUES ($1, $2, $3, now() + ($4 * interval '1 second'), $5)\n         ON CONFLICT (account_id, which)\n         DO UPDATE SET run_at = EXCLUDED.run_at, attempts = EXCLUDED.attempts",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Float8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "437be151d4dac5f49bafe546b894f0dda279090d89e3add34907a20c038c6252"
+}

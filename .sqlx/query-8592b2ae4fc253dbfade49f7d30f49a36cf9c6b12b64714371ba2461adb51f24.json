@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE host_signature_prefs SET updated_at = now() - interval '31 days'\n             WHERE host = 'modern.example'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "8592b2ae4fc253dbfade49f7d30f49a36cf9c6b12b64714371ba2461adb51f24"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM otp_backup_codes WHERE user_id = $1 AND code_hash = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "62cef10b3e921ac566ab07996abd0534c969935ad47303c5b7f091a0d3d81cc7"
+}

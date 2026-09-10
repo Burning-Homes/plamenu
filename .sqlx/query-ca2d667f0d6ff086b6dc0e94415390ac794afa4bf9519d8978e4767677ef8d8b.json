@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT attempts, retry_at FROM remote_fetch_failures\n             WHERE scope = 'resource' AND failure_key = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "remote_fetch_failures",
+            "name": "attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "retry_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_fetch_failures",
+            "name": "retry_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "ca2d667f0d6ff086b6dc0e94415390ac794afa4bf9519d8978e4767677ef8d8b"
+}

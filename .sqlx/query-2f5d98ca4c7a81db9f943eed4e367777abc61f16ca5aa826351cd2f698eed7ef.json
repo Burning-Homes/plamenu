@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"c!\" FROM reports\n           WHERE reports.action_taken_at IS NOT NULL\n             AND reports.action_taken_at >= ($1 AT TIME ZONE 'UTC')::date\n             AND reports.action_taken_at < (($2 AT TIME ZONE 'UTC')::date + 1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "c!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2f5d98ca4c7a81db9f943eed4e367777abc61f16ca5aa826351cd2f698eed7ef"
+}

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1\n            FROM notifications n\n            WHERE n.account_id = $2\n              AND n.id > COALESCE(\n                  (SELECT last_read_id FROM markers\n                   WHERE user_id = $1 AND timeline = 'notifications'),\n                  0)\n              AND NOT n.filtered\n              AND NOT sender_filtered($2, n.from_account_id)\n        ) AS \"unread!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "unread!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "dfa017027b4fb16b62b0592a00eb47f8f10cc6d1c035df6a77b0993874ed8c80"
+}

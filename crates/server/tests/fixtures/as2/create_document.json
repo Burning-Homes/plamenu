@@ -1,0 +1,40 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/objects/quarterly-report/activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "published": "2026-07-10T10:00:00Z",
+  "object": {
+    "id": "https://remote.example/objects/quarterly-report",
+    "type": "Document",
+    "attributedTo": "https://remote.example/users/bob",
+    "name": "Quarterly interop report",
+    "content": "<p>Bob shared the complete quarterly report with the working group.</p>",
+    "published": "2026-07-10T10:00:00Z",
+    "url": [
+      {
+        "type": "Link",
+        "mediaType": "text/html",
+        "href": "https://remote.example/documents/quarterly-report"
+      },
+      {
+        "type": "Link",
+        "mediaType": "application/pdf",
+        "href": "https://remote.example/files/quarterly-report.pdf",
+        "contentSize": 2048
+      }
+    ],
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://remote.example/users/bob/followers"],
+    "attachment": [
+      {
+        "type": "Document",
+        "mediaType": "image/png",
+        "url": "https://remote.example/files/quarterly-report-cover.png",
+        "name": "Report cover"
+      }
+    ]
+  }
+}

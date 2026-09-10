@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT v.viewer AS \"viewer!\"\n        FROM unnest($1::bigint[]) AS v(viewer)\n        JOIN statuses s ON s.id = $2 -- STUBKEEP: delivery-time probe on a live post\n        WHERE s.reblog_of_id IS NULL\n          AND s.visibility = 'public'\n          AND NOT account_hidden(v.viewer, s.account_id)\n          AND (s.in_reply_to_id IS NULL\n               OR EXISTS (\n                   SELECT 1 FROM statuses p\n                   WHERE p.id = s.in_reply_to_id\n                     AND (p.account_id = v.viewer\n                          OR p.account_id = s.account_id\n                          OR EXISTS (\n                              SELECT 1 FROM follows rf\n                              WHERE rf.account_id = v.viewer\n                                AND rf.target_account_id = p.account_id\n                                AND NOT rf.pending))))\n          AND (v.viewer = s.account_id OR NOT EXISTS (\n                  SELECT 1 FROM list_accounts la\n                  JOIN lists l ON l.id = la.list_id\n                  WHERE l.account_id = v.viewer AND l.exclusive\n                    AND la.account_id = s.account_id))\n          AND EXISTS (\n              SELECT 1 FROM status_tags st\n              JOIN tag_follows tf ON tf.tag_id = st.tag_id\n              WHERE st.status_id = s.id AND tf.account_id = v.viewer)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "viewer!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f610e7aa3fd7f6010d24d27d713868edebf6fa8859ff096335e6b9f8ab2a8195"
+}

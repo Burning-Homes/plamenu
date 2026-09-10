@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO status_trends (status_id, account_id, score, language, allowed)\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (status_id)\n        DO UPDATE SET account_id = $2, score = $3, language = $4, allowed = $5\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Float8",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4ce37ab954b6314f193f2ecc0497d2fda5b3fb75652a143fabea0d3426fdca2b"
+}

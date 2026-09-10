@@ -1,0 +1,150 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webxdc_guests SET accepted = true, replay_boundary = $3,\n                accepted_at = coalesce(accepted_at, now())\n         WHERE session_id = $1 AND id = $2\n         RETURNING id, session_id, display_name, token_hash, participant_uri,\n                   accepted, replay_boundary, self_addr, joined_at, accepted_at,\n                   last_submitted_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "session_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "session_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "token_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "token_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "participant_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "participant_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "accepted",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "accepted"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "replay_boundary",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "replay_boundary"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "self_addr",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "self_addr"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "joined_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "joined_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "accepted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "accepted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "last_submitted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "last_submitted_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "caf104d833d29bb5bcc299464505493ec7bd7bc251c1a25f835baf9ede8f5e62"
+}

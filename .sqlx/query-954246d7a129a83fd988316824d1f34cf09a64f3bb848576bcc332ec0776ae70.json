@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT EXISTS (\n                SELECT 1 FROM accounts\n                WHERE id = $1 AND suspended_at IS NOT NULL AND deleted_at IS NULL\n            ) AS \"eligible!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "eligible!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "954246d7a129a83fd988316824d1f34cf09a64f3bb848576bcc332ec0776ae70"
+}

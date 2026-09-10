@@ -1,0 +1,10 @@
+# destination|repository|commit
+discourse-source|https://github.com/discourse/discourse.git|28b3afbe4f74b0894f0a0caa9d4ca7767b396ad3
+discourse-source/plugins/discourse-activity-pub|https://github.com/discourse/discourse-activity-pub.git|dc484ccb3ec5a452210a7b867854fd5f160a09c1
+hubzilla-source|https://framagit.org/hubzilla/core.git|2759ba248dcd7eba752fb69cbd13e8ed6986acd8
+hubzilla-addons-source|https://framagit.org/hubzilla/addons.git|a32d9f47de87af5f10aec55843f1264200238ca5
+lemmy-source|https://github.com/LemmyNet/lemmy.git|d4b5330a2c23e251aa6d7aa75c0addd33ea2c825
+mitra-source|https://codeberg.org/silverpill/mitra.git|3132e595c67d93aeef9940d6d105c7a453ca929d
+owncast-source|https://github.com/owncast/owncast.git|b0de2e462058b34aa3fa2e68e1939ff416b69de5
+pleroma-source|https://git.pleroma.social/pleroma/pleroma.git|b0ae451942b892e0983b4e3f63aa55e3d9341a84
+sharkey-source|https://activitypub.software/TransFem-org/Sharkey.git|e60bbcd34bfb243fca93a9a1defd85e9ccb536d5

@@ -1,0 +1,23 @@
+[package]
+name = "plamenu-db"
+description = "PostgreSQL persistence layer for Plamenu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+# `sync` (Barrier) is used only by the concurrent-upsert race regression tests.
+tokio = { workspace = true, features = ["sync"] }
+
+[lints]
+workspace = true

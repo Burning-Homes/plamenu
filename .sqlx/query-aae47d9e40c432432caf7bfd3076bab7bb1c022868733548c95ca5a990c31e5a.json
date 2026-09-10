@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE oauth_tokens\n        SET last_used_at = now(),\n            last_used_ip = COALESCE($2, last_used_ip)\n        WHERE id = $1\n          AND (last_used_at IS NULL OR last_used_at < now() - interval '5 minutes')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aae47d9e40c432432caf7bfd3076bab7bb1c022868733548c95ca5a990c31e5a"
+}

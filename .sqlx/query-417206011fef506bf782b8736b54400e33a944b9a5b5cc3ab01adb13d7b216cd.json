@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT fav.id AS cursor, s.uri, author.username AS author_username,\n               author.uri AS author_uri, s.id AS status_id\n        FROM favourites fav\n        JOIN statuses s ON s.id = fav.status_id -- STUBKEEP: the export is the user's own record; a soft-deleted stub's URI still says what was favourited\n        JOIN accounts author ON author.id = s.account_id\n        WHERE fav.account_id = $1 AND ($2::bigint IS NULL OR fav.id < $2)\n        ORDER BY fav.id DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cursor",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "favourites",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "author_username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "author_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "417206011fef506bf782b8736b54400e33a944b9a5b5cc3ab01adb13d7b216cd"
+}

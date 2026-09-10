@@ -1,0 +1,247 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.id, s.uri, s.account_id, s.content, s.created_at, s.updated_at,\n               s.visibility, s.in_reply_to_id, s.reblog_of_id, s.edited_at,\n               s.spoiler_text, s.sensitive, s.language, s.url,\n               s.quote_approval_policy, s.application_id,\n               s.title, s.object_type, s.external_url\n        FROM preview_card_trends tr\n        JOIN preview_cards c ON c.id = tr.preview_card_id\n        JOIN preview_cards_statuses pcs ON pcs.preview_card_id = c.id\n        JOIN statuses s ON s.id = pcs.status_id\n        JOIN accounts a ON a.id = s.account_id\n        WHERE tr.allowed AND c.url = $1\n          AND s.deleted_at IS NULL -- STUBFILTER\n          AND s.visibility = 'public' AND s.reblog_of_id IS NULL\n          AND NOT account_hidden($2, s.account_id)\n          AND NOT account_silenced(s.account_id)\n          AND (a.portable OR instance_domain_allowed(a.domain))\n          AND ($3::bigint IS NULL OR s.id < $3)\n        ORDER BY s.id DESC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "content",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "in_reply_to_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "in_reply_to_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "reblog_of_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "reblog_of_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "edited_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "edited_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "spoiler_text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "spoiler_text"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "sensitive",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "sensitive"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "quote_approval_policy",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "quote_approval_policy"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "application_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "application_id"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "object_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "object_type"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "external_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "external_url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "30fbc786092563cef0adb955b4292d934e9577775dd575d36f71a3e88ae25247"
+}

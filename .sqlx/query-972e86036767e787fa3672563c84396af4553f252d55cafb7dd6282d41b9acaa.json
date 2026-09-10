@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE instance_settings\n        SET self_destruct_initiated_at = now(), updated_at = now()\n        WHERE self_destruct_initiated_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "972e86036767e787fa3672563c84396af4553f252d55cafb7dd6282d41b9acaa"
+}

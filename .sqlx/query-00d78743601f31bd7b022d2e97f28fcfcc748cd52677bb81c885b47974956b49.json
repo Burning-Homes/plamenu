@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.id AS \"id!\", COALESCE(a.remote_statuses_count, s.cnt, 0) AS \"count!\"\n        FROM accounts a\n        LEFT JOIN (\n            SELECT account_id, count(*) AS cnt\n            FROM statuses\n            WHERE account_id = ANY($1) AND deleted_at IS NULL -- STUBFILTER\n            GROUP BY 1\n        ) s ON s.account_id = a.id\n        WHERE a.id = ANY($1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "00d78743601f31bd7b022d2e97f28fcfcc748cd52677bb81c885b47974956b49"
+}

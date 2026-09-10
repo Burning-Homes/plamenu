@@ -1,0 +1,184 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, account_id, name, description, language, sensitive,\n               discoverable, local, tag_id, uri, url, original_number_of_items,\n               created_at, updated_at\n        FROM collections WHERE uri = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "sensitive",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "sensitive"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "discoverable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "discoverable"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "local",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "local"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "tag_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "tag_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "original_number_of_items",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "original_number_of_items"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "02f5bc3946420266b98b6af2d764fff682c16f535155037893419703bcb59707"
+}

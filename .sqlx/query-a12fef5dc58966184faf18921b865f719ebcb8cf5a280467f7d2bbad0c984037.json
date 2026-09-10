@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT table_name, column_name\n            FROM information_schema.columns\n            WHERE table_schema = 'public' AND data_type IN ('json', 'jsonb')\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "table_name",
+        "type_info": "Name",
+        "origin": {
+          "Table": {
+            "table": "information_schema.columns",
+            "name": "table_name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "column_name",
+        "type_info": "Name",
+        "origin": {
+          "Table": {
+            "table": "information_schema.columns",
+            "name": "column_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "a12fef5dc58966184faf18921b865f719ebcb8cf5a280467f7d2bbad0c984037"
+}

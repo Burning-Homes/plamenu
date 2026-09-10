@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f.target_account_id FROM follows f\n        WHERE f.account_id = $1 AND NOT f.pending\n          AND EXISTS (\n              SELECT 1 FROM follows g\n              WHERE g.account_id = f.target_account_id\n                AND g.target_account_id = $1 AND NOT g.pending\n          )\n        ORDER BY f.id DESC\n        OFFSET $2 LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "target_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "target_account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "503af94788f1be7c2566bf249fdcaf8e48af0179c532c6476637ad7b1462a9e3"
+}

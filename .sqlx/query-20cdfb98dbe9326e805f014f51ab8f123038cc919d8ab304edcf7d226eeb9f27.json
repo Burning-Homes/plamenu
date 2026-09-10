@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_statuses_cleanup_policies (account_id) VALUES ($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "20cdfb98dbe9326e805f014f51ab8f123038cc919d8ab304edcf7d226eeb9f27"
+}

@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT app.id AS \"id!\",\n               app.name AS \"name!\",\n               app.website,\n               app.scopes AS \"scopes!\",\n               min(t.created_at) AS \"authorized_at!\",\n               max(t.last_used_at) AS \"last_used_at\"\n        FROM oauth_tokens t\n        JOIN oauth_apps app ON app.id = t.app_id\n        WHERE t.user_id = $1 AND t.revoked_at IS NULL AND t.app_id <> $2\n        GROUP BY app.id, app.name, app.website, app.scopes\n        ORDER BY min(t.created_at) DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "oauth_apps",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_apps",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "website",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_apps",
+            "name": "website"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "scopes!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_apps",
+            "name": "scopes"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "authorized_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "last_used_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "fe4413a4d79ef5c2e88cc79aa4464a86de77d40bf5f17704a69de8d9cc1f6455"
+}

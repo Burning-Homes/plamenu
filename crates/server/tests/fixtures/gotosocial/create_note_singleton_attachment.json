@@ -1,0 +1,26 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/users/bob/statuses/01JZQYAGTS0SINGLETON0MEDIA/activity#Create",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": "https://www.w3.org/ns/activitystreams#Public",
+  "cc": "https://remote.example/users/bob/followers",
+  "published": "2026-07-10T09:05:00Z",
+  "object": {
+    "id": "https://remote.example/users/bob/statuses/01JZQYAGTS0SINGLETON0MEDIA",
+    "type": "Note",
+    "attributedTo": "https://remote.example/users/bob",
+    "published": "2026-07-10T09:05:00Z",
+    "url": "https://remote.example/@bob/statuses/01JZQYAGTS0SINGLETON0MEDIA",
+    "content": "<p>one photo, bare attachment object</p>",
+    "to": "https://www.w3.org/ns/activitystreams#Public",
+    "cc": "https://remote.example/users/bob/followers",
+    "attachment": {
+      "type": "Document",
+      "mediaType": "image/jpeg",
+      "url": "https://remote.example/fileserver/01JZQYA/attachment/original/photo.jpg",
+      "name": "A single photo",
+      "blurhash": "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f.account_id AS \"account_id!\"\n        FROM follows f\n        JOIN accounts a ON a.id = f.account_id\n        WHERE f.target_account_id = $1 AND NOT f.pending\n          AND a.suspended_at IS NULL\n          AND (NOT a.hide_collections OR a.id = $4 OR $1 = $4)\n        ORDER BY f.id DESC\n        OFFSET $2 LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d135566e9cf7db221839a8bb5a104a4ae14588786f13d2f81fbcf3da855ca89b"
+}

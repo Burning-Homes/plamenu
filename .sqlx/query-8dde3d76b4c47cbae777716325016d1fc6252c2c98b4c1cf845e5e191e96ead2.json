@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE accounts\n        SET uri = 'https://' || $1 || '/users/' || username\n        WHERE domain IS NULL AND uri IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8dde3d76b4c47cbae777716325016d1fc6252c2c98b4c1cf845e5e191e96ead2"
+}

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO account_fields (account_id, position, name, value, verified_at)\n        SELECT $1, v.position, v.name, v.value, v.verified_at\n        FROM unnest($2::int[], $3::text[], $4::text[], $5::timestamptz[])\n             AS v(position, name, value, verified_at)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4Array",
+        "TextArray",
+        "TextArray",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "de724cf49cbb7ac37f96f9e01d3bd70e84b903643158d197bfe720f5d67fa977"
+}

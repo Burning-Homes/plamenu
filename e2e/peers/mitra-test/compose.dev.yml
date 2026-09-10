@@ -1,0 +1,22 @@
+name: mitra-test
+
+services:
+  db:
+    image: postgres:15-alpine@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mitra
+      POSTGRES_PASSWORD: mitra
+      POSTGRES_DB: mitra
+    ports:
+      - "55432:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mitra"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  db:

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE oauth_tokens SET revoked_at = now() - make_interval(days => 2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "b3ffdf5351cf28e67035e09ee09bb048fe3f13ede21d1eab2b530a002ac51daf"
+}

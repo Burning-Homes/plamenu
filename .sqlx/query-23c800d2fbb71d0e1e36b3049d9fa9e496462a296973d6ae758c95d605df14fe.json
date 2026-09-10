@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE follows SET\n            show_reblogs = COALESCE($3, show_reblogs),\n            with_replies = COALESCE($4, with_replies),\n            notify = COALESCE($5, notify),\n            languages = CASE WHEN $6 THEN $7::text[] ELSE languages END\n        WHERE account_id = $1 AND target_account_id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "23c800d2fbb71d0e1e36b3049d9fa9e496462a296973d6ae758c95d605df14fe"
+}

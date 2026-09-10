@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO account_move_jobs (id, source_account_id, target_account_id)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (source_account_id, target_account_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "58a98b551db3fa6ab94c724e519ba24d96886bba815b238b0891c148c510156a"
+}

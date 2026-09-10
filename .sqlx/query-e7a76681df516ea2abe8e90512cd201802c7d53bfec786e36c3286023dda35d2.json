@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webxdc_memberships SET last_submitted_at = now()\n         WHERE session_id = $1 AND participant_account_id = $2 AND accepted\n           AND (last_submitted_at IS NULL\n                OR last_submitted_at <= now() - ($3::bigint * interval '1 millisecond'))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e7a76681df516ea2abe8e90512cd201802c7d53bfec786e36c3286023dda35d2"
+}

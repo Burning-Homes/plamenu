@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_attachments\n        SET small_file_name = $2, small_width = $3, small_height = $4\n        WHERE id = $1 AND file_name IS NULL AND remote_url IS NOT NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "438432ff0b2e4fd6bed0d14c4e9567e65ce865305fcbe2c86ca0966372a0ba68"
+}

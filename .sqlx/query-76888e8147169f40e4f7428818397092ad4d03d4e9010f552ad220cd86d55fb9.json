@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT s.id\n        FROM statuses s -- STUBKEEP: a moderation sweep must catch stubs too\n        JOIN statuses boost ON boost.reblog_of_id = s.id AND boost.account_id = $1\n        WHERE s.account_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "76888e8147169f40e4f7428818397092ad4d03d4e9010f552ad220cd86d55fb9"
+}

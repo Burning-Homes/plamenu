@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, domain, trendable, reviewed_at, requested_review_at\n        FROM preview_card_providers\n        WHERE ($1::bigint IS NULL OR id < $1) AND ($2::bigint IS NULL OR id > $2)\n        ORDER BY id DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_card_providers",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "domain",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_card_providers",
+            "name": "domain"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "trendable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "preview_card_providers",
+            "name": "trendable"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "reviewed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "preview_card_providers",
+            "name": "reviewed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "requested_review_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "preview_card_providers",
+            "name": "requested_review_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "cb7683407d0046022d4ddb2b1d22ec263a2b2a4156d94f4b38c35f9f8ed88dc4"
+}

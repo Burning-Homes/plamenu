@@ -1,0 +1,42 @@
+{
+	on_demand_tls {
+		# Only numeric Webxdc session origins accepted by Plamenu may receive a
+		# certificate. Do not remove this permission check.
+		ask http://127.0.0.1:8420/webxdc/caddy-allow
+	}
+}
+
+social.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8420
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+	}
+}
+
+# Webxdc packages use a dedicated, cookie-less origin for every session. Point
+# both webxdc.social.example.com and *.webxdc.social.example.com at this host.
+https:// {
+	@webxdc host *.webxdc.social.example.com
+	handle @webxdc {
+		encode zstd gzip
+		reverse_proxy 127.0.0.1:8420
+
+		header {
+			>Strict-Transport-Security "max-age=31536000; includeSubDomains"
+			>X-Content-Type-Options "nosniff"
+			>Referrer-Policy "no-referrer"
+		}
+	}
+
+	handle {
+		abort
+	}
+
+	tls {
+		on_demand
+	}
+}

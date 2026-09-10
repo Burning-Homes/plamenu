@@ -1,0 +1,316 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.id AS \"account_id!\",\n               a.portable     AS \"portable!\",\n               u.id            AS \"user_id?\",\n               u.email         AS \"email?\",\n               u.confirmed_at  AS \"confirmed_at?\",\n               u.approved      AS \"approved?\",\n               u.disabled      AS \"disabled?\",\n               u.locale        AS \"locale?\",\n               u.sign_up_ip AS \"sign_up_ip?\", u.invite_request_text AS \"invite_request_text?\",\n               signup_app.name AS \"sign_up_application?\", signup_invite.code AS \"invite_code?\",\n               inviter_account.id AS \"inviter_account_id?\", inviter_account.username AS \"inviter_username?\",\n               u.confirmation_sent_at AS \"confirmation_sent_at?\", u.time_zone AS \"time_zone?\", u.age_verified_at AS \"age_verified_at?\",\n               r.id            AS \"role_id?\",\n               r.name          AS \"role_name?\",\n               r.color         AS \"role_color?\",\n               r.position      AS \"role_position?\",\n               r.permissions   AS \"role_permissions?\",\n               r.highlighted   AS \"role_highlighted?\",\n               r.created_at    AS \"role_created_at?\",\n               r.updated_at    AS \"role_updated_at?\"\n        FROM accounts a\n        LEFT JOIN users u ON u.account_id = a.id\n        LEFT JOIN user_roles r ON r.id = u.role_id\n        LEFT JOIN oauth_apps signup_app ON signup_app.id = u.created_by_application_id\n        LEFT JOIN invites signup_invite ON signup_invite.id = u.invite_id\n        LEFT JOIN users inviter_user ON inviter_user.id = signup_invite.user_id\n        LEFT JOIN accounts inviter_account ON inviter_account.id = inviter_user.account_id\n        WHERE a.id = ANY($1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "portable!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "portable"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "email?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "confirmed_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "confirmed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "approved?",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "approved"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "disabled?",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "disabled"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "locale?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "locale"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "sign_up_ip?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "sign_up_ip"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "invite_request_text?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "invite_request_text"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "sign_up_application?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_apps",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "invite_code?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "invites",
+            "name": "code"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "inviter_account_id?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "inviter_username?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "confirmation_sent_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "confirmation_sent_at"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "time_zone?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "time_zone"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "age_verified_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "age_verified_at"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "role_id?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "role_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "role_color?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "color"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "role_position?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "role_permissions?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "permissions"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "role_highlighted?",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "highlighted"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "role_created_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "role_updated_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "2a521d4512575dccc969444fa73be97b9c7eff0068da82236cda6a1b9a943a3a"
+}

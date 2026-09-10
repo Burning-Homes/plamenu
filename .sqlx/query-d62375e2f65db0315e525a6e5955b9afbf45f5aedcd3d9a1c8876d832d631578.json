@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH locked AS (\n            SELECT id, run_at AS original_run_at\n            FROM delivery_jobs\n            WHERE run_at <= now()\n            ORDER BY run_at, id\n            LIMIT $1\n            FOR UPDATE SKIP LOCKED\n        ),\n        updated AS (\n        UPDATE delivery_jobs SET\n            attempts = attempts + 1,\n            run_at = now() + make_interval(secs => $2)\n        FROM locked\n        WHERE delivery_jobs.id = locked.id\n        RETURNING delivery_jobs.id, account_id, inbox_url, activity,\n                  synchronize_followers, attempts, locked.original_run_at\n        )\n        SELECT id, account_id, inbox_url, activity, synchronize_followers, attempts\n        FROM updated\n        ORDER BY original_run_at, id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "delivery_jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "delivery_jobs",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "inbox_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "delivery_jobs",
+            "name": "inbox_url"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "activity",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "delivery_jobs",
+            "name": "activity"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "synchronize_followers",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "delivery_jobs",
+            "name": "synchronize_followers"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "delivery_jobs",
+            "name": "attempts"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d62375e2f65db0315e525a6e5955b9afbf45f5aedcd3d9a1c8876d832d631578"
+}

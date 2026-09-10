@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO preview_card_trends (preview_card_id, score, language, allowed)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (preview_card_id)\n        DO UPDATE SET score = $2, language = $3, allowed = $4\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aa5953250a9d3cb15530d49a81c5a273307fce3ce85180ee7bf960fc780f6b8a"
+}

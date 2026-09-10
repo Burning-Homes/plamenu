@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM statuses WHERE reblog_of_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "980f3b142dd9feb192c88e35d4919c192e2c68f8ed5c2cd2ae75846682aa8ee9"
+}

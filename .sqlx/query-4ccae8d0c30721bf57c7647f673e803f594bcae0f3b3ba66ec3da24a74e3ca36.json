@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, status_id, account_id, content, text, spoiler_text, sensitive,\n               media_ids, created_at\n        FROM status_edits\n        WHERE status_id = $1\n        ORDER BY id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_edits",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_edits",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_edits",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "content",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_edits",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_edits",
+            "name": "text"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "spoiler_text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_edits",
+            "name": "spoiler_text"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "sensitive",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "status_edits",
+            "name": "sensitive"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "media_ids",
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "status_edits",
+            "name": "media_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "status_edits",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4ccae8d0c30721bf57c7647f673e803f594bcae0f3b3ba66ec3da24a74e3ca36"
+}

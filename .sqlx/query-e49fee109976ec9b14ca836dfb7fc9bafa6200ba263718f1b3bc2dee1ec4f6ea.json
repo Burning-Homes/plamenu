@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO account_domain_blocks (id, account_id, domain)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (account_id, domain) DO UPDATE SET domain = EXCLUDED.domain\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_domain_blocks",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e49fee109976ec9b14ca836dfb7fc9bafa6200ba263718f1b3bc2dee1ec4f6ea"
+}

@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO follows (id, account_id, target_account_id, uri, pending)\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (account_id, target_account_id)\n            DO UPDATE SET uri = EXCLUDED.uri, pending = EXCLUDED.pending\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fe07dac90e786c5040c5580d73e55ecd3dc73d9b0ac9a6363314e2b28b3dcf08"
+}

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT peers.domain AS \"domain!\"\n        FROM (\n            SELECT accounts.domain, count(*) AS accounts_count\n            FROM accounts WHERE accounts.domain IS NOT NULL AND NOT accounts.portable\n            GROUP BY accounts.domain\n            UNION\n            SELECT domain_allows.domain, 0 FROM domain_allows\n            WHERE domain_allows.domain NOT IN\n                (SELECT accounts.domain FROM accounts\n                 WHERE accounts.domain IS NOT NULL AND NOT accounts.portable)\n        ) AS peers\n        WHERE peers.domain NOT IN (SELECT domain FROM domain_blocks)\n          AND peers.domain LIKE $1 || '%'\n        ORDER BY peers.accounts_count DESC, peers.domain\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "domain!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7ec843877e9dd0d17c2c6e710010557a475cc2b7ccef9f652c2b938e49d5ab46"
+}

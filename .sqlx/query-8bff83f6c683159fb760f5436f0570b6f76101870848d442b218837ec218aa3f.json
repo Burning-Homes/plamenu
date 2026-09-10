@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE preview_cards SET max_score = v.max_score, max_score_at = $3\n        FROM unnest($1::bigint[], $2::float8[]) AS v(id, max_score)\n        WHERE preview_cards.id = v.id\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Float8Array",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8bff83f6c683159fb760f5436f0570b6f76101870848d442b218837ec218aa3f"
+}

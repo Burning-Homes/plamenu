@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE invites SET expires_at = now()\n        WHERE id = $1 AND user_id = $2\n          AND (expires_at IS NULL OR expires_at > now())\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2f30e62e26223cc92076bf0809f263397917886dec8be9956313a65d2533285c"
+}

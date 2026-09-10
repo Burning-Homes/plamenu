@@ -1,0 +1,61 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT g.group_key AS \"group_key!\",\n               (SELECT max(n.id) FROM notifications n\n                 WHERE n.account_id = $1 AND n.group_key = g.group_key\n                   AND ($4::bigint IS NULL OR n.id <= $4)) AS \"most_recent_id!\",\n               ARRAY(SELECT n.from_account_id FROM notifications n\n                      WHERE n.account_id = $1 AND n.group_key = g.group_key\n                        AND ($4::bigint IS NULL OR n.id <= $4)\n                      ORDER BY n.id DESC LIMIT 8) AS \"sample_account_ids!\",\n               (SELECT count(*) FROM notifications n\n                 WHERE n.account_id = $1 AND n.group_key = g.group_key\n                   AND ($4::bigint IS NULL OR n.id <= $4)) AS \"notifications_count!\",\n               (SELECT min(n.id) FROM notifications n\n                 WHERE n.account_id = $1 AND n.group_key = g.group_key\n                   AND n.id >= $3) AS min_id,\n               (SELECT max(n.created_at) FROM notifications n\n                 WHERE n.account_id = $1 AND n.group_key = g.group_key\n                   AND ($4::bigint IS NULL OR n.id <= $4)) AS \"latest_at!\"\n        FROM unnest($2::text[]) AS g(group_key)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "group_key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "most_recent_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "sample_account_ids!",
+        "type_info": "Int8Array",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "notifications_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "min_id",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "latest_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "bd5e59adb44ae1a6f8aa04e5dd0165e17deae316aec515cfedc1b8e3571207be"
+}

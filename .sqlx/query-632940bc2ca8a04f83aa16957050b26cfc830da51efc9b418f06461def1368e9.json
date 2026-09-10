@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE conversations\n         SET history_uri      = COALESCE(history_uri, $2),\n             owner_account_id = CASE WHEN $3 THEN owner_account_id\n                                     ELSE COALESCE(owner_account_id, $4) END,\n             root_status_id   = CASE WHEN $3 THEN root_status_id\n                                     ELSE COALESCE(root_status_id, $5) END\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Bool",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "632940bc2ca8a04f83aa16957050b26cfc830da51efc9b418f06461def1368e9"
+}

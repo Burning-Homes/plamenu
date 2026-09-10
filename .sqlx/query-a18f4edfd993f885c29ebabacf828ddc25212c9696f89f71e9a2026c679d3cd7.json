@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO remote_fetch_failures\n               (scope, failure_key, attempts, retry_at, last_error)\n           VALUES ($1, $2, 0, now() + make_interval(secs => $4), $3)\n           ON CONFLICT (scope, failure_key) DO UPDATE SET\n               retry_at = GREATEST(\n                   COALESCE(remote_fetch_failures.retry_at, '-infinity'::timestamptz),\n                   now() + make_interval(secs => $4)\n               ),\n               last_error = $3,\n               last_failed_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a18f4edfd993f885c29ebabacf828ddc25212c9696f89f71e9a2026c679d3cd7"
+}

@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO featured_tags (id, account_id, tag_id)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (account_id, tag_id) DO UPDATE SET account_id = featured_tags.account_id\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "featured_tags",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "388c957721a3b1d9eac1a7eee744caaa25795e23881ff65988092ab46431d3e9"
+}

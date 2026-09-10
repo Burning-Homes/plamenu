@@ -1,0 +1,50 @@
+# Development/test database for Plamenu.
+# Port 5433 on loopback so it never collides with the Mastodon test stack
+# (which keeps its postgres on an internal docker network) or a system postgres.
+name: plamenu-dev
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    # The streaming tests hold a LISTEN connection per parallel test on top
+    # of each test's own pool; the stock 100 backends run out. Durability is
+    # off — this database is disposable, and the parallel per-test database
+    # creation in `cargo test` is fsync-bound otherwise.
+    command: >-
+      postgres -c max_connections=300
+               -c fsync=off
+               -c synchronous_commit=off
+               -c full_page_writes=off
+    ports:
+      - "127.0.0.1:5433:5432"
+    environment:
+      POSTGRES_USER: plamenu
+      POSTGRES_PASSWORD: plamenu
+      POSTGRES_DB: plamenu_dev
+    volumes:
+      # postgres:18 images keep PGDATA in a subdirectory of /var/lib/postgresql;
+      # mounting the parent is the supported layout.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "plamenu"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Catches all outgoing mail in dev/e2e (M21): SMTP on 1025, HTTP UI + API
+  # on 8025 (`GET /api/v1/messages`). The e2e registration flow reads its
+  # confirmation links from here.
+  # Dev rig images stay on version tags, not digests — reproducibility of the
+  # disposable dev stack is not worth the bump churn; production pins live in
+  # deploy/compose.yml and the Dockerfile, where mutable base tags would make
+  # nominally identical production builds diverge.
+  mailpit:
+    image: axllent/mailpit:v1.30.6
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  pgdata:

@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT t.id, t.name, t.display_name, t.usable, t.listable, t.trendable,\n               t.reviewed_at\n        FROM tag_trends tr\n        JOIN tags t ON t.id = tr.tag_id\n        ORDER BY tr.score DESC, t.id DESC\n        LIMIT $1 OFFSET $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "usable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "usable"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "listable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "listable"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "trendable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "trendable"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "reviewed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "reviewed_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "e91be3b926856dd6943d47133244228230e492b0e19899eeedf5d6ece8346b10"
+}

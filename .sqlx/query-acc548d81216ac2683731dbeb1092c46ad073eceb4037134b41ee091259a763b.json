@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f.id AS \"follow_id!\", f.target_account_id AS \"account_id!\"\n        FROM follows f\n        JOIN accounts a ON a.id = f.target_account_id\n        WHERE f.account_id = $1 AND NOT f.pending\n          AND a.suspended_at IS NULL\n          AND (NOT a.hide_collections OR a.id = $5 OR $1 = $5)\n          AND ($2::bigint IS NULL OR f.id < $2)\n          AND ($3::bigint IS NULL OR f.id > $3)\n        ORDER BY f.id DESC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "follow_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "target_account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "acc548d81216ac2683731dbeb1092c46ad073eceb4037134b41ee091259a763b"
+}

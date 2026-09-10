@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT account_id, affiliation\n        FROM group_affiliations\n        WHERE group_account_id = $1 AND affiliation IN ('owner', 'moderator')\n        ORDER BY affiliation = 'owner' DESC, created_at, account_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "group_affiliations",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "affiliation",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "group_affiliations",
+            "name": "affiliation"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "9e05e2088ef5c7bd7a6809ebff55d13916cd28e7d8154fcc9221db8d3e86694b"
+}

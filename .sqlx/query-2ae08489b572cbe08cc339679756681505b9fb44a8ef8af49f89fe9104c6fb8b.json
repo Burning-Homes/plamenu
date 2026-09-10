@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT sc.status_id AS \"status_id!\", c.id AS conversation_id, c.uri, c.history_uri,\n               root.visibility AS \"root_visibility?\"\n        FROM status_conversations sc\n        JOIN conversations c ON c.id = sc.conversation_id\n        LEFT JOIN statuses root ON root.id = c.root_status_id -- STUBKEEP: a stubbed root still carries the conversation's visibility\n        WHERE sc.status_id = ANY($1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_conversations",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "conversation_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "conversations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "conversations",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "history_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "conversations",
+            "name": "history_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "root_visibility?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "visibility"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "2ae08489b572cbe08cc339679756681505b9fb44a8ef8af49f89fe9104c6fb8b"
+}

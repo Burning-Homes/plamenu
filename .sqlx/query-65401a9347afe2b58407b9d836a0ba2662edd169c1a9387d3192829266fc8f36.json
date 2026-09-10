@@ -1,0 +1,167 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO collection_items\n            (id, collection_id, account_id, state, position, uri, object_uri,\n             activity_uri, approval_uri)\n        VALUES ($1, $2, $3, $4,\n                COALESCE((SELECT max(position) + 1 FROM collection_items\n                          WHERE collection_id = $2), 1),\n                $5, $6, $7, $8)\n        ON CONFLICT (collection_id, account_id) WHERE account_id IS NOT NULL\n        DO NOTHING\n        RETURNING id, collection_id, account_id, state, position, uri, object_uri,\n                  activity_uri, approval_uri, approval_last_verified_at,\n                  created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "collection_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "collection_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "position",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "object_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "object_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "activity_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "activity_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "approval_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "approval_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "approval_last_verified_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "approval_last_verified_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "65401a9347afe2b58407b9d836a0ba2662edd169c1a9387d3192829266fc8f36"
+}

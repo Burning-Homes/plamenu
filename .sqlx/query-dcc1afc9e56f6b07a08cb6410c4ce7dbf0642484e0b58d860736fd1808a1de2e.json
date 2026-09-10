@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_attachments m\n        SET description = CASE WHEN c.set_description THEN c.description\n                               ELSE m.description END\n        FROM unnest($2::bigint[], $3::boolean[], $4::text[])\n             AS c(id, set_description, description)\n        WHERE m.id = c.id AND m.account_id = $1 AND m.status_id IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array",
+        "BoolArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dcc1afc9e56f6b07a08cb6410c4ce7dbf0642484e0b58d860736fd1808a1de2e"
+}

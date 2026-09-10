@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id FROM webxdc_sessions s\n         WHERE s.id = $1\n           AND NOT EXISTS (\n               SELECT 1 FROM webxdc_tombstones t WHERE t.session_id = s.id\n           )\n         FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "684d0695cc9c3d9d3405d3cb19fca1ec3d66c2f98db72f7cf94d13466414ce4b"
+}

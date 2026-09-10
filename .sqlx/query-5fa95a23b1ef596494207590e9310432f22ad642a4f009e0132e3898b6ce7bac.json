@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH RECURSIVE subtree(id, visibility) AS (\n               SELECT s.id, s.visibility FROM statuses s WHERE s.id = ANY($1) -- STUBKEEP: delete fan-out walks the whole subtree, stubs included\n               UNION ALL\n               SELECT c.id, c.visibility\n               FROM statuses c JOIN subtree t ON c.in_reply_to_id = t.id\n           ) CYCLE id SET looped USING path\n           SELECT DISTINCT id AS \"id!\", visibility AS \"visibility!\" FROM subtree",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "visibility!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "5fa95a23b1ef596494207590e9310432f22ad642a4f009e0132e3898b6ce7bac"
+}

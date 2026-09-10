@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT reblog_of_id AS \"id!\" FROM statuses -- STUBKEEP: a boost wrapper never stubs\n           WHERE account_id = $1 AND reblog_of_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "reblog_of_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "9129f382e2e6c75602c381247bdaaf87c8c677c195dcdefed84198159bcb2f2a"
+}

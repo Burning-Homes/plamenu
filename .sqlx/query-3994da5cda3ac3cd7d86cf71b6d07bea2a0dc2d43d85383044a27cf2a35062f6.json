@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO tags (id, name)\n        SELECT DISTINCT ON (lower(v.name)) v.id, v.name\n        FROM unnest($1::bigint[], $2::text[]) WITH ORDINALITY AS v(id, name, ord)\n        ORDER BY lower(v.name), v.ord\n        ON CONFLICT (lower(name)) DO UPDATE SET name = tags.name\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3994da5cda3ac3cd7d86cf71b6d07bea2a0dc2d43d85383044a27cf2a35062f6"
+}

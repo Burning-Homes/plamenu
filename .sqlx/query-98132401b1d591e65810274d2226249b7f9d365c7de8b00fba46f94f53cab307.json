@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT sender_filtered($1, $2) AS \"filtered!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "filtered!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "98132401b1d591e65810274d2226249b7f9d365c7de8b00fba46f94f53cab307"
+}

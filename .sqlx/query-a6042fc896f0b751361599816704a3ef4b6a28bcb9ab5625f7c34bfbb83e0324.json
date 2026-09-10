@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM oauth_tokens\n        WHERE id IN (\n            SELECT id FROM oauth_tokens\n            WHERE app_id = $1 AND user_id IS NULL AND revoked_at IS NULL\n            ORDER BY id DESC\n            OFFSET $2\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a6042fc896f0b751361599816704a3ef4b6a28bcb9ab5625f7c34bfbb83e0324"
+}

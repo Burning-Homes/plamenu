@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT last_serial, storage_bytes FROM webxdc_sessions WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_serial",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "last_serial"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "storage_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "storage_bytes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "c8d6b01562ee758f74aa0edea4f872a5a5cf439a5094f9d03267aed3fb5c50de"
+}

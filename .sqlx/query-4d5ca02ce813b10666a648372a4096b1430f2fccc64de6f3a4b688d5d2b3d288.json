@@ -1,0 +1,138 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, user_id, access_token_id, access_token, endpoint,\n               key_p256dh, key_auth, standard, policy,\n               ARRAY(SELECT a.kind FROM web_push_alerts a\n                     WHERE a.subscription_id = s.id ORDER BY a.kind) AS \"alert_kinds!\",\n               ARRAY(SELECT a.enabled FROM web_push_alerts a\n                     WHERE a.subscription_id = s.id ORDER BY a.kind) AS \"alert_values!\"\n        FROM web_push_subscriptions s\n        WHERE s.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "web_push_subscriptions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "web_push_subscriptions",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "access_token_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "web_push_subscriptions",
+            "name": "access_token_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "access_token",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "web_push_subscriptions",
+            "name": "access_token"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "endpoint",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "web_push_subscriptions",
+            "name": "endpoint"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "key_p256dh",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "web_push_subscriptions",
+            "name": "key_p256dh"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "key_auth",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "web_push_subscriptions",
+            "name": "key_auth"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "standard",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "web_push_subscriptions",
+            "name": "standard"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "policy",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "web_push_subscriptions",
+            "name": "policy"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "alert_kinds!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "alert_values!",
+        "type_info": "BoolArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "4d5ca02ce813b10666a648372a4096b1430f2fccc64de6f3a4b688d5d2b3d288"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE remote_history_states\n         SET state = 'complete', last_success_at = '2026-08-14 08:15:00+00',\n             automatic_retry_at = now() + interval '6 hours'\n         WHERE account_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6c7e5b2705b7a081692627277d2c1ad38e91e0942436e6f846a338116b931d9a"
+}

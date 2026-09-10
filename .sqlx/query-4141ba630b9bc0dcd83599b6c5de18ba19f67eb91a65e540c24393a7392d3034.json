@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT bk.id AS cursor, s.uri, author.username AS author_username,\n               author.uri AS author_uri, s.id AS status_id\n        FROM bookmarks bk\n        JOIN statuses s ON s.id = bk.status_id -- STUBKEEP: the export is the user's own record; a soft-deleted stub's URI still says what was bookmarked\n        JOIN accounts author ON author.id = s.account_id\n        WHERE bk.account_id = $1 AND ($2::bigint IS NULL OR bk.id < $2)\n        ORDER BY bk.id DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cursor",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "bookmarks",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "author_username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "author_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "4141ba630b9bc0dcd83599b6c5de18ba19f67eb91a65e540c24393a7392d3034"
+}

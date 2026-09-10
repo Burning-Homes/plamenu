@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO tag_usages (tag_id, day, account_id, uses)\n        SELECT st.tag_id, $2, s.account_id, 1\n        FROM statuses s\n        JOIN status_tags st ON st.status_id = s.id\n        JOIN tags t ON t.id = st.tag_id\n        JOIN accounts a ON a.id = s.account_id\n        WHERE s.id = $1\n          AND s.reblog_of_id IS NULL\n          AND s.visibility = 'public'\n          AND NOT account_silenced(a.id)\n          AND t.usable IS NOT FALSE\n        ON CONFLICT (tag_id, day, account_id)\n        DO UPDATE SET uses = tag_usages.uses + 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Date"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9fb264f871b44deda9a472050564f10034fd795f7cd0c1a252f97d1daeb724dc"
+}

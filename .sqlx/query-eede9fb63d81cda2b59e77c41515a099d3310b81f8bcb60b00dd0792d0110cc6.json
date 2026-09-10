@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM site_uploads WHERE var = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eede9fb63d81cda2b59e77c41515a099d3310b81f8bcb60b00dd0792d0110cc6"
+}

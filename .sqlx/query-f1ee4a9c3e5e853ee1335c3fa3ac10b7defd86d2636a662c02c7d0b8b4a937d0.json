@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT last_serial, ended_at FROM webxdc_sessions WHERE id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_serial",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "last_serial"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "ended_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "ended_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "f1ee4a9c3e5e853ee1335c3fa3ac10b7defd86d2636a662c02c7d0b8b4a937d0"
+}

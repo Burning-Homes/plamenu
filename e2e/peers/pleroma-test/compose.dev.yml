@@ -1,0 +1,81 @@
+# Disposable Pleroma-family instance for federation / e2e testing against
+# Plamenu. Builds **Akkoma** (see ./Dockerfile) — the real-world "Pleroma"
+# servers we interop with run Akkoma, which top-levels a status' emoji_reactions
+# where upstream Pleroma only nests them. Kept on the pleroma.local domain /
+# pleroma-web alias so the rest of the stack (Caddy, hosts, ./dev, e2e) is
+# unchanged.
+#
+# It joins the Mastodon stack's Caddy network so the same local CA terminates
+# TLS for https://pleroma.local and all three instances can federate.
+
+name: pleroma-test
+
+services:
+  db:
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    restart: unless-stopped
+    # Distinct alias: `pleroma` also joins the Mastodon network, which has its
+    # own `db` service — `DB_HOST=pleroma-db` avoids that name collision.
+    networks:
+      plr:
+        aliases: [pleroma-db]
+    environment:
+      POSTGRES_USER: pleroma
+      POSTGRES_PASSWORD: pleroma
+      POSTGRES_DB: pleroma
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "pleroma"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Not named `web`: compose registers the service name as a DNS alias on
+  # every attached network, including the shared Caddy one, where it would
+  # collide with the Mastodon stack's own `web` service (Caddy's
+  # `reverse_proxy web:3000` would round-robin into the wrong container).
+  pleroma:
+    build:
+      # Self-contained Akkoma release build (clones akkoma stable in-image).
+      context: .
+    image: pleroma-test:dev
+    restart: unless-stopped
+    networks:
+      plr: {}
+      shared:
+        aliases: [pleroma-web]
+    environment:
+      DOMAIN: pleroma.local
+      INSTANCE_NAME: Pleroma
+      ADMIN_EMAIL: admin@pleroma.local
+      NOTIFY_EMAIL: notify@pleroma.local
+      DB_USER: pleroma
+      DB_PASS: pleroma
+      DB_NAME: pleroma
+      DB_HOST: pleroma-db
+    volumes:
+      # Persistent secrets, uploads and static assets. Runtime federation config
+      # is baked into the image at /etc/akkoma/config.exs (see ./Dockerfile).
+      - plrdata:/var/lib/akkoma
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost: Akkoma binds 0.0.0.0:4000 (IPv4 only), but
+      # `localhost` resolves to ::1 first and the IPv6 probe is refused.
+      test:
+        ["CMD-SHELL", "wget -q --spider --proxy=off 127.0.0.1:4000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+networks:
+  plr:
+  shared:
+    external: true
+    name: mastodon-test_internal
+
+volumes:
+  pgdata:
+  plrdata:

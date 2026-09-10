@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE quotes SET state = 'accepted', approval_uri = $2\n        WHERE id = $1 AND state = 'pending'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a0e0fe64da95608708cf895e1fd14263509adeb7b60eaf8f6a8a837542d3be8c"
+}

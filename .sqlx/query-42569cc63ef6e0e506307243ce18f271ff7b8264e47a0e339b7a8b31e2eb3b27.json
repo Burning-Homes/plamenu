@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) AS \"count!\" FROM (\n            SELECT 1 FROM notifications\n            WHERE account_id = $1 AND from_account_id = $2 AND filtered\n              AND kind = ANY($3)\n            LIMIT 100\n        ) capped\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "42569cc63ef6e0e506307243ce18f271ff7b8264e47a0e339b7a8b31e2eb3b27"
+}

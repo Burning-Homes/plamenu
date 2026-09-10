@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE remote_history_states SET state = 'unsupported',\n                 automatic_retry_at = now() + interval '7 days',\n                 last_error_class = 'empty_collection'\n             WHERE account_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5755b894ca2e730b2c53090bd53bcb6e88fb450fe9806de9fa48cc26c5523b2a"
+}

@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"count!\" FROM statuses s\n           JOIN accounts a ON a.id = s.account_id\n           WHERE (s.uri IS NULL OR a.portable)\n             AND s.reblog_of_id IS NULL AND s.deleted_at IS NULL -- STUBFILTER",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b313d97c5c6c217bdeae0836dcf45dfd45b22c393356dcbe586c36ecebe02602"
+}

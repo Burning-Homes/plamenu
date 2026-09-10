@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET locked_at = now() - interval '2 hours' WHERE lower(email) = lower($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e96c8dca677e2d135a5e36f3b008c24283626087caba50243feb36fb8406bf43"
+}

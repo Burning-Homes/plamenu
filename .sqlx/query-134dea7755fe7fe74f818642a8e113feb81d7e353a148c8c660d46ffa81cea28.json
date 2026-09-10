@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT last_served_at FROM media_attachments WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_served_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "last_served_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "134dea7755fe7fe74f818642a8e113feb81d7e353a148c8c660d46ffa81cea28"
+}

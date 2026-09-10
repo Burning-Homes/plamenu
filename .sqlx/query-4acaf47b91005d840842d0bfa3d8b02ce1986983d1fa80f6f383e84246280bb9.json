@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f.account_id AS \"id!\"\n        FROM follows f\n        JOIN accounts a ON a.id = f.account_id\n        WHERE f.target_account_id = $1 AND a.domain IS NULL AND NOT f.pending\n        ORDER BY f.account_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4acaf47b91005d840842d0bfa3d8b02ce1986983d1fa80f6f383e84246280bb9"
+}

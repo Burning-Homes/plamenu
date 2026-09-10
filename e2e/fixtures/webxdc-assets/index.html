@@ -1,0 +1,70 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Webxdc asset checks</title>
+<script>const nativeAssetFetch = window.fetch.bind(window);</script>
+<script src="webxdc.js"></script>
+<h1>Webxdc asset checks</h1>
+<ul id="results"></ul>
+<canvas id="texture" width="1" height="1" style="width:64px;height:64px"></canvas>
+<script>
+(async () => {
+  const results = document.getElementById('results');
+  async function check(name, run) {
+    const row = document.createElement('li');
+    results.append(row);
+    try {
+      await run();
+      row.textContent = 'PASS: ' + name;
+    } catch (error) {
+      row.textContent = 'FAIL: ' + name + ' — ' + error.message;
+    }
+  }
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==';
+  async function decodeTexture(url) {
+    const response = await fetch(url);
+    const bitmap = await createImageBitmap(await response.blob());
+    const context = document.getElementById('texture').getContext('2d');
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    if (context.getImageData(0, 0, 1, 1).data[3] !== 255) throw new Error('Texture was not decoded');
+  }
+  await check('same-origin asset fetch', async () => {
+    const response = await fetch('manifest.toml');
+    if (!response.ok) throw new Error('Could not fetch packaged file');
+  });
+  await check('blob texture fetch and bitmap decode', async () => {
+    const bytes = Uint8Array.from(atob(png.split(',')[1]), c => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], {type:'image/png'}));
+    try { await decodeTexture(url); } finally { URL.revokeObjectURL(url); }
+  });
+  await check('data texture fetch and bitmap decode', () => decodeTexture(png));
+  await check('parent server fetch blocked by bridge', async () => {
+    const origin = 'https://' + location.hostname.split('.').slice(2).join('.');
+    try { await fetch(origin + '/health'); }
+    catch (error) {
+      if (error.message.includes('Internet access is disabled')) return;
+      throw error;
+    }
+    throw new Error('Expected the bridge to reject external requests');
+  });
+  await check('parent server fetch blocked by CSP', async () => {
+    const origin = 'https://' + location.hostname.split('.').slice(2).join('.');
+    let onViolation;
+    const violation = new Promise(resolve => {
+      onViolation = event => {
+        if (event.effectiveDirective === 'connect-src' && event.blockedURI.startsWith(origin)) resolve(true);
+      };
+      document.addEventListener('securitypolicyviolation', onViolation);
+    });
+    try {
+      let rejected = false;
+      try { await nativeAssetFetch(origin + '/health', {mode:'no-cors', credentials:'omit'}); }
+      catch { rejected = true; }
+      const blocked = await Promise.race([violation, new Promise(resolve => setTimeout(() => resolve(false), 1000))]);
+      if (!rejected || !blocked) throw new Error('Expected a connect-src violation');
+    } finally {
+      document.removeEventListener('securitypolicyviolation', onViolation);
+    }
+  });
+})();
+</script>

@@ -1,0 +1,4 @@
+# Stable-only rustfmt options. Import grouping/granularity and comment
+# wrapping (including `comment_width`) were dropped when the toolchain moved
+# from nightly to stable 1.98; only stable-channel keys belong here.
+max_width = 100

@@ -1,0 +1,161 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ap.id, ap.account_id, ap.account_warning_id, ap.text,\n               ap.approved_at, ap.approved_by_account_id,\n               ap.rejected_at, ap.rejected_by_account_id, ap.created_at,\n               w.action AS strike_action, w.text AS strike_text,\n               a.username\n        FROM appeals ap\n        JOIN account_warnings w ON w.id = ap.account_warning_id\n        JOIN accounts a ON a.id = ap.account_id\n        WHERE NOT $1::boolean OR (ap.approved_at IS NULL AND ap.rejected_at IS NULL)\n        ORDER BY ap.id DESC\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_warning_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "account_warning_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "text"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "approved_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "approved_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "approved_by_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "approved_by_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "rejected_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "rejected_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "rejected_by_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "rejected_by_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "appeals",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "strike_action",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "account_warnings",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "strike_text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "account_warnings",
+            "name": "text"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a2ccbd9d8c50c9f1f4711424b57bf7e08935ffa672ebf7b2377aaab89d4b1b08"
+}

@@ -1,0 +1,192 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE collections\n        SET name = $2, description = $3, language = $4, sensitive = $5,\n            discoverable = $6, tag_id = $7, url = $8,\n            original_number_of_items = $9, updated_at = now()\n        WHERE id = $1\n        RETURNING id, account_id, name, description, language, sensitive,\n                  discoverable, local, tag_id, uri, url, original_number_of_items,\n                  created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "sensitive",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "sensitive"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "discoverable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "discoverable"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "local",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "local"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "tag_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "tag_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "original_number_of_items",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "original_number_of_items"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collections",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Bool",
+        "Int8",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "794286737b4bfd468d3b469bb2e5485d223e344c931ae5a204be3ed1009d1942"
+}

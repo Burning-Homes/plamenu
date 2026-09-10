@@ -1,0 +1,127 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT session_id, serial, create_id, object_id, actor_uri, raw_create,\n                webxdc_update, announce_id, created_at FROM webxdc_updates\n         WHERE (session_id = $1 AND serial = $2) OR create_id = $3 OR object_id = $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_updates",
+            "name": "session_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "serial",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_updates",
+            "name": "serial"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "create_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_updates",
+            "name": "create_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "object_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_updates",
+            "name": "object_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "actor_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_updates",
+            "name": "actor_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "raw_create",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "webxdc_updates",
+            "name": "raw_create"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "webxdc_update",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "webxdc_updates",
+            "name": "webxdc_update"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "announce_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_updates",
+            "name": "announce_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_updates",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "45776a60e305e2bfc788be5dd1aee5c3704a3f92cda3a0e38e17e0189caac145"
+}

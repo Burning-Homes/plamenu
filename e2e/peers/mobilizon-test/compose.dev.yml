@@ -1,0 +1,148 @@
+# Disposable Mobilizon instance for federation / e2e testing against Plamenu.
+#
+# Mobilizon is the reference host for federated *events* (ActivityPub `Event`
+# objects plus the participation verb family: `Join`, `Accept(Join)`,
+# `Reject(Join)`, `Leave`/`Undo(Join)`). Plamenu ingests `Event` into a typed
+# sidecar already; this peer is what lets the E-track exercise RSVP over real
+# HTTPS on the same local CA as the rest of the fleet.
+#
+# Like PeerTube and unlike Lemmy, no source rebuild is needed: Mobilizon has
+# first-class support for a custom trust store via MOBILIZON_CA_CERT_PATH,
+# which feeds BOTH its Tesla/hackney clients (`get_tls_config/0`, used by the
+# ActivityPub, WebFinger and host-meta clients) and an explicit
+# `:tls_certificate_check.override_trusted_authorities/1` +
+# `:public_key.cacerts_load/1` at boot (see mobilizon-source
+# lib/mobilizon.ex `load_certificates/0`). So the stock image accepts the
+# Caddy local CA that terminates TLS for the *.local fleet.
+#
+# It joins the Mastodon stack's Caddy network (external `mastodon-test_internal`)
+# so the same local CA terminates TLS for https://mobilizon.local and every
+# instance can federate. Caddy reverse-proxies the vhost to mobilizon-web:4000
+# (see mastodon-test/Caddyfile); Phoenix serves the SPA, the GraphQL API and
+# ActivityPub from that one port.
+#
+# Mobilizon has NO SSRF / private-IP guard (unlike Lemmy's
+# DANGER_FEDERATION_ALLOW_LOCAL_IP and PeerTube's PREVENT_SSRF), so nothing
+# needs relaxing for the private-IP .local fleet.
+
+name: mobilizon-test
+
+services:
+  db:
+    # PostGIS, not plain postgres: Mobilizon's first migration
+    # (20180109150000_prerequites.exs) does CREATE EXTENSION postgis, and
+    # POSTGRES_USER=mobilizon becoming the cluster superuser is what lets it
+    # (plus pg_trgm/unaccent, which the image entrypoint creates).
+    image: postgis/postgis:16-3.4-alpine@sha256:681931a625df344215e9b8998bf34daf146b6a395ceacee4439eb9c85869239f
+    restart: unless-stopped
+    # Disposable data: trade durability for speed.
+    command: postgres -c fsync=off -c full_page_writes=off
+    # Distinct alias, following the sharkey-/lemmy-/peertube-test convention:
+    # compose registers service names as DNS aliases on every attached
+    # network, so generic names like `db`/`web` must never leak onto the
+    # shared one. db only joins the private network, but the alias keeps
+    # configs unambiguous anyway.
+    networks:
+      mbz:
+        aliases: [mobilizon-db]
+    environment:
+      POSTGRES_USER: mobilizon
+      POSTGRES_PASSWORD: mobilizon
+      POSTGRES_DB: mobilizon
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "mobilizon"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mobilizon:
+    # Pinned to the checked-out ../mobilizon-source tag. NB the project moved
+    # namespace: the image is `kaihuri/mobilizon`, not `framasoft/mobilizon`
+    # (which no longer exists on Docker Hub) — see .gitlab-ci.yml
+    # `build-docker-tag`.
+    image: kaihuri/mobilizon:5.2.4@sha256:95c201b39d7041678273ff6c4049deaec10c5a66824885b654a2662a4d4a52fa
+    restart: unless-stopped
+    networks:
+      mbz: {}
+      shared:
+        aliases: [mobilizon-web]
+    environment:
+      # ── identity / public URLs (drive the AP actor + object ids) ───────
+      # Only the host is set at runtime: config/prod.exs (compile-time) fixes
+      # scheme=https and port=443, and config/docker.exs — which the image
+      # installs as runtime.exs — merges just `url: [host: …]` over it. So
+      # ids come out as https://mobilizon.local/… while Phoenix listens on
+      # plain :4000 behind Caddy (`has_reverse_proxy: true` upstream).
+      MOBILIZON_INSTANCE_HOST: mobilizon.local
+      MOBILIZON_INSTANCE_PORT: "4000"
+      MOBILIZON_INSTANCE_NAME: Mobilizon interop peer
+      MOBILIZON_INSTANCE_DESCRIPTION: Disposable Mobilizon peer for Plamenu federation tests
+      MOBILIZON_INSTANCE_EMAIL: noreply@mobilizon.local
+      MOBILIZON_REPLY_EMAIL: noreply@mobilizon.local
+      # Any fixed dev secrets (prod wants `openssl rand -base64 48`);
+      # secret_key_base must be long — Phoenix rejects short ones.
+      MOBILIZON_INSTANCE_SECRET_KEY_BASE: e5Kq2mYwGx7pRt4vZa9Nc3Bd8Hj6Lf0SsUu1Wi5Oy2Pl7Rk4Tn9Xb3Ce6Mg0Qz8Av1Dh5Jr
+      MOBILIZON_INSTANCE_SECRET_KEY: Vx3Qm8Kd1Zp6Rt9Bw4Nf7Hs2Lc5Ay0Ju
+      # ── registration / federation ─────────────────────────────────────
+      # Open registration so the e2e harness can mint throwaway accounts;
+      # the standing `grace` account is created by ./dev via mobilizon_ctl.
+      MOBILIZON_INSTANCE_REGISTRATIONS_OPEN: "true"
+      MOBILIZON_INSTANCE_REGISTRATIONS_MODERATION: "false"
+      MOBILIZON_INSTANCE_FEDERATING: "true"
+      MOBILIZON_INSTANCE_ALLOW_RELAY: "true"
+      MOBILIZON_INSTANCE_DEMO: "false"
+      # ── database (mobilizon-db on the private net) ────────────────────
+      MOBILIZON_DATABASE_HOST: mobilizon-db
+      MOBILIZON_DATABASE_PORT: "5432"
+      MOBILIZON_DATABASE_USERNAME: mobilizon
+      MOBILIZON_DATABASE_PASSWORD: mobilizon
+      MOBILIZON_DATABASE_DBNAME: mobilizon
+      MOBILIZON_DATABASE_SSL: "false"
+      # ── trust the fleet's local Caddy CA ──────────────────────────────
+      # Read at boot by load_certificates/0 AND per-request by
+      # get_tls_config/0 (cacertfile); without it every https://*.local
+      # fetch/delivery dies on an unknown authority.
+      MOBILIZON_CA_CERT_PATH: /etc/ssl/local/ca-bundle.crt
+      # ── noise control ─────────────────────────────────────────────────
+      # No SMTP host is reachable on the fleet, and accounts are created
+      # pre-confirmed by mobilizon_ctl, so nothing in the test path needs
+      # mail to *arrive*. But it must still fail as a connection error, not
+      # an exception: `config/docker.exs` defaults the SMTP username and
+      # password to **nil**, and `Swoosh.Adapters.SMTP.enforce_type!/2`
+      # raises `ArgumentError: username is not configured properly` on a nil
+      # — inside the request, so any mutation that notifies by mail answers
+      # HTTP 500 with a stack trace instead of doing its job. That silently
+      # broke `updateParticipation` (approve/reject a participation, i.e.
+      # every `Accept(Join)`/`Reject(Join)` the E-track needs). Dummy strings
+      # get past the type check; delivery then just fails to connect and
+      # Swoosh logs it.
+      MOBILIZON_SMTP_SERVER: localhost
+      MOBILIZON_SMTP_USERNAME: noreply@mobilizon.local
+      MOBILIZON_SMTP_PASSWORD: unused-no-smtp-on-the-fleet
+      MOBILIZON_LOGLEVEL: info
+    volumes:
+      - ../mastodon-test/ca-bundle.crt:/etc/ssl/local/ca-bundle.crt:ro
+      - uploads:/var/lib/mobilizon/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # curl ships in the official image; /.well-known/nodeinfo is
+      # unauthenticated and needs no SPA assets.
+      test: ["CMD", "curl", "-fsS", "http://localhost:4000/.well-known/nodeinfo"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+networks:
+  mbz:
+  shared:
+    external: true
+    name: mastodon-test_internal
+
+volumes:
+  pgdata:
+  uploads:

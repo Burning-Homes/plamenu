@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM featured_tags WHERE id = $1 AND account_id = $2 RETURNING tag_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tag_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "featured_tags",
+            "name": "tag_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b3e42997ae82cfe79e254961e18507bdf339c56c2fa22402930628312768f258"
+}

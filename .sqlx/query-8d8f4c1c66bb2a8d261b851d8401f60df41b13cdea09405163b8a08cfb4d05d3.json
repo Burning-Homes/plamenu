@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO webxdc_invitations (status_id, session_id) VALUES ($1, $2)\n         ON CONFLICT (status_id) DO UPDATE SET session_id = EXCLUDED.session_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8d8f4c1c66bb2a8d261b851d8401f60df41b13cdea09405163b8a08cfb4d05d3"
+}

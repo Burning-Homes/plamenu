@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT m.id, m.file_name, m.small_file_name\n            FROM media_attachments m\n            JOIN accounts a ON a.id = m.account_id\n            WHERE a.domain = $1\n              AND m.remote_url IS NOT NULL\n              AND (m.file_name IS NOT NULL OR m.small_file_name IS NOT NULL)\n            LIMIT $2\n        )\n        UPDATE media_attachments m\n        SET file_name = NULL, small_file_name = NULL, small_width = NULL,\n            small_height = NULL, cached_at = NULL, last_served_at = NULL\n        FROM due\n        WHERE m.id = due.id\n        RETURNING due.file_name AS \"file_name?\", due.small_file_name AS \"small_file_name?\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "small_file_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "small_file_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "dc2d3b3e7273646e5c1c9f53805c8e6f02d87ff44a1c092c72ac9556a094804d"
+}

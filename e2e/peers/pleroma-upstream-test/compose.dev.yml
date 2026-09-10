@@ -1,0 +1,74 @@
+# Disposable **upstream Pleroma** interop peer (git.pleroma.social develop,
+# ~2.10.2) at https://plup.local, built from ../pleroma-source with its own
+# Dockerfile. Stands alongside the Akkoma peer (pleroma.local) — a distinct
+# domain avoids any actor/host-cache collision in Plamenu. Purpose: reproduce
+# lain.com (upstream Pleroma 2.10.0+271) faithfully and verify the Plamenu ->
+# Pleroma Follow/Accept handshake against the real software.
+#
+# Joins the Mastodon stack's Caddy network so the shared local CA terminates
+# TLS for https://plup.local and it can federate with dev Plamenu.
+
+name: pleroma-upstream-test
+
+services:
+  db:
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    restart: unless-stopped
+    networks:
+      plup:
+        aliases: [plup-db]
+    environment:
+      POSTGRES_USER: pleroma
+      POSTGRES_PASSWORD: pleroma
+      POSTGRES_DB: pleroma
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "pleroma"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  pleroma:
+    build:
+      context: ../pleroma-source
+      dockerfile: Dockerfile
+    image: pleroma-upstream:dev
+    restart: unless-stopped
+    networks:
+      plup: {}
+      shared:
+        aliases: [plup-web]
+    environment:
+      DOMAIN: plup.local
+      INSTANCE_NAME: PleromaUpstream
+      ADMIN_EMAIL: admin@plup.local
+      NOTIFY_EMAIL: notify@plup.local
+      DB_USER: pleroma
+      DB_PASS: pleroma
+      DB_NAME: pleroma
+      DB_HOST: plup-db
+    entrypoint: ["/bin/ash", "/entrypoint-seed.sh"]
+    volumes:
+      - plupdata:/var/lib/pleroma
+      - ./entrypoint-seed.sh:/entrypoint-seed.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1 (not localhost): the endpoint binds 0.0.0.0:4000 IPv4-only.
+      test:
+        ["CMD-SHELL", "wget -q --spider --proxy=off 127.0.0.1:4000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+networks:
+  plup:
+  shared:
+    external: true
+    name: mastodon-test_internal
+
+volumes:
+  pgdata:
+  plupdata:

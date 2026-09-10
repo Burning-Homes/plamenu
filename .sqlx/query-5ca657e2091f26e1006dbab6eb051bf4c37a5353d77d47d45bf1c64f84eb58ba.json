@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM media_hls_segments\n        WHERE cached_at < now() - ($1 * interval '1 second')\n          AND (last_served_at IS NULL\n               OR last_served_at < now() - ($1 * interval '1 second'))\n        RETURNING cache_file\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cache_file",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_hls_segments",
+            "name": "cache_file"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5ca657e2091f26e1006dbab6eb051bf4c37a5353d77d47d45bf1c64f84eb58ba"
+}

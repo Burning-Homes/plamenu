@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT count(*) AS \"count!\"\n        FROM follows f\n        JOIN accounts target ON target.id = f.target_account_id\n        WHERE f.account_id = $1 AND target.domain = $2 AND NOT f.pending\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3f1516fa5492e0db99b2d2763b283f2e52ded36f3576477af8de4a92054ab7f3"
+}

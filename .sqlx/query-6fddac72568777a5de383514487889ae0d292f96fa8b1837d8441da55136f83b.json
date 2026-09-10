@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE account_move_jobs SET\n            run_at = now() + make_interval(secs => $2),\n            attempts = attempts + 1\n        WHERE id IN (\n            SELECT id FROM account_move_jobs\n            WHERE run_at <= now()\n            ORDER BY run_at\n            LIMIT $1\n            FOR UPDATE SKIP LOCKED\n        )\n        RETURNING id, source_account_id, target_account_id, attempts\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_move_jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "source_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_move_jobs",
+            "name": "source_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "target_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_move_jobs",
+            "name": "target_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "account_move_jobs",
+            "name": "attempts"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6fddac72568777a5de383514487889ae0d292f96fa8b1837d8441da55136f83b"
+}

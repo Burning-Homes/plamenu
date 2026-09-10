@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE reply_fetch_jobs SET run_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "4eda836de5f71f3e00943808747b7a9a810064c3f20f6cf7053a9950fcfb3be2"
+}

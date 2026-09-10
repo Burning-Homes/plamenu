@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM webxdc_memberships\n         WHERE session_id = $1 AND participant_account_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5d58e16f0ff81190d7eda2c55e47e7573e8d9b91ab108b1cb9e741c457c16c19"
+}

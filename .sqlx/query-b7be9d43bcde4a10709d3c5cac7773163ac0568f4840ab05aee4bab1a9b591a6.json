@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            (SELECT count(*) FROM accounts WHERE domain = $1 AND NOT portable)\n                AS \"accounts_count!\",\n            (SELECT count(*) FROM statuses s -- STUBKEEP: operator aggregate; stubs are rows until pruned\n              JOIN accounts a ON a.id = s.account_id\n              WHERE a.domain = $1 AND NOT a.portable) AS \"statuses_count!\",\n            (SELECT count(*) FROM follows f\n              JOIN accounts t ON t.id = f.target_account_id\n              JOIN accounts src ON src.id = f.account_id\n              WHERE t.domain = $1 AND NOT t.portable\n                AND (src.domain IS NULL OR src.portable) AND NOT f.pending)\n                AS \"follows_out!\",\n            (SELECT count(*) FROM follows f\n              JOIN accounts src ON src.id = f.account_id\n              JOIN accounts t ON t.id = f.target_account_id\n              WHERE src.domain = $1 AND NOT src.portable\n                AND (t.domain IS NULL OR t.portable) AND NOT f.pending)\n                AS \"follows_in!\",\n            (SELECT count(*) FROM reports r\n              JOIN accounts t ON t.id = r.target_account_id\n              WHERE t.domain = $1 AND NOT t.portable) AS \"reports_count!\",\n            (SELECT max(s.created_at) FROM statuses s\n              JOIN accounts a ON a.id = s.account_id\n              WHERE a.domain = $1 AND NOT a.portable) AS \"last_status_at?\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "accounts_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "statuses_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "follows_out!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "follows_in!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "reports_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "last_status_at?",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "b7be9d43bcde4a10709d3c5cac7773163ac0568f4840ab05aee4bab1a9b591a6"
+}

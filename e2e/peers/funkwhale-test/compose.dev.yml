@@ -1,0 +1,158 @@
+name: funkwhale-test
+
+x-funkwhale-env: &funkwhale-env
+  FUNKWHALE_HOSTNAME: funkwhale.local
+  FUNKWHALE_PROTOCOL: https
+  FUNKWHALE_API_PORT: "5000"
+  DJANGO_SETTINGS_MODULE: config.settings.production
+  DJANGO_SECRET_KEY: funkwhale-local-e2e-secret-key-not-for-production-2-0-8
+  DATABASE_URL: postgresql://funkwhale:funkwhale@funkwhale-db:5432/funkwhale
+  CACHE_URL: redis://funkwhale-redis:6379/0
+  CELERY_BROKER_URL: redis://funkwhale-redis:6379/0
+  MEDIA_ROOT: /srv/funkwhale/data/media
+  STATIC_ROOT: /srv/funkwhale/data/static
+  MUSIC_DIRECTORY_PATH: /music
+  EMAIL_CONFIG: dummymail://
+  ACCOUNT_EMAIL_VERIFICATION_ENFORCE: "false"
+  DEFAULT_FROM_EMAIL: noreply@funkwhale.local
+  EXTERNAL_REQUESTS_VERIFY_SSL: "true"
+  REQUESTS_CA_BUNDLE: /etc/ssl/local/ca-bundle.crt
+  SSL_CERT_FILE: /etc/ssl/local/ca-bundle.crt
+  CELERYD_CONCURRENCY: "2"
+  LOGLEVEL: info
+
+x-api-volumes: &api-volumes
+  - media:/srv/funkwhale/data/media
+  - static:/srv/funkwhale/data/static
+  - ../mastodon-test/ca-bundle.crt:/etc/ssl/local/ca-bundle.crt:ro
+
+services:
+  postgres:
+    image: postgres:15-alpine@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: funkwhale
+      POSTGRES_USER: funkwhale
+      POSTGRES_PASSWORD: funkwhale
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U funkwhale -d funkwhale"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+    networks:
+      private:
+        aliases: [funkwhale-db]
+
+  redis:
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    restart: unless-stopped
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+    networks:
+      private:
+        aliases: [funkwhale-redis]
+
+  api:
+    image: funkwhale/api:2.0.8@sha256:0269dc550e14dfbf573d60b517b6d4121b7a274b65cdb45876e329337abc3290
+    restart: unless-stopped
+    command: gunicorn
+    environment: *funkwhale-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - media:/srv/funkwhale/data/media
+      - static:/srv/funkwhale/data/static
+      - ../mastodon-test/ca-bundle.crt:/etc/ssl/local/ca-bundle.crt:ro
+      - ./seed-channel.py:/opt/funkwhale-test/seed-channel.py:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 5000), 3).close()"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+    networks:
+      private:
+        aliases: [funkwhale-api]
+      shared:
+
+  celeryworker:
+    image: funkwhale/api:2.0.8@sha256:0269dc550e14dfbf573d60b517b6d4121b7a274b65cdb45876e329337abc3290
+    restart: unless-stopped
+    command: ["celery", "--app=funkwhale_api.taskapp", "worker", "--loglevel=INFO", "--concurrency=2"]
+    environment:
+      <<: *funkwhale-env
+      C_FORCE_ROOT: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes: *api-volumes
+    networks:
+      - private
+      - shared
+
+  celerybeat:
+    image: funkwhale/api:2.0.8@sha256:0269dc550e14dfbf573d60b517b6d4121b7a274b65cdb45876e329337abc3290
+    restart: unless-stopped
+    command: ["celery", "--app=funkwhale_api.taskapp", "beat", "--loglevel=INFO"]
+    environment: *funkwhale-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes: *api-volumes
+    networks:
+      - private
+      - shared
+
+  front:
+    image: funkwhale/front:2.0.8@sha256:33aa0b8add131704b817bef3b334dae005e4a3334832d97fc5e49a358de5ee06
+    restart: unless-stopped
+    environment:
+      FUNKWHALE_API_HOST: funkwhale-api
+      FUNKWHALE_API_PORT: "5000"
+      FUNKWHALE_HOSTNAME: funkwhale.local
+      FUNKWHALE_PROTOCOL: https
+      MEDIA_ROOT: /srv/funkwhale/data/media
+      MUSIC_DIRECTORY_PATH: /music
+      NGINX_MAX_BODY_SIZE: 128M
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - media:/srv/funkwhale/data/media:ro
+      - static:/usr/share/nginx/html/staticfiles:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/.well-known/nodeinfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 5s
+    networks:
+      private:
+      shared:
+        aliases: [funkwhale-web]
+
+networks:
+  private:
+  shared:
+    name: mastodon-test_internal
+    external: true
+
+volumes:
+  postgres:
+  redis:
+  media:
+  static:

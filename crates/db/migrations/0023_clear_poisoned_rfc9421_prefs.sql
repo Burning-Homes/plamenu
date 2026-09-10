@@ -1,0 +1,19 @@
+-- Clear poisoned RFC 9421 host-preference rows.
+--
+-- Until this release, `host_signature_prefs.rfc9421 = true` was written by the
+-- delivery worker whenever an outbound delivery came back `200` while
+-- double-knocking RFC 9421 first. That heuristic is unsound: upstream Pleroma
+-- (2.10) returns HTTP 200 on an inbox POST and *then* asynchronously rejects a
+-- signature it can't parse (it speaks draft-cavage, not RFC 9421), silently
+-- dropping the activity. Every such peer got stamped `rfc9421 = true`, so every
+-- subsequent delivery to it — follows, posts, reactions — was emitted as RFC
+-- 9421 and black-holed. Staging's `lain.com` was one such row.
+--
+-- The fix (approach a) learns RFC 9421 support only from a positive inbound
+-- signal (a verified RFC 9421 request the peer itself signed us), so every
+-- existing `true` row is untrustworthy: it was minted by the old 200 heuristic,
+-- never by observation. Delete them. Post-migration those hosts default to
+-- draft-cavage (universal, lossless here) and re-earn `true` only via inbound
+-- observation. `false` rows are harmless (absence-of-row already means cavage),
+-- but are cleared too so the table starts empty and re-learns cleanly.
+DELETE FROM host_signature_prefs;

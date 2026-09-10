@@ -1,0 +1,253 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.id, s.uri, s.account_id, s.content, s.created_at, s.updated_at,\n               s.visibility, s.in_reply_to_id, s.reblog_of_id, s.edited_at,\n               s.spoiler_text, s.sensitive, s.language, s.url, s.quote_approval_policy, s.application_id,\n                        s.title, s.object_type, s.external_url\n        FROM statuses s\n        WHERE s.account_id = $1\n          AND EXISTS (SELECT 1 FROM accounts author\n                      WHERE author.id = $1 AND author.suspended_at IS NULL)\n          AND (s.reblog_of_id IS NULL OR (\n                NOT account_relationship_hidden($2, (SELECT target.account_id FROM statuses target\n                                                     WHERE target.id = s.reblog_of_id))\n                AND EXISTS (\n                    SELECT 1 FROM statuses target\n                    -- Keep this correlated to the current boost. PostgreSQL\n                    -- otherwise decorrelates the EXISTS into a hash of every\n                    -- status/account before the outer LIMIT can stop at one\n                    -- page (notably a Group's announce-only timeline).\n                    CROSS JOIN LATERAL (\n                        SELECT a.domain, a.portable, a.suspended_at\n                        FROM accounts a\n                        WHERE a.id = target.account_id\n                        OFFSET 0\n                    ) target_author\n                    WHERE target.id = s.reblog_of_id\n                      AND target_author.suspended_at IS NULL\n                      AND (target_author.portable OR instance_domain_allowed(target_author.domain))\n                    OFFSET 0)))\n          AND s.deleted_at IS NULL -- STUBFILTER (the reply-parent probe below keeps stubs: a stubbed parent still roots a chain)\n          -- GoToSocial can explicitly forbid exposing federated content to\n          -- unauthenticated web visitors. Signed-in viewers still see the\n          -- bounded cache; anonymous viewers do not see cold rows in that case.\n          AND ($2::bigint IS NOT NULL OR s.ingest_provenance <> 'history'\n               OR NOT EXISTS (\n                   SELECT 1 FROM remote_history_states h\n                   WHERE h.account_id = $1\n                     AND h.anonymous_visibility = 'restricted'))\n          -- A silenced author's posts are withheld from anonymous visitors on\n          -- the profile page; any logged-in viewer sees them normally.\n          AND ($2::bigint IS NOT NULL OR NOT account_silenced($1))\n          AND (s.visibility IN ('public', 'unlisted')\n               OR $2::bigint = $1\n               OR ($2::bigint IS NOT NULL AND s.visibility = 'local'\n                   AND EXISTS (SELECT 1 FROM accounts author\n                               WHERE author.id = $1\n                                 AND (author.domain IS NULL OR author.portable)))\n               OR ($2 IS NOT NULL AND (\n                     (s.visibility = 'private'\n                      AND EXISTS (SELECT 1 FROM follows f\n                                  WHERE f.account_id = $2 AND f.target_account_id = $1\n                                    AND NOT f.pending))\n                     OR EXISTS (SELECT 1 FROM status_mentions m\n                                WHERE m.status_id = s.id AND m.account_id = $2))))\n          AND (NOT $3 OR s.in_reply_to_id IS NULL\n               OR EXISTS (SELECT 1 FROM statuses p\n                          WHERE p.id = s.in_reply_to_id AND p.account_id = $1))\n          AND (NOT $4 OR s.reblog_of_id IS NULL)\n          -- `only_media` matches the row's own attachments, unless\n          -- `media_through_reblog` ($7) is set, when a boost matches on the\n          -- boosted post's media — so a Group's announce-only feed drives a\n          -- Media wall while a person's stays own-media-only.\n          AND (NOT $5 OR EXISTS (\n                 SELECT 1 FROM media_attachments ma\n                 WHERE ma.status_id = CASE WHEN $7 AND s.reblog_of_id IS NOT NULL\n                                           THEN s.reblog_of_id ELSE s.id END))\n          AND ($6::text IS NULL OR EXISTS (\n                 SELECT 1 FROM status_tags st\n                 JOIN tags t ON t.id = st.tag_id\n                 WHERE st.status_id = s.id AND lower(t.name) = lower($6)))\n          AND ($8::bigint IS NULL OR s.id < $8)\n          AND ($9::bigint IS NULL OR s.id > $9)\n        ORDER BY s.id DESC\n        LIMIT $10\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "content",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "in_reply_to_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "in_reply_to_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "reblog_of_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "reblog_of_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "edited_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "edited_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "spoiler_text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "spoiler_text"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "sensitive",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "sensitive"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "quote_approval_policy",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "quote_approval_policy"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "application_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "application_id"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "object_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "object_type"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "external_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "external_url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Text",
+        "Bool",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "1a40b8b17f0dd7a58dc0493d47c05e1d437c4344b9a133225deeffa6fefb5f41"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO domain_severance_jobs (id, account_id, domain)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (account_id, domain) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "015c0f1b7ec086e842d4f18b231cf554a703cab849dabeca2d97f4404798ca3d"
+}

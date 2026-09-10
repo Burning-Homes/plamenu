@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webxdc_sessions SET storage_bytes = $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "df5c0eaf42fe49d8fd9310cf9d5f1345a5719bab303b1a9ef054d669c4361ae8"
+}

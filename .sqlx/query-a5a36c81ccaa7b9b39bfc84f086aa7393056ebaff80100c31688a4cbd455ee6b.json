@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE push_delivery_jobs SET run_at = now() + make_interval(secs => $2) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a5a36c81ccaa7b9b39bfc84f086aa7393056ebaff80100c31688a4cbd455ee6b"
+}

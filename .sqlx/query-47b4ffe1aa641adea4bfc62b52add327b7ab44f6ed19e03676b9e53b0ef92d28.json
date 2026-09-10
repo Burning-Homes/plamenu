@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT 1 AS \"one\"\n        FROM account_domain_blocks\n        WHERE account_id = $1 AND domain = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "one",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "47b4ffe1aa641adea4bfc62b52add327b7ab44f6ed19e03676b9e53b0ef92d28"
+}

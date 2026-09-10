@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT\n            CASE WHEN a.shared_inbox_url <> '' THEN a.shared_inbox_url\n                 ELSE a.inbox_url\n            END AS \"inbox!\"\n        FROM status_participations p\n        JOIN accounts a ON a.id = p.account_id\n        WHERE p.status_id = $1\n          AND p.state IN ('accepted', 'pending')\n          AND a.domain IS NOT NULL\n          AND (a.shared_inbox_url <> '' OR a.inbox_url <> '')\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inbox!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "bcf808af6c80926b961588b2e076aad31c3b73bc82f8af5da8b0a47f15ef9801"
+}

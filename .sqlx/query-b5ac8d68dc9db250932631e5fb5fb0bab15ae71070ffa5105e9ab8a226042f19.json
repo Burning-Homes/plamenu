@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE custom_emojis SET disabled = TRUE WHERE shortcode = 'party'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "b5ac8d68dc9db250932631e5fb5fb0bab15ae71070ffa5105e9ab8a226042f19"
+}

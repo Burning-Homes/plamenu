@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_attachments m\n        SET description = CASE WHEN c.set_description THEN c.description\n                               ELSE m.description END,\n            focus_x = COALESCE(c.focus_x, m.focus_x),\n            focus_y = COALESCE(c.focus_y, m.focus_y)\n        FROM unnest($2::bigint[], $3::boolean[], $4::text[], $5::float8[], $6::float8[])\n             AS c(id, set_description, description, focus_x, focus_y)\n        WHERE m.id = c.id AND m.account_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array",
+        "BoolArray",
+        "TextArray",
+        "Float8Array",
+        "Float8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d960aad9c905130f51f780241cec02b95dc75adbc929e13c7e64675f38eb4a4d"
+}

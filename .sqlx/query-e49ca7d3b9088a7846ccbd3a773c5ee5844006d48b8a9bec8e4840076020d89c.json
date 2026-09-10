@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT tag_id AS \"tag_id!\" FROM featured_tags\n           WHERE account_id = $1 AND tag_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tag_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "featured_tags",
+            "name": "tag_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e49ca7d3b9088a7846ccbd3a773c5ee5844006d48b8a9bec8e4840076020d89c"
+}

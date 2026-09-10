@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) AS \"count!\"\n        FROM users u\n        JOIN user_roles r ON u.role_id = r.id\n        JOIN accounts a ON a.id = u.account_id\n        WHERE r.permissions & $1::bigint <> 0\n          AND u.approved AND NOT u.disabled\n          AND a.suspended_at IS NULL\n          AND ($2::bigint IS NULL OR u.account_id <> $2)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7e9bc697a121cf7981c699134987e840181e6b242cd6595910d112e7e285deb1"
+}

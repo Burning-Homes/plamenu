@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET confirmed_at = NULL, confirmation_sent_at = now() - make_interval(days => 1) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "096c3e658923a31d89468dd2d3e98ef7e0286535a82ea0a92ae2bd058342a7b5"
+}

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT id, image_file_name\n            FROM preview_cards\n            WHERE image_file_name IS NOT NULL\n              AND image_cached_at IS NOT NULL\n              AND image_cached_at < now() - ($1 * interval '1 second')\n            ORDER BY image_cached_at\n            LIMIT $2\n        )\n        UPDATE preview_cards c\n        SET image_file_name = NULL, image_file_size = NULL, image_cached_at = NULL\n        FROM due\n        WHERE c.id = due.id\n        RETURNING due.image_file_name AS \"image_file_name!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "image_file_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_file_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "967ef018809ba2e57d76dc6a57d417f9733be4bef194e4c13145bdefb5504d9b"
+}

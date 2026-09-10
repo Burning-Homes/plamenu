@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO rule_translations (id, rule_id, language, text, hint)\n               VALUES ($1, $2, 'fr', 'Texte', 'Indice'), ($3, $2, 'de', 'Text', '')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e30eb44b1c089d41bedc45e91ef7bd579b5f7a4a73e7180793366af13213e679"
+}

@@ -1,0 +1,293 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT c.id, c.url, c.title, c.description, c.kind, c.author_name,\n               c.author_url, c.provider_name, c.provider_url, c.html, c.width,\n               c.height, c.image_url, c.image_file_name, c.image_content_type,\n               c.image_file_size, c.image_cached_at, c.image_description,\n               c.embed_url, c.language, c.published_at, c.author_account_id,\n               c.updated_at\n        FROM preview_card_trends tr\n        JOIN preview_cards c ON c.id = tr.preview_card_id\n        WHERE tr.allowed\n        ORDER BY tr.score DESC, c.id DESC\n        LIMIT $1 OFFSET $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "author_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "author_name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "author_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "author_url"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "provider_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "provider_name"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "provider_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "provider_url"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "html",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "html"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "height"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "image_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_url"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "image_file_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "image_content_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "image_file_size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_file_size"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "image_cached_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_cached_at"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "image_description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_description"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "embed_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "embed_url"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "author_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "author_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "d7b4afe71619bb6b0120f5695c56a9b0539d6749bef3cdfbb94451b2c51cbfee"
+}

@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, user_agent, last_used_ip, created_at, last_used_at\n        FROM oauth_tokens\n        WHERE user_id = $1 AND app_id = $2 AND revoked_at IS NULL\n        ORDER BY created_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "oauth_tokens",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_agent",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_tokens",
+            "name": "user_agent"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "last_used_ip",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_tokens",
+            "name": "last_used_ip"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "oauth_tokens",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "last_used_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "oauth_tokens",
+            "name": "last_used_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "19080f34de974274a7bac5789fdb0229a8aabf0ce19e8bcfd7179a80b67e1cd5"
+}

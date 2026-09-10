@@ -1,0 +1,251 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT h.account_id, rs.enabled AS \"hydration_enabled!\",\n                  h.outbox_uri, h.first_page_uri, h.next_page_uri,\n                  h.state, h.reported_total_items, h.outbox_etag, h.first_page_etag,\n                  h.anonymous_visibility,\n                  h.last_attempt_at, h.last_success_at, h.retry_at,\n                  h.automatic_retry_at,\n                  h.last_error_class, h.pages_fetched, h.items_seen,\n                  h.items_accepted, h.bytes_fetched,\n                  count(s.id) FILTER (\n                      WHERE s.deleted_at IS NULL\n                        -- STUBFILTER\n                        AND s.visibility IN ('public', 'unlisted')\n                  ) AS \"available_statuses!\"\n           FROM remote_history_states h\n           CROSS JOIN remote_history_settings rs\n           LEFT JOIN statuses s ON s.account_id = h.account_id\n           WHERE h.account_id = $1\n           GROUP BY h.account_id, rs.enabled",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "hydration_enabled!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "remote_history_settings",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "outbox_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "outbox_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "first_page_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "first_page_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "next_page_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "next_page_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "reported_total_items",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "reported_total_items"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "outbox_etag",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "outbox_etag"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "first_page_etag",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "first_page_etag"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "anonymous_visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "anonymous_visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "last_attempt_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "last_attempt_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "last_success_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "last_success_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "retry_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "retry_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "automatic_retry_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "automatic_retry_at"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "last_error_class",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "last_error_class"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "pages_fetched",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "pages_fetched"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "items_seen",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "items_seen"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "items_accepted",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "items_accepted"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "bytes_fetched",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "bytes_fetched"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "available_statuses!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "13db9d457555ef7d380d66847e68e1374e6418aa2de51a1dbc391a846fe60333"
+}

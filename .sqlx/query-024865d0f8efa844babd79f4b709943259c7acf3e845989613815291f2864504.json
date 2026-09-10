@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) = $2\n                  AND min(serial) = 1\n                  AND max(serial) = $2 AS \"complete!\"\n           FROM webxdc_updates WHERE session_id = $1 AND serial <= $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "complete!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "024865d0f8efa844babd79f4b709943259c7acf3e845989613815291f2864504"
+}

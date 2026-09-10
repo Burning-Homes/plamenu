@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET in_reply_to_id = $1\n           WHERE in_reply_to_id IS NULL\n             AND in_reply_to_uri = $2\n             AND id <> $1\n             AND NOT EXISTS (\n                 SELECT 1 FROM status_ancestor_ids($1) a WHERE a = statuses.id\n             )\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "07414a6eedbb2c0716b309877368fd60cacadf9e388d7675aa8da2fe7a90687f"
+}

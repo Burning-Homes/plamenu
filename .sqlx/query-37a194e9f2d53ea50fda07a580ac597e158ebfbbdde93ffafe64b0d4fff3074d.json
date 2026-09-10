@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE quotes SET quoted_uri = $2 WHERE id = $1 AND quoted_uri IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "37a194e9f2d53ea50fda07a580ac597e158ebfbbdde93ffafe64b0d4fff3074d"
+}

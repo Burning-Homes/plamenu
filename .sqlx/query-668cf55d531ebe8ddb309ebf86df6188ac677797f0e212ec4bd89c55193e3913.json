@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO preview_card_providers (id, domain)\n        SELECT * FROM unnest($1::bigint[], $2::text[])\n        ON CONFLICT (domain) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "668cf55d531ebe8ddb309ebf86df6188ac677797f0e212ec4bd89c55193e3913"
+}

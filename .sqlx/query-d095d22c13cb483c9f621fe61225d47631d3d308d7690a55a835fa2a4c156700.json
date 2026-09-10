@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notification_requests",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "d095d22c13cb483c9f621fe61225d47631d3d308d7690a55a835fa2a4c156700"
+}

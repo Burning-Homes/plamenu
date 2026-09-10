@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT image_file_name AS \"image_file_name!\" FROM custom_emojis\n         WHERE owner_account_id = $1 AND image_file_name IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "image_file_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_file_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "86ca7e570293fd392e1a7652d2f37cbb2078e4295c3a7323f96ad6fd007e4848"
+}

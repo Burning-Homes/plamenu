@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE account_statuses_cleanup_policies\n        SET last_inspected_id = $2\n        WHERE account_id = $1\n          AND last_inspected_id > $2\n          AND (($3 AND keep_self_fav) OR ($4 AND keep_self_bookmark) OR ($5 AND keep_pinned))\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4b5e72da97689df4cad752c475f18dc3716602fcc914dc8ee72ff4d4ca1aec06"
+}

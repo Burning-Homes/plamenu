@@ -1,0 +1,92 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO username_blocks (id, username, normalized_username, exact, allow_with_approval)\n        VALUES ($1, $2, $3, $4, $5)\n        RETURNING id, username, normalized_username, exact, allow_with_approval, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "username_blocks",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "username_blocks",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "normalized_username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "username_blocks",
+            "name": "normalized_username"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "exact",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "username_blocks",
+            "name": "exact"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "allow_with_approval",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "username_blocks",
+            "name": "allow_with_approval"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "username_blocks",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8ab222bb522652bc2ed266ffdab73c03fea99ad455fb8ddef4f516670fe66bbc"
+}

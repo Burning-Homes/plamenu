@@ -1,0 +1,166 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, account_id, from_account_id, kind, status_id, collection_id, emoji, created_at, group_key, filtered, account_warning_id, report_id\n        FROM notifications n\n        WHERE account_id = $1\n          AND ($2::bigint IS NULL OR id < $2)\n          AND ($3::bigint IS NULL OR id > $3)\n          AND ($5::text[] IS NULL OR kind = ANY($5))\n          AND ($6::bigint IS NULL OR from_account_id = $6)\n          AND ($7 OR NOT filtered)\n          AND NOT sender_filtered($1, n.from_account_id)\n        ORDER BY id DESC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "from_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "from_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "collection_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "collection_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "emoji",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "emoji"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "group_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "group_key"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "filtered",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "filtered"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "account_warning_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "account_warning_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "report_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "report_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "TextArray",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "25c4afed991657e5196df5e0f7d9ab7e44df921ff70462b22c1b1a039e354c32"
+}

@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE push_delivery_jobs j SET\n            attempts = j.attempts + 1,\n            run_at = now() + make_interval(secs => $2)\n        FROM (\n            SELECT ranked.id\n            FROM (\n                SELECT dj.id,\n                       dj.run_at AS due_at,\n                       row_number() OVER (\n                           PARTITION BY s.user_id ORDER BY dj.run_at, dj.id\n                       ) AS user_rank\n                FROM push_delivery_jobs dj\n                JOIN web_push_subscriptions s ON s.id = dj.subscription_id\n                WHERE dj.run_at <= now()\n            ) ranked\n            ORDER BY ranked.user_rank, ranked.due_at, ranked.id\n            LIMIT $1\n        ) picked\n        WHERE j.id = picked.id\n        RETURNING j.id, j.subscription_id, j.notification_id, j.attempts\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "push_delivery_jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "subscription_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "push_delivery_jobs",
+            "name": "subscription_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "notification_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "push_delivery_jobs",
+            "name": "notification_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "push_delivery_jobs",
+            "name": "attempts"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "37e74e8913a9ff5a2ca54a0ae0ff36bab1c7edc1c35809ab5e4beffebe332382"
+}

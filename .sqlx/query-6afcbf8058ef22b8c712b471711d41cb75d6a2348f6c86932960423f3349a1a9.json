@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT u.account_id\n        FROM users u\n        JOIN user_roles r ON u.role_id = r.id\n        WHERE r.permissions & ($1::bigint | $2::bigint) <> 0\n        ORDER BY u.account_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6afcbf8058ef22b8c712b471711d41cb75d6a2348f6c86932960423f3349a1a9"
+}

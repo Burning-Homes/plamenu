@@ -1,0 +1,148 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE polls p SET\n            cached_tallies = (\n                SELECT COALESCE(array_agg(COALESCE(v.cnt, 0) ORDER BY gs.i), '{}')\n                FROM generate_subscripts(p.options, 1) AS gs(i)\n                LEFT JOIN (SELECT choice, count(*) AS cnt FROM poll_votes\n                           WHERE poll_id = p.id GROUP BY choice) v\n                       ON v.choice = gs.i - 1\n            ),\n            voters_count = (SELECT count(DISTINCT account_id) FROM poll_votes\n                            WHERE poll_id = p.id),\n            updated_at = now()\n        WHERE p.id = $1\n        RETURNING id, status_id, account_id,\n                  options AS \"options!\", cached_tallies AS \"cached_tallies!\",\n                  multiple, hide_totals, voters_count, expires_at,\n                  created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "options!",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "options"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "cached_tallies!",
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "cached_tallies"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "multiple",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "multiple"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "hide_totals",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "hide_totals"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "voters_count",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "voters_count"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "polls",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "ac503465cd30eff13a0a8edc0c8a1f31aff39be3e754db3b4bb4bee43f2e1a18"
+}

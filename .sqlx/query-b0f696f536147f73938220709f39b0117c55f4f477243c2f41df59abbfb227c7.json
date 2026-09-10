@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_attachments\n        SET live_state = $2,\n            hls_master_url = COALESCE($3::text, hls_master_url)\n        WHERE id = $1\n          AND (live_state IS DISTINCT FROM $2\n               OR ($3::text IS NOT NULL AND hls_master_url IS DISTINCT FROM $3::text))\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b0f696f536147f73938220709f39b0117c55f4f477243c2f41df59abbfb227c7"
+}

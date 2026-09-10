@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.id\n        FROM statuses s\n        WHERE s.account_id = $1\n          AND s.id <= $2\n          AND s.id >= $3\n          AND s.deleted_at IS NULL -- STUBFILTER: an existing stub has nothing left to clean up\n          AND s.uri IS NULL\n          AND (NOT $4::bool OR s.visibility <> 'direct')\n          AND (NOT $5::bool OR NOT EXISTS (\n              SELECT 1 FROM status_pins p\n              WHERE p.status_id = s.id AND p.account_id = s.account_id))\n          AND (NOT $6::bool OR NOT EXISTS (\n              SELECT 1 FROM polls pl WHERE pl.status_id = s.id))\n          AND (NOT $7::bool OR NOT EXISTS (\n              SELECT 1 FROM media_attachments m WHERE m.status_id = s.id))\n          AND (NOT $8::bool OR NOT EXISTS (\n              SELECT 1 FROM favourites f\n              WHERE f.status_id = s.id AND f.account_id = s.account_id))\n          AND (NOT $9::bool OR NOT EXISTS (\n              SELECT 1 FROM bookmarks b\n              WHERE b.status_id = s.id AND b.account_id = s.account_id))\n          AND ($10::int IS NULL OR\n              (SELECT count(*) FROM favourites f2 WHERE f2.status_id = s.id) < $10)\n          AND ($11::int IS NULL OR\n              (SELECT count(*) FROM statuses b2 WHERE b2.reblog_of_id = s.id) < $11)\n        ORDER BY s.id ASC\n        LIMIT $12\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Int4",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1aa0b7dbc84b25829eae6762172f35aff03796488c15228a50eb23ff8d1fd509"
+}

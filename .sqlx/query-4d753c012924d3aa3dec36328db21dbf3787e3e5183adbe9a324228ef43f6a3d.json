@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO remote_history_jobs\n               (id, account_id, kind, page_uri, origin, requested_by)\n           VALUES ($1, $2, $3, $4, $5, $6)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4d753c012924d3aa3dec36328db21dbf3787e3e5183adbe9a324228ef43f6a3d"
+}

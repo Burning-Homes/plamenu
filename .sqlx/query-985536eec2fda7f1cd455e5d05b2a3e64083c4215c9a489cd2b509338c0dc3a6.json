@@ -1,0 +1,73 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f.account_id AS \"follower_id!\", a.username AS \"username!\",\n               a.uri AS actor_uri,\n               f.uri AS edge_uri,\n               (f.account_id <> $2\n                AND NOT EXISTS (SELECT 1 FROM blocks\n                                WHERE account_id = f.account_id AND target_account_id = $2)\n                AND NOT EXISTS (SELECT 1 FROM blocks\n                                WHERE account_id = $2 AND target_account_id = f.account_id)\n                AND NOT ($3::text IS NOT NULL AND EXISTS (\n                        SELECT 1 FROM account_domain_blocks\n                        WHERE account_id = f.account_id AND domain = $3))\n                AND NOT EXISTS (SELECT 1 FROM follows\n                                WHERE account_id = f.account_id AND target_account_id = $2)\n               ) AS \"eligible!\"\n        FROM follows f\n        JOIN accounts a ON a.id = f.account_id\n        WHERE f.target_account_id = $1 AND a.domain IS NULL AND NOT f.pending\n        ORDER BY f.account_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "follower_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "actor_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "edge_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "eligible!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "985536eec2fda7f1cd455e5d05b2a3e64083c4215c9a489cd2b509338c0dc3a6"
+}

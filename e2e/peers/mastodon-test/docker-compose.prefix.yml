@@ -1,0 +1,11 @@
+# Opt-in overlay: puts the local Mastodon 4.7 instance back into the
+# 2026-06-19 … 2026-07-06 window where `assertionMethod` replaced `publicKey`
+# (see prefix_fep521.rb). Only used for reproducing the infosec.space
+# "Public key not found for key …#main-key" 401 — never part of a normal run.
+services:
+  web:
+    volumes:
+      - ./prefix_fep521.rb:/mastodon/config/initializers/zzz_prefix_fep521.rb:ro
+  sidekiq:
+    volumes:
+      - ./prefix_fep521.rb:/mastodon/config/initializers/zzz_prefix_fep521.rb:ro

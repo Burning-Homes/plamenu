@@ -1,0 +1,102 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, name, display_name, usable, listable, trendable, reviewed_at\n        FROM tags\n        WHERE ($1::bigint IS NULL OR id < $1) AND ($2::bigint IS NULL OR id > $2)\n        ORDER BY id DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "usable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "usable"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "listable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "listable"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "trendable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "trendable"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "reviewed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "reviewed_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "427aa66be251a74327e97f042977a14156b7793a9351b82f0586bcdcf331dc7c"
+}

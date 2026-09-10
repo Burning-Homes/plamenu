@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(DISTINCT domain) AS \"count!\" FROM accounts\n           WHERE domain IS NOT NULL AND NOT portable",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4be1e3453de7fbb464856685b6369a57170101b8fe863cce335bc6369458e710"
+}

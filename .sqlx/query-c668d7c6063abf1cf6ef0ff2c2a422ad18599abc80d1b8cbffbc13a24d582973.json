@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO software_updates (version, urgent, release_type, release_notes)\n            SELECT v.version, v.urgent, v.release_type, v.release_notes\n            FROM unnest($1::text[], $2::bool[], $3::text[], $4::text[])\n                 AS v(version, urgent, release_type, release_notes)\n            ON CONFLICT (version) DO UPDATE SET\n                urgent = EXCLUDED.urgent,\n                release_type = EXCLUDED.release_type,\n                release_notes = EXCLUDED.release_notes\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "BoolArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c668d7c6063abf1cf6ef0ff2c2a422ad18599abc80d1b8cbffbc13a24d582973"
+}

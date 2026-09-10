@@ -1,0 +1,789 @@
+{
+  "benchmarks": {
+    "ap/actor": {
+      "bytes": 5742,
+      "ci_ms": [
+        0.7588972895833334,
+        0.8017874635416667
+      ],
+      "mad_ms": 0.03737303265212104,
+      "median_ms": 0.7746080451923076,
+      "queries": 4,
+      "samples": 20
+    },
+    "ap/followers_collection": {
+      "bytes": 841,
+      "ci_ms": [
+        1.2825623151041665,
+        1.3669825614583333
+      ],
+      "mad_ms": 0.04593499395612536,
+      "median_ms": 1.3008248080357143,
+      "queries": 4,
+      "samples": 20
+    },
+    "ap/outbox_page": {
+      "bytes": 51756,
+      "ci_ms": [
+        2.9124086184210527,
+        3.055316232638889
+      ],
+      "mad_ms": 0.12822625829136503,
+      "median_ms": 2.998919916666667,
+      "queries": 18,
+      "samples": 20
+    },
+    "ap/status_note": {
+      "bytes": 3771,
+      "ci_ms": [
+        2.5034043055555557,
+        2.6129693731617647
+      ],
+      "mad_ms": 0.06064858094803314,
+      "median_ms": 2.5262031055194805,
+      "queries": 21,
+      "samples": 20
+    },
+    "ap/status_replies": {
+      "bytes": 82607,
+      "ci_ms": [
+        3.5902044888888884,
+        3.680579308333334
+      ],
+      "mad_ms": 0.10479151418428469,
+      "median_ms": 3.631952289285714,
+      "queries": 22,
+      "samples": 20
+    },
+    "api/account_lookup": {
+      "bytes": 1140,
+      "ci_ms": [
+        1.1822140871848739,
+        1.2542420729166666
+      ],
+      "mad_ms": 0.061968551206656355,
+      "median_ms": 1.2112938955965908,
+      "queries": 11,
+      "samples": 20
+    },
+    "api/account_statuses": {
+      "bytes": 54512,
+      "ci_ms": [
+        5.919761651041666,
+        6.108715519886363
+      ],
+      "mad_ms": 0.17683445553556107,
+      "median_ms": 6.0363291263736265,
+      "queries": 45,
+      "samples": 20
+    },
+    "api/bookmarks_page": {
+      "bytes": 81552,
+      "ci_ms": [
+        6.3881411041666665,
+        6.578544996240602
+      ],
+      "mad_ms": 0.2065707143426366,
+      "median_ms": 6.45374894047619,
+      "queries": 47,
+      "samples": 20
+    },
+    "api/context_deep": {
+      "bytes": 106546,
+      "ci_ms": [
+        13.724809333333333,
+        14.139289785714286
+      ],
+      "mad_ms": 0.31113775095120116,
+      "median_ms": 13.844466872222222,
+      "queries": 80,
+      "samples": 20
+    },
+    "api/conversations": {
+      "bytes": 71329,
+      "ci_ms": [
+        10.172296280701753,
+        10.657753133333333
+      ],
+      "mad_ms": 0.37365800849556036,
+      "median_ms": 10.34501109090909,
+      "queries": 50,
+      "samples": 20
+    },
+    "api/favourites_page": {
+      "bytes": 78712,
+      "ci_ms": [
+        6.371917234313726,
+        6.6659657061403506
+      ],
+      "mad_ms": 0.2502442153889445,
+      "median_ms": 6.4943572750000005,
+      "queries": 47,
+      "samples": 20
+    },
+    "api/followers_page": {
+      "bytes": 40420,
+      "ci_ms": [
+        3.846136239583333,
+        4.0179130305555555
+      ],
+      "mad_ms": 0.159101056658725,
+      "median_ms": 3.9492782333333336,
+      "queries": 15,
+      "samples": 20
+    },
+    "api/group_hot": {
+      "bytes": 118078,
+      "ci_ms": [
+        16.168627180701755,
+        16.327351651709403
+      ],
+      "mad_ms": 0.15487507016708515,
+      "median_ms": 16.247480200757575,
+      "queries": 49,
+      "samples": 20
+    },
+    "api/group_new": {
+      "bytes": 120871,
+      "ci_ms": [
+        9.271790833333332,
+        9.382587297619049
+      ],
+      "mad_ms": 0.10435703073479281,
+      "median_ms": 9.335157292307692,
+      "queries": 49,
+      "samples": 20
+    },
+    "api/group_top": {
+      "bytes": 119655,
+      "ci_ms": [
+        14.135082233333334,
+        14.477935361111111
+      ],
+      "mad_ms": 0.27586829290934306,
+      "median_ms": 14.311133295454546,
+      "queries": 47,
+      "samples": 20
+    },
+    "api/home_dense": {
+      "bytes": 89908,
+      "ci_ms": [
+        97.1703985,
+        98.9154625
+      ],
+      "mad_ms": 1.0689423495724797,
+      "median_ms": 97.6257405,
+      "queries": 43,
+      "samples": 20
+    },
+    "api/home_sparse": {
+      "bytes": 51719,
+      "ci_ms": [
+        17.0273575,
+        17.720684200000004
+      ],
+      "mad_ms": 0.5697873362642537,
+      "median_ms": 17.28357,
+      "queries": 42,
+      "samples": 20
+    },
+    "api/instance_v1": {
+      "bytes": 1551,
+      "ci_ms": [
+        0.7122331466836735,
+        0.7500146035714286
+      ],
+      "mad_ms": 0.026289986159583015,
+      "median_ms": 0.7225654285714287,
+      "queries": 7,
+      "samples": 20
+    },
+    "api/list_timeline": {
+      "bytes": 78976,
+      "ci_ms": [
+        31.972896833333337,
+        32.627035166666666
+      ],
+      "mad_ms": 0.45798575716912654,
+      "median_ms": 32.409452,
+      "queries": 43,
+      "samples": 20
+    },
+    "api/notifications": {
+      "bytes": 134554,
+      "ci_ms": [
+        10.171648277777779,
+        10.549597477272727
+      ],
+      "mad_ms": 0.3071101997289545,
+      "median_ms": 10.335265901785714,
+      "queries": 52,
+      "samples": 20
+    },
+    "api/notifications_grouped": {
+      "bytes": 277941,
+      "ci_ms": [
+        24.320366875,
+        24.974734
+      ],
+      "mad_ms": 0.4636499685935676,
+      "median_ms": 24.576833875,
+      "queries": 53,
+      "samples": 20
+    },
+    "api/public_federated": {
+      "bytes": 58141,
+      "ci_ms": [
+        17.58872761111111,
+        17.853392754411765
+      ],
+      "mad_ms": 0.25570144286846763,
+      "median_ms": 17.71724477222222,
+      "queries": 77,
+      "samples": 20
+    },
+    "api/public_federated_anon": {
+      "bytes": 54914,
+      "ci_ms": [
+        16.443657092857144,
+        16.623092047916664
+      ],
+      "mad_ms": 0.13850638397435378,
+      "median_ms": 16.50482322222222,
+      "queries": 55,
+      "samples": 20
+    },
+    "api/public_local": {
+      "bytes": 68169,
+      "ci_ms": [
+        7.400797770238096,
+        7.516959576388889
+      ],
+      "mad_ms": 0.09314771743796459,
+      "median_ms": 7.418379553571429,
+      "queries": 41,
+      "samples": 20
+    },
+    "api/relationships": {
+      "bytes": 6852,
+      "ci_ms": [
+        1.612720136111111,
+        1.6812182796296296
+      ],
+      "mad_ms": 0.05836637165357708,
+      "median_ms": 1.6371863225160255,
+      "queries": 12,
+      "samples": 20
+    },
+    "api/search": {
+      "bytes": 65927,
+      "ci_ms": [
+        10.828342333333332,
+        11.147862756140352
+      ],
+      "mad_ms": 0.3107362037130765,
+      "median_ms": 11.022335216911765,
+      "queries": 72,
+      "samples": 20
+    },
+    "api/search_accounts": {
+      "bytes": 21923,
+      "ci_ms": [
+        9.880064826388889,
+        10.27907989473684
+      ],
+      "mad_ms": 0.2060623841769551,
+      "median_ms": 9.936320397435898,
+      "queries": 33,
+      "samples": 20
+    },
+    "api/search_common": {
+      "bytes": 48931,
+      "ci_ms": [
+        88.046892,
+        89.36735575
+      ],
+      "mad_ms": 1.2569174937352539,
+      "median_ms": 88.4705605,
+      "queries": 39,
+      "samples": 20
+    },
+    "api/search_tags": {
+      "bytes": 9451,
+      "ci_ms": [
+        3.1418555992063495,
+        3.391111622222222
+      ],
+      "mad_ms": 0.18379498854282036,
+      "median_ms": 3.2574239333333335,
+      "queries": 7,
+      "samples": 20
+    },
+    "api/status_show": {
+      "bytes": 3503,
+      "ci_ms": [
+        3.7783049333333336,
+        3.9133313518518515
+      ],
+      "mad_ms": 0.14353135903555875,
+      "median_ms": 3.8691020104166665,
+      "queries": 43,
+      "samples": 20
+    },
+    "api/tag_timeline": {
+      "bytes": 55275,
+      "ci_ms": [
+        7.963641387499999,
+        8.168634416666666
+      ],
+      "mad_ms": 0.17059462467133998,
+      "median_ms": 8.066360794642858,
+      "queries": 43,
+      "samples": 20
+    },
+    "api/trends_tags": {
+      "bytes": 4721,
+      "ci_ms": [
+        0.8668105606060605,
+        0.8910187128787879
+      ],
+      "mad_ms": 0.02627523201988507,
+      "median_ms": 0.8712659045454545,
+      "queries": 7,
+      "samples": 20
+    },
+    "api/verify_credentials": {
+      "bytes": 1268,
+      "ci_ms": [
+        1.4856461564102563,
+        1.534823588235294
+      ],
+      "mad_ms": 0.04381300605549686,
+      "median_ms": 1.5049701383928573,
+      "queries": 13,
+      "samples": 20
+    },
+    "db/by_account_published": {
+      "bytes": null,
+      "ci_ms": [
+        0.7881603461538461,
+        0.7970378461538461
+      ],
+      "mad_ms": 0.021605501743348778,
+      "median_ms": 0.791395,
+      "queries": null,
+      "samples": 100
+    },
+    "db/by_account_received": {
+      "bytes": null,
+      "ci_ms": [
+        0.78224568,
+        0.7921944599999999
+      ],
+      "mad_ms": 0.01654234642231478,
+      "median_ms": 0.7862183600000001,
+      "queries": null,
+      "samples": 100
+    },
+    "db/lemmy_aliases_20_warm": {
+      "bytes": null,
+      "ci_ms": [
+        0.08392105999999999,
+        0.08531003050490883
+      ],
+      "mad_ms": 0.0026062513260934252,
+      "median_ms": 0.08452797031063322,
+      "queries": null,
+      "samples": 100
+    },
+    "db/lemmy_inbox_read_states_20": {
+      "bytes": null,
+      "ci_ms": [
+        0.12153385416666668,
+        0.12328228703703703
+      ],
+      "mad_ms": 0.003245698228778642,
+      "median_ms": 0.12234480607986645,
+      "queries": null,
+      "samples": 100
+    },
+    "db/lemmy_media_list_20": {
+      "bytes": null,
+      "ci_ms": [
+        0.09459311208791209,
+        0.09586686417391305
+      ],
+      "mad_ms": 0.003105535486218268,
+      "median_ms": 0.09527815075757576,
+      "queries": null,
+      "samples": 100
+    },
+    "db/lemmy_unread_counts": {
+      "bytes": null,
+      "ci_ms": [
+        0.15647588505747126,
+        0.16370809523809524
+      ],
+      "mad_ms": 0.011399307975654572,
+      "median_ms": 0.15955139932680537,
+      "queries": null,
+      "samples": 100
+    },
+    "db/post_reads_20_warm": {
+      "bytes": null,
+      "ci_ms": [
+        0.084682898989899,
+        0.08865306436781609
+      ],
+      "mad_ms": 0.00642706394678722,
+      "median_ms": 0.08604853594470048,
+      "queries": null,
+      "samples": 100
+    },
+    "db_jobs/delivery_drain": {
+      "bytes": null,
+      "ci_ms": [
+        6.421542925,
+        6.688734583333334
+      ],
+      "mad_ms": 0.0808105323903265,
+      "median_ms": 6.465727055555556,
+      "queries": null,
+      "samples": 10
+    },
+    "db_jobs/link_crawl_drain": {
+      "bytes": null,
+      "ci_ms": [
+        3.1631613333333335,
+        3.474630142857143
+      ],
+      "mad_ms": 0.22346710493266583,
+      "median_ms": 3.3322533229166664,
+      "queries": null,
+      "samples": 10
+    },
+    "db_jobs/purge_account": {
+      "bytes": null,
+      "ci_ms": [
+        2.7034425892857143,
+        2.7619723333333335
+      ],
+      "mad_ms": 0.03529899626498425,
+      "median_ms": 2.712355708333333,
+      "queries": null,
+      "samples": 10
+    },
+    "db_jobs/statuses_cleanup_sweep": {
+      "bytes": null,
+      "ci_ms": [
+        119.002997,
+        126.187292
+      ],
+      "mad_ms": 5.325717788949609,
+      "median_ms": 122.998267,
+      "queries": null,
+      "samples": 10
+    },
+    "db_jobs/trends_refresh_tags": {
+      "bytes": null,
+      "ci_ms": [
+        37.802162116666665,
+        42.8968275
+      ],
+      "mad_ms": 0.6367217371859352,
+      "median_ms": 42.49812281428571,
+      "queries": null,
+      "samples": 10
+    },
+    "micro/proof_roundtrip": {
+      "bytes": null,
+      "ci_ms": [
+        0.06702254166666666,
+        0.0682009109589041
+      ],
+      "mad_ms": 0.0023733575216785727,
+      "median_ms": 0.06745810902777777,
+      "queries": null,
+      "samples": 100
+    },
+    "micro/render_statuses_20": {
+      "bytes": null,
+      "ci_ms": [
+        7.109152804166667,
+        7.170919833333333
+      ],
+      "mad_ms": 0.17928315471708728,
+      "median_ms": 7.135629,
+      "queries": null,
+      "samples": 100
+    },
+    "micro/sign_post": {
+      "bytes": null,
+      "ci_ms": [
+        1.194031411764706,
+        1.2140140588235293
+      ],
+      "mad_ms": 0.04028490124362364,
+      "median_ms": 1.2050808823529413,
+      "queries": null,
+      "samples": 100
+    },
+    "stream/route_status_1": {
+      "bytes": null,
+      "ci_ms": [
+        5.3738263669871795,
+        5.509451415384616
+      ],
+      "mad_ms": 0.05490494947928085,
+      "median_ms": 5.404666747252747,
+      "queries": null,
+      "samples": 10
+    },
+    "stream/route_status_50": {
+      "bytes": null,
+      "ci_ms": [
+        10.41568159375,
+        11.782684359375
+      ],
+      "mad_ms": 0.7966737676937151,
+      "median_ms": 10.777044822916668,
+      "queries": null,
+      "samples": 10
+    },
+    "web/web_explore": {
+      "bytes": 223458,
+      "ci_ms": [
+        10.3780807,
+        10.58791662087912
+      ],
+      "mad_ms": 0.23234012336513932,
+      "median_ms": 10.509902483333335,
+      "queries": 52,
+      "samples": 20
+    },
+    "web/web_home": {
+      "bytes": 214208,
+      "ci_ms": [
+        22.588517625,
+        24.312436375
+      ],
+      "mad_ms": 2.0059864897616206,
+      "median_ms": 23.3294545,
+      "queries": 59,
+      "samples": 20
+    },
+    "web/web_list": {
+      "bytes": 222252,
+      "ci_ms": [
+        34.74589816666667,
+        35.3821325
+      ],
+      "mad_ms": 0.6108754200547915,
+      "median_ms": 35.023487833333334,
+      "queries": 58,
+      "samples": 20
+    },
+    "web/web_notifications": {
+      "bytes": 170856,
+      "ci_ms": [
+        8.84236308531746,
+        9.068818266666666
+      ],
+      "mad_ms": 0.19552098498880807,
+      "median_ms": 8.95163034375,
+      "queries": 58,
+      "samples": 20
+    },
+    "web/web_profile": {
+      "bytes": 252129,
+      "ci_ms": [
+        16.221990386363636,
+        16.61341464285714
+      ],
+      "mad_ms": 0.5220789959041852,
+      "median_ms": 16.47594795,
+      "queries": 106,
+      "samples": 20
+    },
+    "web/web_thread": {
+      "bytes": 438766,
+      "ci_ms": [
+        16.617081876262624,
+        17.312001891666664
+      ],
+      "mad_ms": 0.629308233046663,
+      "median_ms": 16.94949925,
+      "queries": 130,
+      "samples": 20
+    },
+    "web/web_thread_anon": {
+      "bytes": 215813,
+      "ci_ms": [
+        12.62113359090909,
+        13.00956937867647
+      ],
+      "mad_ms": 0.14769609474459983,
+      "median_ms": 12.6840546,
+      "queries": 83,
+      "samples": 20
+    },
+    "write/inbox_announce": {
+      "bytes": null,
+      "ci_ms": [
+        2.979562375,
+        3.5210685
+      ],
+      "mad_ms": 0.27468300142701313,
+      "median_ms": 3.1428335777777776,
+      "queries": null,
+      "samples": 10
+    },
+    "write/inbox_create_note": {
+      "bytes": null,
+      "ci_ms": [
+        2.5194304000000005,
+        2.6722084444444443
+      ],
+      "mad_ms": 0.06944371706601676,
+      "median_ms": 2.5596001740740744,
+      "queries": null,
+      "samples": 10
+    },
+    "write/inbox_create_reply": {
+      "bytes": null,
+      "ci_ms": [
+        3.05353912345679,
+        3.2889540740740744
+      ],
+      "mad_ms": 0.12634381445926393,
+      "median_ms": 3.135712465277778,
+      "queries": null,
+      "samples": 10
+    },
+    "write/inbox_create_rich": {
+      "bytes": null,
+      "ci_ms": [
+        5.3399617,
+        5.525985177777778
+      ],
+      "mad_ms": 0.11308887123227106,
+      "median_ms": 5.4026317666666674,
+      "queries": null,
+      "samples": 10
+    },
+    "write/inbox_delete_note": {
+      "bytes": null,
+      "ci_ms": [
+        2.0724504285714285,
+        2.2626650227272727
+      ],
+      "mad_ms": 0.07976138284721013,
+      "median_ms": 2.120417388888889,
+      "queries": null,
+      "samples": 10
+    },
+    "write/inbox_like": {
+      "bytes": null,
+      "ci_ms": [
+        3.1035145714285717,
+        3.293338173611111
+      ],
+      "mad_ms": 0.12342463574210731,
+      "median_ms": 3.1928255462962967,
+      "queries": null,
+      "samples": 10
+    },
+    "write/inbox_update_note": {
+      "bytes": null,
+      "ci_ms": [
+        3.386239486394558,
+        3.7029871190476196
+      ],
+      "mad_ms": 0.14911228055272804,
+      "median_ms": 3.450598364285714,
+      "queries": null,
+      "samples": 10
+    },
+    "write/post_boost": {
+      "bytes": null,
+      "ci_ms": [
+        37.757922625,
+        38.82007177777778
+      ],
+      "mad_ms": 0.7463405561164727,
+      "median_ms": 38.3013493,
+      "queries": null,
+      "samples": 10
+    },
+    "write/post_delete": {
+      "bytes": null,
+      "ci_ms": [
+        38.25024435,
+        39.25645528571428
+      ],
+      "mad_ms": 0.516769981275497,
+      "median_ms": 38.58236175,
+      "queries": null,
+      "samples": 10
+    },
+    "write/post_edit": {
+      "bytes": null,
+      "ci_ms": [
+        73.709164,
+        75.00288933333333
+      ],
+      "mad_ms": 0.9270601266413927,
+      "median_ms": 74.043077,
+      "queries": null,
+      "samples": 10
+    },
+    "write/post_favourite": {
+      "bytes": null,
+      "ci_ms": [
+        3.8276876333333334,
+        3.9069614120370373
+      ],
+      "mad_ms": 0.03852896385764074,
+      "median_ms": 3.8503106833333334,
+      "queries": null,
+      "samples": 10
+    },
+    "write/post_reply": {
+      "bytes": null,
+      "ci_ms": [
+        75.537693,
+        82.21512266666666
+      ],
+      "mad_ms": 3.80836962548792,
+      "median_ms": 78.831609,
+      "queries": null,
+      "samples": 10
+    },
+    "write/post_status": {
+      "bytes": null,
+      "ci_ms": [
+        80.18467566666666,
+        84.01349333333334
+      ],
+      "mad_ms": 1.7795605477064922,
+      "median_ms": 81.75408916666667,
+      "queries": null,
+      "samples": 10
+    }
+  },
+  "finished_at": "2026-08-25T16:31:15.453744805Z",
+  "git_describe": "caff575",
+  "git_dirty": false,
+  "git_sha": "caff575be09de020ca59177f085150e6d9b95dee",
+  "machine": {
+    "cores": 16,
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11700F @ 2.50GHz",
+    "memory_kb": 32717616,
+    "platform": "linux"
+  },
+  "measurement_secs": 2.0,
+  "recorded_at": "2026-08-25T16:31:21.002002+00:00",
+  "seed_version": "4",
+  "started_at": "2026-08-25T16:26:11.705944999Z",
+  "warm_up_secs": 1.0
+}

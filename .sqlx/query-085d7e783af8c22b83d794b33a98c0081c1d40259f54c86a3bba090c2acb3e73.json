@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO custom_filter_statuses (id, custom_filter_id, status_id)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (custom_filter_id, status_id) DO NOTHING\n        RETURNING id, custom_filter_id, status_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "custom_filter_statuses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "custom_filter_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "custom_filter_statuses",
+            "name": "custom_filter_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "custom_filter_statuses",
+            "name": "status_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "085d7e783af8c22b83d794b33a98c0081c1d40259f54c86a3bba090c2acb3e73"
+}

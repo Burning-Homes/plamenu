@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, inbox_url, actor_uri, state, follow_activity_id, created_at, updated_at\n        FROM relays\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "inbox_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "inbox_url"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "actor_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "actor_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "follow_activity_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "follow_activity_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "relays",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "69654db38356ac18c1f3fd71f3c89c1a78caff73e6c03bd08f2dcf046e5bc6d8"
+}

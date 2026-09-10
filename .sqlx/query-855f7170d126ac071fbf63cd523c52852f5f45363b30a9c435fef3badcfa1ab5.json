@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT id, file_name, small_file_name\n            FROM media_attachments\n            WHERE remote_url IS NOT NULL\n              AND NOT download_on_demand\n              AND cached_at IS NOT NULL\n              AND cached_at < now() - ($1 * interval '1 second')\n              -- A recently-served file is hot: eviction waits until viewers\n              -- stop coming, however old the download is.\n              AND (last_served_at IS NULL\n                   OR last_served_at < now() - ($1 * interval '1 second'))\n            ORDER BY cached_at\n            LIMIT $2\n        )\n        UPDATE media_attachments m\n        SET file_name = NULL, small_file_name = NULL, small_width = NULL,\n            small_height = NULL, cached_at = NULL, last_served_at = NULL\n        FROM due\n        WHERE m.id = due.id\n        RETURNING due.file_name AS \"file_name?\", due.small_file_name AS \"small_file_name?\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "small_file_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "small_file_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "855f7170d126ac071fbf63cd523c52852f5f45363b30a9c435fef3badcfa1ab5"
+}

@@ -1,0 +1,134 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT host, consecutive_failures, first_failure_at, last_failure_at,\n                  last_failure_class, last_error, unreachable_since,\n                  last_success_at, next_probe_at, abandoned_at\n           FROM host_reachability\n           WHERE unreachable_since IS NOT NULL\n           ORDER BY unreachable_since",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "host_reachability",
+            "name": "host"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "consecutive_failures",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "host_reachability",
+            "name": "consecutive_failures"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "first_failure_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "host_reachability",
+            "name": "first_failure_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "last_failure_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "host_reachability",
+            "name": "last_failure_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "last_failure_class",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "host_reachability",
+            "name": "last_failure_class"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "last_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "host_reachability",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "unreachable_since",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "host_reachability",
+            "name": "unreachable_since"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "last_success_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "host_reachability",
+            "name": "last_success_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "next_probe_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "host_reachability",
+            "name": "next_probe_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "abandoned_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "host_reachability",
+            "name": "abandoned_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "97bd49c972b0d38b3d3783d9b31afdaa9966da825950a0476d2901e12e1b19c9"
+}

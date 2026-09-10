@@ -1,0 +1,164 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE collection_items\n        SET account_id = COALESCE($2, account_id), uri = $3, object_uri = $4,\n            approval_uri = COALESCE($5, approval_uri), state = 'accepted',\n            updated_at = now()\n        WHERE id = $1\n        RETURNING id, collection_id, account_id, state, position, uri, object_uri,\n                  activity_uri, approval_uri, approval_last_verified_at,\n                  created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "collection_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "collection_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "position",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "object_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "object_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "activity_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "activity_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "approval_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "approval_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "approval_last_verified_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "approval_last_verified_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "5c6400a4091d5bc5329da9d02ff5bc47e6f697e9683bb8ddcdae9b02182adde2"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT sort_at FROM statuses WHERE id = $1 -- STUBKEEP: ordering probe",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sort_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "sort_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d5b3089fb17b49dc29d55f1ed93c13cd271f9413f4804a005f9bfe9aa71d3620"
+}

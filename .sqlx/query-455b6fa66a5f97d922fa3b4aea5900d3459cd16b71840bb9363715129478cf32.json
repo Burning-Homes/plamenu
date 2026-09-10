@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO login_activities (id, user_id, created_at) VALUES ($1, $2, now() - make_interval(days => $3))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "455b6fa66a5f97d922fa3b4aea5900d3459cd16b71840bb9363715129478cf32"
+}

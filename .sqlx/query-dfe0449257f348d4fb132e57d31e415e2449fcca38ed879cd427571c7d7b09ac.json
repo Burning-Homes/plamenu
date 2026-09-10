@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT account_fields_json($1) AS \"fields!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "fields!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "dfe0449257f348d4fb132e57d31e415e2449fcca38ed879cd427571c7d7b09ac"
+}

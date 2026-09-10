@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE instance_settings SET rate_limit_app_registrations = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "f605355f865ab6a283732a53b097174f013f23c153eec0e5a26d540770d518ed"
+}

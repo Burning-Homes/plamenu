@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE instance_settings SET rate_limit_unauthenticated_api = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "4a81e2dbb669dbb3c7977b79792b39fc7cb3cfa12b1a567af9758288e37d3159"
+}

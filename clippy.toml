@@ -1,0 +1,13 @@
+# `large_futures` fires at 16 KiB by default; the remote-ingest call chain
+# (ingest_remote_note → resolve_thread_parent → resolve_or_fetch_status and
+# the inbox dispatch over it) sits at a known, accepted ~17–18 KiB — a handful
+# of concurrent ingests, not a per-connection future, so boxing it would buy
+# an allocation on the ingest path and nothing else. Keep the lint armed for
+# genuinely runaway futures above that plateau.
+future-size-threshold = 32768
+
+# Web handlers deliberately use `axum::Response` as the rejection type so
+# errors can carry redirects, headers, and rendered bodies. Rust 1.98 measures
+# that response at 128 bytes; keep the lint useful for errors larger than the
+# framework response rather than annotating every handler.
+large-error-threshold = 256

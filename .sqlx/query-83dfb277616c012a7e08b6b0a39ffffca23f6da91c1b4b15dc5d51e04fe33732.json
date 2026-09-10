@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ingest_provenance FROM statuses WHERE id = $1 -- STUBKEEP: provenance inspection includes a soft-delete stub",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ingest_provenance",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "ingest_provenance"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "83dfb277616c012a7e08b6b0a39ffffca23f6da91c1b4b15dc5d51e04fe33732"
+}

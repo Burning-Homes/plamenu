@@ -1,0 +1,54 @@
+{
+	on_demand_tls {
+		# Plamenu permits only origins belonging to existing local sessions.
+		ask http://plamenu:8420/webxdc/caddy-allow
+	}
+}
+
+{$PLAMENU_DOMAIN:?PLAMENU_DOMAIN is required} {
+	encode zstd gzip
+	reverse_proxy plamenu:8420
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+	}
+}
+
+# Optional split-domain discovery. If plamenu.toml sets, for example,
+# `account_domain = "example.com"` while PLAMENU_DOMAIN is
+# `social.example.com`, add a separate site like this (usually to the Caddy
+# instance already serving the apex). Keep every non-well-known apex route with
+# the service that normally owns it.
+# example.com {
+# 	redir /.well-known/webfinger* https://social.example.com{uri} permanent
+# 	redir /.well-known/host-meta* https://social.example.com{uri} permanent
+# 	redir /.well-known/nodeinfo* https://social.example.com{uri} permanent
+# }
+
+# Webxdc packages run on a dedicated, cookie-less origin per session. Set
+# PLAMENU_WEBXDC_DOMAIN to `webxdc.${PLAMENU_DOMAIN}` and point wildcard DNS
+# (`*.webxdc.example`) at this Caddy instance. On-Demand TLS issues ordinary
+# certificates only after the permission endpoint confirms the numeric session.
+https:// {
+	@webxdc host *.{$PLAMENU_WEBXDC_DOMAIN:?PLAMENU_WEBXDC_DOMAIN is required}
+	handle @webxdc {
+		encode zstd gzip
+		reverse_proxy plamenu:8420
+
+		header {
+			>Strict-Transport-Security "max-age=31536000; includeSubDomains"
+			>X-Content-Type-Options "nosniff"
+			>Referrer-Policy "no-referrer"
+		}
+	}
+
+	handle {
+		abort
+	}
+
+	tls {
+		on_demand
+	}
+}

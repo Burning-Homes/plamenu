@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO custom_emojis (id, shortcode, domain, uri, image_remote_url, origin_id)\n        VALUES ($1, $2, $3, $4, $5, $7)\n        ON CONFLICT (shortcode, domain) WHERE domain IS NOT NULL DO UPDATE\n        SET uri = EXCLUDED.uri,\n            image_remote_url = EXCLUDED.image_remote_url,\n            -- A changed origin URL invalidates any cached copy; the media\n            -- proxy re-fetches it on next view.\n            image_file_name = CASE\n                WHEN custom_emojis.image_remote_url IS DISTINCT FROM EXCLUDED.image_remote_url\n                THEN NULL ELSE custom_emojis.image_file_name END,\n            image_content_type = CASE\n                WHEN custom_emojis.image_remote_url IS DISTINCT FROM EXCLUDED.image_remote_url\n                THEN NULL ELSE custom_emojis.image_content_type END,\n            image_file_size = CASE\n                WHEN custom_emojis.image_remote_url IS DISTINCT FROM EXCLUDED.image_remote_url\n                THEN NULL ELSE custom_emojis.image_file_size END,\n            updated_at = now()\n        WHERE custom_emojis.image_remote_url IS DISTINCT FROM EXCLUDED.image_remote_url\n           OR ($6::timestamptz IS NOT NULL AND $6 >= custom_emojis.updated_at)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "001b991d7d7df6f8a6524e8c83b5f9062c5fe00ae2d8978a7170929862e14419"
+}

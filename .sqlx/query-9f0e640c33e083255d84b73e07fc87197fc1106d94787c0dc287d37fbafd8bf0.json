@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO daily_interactions (day, count)\n        VALUES ((now() AT TIME ZONE 'UTC')::date, 1)\n        ON CONFLICT (day) DO UPDATE SET count = daily_interactions.count + 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "9f0e640c33e083255d84b73e07fc87197fc1106d94787c0dc287d37fbafd8bf0"
+}

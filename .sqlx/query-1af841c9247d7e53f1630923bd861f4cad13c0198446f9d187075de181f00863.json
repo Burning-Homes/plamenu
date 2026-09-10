@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id AS \"id!\", target_acct AS \"target_acct!\", target_account_id,\n               followers_count AS \"followers_count!\", created_at AS \"created_at!\"\n        FROM account_migrations\n        WHERE account_id = $1\n        ORDER BY created_at DESC, id DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_migrations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "target_acct!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "account_migrations",
+            "name": "target_acct"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "target_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_migrations",
+            "name": "target_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "followers_count!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_migrations",
+            "name": "followers_count"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "account_migrations",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "1af841c9247d7e53f1630923bd861f4cad13c0198446f9d187075de181f00863"
+}

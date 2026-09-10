@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO remote_history_origin_leases\n                   (origin, job_id, lease_owner, leased_until)\n               VALUES ($1, $2, $3, now() + make_interval(secs => $4))\n               ON CONFLICT (origin) DO UPDATE SET\n                   job_id = excluded.job_id,\n                   lease_owner = excluded.lease_owner,\n                   leased_until = excluded.leased_until\n               WHERE remote_history_origin_leases.leased_until <= now()\n               RETURNING origin",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "origin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_history_origin_leases",
+            "name": "origin"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7b43741761cc82468340b0790cc7129e9bc0b84dcee756cb37ab7d4381081ab9"
+}

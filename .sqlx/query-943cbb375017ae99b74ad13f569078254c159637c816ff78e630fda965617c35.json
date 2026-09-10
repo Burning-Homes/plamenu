@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pg_database_size(current_database()) AS \"size!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "size!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "943cbb375017ae99b74ad13f569078254c159637c816ff78e630fda965617c35"
+}

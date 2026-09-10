@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO announcement_reactions (id, account_id, announcement_id, name, custom_emoji_id)\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (account_id, announcement_id, name) DO NOTHING\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "announcement_reactions",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "91e4ed81b0be98522b9f770451b8bb235eb6db653121f8cd8882698dbfb0dd7c"
+}

@@ -1,0 +1,181 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    {
+      "addressRegion": "sc:addressRegion",
+      "timezone": {
+        "@id": "mz:timezone",
+        "@type": "sc:Text"
+      },
+      "isOnline": {
+        "@id": "mz:isOnline",
+        "@type": "sc:Boolean"
+      },
+      "pt": "https://joinpeertube.org/ns#",
+      "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+      "inLanguage": "sc:inLanguage",
+      "address": {
+        "@id": "sc:address",
+        "@type": "sc:PostalAddress"
+      },
+      "status": {
+        "@id": "ical:status",
+        "@type": "ical:status"
+      },
+      "discoverable": "toot:discoverable",
+      "repliesModerationOption": {
+        "@id": "mz:repliesModerationOption",
+        "@type": "mz:repliesModerationOptionType"
+      },
+      "sc": "http://schema.org#",
+      "mz": "https://mobilizon.org/ns#",
+      "category": "sc:category",
+      "joinModeType": {
+        "@id": "mz:joinModeType",
+        "@type": "rdfs:Class"
+      },
+      "Hashtag": "as:Hashtag",
+      "propertyID": "sc:propertyID",
+      "PostalAddress": "sc:PostalAddress",
+      "discussions": {
+        "@id": "mz:discussions",
+        "@type": "@id"
+      },
+      "remainingAttendeeCapacity": "sc:remainingAttendeeCapacity",
+      "streetAddress": "sc:streetAddress",
+      "anonymousParticipationEnabled": {
+        "@id": "mz:anonymousParticipationEnabled",
+        "@type": "sc:Boolean"
+      },
+      "externalParticipationUrl": {
+        "@id": "mz:externalParticipationUrl",
+        "@type": "sc:URL"
+      },
+      "addressLocality": "sc:addressLocality",
+      "joinMode": {
+        "@id": "mz:joinMode",
+        "@type": "mz:joinModeType"
+      },
+      "location": {
+        "@id": "sc:location",
+        "@type": "sc:Place"
+      },
+      "toot": "http://joinmastodon.org/ns#",
+      "participantCount": {
+        "@id": "mz:participantCount",
+        "@type": "sc:Integer"
+      },
+      "uuid": "sc:identifier",
+      "maximumAttendeeCapacity": "sc:maximumAttendeeCapacity",
+      "participationMessage": {
+        "@id": "mz:participationMessage",
+        "@type": "sc:Text"
+      },
+      "openness": {
+        "@id": "mz:openness",
+        "@type": "@id"
+      },
+      "members": {
+        "@id": "mz:members",
+        "@type": "@id"
+      },
+      "events": {
+        "@id": "mz:events",
+        "@type": "@id"
+      },
+      "resources": {
+        "@id": "mz:resources",
+        "@type": "@id"
+      },
+      "addressCountry": "sc:addressCountry",
+      "posts": {
+        "@id": "mz:posts",
+        "@type": "@id"
+      },
+      "commentsEnabled": {
+        "@id": "pt:commentsEnabled",
+        "@type": "sc:Boolean"
+      },
+      "value": "sc:value",
+      "PropertyValue": "sc:PropertyValue",
+      "repliesModerationOptionType": {
+        "@id": "mz:repliesModerationOptionType",
+        "@type": "rdfs:Class"
+      },
+      "todos": {
+        "@id": "mz:todos",
+        "@type": "@id"
+      },
+      "ical": "http://www.w3.org/2002/12/cal/ical#",
+      "postalCode": "sc:postalCode",
+      "memberCount": {
+        "@id": "mz:memberCount",
+        "@type": "sc:Integer"
+      },
+      "@language": "und"
+    }
+  ],
+  "actor": "https://remote.example/users/bob",
+  "attributedTo": "https://remote.example/@testgroup",
+  "cc": [
+    "https://remote.example/users/bob/followers"
+  ],
+  "id": "https://remote.example/events/7265acf4-f8f4-425b-b637-d7de1ae67ae5/activity",
+  "object": {
+    "timezone": "Etc/UTC",
+    "isOnline": false,
+    "contacts": [],
+    "cc": [
+      "https://remote.example/users/bob/followers"
+    ],
+    "id": "https://remote.example/events/7265acf4-f8f4-425b-b637-d7de1ae67ae5",
+    "summary": "September 15, 2026, 6:00:00 PM UTC - GMT - Community Hall, Ljubljana, Slovenia",
+    "inLanguage": "en",
+    "endTime": "2026-09-15T20:00:00Z",
+    "status": "CONFIRMED",
+    "repliesModerationOption": null,
+    "content": "<p>A test event for federation.</p>",
+    "category": "MEETING",
+    "actor": "https://remote.example/users/bob",
+    "type": "Event",
+    "url": "https://remote.example/events/7265acf4-f8f4-425b-b637-d7de1ae67ae5",
+    "remainingAttendeeCapacity": null,
+    "anonymousParticipationEnabled": null,
+    "ical:status": "CONFIRMED",
+    "to": [
+      "https://www.w3.org/ns/activitystreams#Public"
+    ],
+    "externalParticipationUrl": null,
+    "joinMode": "free",
+    "location": {
+      "address": {
+        "addressCountry": "Slovenia",
+        "addressLocality": "Ljubljana",
+        "addressRegion": null,
+        "postalCode": null,
+        "streetAddress": "Trg 1",
+        "type": "PostalAddress"
+      },
+      "id": "https://remote.example/address/f53f92c7-f942-4f74-b49d-5aacfdfb4c1b",
+      "name": "Community Hall",
+      "type": "Place"
+    },
+    "startTime": "2026-09-15T18:00:00Z",
+    "published": "2026-07-26T11:17:05Z",
+    "draft": false,
+    "participantCount": 0,
+    "uuid": "7265acf4-f8f4-425b-b637-d7de1ae67ae5",
+    "maximumAttendeeCapacity": null,
+    "tag": [],
+    "updated": "2026-07-26T11:17:05Z",
+    "attributedTo": "https://remote.example/@testgroup",
+    "commentsEnabled": false,
+    "attachment": [],
+    "name": "Plamenu interop meetup",
+    "mediaType": "text/html"
+  },
+  "published": "2026-07-26T11:17:37Z",
+  "to": "https://www.w3.org/ns/activitystreams#Public",
+  "type": "Create"
+}

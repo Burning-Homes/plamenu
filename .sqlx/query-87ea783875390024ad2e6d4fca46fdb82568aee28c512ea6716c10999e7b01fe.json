@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE custom_emojis\n        SET image_file_name = $2, image_content_type = $3, image_file_size = $4,\n            image_cached_at = now()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "87ea783875390024ad2e6d4fca46fdb82568aee28c512ea6716c10999e7b01fe"
+}

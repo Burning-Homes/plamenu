@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT 1 AS \"one\" FROM follows\n        WHERE account_id = $2 AND target_account_id = $1 AND NOT pending\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "one",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a67f81bf09f3fff791a5b4b2c8301689eb6565e40f0cd0b9717853039e92f44f"
+}

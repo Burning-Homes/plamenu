@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO custom_filter_keywords (id, custom_filter_id, keyword, whole_word)\n            SELECT u.id, $2, u.keyword, u.whole_word\n            FROM unnest($1::bigint[], $3::text[], $4::bool[]) AS u(id, keyword, whole_word)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8",
+        "TextArray",
+        "BoolArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d6d39a55c7d8f4c618ae945a35b0502bd0774c1286003681c6fc07e14297a7de"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notifications\n         WHERE account_id = $1 AND from_account_id = $2 AND status_id = $3\n           AND kind = 'pleroma:emoji_reaction' AND emoji = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6e2fc86e0c48f654635455ed4e0a643807baa7beade13c0d6f111127a82765e5"
+}

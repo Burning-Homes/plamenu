@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE account_conversations\n            SET status_ids = ARRAY(SELECT t.x\n                                   FROM unnest(status_ids) WITH ORDINALITY AS t(x, ord)\n                                   WHERE t.x <> ALL($2::bigint[])\n                                   ORDER BY t.ord),\n                last_status_id = (SELECT max(t.x) FROM unnest(status_ids) AS t(x)\n                                  WHERE t.x <> ALL($2::bigint[]))\n            WHERE account_id = $1 AND status_ids && $2::bigint[]\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d9ff1f4c323ae06bbfb68150da357de454e8b63d042fc498c123ef90dec3d63c"
+}

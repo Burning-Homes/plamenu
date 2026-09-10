@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) FROM scheduled_statuses\n         WHERE account_id = $1\n           AND (scheduled_at AT TIME ZONE $3)::date\n               = ($2::timestamptz AT TIME ZONE $3)::date",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "71a8a17969a5ffff395ac499c480f64fa9b88bdebca197b3c26d57ab6b9575d8"
+}

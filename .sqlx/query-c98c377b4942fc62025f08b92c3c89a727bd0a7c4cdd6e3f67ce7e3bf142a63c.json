@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO remote_fetch_failures\n               (scope, failure_key, attempts, retry_at, last_error)\n           VALUES ($1, $2, 1, now() + make_interval(secs => $4), $3)\n           ON CONFLICT (scope, failure_key) DO UPDATE SET\n               attempts = remote_fetch_failures.attempts + 1,\n               retry_at = CASE\n                   WHEN remote_fetch_failures.attempts + 1 >= $5 THEN NULL\n                   ELSE now() + make_interval(\n                       secs => least(21600.0, 60.0 * power(4.0, least(remote_fetch_failures.attempts, 8)))\n                   )\n               END,\n               abandoned_at = CASE\n                   WHEN remote_fetch_failures.attempts + 1 >= $5\n                       THEN COALESCE(remote_fetch_failures.abandoned_at, now())\n                   ELSE remote_fetch_failures.abandoned_at\n               END,\n               last_error = $3,\n               last_failed_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Float8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c98c377b4942fc62025f08b92c3c89a727bd0a7c4cdd6e3f67ce7e3bf142a63c"
+}

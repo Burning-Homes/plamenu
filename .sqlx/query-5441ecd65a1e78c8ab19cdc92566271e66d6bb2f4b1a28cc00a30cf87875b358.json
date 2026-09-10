@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT count(*) AS \"count!\" FROM accounts\n        WHERE domain IS NOT NULL AND NOT portable\n          AND actor_type IS DISTINCT FROM 'Group'\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "5441ecd65a1e78c8ab19cdc92566271e66d6bb2f4b1a28cc00a30cf87875b358"
+}

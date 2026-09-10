@@ -1,0 +1,58 @@
+{
+  "repository": {
+    "has_actions": true,
+    "has_issues": true,
+    "has_pull_requests": true,
+    "has_releases": true,
+    "has_packages": true,
+    "description": "ActivityPub server with a Mastodon-compatible API",
+    "default_delete_branch_after_merge": true
+  },
+  "maintainers": [
+    "lnkr"
+  ],
+  "main_protection": {
+    "rule_name": "main",
+    "enable_push": false,
+    "apply_to_admins": true,
+    "enable_force_push_allowlist": false,
+    "enable_status_check": true,
+    "status_check_contexts": [
+      "Contribution checks / quick (pull_request)",
+      "Contribution checks / clippy (pull_request)"
+    ],
+    "required_approvals": 0,
+    "block_on_rejected_reviews": true,
+    "block_on_outdated_branch": true,
+    "dismiss_stale_approvals": true
+  },
+  "release_tags": {
+    "name_pattern": "v*",
+    "whitelist_teams": [
+      "maintainers"
+    ],
+    "whitelist_usernames": []
+  },
+  "labels": [
+    {
+      "name": "bug",
+      "color": "d73a4a",
+      "description": "Unexpected behavior or regression"
+    },
+    {
+      "name": "proposal",
+      "color": "0052cc",
+      "description": "Proposed improvement or design change"
+    },
+    {
+      "name": "federation",
+      "color": "5319e7",
+      "description": "ActivityPub interoperability"
+    },
+    {
+      "name": "needs-triage",
+      "color": "fbca04",
+      "description": "Awaiting maintainer assessment"
+    }
+  ]
+}

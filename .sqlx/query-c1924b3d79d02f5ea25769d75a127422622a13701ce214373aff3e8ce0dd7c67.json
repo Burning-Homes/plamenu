@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET content = '', spoiler_text = '', text = '', title = NULL,\n                                   sensitive = false, language = NULL,\n                                   deleted_at = COALESCE(deleted_at, now())\n               WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c1924b3d79d02f5ea25769d75a127422622a13701ce214373aff3e8ce0dd7c67"
+}

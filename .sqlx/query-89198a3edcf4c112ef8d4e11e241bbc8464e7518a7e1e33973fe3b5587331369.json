@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH promoted AS (\n               UPDATE media_attachments m SET\n                   download_on_demand = false,\n                   history_deferred = false,\n                   processing = CASE\n                       WHEN m.file_name IS NULL\n                        AND NOT COALESCE(instance_domain_rejects_media(a.domain), false)\n                       THEN 'queued'\n                       ELSE m.processing\n                   END\n               FROM accounts a\n               WHERE m.status_id = $1\n                 AND m.account_id = a.id\n                 AND m.history_deferred\n               RETURNING m.id, m.file_name,\n                         COALESCE(instance_domain_rejects_media(a.domain), false) AS rejected\n           )\n           SELECT id FROM promoted WHERE file_name IS NULL AND NOT rejected",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "89198a3edcf4c112ef8d4e11e241bbc8464e7518a7e1e33973fe3b5587331369"
+}

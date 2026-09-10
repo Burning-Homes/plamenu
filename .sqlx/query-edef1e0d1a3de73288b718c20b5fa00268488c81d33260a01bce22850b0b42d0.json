@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO media_attachments (id, account_id, status_id, content_type, file_name)\n             VALUES ($1, $2, $3, 'image/png', 'x.png')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "edef1e0d1a3de73288b718c20b5fa00268488c81d33260a01bce22850b0b42d0"
+}

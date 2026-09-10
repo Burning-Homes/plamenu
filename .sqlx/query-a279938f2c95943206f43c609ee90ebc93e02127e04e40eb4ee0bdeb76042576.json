@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE oauth_tokens SET last_used_at = now() - make_interval(days => 400)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "a279938f2c95943206f43c609ee90ebc93e02127e04e40eb4ee0bdeb76042576"
+}

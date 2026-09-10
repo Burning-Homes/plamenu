@@ -1,0 +1,116 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO remote_stream_sources\n            (account_id, media_id, provider, homepage_url, status_url,\n             hls_master_url)\n        VALUES ($1, $2, 'owncast', $3, $4, $5)\n        ON CONFLICT (account_id) DO UPDATE SET\n            provider = 'owncast',\n            homepage_url = EXCLUDED.homepage_url,\n            status_url = EXCLUDED.status_url,\n            hls_master_url = EXCLUDED.hls_master_url,\n            updated_at = now()\n        RETURNING account_id, media_id, provider, homepage_url, status_url,\n                  hls_master_url, created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "remote_stream_sources",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "remote_stream_sources",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_stream_sources",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "homepage_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_stream_sources",
+            "name": "homepage_url"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_stream_sources",
+            "name": "status_url"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "hls_master_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_stream_sources",
+            "name": "hls_master_url"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_stream_sources",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_stream_sources",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "69e8a56ead03e8f036df0525b1b0f246f2e1a2acb1f69f230b319606ee6794fb"
+}

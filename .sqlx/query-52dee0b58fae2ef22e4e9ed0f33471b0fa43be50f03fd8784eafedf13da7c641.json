@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO remote_history_pages (account_id, page_uri)\n               VALUES ($1, $2) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "52dee0b58fae2ef22e4e9ed0f33471b0fa43be50f03fd8784eafedf13da7c641"
+}

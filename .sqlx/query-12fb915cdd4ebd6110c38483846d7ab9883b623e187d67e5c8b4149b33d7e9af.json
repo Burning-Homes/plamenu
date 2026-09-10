@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT\n            CASE WHEN shared_inbox_url <> '' THEN shared_inbox_url\n                 ELSE inbox_url\n            END AS \"inbox!\"\n        FROM accounts\n        WHERE domain IS NOT NULL AND inbox_url <> ''\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inbox!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "12fb915cdd4ebd6110c38483846d7ab9883b623e187d67e5c8b4149b33d7e9af"
+}

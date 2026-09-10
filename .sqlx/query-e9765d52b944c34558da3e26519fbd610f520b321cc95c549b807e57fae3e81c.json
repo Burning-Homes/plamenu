@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT parent_id AS \"parent_id!\", id AS \"id!\"\n        FROM (\n            SELECT r.in_reply_to_id AS parent_id, r.id,\n                   row_number() OVER (PARTITION BY r.in_reply_to_id ORDER BY r.id) AS rn\n            FROM statuses r\n            JOIN statuses p ON p.id = r.in_reply_to_id\n            WHERE r.in_reply_to_id = ANY($1)\n              AND r.visibility IN ('public', 'unlisted')\n              AND r.deleted_at IS NULL -- STUBFILTER: don't advertise blank stubs\n              AND r.account_id = p.account_id\n        ) ranked\n        WHERE rn <= $2\n        ORDER BY parent_id, id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "parent_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "in_reply_to_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "e9765d52b944c34558da3e26519fbd610f520b321cc95c549b807e57fae3e81c"
+}

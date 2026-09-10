@@ -1,0 +1,53 @@
+{
+  "fanout_width": 1850,
+  "git_dirty": false,
+  "git_sha": "ebd209bd0646f75642c842d1c5244dabdafd0dda",
+  "kind": "contention",
+  "machine": {
+    "cores": 16,
+    "cpu": "11th Gen Intel(R) Core(TM) i7-11700F @ 2.50GHz",
+    "platform": "linux"
+  },
+  "ratio_budget": 2.96,
+  "recorded_at": "2026-08-25T06:23:16.47400543Z",
+  "scenarios": {
+    "credential burst": {
+      "concurrent_max_ms": 44.295866000000004,
+      "concurrent_p50_ms": 33.433174,
+      "concurrent_p99_ms": 44.295866000000004,
+      "failures": 0,
+      "invariant_ok": null,
+      "ratio": 2.0444429360745713,
+      "ratio_budget": 2.96,
+      "requests": 32,
+      "serial_p50_ms": 16.353195,
+      "wall_secs": 0.14374187
+    },
+    "fan-out contention": {
+      "concurrent_max_ms": 286.68498,
+      "concurrent_p50_ms": 123.83403,
+      "concurrent_p99_ms": 283.092031,
+      "failures": 0,
+      "invariant_ok": true,
+      "ratio": 1.4412198363307975,
+      "ratio_budget": 2.96,
+      "requests": 128,
+      "serial_p50_ms": 85.923068,
+      "wall_secs": 2.276289723
+    },
+    "mixed read/write": {
+      "concurrent_max_ms": 239.871578,
+      "concurrent_p50_ms": 168.232918,
+      "concurrent_p99_ms": 238.407643,
+      "failures": 0,
+      "invariant_ok": null,
+      "ratio": 1.576815188308799,
+      "ratio_budget": 2.96,
+      "requests": 64,
+      "serial_p50_ms": 106.69158900000001,
+      "wall_secs": 2.617833311
+    }
+  },
+  "seed_version": "4",
+  "workers": 8
+}

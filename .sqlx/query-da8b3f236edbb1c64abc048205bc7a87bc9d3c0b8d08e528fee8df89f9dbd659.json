@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webxdc_sessions SET bundle_url = $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "da8b3f236edbb1c64abc048205bc7a87bc9d3c0b8d08e528fee8df89f9dbd659"
+}

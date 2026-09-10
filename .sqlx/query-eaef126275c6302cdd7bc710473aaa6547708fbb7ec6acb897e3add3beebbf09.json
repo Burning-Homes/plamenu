@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT announcement_id FROM announcement_mutes\n           WHERE account_id = $1 AND announcement_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "announcement_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "announcement_mutes",
+            "name": "announcement_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "eaef126275c6302cdd7bc710473aaa6547708fbb7ec6acb897e3add3beebbf09"
+}

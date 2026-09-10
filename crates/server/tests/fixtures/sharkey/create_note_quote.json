@@ -1,0 +1,49 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    {
+      "sensitive": "as:sensitive",
+      "quoteUrl": "as:quoteUrl",
+      "fedibird": "http://fedibird.com/ns#",
+      "quoteUri": "fedibird:quoteUri",
+      "misskey": "https://misskey-hub.net/ns#",
+      "_misskey_content": "misskey:_misskey_content",
+      "_misskey_quote": "misskey:_misskey_quote"
+    }
+  ],
+  "id": "https://remote.example/notes/9sh4rkquote001/activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "published": "2026-07-10T10:30:00.000Z",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "object": {
+    "id": "https://remote.example/notes/9sh4rkquote001",
+    "type": "Note",
+    "attributedTo": "https://remote.example/users/bob",
+    "content": "<p>quoting my earlier note<br>RE: <a href=\"https://remote.example/notes/9sh4rkbase0001\">https://remote.example/notes/9sh4rkbase0001</a></p>",
+    "_misskey_content": "quoting my earlier note",
+    "source": {
+      "content": "quoting my earlier note",
+      "mediaType": "text/x.misskeymarkdown"
+    },
+    "_misskey_quote": "https://remote.example/notes/9sh4rkbase0001",
+    "quoteUrl": "https://remote.example/notes/9sh4rkbase0001",
+    "quoteUri": "https://remote.example/notes/9sh4rkbase0001",
+    "published": "2026-07-10T10:30:00.000Z",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://remote.example/users/bob/followers"],
+    "inReplyTo": null,
+    "attachment": [],
+    "sensitive": false,
+    "tag": [
+      {
+        "type": "Link",
+        "mediaType": "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"",
+        "rel": "https://misskey-hub.net/ns#_misskey_quote",
+        "href": "https://remote.example/notes/9sh4rkbase0001"
+      }
+    ]
+  }
+}

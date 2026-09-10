@@ -1,0 +1,128 @@
+# Hot-path calibration. Usage and recalibration: bench/README.md.
+# ms: median ceiling in milliseconds. queries: SQL statement ceiling.
+# bytes: response-size baseline, with a 1.15x allowance.
+# ratio / ratio_of: median ratio ceiling and comparison case.
+# calibrated: date of calibration. known-bad entries cannot qualify for release.
+# Values are specific to the dataset and calibration machine.
+# Status-rendering query ceilings include one bulk mini-app invitation lookup
+# per rendered batch (two for federated public pages, profiles, and threads).
+# Query counts verified 2026-09-11; timing, size, and ratio limits are unchanged.
+# nplus1_guard exercises populated invitation cards as the page size grows.
+
+[budgets]
+
+# Includes the actor’s identity-proof lookup.
+"ap/actor" = { ms = 1.29, queries = 5, bytes = 5441, calibrated = "2026-07-28" }
+"ap/followers_collection" = { ms = 2.6, queries = 4, bytes = 841, calibrated = "2026-08-22" }
+"ap/outbox_page" = { ms = 5.0, queries = 18, bytes = 51756, calibrated = "2026-07-30" }
+
+# A Note with media and tags.
+"ap/status_note" = { ms = 4.2, queries = 21, bytes = 3771, calibrated = "2026-07-30" }
+
+# A page of local replies rendered as ActivityPub objects.
+"ap/status_replies" = { ms = 6.0, queries = 22, bytes = 82607, calibrated = "2026-07-30" }
+"api/account_lookup" = { ms = 2.13, queries = 11, bytes = 1140, calibrated = "2026-07-28" }
+"api/account_statuses" = { ms = 15.4, queries = 46, bytes = 54646, calibrated = "2026-07-28" }
+"api/bookmarks_page" = { ms = 12.0, queries = 48, bytes = 81549, calibrated = "2026-08-22" }
+"api/context_deep" = { ms = 33.5, queries = 81, bytes = 106503, calibrated = "2026-08-22" }
+"api/conversations" = { ms = 24.5, queries = 51, bytes = 71326, calibrated = "2026-07-28" }
+"api/favourites_page" = { ms = 12.0, queries = 48, bytes = 78709, calibrated = "2026-08-22" }
+"api/followers_page" = { ms = 39.8, queries = 15, bytes = 40421, calibrated = "2026-07-28" }
+"api/group_hot" = { ms = 37.0, queries = 50, bytes = 120984, calibrated = "2026-08-31" }
+"api/group_new" = { ms = 17.8, queries = 50, bytes = 121069, calibrated = "2026-08-22" }
+"api/group_top" = { ms = 32.6, queries = 48, bytes = 119313, calibrated = "2026-07-28" }
+
+# The dense persona exercises the candidate pool across about 1,500 follows.
+"api/home_dense" = { ms = 192, queries = 44, bytes = 89895, calibrated = "2026-07-30" }
+"api/home_sparse" = { ms = 36.9, queries = 43, bytes = 52184, calibrated = "2026-07-28" }
+
+# Warm cached instance document; excludes recomputing the instance totals.
+"api/instance_v1" = { ms = 1.27, queries = 7, bytes = 1557, calibrated = "2026-07-28" }
+"api/list_timeline" = { ms = 65.5, queries = 44, bytes = 78977, calibrated = "2026-07-28" }
+"api/notifications" = { ms = 24.5, queries = 53, bytes = 134573, calibrated = "2026-07-28" }
+"api/notifications_grouped" = { ms = 58.6, queries = 54, bytes = 277944, calibrated = "2026-07-30" }
+"api/public_federated" = { ms = 40.5, queries = 79, bytes = 59500, calibrated = "2026-07-30" }
+"api/public_federated_anon" = { ms = 35.4, queries = 57, bytes = 55909, calibrated = "2026-07-30" }
+"api/public_local" = { ms = 19.7, queries = 42, bytes = 68770, calibrated = "2026-07-28" }
+"api/relationships" = { ms = 3.09, queries = 12, bytes = 6852, calibrated = "2026-07-28" }
+
+# The search term matches accounts, statuses, and tags.
+"api/search" = { ms = 23.0, queries = 73, bytes = 65927, calibrated = "2026-07-28" }
+"api/search_accounts" = { ms = 19.3, queries = 33, bytes = 21926, calibrated = "2026-07-28" }
+
+# A common term matching about 42% of seeded statuses.
+"api/search_common" = { ms = 179, queries = 40, bytes = 48930, calibrated = "2026-07-28" }
+"api/search_tags" = { ms = 6.32, queries = 7, bytes = 9451, calibrated = "2026-07-28" }
+"api/status_show" = { ms = 11.2, queries = 44, bytes = 3503, calibrated = "2026-07-28" }
+"api/tag_timeline" = { ms = 19.8, queries = 44, bytes = 55607, calibrated = "2026-07-28" }
+"api/trends_tags" = { ms = 1.56, queries = 7, bytes = 4721, calibrated = "2026-07-28" }
+"api/verify_credentials" = { ms = 2.84, queries = 13, bytes = 1268, calibrated = "2026-07-28" }
+"db/by_account_published" = { ms = 1.53, calibrated = "2026-08-22" }
+"db/by_account_received" = { ms = 1.53, calibrated = "2026-08-22" }
+
+# Batch lookup of 20 native IDs.
+"db/lemmy_aliases_20_warm" = { ms = 0.162, calibrated = "2026-08-12" }
+
+# A page of per-item read states overlaid on the notification marker.
+"db/lemmy_inbox_read_states_20" = { ms = 0.235, calibrated = "2026-08-12" }
+
+# An indexed page from the Pictrs compatibility sidecar.
+"db/lemmy_media_list_20" = { ms = 0.190, calibrated = "2026-08-12" }
+"db/lemmy_unread_counts" = { ms = 1.076, calibrated = "2026-08-12" }
+
+# Batch lookup of read state for 20 posts.
+"db/post_reads_20_warm" = { ms = 0.161, calibrated = "2026-08-12" }
+
+# A batch of 20 jobs with outbound transport stubbed.
+"db_jobs/delivery_drain" = { ms = 12.0, calibrated = "2026-07-28" }
+
+# A batch of 20 link-crawl jobs.
+"db_jobs/link_crawl_drain" = { ms = 29.6, calibrated = "2026-07-28" }
+"db_jobs/purge_account" = { ms = 5.21, calibrated = "2026-07-28" }
+
+# 50 deletions from an account without followers; excludes delivery fan-out.
+"db_jobs/statuses_cleanup_sweep" = { ms = 212, calibrated = "2026-07-28" }
+
+# Reference time is anchored to the seeded tag-usage dates.
+"db_jobs/trends_refresh_tags" = { ms = 595, calibrated = "2026-07-28" }
+
+# FEP-8b32 proof signing and verification.
+"micro/proof_roundtrip" = { ms = 0.138, calibrated = "2026-07-28" }
+"micro/render_statuses_20" = { ms = 20.0, calibrated = "2026-07-28" }
+"micro/sign_post" = { ms = 2.44, calibrated = "2026-07-28" }
+
+# Compare one subscriber with fifty using the ratio cap below.
+"stream/route_status_1" = { ms = 14.3, calibrated = "2026-07-28" }
+"stream/route_status_50" = { ms = 579, ratio_of = "stream/route_status_1", ratio = 61.0, calibrated = "2026-07-28" }
+"web/web_explore" = { ms = 24.2, queries = 53, bytes = 201098, calibrated = "2026-08-22" }
+"web/web_home" = { ms = 42.8, queries = 60, bytes = 195513, calibrated = "2026-08-22" }
+"web/web_list" = { ms = 70.6, queries = 59, bytes = 203035, calibrated = "2026-08-22" }
+
+# Includes advancing the account’s read marker.
+"web/web_notifications" = { ms = 18.6, queries = 59, bytes = 153452, calibrated = "2026-08-22" }
+
+# Includes the profile’s identity-proof lookup.
+"web/web_profile" = { ms = 39.8, queries = 109, bytes = 228934, calibrated = "2026-08-22" }
+"web/web_thread" = { ms = 41.0, queries = 132, bytes = 407594, calibrated = "2026-08-22" }
+
+# The thread page without an authenticated session.
+"web/web_thread_anon" = { ms = 31.1, queries = 85, bytes = 197313, calibrated = "2026-08-22" }
+"write/inbox_announce" = { ms = 7.0, calibrated = "2026-09-02" }
+"write/inbox_create_note" = { ms = 3.89, calibrated = "2026-07-28" }
+"write/inbox_create_reply" = { ms = 4.84, calibrated = "2026-07-28" }
+
+# Ingestion with two mentions, three tags, and two attachments.
+"write/inbox_create_rich" = { ms = 10.9, calibrated = "2026-07-28" }
+
+# Deletion of a remote Note without live replies, including cascades.
+"write/inbox_delete_note" = { ms = 3.49, calibrated = "2026-07-28" }
+"write/inbox_like" = { ms = 5.38, calibrated = "2026-07-28" }
+"write/inbox_update_note" = { ms = 8.1, calibrated = "2026-09-02" }
+"write/post_boost" = { ms = 85.6, calibrated = "2026-07-28" }
+
+# Unlisted targets exclude the relay fan-out used by public posts.
+"write/post_delete" = { ms = 82.5, calibrated = "2026-07-28" }
+"write/post_edit" = { ms = 147, calibrated = "2026-07-28" }
+"write/post_favourite" = { ms = 11.5, calibrated = "2026-07-28" }
+"write/post_reply" = { ms = 155, calibrated = "2026-07-28" }
+"write/post_status" = { ms = 144, calibrated = "2026-07-28" }

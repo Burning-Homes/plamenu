@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT u.account_id AS \"account_id!\",\n               u.noindex AS \"noindex!\",\n               r.id AS \"role_id?\", r.name AS \"role_name?\", r.color AS \"role_color?\"\n        FROM users u\n        LEFT JOIN user_roles r ON r.id = u.role_id AND r.highlighted\n        WHERE u.account_id = ANY($1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "noindex!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "noindex"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "role_id?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "role_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "role_color?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "color"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "006c266b70ae3413fe48801ddc274f895d3fdc3adea1dddbbfeab288eede984e"
+}

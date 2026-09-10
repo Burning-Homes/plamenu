@@ -1,0 +1,26 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/objects/lonely-poll/activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": "https://www.w3.org/ns/activitystreams#Public",
+  "published": "2026-07-10T11:00:00Z",
+  "object": {
+    "id": "https://remote.example/objects/lonely-poll",
+    "type": ["Question"],
+    "attributedTo": "https://remote.example/users/bob",
+    "content": "<p>only one way forward</p>",
+    "published": "2026-07-10T11:00:00Z",
+    "to": "https://www.w3.org/ns/activitystreams#Public",
+    "endTime": "2027-01-01T00:00:00Z",
+    "votersCount": 3,
+    "oneOf": {
+      "type": "Note",
+      "name": "yes",
+      "replies": {
+        "type": "Collection",
+        "totalItems": 3
+      }
+    }
+  }
+}

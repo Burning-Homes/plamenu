@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE remote_history_states SET\n               first_page_uri = COALESCE($2, first_page_uri),\n               next_page_uri = $3,\n               outbox_etag = COALESCE($4, outbox_etag),\n               first_page_etag = COALESCE($5, first_page_etag),\n               reported_total_items = COALESCE($6, reported_total_items),\n               state = $7, last_success_at = now(), retry_at = NULL,\n               automatic_retry_at = $12,\n               last_error_class = NULL,\n               pages_fetched = pages_fetched + $8,\n               items_seen = items_seen + $9,\n               items_accepted = items_accepted + $10,\n               bytes_fetched = bytes_fetched + $11,\n               updated_at = now()\n           WHERE account_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a5a78f9ddd409633ba84bf053f1d74feec6c491634f2238e334102d2ee80cbd8"
+}

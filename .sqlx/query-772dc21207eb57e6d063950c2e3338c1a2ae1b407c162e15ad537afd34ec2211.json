@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, image_file_name AS \"file_name!\", NULL::text AS \"thumb_file_name\"\n        FROM custom_emojis\n        WHERE image_file_name IS NOT NULL AND image_file_size IS NULL AND id > $1\n        ORDER BY id\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "thumb_file_name",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "772dc21207eb57e6d063950c2e3338c1a2ae1b407c162e15ad537afd34ec2211"
+}

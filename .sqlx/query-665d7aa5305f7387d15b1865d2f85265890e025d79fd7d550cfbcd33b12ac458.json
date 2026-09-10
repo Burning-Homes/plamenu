@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET last_webfingered_at = NULL WHERE uri = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "665d7aa5305f7387d15b1865d2f85265890e025d79fd7d550cfbcd33b12ac458"
+}

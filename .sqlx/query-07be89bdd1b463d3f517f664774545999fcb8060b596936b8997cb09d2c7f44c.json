@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO list_accounts (id, list_id, account_id, follow_id)\n        SELECT ins.id, $2, ins.account_id, ins.follow_id\n        FROM unnest($1::bigint[], $3::bigint[], $4::bigint[])\n             AS ins(id, account_id, follow_id)\n        ON CONFLICT (list_id, account_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8",
+        "Int8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "07be89bdd1b463d3f517f664774545999fcb8060b596936b8997cb09d2c7f44c"
+}

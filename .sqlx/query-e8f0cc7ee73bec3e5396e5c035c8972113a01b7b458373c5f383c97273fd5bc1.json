@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET hide_collections = true WHERE username = 'alice'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "e8f0cc7ee73bec3e5396e5c035c8972113a01b7b458373c5f383c97273fd5bc1"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE custom_filter_keywords k\n        SET keyword = COALESCE(v.keyword, k.keyword),\n            whole_word = COALESCE(v.whole_word, k.whole_word),\n            updated_at = now()\n        FROM unnest($2::bigint[], $3::text[], $4::bool[]) AS v(id, keyword, whole_word)\n        WHERE k.id = v.id AND k.custom_filter_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array",
+        "TextArray",
+        "BoolArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7bccee79e6dd3e55e53b21e723c3525a4f286b1cf60ace95aa7f5d5c07578c73"
+}

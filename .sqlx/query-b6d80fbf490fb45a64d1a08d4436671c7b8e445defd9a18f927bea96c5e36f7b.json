@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_attachments SET status_id = $1\n        WHERE id = ANY($2) AND account_id = $3 AND status_id IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b6d80fbf490fb45a64d1a08d4436671c7b8e445defd9a18f927bea96c5e36f7b"
+}

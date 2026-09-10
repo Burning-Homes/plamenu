@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT axis.period AS \"period!\", (\n            SELECT count(*) FROM reports\n            WHERE reports.action_taken_at IS NOT NULL\n              AND date_trunc('day', reports.action_taken_at AT TIME ZONE 'UTC')::date = axis.period\n        ) AS \"value!\"\n        FROM (\n            SELECT generate_series(\n                ($1 AT TIME ZONE 'UTC')::date::timestamp,\n                ($2 AT TIME ZONE 'UTC')::date::timestamp,\n                '1 day'\n            )::date AS period\n        ) AS axis\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "period!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "value!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "a96c3050ea63f3a9a866fe80c7f13d6a0a423adaa33f701a728676dd3e2d38da"
+}

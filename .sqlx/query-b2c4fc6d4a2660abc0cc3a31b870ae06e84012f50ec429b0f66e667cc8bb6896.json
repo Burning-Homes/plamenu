@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT CASE WHEN history_fetched_at IS NOT NULL\n                       THEN 'history' ELSE ingest_provenance END AS \"ingest_provenance!\"\n           FROM statuses\n           WHERE id = $1 AND uri IS NOT NULL AND delivery_side_effects_at IS NULL\n             AND deleted_at IS NULL -- STUBFILTER\n           FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ingest_provenance!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b2c4fc6d4a2660abc0cc3a31b870ae06e84012f50ec429b0f66e667cc8bb6896"
+}

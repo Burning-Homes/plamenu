@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET is_bot = true, locked = true WHERE username = 'alice'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "436817d803773b44d9b84955d11e081d7419ef128723cc1e8b93acd5d031686a"
+}

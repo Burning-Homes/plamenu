@@ -1,0 +1,47 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    { "toot": "http://joinmastodon.org/ns#", "Emoji": "toot:Emoji" }
+  ],
+  "id": "https://remote.example/post/1/activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": [
+    "https://www.w3.org/ns/activitystreams#Public",
+    "https://remote.example/category/2"
+  ],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "object": {
+    "id": "https://remote.example/post/1",
+    "type": "Article",
+    "to": [
+      "https://www.w3.org/ns/activitystreams#Public",
+      "https://remote.example/category/2"
+    ],
+    "cc": ["https://remote.example/users/bob/followers"],
+    "inReplyTo": null,
+    "published": "2026-07-01T15:22:42.176Z",
+    "updated": null,
+    "url": "https://remote.example/post/1",
+    "attributedTo": "https://remote.example/users/bob",
+    "context": "https://remote.example/topic/1",
+    "audience": "https://remote.example/category/2",
+    "summary": " <h3>Welcome to your brand new NodeBB forum!</h3> <p>This is what a topic and post looks like.</p>",
+    "name": "Welcome to your NodeBB!",
+    "preview": {
+      "type": "Note",
+      "attributedTo": "https://remote.example/users/bob",
+      "content": "<h3>Welcome to your brand new NodeBB forum!</h3>\n<p>This is what a topic and post looks like.</p>\n",
+      "published": "2026-07-01T15:22:42.176Z",
+      "attachment": []
+    },
+    "content": "<h3>Welcome to your brand new NodeBB forum!</h3>\n<p>This is what a topic and post looks like. As an administrator, you can edit the post's title and content.</p>\n<h4>Additional Resources</h4>\n<ul>\n<li><a href=\"https://docs.nodebb.org/\" rel=\"nofollow ugc\">NodeBB Documentation</a></li>\n</ul>\n",
+    "source": {
+      "content": "### Welcome to your brand new NodeBB forum!\n\nThis is what a topic and post looks like.",
+      "mediaType": "text/markdown"
+    },
+    "tag": [],
+    "attachment": [],
+    "replies": "https://remote.example/post/1/replies"
+  }
+}

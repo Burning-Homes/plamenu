@@ -1,0 +1,48 @@
+# Disposable GoToSocial instance for federation / e2e testing against
+# Plamenu. Runs the official 0.22.0 image (reference source checkout
+# in ../gotosocial-source, which upstream asks us not to build from
+# directly); stable rather than :snapshot so e2e failures track *Plamenu*
+# regressions, not upstream churn.
+#
+# Known upstream bug (2026-07-10, present in BOTH 0.22.0 stable and
+# 0.22.1-SNAPSHOT, reproducible from Mastodon 4.6.2 too): GtS cannot process
+# a remote Delete of a status it holds an edit for (statuses.thread_id NOT
+# NULL on stubbing), and the failed delete wedges home-timeline fan-in until
+# the container restarts. The e2e suite works around it (known_status helper
+# + xfail); restart the container if manual-QA timelines look frozen.
+#
+# It joins the Mastodon stack's Caddy network so the same local CA terminates
+# TLS for https://gotosocial.local and all instances can federate.
+
+name: gotosocial-test
+
+services:
+  # Not named `web`: compose registers the service name as a DNS alias on
+  # every attached network, including the shared Caddy one, where a second
+  # `web` would collide with the Mastodon stack's own `web` service.
+  gotosocial:
+    image: docker.io/superseriousbusiness/gotosocial:0.22.0@sha256:2a59e8d70c70ec51322a5be0bc5090a67eb55ea93f1fe556012192661ebe905f
+    restart: unless-stopped
+    command: ["--config-path", "/gotosocial/config.yaml"]
+    networks:
+      shared:
+        aliases: [gotosocial-web]
+    volumes:
+      - ./config.yaml:/gotosocial/config.yaml:ro
+      # Go reads /etc/ssl/certs/ca-certificates.crt; the bundle is the system
+      # roots plus the Caddy local CA (same mount the Mastodon stack uses).
+      - ../mastodon-test/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro
+      - storage:/gotosocial/storage
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider localhost:8080/nodeinfo/2.0 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+networks:
+  shared:
+    external: true
+    name: mastodon-test_internal
+
+volumes:
+  storage:

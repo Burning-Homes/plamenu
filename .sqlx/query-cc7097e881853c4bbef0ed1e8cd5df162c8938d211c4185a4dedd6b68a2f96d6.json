@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT u.account_id AS \"account_id!\", r.name AS \"role_name!\"\n        FROM users u\n        JOIN user_roles r ON u.role_id = r.id\n        JOIN accounts a ON a.id = u.account_id\n        WHERE r.permissions & ~$1::bigint <> 0\n          AND u.approved AND u.confirmed_at IS NOT NULL\n          AND NOT u.disabled AND a.suspended_at IS NULL\n          AND a.discoverable IS NOT FALSE\n        ORDER BY r.position DESC, u.account_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "role_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "cc7097e881853c4bbef0ed1e8cd5df162c8938d211c4185a4dedd6b68a2f96d6"
+}

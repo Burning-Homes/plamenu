@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_attachments SET processing = 'complete'\n        WHERE id = $1 AND remote_url IS NOT NULL AND file_name IS NULL\n          AND processing = 'queued'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bbe983da135cede5335b18768066b8b5456a7742dd2b46c41ed776bcc5b085af"
+}

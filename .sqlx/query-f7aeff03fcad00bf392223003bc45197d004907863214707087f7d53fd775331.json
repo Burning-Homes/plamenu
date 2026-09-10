@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT sc.status_id AS \"status_id!\"\n        FROM status_conversations sc\n        JOIN conversation_mutes cm ON cm.conversation_id = sc.conversation_id\n        WHERE cm.account_id = $1 AND sc.status_id = ANY($2)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_conversations",
+            "name": "status_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f7aeff03fcad00bf392223003bc45197d004907863214707087f7d53fd775331"
+}

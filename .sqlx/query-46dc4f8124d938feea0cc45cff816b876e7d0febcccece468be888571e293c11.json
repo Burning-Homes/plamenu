@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE remote_history_states SET\n               state = $2, retry_at = $3, last_error_class = $4,\n               automatic_retry_at = CASE\n                   WHEN $5 THEN $6\n                   WHEN NOT $7 THEN $8\n                   ELSE automatic_retry_at\n               END,\n               updated_at = now()\n           WHERE account_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Bool",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "46dc4f8124d938feea0cc45cff816b876e7d0febcccece468be888571e293c11"
+}

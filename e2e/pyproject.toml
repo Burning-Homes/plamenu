@@ -1,0 +1,33 @@
+[project]
+name = "plamenu-e2e"
+version = "0.1.0"
+description = "End-to-end federation tests: Plamenu against a live Mastodon instance"
+requires-python = ">=3.12"
+dependencies = [
+    "pytest>=8",
+    "requests>=2.32",
+    "psycopg[binary]>=3.2",
+    "websockets>=14",
+    "cryptography>=49.0.0",
+    # Pinned: the client-library compatibility test (test_mastodon_py_client)
+    # asserts Plamenu works with this exact release.
+    "mastodon-py==2.2.1",
+]
+
+[tool.uv]
+# Plain test tree, not an installable package; pytest picks the helpers up
+# from the rootdir (conftest.py puts e2e/ on sys.path).
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# --strict-markers fails collection on any unregistered marker, so a
+# misspelled/forgotten `federation(...)` is caught mechanically.
+addopts = "-ra --strict-markers"
+# local Caddy CA; certificate trust is not under test (see api.py)
+filterwarnings = ["ignore::urllib3.exceptions.InsecureRequestWarning"]
+# Real federation is slow (delivery queues on both sides); these are not
+# unit tests. Run with -s to watch the >> step lines live.
+markers = [
+    "federation(direction, reverse_of, one_way_reason, peer): pairs a directional federation test with its opposite-direction reverse_of, or records a one_way_reason. direction is one of inbound/outbound/both; exactly one of {reverse_of, one_way_reason} when direction != both, neither when direction == both. peer is inferred from the filename when omitted. Audited by tools/federation_coverage.py.",
+]

@@ -1,0 +1,208 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT posting_default_visibility, posting_default_sensitive,\n               posting_default_language, posting_default_quote_policy,\n               posting_default_content_type, reading_expand_media,\n               reading_expand_spoilers, reading_autoplay_gifs,\n               reading_allow_direct_remote_media, reading_collapse_boosts,\n               reading_translate_language,\n               timeline_order,\n               thread_order, noindex, show_application, time_zone\n        FROM users\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "posting_default_visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "posting_default_visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "posting_default_sensitive",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "posting_default_sensitive"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "posting_default_language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "posting_default_language"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "posting_default_quote_policy",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "posting_default_quote_policy"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "posting_default_content_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "posting_default_content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "reading_expand_media",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "reading_expand_media"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "reading_expand_spoilers",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "reading_expand_spoilers"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "reading_autoplay_gifs",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "reading_autoplay_gifs"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "reading_allow_direct_remote_media",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "reading_allow_direct_remote_media"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "reading_collapse_boosts",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "reading_collapse_boosts"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "reading_translate_language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "reading_translate_language"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "timeline_order",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "timeline_order"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "thread_order",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "thread_order"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "noindex",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "noindex"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "show_application",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "show_application"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "time_zone",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "time_zone"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "e2d99a288cccdbb587f46005912a2ba255594e28f3846a9f7621831286523d36"
+}

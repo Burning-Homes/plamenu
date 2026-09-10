@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT target_account_id AS \"id!\", hide_notifications, expires_at\n        FROM mutes\n        WHERE account_id = $1 AND target_account_id = ANY($2)\n          AND (expires_at IS NULL OR expires_at > now())\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "target_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "hide_notifications",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "hide_notifications"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "mutes",
+            "name": "expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "b9fb93f4279b940d129f4bb95e10e6baa2067371d8405ca8b6af531e89fa1114"
+}

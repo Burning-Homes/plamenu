@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT peers.domain AS \"domain!\"\n        FROM (\n            SELECT DISTINCT domain FROM accounts WHERE domain IS NOT NULL AND NOT portable\n            UNION\n            SELECT domain FROM domain_allows\n        ) AS peers\n        WHERE peers.domain NOT IN (SELECT domain FROM domain_blocks)\n        ORDER BY peers.domain\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "domain!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "178b24b9d1fb24038e4988bcd75a1544694ba87afa6275374c95c264904caad7"
+}

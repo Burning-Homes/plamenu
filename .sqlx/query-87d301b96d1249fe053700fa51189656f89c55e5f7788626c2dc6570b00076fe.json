@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM media_attachments WHERE status_id = $1 AND remote_url IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "87d301b96d1249fe053700fa51189656f89c55e5f7788626c2dc6570b00076fe"
+}

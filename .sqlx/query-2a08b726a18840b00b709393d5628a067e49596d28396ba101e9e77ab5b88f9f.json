@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE account_conversations\n        SET status_ids = array_remove(status_ids, $2),\n            last_status_id = (SELECT max(remaining)\n                              FROM unnest(array_remove(status_ids, $2)) AS remaining)\n        WHERE conversation_id = $1 AND status_ids @> ARRAY[$2::bigint]\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2a08b726a18840b00b709393d5628a067e49596d28396ba101e9e77ab5b88f9f"
+}

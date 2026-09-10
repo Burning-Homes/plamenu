@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users\n        SET reset_password_token_hash = $2,\n            reset_password_sent_at = now()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ad4a983acce729d46937abfe57316ca9b8ed71423738b4c6fc3682ac9b717c24"
+}

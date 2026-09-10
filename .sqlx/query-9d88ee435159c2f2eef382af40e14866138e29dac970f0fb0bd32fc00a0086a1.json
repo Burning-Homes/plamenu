@@ -1,0 +1,131 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT r.id, r.acct, r.show_reblogs, r.with_replies, r.notify,\n               COALESCE(\n                   ARRAY(\n                       SELECT l.language\n                       FROM bulk_import_row_languages l\n                       WHERE l.bulk_import_row_id = r.id\n                       ORDER BY l.position\n                   ),\n                   '{}'::text[]\n               ) AS \"languages!\",\n               r.hide_notifications, r.domain, r.uri, r.list_name\n        FROM bulk_import_rows r\n        WHERE r.bulk_import_id = $1\n        ORDER BY r.row_position\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "bulk_import_rows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "acct",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "bulk_import_rows",
+            "name": "acct"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "show_reblogs",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "bulk_import_rows",
+            "name": "show_reblogs"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "with_replies",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "bulk_import_rows",
+            "name": "with_replies"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "notify",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "bulk_import_rows",
+            "name": "notify"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "languages!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "hide_notifications",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "bulk_import_rows",
+            "name": "hide_notifications"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "domain",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "bulk_import_rows",
+            "name": "domain"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "bulk_import_rows",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "list_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "bulk_import_rows",
+            "name": "list_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      null,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "9d88ee435159c2f2eef382af40e14866138e29dac970f0fb0bd32fc00a0086a1"
+}

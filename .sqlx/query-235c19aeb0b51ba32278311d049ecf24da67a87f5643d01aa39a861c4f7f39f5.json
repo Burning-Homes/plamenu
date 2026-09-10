@@ -1,0 +1,97 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f.id AS cursor, a.username,\n               CASE WHEN a.portable THEN NULL ELSE a.domain END AS domain,\n               f.show_reblogs, f.notify, f.languages, f.with_replies\n        FROM follows f\n        JOIN accounts a ON a.id = f.target_account_id\n        WHERE f.account_id = $1 AND NOT f.pending\n          AND ($2::bigint IS NULL OR f.id < $2)\n        ORDER BY f.id DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cursor",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "domain",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "show_reblogs",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "show_reblogs"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "notify",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "notify"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "languages",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "languages"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "with_replies",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "with_replies"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "235c19aeb0b51ba32278311d049ecf24da67a87f5643d01aa39a861c4f7f39f5"
+}

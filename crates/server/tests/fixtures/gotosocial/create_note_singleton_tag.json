@@ -1,0 +1,24 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/users/bob/statuses/01JZQY9GTS0SINGLETON0TAG00/activity#Create",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": "https://www.w3.org/ns/activitystreams#Public",
+  "cc": "https://remote.example/users/bob/followers",
+  "published": "2026-07-10T09:00:00Z",
+  "object": {
+    "id": "https://remote.example/users/bob/statuses/01JZQY9GTS0SINGLETON0TAG00",
+    "type": "Note",
+    "attributedTo": "https://remote.example/users/bob",
+    "published": "2026-07-10T09:00:00Z",
+    "url": "https://remote.example/@bob/statuses/01JZQY9GTS0SINGLETON0TAG00",
+    "content": "<p>hey <span class=\"h-card\"><a href=\"https://plamenu.test/@alice\" class=\"u-url mention\">@<span>alice</span></a></span>, singleton tag incoming</p>",
+    "to": "https://www.w3.org/ns/activitystreams#Public",
+    "cc": "https://remote.example/users/bob/followers",
+    "tag": {
+      "type": "Mention",
+      "href": "https://plamenu.test/users/alice",
+      "name": "@alice@plamenu.test"
+    }
+  }
+}

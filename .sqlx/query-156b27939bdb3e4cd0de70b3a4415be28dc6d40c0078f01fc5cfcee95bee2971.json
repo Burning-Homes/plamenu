@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM oauth_tokens\n        WHERE revoked_at IS NOT NULL\n          AND revoked_at < now() - make_interval(days => 1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "156b27939bdb3e4cd0de70b3a4415be28dc6d40c0078f01fc5cfcee95bee2971"
+}

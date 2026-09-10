@@ -1,0 +1,31 @@
+# Debian host deployment. Copy to /etc/plamenu/plamenu.toml, replace every
+# example value, and keep the file readable only by root and the plamenu group.
+# The hosting domain is permanent after federation begins.
+domain = "social.example.com"
+# Optional: use alice@example.com handles while serving Plamenu itself from
+# social.example.com. This is also permanent and needs well-known redirects.
+# account_domain = "example.com"
+bind = "127.0.0.1:8420"
+
+# On a single host, the plamenu operating-system user authenticates to the
+# matching PostgreSQL role over the local socket. No database password is
+# stored in this file and PostgreSQL is not exposed to the network.
+database_url = "postgres://plamenu@%2Fvar%2Frun%2Fpostgresql/plamenu"
+media_dir = "/var/lib/plamenu/media"
+trusted_proxies = ["127.0.0.1/32", "::1/128"]
+
+authorized_fetch = true
+authorized_fetch_unsigned = "profile"
+csp_reporting = false
+encryption_secret = "replace-with-output-of-openssl-rand-hex-32"
+encryption_secret_version = 1
+# encryption_previous_secrets = []
+
+# Add SMTP before enabling registration or password reset.
+# [smtp]
+# server = "smtp.example.com"
+# port = 587
+# login = "username"
+# password = "replace-me"
+# from_address = "Plamenu <notifications@example.com>"
+# starttls = "always"

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET public_key = $2, public_key_id = $3, updated_at = now()\n         WHERE id = $1 AND domain IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ae2184292fffc28ad8edd37829a99a25057ec41811ae9a59c49a634c0c27bac5"
+}

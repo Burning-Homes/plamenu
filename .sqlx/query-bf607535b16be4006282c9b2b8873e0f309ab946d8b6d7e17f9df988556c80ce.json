@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT (\n            (SELECT COALESCE(SUM(COALESCE(file_size, 0) + COALESCE(thumbnail_file_size, 0)), 0)::bigint FROM media_attachments)\n          + (SELECT COALESCE(SUM(COALESCE(avatar_file_size, 0) + COALESCE(header_file_size, 0)), 0)::bigint FROM accounts)\n          + (SELECT COALESCE(SUM(COALESCE(image_file_size, 0)), 0)::bigint FROM custom_emojis)\n          + (SELECT COALESCE(SUM(COALESCE(image_file_size, 0)), 0)::bigint FROM preview_cards)\n        ) AS \"c!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "c!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "bf607535b16be4006282c9b2b8873e0f309ab946d8b6d7e17f9df988556c80ce"
+}

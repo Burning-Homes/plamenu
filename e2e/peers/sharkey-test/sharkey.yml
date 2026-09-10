@@ -1,0 +1,37 @@
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Sharkey configuration — disposable sharkey.local test instance
+# (mounted read-only at /sharkey/.config/default.yml)
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+url: https://sharkey.local/
+port: 3000
+
+db:
+  host: sharkey-db
+  port: 5432
+  db: sharkey
+  user: sharkey
+  pass: sharkey
+
+dbReplications: false
+
+redis:
+  host: sharkey-redis
+  port: 6379
+
+fulltextSearch:
+  provider: sqlLike
+
+id: 'aidx'
+
+# Every *.local peer resolves to a private (docker / loopback) address, which
+# Sharkey's SSRF guard would otherwise block for all outbound fetches.
+allowedPrivateNetworks:
+  - '127.0.0.0/8'
+  - '10.0.0.0/8'
+  - '172.16.0.0/12'
+  - '192.168.0.0/16'
+
+proxyRemoteFiles: true
+signToActivityPubGet: true
+attachLdSignatureForRelays: true

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO tagged_objects (id, status_id, collection_id, uri)\n         VALUES ($1, $2, $3, $4)\n         ON CONFLICT (status_id, collection_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "de7e781d8bd8ae680f91073a3af558ac0dc40bf2d0e1132b8aadfba790cb7a79"
+}

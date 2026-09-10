@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO media_fetch_failures (kind, target_id, failed_at, attempts)\n        VALUES ($1, $2, now(), 1)\n        ON CONFLICT (kind, target_id) DO UPDATE\n            SET failed_at = now(),\n                attempts = media_fetch_failures.attempts + 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1b741d94b1d9eac43efda50aff18dfe7572950f94beee49cdb3679eea17d6ff8"
+}

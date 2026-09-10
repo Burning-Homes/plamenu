@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM scheduled_statuses\n         WHERE id = $1 AND account_id = $2 AND publish_generation = $3\n           AND publish_generation > 0",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "85e602981526d4b0084890b2588d54f3e933a7f3f943629ef1048acf0c1261b2"
+}

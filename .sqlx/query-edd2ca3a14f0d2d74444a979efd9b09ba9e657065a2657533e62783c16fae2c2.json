@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH RECURSIVE ancestors(id, in_reply_to_id, depth) AS (\n            SELECT s.id, s.in_reply_to_id, 0\n            FROM statuses s WHERE s.id = $1\n          UNION ALL\n            SELECT s.id, s.in_reply_to_id, a.depth + 1\n            FROM ancestors a\n            JOIN statuses s ON s.id = a.in_reply_to_id\n            WHERE a.depth < 100\n        )\n        SELECT r.recipient AS \"recipient!\"\n        FROM unnest($2::bigint[]) AS r(recipient)\n        WHERE EXISTS (\n            SELECT 1\n            FROM ancestors a\n            JOIN statuses s ON s.id = a.id -- STUBKEEP: the walk crosses stubs; their kept mention rows still witness the opt-in\n            JOIN status_mentions m ON m.status_id = s.id AND m.account_id = $3\n            WHERE s.account_id = r.recipient AND s.visibility = 'direct'\n        )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "recipient!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "edd2ca3a14f0d2d74444a979efd9b09ba9e657065a2657533e62783c16fae2c2"
+}

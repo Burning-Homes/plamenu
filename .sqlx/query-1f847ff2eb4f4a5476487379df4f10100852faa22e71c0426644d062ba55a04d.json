@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT cache_file, bytes FROM media_hls_segments\n        WHERE origin_url = $1 AND range_start = $2 AND range_len = $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cache_file",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_hls_segments",
+            "name": "cache_file"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_hls_segments",
+            "name": "bytes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1f847ff2eb4f4a5476487379df4f10100852faa22e71c0426644d062ba55a04d"
+}

@@ -1,0 +1,248 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id AS \"id!\", uri, account_id AS \"account_id!\", content AS \"content!\",\n               created_at AS \"created_at!\", updated_at AS \"updated_at!\",\n               visibility AS \"visibility!\", in_reply_to_id, reblog_of_id, edited_at,\n               spoiler_text AS \"spoiler_text!\", sensitive AS \"sensitive!\", language, url,\n               quote_approval_policy AS \"quote_approval_policy!\", application_id,\n               title, object_type, external_url\n        FROM (\n            SELECT sl.id, sl.uri, sl.account_id, sl.content, sl.created_at, sl.updated_at,\n                   sl.visibility, sl.in_reply_to_id, sl.reblog_of_id, sl.edited_at,\n                   sl.spoiler_text, sl.sensitive, sl.language, sl.url, sl.quote_approval_policy,\n                   sl.application_id, sl.title, sl.object_type, sl.external_url\n            FROM (\n                SELECT la.account_id AS aid, mf.id AS follow_id, mf.show_reblogs,\n                       mf.with_replies, mf.languages\n                FROM list_accounts la\n                LEFT JOIN follows mf ON mf.id = la.follow_id\n                WHERE la.list_id = $1\n                  AND (la.follow_id IS NULL OR NOT mf.pending)\n                  AND EXISTS (SELECT 1 FROM accounts member\n                              WHERE member.id = la.account_id\n                                AND member.suspended_at IS NULL)\n                  -- Member-level: inlined NOT account_hidden($2, member).\n                  -- MUST stay in sync with the other ordering's copy and,\n                  -- semantically, with account_hidden().\n                  AND (la.account_id = $2 OR (\n                       la.account_id NOT IN (SELECT b.target_account_id FROM blocks b\n                                             WHERE b.account_id = $2)\n                   AND la.account_id NOT IN (SELECT b.account_id FROM blocks b\n                                             WHERE b.target_account_id = $2)\n                   AND la.account_id NOT IN (SELECT m.target_account_id FROM mutes m\n                                             WHERE m.account_id = $2\n                                               AND (m.expires_at IS NULL OR m.expires_at > now()))\n                   AND la.account_id NOT IN (SELECT adb.account_id\n                                             FROM account_domain_blocks adb\n                                             JOIN accounts v ON v.id = $2 AND adb.domain = v.domain)\n                   AND NOT EXISTS (SELECT 1 FROM accounts a\n                                   WHERE a.id = la.account_id AND a.domain IS NOT NULL\n                                     AND NOT a.portable\n                                     AND a.domain IN (SELECT adb.domain\n                                                      FROM account_domain_blocks adb\n                                                      WHERE adb.account_id = $2))))\n            ) members\n            CROSS JOIN LATERAL (\n                SELECT s.id, s.uri, s.account_id, s.content, s.created_at, s.updated_at,\n                       s.visibility, s.in_reply_to_id, s.reblog_of_id, s.edited_at,\n                       s.spoiler_text, s.sensitive, s.language, s.url, s.quote_approval_policy,\n                       s.application_id, s.title, s.object_type, s.external_url\n                FROM statuses s\n                WHERE s.account_id = members.aid\n                  AND s.deleted_at IS NULL -- STUBFILTER (reply-parent probe below keeps stubs)\n                  AND s.ingest_provenance = 'delivery'\n                  -- Row-level: MUST stay in sync with the other ordering's\n                  -- copy and with `streams_receiving` below.\n                  AND s.visibility <> 'direct'\n                  AND (s.reblog_of_id IS NULL OR NOT account_hidden(\n                         $2, (SELECT t.account_id FROM statuses t WHERE t.id = s.reblog_of_id)))\n                  AND (s.in_reply_to_id IS NULL OR EXISTS (\n                         SELECT 1 FROM statuses p\n                         WHERE p.id = s.in_reply_to_id\n                           AND (p.account_id = s.account_id\n                                OR p.account_id = $2\n                                OR ($3 = 'followed' AND EXISTS (\n                                      SELECT 1 FROM follows rf\n                                      WHERE rf.account_id = $2\n                                        AND rf.target_account_id = p.account_id\n                                        AND NOT rf.pending))\n                                OR ($3 = 'list' AND EXISTS (\n                                      SELECT 1 FROM list_accounts ra\n                                      WHERE ra.list_id = $1\n                                        AND ra.account_id = p.account_id)))))\n                  -- Per-follow settings (M32), same as the home timeline: the\n                  -- owner's follow of the member gates boosts and languages.\n                  AND (members.follow_id IS NULL OR ((s.reblog_of_id IS NULL OR members.show_reblogs)\n                       AND (s.language IS NULL OR members.languages IS NULL\n                            OR s.language = ANY(members.languages))))\n                  -- Per-follow `with_replies`, ANDed with the list's own\n                  -- replies_policy gate above: Mastodon runs\n                  -- `filter_from_list?` and then `filter_from_home`, so a list\n                  -- is never less filtered than home. Same three exemptions as\n                  -- home, and the judge-a-boost-by-its-target rule rides along for\n                  -- the same reason it does there (a community authors nothing;\n                  -- everything it contributes is a wrapper whose own\n                  -- in_reply_to_id is NULL). A member with no follow row has no\n                  -- flag to read and keeps every reply. MUST stay in sync with\n                  -- the other ordering's copy, with `streams_receiving` below,\n                  -- and semantically with home arm A.\n                  AND (members.follow_id IS NULL OR members.with_replies\n                       OR ((s.in_reply_to_id IS NULL\n                            OR s.in_reply_to_account_id = s.account_id\n                            OR s.in_reply_to_account_id = $2\n                            OR EXISTS (SELECT 1 FROM follows rf\n                                       WHERE rf.account_id = $2\n                                         AND rf.target_account_id = s.in_reply_to_account_id\n                                         AND NOT rf.pending))\n                           AND (s.reblog_of_id IS NULL OR NOT EXISTS (\n                                  SELECT 1 FROM statuses bt\n                                  WHERE bt.id = s.reblog_of_id\n                                    AND bt.in_reply_to_id IS NOT NULL))))\n                  AND ($4::bigint IS NULL OR s.id < $4)\n                ORDER BY s.id DESC\n                LIMIT $5\n            ) sl\n        ) merged\n        ORDER BY id DESC\n        LIMIT $5\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "content!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "visibility!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "in_reply_to_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "in_reply_to_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "reblog_of_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "reblog_of_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "edited_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "edited_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "spoiler_text!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "spoiler_text"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "sensitive!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "sensitive"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "quote_approval_policy!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "quote_approval_policy"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "application_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "application_id"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "object_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "object_type"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "external_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "external_url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "cb100cd645e22dae92c8da541fe5a0ddfcedee6d421f2d20423eaf27cbd8e45b"
+}

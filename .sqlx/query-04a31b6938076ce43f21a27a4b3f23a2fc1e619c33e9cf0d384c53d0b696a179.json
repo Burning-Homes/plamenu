@@ -1,0 +1,161 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT e.id AS \"id!\", e.shortcode AS \"shortcode!\", e.domain, e.uri,\n               e.image_remote_url, e.image_file_name, e.image_content_type,\n               e.disabled AS \"disabled!\", e.visible_in_picker AS \"visible_in_picker!\",\n               e.category, e.created_at AS \"created_at!\", e.updated_at AS \"updated_at!\"\n        FROM custom_emojis e\n        JOIN unnest($1::text[], $2::text[]) AS want(shortcode, domain)\n          ON e.shortcode = want.shortcode AND e.domain IS NOT DISTINCT FROM want.domain\n        WHERE e.owner_account_id IS NULL AND NOT e.disabled AND NOT e.retired\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "shortcode!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "shortcode"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "domain",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "domain"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "image_remote_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_remote_url"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "image_file_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "image_content_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "disabled!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "disabled"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "visible_in_picker!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "visible_in_picker"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "category"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "04a31b6938076ce43f21a27a4b3f23a2fc1e619c33e9cf0d384c53d0b696a179"
+}

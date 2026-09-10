@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE follows SET with_replies = TRUE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "2476721e2c4507e91a778ee6e67b70c7aff264f92c773f7dfc680abd3f3073fd"
+}

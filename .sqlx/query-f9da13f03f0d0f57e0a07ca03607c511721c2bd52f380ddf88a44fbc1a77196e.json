@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO relay_daily_activities (relay_id, day, count)\n         VALUES ($1, (now() AT TIME ZONE 'UTC')::date, 42)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f9da13f03f0d0f57e0a07ca03607c511721c2bd52f380ddf88a44fbc1a77196e"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO media_renditions\n           (id, media_id, height, width, frame_rate, size_bytes, origin_url, is_audio)\n           VALUES ($1, $2, 480, 854, 10, $3, $4, false)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8b00ae43a0270d8b360c584c387594540fad866aef16ccbd81112cb546b8d1a6"
+}

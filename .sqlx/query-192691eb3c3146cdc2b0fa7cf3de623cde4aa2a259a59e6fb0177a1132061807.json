@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH abandoned AS (\n            DELETE FROM media_processing_jobs j\n            USING media_attachments m\n            WHERE m.id = j.media_id AND m.hls_master_url IS NOT NULL\n            RETURNING j.media_id\n        )\n        UPDATE media_attachments SET processing = 'complete'\n        WHERE id IN (SELECT media_id FROM abandoned) AND file_name IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "192691eb3c3146cdc2b0fa7cf3de623cde4aa2a259a59e6fb0177a1132061807"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id AS \"id!\" FROM statuses s -- STUBKEEP: identity probe over caller-chosen ids\n           JOIN accounts a ON a.id = s.account_id\n           WHERE s.id = ANY($1) AND a.domain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ceedd90efb09bb10abfaca1987137d4c78a5ec260f3d378a8586edf41d09b97f"
+}

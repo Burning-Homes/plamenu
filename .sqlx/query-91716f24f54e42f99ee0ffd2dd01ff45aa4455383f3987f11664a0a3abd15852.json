@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT MAX(id) AS \"max\"\n        FROM (\n            SELECT id FROM statuses -- STUBKEEP: cursor math only; no row is displayed\n            WHERE account_id = $1 AND id >= $2 AND id <= $3\n            ORDER BY id ASC\n            LIMIT $4\n        ) scan_window\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "max",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "91716f24f54e42f99ee0ffd2dd01ff45aa4455383f3987f11664a0a3abd15852"
+}

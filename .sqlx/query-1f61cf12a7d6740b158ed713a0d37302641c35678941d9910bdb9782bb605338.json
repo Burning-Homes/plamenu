@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT media_id FROM remote_stream_sources WHERE account_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "remote_stream_sources",
+            "name": "media_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1f61cf12a7d6740b158ed713a0d37302641c35678941d9910bdb9782bb605338"
+}

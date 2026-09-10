@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO status_reply_fetches (status_id, fetched_at) VALUES ($1, $2)\n         ON CONFLICT (status_id) DO UPDATE SET fetched_at = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3acf410e9f9bd196e8bd87252dddc50c1a29f93f54e0b35b85ab58c3496b9c61"
+}

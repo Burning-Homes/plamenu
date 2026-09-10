@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO remote_history_states\n               (account_id, outbox_uri, anonymous_visibility)\n           VALUES ($1, $2, COALESCE($3, 'unknown'))\n           ON CONFLICT (account_id) DO UPDATE SET\n               state = CASE\n                   WHEN remote_history_states.outbox_uri IS DISTINCT FROM excluded.outbox_uri\n                       AND NOT EXISTS (\n                           SELECT 1 FROM remote_history_jobs\n                           WHERE account_id = remote_history_states.account_id\n                       )\n                       THEN 'idle'\n                   ELSE remote_history_states.state\n               END,\n               retry_at = CASE\n                   WHEN remote_history_states.outbox_uri IS DISTINCT FROM excluded.outbox_uri\n                       THEN NULL\n                   ELSE remote_history_states.retry_at\n               END,\n               automatic_retry_at = CASE\n                   WHEN remote_history_states.outbox_uri IS DISTINCT FROM excluded.outbox_uri\n                       THEN NULL\n                   ELSE remote_history_states.automatic_retry_at\n               END,\n               last_error_class = CASE\n                   WHEN remote_history_states.outbox_uri IS DISTINCT FROM excluded.outbox_uri\n                       THEN NULL\n                   ELSE remote_history_states.last_error_class\n               END,\n               outbox_uri = excluded.outbox_uri,\n               anonymous_visibility = COALESCE($3, remote_history_states.anonymous_visibility),\n               updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bd800f8a1f3f018961ae86d5cdec1f962f368336534ecaed946cf22747c21901"
+}

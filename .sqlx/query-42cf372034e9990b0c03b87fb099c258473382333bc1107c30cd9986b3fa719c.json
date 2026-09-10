@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO reply_fetch_jobs (id, status_id) VALUES ($1, $2)\n         ON CONFLICT (status_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "42cf372034e9990b0c03b87fb099c258473382333bc1107c30cd9986b3fa719c"
+}

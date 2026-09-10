@@ -1,0 +1,39 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/objects/e232-quote/activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "object": {
+    "id": "https://remote.example/objects/e232-quote",
+    "type": "Note",
+    "attributedTo": "https://remote.example/users/bob",
+    "published": "2026-07-01T16:00:00Z",
+    "content": "<p>Quoting purely via FEP-e232 <a href=\"https://remote.example/notes/9sh4rkbase0001\">https://remote.example/notes/9sh4rkbase0001</a></p>",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://remote.example/users/bob/followers"],
+    "tag": [
+      {
+        "type": "Link",
+        "href": "https://example.com/ordinary-web-page",
+        "mediaType": "text/html",
+        "rel": ["https://misskey-hub.net/ns#_misskey_quote"]
+      },
+      {
+        "type": "Link",
+        "href": "https://remote.example/objects/some-other-object",
+        "mediaType": "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"",
+        "rel": [],
+        "name": null
+      },
+      {
+        "type": "Link",
+        "href": "https://remote.example/notes/9sh4rkbase0001",
+        "mediaType": "application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"",
+        "rel": ["https://misskey-hub.net/ns#_misskey_quote"],
+        "name": null
+      }
+    ]
+  }
+}

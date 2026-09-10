@@ -1,0 +1,53 @@
+name: tor-test
+
+# Tor + database halves of the onion-Mitra rig. The onion-identity Mitra
+# itself runs natively on the host (port 8381), like the clearnet mitra-test
+# instance; `./dev up onion` orchestrates all three. Unlike every other peer
+# rig this one needs the real Tor network (hidden-service publication), so it
+# is NOT part of `./dev up all`.
+
+services:
+  tor:
+    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    restart: unless-stopped
+    command: >
+      sh -c "apk add --no-cache tor &&
+             install -d -o tor -g nogroup -m 700 /var/lib/tor /var/lib/tor/hs &&
+             exec su tor -s /bin/sh -c 'tor -f /etc/torrc'"
+    volumes:
+      - ./torrc:/etc/torrc:ro
+      - hs:/var/lib/tor
+    ports:
+      # Plamenu's socks5h onion lane.
+      - "127.0.0.1:9350:9050"
+    extra_hosts:
+      # The hidden service forwards to the host-native Mitra on 8381.
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      # Healthy once the onion hostname exists; hidden-service descriptor
+      # publication (readiness for actual dials) follows within ~30 s.
+      test: ["CMD-SHELL", "test -s /var/lib/tor/hs/hostname"]
+      interval: 2s
+      timeout: 3s
+      retries: 90
+
+  db:
+    image: postgres:15-alpine@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mitra
+      POSTGRES_PASSWORD: mitra
+      POSTGRES_DB: mitra
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mitra"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  hs:
+  db:

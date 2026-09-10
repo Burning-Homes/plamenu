@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (deleted_at IS NOT NULL) AS \"deleted!\" FROM statuses WHERE id = $1 -- STUBKEEP: this IS the stub lookup",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "deleted!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "54b2a31f5e21e2a987ceac3f4292ea2720e9577808fe512c9eea907e16e3fc61"
+}

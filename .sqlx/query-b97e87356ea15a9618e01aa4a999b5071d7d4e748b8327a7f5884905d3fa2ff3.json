@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE host_reachability SET\n               consecutive_failures = 0,\n               first_failure_at = NULL,\n               unreachable_since = NULL,\n               next_probe_at = NULL,\n               abandoned_at = NULL,\n               last_success_at = now(),\n               updated_at = now()\n           WHERE host = $1\n             AND (consecutive_failures > 0\n                  OR unreachable_since IS NOT NULL\n                  OR next_probe_at IS NOT NULL\n                  OR abandoned_at IS NOT NULL\n                  OR last_success_at IS NULL\n                  OR last_success_at < now() - interval '1 hour')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b97e87356ea15a9618e01aa4a999b5071d7d4e748b8327a7f5884905d3fa2ff3"
+}

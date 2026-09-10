@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO status_tombstones (status_id, account_id, uri)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (status_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d90c565a58901d5080b4de6bc31fa69f98addf5993d51d9ce6825d351302669c"
+}

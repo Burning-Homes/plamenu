@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT visibility, in_reply_to_id FROM statuses WHERE id = $1 -- STUBKEEP: reads the just-arrived status, never a stub",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "in_reply_to_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "in_reply_to_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "bc653fdf6807f30f8c2c391d7b6b5998ca5f8675797e240a65ced6cec5235875"
+}

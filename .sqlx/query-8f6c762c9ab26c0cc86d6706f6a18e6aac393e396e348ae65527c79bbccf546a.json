@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT l.id AS \"id!\"\n        FROM lists l\n        JOIN list_accounts la ON la.list_id = l.id AND la.account_id = $2\n        LEFT JOIN follows mf ON mf.id = la.follow_id\n        WHERE l.id = ANY($1) AND (la.follow_id IS NULL OR NOT mf.pending)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "lists",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8f6c762c9ab26c0cc86d6706f6a18e6aac393e396e348ae65527c79bbccf546a"
+}

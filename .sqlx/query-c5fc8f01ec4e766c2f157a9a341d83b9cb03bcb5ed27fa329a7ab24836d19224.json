@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM mutes WHERE account_id = $1 OR target_account_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c5fc8f01ec4e766c2f157a9a341d83b9cb03bcb5ed27fa329a7ab24836d19224"
+}

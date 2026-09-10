@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT target_account_id AS \"id!\"\n           FROM account_endorsements\n           WHERE account_id = $1 AND target_account_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_endorsements",
+            "name": "target_account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5b19e5c08b515a617a646a21c09b7eec8d92bcd34207e3f4950ea96274b67650"
+}

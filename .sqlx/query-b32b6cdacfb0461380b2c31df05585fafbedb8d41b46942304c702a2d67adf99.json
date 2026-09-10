@@ -1,0 +1,105 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO webauthn_credentials\n            (id, user_id, external_id, nickname, credential, sign_count)\n        VALUES ($1, $2, $3, $4, $5, $6)\n        RETURNING id, user_id, external_id, nickname, credential, sign_count, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webauthn_credentials",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webauthn_credentials",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "external_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webauthn_credentials",
+            "name": "external_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "nickname",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webauthn_credentials",
+            "name": "nickname"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "credential",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "webauthn_credentials",
+            "name": "credential"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "sign_count",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webauthn_credentials",
+            "name": "sign_count"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webauthn_credentials",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b32b6cdacfb0461380b2c31df05585fafbedb8d41b46942304c702a2d67adf99"
+}

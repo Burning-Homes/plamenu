@@ -1,0 +1,137 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webxdc_memberships\n         SET accepted = true, replay_boundary = $2, accepted_at = coalesce(accepted_at, now())\n         WHERE follow_id = $1\n         RETURNING session_id, participant_account_id, participant_uri, follow_id,\n                   accepted, replay_boundary, self_addr, joined_at, accepted_at,\n                   last_submitted_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_memberships",
+            "name": "session_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "participant_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_memberships",
+            "name": "participant_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "participant_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_memberships",
+            "name": "participant_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "follow_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_memberships",
+            "name": "follow_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "accepted",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "webxdc_memberships",
+            "name": "accepted"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "replay_boundary",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_memberships",
+            "name": "replay_boundary"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "self_addr",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_memberships",
+            "name": "self_addr"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "joined_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_memberships",
+            "name": "joined_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "accepted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_memberships",
+            "name": "accepted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "last_submitted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_memberships",
+            "name": "last_submitted_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "6b835b079e8ca783abe530d90e39bd22e856371a2baa764decb56e9fa9a2e14a"
+}

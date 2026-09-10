@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT media_id, height, width, frame_rate, size_bytes, origin_url,\n               is_audio\n        FROM media_renditions\n        WHERE media_id = ANY($1)\n        ORDER BY is_audio ASC, height DESC, width DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_renditions",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media_renditions",
+            "name": "height"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media_renditions",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "frame_rate",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media_renditions",
+            "name": "frame_rate"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "size_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_renditions",
+            "name": "size_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "origin_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_renditions",
+            "name": "origin_url"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "is_audio",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_renditions",
+            "name": "is_audio"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "f07e97206abc468bab2a4e9f952ea27b78610efc1a819143febf6b4be6bde1fb"
+}

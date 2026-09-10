@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE custom_emojis e SET image_file_size = v.size\n         FROM unnest($1::bigint[], $2::bigint[]) AS v(id, size)\n         WHERE e.id = v.id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9a16db6b7e3a52937a1972f2a4be3a045f8d5edb6b3ccde80f50b4975d06aa65"
+}

@@ -1,0 +1,539 @@
+#!/usr/bin/env bash
+# Plamenu developer workflow helper.
+#
+# Core development is standalone: this script manages PostgreSQL, Mailpit,
+# local configuration, builds, tests, SQLx metadata, and benchmarks from this
+# repository. Live federation uses the in-tree peer workspace by default; an
+# alternate fleet can still be selected through PLAMENU_PEER_DEV.
+set -euo pipefail
+
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+cd "$ROOT"
+
+# Releases use an isolated source snapshot and their own disposable services.
+# Do not load the developer's standing database or application configuration.
+if [[ ${1:-} == release ]]; then
+  shift
+  exec python3 "$ROOT/scripts/release.py" "$@"
+fi
+
+if [[ ${1:-} == docs-deploy ]]; then
+  shift
+  exec python3 "$ROOT/scripts/docs.py" deploy "$@"
+fi
+
+ENV_FILE=${PLAMENU_DEV_ENV:-"$ROOT/.env"}
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090 # The developer explicitly selects this local file.
+  . "$ENV_FILE"
+  set +a
+fi
+
+DATABASE_URL=${DATABASE_URL:-postgres://plamenu:plamenu@127.0.0.1:5433/plamenu_dev}
+RUST_LOG=${RUST_LOG:-plamenu=debug,tower_http=info}
+PLAMENU_DOMAIN=${PLAMENU_DOMAIN:-plamenu.local}
+PLAMENU_BIND=${PLAMENU_BIND:-0.0.0.0:8420}
+PLAMENU_HEALTH_URL=${PLAMENU_HEALTH_URL:-http://127.0.0.1:8420/health}
+PLAMENU_DEV_USER=${PLAMENU_DEV_USER:-developer}
+PLAMENU_DEV_EMAIL=${PLAMENU_DEV_EMAIL:-developer@plamenu.local}
+PLAMENU_DEV_PASSWORD=${PLAMENU_DEV_PASSWORD:-plamenu-development-only}
+PLAMENU_LEGACY_FIXTURE_USER=${PLAMENU_LEGACY_FIXTURE_USER:-legacy}
+# Disposable development-only envelope root. Production configuration must
+# use an independently generated secret kept outside the database/backups.
+PLAMENU_ENCRYPTION_SECRET=${PLAMENU_ENCRYPTION_SECRET:-plamenu-development-envelope-root-only}
+# Optional peer-harness Tor SOCKS endpoint. It is harmless while the onion rig
+# is down because only `.onion` destinations are routed through it.
+PLAMENU_ONION_PROXY_URL=${PLAMENU_ONION_PROXY_URL:-socks5h://127.0.0.1:9350}
+
+STATE_DIR=${PLAMENU_DEV_STATE_DIR:-"$ROOT/.dev"}
+PLAMENU_MEDIA_DIR=${PLAMENU_MEDIA_DIR:-"$STATE_DIR/media"}
+PID_FILE="$STATE_DIR/server.pid"
+LOG_FILE=${PLAMENU_DEV_LOG:-"$STATE_DIR/server.log"}
+
+if [[ -n ${PLAMENU_CONFIG:-} ]]; then
+  CONFIG_FILE=$PLAMENU_CONFIG
+  MANAGED_CONFIG=false
+else
+  CONFIG_FILE="$ROOT/plamenu.dev.toml"
+  MANAGED_CONFIG=true
+fi
+
+PEER_ROOT=${PLAMENU_PEER_ROOT:-"$ROOT/e2e/peers"}
+PEER_DEV=${PLAMENU_PEER_DEV:-"$PEER_ROOT/dev"}
+PEER_PROVISIONER=${PLAMENU_PEER_PROVISIONER:-"$ROOT/e2e/peers/provision.sh"}
+PEERS=(mastodon discourse hubzilla funkwhale pleroma sharkey gotosocial mitra lemmy peertube owncast)
+# These fixtures are deliberately excluded from bulk `up peers`/`up all`, but
+# the documented `./dev up PEER` and `./dev down PEER` forms must still reach
+# them through the configured helper.
+OPTIONAL_PEERS=(mobilizon plup onion)
+
+export DATABASE_URL RUST_LOG PLAMENU_CONFIG="$CONFIG_FILE" PLAMENU_PEER_ROOT="$PEER_ROOT"
+
+usage() {
+  cat <<'EOF'
+Usage: ./dev COMMAND [ARGS...]
+
+Local runtime:
+  up [app|db|peers|all|PEER]    Start Plamenu (default), its database, or peers
+  down [app|db|peers|all|PEER]  Stop services
+  run                           Run Plamenu in the foreground
+  status                        Show local and optional peer status
+  logs [app|PEER]               Follow logs
+  creds                         Print disposable development credentials
+  config                        Regenerate the ignored local TOML configuration
+
+Development:
+  build [CARGO_ARGS...]         Build the workspace
+  test [NEXTEST_ARGS...]        Start PostgreSQL and run workspace tests
+  check                         Run formatting, Clippy, and offline Cargo checks
+  ci                            Run check, tests, and cargo-deny when installed
+  docs-build [VERSION]          Build the searchable static guide (default: dev)
+  docs-deploy [--ref TAG]       Build, publish and verify Codefloe Pages
+  docs-serve [MDBOOK_ARGS...]   Preview the guide at http://127.0.0.1:3000
+  docs-check                    Check examples, generated CLI help, and the book
+  docs-generate                 Refresh generated documentation from source code
+  sqlx                          Regenerate workspace SQLx metadata
+  sqlx-check                    Verify committed workspace SQLx metadata
+  bench [CRITERION_ARGS...]     Run the server hot-path benchmarks
+  bench-check [--strict|--filtered]
+                                Grade the last run against budgets and record it
+  bench-concurrency             Run the fan-out contention tripwire (cores/2 load)
+  e2e [PYTEST_ARGS...]          Run live federation tests against available peers
+  e2e-full [PYTEST_ARGS...]     Require every configured peer, then run all E2E tests
+  provision-peers [--no-start|--check]
+                                Fetch pinned peer sources and prepare the live fleet
+  smoke-install                 Rehearse a clean production-shaped container install
+  backup-restore               Destroy and restore a disposable container install
+  deploy-staging                Build and deploy using ignored .staging.env settings
+  release [--publish] [--arm64-on codefloe] [--skip-e2e]
+                                Check and package locally; optionally sign and publish
+  doctor                        Check local tools and optional peer-harness wiring
+
+Peer provisioning defaults to e2e/peers. Set PLAMENU_PEER_DEV and
+PLAMENU_PEER_ROOT only when using a separately managed compatible fleet.
+EOF
+}
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+docker_compose() {
+  if docker info >/dev/null 2>&1; then
+    docker compose "$@"
+  elif sg docker -c "docker info" >/dev/null 2>&1; then
+    sg docker -c "docker compose $(printf '%q ' "$@")"
+  else
+    sudo docker compose "$@"
+  fi
+}
+
+compose() { docker_compose -f "$ROOT/compose.dev.yml" "$@"; }
+
+write_config() {
+  if [[ "$MANAGED_CONFIG" != true ]]; then
+    [[ -f "$CONFIG_FILE" ]] || {
+      echo "PLAMENU_CONFIG does not exist: $CONFIG_FILE" >&2
+      return 1
+    }
+    echo "Using developer-managed config: $CONFIG_FILE"
+    return
+  fi
+
+  cat >"$CONFIG_FILE" <<EOF
+# Generated by ./dev config; local-only and gitignored.
+domain = "$PLAMENU_DOMAIN"
+database_url = "$DATABASE_URL"
+bind = "$PLAMENU_BIND"
+media_dir = "$PLAMENU_MEDIA_DIR"
+allow_private_fetch = true
+conversation_containers = true
+csp_reporting = true
+encryption_secret = "$PLAMENU_ENCRYPTION_SECRET"
+encryption_secret_version = 1
+
+[smtp]
+server = "127.0.0.1"
+port = 1025
+from_address = "Plamenu <notifications@$PLAMENU_DOMAIN>"
+
+[federation]
+onion_proxy_url = "$PLAMENU_ONION_PROXY_URL"
+EOF
+  mkdir -p "$PLAMENU_MEDIA_DIR"
+  echo "Wrote $CONFIG_FILE"
+}
+
+db_up() {
+  echo ">> Starting development PostgreSQL and Mailpit"
+  compose up -d --wait
+}
+
+# Seed the schema into Postgres' `template1` so `#[sqlx::test]` — which creates
+# every per-test database with a bare `CREATE DATABASE` (inheriting template1) —
+# gets a fast file-copy of the finished schema instead of replaying all 18
+# migrations from scratch on each of the ~1000 tests. sqlx's per-test migrator
+# then finds `_sqlx_migrations` already satisfied and no-ops. Migrations are
+# append-only here, so re-running this is idempotent (only new migrations apply)
+# and cheap (~0.4s). Purely an optimization: if sqlx-cli is absent we skip it
+# and the tests still pass, just slower. The dev database is disposable, so
+# seeding its template1 is safe.
+seed_test_template() {
+  have sqlx || {
+    echo ">> sqlx-cli not found; skipping template1 seed (tests will replay migrations per-test)"
+    return 0
+  }
+  local template_url="${DATABASE_URL%/*}/template1"
+  echo ">> Seeding schema into template1 for fast per-test databases"
+  sqlx migrate run --source "$ROOT/crates/db/migrations" --database-url "$template_url" >/dev/null
+}
+
+db_down() {
+  echo ">> Stopping development PostgreSQL and Mailpit"
+  compose down
+}
+
+server_pid() {
+  [[ -s "$PID_FILE" ]] || return 1
+  local pid
+  pid=$(<"$PID_FILE")
+  [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null || return 1
+  printf '%s\n' "$pid"
+}
+
+ensure_login() {
+  echo ">> Ensuring disposable development account exists"
+  cargo run --locked -q -- --config "$CONFIG_FILE" account add \
+    "$PLAMENU_DEV_USER" >/dev/null 2>&1 || true
+  # Preserve live coverage for accounts created before immutable numeric actor
+  # IDs. The hidden CLI switch exists only for upgrade/interoperability rigs;
+  # ordinary operator-created accounts always use immutable IDs.
+  cargo run --locked -q -- --config "$CONFIG_FILE" account add \
+    "$PLAMENU_LEGACY_FIXTURE_USER" --legacy-actor-uri >/dev/null 2>&1 || true
+  cargo run --locked -q -- --config "$CONFIG_FILE" account passwd \
+    "$PLAMENU_DEV_USER" --email "$PLAMENU_DEV_EMAIL" \
+    --password "$PLAMENU_DEV_PASSWORD" >/dev/null
+}
+
+wait_for_server() {
+  local pid=$1
+  for _ in $(seq 1 180); do
+    if curl -fsS --max-time 2 "$PLAMENU_HEALTH_URL" >/dev/null 2>&1; then
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "Plamenu exited during startup; see $LOG_FILE" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  echo "Timed out waiting for $PLAMENU_HEALTH_URL; see $LOG_FILE" >&2
+  return 1
+}
+
+app_up() {
+  db_up
+  write_config
+  ensure_login
+  mkdir -p "$STATE_DIR"
+
+  local pid
+  if pid=$(server_pid); then
+    echo "Plamenu is already running (pid $pid)"
+    return
+  fi
+  rm -f "$PID_FILE"
+
+  echo ">> Starting Plamenu; log: $LOG_FILE"
+  # Detach from the caller's process group so a completed CI bootstrap shell
+  # does not reap the server before the E2E runner connects to it.
+  setsid cargo run --locked -- --config "$CONFIG_FILE" serve \
+    >>"$LOG_FILE" 2>&1 &
+  pid=$!
+  printf '%s\n' "$pid" >"$PID_FILE"
+  if ! wait_for_server "$pid"; then
+    rm -f "$PID_FILE"
+    return 1
+  fi
+  echo "Plamenu is healthy at $PLAMENU_HEALTH_URL (pid $pid)"
+  echo "HTTPS through the optional peer Caddy: https://$PLAMENU_DOMAIN"
+}
+
+app_run() {
+  db_up
+  write_config
+  ensure_login
+  exec cargo run --locked -- --config "$CONFIG_FILE" serve
+}
+
+app_down() {
+  local pid cwd
+  if pid=$(server_pid); then
+    cwd=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+    if [[ -n "$cwd" && "$cwd" != "$ROOT" ]]; then
+      echo "Refusing to stop pid $pid: its working directory is $cwd" >&2
+      return 1
+    fi
+    echo ">> Stopping Plamenu (pid $pid)"
+    kill "$pid"
+    for _ in $(seq 1 30); do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 1
+    done
+  fi
+  rm -f "$PID_FILE"
+  db_down
+}
+
+app_status() {
+  local db=stopped app=stopped pid
+  if compose ps --status running --services 2>/dev/null | grep -qx db; then
+    db=running
+  fi
+  if pid=$(server_pid); then
+    app="running (pid $pid)"
+  fi
+  printf 'plamenu    %-20s %s\n' "$app" "$PLAMENU_HEALTH_URL"
+  printf 'postgres   %s\n' "$db"
+}
+
+is_peer() {
+  local candidate=$1 peer
+  for peer in "${PEERS[@]}" "${OPTIONAL_PEERS[@]}"; do
+    [[ "$candidate" == "$peer" ]] && return 0
+  done
+  return 1
+}
+
+require_peer_dev() {
+  [[ -x "$PEER_DEV" ]] || {
+    echo "Peer helper is unavailable: $PEER_DEV" >&2
+    echo "Run ./dev provision-peers, or set PLAMENU_PEER_DEV in .env." >&2
+    return 1
+  }
+}
+
+peer_one() {
+  local action=$1 peer=$2
+  require_peer_dev
+  is_peer "$peer" || { echo "Unknown peer: $peer" >&2; return 2; }
+  "$PEER_DEV" "$action" "$peer"
+}
+
+peers_up() {
+  local peer
+  require_peer_dev
+  for peer in "${PEERS[@]}"; do
+    "$PEER_DEV" up "$peer"
+  done
+}
+
+peers_down() {
+  local i
+  require_peer_dev
+  for ((i=${#PEERS[@]}-1; i>=0; i--)); do
+    "$PEER_DEV" down "${PEERS[$i]}"
+  done
+}
+
+peer_status() {
+  if [[ -x "$PEER_DEV" ]]; then
+    # Compatible workspace helpers may also manage another Plamenu checkout;
+    # omit that line so this repository's status remains authoritative.
+    "$PEER_DEV" status | sed '/^plamenu[[:space:]]/d'
+  else
+    echo "peers       unavailable (set PLAMENU_PEER_DEV)"
+  fi
+}
+
+full_peer_preflight() {
+  local failed=0
+  local checks=(
+    "mastodon|${MASTODON_URL:-https://mastodon.local}/api/v1/instance"
+    "pleroma|${PLEROMA_URL:-https://pleroma.local}/api/v1/instance"
+    "gotosocial|${GOTOSOCIAL_URL:-https://gotosocial.local}/api/v1/instance"
+    "mitra|${MITRA_URL:-https://mitra.local}/api/v1/instance"
+    "lemmy|${LEMMY_URL:-https://lemmy.local}/api/v3/site"
+    "peertube|${PEERTUBE_URL:-https://peertube.local}/api/v1/config"
+    "owncast|${OWNCAST_URL:-https://owncast.local}/api/status"
+    "discourse|${DISCOURSE_URL:-https://discourse.local}/about.json"
+    "hubzilla|${HUBZILLA_URL:-https://hubzilla.local}/"
+    "funkwhale|${FUNKWHALE_URL:-https://funkwhale.local}/api/v2/instance/nodeinfo/2.1/"
+  )
+  local check name url
+  for check in "${checks[@]}"; do
+    IFS='|' read -r name url <<<"$check"
+    if ! curl -kfsS --max-time 10 "$url" >/dev/null; then
+      echo "Missing E2E peer: $name ($url)" >&2
+      failed=1
+    fi
+  done
+  if ! curl -kfsS --max-time 10 -X POST \
+    -H 'Content-Type: application/json' -d '{}' \
+    "${SHARKEY_URL:-https://sharkey.local}/api/meta" >/dev/null; then
+    echo "Missing E2E peer: sharkey (${SHARKEY_URL:-https://sharkey.local})" >&2
+    failed=1
+  fi
+  return "$failed"
+}
+
+run_e2e() {
+  local full=$1
+  shift
+  have uv || { echo "uv is required for E2E tests" >&2; return 1; }
+  app_up
+  if [[ "$full" == true ]]; then
+    full_peer_preflight
+    set -- --release-matrix "$@"
+  fi
+  (
+    cd e2e
+    uv sync --locked
+    uv run pytest "$@"
+  )
+}
+
+doctor() {
+  local failed=0 optional=0 tool
+  for tool in cargo cargo-nextest docker curl; do
+    if have "$tool"; then
+      printf 'ok       %s\n' "$tool"
+    else
+      printf 'missing  %s\n' "$tool"
+      failed=1
+    fi
+  done
+  for tool in uv ffmpeg ffprobe cargo-deny mdbook shellcheck; do
+    if have "$tool"; then
+      printf 'ok       %s\n' "$tool"
+    else
+      printf 'optional %s\n' "$tool"
+      optional=1
+    fi
+  done
+  if [[ -x "$PEER_DEV" ]]; then
+    printf 'ok       peer helper %s\n' "$PEER_DEV"
+  else
+    printf 'optional peer helper %s\n' "$PEER_DEV"
+    optional=1
+  fi
+  [[ "$optional" == 0 ]] || echo "Optional tools are required only by their matching workflows."
+  return "$failed"
+}
+
+action=${1:-status}
+[[ $# -eq 0 ]] || shift
+
+case "$action" in
+  up)
+    target=${1:-app}
+    case "$target" in
+      app|plamenu) app_up ;;
+      db) db_up ;;
+      peers) peers_up ;;
+      all) peer_one up mastodon; app_up; for peer in "${PEERS[@]:1}"; do peer_one up "$peer"; done ;;
+      *)
+        if is_peer "$target"; then
+          peer_one up "$target"
+        else
+          echo "Unknown target: $target" >&2
+          exit 2
+        fi
+        ;;
+    esac
+    ;;
+  down)
+    target=${1:-app}
+    case "$target" in
+      app|plamenu) app_down ;;
+      db) db_down ;;
+      peers) peers_down ;;
+      all) peers_down; app_down ;;
+      *)
+        if is_peer "$target"; then
+          peer_one down "$target"
+        else
+          echo "Unknown target: $target" >&2
+          exit 2
+        fi
+        ;;
+    esac
+    ;;
+  run) app_run ;;
+  status) app_status; peer_status ;;
+  logs)
+    target=${1:-app}
+    if [[ "$target" == app || "$target" == plamenu ]]; then
+      touch "$LOG_FILE"
+      tail -f "$LOG_FILE"
+    else
+      peer_one logs "$target"
+    fi
+    ;;
+  creds)
+    echo "plamenu    https://$PLAMENU_DOMAIN"
+    echo "  $PLAMENU_DEV_USER / $PLAMENU_DEV_EMAIL / $PLAMENU_DEV_PASSWORD"
+    echo "Peer credentials are owned by the configured peer harness: $PEER_DEV"
+    ;;
+  config) write_config ;;
+  build) cargo build --locked --workspace "$@" ;;
+  test)
+    have cargo-nextest || {
+      echo ">> cargo-nextest is required; install it with:" >&2
+      echo ">> cargo install cargo-nextest --locked --version 0.9.140" >&2
+      exit 1
+    }
+    db_up
+    seed_test_template
+    cargo nextest run --locked --workspace "$@"
+    ;;
+  check)
+    cargo fmt --all -- --check
+    cargo clippy --locked --workspace --all-targets -- -D warnings
+    SQLX_OFFLINE=true cargo check --locked --workspace --all-targets
+    # The benchmark gate decides whether a change ships; its exit-code
+    # contract is cheap to check and needs no database.
+    if python3 -c 'import pytest' 2>/dev/null; then
+      python3 -m pytest bench/test_bench_budgets.py -q
+    else
+      echo "Skipping bench-gate tests (pytest not installed)"
+    fi
+    ;;
+  docs-build) exec "$ROOT/scripts/build-docs-site.sh" "${1:-dev}" ;;
+  docs-serve) exec mdbook serve docs "$@" ;;
+  docs-check) exec "$ROOT/scripts/check-docs.sh" ;;
+  docs-generate)
+    cargo build --locked -p plamenu --bin plamenu
+    exec python3 scripts/generate-cli-reference.py \
+      target/debug/plamenu docs/reference/cli.md
+    ;;
+  ci)
+    "$0" check
+    "$0" docs-check
+    "$0" test
+    if have cargo-deny; then cargo deny check --deny warnings; else echo "Skipping cargo-deny (not installed)"; fi
+    ;;
+  sqlx)
+    db_up
+    cargo sqlx prepare --workspace -- --all-targets
+    ;;
+  sqlx-check)
+    db_up
+    cargo sqlx prepare --workspace --check -- --all-targets
+    ;;
+  # `--bench hot_paths` on purpose: without it, `cargo bench` also runs the
+  # contention driver, which takes its settings from the environment rather
+  # than argv — so a filtered spot-check silently ran the full concurrency
+  # scenario too and crossed its exit code into the result.
+  bench) db_up; cargo bench --locked -p plamenu --bench hot_paths "$@" ;;
+  bench-check) python3 bench/bench_budgets.py "$@" ;;
+  bench-concurrency) db_up; cargo bench --locked -p plamenu --bench contention "$@" ;;
+  e2e) run_e2e false "$@" ;;
+  e2e-full) run_e2e true "$@" ;;
+  provision-peers) exec "$PEER_PROVISIONER" "$@" ;;
+  smoke-install) exec "$ROOT/scripts/rehearse-deployment.sh" install ;;
+  backup-restore) exec "$ROOT/scripts/rehearse-deployment.sh" restore ;;
+  deploy-staging) exec "$ROOT/scripts/deploy-staging.sh" "$@" ;;
+  doctor) doctor ;;
+  help|-h|--help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

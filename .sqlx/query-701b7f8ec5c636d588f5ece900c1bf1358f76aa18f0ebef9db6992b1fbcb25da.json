@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users\n         SET otp_secret = $2, otp_required_for_login = false, otp_consumed_timestep = NULL\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "701b7f8ec5c636d588f5ece900c1bf1358f76aa18f0ebef9db6992b1fbcb25da"
+}

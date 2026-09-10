@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE remote_history_jobs SET leased_until = now() - interval '1 second'\n             WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c3965d18b4425470b4a6208d3c22c9a234b096239fefcd7d9851265dbd6b974f"
+}

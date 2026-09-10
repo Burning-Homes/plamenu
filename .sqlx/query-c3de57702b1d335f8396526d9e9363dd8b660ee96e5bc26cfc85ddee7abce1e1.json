@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO mutes (id, account_id, target_account_id, hide_notifications, expires_at)\n        SELECT v.id, v.account_id, $2, v.hide_notifications, v.expires_at\n        FROM unnest($1::bigint[], $3::bigint[], $4::bool[], $5::timestamptz[])\n             AS v(id, account_id, hide_notifications, expires_at)\n        ON CONFLICT (account_id, target_account_id) DO UPDATE SET\n            hide_notifications = EXCLUDED.hide_notifications,\n            expires_at = EXCLUDED.expires_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8",
+        "Int8Array",
+        "BoolArray",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c3de57702b1d335f8396526d9e9363dd8b660ee96e5bc26cfc85ddee7abce1e1"
+}

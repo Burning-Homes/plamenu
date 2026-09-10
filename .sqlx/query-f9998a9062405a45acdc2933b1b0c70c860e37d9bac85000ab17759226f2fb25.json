@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE statuses SET content = '<p>Adiós mundo</p>' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f9998a9062405a45acdc2933b1b0c70c860e37d9bac85000ab17759226f2fb25"
+}

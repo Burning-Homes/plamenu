@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE notification_requests SET last_status_id = NULL WHERE last_status_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d8282fc5c6490def92b0309abcf049b24528c5e2488939564e225c4ff14c6119"
+}

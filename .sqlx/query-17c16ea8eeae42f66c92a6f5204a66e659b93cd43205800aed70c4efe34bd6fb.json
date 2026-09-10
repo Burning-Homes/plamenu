@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO markers (user_id, timeline) VALUES ($1, $2)\n             ON CONFLICT (user_id, timeline) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "17c16ea8eeae42f66c92a6f5204a66e659b93cd43205800aed70c4efe34bd6fb"
+}

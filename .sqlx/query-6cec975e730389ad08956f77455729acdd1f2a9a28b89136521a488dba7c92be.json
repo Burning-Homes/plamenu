@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT r.account_id AS \"account_id!\"\n        FROM account_deletion_requests r\n        JOIN accounts a ON a.id = r.account_id\n        WHERE r.due_at <= now() AND a.suspended_at IS NOT NULL\n          AND a.deleted_at IS NULL\n        ORDER BY r.due_at, r.account_id\n        LIMIT $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_deletion_requests",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6cec975e730389ad08956f77455729acdd1f2a9a28b89136521a488dba7c92be"
+}

@@ -1,0 +1,48 @@
+{
+  "x86_64": [
+    {
+      "binary": "cargo-nextest",
+      "url": "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.140/cargo-nextest-0.9.140-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "4ee9aaa0d0171a985a5d0eb735b87355894c1c455972e9674fb9fdbd1387c9a3"
+    },
+    {
+      "binary": "mdbook",
+      "url": "https://github.com/rust-lang/mdBook/releases/download/v0.5.4/mdbook-v0.5.4-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "5222beabd3e37dc5be0d18ff99b79058469354db5c220153a1b92db5ba12be89"
+    },
+    {
+      "binary": "cargo-deny",
+      "url": "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+    },
+    {
+      "binary": "cosign",
+      "url": "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-amd64",
+      "sha256": "4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71",
+      "format": "binary"
+    }
+  ],
+  "aarch64": [
+    {
+      "binary": "cargo-nextest",
+      "url": "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.140/cargo-nextest-0.9.140-aarch64-unknown-linux-gnu.tar.gz",
+      "sha256": "8b3f4d4560b6b0f83774fecc6be07e47716dbad0eb0bb6c3890f478f4affe4b6"
+    },
+    {
+      "binary": "mdbook",
+      "url": "https://github.com/rust-lang/mdBook/releases/download/v0.5.4/mdbook-v0.5.4-aarch64-unknown-linux-musl.tar.gz",
+      "sha256": "753e5c5c363ee8a56972344dcf91466f005a51db84a7aeffe427ae3ef83d6d44"
+    },
+    {
+      "binary": "cargo-deny",
+      "url": "https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-aarch64-unknown-linux-musl.tar.gz",
+      "sha256": "995c82be0defc7a025cae49a2aa2644ce8245c9a3318fc4103907c6a285e8c7d"
+    },
+    {
+      "binary": "cosign",
+      "url": "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-arm64",
+      "sha256": "c5d324e091826b0d7a78eb16fef316450b4eb9aaec045611c08ba06f5e73220a",
+      "format": "binary"
+    }
+  ]
+}

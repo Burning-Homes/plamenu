@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users SET sign_up_ip = NULL\n        WHERE sign_up_ip IS NOT NULL\n          AND current_sign_in_at IS NOT NULL\n          AND current_sign_in_at < now() - make_interval(days => $1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "038c23ddffe37539dd247daafe3d7caedbf75a05ed8ad7f9bcfd887325cdaf16"
+}

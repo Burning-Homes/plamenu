@@ -1,0 +1,275 @@
+[workspace]
+resolver = "3"
+members = ["crates/ap", "crates/db", "crates/federation", "crates/server"]
+
+[workspace.package]
+version = "0.6.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+repository = "https://codefloe.com/plamenu/plamenu"
+rust-version = "1.98"
+
+[workspace.dependencies]
+plamenu-ap = { path = "crates/ap" }
+plamenu-db = { path = "crates/db" }
+plamenu-federation = { path = "crates/federation" }
+
+aes-gcm = "0.11"
+ammonia = "4"
+argon2 = "0.5"
+axum = { version = "0.8", default-features = false, features = [
+    "form",
+    "http1",
+    "json",
+    "multipart",
+    "query",
+    "tokio",
+    "tracing",
+    "ws",
+] }
+base32 = "0.5"
+base64 = "0.23"
+# Multikey/multibase encoding (FEP-521a keys, FEP-8b32 proof values) is
+# base58btc; bs58 is the encoding alone, which is all multibase's 'z' needs.
+bs58 = "0.5"
+ml-dsa = { version = "0.1.1", features = ["zeroize"] }
+# Pure-Rust blurhash encoding for media placeholders (whisperfish's crate).
+blurhash = "0.2"
+clap = { version = "4", features = ["derive", "env"] }
+# In-memory CSV writing for the data-export endpoints.
+csv = "1.3"
+# Ed25519 signing for FEP-521a actor keys and FEP-8b32 integrity proofs.
+# Key bytes come from `getrandom` directly, sidestepping the rand_core
+# version split between rsa (0.6) and the dalek 3.x line (0.9).
+ed25519-dalek = { version = "3", features = ["zeroize"] }
+# Mozilla Fluent catalogs for the server-rendered interface. Resources are
+# embedded in the binary; the concurrent bundle is safe to share across Axum
+# request threads.
+fluent-bundle = "0.16"
+getrandom = "0.4"
+hkdf = "0.13"
+# TOTP (RFC 6238) needs HMAC-SHA1; both already in the tree as transitives
+# of the digest 0.11 generation.
+hmac = "0.13"
+sha1 = "0.11"
+# Already in-tree through ammonia; used directly (tokenizer only) to read
+# link-preview metadata out of fetched pages.
+html5ever = "0.39"
+http = "1"
+httpdate = "1"
+image = { version = "0.25", default-features = false, features = [
+    "gif",
+    "jpeg",
+    "png",
+    "webp",
+    # AVIF *encoder* only (pure-Rust rav1e via ravif) — re-encoded media (status
+    # attachments + their previews, avatars/headers) ships as AVIF, far smaller
+    # than JPEG/PNG. Decoding AVIF would need a C dep (dav1d); we never decode
+    # our own output, so the encoder alone keeps the static-musl build clean.
+    "avif",
+] }
+# JPEG XL *decoding*, pure Rust (the encoder side shells out to ffmpeg's
+# libjxl instead — linking libjxl itself is C++ and off the table for the
+# static-musl build). Accepting JXL uploads and re-reading our own optional
+# JXL renditions both go through this.
+jxl-oxide = { version = "0.12", default-features = false }
+# SMTP sending for the e-mail queue (M21). Reqwest's `rustls` feature selects
+# AWS-LC; Lettre and SQLx explicitly use the same provider so the binary does
+# not carry both AWS-LC and ring. All three use the system trust store.
+lettre = { version = "0.11", default-features = false, features = [
+    "builder",
+    "smtp-transport",
+    "tokio1",
+    "tokio1-rustls",
+    "aws-lc-rs",
+    "rustls-native-certs",
+] }
+# Compile-time-checked HTML templating: markup is type-checked Rust, no
+# runtime template files or separate build step (the `axum` feature gives
+# `Markup: IntoResponse`).
+maud = { version = "0.27", features = ["axum"] }
+# Global allocator: musl's malloc is slow under multithreaded load, and the
+# staging deploy is a static musl binary. The `no_thp` feature prevents
+# mimalloc from explicitly advising huge pages; supported launchers also set
+# `MIMALLOC_ALLOW_THP=0` so Linux disables THP for the whole process.
+mimalloc = { version = "0.1", features = ["no_thp"] }
+# TOTP enrollment QR codes, rendered as inline SVG (no `image` feature —
+# raster rendering would pull C-adjacent weight the musl build doesn't need).
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+quick_html2md = "0.2.1"
+# Markdown → HTML for operator-authored text (extended description & co.);
+# Mastodon renders the same fields through Redcarpet. Pure Rust, output is
+# sanitized before serving.
+pulldown-cmark = { version = "0.13", default-features = false, features = [
+    "html",
+] }
+# `rustls-native-certs` (system trust store) rather than webpki: the e2e
+# setup must trust the local Caddy CA for https://mastodon.local.
+reqwest = { version = "0.13", default-features = false, features = [
+    "http2",
+    "json",
+    "rustls",
+    "rustls-native-certs",
+    # socks5h:// proxies for .onion/.i2p federation. Note `system-proxy` (a
+    # reqwest 0.13 default we opt out of) must stay off: proxy routing is
+    # explicit per-destination config, never env-var pickup.
+    "socks",
+] }
+# p256 signs/derives for Web Push: VAPID ES256 tokens
+# and the RFC 8291 / legacy `aesgcm` ECDH content encryption.
+p256 = { version = "0.14", features = ["ecdh", "pem"] }
+# rsa 0.9 pins rand_core 0.6;
+# we use its re-exported OsRng (`getrandom`) instead of a separate `rand`.
+rsa = { version = "0.9", features = ["sha2", "getrandom"] }
+# Keyword-filter matching: union of per-keyword regexes, case-insensitive,
+# optional word boundaries — like Mastodon's `CustomFilterKeyword#to_regex`.
+regex = "1"
+sha2 = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# RFC 8785 JSON Canonicalization Scheme, the `jcs` half of eddsa-jcs-2022
+# (FEP-8b32 integrity proofs).
+serde_json_canonicalizer = "0.3"
+serde_urlencoded = "0.7"
+sqlx = { version = "0.9", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls-aws-lc-rs",
+    "postgres",
+    "macros",
+    "migrate",
+    "json",
+    "time",
+] }
+# Scratch files for the ffmpeg transcoding pipeline.
+tempfile = "3"
+thiserror = "2"
+time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+# IANA time-zone conversions for viewer-local timestamp display. The tzdb is
+# always bundled so the static musl binary needs no /usr/share/zoneinfo.
+jiff = { version = "0.2", features = ["tzdb-bundle-always"] }
+tokio = { version = "1", features = [
+    "fs",
+    "io-util",
+    "macros",
+    "net",
+    "process",
+    "rt-multi-thread",
+    "signal",
+    "time",
+] }
+# ReaderStream for range-serving stored media without buffering whole files.
+tokio-util = { version = "0.7", features = ["io"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.7", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+toml = "1.1.3"
+# Grapheme-cluster counting for the status length limit — Mastodon's
+# `StatusLengthValidator` counts `each_grapheme_cluster`, not chars.
+unicode-segmentation = "1"
+unicode-normalization = "0.1"
+# BCP-47 language identifiers used by Fluent and HTML `lang`.
+unic-langid = "0.9"
+# Already in-tree through reqwest; used for resolving link-preview URLs.
+url = "2"
+zeroize = "1"
+# WebAuthn (security-key second factor). The 0.6.x line dropped the
+# OpenSSL dependency of 0.5 for pure-Rust `crypto-glue`, so it links cleanly
+# into the static-musl staging build (0.5.5 + openssl-sys would not).
+# `danger-allow-state-serialisation` lets us persist the in-flight
+# registration/authentication ceremony state into `two_factor_challenges`
+# (our login/OAuth flow is sessionless — there's nowhere else to keep it).
+webauthn-rs = { version = "0.6.1-dev", default-features = false, features = [
+    "danger-allow-state-serialisation",
+] }
+# Zip container for the account-archive export. `deflate-flate2` is
+# the pure-Rust deflate backend (flate2 → miniz_oxide, already in-tree via
+# `image`/`png`); the `-zlib*` variants would pull C into the static-musl
+# staging build.
+zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
+
+# Test-only
+# Bench harness for the hot-path suite (crates/server/benches); async_tokio
+# drives the axum router in-process. See bench/README.md for the workflow.
+criterion = { version = "0.8", features = ["async_tokio"] }
+futures-util = { version = "0.3", default-features = false }
+http-body-util = "0.1"
+tokio-tungstenite = "0.30.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+# Keep debug symbols in split `.dwo`/object files instead of copying the full
+# debuginfo into every binary. Debug/test binaries here run ~0.5 GB each and
+# cargo never GCs stale hash-suffixed copies, so unpacked split-debuginfo keeps
+# `target/debug` from ballooning (it hit 462 GB before this).
+[profile.dev]
+split-debuginfo = "unpacked"
+
+# RSA keygen and argon2id are unusably slow at opt-level 0; always optimize
+# the math-heavy crypto dependencies, even in dev/test builds.
+[profile.dev.package.rsa]
+opt-level = 3
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+[profile.dev.package.rand_core]
+opt-level = 3
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
+
+# The AVIF encoder (rav1e via ravif) is our re-encode target for every uploaded
+# still and video poster. At opt-level 0 it is 10-30x slower — a single 1200²
+# noise upload takes ~28 s in the test suite unoptimized, vs ~1-2 s optimized —
+# so the media tests dominate the whole suite. Optimize the encoder crate and
+# the pixel-buffer helpers ravif drives in its hot loops, like the crypto math
+# above. (Compiled once, then cached; no effect on the release profile.)
+[profile.dev.package.rav1e]
+opt-level = 3
+[profile.dev.package.ravif]
+opt-level = 3
+[profile.dev.package.avif-serialize]
+opt-level = 3
+[profile.dev.package.imgref]
+opt-level = 3
+[profile.dev.package.loop9]
+opt-level = 3
+[profile.dev.package.rgb]
+opt-level = 3
+# `image` itself does the PNG/JPEG decode + Lanczos downscale before the encode.
+[profile.dev.package.image]
+opt-level = 3
+
+# General release builds use Thin LTO; shipping uses the deploy profile below.
+# The hosted build setup is described in docs/CI-CD.md. Keep the symbol
+# table so staging panic backtraces have function names.
+#
+# `panic = "unwind"` is required, not incidental: the worker
+# supervisor (`supervise_with` in `crates/server/src/main.rs`) recovers a
+# panicked background worker by observing its erroring `JoinHandle` and
+# respawning it, and an unwinding request handler panic drops one connection
+# instead of the whole server. `panic = "abort"` would tear the process down on
+# any panic, silently defeating both. A `#[cfg(panic = "abort")] compile_error!`
+# guard beside the supervisor and the `release_panic_strategy` test enforce this.
+[profile.release]
+lto = "thin"
+panic = "unwind"
+strip = "debuginfo"
+
+# Shipping profile: spend extra link time deduplicating monomorphized code.
+# Symbols remain in Cargo's compiler output; packaging strips the one executable
+# shipped in each installation archive and runtime image. Inherit `panic = "unwind"` — worker supervision requires it.
+[profile.deploy]
+inherits = "release"
+lto = "fat"
+codegen-units = 1

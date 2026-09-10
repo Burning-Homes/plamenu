@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH RECURSIVE chain(id, in_reply_to_id, depth) AS (\n            SELECT id, in_reply_to_id, 0 FROM statuses WHERE id = $1 -- STUBKEEP: the root walk crosses stubs so the tree holds\n            UNION ALL\n            SELECT s.id, s.in_reply_to_id, chain.depth + 1\n            FROM statuses s\n            JOIN chain ON s.id = chain.in_reply_to_id\n            WHERE chain.depth < 40\n        )\n        SELECT id AS \"id!\" FROM chain WHERE in_reply_to_id IS NULL\n        ORDER BY depth DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2e4035897dcf78f0e0cf5110f114c421009ade6da9ba48cb1e1a32f9735f7466"
+}

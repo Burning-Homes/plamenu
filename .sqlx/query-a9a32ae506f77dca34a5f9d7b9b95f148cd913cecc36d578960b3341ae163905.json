@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT count(*) AS \"count!\"\n        FROM accounts a\n        JOIN users u ON u.account_id = a.id\n        WHERE a.domain IS NULL AND u.approved = false\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a9a32ae506f77dca34a5f9d7b9b95f148cd913cecc36d578960b3341ae163905"
+}

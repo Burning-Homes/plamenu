@@ -1,0 +1,234 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id, s.account_id, s.coordinator_uri, s.creator_account_id,\n                s.creator_uri, s.name, s.summary, s.bundle_id, s.bundle_url,\n                s.bundle_name, s.bundle_media_type, s.digest_multibase,\n                s.send_update_interval, s.send_update_max_size,\n                s.membership_policy, s.last_serial, s.published_at, s.ended_at\n         FROM webxdc_sessions s\n         JOIN accounts coordinator ON coordinator.id = s.account_id\n         WHERE NOT EXISTS (\n                   SELECT 1 FROM webxdc_tombstones t WHERE t.session_id = s.id\n               )\n           AND (\n               (s.ended_at IS NULL AND coordinator.domain IS NULL\n                AND s.last_activity_at <= $1)\n               OR s.ended_at <= $2\n           )\n         ORDER BY coalesce(s.ended_at, s.last_activity_at), s.id\n         LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "coordinator_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "coordinator_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "creator_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "creator_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "creator_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "creator_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "summary",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "bundle_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "bundle_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "bundle_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "bundle_url"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "bundle_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "bundle_name"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "bundle_media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "bundle_media_type"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "digest_multibase",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "digest_multibase"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "send_update_interval",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "send_update_interval"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "send_update_max_size",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "send_update_max_size"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "membership_policy",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "membership_policy"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "last_serial",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "last_serial"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "ended_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "ended_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "10f19f37f2905d1e3821d9fe5ada2bc55742164792797c33bb58462f185ab1a1"
+}

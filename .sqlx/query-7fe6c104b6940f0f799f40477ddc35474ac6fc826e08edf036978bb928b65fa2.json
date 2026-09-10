@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO quote_verify_jobs (id, quote_id, run_at, attempts)\n        VALUES ($1, $2, now() + make_interval(secs => $3), $4)\n        ON CONFLICT (quote_id) DO UPDATE\n            SET run_at = EXCLUDED.run_at, attempts = EXCLUDED.attempts\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Float8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7fe6c104b6940f0f799f40477ddc35474ac6fc826e08edf036978bb928b65fa2"
+}

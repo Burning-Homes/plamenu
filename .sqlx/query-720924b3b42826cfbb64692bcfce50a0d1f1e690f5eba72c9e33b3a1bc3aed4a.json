@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n             SELECT 1 FROM webxdc_memberships m\n             JOIN accounts a ON a.id = m.participant_account_id\n             WHERE m.session_id = $1 AND m.accepted AND a.domain IS NULL\n           ) AS \"exists!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "720924b3b42826cfbb64692bcfce50a0d1f1e690f5eba72c9e33b3a1bc3aed4a"
+}

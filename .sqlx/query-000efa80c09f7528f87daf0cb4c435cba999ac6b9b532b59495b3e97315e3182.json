@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT EXISTS (\n                SELECT 1 FROM account_deletion_requests r\n                JOIN accounts a ON a.id = r.account_id\n                WHERE r.account_id = $1 AND r.due_at <= now()\n                  AND a.suspended_at IS NOT NULL AND a.deleted_at IS NULL\n            ) AS \"eligible!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "eligible!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "000efa80c09f7528f87daf0cb4c435cba999ac6b9b532b59495b3e97315e3182"
+}

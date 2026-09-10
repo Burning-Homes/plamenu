@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO oauth_grants (id, code_hash, app_id, user_id, redirect_uri,\n                                  scopes, pkce_challenge, expires_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "01fec96352cda63fa6c4fe3cdad969dbe54bf0d7eb83927be507185a9c88782a"
+}

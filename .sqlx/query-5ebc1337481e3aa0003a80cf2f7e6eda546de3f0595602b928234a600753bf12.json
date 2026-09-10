@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO preview_cards_statuses (preview_card_id, status_id, url) VALUES ($1, $2, 'https://a/3')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5ebc1337481e3aa0003a80cf2f7e6eda546de3f0595602b928234a600753bf12"
+}

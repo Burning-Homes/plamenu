@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT g.account_id\n        FROM groups g\n        JOIN accounts a ON a.id = g.account_id\n        WHERE a.suspended_at IS NULL\n          AND ($1 OR a.discoverable IS NOT FALSE)\n        ORDER BY g.created_at DESC\n        LIMIT $2 OFFSET $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "groups",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "189ca20f97b1c6d8773b8f17affe83f942866bc64f5c7d867a1b9280c4f6dee6"
+}

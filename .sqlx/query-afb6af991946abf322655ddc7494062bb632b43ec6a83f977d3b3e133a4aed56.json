@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO oauth_grants (id, code_hash, app_id, user_id, redirect_uri, scopes, expires_at) VALUES ($1, 'c', $2, $3, 'urn:x', 'read', now() - make_interval(days => 1))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "afb6af991946abf322655ddc7494062bb632b43ec6a83f977d3b3e133a4aed56"
+}

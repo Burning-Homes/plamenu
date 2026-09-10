@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pending FROM follows WHERE account_id = $1 AND target_account_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "pending"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8568ee84cde244fa5e3df549322e5c5567025f388d09e8d6cae794889520bb00"
+}

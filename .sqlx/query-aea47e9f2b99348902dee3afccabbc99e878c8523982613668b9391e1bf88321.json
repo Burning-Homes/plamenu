@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT accounts.domain AS \"key\", count(*) AS \"value!\"\n        FROM statuses -- STUBKEEP: usage aggregate\n        INNER JOIN accounts ON accounts.id = statuses.account_id\n        INNER JOIN status_tags ON status_tags.status_id = statuses.id\n        WHERE status_tags.tag_id = $1\n          AND statuses.id BETWEEN $2 AND $3\n        GROUP BY accounts.domain\n        ORDER BY count(*) DESC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "domain"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "value!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "aea47e9f2b99348902dee3afccabbc99e878c8523982613668b9391e1bf88321"
+}

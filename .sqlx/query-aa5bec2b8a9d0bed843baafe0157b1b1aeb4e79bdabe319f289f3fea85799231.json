@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET reset_password_sent_at = now() - interval '7 hours' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aa5bec2b8a9d0bed843baafe0157b1b1aeb4e79bdabe319f289f3fea85799231"
+}

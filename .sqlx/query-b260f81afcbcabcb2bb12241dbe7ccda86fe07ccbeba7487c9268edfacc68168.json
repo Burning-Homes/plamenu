@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_deletion_requests (account_id)\n                 VALUES ($1) ON CONFLICT (account_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b260f81afcbcabcb2bb12241dbe7ccda86fe07ccbeba7487c9268edfacc68168"
+}

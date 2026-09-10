@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_processing_jobs\n         SET run_at = now() + ($2 * interval '1 second'), attempts = $3\n         WHERE media_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "751a0aa885eaa763f8a1f6420bd9fad3ea041a30ee92876f96764a7600392c64"
+}

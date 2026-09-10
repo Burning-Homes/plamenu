@@ -1,0 +1,13 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1"
+  ],
+  "id": "https://remote.example/notes/9sh4rkboost001/activity",
+  "type": "Announce",
+  "actor": "https://remote.example/users/bob",
+  "published": "2026-07-10T11:00:00.000Z",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "object": "https://remote.example/notes/9sh4rkbase0001"
+}

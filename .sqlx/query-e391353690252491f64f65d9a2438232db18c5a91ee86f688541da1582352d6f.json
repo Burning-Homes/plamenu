@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.uri AS \"uri!\"\n        FROM follows f\n        JOIN accounts a ON a.id = f.account_id\n        WHERE f.target_account_id = $1\n          AND a.uri IS NOT NULL\n          AND (a.uri = $2 OR a.uri LIKE ($2 || '/%'))\n          AND NOT f.pending\n        ORDER BY a.uri\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uri!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "uri"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "e391353690252491f64f65d9a2438232db18c5a91ee86f688541da1582352d6f"
+}

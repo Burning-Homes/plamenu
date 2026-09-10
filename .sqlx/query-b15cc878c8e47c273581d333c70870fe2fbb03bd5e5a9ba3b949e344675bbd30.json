@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COALESCE(statuses.language, 'und') AS \"key!\", count(*) AS \"value!\"\n        FROM statuses -- STUBKEEP: usage aggregate\n        INNER JOIN accounts ON accounts.id = statuses.account_id\n        WHERE accounts.domain = $1\n          AND statuses.id BETWEEN $2 AND $3\n          AND statuses.reblog_of_id IS NULL\n          AND statuses.deleted_at IS NULL -- STUBFILTER\n        GROUP BY COALESCE(statuses.language, 'und')\n        ORDER BY count(*) DESC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "value!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "b15cc878c8e47c273581d333c70870fe2fbb03bd5e5a9ba3b949e344675bbd30"
+}

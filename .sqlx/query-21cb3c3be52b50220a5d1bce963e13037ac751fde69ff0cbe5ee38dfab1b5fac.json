@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT uri, pending, show_reblogs, with_replies, notify, languages\n        FROM follows\n        WHERE account_id = $1 AND target_account_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pending",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "pending"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "show_reblogs",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "show_reblogs"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "with_replies",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "with_replies"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "notify",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "notify"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "languages",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "languages"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "21cb3c3be52b50220a5d1bce963e13037ac751fde69ff0cbe5ee38dfab1b5fac"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT in_reply_to_account_id FROM statuses WHERE id = $1 -- STUBKEEP: a stub edge still threads",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "in_reply_to_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "in_reply_to_account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "8458be8852b15207891244d407d39d4b2b62760f355da5482edb6589cdcc0ea2"
+}

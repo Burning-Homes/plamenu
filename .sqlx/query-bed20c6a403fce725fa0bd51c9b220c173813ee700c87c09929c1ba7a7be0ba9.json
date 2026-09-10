@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO canonical_email_blocks\n                        (id, canonical_email_hash, reference_account_id)\n                     VALUES ($1, $2, $3)\n                     ON CONFLICT (canonical_email_hash) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bed20c6a403fce725fa0bd51c9b220c173813ee700c87c09929c1ba7a7be0ba9"
+}

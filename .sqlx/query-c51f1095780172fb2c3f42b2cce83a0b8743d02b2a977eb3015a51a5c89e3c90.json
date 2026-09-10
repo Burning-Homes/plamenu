@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT count(*) AS \"count!\"\n        FROM accounts\n        LEFT JOIN users ON users.account_id = accounts.id\n        WHERE (accounts.domain IS NULL OR accounts.portable)\n          AND accounts.actor_type IS DISTINCT FROM 'Group'\n          AND (users.id IS NULL OR (users.approved AND users.confirmed_at IS NOT NULL))\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c51f1095780172fb2c3f42b2cce83a0b8743d02b2a977eb3015a51a5c89e3c90"
+}

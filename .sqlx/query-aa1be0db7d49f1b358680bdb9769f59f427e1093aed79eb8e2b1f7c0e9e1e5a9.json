@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts\n         SET is_internal = true,\n             suspended_at = coalesce(suspended_at, $2),\n             suspension_origin = CASE WHEN domain IS NULL THEN 'local' ELSE 'remote' END,\n             deleted_at = coalesce(deleted_at, $2),\n             discoverable = false,\n             indexable = false\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aa1be0db7d49f1b358680bdb9769f59f427e1093aed79eb8e2b1f7c0e9e1e5a9"
+}

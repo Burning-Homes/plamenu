@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE status_translations SET last_used_at = now()\n             WHERE status_id = $1 AND target_language = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d66e2b56b7e0bbcb536a3dfff0c3d7095a90b080a65c932227bf49b0c78432ff"
+}

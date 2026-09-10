@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users\n        SET last_sign_in_at = current_sign_in_at,\n            current_sign_in_at = now(),\n            last_sign_in_ip = CASE\n                WHEN $3::text IS NULL THEN last_sign_in_ip\n                ELSE current_sign_in_ip\n            END,\n            current_sign_in_ip = COALESCE($3, current_sign_in_ip),\n            sign_in_count = sign_in_count + 1,\n            failed_attempts = 0,\n            locked_at = NULL,\n            locale = COALESCE(locale, $2)\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "86858c8f82ddb818523231b82f4a4d49a960f95997211b5fe4d60d0807f7722b"
+}

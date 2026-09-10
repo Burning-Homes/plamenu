@@ -1,0 +1,28 @@
+{
+  # Disposable Lemmy test instance for federation / e2e testing against
+  # Plamenu (see README.md). First boot creates the admin account below
+  # and the site; `./dev lemmy` then relaxes rate limits + site settings
+  # directly in postgres.
+
+  setup: {
+    admin_username: "frank"
+    admin_password: "lemmy-frank-pass-123"
+    site_name: "Lemmy Test"
+  }
+
+  hostname: "lemmy.local"
+  bind: "0.0.0.0"
+  port: 8536
+  # TLS is terminated by the shared Caddy (mastodon-test stack); this only
+  # makes Lemmy mint https:// object ids.
+  tls_enabled: true
+
+  database: {
+    uri: "postgres://lemmy:lemmy@lemmy-db:5432/lemmy"
+  }
+
+  pictrs: {
+    url: "http://lemmy-pictrs:8080/"
+    api_key: "lemmy-pictrs-key"
+  }
+}

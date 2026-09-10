@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT cm.account_id AS \"account_id!\"\n        FROM status_conversations sc\n        JOIN conversation_mutes cm ON cm.conversation_id = sc.conversation_id\n        WHERE sc.status_id = $1 AND cm.account_id = ANY($2)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "conversation_mutes",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "38c1f9604fcf2518a0566d34a6caaece1e82b9f2697aa4313b2627d9d5aaef87"
+}

@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT id, file_name, small_file_name\n            FROM media_attachments\n            WHERE remote_url IS NOT NULL\n              AND download_on_demand = $1\n              AND cached_at IS NOT NULL\n            ORDER BY cached_at\n            LIMIT $2\n        )\n        UPDATE media_attachments m\n        SET file_name = NULL, small_file_name = NULL, small_width = NULL,\n            small_height = NULL, cached_at = NULL, last_served_at = NULL\n        FROM due\n        WHERE m.id = due.id\n        RETURNING due.file_name AS \"file_name?\", due.small_file_name AS \"small_file_name?\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "small_file_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "small_file_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "fc4426d1fbe1cc965445c1653067420663b23cd7d3cb5ceced34613cd3f3e17d"
+}

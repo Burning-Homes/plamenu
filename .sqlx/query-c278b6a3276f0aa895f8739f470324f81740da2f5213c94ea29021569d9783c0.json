@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT axis.period AS \"period!\", (\n            SELECT count(*) FROM (\n                SELECT DISTINCT accounts.domain\n                FROM statuses -- STUBKEEP: usage aggregate\n                INNER JOIN status_tags ON statuses.id = status_tags.status_id\n                INNER JOIN accounts ON statuses.account_id = accounts.id\n                WHERE status_tags.tag_id = $3\n                  AND statuses.id BETWEEN $4 AND $5\n                  AND date_trunc('day', statuses.created_at AT TIME ZONE 'UTC')::date = axis.period\n            ) AS d\n        ) AS \"value!\"\n        FROM (\n            SELECT generate_series(\n                ($1 AT TIME ZONE 'UTC')::date::timestamp,\n                ($2 AT TIME ZONE 'UTC')::date::timestamp,\n                '1 day'\n            )::date AS period\n        ) AS axis\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "period!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "value!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "c278b6a3276f0aa895f8739f470324f81740da2f5213c94ea29021569d9783c0"
+}

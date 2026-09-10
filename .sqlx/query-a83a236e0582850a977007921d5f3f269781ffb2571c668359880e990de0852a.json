@@ -1,0 +1,160 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, shortcode, domain, uri, image_remote_url, image_file_name,\n               image_content_type, disabled, visible_in_picker, category, created_at, updated_at\n        FROM custom_emojis\n        WHERE id = $1 AND domain IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "shortcode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "shortcode"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "domain",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "domain"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "image_remote_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_remote_url"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "image_file_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "image_content_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "image_content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "disabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "disabled"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "visible_in_picker",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "visible_in_picker"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "category"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "custom_emojis",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "a83a236e0582850a977007921d5f3f269781ffb2571c668359880e990de0852a"
+}

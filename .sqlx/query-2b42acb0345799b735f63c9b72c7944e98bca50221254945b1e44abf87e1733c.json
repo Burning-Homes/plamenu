@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id AS \"id!\", acct AS \"acct!\", uri AS \"uri!\", created_at AS \"created_at!\"\n        FROM account_aliases\n        WHERE account_id = $1\n        ORDER BY id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_aliases",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "acct!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "account_aliases",
+            "name": "acct"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "uri!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "account_aliases",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "account_aliases",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2b42acb0345799b735f63c9b72c7944e98bca50221254945b1e44abf87e1733c"
+}

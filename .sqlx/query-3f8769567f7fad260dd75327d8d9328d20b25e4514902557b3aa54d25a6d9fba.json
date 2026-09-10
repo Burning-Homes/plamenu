@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM follows WHERE account_id = $1 OR target_account_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3f8769567f7fad260dd75327d8d9328d20b25e4514902557b3aa54d25a6d9fba"
+}

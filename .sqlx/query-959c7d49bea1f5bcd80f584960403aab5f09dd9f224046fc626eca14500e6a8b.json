@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ft.id AS \"id!\", ft.tag_id AS \"tag_id!\", t.name AS \"name!\",\n               count(s.id) AS \"statuses_count!\",\n               max(s.created_at) AS \"last_status_at\"\n        FROM featured_tags ft\n        JOIN tags t ON t.id = ft.tag_id\n        LEFT JOIN status_tags st ON st.tag_id = ft.tag_id\n        LEFT JOIN statuses s -- STUBKEEP: own-tag aggregate; a stub still witnesses the tag was used\n            ON s.id = st.status_id\n           AND s.account_id = ft.account_id\n           AND s.visibility IN ('public', 'unlisted')\n        WHERE ft.account_id = $1\n        GROUP BY ft.id, t.name\n        ORDER BY count(s.id) DESC, ft.id DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "featured_tags",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tag_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "featured_tags",
+            "name": "tag_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "statuses_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "last_status_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "959c7d49bea1f5bcd80f584960403aab5f09dd9f224046fc626eca14500e6a8b"
+}

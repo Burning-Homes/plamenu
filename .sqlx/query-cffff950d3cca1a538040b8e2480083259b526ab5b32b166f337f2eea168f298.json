@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, header_file_name AS \"file_name!\", NULL::text AS \"thumb_file_name\"\n        FROM accounts\n        WHERE header_file_name IS NOT NULL AND header_file_size IS NULL AND id > $1\n        ORDER BY id\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "header_file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "thumb_file_name",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "cffff950d3cca1a538040b8e2480083259b526ab5b32b166f337f2eea168f298"
+}

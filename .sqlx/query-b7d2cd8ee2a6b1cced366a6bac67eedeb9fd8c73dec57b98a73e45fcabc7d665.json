@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE remote_history_jobs SET run_at = now() WHERE account_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b7d2cd8ee2a6b1cced366a6bac67eedeb9fd8c73dec57b98a73e45fcabc7d665"
+}

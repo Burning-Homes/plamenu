@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO quote_verify_jobs (id, quote_id, run_at)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (quote_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "df5b59a82ba1751e03223f3cca769f812d9b9588229bf3ddf7f0aeb418b6d23b"
+}

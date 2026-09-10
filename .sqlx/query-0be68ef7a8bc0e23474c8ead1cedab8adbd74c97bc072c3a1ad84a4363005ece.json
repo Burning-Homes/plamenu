@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1\n            FROM status_conversations sc\n            JOIN conversation_mutes cm ON cm.conversation_id = sc.conversation_id\n            WHERE sc.status_id = $1 AND cm.account_id = $2\n        ) AS \"muted!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "muted!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0be68ef7a8bc0e23474c8ead1cedab8adbd74c97bc072c3a1ad84a4363005ece"
+}

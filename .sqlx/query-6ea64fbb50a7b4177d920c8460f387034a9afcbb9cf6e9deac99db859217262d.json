@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT documents FROM account_identity_proofs WHERE account_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "documents",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "account_identity_proofs",
+            "name": "documents"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6ea64fbb50a7b4177d920c8460f387034a9afcbb9cf6e9deac99db859217262d"
+}

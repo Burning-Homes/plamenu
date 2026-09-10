@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT axis.period AS \"period!\", (\n            SELECT count(*)\n            FROM statuses\n            INNER JOIN accounts ON accounts.id = statuses.account_id\n            WHERE statuses.id BETWEEN $3 AND $4\n              AND statuses.deleted_at IS NULL -- STUBFILTER\n              AND (accounts.domain = $5 OR ($6 AND accounts.domain LIKE '%.' || $5))\n              AND date_trunc('day', statuses.created_at AT TIME ZONE 'UTC')::date = axis.period\n        ) AS \"value!\"\n        FROM (\n            SELECT generate_series(\n                ($1 AT TIME ZONE 'UTC')::date::timestamp,\n                ($2 AT TIME ZONE 'UTC')::date::timestamp,\n                '1 day'\n            )::date AS period\n        ) AS axis\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "period!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "value!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Int8",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "4831f4a78142936b4bbc180a55dd5ca0f8af29723f7323d59d0db8c70f12b3ab"
+}

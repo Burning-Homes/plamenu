@@ -1,0 +1,73 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    {
+      "mz": "https://joinmobilizon.org/ns#",
+      "sc": "http://schema.org#",
+      "ical": "http://www.w3.org/2002/12/cal/ical#",
+      "GeoCoordinates": "sc:GeoCoordinates",
+      "PostalAddress": "sc:PostalAddress",
+      "status": { "@id": "ical:status", "@type": "ical:status" },
+      "joinMode": { "@id": "mz:joinMode", "@type": "mz:joinModeType" },
+      "location": { "@id": "sc:location", "@type": "sc:Place" },
+      "startTime": { "@id": "as:startTime", "@type": "xsd:dateTime" },
+      "endTime": { "@id": "as:endTime", "@type": "xsd:dateTime" }
+    }
+  ],
+  "id": "https://remote.example/events/b81c0531-a57c-497d-93ba-af0f8b255498/activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "object": {
+    "id": "https://remote.example/events/b81c0531-a57c-497d-93ba-af0f8b255498",
+    "type": "Event",
+    "actor": "https://remote.example/users/bob",
+    "attributedTo": "https://remote.example/users/bob",
+    "name": "Caledonian scottish dance class",
+    "content": "<p>£6 each.</p><p></p><p>The dance style is like a posh ceilidh, with some exciting new ways to turn your partner, set patterns and learn some reels by heart.</p>",
+    "summary": "Sunday 11 December 2026, 19:00 GMT — The Kenn Centre",
+    "startTime": "2026-12-11T19:00:00+00:00",
+    "endTime": "2026-12-11T21:00:00+00:00",
+    "timezone": "Europe/London",
+    "isOnline": false,
+    "inLanguage": "en",
+    "ical:status": "CONFIRMED",
+    "status": "CONFIRMED",
+    "category": "SPORTS",
+    "joinMode": "free",
+    "anonymousParticipationEnabled": true,
+    "repliesModerationOption": "allow_all",
+    "commentsEnabled": true,
+    "draft": false,
+    "uuid": "b81c0531-a57c-497d-93ba-af0f8b255498",
+    "location": {
+      "type": "Place",
+      "id": "https://remote.example/address/e4c95383-15ac-4cc7-adf6-723d74ee2ccc",
+      "name": "The Kenn Centre",
+      "latitude": 50.66881615,
+      "longitude": -3.537739788359949,
+      "address": {
+        "type": "PostalAddress",
+        "addressCountry": "United Kingdom",
+        "addressLocality": "Teignbridge",
+        "addressRegion": "England",
+        "postalCode": "EX6 7TW",
+        "streetAddress": "Devon Expressway"
+      }
+    },
+    "attachment": [
+      {
+        "type": "Document",
+        "mediaType": "image/jpeg",
+        "name": "Banner",
+        "url": "https://remote.example/media/cd75bf2f61b66004fe20af4797f5aa84.jpg"
+      }
+    ],
+    "contacts": ["https://remote.example/users/bob"],
+    "published": "2026-07-01T10:00:00Z",
+    "url": "https://remote.example/events/b81c0531-a57c-497d-93ba-af0f8b255498",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://remote.example/users/bob/followers"]
+  }
+}

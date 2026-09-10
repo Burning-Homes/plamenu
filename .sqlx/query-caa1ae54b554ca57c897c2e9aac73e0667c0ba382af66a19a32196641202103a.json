@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1 FROM media_attachments m\n            JOIN accounts a ON a.id = m.account_id\n            WHERE m.id = $1 AND a.suspended_at IS NOT NULL\n        ) AS \"suspended!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "suspended!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "caa1ae54b554ca57c897c2e9aac73e0667c0ba382af66a19a32196641202103a"
+}

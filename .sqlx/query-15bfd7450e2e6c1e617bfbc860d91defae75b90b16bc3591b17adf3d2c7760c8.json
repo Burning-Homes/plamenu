@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webxdc_sessions SET ended_at = now() - interval '31 days' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "15bfd7450e2e6c1e617bfbc860d91defae75b90b16bc3591b17adf3d2c7760c8"
+}

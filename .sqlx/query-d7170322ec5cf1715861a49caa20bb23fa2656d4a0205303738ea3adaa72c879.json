@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webxdc_guests SET last_submitted_at = now()\n         WHERE session_id = $1 AND id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d7170322ec5cf1715861a49caa20bb23fa2656d4a0205303738ea3adaa72c879"
+}

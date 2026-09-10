@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT count(*) AS \"count!\"\n        FROM (\n            SELECT 1 AS one FROM follows\n            WHERE account_id = $1 AND pending\n            LIMIT $2\n        ) AS capped\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7dd99633c1f42d50c8d219773f6b2edb8d6daf0a51b9b42a4e9507daa6a68760"
+}

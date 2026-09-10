@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO media_cleanup_jobs (id, file_name)\n         SELECT input.id, input.file_name\n         FROM unnest($1::bigint[], $2::text[]) AS input(id, file_name)\n         ON CONFLICT (file_name) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d067c445100fe5a04f1d43c96736ab8c0faf0d8d0534865adf3b11096dadcb17"
+}

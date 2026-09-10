@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET otp_consumed_timestep = $2\n         WHERE id = $1\n           AND (otp_consumed_timestep IS NULL OR otp_consumed_timestep < $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2bebd063038b2d09509872ccd69d71df89159d49dae0a3b31d737f5492c849da"
+}

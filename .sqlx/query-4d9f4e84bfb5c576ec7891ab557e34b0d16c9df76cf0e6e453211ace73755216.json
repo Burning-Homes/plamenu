@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET time_zone = 'Asia/Tbilisi' WHERE account_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4d9f4e84bfb5c576ec7891ab557e34b0d16c9df76cf0e6e453211ace73755216"
+}

@@ -1,0 +1,19 @@
+[Unit]
+Description=Wildcard DNS for Plamenu Webxdc development sessions
+Requires=systemd-resolved.service
+After=systemd-resolved.service NetworkManager.service
+
+[Service]
+Type=simple
+# A dedicated resolver link scopes DNS strictly to these two zones.
+ExecStartPre=/usr/bin/ip link add plamenu-dns type dummy
+ExecStartPre=/usr/bin/ip address add 192.0.2.53/32 dev plamenu-dns
+ExecStartPre=/usr/bin/ip link set plamenu-dns up
+ExecStart=/usr/bin/dnsmasq --keep-in-foreground --conf-file=/etc/plamenu-webxdc-dns.conf
+ExecStartPost=/usr/bin/resolvectl dns plamenu-dns 192.0.2.53:5354
+ExecStartPost=/usr/bin/resolvectl domain plamenu-dns ~webxdc.plamenu.local ~webxdc.plamenu2.local
+ExecStartPost=/usr/bin/resolvectl default-route plamenu-dns no
+ExecStopPost=-/usr/bin/ip link delete plamenu-dns
+
+[Install]
+WantedBy=multi-user.target

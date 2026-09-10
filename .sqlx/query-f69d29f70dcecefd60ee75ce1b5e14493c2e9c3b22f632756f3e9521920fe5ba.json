@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET suspended_at = now(), suspension_origin = 'local'\n         WHERE id = $1 AND suspended_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f69d29f70dcecefd60ee75ce1b5e14493c2e9c3b22f632756f3e9521920fe5ba"
+}

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE reports\n             SET action_taken_at = now(), action_taken_by_account_id = $2,\n                 updated_at = now()\n             WHERE target_account_id = $1 AND action_taken_at IS NULL\n             RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1cb76975f9bd09f1975493061f640eba6e7d6f940fc8a2f35a939a2ef3f87ed6"
+}

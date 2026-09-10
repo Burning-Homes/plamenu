@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT author.id AS \"id!\"\n        FROM unnest($2::bigint[]) AS author (id)\n        WHERE account_hidden($1, author.id)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "61664118fefe4d661b79136662ea31ec79259266e933109884f444e829c01917"
+}

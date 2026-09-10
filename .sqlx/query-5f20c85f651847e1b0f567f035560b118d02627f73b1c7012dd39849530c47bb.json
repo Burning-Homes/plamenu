@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM account_conversations\n         WHERE account_id = $1 AND participant_account_ids @> ARRAY[$2::bigint]",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5f20c85f651847e1b0f567f035560b118d02627f73b1c7012dd39849530c47bb"
+}

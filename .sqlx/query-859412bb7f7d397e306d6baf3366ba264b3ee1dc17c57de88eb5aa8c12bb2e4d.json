@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE instance_settings SET landing_page = false",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "859412bb7f7d397e306d6baf3366ba264b3ee1dc17c57de88eb5aa8c12bb2e4d"
+}

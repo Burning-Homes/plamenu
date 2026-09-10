@@ -1,0 +1,105 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO status_participations (id, status_id, account_id, state, uri, message)\n        VALUES ($1, $2, $3, $4, $5, $6)\n        ON CONFLICT (account_id, status_id) DO UPDATE\n        SET uri = COALESCE(EXCLUDED.uri, status_participations.uri),\n            message = COALESCE(EXCLUDED.message, status_participations.message),\n            -- A settled verdict survives a redelivered Join; an invitation is\n            -- consumed by one.\n            state = CASE WHEN status_participations.state IN ('pending', 'invited')\n                         THEN EXCLUDED.state ELSE status_participations.state END,\n            updated_at = now()\n        RETURNING id, status_id, account_id, state, uri, message, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_participations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_participations",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_participations",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_participations",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_participations",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "message",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_participations",
+            "name": "message"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "status_participations",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "31e8a2f78c38ce5750839ff31b522e3f6913d3ec949e715c0a6b66b5fab0c0b1"
+}

@@ -1,0 +1,33 @@
+# GoToSocial config for the disposable interop instance at
+# https://gotosocial.local (TLS terminated by the Mastodon stack's Caddy).
+# Everything not set here uses GoToSocial's defaults.
+
+host: "gotosocial.local"
+protocol: "https"
+bind-address: "0.0.0.0"
+port: 8080
+
+# Caddy proxies from the shared docker network; trust it so GtS sees real
+# client IPs instead of rate-limiting everything as one address.
+trusted-proxies:
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "192.168.0.0/16"
+
+# Single-file sqlite — no separate db container needed for a test peer.
+db-type: "sqlite"
+db-address: "/gotosocial/storage/sqlite.db"
+
+accounts-registration-open: false
+
+# All peers (mastodon.local, plamenu.local, …) resolve to private addresses;
+# open GtS's outgoing-request SSRF guard for them or federation silently fails.
+http-client:
+  allow-ips:
+    - "127.0.0.0/8"
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+
+# e2e polling trips per-IP rate limits constantly; disable them entirely.
+advanced-rate-limit-requests: 0

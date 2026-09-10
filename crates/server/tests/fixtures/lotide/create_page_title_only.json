@@ -1,0 +1,19 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/posts/9/create",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": "https://remote.example/communities/4",
+  "cc": "https://www.w3.org/ns/activitystreams#Public",
+  "object": {
+    "id": "https://remote.example/posts/9",
+    "type": "Page",
+    "name": "What's Dylan Grillin'? (reupload)",
+    "to": "https://remote.example/communities/4",
+    "attributedTo": "https://remote.example/users/bob",
+    "published": "2026-07-01T07:29:19.460932+00:00",
+    "url": "https://www.youtube.com/watch?v=ZI4LGTXscR4",
+    "summary": "What's Dylan Grillin'? (reupload)",
+    "cc": "https://www.w3.org/ns/activitystreams#Public"
+  }
+}

@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# Disposable Mastodon test instance manager.
+#
+#   ./masto setup     one-time: generate secrets, init db, create accounts
+#   ./masto up        start the stack
+#   ./masto down      stop the stack (data preserved)
+#   ./masto nuke       stop + delete ALL data (volumes), keep config files
+#   ./masto logs [svc] tail logs
+#   ./masto ps        show container status
+#   ./masto tootctl … run a tootctl command (e.g. ./masto tootctl accounts list)
+#   ./masto sh        shell into the web container
+#   ./masto creds     print account credentials (kept in .credentials)
+#   ./masto passwd U  reset account U's password and record it
+set -euo pipefail
+cd "$(dirname "$0")"
+
+# GUI password prompt for any sudo -A below (hosts entry, CA trust).
+export SUDO_ASKPASS="${SUDO_ASKPASS:-$PWD/.askpass.sh}"
+
+# Reach the docker daemon: directly if possible, else via the `docker` group
+# (sg) without needing a re-login, else fall back to sudo.
+if docker info >/dev/null 2>&1; then
+  compose() { docker compose "$@"; }
+elif sg docker -c "docker info" >/dev/null 2>&1; then
+  compose() { sg docker -c "docker compose $(printf '%q ' "$@")"; }
+else
+  compose() { sudo -A docker compose "$@"; }
+fi
+
+DOMAIN="mastodon.local"
+
+gen_secret() { compose run --rm --no-deps web bin/rails secret | tr -d '\r\n'; }
+
+set_env() { # key value -> upsert in .env
+  local k="$1" v="$2"
+  if grep -q "^${k}=" .env; then
+    sed -i "s|^${k}=.*|${k}=${v}|" .env
+  else
+    echo "${k}=${v}" >> .env
+  fi
+}
+
+env_has_value() {
+  grep -Eq "^${1}=.+" .env
+}
+
+validate_fixture_keys() {
+  compose exec -T web bin/rails runner '
+    %w[admin alice].each do |username|
+      account = Account.find_by(username: username, domain: nil)
+      abort "missing required Mastodon fixture account: #{username}" unless account
+      keypair = account.keypairs.where(revoked: false).order(:created_at).first if account.respond_to?(:keypairs)
+      private_key = keypair&.private_key
+      private_key ||= account.private_key if account.respond_to?(:private_key)
+      abort "unreadable private key for Mastodon fixture account: #{username}" if private_key.blank?
+    end
+  ' >/dev/null
+}
+
+cmd_setup() {
+  [ -f .env ] || cp .env.template .env
+  echo ">> Pulling images…"
+  compose pull db redis web streaming sidekiq
+
+  echo ">> Generating secrets…"
+  env_has_value SECRET_KEY_BASE || set_env SECRET_KEY_BASE "$(gen_secret)"
+  env_has_value OTP_SECRET || set_env OTP_SECRET "$(gen_secret)"
+
+  # VAPID keypair for web push
+  if ! env_has_value VAPID_PRIVATE_KEY || ! env_has_value VAPID_PUBLIC_KEY; then
+    local vapid
+    vapid=$(compose run --rm --no-deps web bin/rails mastodon:webpush:generate_vapid_key)
+    set_env VAPID_PRIVATE_KEY "$(echo "$vapid" | grep VAPID_PRIVATE_KEY | cut -d= -f2 | tr -d '\r')"
+    set_env VAPID_PUBLIC_KEY  "$(echo "$vapid" | grep VAPID_PUBLIC_KEY  | cut -d= -f2 | tr -d '\r')"
+  fi
+
+  # ActiveRecord encryption keys (Mastodon 4.3+)
+  local arenc ar_key count=0
+  local ar_keys=(
+    ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY
+    ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY
+    ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT
+  )
+  for ar_key in "${ar_keys[@]}"; do
+    env_has_value "$ar_key" && ((count += 1))
+  done
+  if ((count == 0)); then
+    arenc=$(compose run --rm --no-deps web bin/rails db:encryption:init 2>/dev/null || true)
+    echo "$arenc" | grep -q ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY || {
+      echo "Mastodon did not generate ActiveRecord encryption keys" >&2
+      return 1
+    }
+    for ar_key in "${ar_keys[@]}"; do
+      set_env "$ar_key" \
+        "$(echo "$arenc" | grep "$ar_key" | sed 's/.*: //' | tr -d '\r')"
+    done
+  elif ((count != ${#ar_keys[@]})); then
+    echo "Mastodon .env has a partial ActiveRecord encryption key set; refusing to rotate it" >&2
+    return 1
+  fi
+
+  echo ">> Initializing database…"
+  compose run --rm web bundle exec rails db:setup
+
+  echo ">> Starting stack…"
+  compose up -d --wait
+
+  cmd_accounts
+  validate_fixture_keys
+  echo
+  echo ">> Add a hosts entry (needs sudo):   echo '127.0.0.1 ${DOMAIN}' | sudo tee -a /etc/hosts"
+  echo ">> Trust the local TLS CA:           ./masto trust-ca"
+  echo ">> Web UI:  https://${DOMAIN}"
+}
+
+# Export Caddy's internal root CA and add it to the system trust store so
+# curl / test clients accept https://${DOMAIN}.
+cmd_trust_ca() {
+  local crt=/tmp/caddy-mastodon-local-root.crt
+  compose exec caddy cat /data/caddy/pki/authorities/local/root.crt > "$crt"
+  sudo -A cp "$crt" /etc/ca-certificates/trust-source/anchors/caddy-mastodon-local.crt
+  sudo -A update-ca-trust
+  echo ">> Caddy CA trusted. (For Firefox, import $crt under Authorities.)"
+}
+
+# Passwords for tootctl-created accounts are only printed once, so capture
+# them into .credentials (username email password, one per line).
+record_cred() { # username email password
+  touch .credentials
+  { grep -v "^$1 " .credentials || true; } > .credentials.tmp
+  mv .credentials.tmp .credentials
+  echo "$1 $2 $3" >> .credentials
+}
+
+create_account() { # username extra-tootctl-args…
+  local user="$1" email="$1@${DOMAIN}" out pw
+  shift
+  echo "--- ${user} ---"
+  if out=$(compose run --rm web bin/tootctl accounts create "$user" \
+      --email "$email" --confirmed "$@" 2>&1); then
+    echo "$out"
+    pw=$(echo "$out" | sed -n 's/^New password: //p' | tr -d '\r' | tail -1)
+    [ -n "$pw" ] && record_cred "$user" "$email" "$pw"
+  else
+    echo "$out" | tail -1   # most likely: already exists
+  fi
+}
+
+cmd_accounts() {
+  # EMAIL_DOMAIN_ALLOWLIST (.env) bypasses the MX check for ${DOMAIN},
+  # so login emails can stay on-domain.
+  echo ">> Creating accounts…"
+  create_account admin --role Owner
+  create_account alice
+  # Instance defaults to approval-required signups; tootctl --confirmed does
+  # not approve. Without approval the actor/profile 404s, breaking federation.
+  echo ">> Approving accounts…"
+  compose run --rm web bin/rails runner \
+    'User.where(approved: false).find_each { |u| u.update!(approved: true) }'
+  cmd_creds
+}
+
+cmd_creds() {
+  if [ -s .credentials ]; then
+    echo ">> Accounts on https://${DOMAIN} (username / email / password):"
+    sed 's/^/   /' .credentials
+  else
+    echo ">> No recorded credentials. Reset and record one with: ./masto passwd <user>"
+  fi
+}
+
+cmd_passwd() { # username
+  local user="${1:?usage: ./masto passwd <username>}" out pw
+  out=$(compose run --rm web bin/tootctl accounts modify "$user" --reset-password 2>&1)
+  echo "$out"
+  pw=$(echo "$out" | sed -n 's/^New password: //p' | tr -d '\r' | tail -1)
+  [ -n "$pw" ] && record_cred "$user" "$user@${DOMAIN}" "$pw"
+  cmd_creds
+}
+
+case "${1:-}" in
+  setup)    cmd_setup ;;
+  up)       compose up -d --wait; validate_fixture_keys; echo "https://${DOMAIN}" ;;
+  trust-ca) cmd_trust_ca ;;
+  down)     compose down ;;
+  nuke)     compose down -v --remove-orphans; echo ">> All volumes deleted." ;;
+  logs)     shift; compose logs -f "$@" ;;
+  ps)       compose ps ;;
+  accounts) cmd_accounts ;;
+  creds)    cmd_creds ;;
+  passwd)   shift; cmd_passwd "${1:-}" ;;
+  tootctl)  shift; compose run --rm web bin/tootctl "$@" ;;
+  sh)       compose exec web bash ;;
+  *) echo "usage: ./masto {setup|up|down|nuke|trust-ca|logs|ps|accounts|creds|passwd|tootctl|sh}"; exit 1 ;;
+esac

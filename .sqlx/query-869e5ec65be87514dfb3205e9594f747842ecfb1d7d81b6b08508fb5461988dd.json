@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE status_translations SET last_used_at = now() - interval '40 days'\n             WHERE target_language = 'de'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "869e5ec65be87514dfb3205e9594f747842ecfb1d7d81b6b08508fb5461988dd"
+}

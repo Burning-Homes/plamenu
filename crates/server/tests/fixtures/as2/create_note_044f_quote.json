@@ -1,0 +1,21 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/objects/044f-quote/activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "object": {
+    "id": "https://remote.example/objects/044f-quote",
+    "type": "Note",
+    "attributedTo": "https://remote.example/users/bob",
+    "published": "2026-07-01T17:00:00Z",
+    "content": "<p>A consented FEP-044f quote of carol's post</p>",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://remote.example/users/bob/followers"],
+    "quote": "https://quoted.example/objects/original",
+    "quoteUri": "https://quoted.example/objects/original",
+    "_misskey_quote": "https://quoted.example/objects/original",
+    "quoteAuthorization": "https://quoted.example/stamps/1"
+  }
+}

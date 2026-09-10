@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT id, avatar_file_name\n            FROM accounts\n            WHERE avatar_remote_url IS NOT NULL\n              AND avatar_file_name IS NOT NULL\n              AND avatar_cached_at IS NOT NULL\n              AND avatar_cached_at < now() - ($1 * interval '1 second')\n            ORDER BY avatar_cached_at\n            LIMIT $2\n        )\n        UPDATE accounts a\n        SET avatar_file_name = NULL, avatar_cached_at = NULL\n        FROM due\n        WHERE a.id = due.id\n        RETURNING due.avatar_file_name AS \"avatar_file_name!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "avatar_file_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "avatar_file_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a119d6f733273a5fb883083631210d7036e903cfa1b3a9df40fa9889bec19d3b"
+}

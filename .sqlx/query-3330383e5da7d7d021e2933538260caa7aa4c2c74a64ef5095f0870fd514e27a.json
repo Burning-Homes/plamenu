@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO host_reachability (host, consecutive_failures, unreachable_since)\n             VALUES ('down.example', 20, now() - interval '4 days')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "3330383e5da7d7d021e2933538260caa7aa4c2c74a64ef5095f0870fd514e27a"
+}

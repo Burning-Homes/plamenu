@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.cache_file\n         FROM media_hls_segments s\n         JOIN media_attachments m ON m.id = s.media_id\n         WHERE m.status_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cache_file",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_hls_segments",
+            "name": "cache_file"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c93c69fa8013c0dc33e9af77c87390fd515df982b5d08b51694cb5f413e08c06"
+}

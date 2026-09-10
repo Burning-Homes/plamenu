@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM statuses WHERE id = ANY($1) AND ingest_provenance = 'history'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6886a15f8c664fe36823863b215f638e015cfa5b5a616534081befc0e55a4576"
+}

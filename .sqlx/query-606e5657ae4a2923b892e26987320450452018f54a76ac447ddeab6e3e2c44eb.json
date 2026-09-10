@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT domain, severity, public_comment, obfuscate\n        FROM domain_blocks\n        WHERE severity IN ('silence', 'suspend')\n        ORDER BY CASE severity WHEN 'silence' THEN 1 ELSE 2 END, domain\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "domain",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "domain"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "severity",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "severity"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "public_comment",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "public_comment"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "obfuscate",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "domain_blocks",
+            "name": "obfuscate"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "606e5657ae4a2923b892e26987320450452018f54a76ac447ddeab6e3e2c44eb"
+}

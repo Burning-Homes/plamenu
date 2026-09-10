@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM remote_history_origin_leases WHERE leased_until <= now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "f8f85273566f0d359cc8baa314b2e7fa5c19dc82b9bc01d1ffedcb4a9d33467c"
+}

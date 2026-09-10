@@ -1,0 +1,148 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, session_id, display_name, token_hash, participant_uri,\n                accepted, replay_boundary, self_addr, joined_at, accepted_at,\n                last_submitted_at\n         FROM webxdc_guests WHERE session_id = $1 ORDER BY joined_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "session_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "session_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "token_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "token_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "participant_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "participant_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "accepted",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "accepted"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "replay_boundary",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "replay_boundary"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "self_addr",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "self_addr"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "joined_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "joined_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "accepted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "accepted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "last_submitted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webxdc_guests",
+            "name": "last_submitted_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "62b6682c7409b6d7a2e3e1b69eba0408b8c7f17d80f7110ded448dc43333d05b"
+}

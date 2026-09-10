@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO retention_sweeps (name, last_success_at, last_swept, last_retained)\n         VALUES ($1, now(), $2, $3)\n         ON CONFLICT (name) DO UPDATE SET\n             last_success_at = excluded.last_success_at,\n             last_swept = excluded.last_swept,\n             last_retained = excluded.last_retained",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "38693db9a4a8de8316e9e4ead4d4891ce9efc66342e36f6d56be1d8a75c46bd8"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ga.group_account_id\n        FROM group_affiliations ga\n        JOIN accounts a ON a.id = ga.group_account_id\n        WHERE ga.account_id = $1\n          AND ga.affiliation IN ('owner', 'moderator')\n          AND (ga.expires_at IS NULL OR ga.expires_at > now())\n          AND a.suspended_at IS NULL\n        ORDER BY ga.created_at DESC, ga.group_account_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "group_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "group_affiliations",
+            "name": "group_account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3fab9eee99ed4784bda3acc50b3f90e6065acbe451d0c164ecea4e0534cbf0b8"
+}

@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT axis.period AS \"period!\", (\n            SELECT COALESCE(sum(uses), 0)::bigint FROM tag_usages\n            WHERE tag_id = $3 AND day = axis.period\n        ) AS \"value!\"\n        FROM (\n            SELECT generate_series(\n                ($1 AT TIME ZONE 'UTC')::date::timestamp,\n                ($2 AT TIME ZONE 'UTC')::date::timestamp,\n                '1 day'\n            )::date AS period\n        ) AS axis\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "period!",
+        "type_info": "Date",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "value!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "cd7034380d0255c965ae339ea4d805dd49601990781aa5089e2eb4d46ce7b3af"
+}

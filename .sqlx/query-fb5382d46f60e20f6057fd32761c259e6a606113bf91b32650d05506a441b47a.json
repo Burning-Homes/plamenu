@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT preview_card_id AS \"preview_card_id!\", day AS \"day!\",\n               COALESCE(sum(uses), 0)::bigint AS \"uses!\",\n               count(*)::bigint AS \"accounts!\"\n        FROM preview_card_usages\n        WHERE preview_card_id = ANY($1) AND day >= $2\n        GROUP BY preview_card_id, day\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "preview_card_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_card_usages",
+            "name": "preview_card_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "day!",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "preview_card_usages",
+            "name": "day"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "uses!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "accounts!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "fb5382d46f60e20f6057fd32761c259e6a606113bf91b32650d05506a441b47a"
+}

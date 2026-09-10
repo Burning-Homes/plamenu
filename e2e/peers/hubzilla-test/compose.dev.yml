@@ -1,0 +1,86 @@
+name: hubzilla-test
+
+services:
+  db:
+    image: mariadb:11.4@sha256:4f1d8d202fcf7bcb3902f63af09f9c1a050c2922a89652f22abaec0d4f015e83
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: hubzilla
+      MARIADB_USER: hubzilla
+      MARIADB_PASSWORD: hubzilla
+      MARIADB_ROOT_PASSWORD: hubzilla-root
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ../hubzilla-source/install/schema_mysql.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+    networks:
+      private:
+        aliases: [hubzilla-db]
+
+  hubzilla:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hubzilla-test:11.4
+    restart: unless-stopped
+    entrypoint: ["/opt/hubzilla-test/entrypoint.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ../hubzilla-source:/var/www/html:ro
+      - ../hubzilla-addons-source:/var/www/html/addon:ro
+      - store:/var/www/html/store
+      - ./.htconfig.php:/var/www/html/.htconfig.php:ro
+      - ./entrypoint.sh:/opt/hubzilla-test/entrypoint.sh:ro
+      - ./seed.php:/opt/hubzilla-test/seed.php:ro
+      - ./publish-file.php:/opt/hubzilla-test/publish-file.php:ro
+      - ../mastodon-test/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+    networks:
+      private:
+      shared:
+        aliases: [hubzilla-web]
+
+  cron:
+    image: hubzilla-test:11.4
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        while true; do
+          php Zotlabs/Daemon/Master.php Cron;
+          sleep 60;
+        done
+    depends_on:
+      hubzilla:
+        condition: service_healthy
+    working_dir: /var/www/html
+    volumes:
+      - ../hubzilla-source:/var/www/html:ro
+      - ../hubzilla-addons-source:/var/www/html/addon:ro
+      - store:/var/www/html/store
+      - ./.htconfig.php:/var/www/html/.htconfig.php:ro
+      - ../mastodon-test/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro
+    networks:
+      - private
+      - shared
+
+networks:
+  private:
+  shared:
+    name: mastodon-test_internal
+    external: true
+
+volumes:
+  dbdata:
+  store:

@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT attempts >= $4\n               OR failed_at + make_interval(\n                    secs => greatest(\n                        $3,\n                        least(\n                            21600.0::float8,\n                            60.0::float8 * power(4.0::float8, least(attempts - 1, 8)::float8)\n                        )\n                    )\n                  ) > now() AS \"cooling!\"\n        FROM media_fetch_failures\n        WHERE kind = $1 AND target_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cooling!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Float8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9e6e40ada1bb9e333e3aee51f061f0e0c9b38e8ea2141d7f8b7a4fa2f4c9d1f1"
+}

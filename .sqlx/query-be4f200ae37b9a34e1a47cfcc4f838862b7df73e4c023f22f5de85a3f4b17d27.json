@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO webxdc_memberships\n             (session_id, participant_account_id, participant_uri, follow_id,\n              accepted, replay_boundary, self_addr, accepted_at)\n         VALUES ($1, $2, $3, $4, true, 0, $5, now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "be4f200ae37b9a34e1a47cfcc4f838862b7df73e4c023f22f5de85a3f4b17d27"
+}

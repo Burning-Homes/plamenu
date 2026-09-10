@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO media_fetch_failures (kind, target_id, attempts, failed_at)\n         VALUES ('hls-master', $1, $2, now() - interval '10 years')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9c40d148288f6a31e14cb41088f6cb10558b77d8a02b36422cd3df5a159eb1aa"
+}

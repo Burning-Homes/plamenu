@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n              split_part(split_part(inbox_url, '/', 3), ':', 1) AS \"host!\",\n              count(*) AS \"jobs!\",\n              max(attempts) AS \"max_attempts!\",\n              EXTRACT(EPOCH FROM min(run_at) - now())::float8 AS \"next_due_seconds\"\n           FROM delivery_jobs\n           GROUP BY 1\n           ORDER BY 2 DESC, 1\n           LIMIT $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "jobs!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "max_attempts!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "next_due_seconds",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2a6b4ca5102cf9dde7ad0fe90515a47f9029861e3a41db3b4ba8ee3887b48c38"
+}

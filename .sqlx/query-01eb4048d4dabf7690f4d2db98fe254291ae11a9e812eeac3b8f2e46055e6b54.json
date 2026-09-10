@@ -1,0 +1,316 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.status_id, s.url AS original_url,\n               c.id, c.url, c.title, c.description, c.kind, c.author_name,\n               c.author_url, c.provider_name, c.provider_url, c.html, c.width,\n               c.height, c.image_url, c.image_file_name, c.image_content_type,\n               c.image_file_size, c.image_cached_at, c.image_description,\n               c.embed_url, c.language, c.published_at, c.author_account_id,\n               c.updated_at\n        FROM preview_cards_statuses s\n        JOIN preview_cards c ON c.id = s.preview_card_id\n        WHERE s.status_id = ANY($1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards_statuses",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "original_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards_statuses",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "author_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "author_name"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "author_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "author_url"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "provider_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "provider_name"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "provider_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "provider_url"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "html",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "html"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "height"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "image_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_url"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "image_file_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "image_content_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "image_file_size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_file_size"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "image_cached_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_cached_at"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "image_description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_description"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "embed_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "embed_url"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "author_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "author_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "01eb4048d4dabf7690f4d2db98fe254291ae11a9e812eeac3b8f2e46055e6b54"
+}

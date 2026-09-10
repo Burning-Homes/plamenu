@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT last_success_at, retry_at, automatic_retry_at\n           FROM remote_history_states WHERE account_id = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_success_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "last_success_at"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "retry_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "retry_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "automatic_retry_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_history_states",
+            "name": "automatic_retry_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "ca0610447aff43c017f3a31fa4117e56763fd83bd866f37f7ab31d9839ea8b58"
+}

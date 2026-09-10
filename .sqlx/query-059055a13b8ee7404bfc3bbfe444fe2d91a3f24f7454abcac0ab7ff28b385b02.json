@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT target_type FROM admin_action_logs ORDER BY target_type",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "target_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "admin_action_logs",
+            "name": "target_type"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "059055a13b8ee7404bfc3bbfe444fe2d91a3f24f7454abcac0ab7ff28b385b02"
+}

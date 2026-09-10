@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO link_verification_jobs (id, account_id) VALUES ($1, $2)\n         ON CONFLICT (account_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f2fcca5a3e3cd449adea116328edd59bff3da3c97cf5831c4a539f1dd64cd1e4"
+}

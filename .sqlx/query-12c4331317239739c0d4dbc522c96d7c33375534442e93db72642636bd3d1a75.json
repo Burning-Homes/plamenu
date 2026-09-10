@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM group_locked_posts WHERE group_account_id = $1 AND status_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "12c4331317239739c0d4dbc522c96d7c33375534442e93db72642636bd3d1a75"
+}

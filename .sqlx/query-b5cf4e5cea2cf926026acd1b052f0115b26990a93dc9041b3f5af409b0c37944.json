@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_fetch_failures SET failed_at = now() - interval '10 years'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "b5cf4e5cea2cf926026acd1b052f0115b26990a93dc9041b3f5af409b0c37944"
+}

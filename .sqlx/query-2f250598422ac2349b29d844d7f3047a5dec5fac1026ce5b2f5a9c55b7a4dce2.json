@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COALESCE(SUM(total_items), 0)::bigint AS \"rows!\"\n        FROM bulk_imports\n        WHERE state IN ('unconfirmed', 'scheduled', 'in_progress')\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rows!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2f250598422ac2349b29d844d7f3047a5dec5fac1026ce5b2f5a9c55b7a4dce2"
+}

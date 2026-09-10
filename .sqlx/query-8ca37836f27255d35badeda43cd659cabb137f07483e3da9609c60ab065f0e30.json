@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT account_silenced($1) AS \"silenced!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "silenced!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8ca37836f27255d35badeda43cd659cabb137f07483e3da9609c60ab065f0e30"
+}

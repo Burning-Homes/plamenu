@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT custom_filter_id, count(*) AS \"count!\"\n        FROM custom_filter_keywords\n        WHERE custom_filter_id = ANY($1)\n        GROUP BY custom_filter_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "custom_filter_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "custom_filter_keywords",
+            "name": "custom_filter_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "0788c8394ed0445f346e05fa1827d171fbe9205da4df6c9218abd2e13b08eaa8"
+}

@@ -1,0 +1,104 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/videos/watch/e7946124-7b72-4ad7-9d22-844a84bb2de1/activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "object": {
+    "type": "Video",
+    "id": "https://remote.example/videos/watch/e7946124-7b72-4ad7-9d22-844a84bb2de1",
+    "name": "Mesa, Wayland & X.org in trouble: Linux & Open Source News",
+    "duration": "PT1145S",
+    "uuid": "e7946124-7b72-4ad7-9d22-844a84bb2de1",
+    "category": { "identifier": "15", "name": "Science & Technology" },
+    "licence": { "identifier": "2", "name": "Attribution - Share Alike" },
+    "language": { "identifier": "en", "name": "English" },
+    "views": 360,
+    "sensitive": false,
+    "waitTranscoding": true,
+    "state": 1,
+    "commentsEnabled": true,
+    "canReply": null,
+    "commentsPolicy": 1,
+    "downloadEnabled": true,
+    "published": "2026-07-01T11:59:45.094Z",
+    "originallyPublishedAt": "2026-07-01T11:39:50.000Z",
+    "tag": [],
+    "mediaType": "text/markdown",
+    "content": "Grab a brand new laptop or desktop running Linux: https://example.com/laptops\r\n\r\nTimestamps:\r\n00:00 Intro\r\n01:42 Mesa, Wayland and X.org lose their hosting",
+    "support": "You can donate whatever you want",
+    "icon": [
+      {
+        "type": "Image",
+        "url": "https://remote.example/lazy-static/thumbnails/904efceb-0715-476f-b0dc-b5fba6769851.jpg",
+        "mediaType": "image/jpeg",
+        "width": 280,
+        "height": 157
+      },
+      {
+        "type": "Image",
+        "url": "https://remote.example/lazy-static/previews/ef6088ee-c83a-4fcf-8be2-58db95ca5135.jpg",
+        "mediaType": "image/jpeg",
+        "width": 850,
+        "height": 480
+      }
+    ],
+    "aspectRatio": 1.7777777777777777,
+    "url": [
+      {
+        "type": "Link",
+        "mediaType": "text/html",
+        "href": "https://remote.example/videos/watch/e7946124-7b72-4ad7-9d22-844a84bb2de1"
+      },
+      {
+        "type": "Link",
+        "mediaType": "application/x-mpegURL",
+        "href": "https://remote.example/static/streaming-playlists/hls/e7946124/master.m3u8",
+        "tag": [
+          { "type": "Infohash", "name": "e984bee1e3fc4165fee56b97fed7cbca8b658be1" },
+          {
+            "type": "Link",
+            "mediaType": "video/mp4",
+            "href": "https://remote.example/static/streaming-playlists/hls/e7946124/e7946124-1080-fragmented.mp4",
+            "height": 1080,
+            "width": 1920,
+            "size": 219840542,
+            "fps": 60
+          },
+          {
+            "type": "Link",
+            "mediaType": "video/mp4",
+            "href": "https://remote.example/static/streaming-playlists/hls/e7946124/e7946124-480-fragmented.mp4",
+            "height": 480,
+            "width": 854,
+            "size": 55474432,
+            "fps": 30
+          },
+          {
+            "type": "Link",
+            "mediaType": "application/x-bittorrent;x-scheme-handler/magnet",
+            "href": "magnet:?xs=https%3A%2F%2Fremote.example%2Flazy-static%2Ftorrents%2Fabc.torrent",
+            "height": 1080,
+            "width": 1920,
+            "fps": 60
+          }
+        ]
+      }
+    ],
+    "likes": "https://remote.example/videos/watch/e7946124-7b72-4ad7-9d22-844a84bb2de1/likes",
+    "dislikes": "https://remote.example/videos/watch/e7946124-7b72-4ad7-9d22-844a84bb2de1/dislikes",
+    "shares": "https://remote.example/videos/watch/e7946124-7b72-4ad7-9d22-844a84bb2de1/announces",
+    "comments": "https://remote.example/videos/watch/e7946124-7b72-4ad7-9d22-844a84bb2de1/comments",
+    "attributedTo": [
+      { "type": "Person", "id": "https://remote.example/users/bob" },
+      { "type": "Group", "id": "https://remote.example/video-channels/tech_channel" }
+    ],
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://remote.example/users/bob/followers"],
+    "isLiveBroadcast": false,
+    "liveSaveReplay": null,
+    "permanentLive": null,
+    "latencyMode": null
+  }
+}

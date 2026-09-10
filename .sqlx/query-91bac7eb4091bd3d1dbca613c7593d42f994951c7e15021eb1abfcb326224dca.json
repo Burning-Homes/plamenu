@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM account_aliases WHERE account_id = $1 AND uri = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "91bac7eb4091bd3d1dbca613c7593d42f994951c7e15021eb1abfcb326224dca"
+}

@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT group_key AS \"group_key!\"\n        FROM notifications\n        WHERE account_id = $1 AND kind = $2\n          AND status_id IS NOT DISTINCT FROM $3\n          AND group_key IS NOT NULL\n        ORDER BY id DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "group_key!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "group_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "e3db501f14b31576bf057662da8c25a8219414c75eba4ed6db8b72fc39577cc1"
+}

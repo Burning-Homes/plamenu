@@ -1,0 +1,11 @@
+# Tor daemon for the onion-Mitra interop rig (`./dev up onion`).
+#
+# Two jobs at once, exactly like a small production deployment:
+#  - SOCKS proxy for Plamenu's outbound .onion lane (host port 9350).
+#  - Hidden service fronting the onion-identity Mitra that runs natively on
+#    the host at port 8381.
+SocksPort 0.0.0.0:9050
+Log notice stdout
+DataDirectory /var/lib/tor
+HiddenServiceDir /var/lib/tor/hs
+HiddenServicePort 80 host.docker.internal:8381

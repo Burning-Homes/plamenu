@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE oauth_tokens SET created_at = now() - make_interval(days => 40), last_used_at = now() - make_interval(days => 40) WHERE token_hash = 'stale-app'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "8aa50548a89a31d61578851f953e6de17e15857e8084fe3e30ad754abae24c70"
+}

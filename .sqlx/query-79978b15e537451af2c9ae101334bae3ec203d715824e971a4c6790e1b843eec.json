@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notification_requests WHERE account_id = $1 OR from_account_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "79978b15e537451af2c9ae101334bae3ec203d715824e971a4c6790e1b843eec"
+}

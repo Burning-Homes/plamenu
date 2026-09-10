@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_hls_segments SET last_served_at = now()\n        WHERE origin_url = $1 AND range_start = $2 AND range_len = $3\n          AND (last_served_at IS NULL OR last_served_at < now() - interval '1 hour')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3d3ddc3acc84f6fef98deeae82d13221a488f83e8f4bb551f3043d54ae9ecaa9"
+}

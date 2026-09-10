@@ -1,0 +1,15 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 5e951f90f..c1b9b06b9 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -130,6 +130,10 @@ reqwest = { version = "0.11.27", default-features = false, features = [
+   "blocking",
+   "gzip",
+   "rustls-tls",
++  # plamenu-dev: also trust system CA certs (SSL_CERT_FILE /
++  # /etc/ssl/certs) so the container can federate with the local
++  # Caddy-CA *.local test fleet. Stock builds only have webpki roots.
++  "rustls-tls-native-roots",
+ ] }
+ reqwest-middleware = "0.2.5"
+ reqwest-tracing = "0.4.8"

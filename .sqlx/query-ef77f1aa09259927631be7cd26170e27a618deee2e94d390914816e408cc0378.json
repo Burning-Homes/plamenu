@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM oauth_tokens\n        WHERE user_id IS NULL\n          AND revoked_at IS NULL\n          AND coalesce(last_used_at, created_at) < now() - make_interval(days => 30)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "ef77f1aa09259927631be7cd26170e27a618deee2e94d390914816e408cc0378"
+}

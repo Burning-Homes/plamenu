@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT domain AS \"domain!\" FROM preview_card_providers WHERE trendable IS TRUE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "domain!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_card_providers",
+            "name": "domain"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d65d6c022039aa47cd46f25b73f7c29d659a533f6b397ad54b9356d3b134493b"
+}

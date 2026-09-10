@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM login_activities\n        WHERE created_at < now() - make_interval(days => $1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aab0102dece580bf0f75f9d0c0de2e414511c70d480bc982bb3a557765350819"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO custom_emoji_origins (id, source) VALUES ($1, 'local')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fc973d785019dd9bfcf30a18844766a689996b52cbaafedcc592b3b93f1f7ffc"
+}

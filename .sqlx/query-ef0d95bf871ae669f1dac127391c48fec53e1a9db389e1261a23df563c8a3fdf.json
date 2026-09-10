@@ -1,0 +1,340 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, account_id, status_id, file_name, remote_url, content_type,\n               description, width, height, created_at, kind, blurhash,\n               focus_x, focus_y, small_file_name, small_width, small_height,\n               thumbnail_remote_url, duration, frame_rate, bitrate, processing,\n               remote_audio_url, download_on_demand, live_state, live_permanent,\n                  hls_master_url\n        FROM media_attachments\n        WHERE id = ANY($1)\n        ORDER BY id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "file_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "remote_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "remote_url"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "content_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "height"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "blurhash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "blurhash"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "focus_x",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "focus_x"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "focus_y",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "focus_y"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "small_file_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "small_file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "small_width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "small_width"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "small_height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "small_height"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "thumbnail_remote_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "thumbnail_remote_url"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "duration",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "duration"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "frame_rate",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "frame_rate"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "bitrate",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "bitrate"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "processing",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "processing"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "remote_audio_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "remote_audio_url"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "download_on_demand",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "download_on_demand"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "live_state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "live_state"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "live_permanent",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "live_permanent"
+          }
+        }
+      },
+      {
+        "ordinal": 26,
+        "name": "hls_master_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "hls_master_url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "ef0d95bf871ae669f1dac127391c48fec53e1a9db389e1261a23df563c8a3fdf"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE quotes SET state = 'pending'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "ac4e6daa8465cb98b8d2f8009205dbce6188e020aa6827390777a6fcbb5b3013"
+}

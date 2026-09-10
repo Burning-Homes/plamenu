@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COALESCE(SUM(COALESCE(file_size, 0) + COALESCE(thumbnail_file_size, 0)), 0)::bigint\n            AS \"total!\"\n        FROM media_attachments\n        WHERE remote_url IS NOT NULL\n          AND download_on_demand = $1\n          AND cached_at IS NOT NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d1e0e366060d4d68cbdd898fea53281a4339bf5bfc77db563354c5be3efd0596"
+}

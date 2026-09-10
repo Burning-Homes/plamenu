@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(SUM(count), 0)::bigint AS \"c!\" FROM daily_interactions\n           WHERE day >= ($1 AT TIME ZONE 'UTC')::date\n             AND day <= ($2 AT TIME ZONE 'UTC')::date",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "c!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "661975a9b370b384611ec9b40b2ca29b2ea1a92dc5ff7379949f487b1f366f92"
+}

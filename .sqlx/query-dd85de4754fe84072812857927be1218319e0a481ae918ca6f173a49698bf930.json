@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO web_push_alerts (subscription_id, kind, enabled)\n        SELECT $1, input.kind, input.enabled\n        FROM unnest($2::text[], $3::boolean[]) AS input(kind, enabled)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray",
+        "BoolArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dd85de4754fe84072812857927be1218319e0a481ae918ca6f173a49698bf930"
+}

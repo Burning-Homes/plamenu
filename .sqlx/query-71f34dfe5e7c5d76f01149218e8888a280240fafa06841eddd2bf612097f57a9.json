@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"c!\" FROM users\n           WHERE users.created_at >= ($1 AT TIME ZONE 'UTC')::date\n             AND users.created_at < (($2 AT TIME ZONE 'UTC')::date + 1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "c!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "71f34dfe5e7c5d76f01149218e8888a280240fafa06841eddd2bf612097f57a9"
+}

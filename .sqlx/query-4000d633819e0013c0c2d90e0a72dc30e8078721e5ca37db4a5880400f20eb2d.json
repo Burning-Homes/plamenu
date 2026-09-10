@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, account_id, target_account_id, action, text, report_id,\n               status_ids, created_at\n        FROM account_warnings\n        WHERE target_account_id = $1\n        ORDER BY id DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_warnings",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_warnings",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "target_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_warnings",
+            "name": "target_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "action",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "account_warnings",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "account_warnings",
+            "name": "text"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "report_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_warnings",
+            "name": "report_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "status_ids",
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "account_warnings",
+            "name": "status_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "account_warnings",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "4000d633819e0013c0c2d90e0a72dc30e8078721e5ca37db4a5880400f20eb2d"
+}

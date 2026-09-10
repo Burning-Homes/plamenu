@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM announcement_reactions\n           WHERE account_id = $1 AND announcement_id = $2 AND name = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "97ffbd397d5a50a1891c68d4ab56efc2e22200c601f887639ef42ce8d49e994d"
+}

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT v.viewer AS \"viewer!\"\n        FROM unnest($1::bigint[]) AS v(viewer)\n        WHERE EXISTS (\n            SELECT 1 FROM tag_follows tf\n            JOIN tags t ON t.id = tf.tag_id\n            WHERE tf.account_id = v.viewer AND lower(t.name) = ANY($2))\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "viewer!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "aaad9364a4e5fd84a614cf9ba16522adecb62ccbac63438436ae9f9350b67cb7"
+}

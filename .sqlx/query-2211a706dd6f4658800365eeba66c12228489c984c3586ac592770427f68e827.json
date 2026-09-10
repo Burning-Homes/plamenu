@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO custom_emojis (id, shortcode, domain, image_file_name)\n         VALUES ($1, 'evil', 'evil.example', 'cached-emoji.png')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2211a706dd6f4658800365eeba66c12228489c984c3586ac592770427f68e827"
+}

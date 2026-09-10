@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT trendable FROM preview_cards WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "trendable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "trendable"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "05df9afb72205da4d2d7901523728b2891bb249f6e0c86984b083032c4463351"
+}

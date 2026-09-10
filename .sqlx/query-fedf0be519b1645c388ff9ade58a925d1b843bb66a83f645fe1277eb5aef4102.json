@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO bulk_import_rows\n                (bulk_import_id, row_position, acct, show_reblogs, with_replies, notify,\n                 hide_notifications, domain, uri, list_name)\n            SELECT $1, input.position, input.acct, input.show_reblogs, input.with_replies,\n                   input.notify,\n                   input.hide_notifications, input.domain, input.uri, input.list_name\n            FROM unnest(\n                $2::integer[], $3::text[], $4::boolean[], $5::boolean[], $6::boolean[],\n                $7::boolean[], $8::text[], $9::text[], $10::text[]\n            ) AS input(\n                position, acct, show_reblogs, with_replies, notify, hide_notifications,\n                domain, uri, list_name\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4Array",
+        "TextArray",
+        "BoolArray",
+        "BoolArray",
+        "BoolArray",
+        "BoolArray",
+        "TextArray",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fedf0be519b1645c388ff9ade58a925d1b843bb66a83f645fe1277eb5aef4102"
+}

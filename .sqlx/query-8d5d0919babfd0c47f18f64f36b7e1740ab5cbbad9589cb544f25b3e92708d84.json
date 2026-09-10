@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE webauthn_credentials SET credential = $2, sign_count = $3 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Jsonb",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8d5d0919babfd0c47f18f64f36b7e1740ab5cbbad9589cb544f25b3e92708d84"
+}

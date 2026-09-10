@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_attachments\n        SET live_state = $2,\n            live_permanent = $3,\n            description = COALESCE(NULLIF($4::text, ''), description),\n            thumbnail_remote_url = COALESCE($5::text, thumbnail_remote_url),\n            hls_master_url = $6\n        WHERE id = $1\n          AND (live_state IS DISTINCT FROM $2\n               OR live_permanent IS DISTINCT FROM $3\n               OR (NULLIF($4::text, '') IS NOT NULL\n                   AND description IS DISTINCT FROM NULLIF($4::text, ''))\n               OR ($5::text IS NOT NULL AND thumbnail_remote_url IS DISTINCT FROM $5)\n               OR hls_master_url IS DISTINCT FROM $6)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Bool",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b03ef0b590860b80ca3ad46b73936e48a5dfc75a334350a64574fad6eaa57e9c"
+}

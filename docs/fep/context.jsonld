@@ -1,0 +1,35 @@
+{
+  "@context": {
+    "@version": 1.1,
+    "@protected": true,
+    "WebxdcSession": "https://w3id.org/fep/752d/WebxdcSession",
+    "WebxdcUpdate": "https://w3id.org/fep/752d/WebxdcUpdate",
+    "WebxdcEphemeral": "https://w3id.org/fep/752d/WebxdcEphemeral",
+    "webxdcProtocol": {
+      "@id": "https://w3id.org/fep/752d/webxdcProtocol",
+      "@type": "@id"
+    },
+    "webxdcUpdate": {
+      "@id": "https://w3id.org/fep/752d/webxdcUpdate",
+      "@type": "@json"
+    },
+    "webxdcData": "https://w3id.org/fep/752d/webxdcData",
+    "webxdcSerial": {
+      "@id": "https://w3id.org/fep/752d/webxdcSerial",
+      "@type": "http://www.w3.org/2001/XMLSchema#positiveInteger"
+    },
+    "webxdcMaxSerial": {
+      "@id": "https://w3id.org/fep/752d/webxdcMaxSerial",
+      "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"
+    },
+    "sendUpdateInterval": {
+      "@id": "https://w3id.org/fep/752d/sendUpdateInterval",
+      "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"
+    },
+    "sendUpdateMaxSize": {
+      "@id": "https://w3id.org/fep/752d/sendUpdateMaxSize",
+      "@type": "http://www.w3.org/2001/XMLSchema#positiveInteger"
+    },
+    "digestMultibase": "https://w3id.org/security#digestMultibase"
+  }
+}

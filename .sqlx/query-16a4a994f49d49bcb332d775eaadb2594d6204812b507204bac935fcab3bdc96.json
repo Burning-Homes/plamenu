@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT a.id AS \"id!\"\n        FROM statuses b -- STUBKEEP: a boost wrapper never stubs (nothing replies to it)\n        JOIN accounts a ON a.id = b.account_id\n        WHERE b.reblog_of_id = $1 AND a.actor_type = 'Group'\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "16a4a994f49d49bcb332d775eaadb2594d6204812b507204bac935fcab3bdc96"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM remote_fetch_failures WHERE scope = $1 AND failure_key = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5f4abc0c1f1ee135b9c387a2602c9a54f97038f4c791560f4d03ff1dca3993a1"
+}

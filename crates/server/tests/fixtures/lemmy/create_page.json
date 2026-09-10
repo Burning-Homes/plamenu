@@ -1,0 +1,57 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/activities/create/55143",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": [
+    "https://remote.example/c/tenforward",
+    "https://www.w3.org/ns/activitystreams#Public"
+  ],
+  "published": "2026-07-01T12:35:34.292626Z",
+  "object": {
+    "id": "https://remote.example/post/55143",
+    "type": "Page",
+    "attributedTo": "https://remote.example/users/bob",
+    "to": [
+      "https://remote.example/c/tenforward",
+      "https://www.w3.org/ns/activitystreams#Public"
+    ],
+    "audience": "https://remote.example/c/tenforward",
+    "name": "Post title",
+    "content": "<p>This is a post in the /c/tenforward community</p>\n",
+    "mediaType": "text/html",
+    "source": {
+      "content": "This is a post in the /c/tenforward community",
+      "mediaType": "text/markdown"
+    },
+    "attachment": [
+      {
+        "type": "Link",
+        "href": "https://remote.example/pictrs/image/eOtYb9iEiB.png"
+      }
+    ],
+    "image": {
+      "type": "Image",
+      "url": "https://remote.example/pictrs/image/eOtYb9iEiB.png"
+    },
+    "sensitive": false,
+    "language": {
+      "identifier": "fr",
+      "name": "Français"
+    },
+    "tag": [
+      {
+        "type": "CommunityPostTag",
+        "id": "https://remote.example/c/tenforward/tag/news",
+        "preferredUsername": "news"
+      },
+      {
+        "href": "https://remote.example/c/tenforward",
+        "type": "Mention",
+        "name": "@tenforward@remote.example"
+      }
+    ],
+    "context": "https://remote.example/post/55143/context",
+    "published": "2026-07-01T12:35:34.292626Z"
+  }
+}

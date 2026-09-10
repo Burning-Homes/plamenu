@@ -1,0 +1,67 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT announcement_id AS \"announcement_id!\",\n               name AS \"name!\",\n               custom_emoji_id,\n               count(*) AS \"count!\",\n               COALESCE(bool_or(account_id = $2), FALSE) AS \"me!\"\n        FROM announcement_reactions\n        WHERE announcement_id = ANY($1)\n        GROUP BY announcement_id, name, custom_emoji_id\n        ORDER BY announcement_id, min(created_at), min(id)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "announcement_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "announcement_reactions",
+            "name": "announcement_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "announcement_reactions",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "custom_emoji_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "announcement_reactions",
+            "name": "custom_emoji_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "me!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "33607d30cf445bc2a891e17419853dedad041308882bd1023417df84b8dd209f"
+}

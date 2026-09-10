@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO site_upload_variants (var, style, file_name, width, height)\n            SELECT $1, v.style, v.file_name, v.width, v.height\n            FROM unnest($2::text[], $3::text[], $4::int[], $5::int[])\n                 AS v(style, file_name, width, height)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray",
+        "TextArray",
+        "Int4Array",
+        "Int4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "46dccda97346cdf1ff8df58ccdcaefebc16bd71de8c52ccc7f1876ee2087a1df"
+}

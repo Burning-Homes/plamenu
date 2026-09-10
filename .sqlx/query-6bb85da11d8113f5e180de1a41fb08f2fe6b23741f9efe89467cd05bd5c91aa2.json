@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"c!\" FROM accounts\n           WHERE accounts.domain = $1\n              OR ($2 AND accounts.domain LIKE '%.' || $1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "c!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6bb85da11d8113f5e180de1a41fb08f2fe6b23741f9efe89467cd05bd5c91aa2"
+}

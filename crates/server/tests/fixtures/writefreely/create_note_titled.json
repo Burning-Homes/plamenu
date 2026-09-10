@@ -1,0 +1,19 @@
+{
+  "@context": ["https://www.w3.org/ns/activitystreams", {}],
+  "id": "https://remote.example/api/posts/abc123def456/activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "object": {
+    "id": "https://remote.example/api/collections/bob/posts/abc123def456",
+    "type": "Note",
+    "attributedTo": "https://remote.example/users/bob",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://remote.example/users/bob/followers"],
+    "published": "2026-07-01T09:00:00Z",
+    "url": "https://remote.example/bob/one-paragraph-thoughts",
+    "name": "One-paragraph thoughts",
+    "content": "<h1>One-paragraph thoughts</h1><p>A titled single-paragraph post federates as a Note, with the title baked into the content as a heading.</p>"
+  }
+}

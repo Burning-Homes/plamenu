@@ -1,0 +1,280 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE scheduled_statuses\n        SET publish_after = now() + interval '5 minutes',\n            publish_generation = publish_generation + 1\n        WHERE id IN (\n            SELECT id FROM scheduled_statuses\n            WHERE GREATEST(scheduled_at, publish_after) <= now()\n            ORDER BY GREATEST(scheduled_at, publish_after), id\n            LIMIT $1\n            FOR UPDATE SKIP LOCKED\n        )\n        RETURNING id, account_id, scheduled_at, text, content_type, visibility,\n                  in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,\n                  application_id, media_ids, poll_options, poll_expires_in,\n                  poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "scheduled_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "scheduled_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "text"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "content_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "in_reply_to_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "in_reply_to_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "quoted_status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "quoted_status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "spoiler_text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "spoiler_text"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "sensitive",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "sensitive"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "application_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "application_id"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "media_ids",
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "media_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "poll_options",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "poll_options"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "poll_expires_in",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "poll_expires_in"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "poll_multiple",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "poll_multiple"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "poll_hide_totals",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "poll_hide_totals"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "quote_approval_policy",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "quote_approval_policy"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "object_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "object_type"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "publish_generation",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "publish_generation"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "2b5f09c2f63886d9fed8fcaf91994f45def8c410820b94bc4641cbf31a7a5454"
+}

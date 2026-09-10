@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE link_verification_jobs SET\n            run_at = now() + make_interval(secs => $2),\n            attempts = attempts + 1\n        WHERE id IN (\n            SELECT id FROM link_verification_jobs\n            WHERE run_at <= now()\n            ORDER BY run_at\n            LIMIT $1\n            FOR UPDATE SKIP LOCKED\n        )\n        RETURNING id, account_id, attempts\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "link_verification_jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "link_verification_jobs",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "link_verification_jobs",
+            "name": "attempts"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "20e7f55086f668d6c5a5147ff216ce8d90ce8da7566745df848c886638a65260"
+}

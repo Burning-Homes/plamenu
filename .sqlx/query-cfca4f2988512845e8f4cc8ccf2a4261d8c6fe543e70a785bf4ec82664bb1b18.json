@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM remote_history_origin_leases WHERE job_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cfca4f2988512845e8f4cc8ccf2a4261d8c6fe543e70a785bf4ec82664bb1b18"
+}

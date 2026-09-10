@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO preview_card_trends (preview_card_id, score, language, allowed)\n        SELECT * FROM unnest($1::bigint[], $2::float8[], $3::text[], $4::boolean[])\n        ON CONFLICT (preview_card_id)\n        DO UPDATE SET score = EXCLUDED.score, language = EXCLUDED.language,\n                      allowed = EXCLUDED.allowed\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Float8Array",
+        "TextArray",
+        "BoolArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "92cb97317549adeebe2b34a4649db02b172e5c7e26733ecbb2a9264c10b51bf5"
+}

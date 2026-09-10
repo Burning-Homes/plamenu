@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts\n                 SET suspended_at = COALESCE(suspended_at, now()), suspension_origin = 'local'\n                 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "746f2e0206d3d907c0d23cf990f3a92af40e916363ab690c68cf33d3d91be33c"
+}

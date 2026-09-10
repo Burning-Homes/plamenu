@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH due AS (\n            SELECT id, avatar_file_name, header_file_name\n            FROM accounts\n            WHERE domain = $1\n              AND (avatar_file_name IS NOT NULL OR header_file_name IS NOT NULL)\n            LIMIT $2\n        )\n        UPDATE accounts a\n        SET avatar_file_name = NULL, header_file_name = NULL\n        FROM due\n        WHERE a.id = due.id\n        RETURNING due.avatar_file_name AS \"file_name?\", due.header_file_name AS \"small_file_name?\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "avatar_file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "small_file_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "header_file_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "c13337c918f5e2e065ce8ff44826bef454f255b56af891cfaad78740aadc2806"
+}

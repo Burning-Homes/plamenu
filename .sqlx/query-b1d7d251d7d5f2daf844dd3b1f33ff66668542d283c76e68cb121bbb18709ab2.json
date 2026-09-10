@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) FROM statuses WHERE account_id = $1 AND reblog_of_id = $2 -- STUBKEEP: a boost wrapper never stubs",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b1d7d251d7d5f2daf844dd3b1f33ff66668542d283c76e68cb121bbb18709ab2"
+}

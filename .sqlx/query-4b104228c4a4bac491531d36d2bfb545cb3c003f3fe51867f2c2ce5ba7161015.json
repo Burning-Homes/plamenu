@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE account_conversations SET unread = FALSE\n         WHERE account_id = $1 AND conversation_id = $2 AND unread",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4b104228c4a4bac491531d36d2bfb545cb3c003f3fe51867f2c2ce5ba7161015"
+}

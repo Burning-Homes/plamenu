@@ -1,0 +1,119 @@
+name: Contribution checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Diff base SHA (manual only; defaults to parent, or all history at root)'
+        required: false
+        type: string
+concurrency:
+  group: contribution-${{ forgejo.event.pull_request.number || forgejo.ref }}
+  cancel-in-progress: true
+jobs:
+  quick:
+    runs-on: [debian-trixie, "arch=amd64"]
+    timeout-minutes: 5
+    env:
+      SQLX_OFFLINE: "true"
+      CARGO_BUILD_JOBS: "2"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_TARGET_DIR: .ci/target-clippy
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install cache codec before computing cache version
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends zstd
+      - name: Restore pinned Rust tools
+        id: rust
+        uses: https://code.forgejo.org/actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.rustup
+            ~/.cargo/bin
+          key: rust-debian-trixie-amd64-v1-${{ hashFiles('rust-toolchain.toml') }}
+      - name: Install worker tools
+        run: ./scripts/ci/setup.sh quick
+      - name: Save pinned Rust tools from main only
+        if: forgejo.ref == 'refs/heads/main' && forgejo.event_name != 'pull_request' && steps.rust.outputs.cache-hit != 'true'
+        uses: https://code.forgejo.org/actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.rustup
+            ~/.cargo/bin
+          key: ${{ steps.rust.outputs.cache-primary-key }}
+      - name: Quick static checks
+        env:
+          CHECK_BASE: ${{ inputs.base }}
+        run: /usr/bin/time -v ./scripts/ci/quick.sh
+  clippy:
+    needs: quick
+    runs-on: [debian-trixie, "arch=amd64"]
+    timeout-minutes: 10
+    env:
+      SQLX_OFFLINE: "true"
+      CARGO_BUILD_JOBS: "2"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_TARGET_DIR: .ci/target-clippy
+    steps:
+      - uses: https://code.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install cache codec before computing cache version
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends zstd
+      - name: Restore pinned Rust tools
+        id: rust
+        uses: https://code.forgejo.org/actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.rustup
+            ~/.cargo/bin
+          key: rust-debian-trixie-amd64-v1-${{ hashFiles('rust-toolchain.toml') }}
+      - name: Install worker tools
+        run: ./scripts/ci/setup.sh clippy
+      - name: Save pinned Rust tools from main only
+        if: forgejo.ref == 'refs/heads/main' && forgejo.event_name != 'pull_request' && steps.rust.outputs.cache-hit != 'true'
+        uses: https://code.forgejo.org/actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.rustup
+            ~/.cargo/bin
+          key: ${{ steps.rust.outputs.cache-primary-key }}
+      - name: Restore compilation cache
+        id: build
+        uses: https://code.forgejo.org/actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            .ci/target-clippy
+          key: clippy-debian-amd64-nodebug-v3-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+      - name: Clippy on every target without executing tests
+        run: /usr/bin/time -v cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Measure cache and worker memory
+        id: budget
+        shell: bash
+        run: |
+          du -sh .ci/target-clippy "$HOME/.cargo/registry" "$HOME/.rustup"
+          cat /sys/fs/cgroup/memory.peak /sys/fs/cgroup/memory.max
+          bytes=$(du -sb .ci/target-clippy "$HOME/.cargo/registry/cache" "$HOME/.cargo/registry/index" | awk '{sum += $1} END {print sum}')
+          if [ "$bytes" -le 1073741824 ]; then echo 'save=true' >> "$GITHUB_OUTPUT"; fi
+      - name: Save at most 1 GiB of compilation cache from main only
+        if: forgejo.ref == 'refs/heads/main' && forgejo.event_name != 'pull_request' && steps.build.outputs.cache-hit != 'true' && steps.budget.outputs.save == 'true'
+        uses: https://code.forgejo.org/actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            .ci/target-clippy
+          key: ${{ steps.build.outputs.cache-primary-key }}

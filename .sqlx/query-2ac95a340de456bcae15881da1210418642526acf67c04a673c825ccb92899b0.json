@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT oauth_apps.name AS \"key?\", count(*) AS \"value!\"\n        FROM users\n        LEFT JOIN oauth_apps ON oauth_apps.id = users.created_by_application_id\n        WHERE users.created_at BETWEEN $1 AND $2\n        GROUP BY oauth_apps.name\n        ORDER BY count(*) DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_apps",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "value!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "2ac95a340de456bcae15881da1210418642526acf67c04a673c825ccb92899b0"
+}

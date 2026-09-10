@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.coordinator_uri, s.account_id, a.username, a.domain\n         FROM webxdc_sessions s\n         JOIN accounts a ON a.id = s.account_id\n         WHERE s.id = $1 FOR UPDATE OF s, a",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "coordinator_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "coordinator_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "webxdc_sessions",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "domain",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "domain"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "f5b37764ced605ebde1a5a6b7236f8494d0b83819b9cfa0d0a522e88425b583f"
+}

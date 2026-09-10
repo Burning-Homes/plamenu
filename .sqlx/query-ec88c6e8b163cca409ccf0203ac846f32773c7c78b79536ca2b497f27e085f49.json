@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT account_id, from_account_id, last_status_id, notifications_count\n             FROM notification_requests ORDER BY account_id, from_account_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notification_requests",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "from_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notification_requests",
+            "name": "from_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "last_status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notification_requests",
+            "name": "last_status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "notifications_count",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notification_requests",
+            "name": "notifications_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "ec88c6e8b163cca409ccf0203ac846f32773c7c78b79536ca2b497f27e085f49"
+}

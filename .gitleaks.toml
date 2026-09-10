@@ -1,0 +1,87 @@
+# Keep the standard detectors; exempt only reviewed values in their fixture files.
+# Unlike commit fingerprints, these exclusions survive a squash or line movement.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Public did:key identifier in the canonical actor fixture"
+condition = "AND"
+paths = ['''(^|/)crates/ap/src/actor\.rs$''']
+regexTarget = "secret"
+regexes = [
+  '''^z6MkiTBz1ymuepAQ4HEHYSF1H8quG5GLVVQR3djdX3mDooWp/actors/alice$''',
+]
+
+[[rules.allowlists]]
+description = "SQL column name, not private key material"
+condition = "AND"
+paths = ['''(^|/)crates/db/src/actor_key\.rs$''']
+regexTarget = "secret"
+regexes = [
+  '''^ed25519_private_key$''',
+]
+
+[[rules.allowlists]]
+description = "SQL column name in the migration drill"
+condition = "AND"
+paths = ['''(^|/)scripts/rehearse\-federation\-key\-upgrade\.sh$''']
+regexTarget = "secret"
+regexes = [
+  '''^ed25519_private_key$''',
+]
+
+[[rules.allowlists]]
+description = "Published disposable peer login fixtures"
+condition = "AND"
+paths = ['''(^|/)e2e/peers/dev$''']
+regexTarget = "secret"
+regexes = [
+  '''^funkwhale\-fiona\-pass\-123$''',
+  '''^gots\-dave\-pass\-123$''',
+  '''^hubzilla\-hazel\-pass\-123$''',
+  '''^lemmy\-frank\-pass\-123$''',
+  '''^mitra\-erin\-pass\-123$''',
+  '''^mobilizon\-grace\-pass\-123$''',
+  '''^peertube\-root\-pass\-123$''',
+]
+
+[[rules.allowlists]]
+description = "Published disposable Lemmy login fixture"
+condition = "AND"
+paths = ['''(^|/)e2e/peers/lemmy\-test/lemmy\.hjson$''']
+regexTarget = "secret"
+regexes = [
+  '''^lemmy\-frank\-pass\-123$''',
+]
+
+[[rules.allowlists]]
+description = "Published disposable Hubzilla login fixture"
+condition = "AND"
+paths = ['''(^|/)e2e/peers/hubzilla\-test/seed\.php$''']
+regexTarget = "secret"
+regexes = [
+  '''^hubzilla\-hazel\-pass\-123$''',
+]
+
+[[rules.allowlists]]
+description = "Published disposable PeerTube bootstrap fixtures"
+condition = "AND"
+paths = ['''(^|/)e2e/peers/peertube\-test/compose\.dev\.yml$''']
+regexTarget = "secret"
+regexes = [
+  '''^a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1$''',
+  '''^peertube\-root\-pass\-123$''',
+]
+
+[[rules.allowlists]]
+description = "Published disposable Mobilizon bootstrap fixtures"
+condition = "AND"
+paths = ['''(^|/)e2e/peers/mobilizon\-test/compose\.dev\.yml$''']
+regexTarget = "secret"
+regexes = [
+  '''^Vx3Qm8Kd1Zp6Rt9Bw4Nf7Hs2Lc5Ay0Ju$''',
+  '''^e5Kq2mYwGx7pRt4vZa9Nc3Bd8Hj6Lf0SsUu1Wi5Oy2Pl7Rk4Tn9Xb3Ce6Mg0Qz8Av1Dh5Jr$''',
+]

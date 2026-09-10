@@ -1,0 +1,172 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT account_id, enabled, min_status_age, keep_direct, keep_pinned,\n               keep_polls, keep_media, keep_self_fav, keep_self_bookmark,\n               min_favs, min_reblogs, last_inspected_id, updated_at\n        FROM account_statuses_cleanup_policies\n        WHERE account_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "min_status_age",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "min_status_age"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "keep_direct",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_direct"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "keep_pinned",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_pinned"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "keep_polls",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_polls"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "keep_media",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_media"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "keep_self_fav",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_self_fav"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "keep_self_bookmark",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_self_bookmark"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "min_favs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "min_favs"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "min_reblogs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "min_reblogs"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "last_inspected_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "last_inspected_id"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "17c8bb7c1d51d243f1046911cf2238795eaff522244d8a8dc90cb196632e961b"
+}

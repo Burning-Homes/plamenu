@@ -1,0 +1,103 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, account_id, from_account_id, last_status_id,\n                   notifications_count, created_at, updated_at\n            FROM notification_requests\n            WHERE account_id = $1 AND id > $2\n              AND ($3::bigint IS NULL OR id < $3)\n            ORDER BY id ASC\n            LIMIT $4\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notification_requests",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notification_requests",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "from_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notification_requests",
+            "name": "from_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "last_status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notification_requests",
+            "name": "last_status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "notifications_count",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notification_requests",
+            "name": "notifications_count"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "notification_requests",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "notification_requests",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0bf1ddfb1cad20b3056fccd202f4427a69c95ed118ab4fce5958ceeb317de402"
+}

@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.domain AS \"origin!\", count(*) AS \"statuses!\",\n                  COALESCE(sum(octet_length(s.content) + octet_length(s.spoiler_text)), 0)::bigint\n                      AS \"bytes!\"\n           FROM statuses s JOIN accounts a ON a.id = s.account_id\n           WHERE s.ingest_provenance = 'history'\n             AND s.deleted_at IS NULL -- STUBFILTER\n             AND a.domain IS NOT NULL\n           GROUP BY a.domain ORDER BY count(*) DESC LIMIT 10",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "origin!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "domain"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "statuses!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "f245d55faa3de1926d9fbb1807585b3b2425a9bfb5dc0dade63ac4cbef286d6b"
+}

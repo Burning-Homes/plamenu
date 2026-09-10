@@ -1,0 +1,51 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/activities/create/55999",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": [
+    "https://remote.example/c/tenforward",
+    "https://www.w3.org/ns/activitystreams#Public"
+  ],
+  "published": "2026-07-01T12:35:34.292626Z",
+  "object": {
+    "id": "https://remote.example/post/55999",
+    "type": "Page",
+    "attributedTo": "https://remote.example/users/bob",
+    "to": [
+      "https://remote.example/c/tenforward",
+      "https://www.w3.org/ns/activitystreams#Public"
+    ],
+    "audience": "https://remote.example/c/tenforward",
+    "name": "Post with image and link",
+    "content": "<p>This is a post with both an image and a link attachment</p>\n",
+    "mediaType": "text/html",
+    "source": {
+      "content": "This is a post with both an image and a link attachment",
+      "mediaType": "text/markdown"
+    },
+    "attachment": [
+      {
+        "type": "Image",
+        "url": "https://remote.example/pictrs/image/eOtYb9iEiB.png",
+        "mediaType": "image/png"
+      },
+      {
+        "type": "Link",
+        "href": "https://example.com/some-article",
+        "mediaType": "text/html"
+      }
+    ],
+    "image": {
+      "type": "Image",
+      "url": "https://remote.example/pictrs/image/eOtYb9iEiB.png"
+    },
+    "sensitive": false,
+    "language": {
+      "identifier": "fr",
+      "name": "Français"
+    },
+    "context": "https://remote.example/post/55999/context",
+    "published": "2026-07-01T12:35:34.292626Z"
+  }
+}

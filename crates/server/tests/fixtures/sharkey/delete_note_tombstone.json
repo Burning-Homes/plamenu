@@ -1,0 +1,13 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1"
+  ],
+  "type": "Delete",
+  "actor": "https://remote.example/users/bob",
+  "object": {
+    "id": "https://remote.example/notes/9sh4rkbase0001",
+    "type": "Tombstone"
+  },
+  "published": "2026-07-10T12:00:00.000Z"
+}

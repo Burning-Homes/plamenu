@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bulk_imports SET created_at = now() - interval '11 minutes' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a1f4c2535fcc7f85f19b06f5a457866874b4fcbb1b6b366d6c250623378b8071"
+}

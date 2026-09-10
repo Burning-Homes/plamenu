@@ -1,0 +1,41 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/activities/update/55143",
+  "type": "Update",
+  "actor": "https://remote.example/users/bob",
+  "to": [
+    "https://remote.example/c/tenforward",
+    "https://www.w3.org/ns/activitystreams#Public"
+  ],
+  "object": {
+    "id": "https://remote.example/post/55143",
+    "type": "Page",
+    "attributedTo": "https://remote.example/users/bob",
+    "to": [
+      "https://remote.example/c/tenforward",
+      "https://www.w3.org/ns/activitystreams#Public"
+    ],
+    "audience": "https://remote.example/c/tenforward",
+    "name": "Post title (edited)",
+    "content": "<p>The body was edited too</p>\n",
+    "mediaType": "text/html",
+    "source": {
+      "content": "The body was edited too",
+      "mediaType": "text/markdown"
+    },
+    "attachment": [
+      {
+        "type": "Link",
+        "href": "https://remote.example/pictrs/image/eOtYb9iEiB.png"
+      }
+    ],
+    "sensitive": false,
+    "language": {
+      "identifier": "fr",
+      "name": "Français"
+    },
+    "context": "https://remote.example/post/55143/context",
+    "published": "2026-07-01T12:35:34.292626Z",
+    "updated": "2026-07-02T09:00:00Z"
+  }
+}

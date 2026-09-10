@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT key AS \"key!\" FROM (\n            SELECT file_name AS key FROM media_attachments WHERE file_name IS NOT NULL\n            UNION SELECT small_file_name FROM media_attachments WHERE small_file_name IS NOT NULL\n            UNION SELECT cache_file FROM media_hls_segments\n            UNION SELECT avatar_file_name FROM accounts WHERE avatar_file_name IS NOT NULL\n            UNION SELECT header_file_name FROM accounts WHERE header_file_name IS NOT NULL\n            UNION SELECT image_file_name FROM custom_emojis WHERE image_file_name IS NOT NULL\n            UNION SELECT image_file_name FROM preview_cards WHERE image_file_name IS NOT NULL\n            UNION SELECT file_name FROM account_archives WHERE file_name IS NOT NULL\n            UNION SELECT file_name FROM site_uploads WHERE file_name IS NOT NULL\n            UNION SELECT file_name FROM site_upload_variants WHERE file_name IS NOT NULL\n        ) refs\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "053ab6308bff4d6bc6dba5e2ac6f067c5af5ebd39ba4514831efd16155be6020"
+}

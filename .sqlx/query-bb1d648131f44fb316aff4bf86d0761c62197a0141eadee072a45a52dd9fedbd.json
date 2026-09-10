@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO conversation_mutes (id, account_id, conversation_id)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (account_id, conversation_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bb1d648131f44fb316aff4bf86d0761c62197a0141eadee072a45a52dd9fedbd"
+}

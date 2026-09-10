@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT tag_id AS \"tag_id!\" FROM tag_follows\n           WHERE account_id = $1 AND tag_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tag_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "tag_follows",
+            "name": "tag_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ea70449e4a81c6e14fe240918e883fcd4a2d749e460b93d9d38052305b43fc84"
+}

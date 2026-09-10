@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1\n            FROM account_conversations ac\n            WHERE ac.account_id = $1\n              AND ac.unread\n              AND NOT EXISTS (\n                  SELECT 1 FROM conversation_mutes cm\n                  WHERE cm.account_id = $1\n                    AND cm.conversation_id = ac.conversation_id)\n        ) AS \"unread!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "unread!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "cab922471891aff1a0fa98143e58e3857443bf47c7f10d377afc60c598a1c143"
+}

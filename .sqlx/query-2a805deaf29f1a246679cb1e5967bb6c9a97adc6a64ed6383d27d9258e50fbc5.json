@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT (last_webfingered_at IS NULL\n                OR last_webfingered_at < now() - interval '1 day') AS \"stale!\"\n        FROM accounts WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "stale!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2a805deaf29f1a246679cb1e5967bb6c9a97adc6a64ed6383d27d9258e50fbc5"
+}

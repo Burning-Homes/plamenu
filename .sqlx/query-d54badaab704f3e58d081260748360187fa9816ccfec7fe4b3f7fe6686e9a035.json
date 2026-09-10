@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE oauth_apps\n        SET name = $2, website = $3, redirect_uris = $4, scopes = $5\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d54badaab704f3e58d081260748360187fa9816ccfec7fe4b3f7fe6686e9a035"
+}

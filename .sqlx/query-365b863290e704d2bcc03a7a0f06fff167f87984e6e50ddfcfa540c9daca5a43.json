@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT attribution_domains AS \"attribution_domains!\" FROM accounts WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attribution_domains!",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "attribution_domains"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "365b863290e704d2bcc03a7a0f06fff167f87984e6e50ddfcfa540c9daca5a43"
+}

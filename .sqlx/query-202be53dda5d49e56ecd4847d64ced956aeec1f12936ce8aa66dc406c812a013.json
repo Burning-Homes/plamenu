@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO mutes (id, account_id, target_account_id, hide_notifications, expires_at)\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (account_id, target_account_id) DO UPDATE SET\n            hide_notifications = EXCLUDED.hide_notifications,\n            expires_at = EXCLUDED.expires_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "202be53dda5d49e56ecd4847d64ced956aeec1f12936ce8aa66dc406c812a013"
+}

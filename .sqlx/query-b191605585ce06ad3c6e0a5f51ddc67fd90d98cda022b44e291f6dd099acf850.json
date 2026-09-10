@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COALESCE(statuses.language, 'und') AS \"key!\", count(*) AS \"value!\"\n        FROM statuses -- STUBKEEP: usage aggregate\n        INNER JOIN status_tags ON status_tags.status_id = statuses.id\n        WHERE status_tags.tag_id = $1\n          AND statuses.id BETWEEN $2 AND $3\n        GROUP BY COALESCE(statuses.language, 'und')\n        ORDER BY count(*) DESC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "value!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "b191605585ce06ad3c6e0a5f51ddc67fd90d98cda022b44e291f6dd099acf850"
+}

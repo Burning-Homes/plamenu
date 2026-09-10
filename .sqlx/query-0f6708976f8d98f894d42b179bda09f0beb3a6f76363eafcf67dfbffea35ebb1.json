@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM statuses WHERE in_reply_to_id = $1) AS \"e!\" -- STUBKEEP: a stub child still holds the tree; prune_leaf_stubs collapses chains bottom-up",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "e!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0f6708976f8d98f894d42b179bda09f0beb3a6f76363eafcf67dfbffea35ebb1"
+}

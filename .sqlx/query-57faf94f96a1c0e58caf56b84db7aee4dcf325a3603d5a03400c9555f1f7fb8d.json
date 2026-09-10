@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM media_hls_segments\n        WHERE id IN (\n            SELECT id FROM media_hls_segments\n            ORDER BY COALESCE(last_served_at, cached_at)\n            LIMIT $1\n        )\n        RETURNING cache_file\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cache_file",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_hls_segments",
+            "name": "cache_file"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "57faf94f96a1c0e58caf56b84db7aee4dcf325a3603d5a03400c9555f1f7fb8d"
+}

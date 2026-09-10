@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT account_hidden(NULL, $1) AS \"hidden!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hidden!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "94078b70c942775c9ac5d39105849d7834127e2ed8b7b9b24100c4c5e897f069"
+}

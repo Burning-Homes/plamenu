@@ -1,0 +1,99 @@
+# Disposable Mastodon instance for federation / e2e testing.
+# Everything (db, uploads, redis) lives in named volumes prefixed with the
+# project name so `./masto nuke` can delete the whole thing cleanly.
+
+x-mastodon-common: &mastodon-common
+  image: ${MASTODON_IMAGE:?copy .env.template to .env before starting Mastodon}
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    # Every federation peer in this disposable rig lives on a loopback or
+    # Docker-private address. Mastodon blocks those ranges unless they are
+    # explicit exceptions, even when their public-facing names use TLS.
+    ALLOWED_PRIVATE_ADDRESSES: "10.0.0.0/8,100.64.0.0/10,127.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128,fc00::/7"
+  networks: [internal]
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    restart: unless-stopped
+    networks: [internal]
+    environment:
+      POSTGRES_USER: mastodon
+      POSTGRES_PASSWORD: mastodon
+      POSTGRES_DB: mastodon_production
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "mastodon"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    restart: unless-stopped
+    networks: [internal]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  caddy:
+    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    restart: unless-stopped
+    networks: [internal]
+    ports:
+      - "127.0.0.1:443:443"
+      - "127.0.0.1:80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - web
+
+  web:
+    <<: *mastodon-common
+    command: bundle exec puma -C config/puma.rb
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - uploads:/mastodon/public/system
+
+  streaming:
+    <<: *mastodon-common
+    image: ${STREAMING_IMAGE:?copy .env.template to .env before starting Mastodon}
+    command: node ./streaming/index.js
+
+  sidekiq:
+    <<: *mastodon-common
+    # Mastodon's alpha account-collections workers can concurrently import the
+    # same remote collection (ProcessingWorker and the actor synchronization
+    # worker), producing a transient unique-key failure before Sidekiq retries.
+    # A single worker thread keeps this disposable interoperability oracle
+    # deterministic and makes every E2E run clean, not merely eventually green.
+    command: bundle exec sidekiq -c 1
+    volumes:
+      - uploads:/mastodon/public/system
+
+networks:
+  internal:
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:
+  caddydata:
+  caddyconfig:

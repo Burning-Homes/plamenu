@@ -1,0 +1,182 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO account_statuses_cleanup_policies\n            (account_id, enabled, min_status_age, keep_direct, keep_pinned,\n             keep_polls, keep_media, keep_self_fav, keep_self_bookmark,\n             min_favs, min_reblogs)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n        ON CONFLICT (account_id) DO UPDATE SET\n            enabled = EXCLUDED.enabled,\n            min_status_age = EXCLUDED.min_status_age,\n            keep_direct = EXCLUDED.keep_direct,\n            keep_pinned = EXCLUDED.keep_pinned,\n            keep_polls = EXCLUDED.keep_polls,\n            keep_media = EXCLUDED.keep_media,\n            keep_self_fav = EXCLUDED.keep_self_fav,\n            keep_self_bookmark = EXCLUDED.keep_self_bookmark,\n            min_favs = EXCLUDED.min_favs,\n            min_reblogs = EXCLUDED.min_reblogs,\n            last_inspected_id = CASE WHEN\n                (account_statuses_cleanup_policies.keep_direct AND NOT EXCLUDED.keep_direct)\n                OR (account_statuses_cleanup_policies.keep_pinned AND NOT EXCLUDED.keep_pinned)\n                OR (account_statuses_cleanup_policies.keep_polls AND NOT EXCLUDED.keep_polls)\n                OR (account_statuses_cleanup_policies.keep_media AND NOT EXCLUDED.keep_media)\n                OR (account_statuses_cleanup_policies.keep_self_fav AND NOT EXCLUDED.keep_self_fav)\n                OR (account_statuses_cleanup_policies.keep_self_bookmark\n                    AND NOT EXCLUDED.keep_self_bookmark)\n                OR (account_statuses_cleanup_policies.min_favs IS NOT NULL\n                    AND (EXCLUDED.min_favs IS NULL\n                         OR EXCLUDED.min_favs > account_statuses_cleanup_policies.min_favs))\n                OR (account_statuses_cleanup_policies.min_reblogs IS NOT NULL\n                    AND (EXCLUDED.min_reblogs IS NULL\n                         OR EXCLUDED.min_reblogs > account_statuses_cleanup_policies.min_reblogs))\n                THEN NULL\n                ELSE account_statuses_cleanup_policies.last_inspected_id\n            END,\n            updated_at = now()\n        RETURNING account_id, enabled, min_status_age, keep_direct, keep_pinned,\n                  keep_polls, keep_media, keep_self_fav, keep_self_bookmark,\n                  min_favs, min_reblogs, last_inspected_id, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "min_status_age",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "min_status_age"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "keep_direct",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_direct"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "keep_pinned",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_pinned"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "keep_polls",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_polls"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "keep_media",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_media"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "keep_self_fav",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_self_fav"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "keep_self_bookmark",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "keep_self_bookmark"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "min_favs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "min_favs"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "min_reblogs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "min_reblogs"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "last_inspected_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "last_inspected_id"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "account_statuses_cleanup_policies",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Int4",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "7b471cd05288a7d3ee68608aa5cb6d43f305eb4e0afef89ddc66c601e544d88a"
+}

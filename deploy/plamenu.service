@@ -1,0 +1,40 @@
+[Unit]
+Description=Plamenu ActivityPub server
+Documentation=https://plamenu.com/
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=simple
+User=plamenu
+Group=plamenu
+Environment=MIMALLOC_ALLOW_THP=0
+ExecStart=/usr/local/bin/plamenu --config /etc/plamenu/plamenu.toml serve
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=90s
+StateDirectory=plamenu
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/plamenu
+UMask=0027
+
+# Plamenu needs its state directory, PostgreSQL's local socket, the network,
+# and FFmpeg subprocesses. It does not need host devices or elevated rights.
+NoNewPrivileges=true
+CapabilityBoundingSet=
+LockPersonality=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+
+[Install]
+WantedBy=multi-user.target

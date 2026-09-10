@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO tag_trends (tag_id, score, allowed)\n        SELECT * FROM unnest($1::bigint[], $2::float8[], $3::boolean[])\n        ON CONFLICT (tag_id) DO UPDATE SET score = EXCLUDED.score, allowed = EXCLUDED.allowed\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Float8Array",
+        "BoolArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9830a405266a2729ca608d881a17a7e88e082aa492b884f21f4f1c76d4cd827f"
+}

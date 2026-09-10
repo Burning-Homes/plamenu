@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO media_renditions\n                (id, media_id, height, width, frame_rate, size_bytes,\n                 origin_url, is_audio)\n            SELECT v.id, $2, v.height, v.width, v.frame_rate, v.size_bytes,\n                   v.origin_url, v.is_audio\n            FROM unnest($1::bigint[], $3::int[], $4::int[], $5::int[],\n                        $6::bigint[], $7::text[], $8::bool[])\n                 AS v(id, height, width, frame_rate, size_bytes, origin_url, is_audio)\n            ON CONFLICT (media_id, origin_url) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8",
+        "Int4Array",
+        "Int4Array",
+        "Int4Array",
+        "Int8Array",
+        "TextArray",
+        "BoolArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ebed247505920b04ede80768f9d9e345261b75eebf8bd7826b5988a90435e396"
+}

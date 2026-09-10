@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM notifications n\n        USING accounts sender\n        WHERE n.account_id = $1\n          AND n.from_account_id = sender.id\n          AND sender.domain = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7ceb2d76acef6887cb1ed67e2a7e712ef52b270ed5a7dd5e2f3aaabb4a45d849"
+}

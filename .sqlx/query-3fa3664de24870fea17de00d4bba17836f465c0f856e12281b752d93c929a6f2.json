@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH user_ips AS (\n            SELECT u.account_id,\n                   u.sign_up_ip AS ip,\n                   u.created_at AS used_at\n            FROM users u\n            WHERE u.account_id = ANY($1)\n              AND u.sign_up_ip IS NOT NULL\n            UNION ALL\n            SELECT u.account_id,\n                   la.ip,\n                   la.created_at AS used_at\n            FROM users u\n            JOIN login_activities la ON la.user_id = u.id\n            WHERE u.account_id = ANY($1)\n              AND la.success\n              AND la.ip IS NOT NULL\n        ),\n        deduped AS (\n            SELECT account_id, ip, max(used_at) AS used_at\n            FROM user_ips\n            GROUP BY account_id, ip\n        )\n        SELECT account_id AS \"account_id!\",\n               ip AS \"ip!\",\n               used_at AS \"used_at!\"\n        FROM deduped\n        ORDER BY account_id, used_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "ip!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "used_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "3fa3664de24870fea17de00d4bba17836f465c0f856e12281b752d93c929a6f2"
+}

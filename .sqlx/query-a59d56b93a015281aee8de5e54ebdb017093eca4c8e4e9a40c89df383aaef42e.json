@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXTRACT(EPOCH FROM now() - min(created_at))::bigint AS \"age\" FROM bulk_imports",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "age",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a59d56b93a015281aee8de5e54ebdb017093eca4c8e4e9a40c89df383aaef42e"
+}

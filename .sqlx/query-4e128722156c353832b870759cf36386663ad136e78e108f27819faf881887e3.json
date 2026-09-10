@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT t.id AS \"tag_id!\", t.name AS \"name!\", t.display_name\n        FROM status_tags st\n        JOIN statuses s ON s.id = st.status_id AND s.account_id = $1 -- STUBKEEP: own-tag aggregate; a stub still witnesses the tag was used\n        JOIN tags t ON t.id = st.tag_id\n        WHERE NOT EXISTS (\n            SELECT 1 FROM featured_tags ft\n            WHERE ft.account_id = $1 AND ft.tag_id = t.id\n        )\n        GROUP BY t.id, t.name, t.display_name\n        ORDER BY max(s.created_at) DESC\n        LIMIT 10\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tag_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tags",
+            "name": "display_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "4e128722156c353832b870759cf36386663ad136e78e108f27819faf881887e3"
+}

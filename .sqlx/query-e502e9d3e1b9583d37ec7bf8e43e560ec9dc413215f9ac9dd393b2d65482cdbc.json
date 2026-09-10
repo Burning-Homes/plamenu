@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE remote_history_jobs SET\n               state = 'pending', lease_owner = NULL, leased_until = NULL,\n               run_at = now(), updated_at = now()\n           WHERE state = 'leased' AND leased_until <= now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "e502e9d3e1b9583d37ec7bf8e43e560ec9dc413215f9ac9dd393b2d65482cdbc"
+}

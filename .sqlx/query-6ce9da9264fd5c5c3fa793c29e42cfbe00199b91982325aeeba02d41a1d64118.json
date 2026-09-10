@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO canonical_email_blocks\n            (id, canonical_email_hash, reference_account_id)\n        VALUES ($1, $2, $3)\n        RETURNING id, canonical_email_hash, reference_account_id, created_at,\n                  updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "canonical_email_blocks",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "canonical_email_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "canonical_email_blocks",
+            "name": "canonical_email_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "reference_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "canonical_email_blocks",
+            "name": "reference_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "canonical_email_blocks",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "canonical_email_blocks",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "6ce9da9264fd5c5c3fa793c29e42cfbe00199b91982325aeeba02d41a1d64118"
+}

@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.id AS \"status_id!\",\n               sc.conversation_id AS \"conversation_id!\",\n               s.account_id AS \"sender_id!\",\n               ARRAY(\n                   SELECT DISTINCT participant_id\n                   FROM (\n                       SELECT s.account_id AS participant_id\n                       UNION\n                       SELECT sm.account_id AS participant_id\n                       FROM status_mentions sm\n                       WHERE sm.status_id = s.id\n                   ) participants\n                   WHERE participant_id <> $1\n                   ORDER BY participant_id\n               ) AS \"participant_account_ids!\"\n        FROM notifications n\n        JOIN statuses s ON s.id = n.status_id -- STUBKEEP: a stub's notification still names its conversation; rows die with the hard delete\n        JOIN status_conversations sc ON sc.status_id = s.id\n        WHERE n.account_id = $1\n          AND n.from_account_id = $2\n          AND n.filtered\n          AND n.kind = 'mention'\n          AND s.visibility = 'direct'\n        ORDER BY s.id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "conversation_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_conversations",
+            "name": "conversation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "sender_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "participant_account_ids!",
+        "type_info": "Int8Array",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "41fdae69305d23fbdcd90ef9798455a68c51ed75c24200452ba8e9fdf0fc2737"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO group_locked_posts (group_account_id, status_id) VALUES ($1, $2)\n         ON CONFLICT (group_account_id, status_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ff434991e4b150729d1319fc23a91448a593a43c80e181580603d08dacdb56f8"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM software_updates WHERE version <> ALL($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2099cb735f7f8adafd55e3b80c30215196330ebc1178e552a1473bd3fde531d0"
+}

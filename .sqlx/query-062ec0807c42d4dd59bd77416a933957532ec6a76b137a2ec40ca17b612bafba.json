@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO status_mentions (status_id, account_id, silent)\n         SELECT $1, m.account_id, m.silent\n         FROM unnest($2::bigint[], $3::boolean[]) AS m(account_id, silent)\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array",
+        "BoolArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "062ec0807c42d4dd59bd77416a933957532ec6a76b137a2ec40ca17b612bafba"
+}

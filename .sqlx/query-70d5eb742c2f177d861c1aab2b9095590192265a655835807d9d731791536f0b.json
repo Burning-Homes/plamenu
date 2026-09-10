@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE media_attachments\n            SET remote_url = $2,\n                thumbnail_remote_url = $3,\n                hls_master_url = $4,\n                content_type = 'application/x-mpegURL',\n                download_on_demand = true,\n                live_permanent = true,\n                processing = 'complete'\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "70d5eb742c2f177d861c1aab2b9095590192265a655835807d9d731791536f0b"
+}

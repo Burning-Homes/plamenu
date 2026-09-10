@@ -1,0 +1,45 @@
+# Federation-with-Plamenu wiring (merged automatically by docker compose):
+# - caddy answers for plamenu.local on the internal network (alias) and can
+#   reach the Plamenu dev server on the host (host-gateway);
+# - the Mastodon containers trust the Caddy local CA via a bundle that
+#   replaces the system one (regenerate with the commands in README.md if the
+#   Caddy CA is ever recreated, e.g. after `./masto nuke`).
+services:
+  caddy:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      internal:
+        aliases:
+          # mastodon.local itself must be an alias too: peer containers
+          # otherwise resolve it through the host's DNS, where /etc/hosts
+          # says 127.0.0.1 — their own loopback, not Caddy.
+          - mastodon.local
+          - plamenu.local
+          - pleroma.local
+          - sharkey.local
+          - gotosocial.local
+          - mitra.local
+          - lemmy.local
+          - peertube.local
+          - owncast.local
+          - mobilizon.local
+          - discourse.local
+          - hubzilla.local
+          - funkwhale.local
+          - doomed.local
+          - plamenu2.local
+
+  web:
+    volumes:
+      - ./ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro
+      - ./disable_rack_attack.rb:/mastodon/config/initializers/zz_disable_rack_attack.rb:ro
+
+  sidekiq:
+    volumes:
+      - ./ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro
+      - ./disable_rack_attack.rb:/mastodon/config/initializers/zz_disable_rack_attack.rb:ro
+
+  streaming:
+    volumes:
+      - ./ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro

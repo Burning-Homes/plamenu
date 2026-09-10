@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, username, normalized_username, exact, allow_with_approval, created_at\n        FROM username_blocks\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "username_blocks",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "username_blocks",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "normalized_username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "username_blocks",
+            "name": "normalized_username"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "exact",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "username_blocks",
+            "name": "exact"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "allow_with_approval",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "username_blocks",
+            "name": "allow_with_approval"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "username_blocks",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fb29be98cafaba39ac39f14a2fcd532bd8d1ae70d9a4e3082ca4ee41e9d7bca8"
+}

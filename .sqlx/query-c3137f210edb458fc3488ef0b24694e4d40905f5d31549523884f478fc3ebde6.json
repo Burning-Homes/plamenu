@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM accounts\n        WHERE id IN (\n            SELECT account_id FROM users\n            WHERE confirmed_at IS NULL\n              AND confirmation_sent_at IS NOT NULL\n              AND confirmation_sent_at < now() - make_interval(days => $1)\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c3137f210edb458fc3488ef0b24694e4d40905f5d31549523884f478fc3ebde6"
+}

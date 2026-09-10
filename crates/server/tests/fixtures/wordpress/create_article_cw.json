@@ -1,0 +1,29 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    {
+      "sensitive": "as:sensitive",
+      "dcterms": "http://purl.org/dc/terms/"
+    }
+  ],
+  "id": "https://remote.example/?p=27760#activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "object": {
+    "id": "https://remote.example/?p=27760",
+    "type": "Article",
+    "attributedTo": "https://remote.example/users/bob",
+    "content": "<p>A long confessional post about board game spending.</p>",
+    "name": "My board game budget",
+    "published": "2026-07-01T08:45:00Z",
+    "summary": "Money talk",
+    "dcterms:subject": "Money talk",
+    "sensitive": true,
+    "url": "https://remote.example/blog/my-board-game-budget/",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://remote.example/users/bob/followers"],
+    "mediaType": "text/html"
+  }
+}

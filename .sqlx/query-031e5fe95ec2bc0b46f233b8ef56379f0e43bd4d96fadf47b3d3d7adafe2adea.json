@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE bulk_imports SET state = 'scheduled', claimed_at = NULL\n        WHERE state = 'in_progress'\n          AND (claimed_at IS NULL OR claimed_at < now() - make_interval(secs => $1))\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "031e5fe95ec2bc0b46f233b8ef56379f0e43bd4d96fadf47b3d3d7adafe2adea"
+}

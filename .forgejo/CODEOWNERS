@@ -1,0 +1,9 @@
+* @plamenu/maintainers
+/crates/db/migrations/ @plamenu/maintainers
+/crates/federation/ @plamenu/maintainers
+/deploy/ @plamenu/maintainers
+/.forgejo/ @plamenu/maintainers
+/SECURITY.md @plamenu/maintainers
+
+/ci/ @plamenu/maintainers
+/scripts/ci/ @plamenu/maintainers

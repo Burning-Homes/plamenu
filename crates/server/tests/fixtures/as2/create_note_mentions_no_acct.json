@@ -1,0 +1,29 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/objects/no-acct-mentions/activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "object": {
+    "id": "https://remote.example/objects/no-acct-mentions",
+    "type": "Note",
+    "attributedTo": "https://remote.example/users/bob",
+    "published": "2026-07-01T18:00:00Z",
+    "content": "<p>Waving at <a href=\"https://remote.example/channels/1/actor\">one nameless actor</a> and <a href=\"https://remote.example/boards/1/actor\">another</a></p>",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://remote.example/users/bob/followers"],
+    "tag": [
+      {
+        "type": "Mention",
+        "href": "https://remote.example/channels/1/actor",
+        "name": "one nameless actor"
+      },
+      {
+        "type": "Mention",
+        "href": "https://remote.example/boards/1/actor",
+        "name": "another nameless actor"
+      }
+    ]
+  }
+}

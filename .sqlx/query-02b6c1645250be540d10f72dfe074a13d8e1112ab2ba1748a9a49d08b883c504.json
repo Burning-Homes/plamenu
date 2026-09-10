@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE instance_settings SET translation_user_rate_limit_per_hour = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "02b6c1645250be540d10f72dfe074a13d8e1112ab2ba1748a9a49d08b883c504"
+}

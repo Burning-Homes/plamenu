@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS(\n            SELECT 1 FROM accounts\n            WHERE (domain IS NULL OR portable) AND lower(username) = lower($1)\n            UNION ALL\n            SELECT 1 FROM webxdc_tombstones\n            WHERE lower(coordinator_username) = lower($1)\n        ) AS \"reserved!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reserved!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4624566e8063449333393d148dd74cf209acd05446a2689b6a414e74a055443f"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE accounts\n        SET followers_url = $2, following_url = $3, outbox_url = $4\n        WHERE id = $1 AND domain IS NOT NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6845c9b4ea960855afda436f98dedc261e28bfe952ec60e5867b7f1328518202"
+}

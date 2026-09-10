@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO notification_policies\n            (account_id, for_not_following, for_not_followers, for_new_accounts,\n             for_private_mentions, for_limited_accounts, for_bots)\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        ON CONFLICT (account_id) DO UPDATE SET\n            for_not_following = EXCLUDED.for_not_following,\n            for_not_followers = EXCLUDED.for_not_followers,\n            for_new_accounts = EXCLUDED.for_new_accounts,\n            for_private_mentions = EXCLUDED.for_private_mentions,\n            for_limited_accounts = EXCLUDED.for_limited_accounts,\n            for_bots = EXCLUDED.for_bots,\n            updated_at = now()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int2",
+        "Int2",
+        "Int2",
+        "Int2",
+        "Int2",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3e857d24429b77015149c3aad7056a5759e0868cb224947cfc931eafab08ac17"
+}

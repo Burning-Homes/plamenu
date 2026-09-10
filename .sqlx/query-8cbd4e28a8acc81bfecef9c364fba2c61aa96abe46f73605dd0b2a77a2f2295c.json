@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE account_archives SET created_at = now() - make_interval(days => $2) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8cbd4e28a8acc81bfecef9c364fba2c61aa96abe46f73605dd0b2a77a2f2295c"
+}

@@ -1,0 +1,292 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, url, title, description, kind, author_name, author_url,\n               provider_name, provider_url, html, width, height, image_url,\n               image_file_name, image_content_type, image_file_size,\n               image_cached_at, image_description, embed_url, language,\n               published_at, author_account_id, updated_at\n        FROM preview_cards WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "author_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "author_name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "author_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "author_url"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "provider_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "provider_name"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "provider_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "provider_url"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "html",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "html"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "height"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "image_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_url"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "image_file_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "image_content_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_content_type"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "image_file_size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_file_size"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "image_cached_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_cached_at"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "image_description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "image_description"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "embed_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "embed_url"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "author_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "author_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "preview_cards",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "57589bdf8daa069415948d50f5581fece7b31f080fca5a0cd4d54545ff407818"
+}

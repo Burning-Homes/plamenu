@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO markers (user_id, timeline, last_read_id, version)\n        VALUES ($1, $2, $3, 1)\n        ON CONFLICT (user_id, timeline) DO UPDATE\n        SET last_read_id = EXCLUDED.last_read_id,\n            version = markers.version + 1,\n            updated_at = now()\n        WHERE markers.last_read_id IS DISTINCT FROM EXCLUDED.last_read_id\n        RETURNING user_id, timeline, last_read_id, version, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "markers",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "timeline",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "markers",
+            "name": "timeline"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "last_read_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "markers",
+            "name": "last_read_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "markers",
+            "name": "version"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "markers",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b04354a99dfc848cba8800c1c515bc3e61c71d34996855c5f445417db94c3c6e"
+}

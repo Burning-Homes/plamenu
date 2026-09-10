@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts a SET avatar_file_size = v.size\n         FROM unnest($1::bigint[], $2::bigint[]) AS v(id, size)\n         WHERE a.id = v.id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2c7c22eab409864060e92a81f45564de5a5e337b4b3670f3f2159de7803cafea"
+}

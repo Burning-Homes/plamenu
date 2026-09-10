@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE accounts SET sensitized_at = COALESCE(sensitized_at, now()) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "92d7be3db0c23f06e6023ef12eaa82d4ef657ba660188b72fe9c8117361e1d64"
+}

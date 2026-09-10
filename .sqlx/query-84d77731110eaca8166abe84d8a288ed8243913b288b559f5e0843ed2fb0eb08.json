@@ -1,0 +1,168 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT v.viewer AS \"viewer!\",\n               ci.id, ci.collection_id, ci.account_id, ci.state, ci.position,\n               ci.uri, ci.object_uri, ci.activity_uri, ci.approval_uri,\n               ci.approval_last_verified_at, ci.created_at, ci.updated_at\n        FROM unnest($2::bigint[]) AS v(viewer)\n        JOIN collection_items ci ON ci.collection_id = ANY($1)\n        JOIN collections c ON c.id = ci.collection_id\n        WHERE (ci.state = 'accepted' OR (c.account_id = v.viewer AND ci.state = 'pending'))\n          AND (ci.account_id IS NULL OR NOT account_hidden(v.viewer, ci.account_id))\n        ORDER BY v.viewer ASC, ci.collection_id ASC, ci.position ASC, ci.id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "viewer!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "collection_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "collection_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "position",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "object_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "object_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "activity_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "activity_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "approval_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "approval_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "approval_last_verified_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "approval_last_verified_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "collection_items",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "84d77731110eaca8166abe84d8a288ed8243913b288b559f5e0843ed2fb0eb08"
+}

@@ -1,0 +1,9 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://remote.example/users/bob/statuses/01JZQY9GTS0SINGLETON0TAG00/activity#delete",
+  "type": "Delete",
+  "actor": "https://remote.example/users/bob",
+  "to": "https://www.w3.org/ns/activitystreams#Public",
+  "cc": "https://remote.example/users/bob/followers",
+  "object": "https://remote.example/users/bob/statuses/01JZQY9GTS0SINGLETON0TAG00"
+}

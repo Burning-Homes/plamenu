@@ -1,0 +1,1082 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT site_title, site_short_description, site_extended_description,\n               site_contact_username, site_contact_email, custom_css,\n               registrations_mode, rate_limiting_enabled,\n               rate_limit_authenticated_api, rate_limit_per_token_api,\n               rate_limit_unauthenticated_api, rate_limit_api_media,\n               rate_limit_api_delete, rate_limit_api_sign_up,\n               rate_limit_app_registrations, rate_limit_paging,\n               rate_limit_login_attempts, rate_limit_password_resets,\n               rate_limit_sign_up_web, max_characters, max_characters_long_form,\n               max_media_attachments,\n               poll_max_options, activity_api_enabled, peers_api_enabled,\n               profile_directory, trends_enabled, trendable_by_default,\n               landing_page, landing_show_stats,\n               show_domain_blocks, show_domain_blocks_rationale, min_age,\n               media_cache_retention_days,\n               media_full_processing, media_preview_processing,\n               media_remote_full_processing, media_cached_image_processing,\n               remote_video_max_mb, remote_video_max_height,\n               media_local_gif_handling, media_remote_gif_handling,\n               media_gifv_max_seconds, media_avif_quality,\n               media_avif_speed_full, media_avif_speed_preview,\n               media_jpeg_quality, media_max_edge,\n               media_jxl_distance, media_jxl_effort,\n               media_video_preset, media_video_rate_mode, media_video_crf,\n               media_audio_bitrate_kbps, media_max_image_mb, media_max_av_mb,\n               media_processing_concurrency, media_video_retention_days,\n               media_profile_retention_days, media_card_retention_days,\n               media_emoji_retention_days, media_cache_max_gb,\n               media_video_cache_max_gb,\n               group_creation_policy,\n               authorized_fetch, authorized_fetch_unsigned_profile,\n               emit_integrity_proofs, emit_rfc9421, conversation_containers,\n               ip_retention_days,\n               timeline_preview_federated, timeline_preview_local,\n               timeline_preview_tag, public_search,\n               anon_trends, anon_directory, anon_directory_federated,\n               anon_groups, public_timeline_replies,\n               boost_collapse, boost_collapse_lookback,\n               translation_cache_retention_days, translation_cache_max_rows,\n               translation_backend_concurrency,\n               translation_user_rate_limit_per_hour,\n               translation_refresh_on_provider_change,\n               self_destruct_initiated_at,\n               registrations_auto_closed_at, updated_at\n        FROM instance_settings\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "site_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "site_title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "site_short_description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "site_short_description"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "site_extended_description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "site_extended_description"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "site_contact_username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "site_contact_username"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "site_contact_email",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "site_contact_email"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "custom_css",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "custom_css"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "registrations_mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "registrations_mode"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "rate_limiting_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "rate_limiting_enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "rate_limit_authenticated_api",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "rate_limit_authenticated_api"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "rate_limit_per_token_api",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "rate_limit_per_token_api"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "rate_limit_unauthenticated_api",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "rate_limit_unauthenticated_api"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "rate_limit_api_media",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "rate_limit_api_media"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "rate_limit_api_delete",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "rate_limit_api_delete"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "rate_limit_api_sign_up",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "rate_limit_api_sign_up"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "rate_limit_app_registrations",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "rate_limit_app_registrations"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "rate_limit_paging",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "rate_limit_paging"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "rate_limit_login_attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "rate_limit_login_attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "rate_limit_password_resets",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "rate_limit_password_resets"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "rate_limit_sign_up_web",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "rate_limit_sign_up_web"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "max_characters",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "max_characters"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "max_characters_long_form",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "max_characters_long_form"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "max_media_attachments",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "max_media_attachments"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "poll_max_options",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "poll_max_options"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "activity_api_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "activity_api_enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "peers_api_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "peers_api_enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "profile_directory",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "profile_directory"
+          }
+        }
+      },
+      {
+        "ordinal": 26,
+        "name": "trends_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "trends_enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 27,
+        "name": "trendable_by_default",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "trendable_by_default"
+          }
+        }
+      },
+      {
+        "ordinal": 28,
+        "name": "landing_page",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "landing_page"
+          }
+        }
+      },
+      {
+        "ordinal": 29,
+        "name": "landing_show_stats",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "landing_show_stats"
+          }
+        }
+      },
+      {
+        "ordinal": 30,
+        "name": "show_domain_blocks",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "show_domain_blocks"
+          }
+        }
+      },
+      {
+        "ordinal": 31,
+        "name": "show_domain_blocks_rationale",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "show_domain_blocks_rationale"
+          }
+        }
+      },
+      {
+        "ordinal": 32,
+        "name": "min_age",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "min_age"
+          }
+        }
+      },
+      {
+        "ordinal": 33,
+        "name": "media_cache_retention_days",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_cache_retention_days"
+          }
+        }
+      },
+      {
+        "ordinal": 34,
+        "name": "media_full_processing",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_full_processing"
+          }
+        }
+      },
+      {
+        "ordinal": 35,
+        "name": "media_preview_processing",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_preview_processing"
+          }
+        }
+      },
+      {
+        "ordinal": 36,
+        "name": "media_remote_full_processing",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_remote_full_processing"
+          }
+        }
+      },
+      {
+        "ordinal": 37,
+        "name": "media_cached_image_processing",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_cached_image_processing"
+          }
+        }
+      },
+      {
+        "ordinal": 38,
+        "name": "remote_video_max_mb",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "remote_video_max_mb"
+          }
+        }
+      },
+      {
+        "ordinal": 39,
+        "name": "remote_video_max_height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "remote_video_max_height"
+          }
+        }
+      },
+      {
+        "ordinal": 40,
+        "name": "media_local_gif_handling",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_local_gif_handling"
+          }
+        }
+      },
+      {
+        "ordinal": 41,
+        "name": "media_remote_gif_handling",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_remote_gif_handling"
+          }
+        }
+      },
+      {
+        "ordinal": 42,
+        "name": "media_gifv_max_seconds",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_gifv_max_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 43,
+        "name": "media_avif_quality",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_avif_quality"
+          }
+        }
+      },
+      {
+        "ordinal": 44,
+        "name": "media_avif_speed_full",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_avif_speed_full"
+          }
+        }
+      },
+      {
+        "ordinal": 45,
+        "name": "media_avif_speed_preview",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_avif_speed_preview"
+          }
+        }
+      },
+      {
+        "ordinal": 46,
+        "name": "media_jpeg_quality",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_jpeg_quality"
+          }
+        }
+      },
+      {
+        "ordinal": 47,
+        "name": "media_max_edge",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_max_edge"
+          }
+        }
+      },
+      {
+        "ordinal": 48,
+        "name": "media_jxl_distance",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_jxl_distance"
+          }
+        }
+      },
+      {
+        "ordinal": 49,
+        "name": "media_jxl_effort",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_jxl_effort"
+          }
+        }
+      },
+      {
+        "ordinal": 50,
+        "name": "media_video_preset",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_video_preset"
+          }
+        }
+      },
+      {
+        "ordinal": 51,
+        "name": "media_video_rate_mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_video_rate_mode"
+          }
+        }
+      },
+      {
+        "ordinal": 52,
+        "name": "media_video_crf",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_video_crf"
+          }
+        }
+      },
+      {
+        "ordinal": 53,
+        "name": "media_audio_bitrate_kbps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_audio_bitrate_kbps"
+          }
+        }
+      },
+      {
+        "ordinal": 54,
+        "name": "media_max_image_mb",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_max_image_mb"
+          }
+        }
+      },
+      {
+        "ordinal": 55,
+        "name": "media_max_av_mb",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_max_av_mb"
+          }
+        }
+      },
+      {
+        "ordinal": 56,
+        "name": "media_processing_concurrency",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_processing_concurrency"
+          }
+        }
+      },
+      {
+        "ordinal": 57,
+        "name": "media_video_retention_days",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_video_retention_days"
+          }
+        }
+      },
+      {
+        "ordinal": 58,
+        "name": "media_profile_retention_days",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_profile_retention_days"
+          }
+        }
+      },
+      {
+        "ordinal": 59,
+        "name": "media_card_retention_days",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_card_retention_days"
+          }
+        }
+      },
+      {
+        "ordinal": 60,
+        "name": "media_emoji_retention_days",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_emoji_retention_days"
+          }
+        }
+      },
+      {
+        "ordinal": 61,
+        "name": "media_cache_max_gb",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_cache_max_gb"
+          }
+        }
+      },
+      {
+        "ordinal": 62,
+        "name": "media_video_cache_max_gb",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "media_video_cache_max_gb"
+          }
+        }
+      },
+      {
+        "ordinal": 63,
+        "name": "group_creation_policy",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "group_creation_policy"
+          }
+        }
+      },
+      {
+        "ordinal": 64,
+        "name": "authorized_fetch",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "authorized_fetch"
+          }
+        }
+      },
+      {
+        "ordinal": 65,
+        "name": "authorized_fetch_unsigned_profile",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "authorized_fetch_unsigned_profile"
+          }
+        }
+      },
+      {
+        "ordinal": 66,
+        "name": "emit_integrity_proofs",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "emit_integrity_proofs"
+          }
+        }
+      },
+      {
+        "ordinal": 67,
+        "name": "emit_rfc9421",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "emit_rfc9421"
+          }
+        }
+      },
+      {
+        "ordinal": 68,
+        "name": "conversation_containers",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "conversation_containers"
+          }
+        }
+      },
+      {
+        "ordinal": 69,
+        "name": "ip_retention_days",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "ip_retention_days"
+          }
+        }
+      },
+      {
+        "ordinal": 70,
+        "name": "timeline_preview_federated",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "timeline_preview_federated"
+          }
+        }
+      },
+      {
+        "ordinal": 71,
+        "name": "timeline_preview_local",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "timeline_preview_local"
+          }
+        }
+      },
+      {
+        "ordinal": 72,
+        "name": "timeline_preview_tag",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "timeline_preview_tag"
+          }
+        }
+      },
+      {
+        "ordinal": 73,
+        "name": "public_search",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "public_search"
+          }
+        }
+      },
+      {
+        "ordinal": 74,
+        "name": "anon_trends",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "anon_trends"
+          }
+        }
+      },
+      {
+        "ordinal": 75,
+        "name": "anon_directory",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "anon_directory"
+          }
+        }
+      },
+      {
+        "ordinal": 76,
+        "name": "anon_directory_federated",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "anon_directory_federated"
+          }
+        }
+      },
+      {
+        "ordinal": 77,
+        "name": "anon_groups",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "anon_groups"
+          }
+        }
+      },
+      {
+        "ordinal": 78,
+        "name": "public_timeline_replies",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "public_timeline_replies"
+          }
+        }
+      },
+      {
+        "ordinal": 79,
+        "name": "boost_collapse",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "boost_collapse"
+          }
+        }
+      },
+      {
+        "ordinal": 80,
+        "name": "boost_collapse_lookback",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "boost_collapse_lookback"
+          }
+        }
+      },
+      {
+        "ordinal": 81,
+        "name": "translation_cache_retention_days",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "translation_cache_retention_days"
+          }
+        }
+      },
+      {
+        "ordinal": 82,
+        "name": "translation_cache_max_rows",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "translation_cache_max_rows"
+          }
+        }
+      },
+      {
+        "ordinal": 83,
+        "name": "translation_backend_concurrency",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "translation_backend_concurrency"
+          }
+        }
+      },
+      {
+        "ordinal": 84,
+        "name": "translation_user_rate_limit_per_hour",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "translation_user_rate_limit_per_hour"
+          }
+        }
+      },
+      {
+        "ordinal": 85,
+        "name": "translation_refresh_on_provider_change",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "translation_refresh_on_provider_change"
+          }
+        }
+      },
+      {
+        "ordinal": 86,
+        "name": "self_destruct_initiated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "self_destruct_initiated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 87,
+        "name": "registrations_auto_closed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "registrations_auto_closed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 88,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "instance_settings",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "8e3f972adeda7b86f28f35d6347334a638e5d7c4821e6ad7b53ed2e761f9bee9"
+}

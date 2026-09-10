@@ -1,0 +1,161 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE quotes\n        SET state = CASE WHEN state = 'accepted' THEN 'revoked' ELSE 'rejected' END,\n            approval_uri = NULL\n        WHERE approval_uri = $1 AND quoted_account_id = $2\n          AND state IN ('pending', 'accepted')\n        RETURNING id, status_id, status_uri, account_id, quoted_status_id,\n                  quoted_account_id, state, activity_uri, approval_uri, quoted_uri, legacy, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "status_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "quoted_status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "quoted_status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "quoted_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "quoted_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "activity_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "activity_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "approval_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "approval_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "quoted_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "quoted_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "legacy",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "legacy"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "quotes",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "d061d37d5b990b97c95a1f1ab3f622adef87d0fe9808a7f359be9f46f498a431"
+}

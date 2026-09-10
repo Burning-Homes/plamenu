@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH inserted AS (\n            INSERT INTO delivery_jobs\n                (id, account_id, inbox_url, activity, synchronize_followers, run_at)\n            SELECT j.id, j.signer, j.inbox_url, j.activity, false, now()\n            FROM unnest($1::bigint[], $2::bigint[], $3::text[], $4::jsonb[])\n                AS j(id, signer, inbox_url, activity)\n            RETURNING id\n        ),\n        notified AS (\n            SELECT pg_notify($5, min(id)::text) FROM inserted\n        )\n        SELECT count(*) AS \"count!\" FROM inserted, notified\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array",
+        "TextArray",
+        "JsonbArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "dc41043506cd3d4d57570bfc3f0ffdefad50cf081b2fd7b708bfddb326b9c91e"
+}

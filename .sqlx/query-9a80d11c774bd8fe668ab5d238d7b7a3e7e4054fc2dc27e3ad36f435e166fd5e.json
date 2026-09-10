@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT account_id AS \"id!\"\n           FROM follows\n           WHERE target_account_id = $1 AND account_id = ANY($2) AND NOT pending",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9a80d11c774bd8fe668ab5d238d7b7a3e7e4054fc2dc27e3ad36f435e166fd5e"
+}

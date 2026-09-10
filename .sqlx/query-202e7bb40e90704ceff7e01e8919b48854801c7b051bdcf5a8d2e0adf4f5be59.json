@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT accounts.id AS \"id!\"\n        FROM accounts\n        LEFT JOIN users ON users.account_id = accounts.id\n        WHERE accounts.id = ANY($1)\n          AND (users.id IS NULL OR (users.approved AND users.confirmed_at IS NOT NULL))\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "202e7bb40e90704ceff7e01e8919b48854801c7b051bdcf5a8d2e0adf4f5be59"
+}

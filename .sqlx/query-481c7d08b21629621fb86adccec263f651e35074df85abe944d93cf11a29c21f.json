@@ -1,0 +1,173 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT status_id, target_language, source_hash, provider,\n               detected_source_language, title, content, spoiler_text,\n               poll_options, media_ids, media_descriptions, created_at,\n               last_used_at\n        FROM status_translations\n        WHERE status_id = $1 AND target_language = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "target_language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "target_language"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "source_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "detected_source_language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "detected_source_language"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "content",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "spoiler_text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "spoiler_text"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "poll_options",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "poll_options"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "media_ids",
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "media_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "media_descriptions",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "media_descriptions"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "last_used_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "status_translations",
+            "name": "last_used_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "481c7d08b21629621fb86adccec263f651e35074df85abe944d93cf11a29c21f"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM account_conversations\n         WHERE conversation_id = $1 AND cardinality(status_ids) = 0",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "86699ffbe4c1366aef2f4e7a6d2841846c6a7985a3e169fa199bf26450c8c3f1"
+}

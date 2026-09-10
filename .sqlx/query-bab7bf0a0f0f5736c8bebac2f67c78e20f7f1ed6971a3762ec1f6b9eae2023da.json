@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM webxdc_guests WHERE session_id = $1 AND id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bab7bf0a0f0f5736c8bebac2f67c78e20f7f1ed6971a3762ec1f6b9eae2023da"
+}

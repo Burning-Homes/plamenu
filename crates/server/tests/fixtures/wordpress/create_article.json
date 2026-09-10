@@ -1,0 +1,65 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    {
+      "Hashtag": "as:Hashtag",
+      "sensitive": "as:sensitive",
+      "dcterms": "http://purl.org/dc/terms/",
+      "gts": "https://gotosocial.org/ns#",
+      "interactionPolicy": { "@id": "gts:interactionPolicy", "@type": "@id" }
+    }
+  ],
+  "id": "https://remote.example/?p=27759#activity",
+  "type": "Create",
+  "actor": "https://remote.example/users/bob",
+  "to": ["https://www.w3.org/ns/activitystreams#Public"],
+  "cc": ["https://remote.example/users/bob/followers"],
+  "object": {
+    "id": "https://remote.example/?p=27759",
+    "type": "Article",
+    "attachment": [
+      {
+        "type": "Image",
+        "url": "https://remote.example/wp-content/uploads/2026/07/Splash-Art2-3.png",
+        "mediaType": "image/png",
+        "name": "A fleet of varied spaceships"
+      },
+      {
+        "type": "Image",
+        "url": "https://remote.example/wp-content/uploads/2026/07/Splash-Art.jpg",
+        "mediaType": "image/jpeg"
+      },
+      {
+        "type": "Image",
+        "url": "https://remote.example/wp-content/uploads/2026/07/small3-1.png",
+        "mediaType": "image/png"
+      },
+      {
+        "type": "Image",
+        "url": "https://remote.example/wp-content/uploads/2026/07/small-1-scaled.jpg",
+        "mediaType": "image/jpeg"
+      }
+    ],
+    "attributedTo": "https://remote.example/users/bob",
+    "audience": "https://remote.example/?author=0",
+    "content": "<p>I recently got my hands on a 3D printer and have been slowly enhancing and customizing my board game collection through printing new inserts and organizers.</p><p>After many prints and iterations, the collection is now fully organized.</p><p>The final paragraph proves the body is never truncated on the wire.</p>",
+    "context": "https://remote.example/wp-json/activitypub/1.0/posts/27759/context",
+    "name": "Pimping my board games with a 3D printer",
+    "preview": {
+      "type": "Note",
+      "content": "I recently got my hands on a 3D printer and have been slowly enhancing and customizing my board game collection."
+    },
+    "published": "2026-07-01T08:30:00Z",
+    "summary": "I recently got my hands on a 3D printer and have been slowly enhancing and customizing my board game collection.",
+    "tag": [
+      { "type": "Hashtag", "href": "https://remote.example/tag/3dprinting", "name": "#3DPrinting" }
+    ],
+    "url": "https://remote.example/blog/pimping-my-board-games-with-a-3d-printer/",
+    "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    "cc": ["https://remote.example/users/bob/followers"],
+    "mediaType": "text/html",
+    "sensitive": false,
+    "likes": "https://remote.example/?p=27759#likes",
+    "shares": "https://remote.example/?p=27759#shares"
+  }
+}

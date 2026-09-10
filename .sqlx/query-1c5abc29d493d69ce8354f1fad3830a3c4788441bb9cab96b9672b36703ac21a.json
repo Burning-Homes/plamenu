@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE account_statuses_cleanup_policies SET last_inspected_id = $2 WHERE account_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c5abc29d493d69ce8354f1fad3830a3c4788441bb9cab96b9672b36703ac21a"
+}

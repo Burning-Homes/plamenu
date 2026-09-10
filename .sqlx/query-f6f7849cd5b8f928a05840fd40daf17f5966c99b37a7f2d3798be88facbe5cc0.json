@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT accounts.id\n        FROM accounts\n        LEFT JOIN users ON users.account_id = accounts.id\n        WHERE accounts.discoverable IS TRUE\n          AND accounts.suspended_at IS NULL\n          AND accounts.silenced_at IS NULL\n          AND accounts.moved_to_uri IS NULL\n          -- Groups have their own directory (/groups); the people directory\n          -- stays people (Mastodon's stays Person-only too).\n          AND accounts.actor_type IS DISTINCT FROM 'Group'\n          AND (users.id IS NULL OR (users.approved AND users.confirmed_at IS NOT NULL))\n          AND (NOT $1::boolean OR accounts.domain IS NULL OR accounts.portable)\n          AND ($2::bigint IS NULL OR (\n                accounts.id NOT IN (\n                    SELECT target_account_id FROM blocks WHERE account_id = $2\n                    UNION\n                    SELECT account_id FROM blocks WHERE target_account_id = $2\n                    UNION\n                    SELECT target_account_id FROM mutes WHERE account_id = $2\n                      AND (expires_at IS NULL OR expires_at > now())\n                )\n            AND (accounts.portable OR accounts.domain IS NULL OR accounts.domain NOT IN (\n                    SELECT domain FROM account_domain_blocks WHERE account_id = $2\n                ))\n          ))\n        ORDER BY CASE WHEN $3::boolean THEN accounts.id END DESC,\n                 (SELECT max(statuses.created_at) FROM statuses\n                  WHERE statuses.account_id = accounts.id\n                    AND statuses.deleted_at IS NULL /* STUBFILTER */) DESC NULLS LAST,\n                 accounts.id DESC\n        LIMIT $4 OFFSET $5\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Int8",
+        "Bool",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f6f7849cd5b8f928a05840fd40daf17f5966c99b37a7f2d3798be88facbe5cc0"
+}

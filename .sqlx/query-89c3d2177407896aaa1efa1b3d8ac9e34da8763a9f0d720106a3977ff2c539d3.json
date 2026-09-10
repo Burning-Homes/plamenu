@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH flipped AS (\n            UPDATE media_attachments m SET processing = 'queued'\n            FROM accounts a\n            WHERE m.id = $2 AND a.id = m.account_id\n              AND m.remote_url IS NOT NULL AND m.file_name IS NULL\n              AND m.processing = 'complete'\n              AND m.download_on_demand\n              AND m.hls_master_url IS NULL\n              AND NOT COALESCE(instance_domain_rejects_media(a.domain), false)\n              AND NOT EXISTS (\n                  SELECT 1 FROM media_fetch_failures f\n                  WHERE f.kind = 'attachment' AND f.target_id = m.id\n                    AND f.attempts >= $3\n              )\n            RETURNING m.id\n        )\n        INSERT INTO media_processing_jobs (id, media_id)\n        SELECT $1, id FROM flipped\n        ON CONFLICT (media_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "89c3d2177407896aaa1efa1b3d8ac9e34da8763a9f0d720106a3977ff2c539d3"
+}

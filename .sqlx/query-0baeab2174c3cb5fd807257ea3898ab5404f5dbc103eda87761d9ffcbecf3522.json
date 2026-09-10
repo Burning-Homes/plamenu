@@ -1,0 +1,97 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.id AS \"status_id!\", s.account_id AS \"account_id!\",\n               s.created_at AS \"created_at!\",\n               (SELECT count(*) FROM favourites f WHERE f.status_id = s.id) AS \"favourites!\",\n               (SELECT count(*) FROM statuses r WHERE r.reblog_of_id = s.id) AS \"reblogs!\",\n               s.trendable, s.language,\n               (s.visibility = 'public' AND s.reblog_of_id IS NULL\n                AND s.in_reply_to_id IS NULL AND s.sensitive = false\n                AND (s.spoiler_text IS NULL OR s.spoiler_text = '')\n                AND s.language IS NOT NULL\n                -- discoverable is nullable; a bare AND would make the whole\n                -- expression NULL and blow up the non-null decode assertion.\n                AND a.discoverable IS TRUE AND NOT account_silenced(a.id)\n                AND a.sensitized_at IS NULL\n                AND s.deleted_at IS NULL -- STUBFILTER: a soft-deleted stub must score ineligible\n                ) AS \"eligible!\"\n        FROM statuses s\n        JOIN accounts a ON a.id = s.account_id\n        WHERE s.id IN (\n            SELECT status_id FROM status_trends\n            UNION\n            SELECT id FROM statuses\n                WHERE reblog_of_id IS NULL\n                  AND date_trunc('day', created_at AT TIME ZONE 'UTC')::date = $1\n            UNION\n            SELECT status_id FROM favourites\n                WHERE date_trunc('day', created_at AT TIME ZONE 'UTC')::date = $1\n            UNION\n            SELECT reblog_of_id FROM statuses\n                WHERE reblog_of_id IS NOT NULL\n                  AND date_trunc('day', created_at AT TIME ZONE 'UTC')::date = $1\n        )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "favourites!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "reblogs!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "trendable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "trendable"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "eligible!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "0baeab2174c3cb5fd807257ea3898ab5404f5dbc103eda87761d9ffcbecf3522"
+}

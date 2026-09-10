@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT a.inbox_url AS \"inbox!\"\n           FROM webxdc_memberships m\n           JOIN accounts a ON a.id = m.participant_account_id\n           WHERE m.session_id = $1 AND m.accepted\n             AND a.domain IS NOT NULL AND a.inbox_url <> ''\n           ORDER BY a.inbox_url",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "inbox!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "inbox_url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a23201f9f8df93e7558707d86e1598582e2843ca35dc47b3763ea1dfe46668b3"
+}

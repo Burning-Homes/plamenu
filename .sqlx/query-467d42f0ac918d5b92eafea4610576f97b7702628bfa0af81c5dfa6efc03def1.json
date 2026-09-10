@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT rfc9421, updated_at FROM host_signature_prefs WHERE host = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rfc9421",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "host_signature_prefs",
+            "name": "rfc9421"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "host_signature_prefs",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "467d42f0ac918d5b92eafea4610576f97b7702628bfa0af81c5dfa6efc03def1"
+}

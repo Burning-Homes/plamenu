@@ -1,0 +1,91 @@
+# Disposable Sharkey (Misskey-family) instance for federation / e2e testing
+# against Plamenu. Built from the local checkout in ../sharkey-source using
+# Sharkey's own Dockerfile, so the running instance always matches the
+# reference source.
+#
+# It joins the Mastodon stack's Caddy network so the same local CA terminates
+# TLS for https://sharkey.local and all instances can federate.
+
+name: sharkey-test
+
+services:
+  db:
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    restart: unless-stopped
+    # Distinct alias: `web` also joins the Mastodon network, which has its own
+    # `db` service — the sharkey-db alias avoids that name collision.
+    networks:
+      shk:
+        aliases: [sharkey-db]
+    environment:
+      POSTGRES_USER: sharkey
+      POSTGRES_PASSWORD: sharkey
+      POSTGRES_DB: sharkey
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "sharkey"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    restart: unless-stopped
+    networks:
+      shk:
+        aliases: [sharkey-redis]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Not named `web`: compose registers the service name as a DNS alias on
+  # every attached network, including the shared Caddy one, where a second
+  # `web` would collide with the Mastodon stack's own `web` service.
+  sharkey:
+    build:
+      # Sharkey's own multi-stage Dockerfile (pnpm install + full frontend
+      # build — the first build takes a long while).
+      context: ../sharkey-source
+    image: sharkey-test:dev
+    restart: unless-stopped
+    networks:
+      shk: {}
+      shared:
+        aliases: [sharkey-web]
+    environment:
+      # Trust the Caddy local CA for outbound federation to *.local peers
+      # (NODE_EXTRA_CA_CERTS appends every cert in the file to Node's store).
+      NODE_EXTRA_CA_CERTS: /etc/ssl/local/ca-bundle.crt
+      NODE_OPTIONS: --max-old-space-size=4096
+    volumes:
+      - ./sharkey.yml:/sharkey/.config/default.yml:ro
+      - ../mastodon-test/ca-bundle.crt:/etc/ssl/local/ca-bundle.crt:ro
+      - files:/sharkey/files
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost: Sharkey binds 0.0.0.0:3000 (IPv4 only), but
+      # `localhost` resolves to ::1 first and the IPv6 probe is refused.
+      test: ["CMD-SHELL", "wget -q --spider 127.0.0.1:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+networks:
+  shk:
+  shared:
+    external: true
+    name: mastodon-test_internal
+
+volumes:
+  pgdata:
+  redisdata:
+  files:

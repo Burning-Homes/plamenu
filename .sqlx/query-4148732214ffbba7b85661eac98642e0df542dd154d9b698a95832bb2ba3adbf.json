@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_media_jobs (id, account_id, which) VALUES ($1, $2, $3)\n         ON CONFLICT (account_id, which) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4148732214ffbba7b85661eac98642e0df542dd154d9b698a95832bb2ba3adbf"
+}

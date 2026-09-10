@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_attachments SET last_served_at = now() - interval '10 days' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8484831da43367ef3d7e9af98146077318f94c03913747a8aa434c4ec57cf7fd"
+}
