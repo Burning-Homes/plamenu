@@ -167,6 +167,10 @@ signing_key = "~/.config/plamenu/cosign.key"
 # Optional overrides; defaults are the reviewed keys in the release source:
 # public_key = "/path/to/cosign.pub"
 # allowed_signers = "/path/to/allowed-signers"
+
+[github]
+repository = "https://github.com/Burning-Homes/plamenu"
+token_file = "~/.config/plamenu/github-release-token"
 ```
 
 Keep the token and encrypted signing key outside Git, with owner-only file
@@ -175,6 +179,13 @@ access; optional workers also need Actions access. Git uses the configured
 remote's normal authentication. Supply the encrypted key password through
 `COSIGN_PASSWORD` in the publishing environment. Credentials are not passed to
 the compiler or the optional workers.
+
+The optional GitHub token should be a fine-grained token restricted to the
+mirror repository with **Contents: read and write** permission. Keep its file
+owner-only. When `[github]` is configured, publication copies the exact release
+assets to a GitHub draft, reads each one back, and publishes that draft only
+after every checksum matches. Source refs continue to arrive through the
+Codefloe push mirror; GitHub Actions are not used.
 
 Publication checks repository and package-owner privacy by default; private
 images must use that forge owner's registry namespace. After an
@@ -199,6 +210,17 @@ finish matching uploads; conflicting tags, images, or assets are refused.
 The final URL and immutable image reference are saved in `publication/` beside
 the prepared stages. Signing and publication remain local even when a worker
 builds the release.
+
+To backfill a release that is already published on Codefloe, run:
+
+```sh
+./dev mirror-release v0.6.0
+```
+
+This uses only Codefloe's public release API and downloads, makes no Codefloe
+changes, and uploads the same verified bytes to GitHub. It is idempotent: a
+matching draft is resumed and a matching published mirror is only verified;
+conflicting or incomplete published releases are refused.
 
 Obtain `release/cosign.pub` and `release/allowed-signers` through reviewed signed
 Git history. Cosign uses explicit keys without public transparency-log

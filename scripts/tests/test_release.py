@@ -18,7 +18,7 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
-from plamenu_release import build, checks, core, publish, worker
+from plamenu_release import build, checks, core, publish, release_mirror, worker
 from plamenu_release.forge import Forge
 
 SPEC = importlib.util.spec_from_file_location(
@@ -97,6 +97,9 @@ class StageTests(TemporaryTest):
         errors = CLI.configuration_errors(args, {})
         self.assertIn("missing signing_key", errors)
         self.assertIn("missing token_file", errors)
+        errors = CLI.configuration_errors(args, {"github": {}})
+        self.assertIn("missing github.repository", errors)
+        self.assertIn("missing github.token_file", errors)
 
     def test_release_environment_ignores_developer_overrides(self):
         with patch.dict(
@@ -646,6 +649,7 @@ class PublishFlowTests(TemporaryTest):
             "token_file": str(self.root / "token"),
             "signing_key": str(self.root / "key"),
             "public_key": str(self.root / "public"),
+            "github": {},
         }
         forge = Mock()
         release = {
@@ -712,6 +716,11 @@ class PublishFlowTests(TemporaryTest):
             patch.object(publish, "registry_digest", return_value="sha256:" + "b" * 64),
             patch.object(publish, "verify_image"),
             patch.object(
+                release_mirror,
+                "mirror_release_assets",
+                return_value="https://github.com/team/repo/releases/tag/v1.2.3",
+            ) as mirror,
+            patch.object(
                 publish,
                 "publish_images",
                 return_value=(
@@ -728,6 +737,14 @@ class PublishFlowTests(TemporaryTest):
             self.assertEqual(events[-3:], ["readback", "verified", "finalize"])
             self.assertEqual(
                 len(list((self.root / "publication").glob("*/receipt.json"))), 1
+            )
+            mirror.assert_called_once()
+            receipt = json.loads(
+                next((self.root / "publication").glob("*/receipt.json")).read_text()
+            )
+            self.assertEqual(
+                receipt["github_release"],
+                "https://github.com/team/repo/releases/tag/v1.2.3",
             )
             # A tampered retry must stop before any new upload/signature.
             retry_assets = next((self.root / "publication").glob("*/assets"))

@@ -498,14 +498,20 @@ def publish(source, root, identity, config, notes):
             release = forge.api(f"/releases/{release['id']}", "PATCH", {"draft": False})
         if release["draft"]:
             raise ReleaseError("Forge did not finalize the release")
-        write_json(
-            output / "receipt.json",
-            {
-                "source": identity["source"],
-                "image": reference,
-                "platforms": platforms,
-                "release": release["html_url"],
-                "manifest_sha256": digest(sums),
-            },
-        )
+        receipt = {
+            "source": identity["source"],
+            "image": reference,
+            "platforms": platforms,
+            "release": release["html_url"],
+            "manifest_sha256": digest(sums),
+        }
+        write_json(output / "receipt.json", receipt)
         print("Published " + release["html_url"], flush=True)
+        if config.get("github") is not None:
+            from .release_mirror import mirror_release_assets
+
+            receipt["github_release"] = mirror_release_assets(
+                repository, release, folder, config
+            )
+            write_json(output / "receipt.json", receipt)
+            print("Mirrored " + receipt["github_release"], flush=True)

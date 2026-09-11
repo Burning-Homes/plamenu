@@ -89,6 +89,17 @@ def configuration_errors(args, config):
         if config.get(name) and not Path(config[name]).expanduser().is_file():
             errors.append(name + " does not name a regular file")
     if args.publish:
+        github = config.get("github")
+        if github is not None:
+            if not isinstance(github, dict):
+                errors.append("github must be a TOML table")
+            else:
+                for name in ("repository", "token_file"):
+                    if not github.get(name):
+                        errors.append("missing github." + name)
+                token_file = github.get("token_file")
+                if token_file and not Path(token_file).expanduser().is_file():
+                    errors.append("github.token_file does not name a regular file")
         try:
             if docs.enabled(config):
                 docs.settings(config)

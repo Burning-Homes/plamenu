@@ -17,6 +17,11 @@ if [[ ${1:-} == release ]]; then
   exec python3 "$ROOT/scripts/release.py" "$@"
 fi
 
+if [[ ${1:-} == mirror-release ]]; then
+  shift
+  exec python3 "$ROOT/scripts/mirror-release.py" "$@"
+fi
+
 if [[ ${1:-} == docs-deploy ]]; then
   shift
   exec python3 "$ROOT/scripts/docs.py" deploy "$@"
@@ -108,6 +113,7 @@ Development:
   deploy-staging                Build and deploy using ignored .staging.env settings
   release [--publish] [--arm64-on codefloe] [--skip-e2e]
                                 Check and package locally; optionally sign and publish
+  mirror-release TAG            Mirror an existing Codefloe release to GitHub
   doctor                        Check local tools and optional peer-harness wiring
 
 Peer provisioning defaults to e2e/peers. Set PLAMENU_PEER_DEV and
