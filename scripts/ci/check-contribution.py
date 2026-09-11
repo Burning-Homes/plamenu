@@ -6,6 +6,13 @@ import os
 import re
 import subprocess
 
+DCO_LINE = r"Signed-off-by: .+ <[^<>\s]+@[^<>\s]+>"
+DCO_TRAILER = re.compile(rf"^{DCO_LINE}$", re.MULTILINE | re.IGNORECASE)
+FORGEJO_SQUASH_DCO = re.compile(
+    rf"^{DCO_LINE}\n\nReviewed-on: https://codefloe\.com/\S+/\S+/pulls/\d+\s*\Z",
+    re.MULTILINE | re.IGNORECASE,
+)
+
 
 def git(*args):
     return subprocess.check_output(["git", *args], text=True).strip()
@@ -62,11 +69,10 @@ def main():
         trailers = subprocess.check_output(
             ["git", "interpret-trailers", "--parse"], input=message, text=True
         )
-        if not re.search(
-            r"^Signed-off-by: .+ <[^<>\s]+@[^<>\s]+>$",
-            trailers,
-            re.MULTILINE | re.IGNORECASE,
-        ):
+        # Forgejo separates the user-provided squash message from its generated
+        # Reviewed-on trailer with a blank line. Accept a sign-off immediately
+        # before that exact Codefloe suffix, but not elsewhere in the body.
+        if not DCO_TRAILER.search(trailers) and not FORGEJO_SQUASH_DCO.search(message):
             raise SystemExit(f"Missing DCO sign-off: {revision}")
     if base is not None:
         subprocess.run(["./scripts/check-seed-version.sh", base], check=True)

@@ -114,6 +114,18 @@ class ContributionTests(unittest.TestCase):
         )
         self.assertIn("Missing DCO sign-off", self.check().stderr)
 
+    def test_signoff_before_forgejo_squash_trailer_passes(self):
+        self.git(
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "Squashed change\n\n"
+            "Signed-off-by: Someone <ci@example.org>\n\n"
+            "Reviewed-on: https://codefloe.com/plamenu/plamenu/pulls/9",
+        )
+        result = self.check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_initial_root_push_and_manual_dispatch_pass(self):
         for kind in ("push", "workflow_dispatch"):
             result = self.check("0" * 40, kind=kind)
