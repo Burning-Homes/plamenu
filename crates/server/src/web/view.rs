@@ -62,7 +62,7 @@ pub(super) fn emojify(html: &str, emojis: &[Value]) -> Markup {
     }
 }
 
-/// Render-time link pass over sanitised status content: anchors that
+/// Render-time enhancement pass over sanitised status content. Anchors that
 /// match the entity's `mentions` are rewritten to the local `/@acct` profile
 /// and hashtag anchors to the local `/tags/{name}` timeline, so both stay
 /// in-app instead of bouncing to the origin server. When `wrap_external` is
@@ -71,13 +71,18 @@ pub(super) fn emojify(html: &str, emojis: &[Value]) -> Markup {
 /// copy of the actor/post it dereferences to, or falls through to the original
 /// page. Links either way open in a new tab (locally-composed HTML already
 /// carries `target="_blank"`, remote sanitised HTML gets `rel` from ammonia).
+///
+/// The same pass makes `<pre>` blocks focusable. They deliberately scroll
+/// horizontally rather than wrapping source code, so keyboard users must be
+/// able to focus and scroll them too. Doing this at render time also covers
+/// content stored before this enhancement existed.
 fn rewrite_content_links(
     html: &str,
     mentions: &[Value],
     tags: &[Value],
     wrap_external: bool,
 ) -> String {
-    if !html.contains("<a ") {
+    if !html.contains("<a ") && !html.contains("<pre") {
         return html.to_owned();
     }
     let mut out = String::with_capacity(html.len() + 64);
@@ -89,6 +94,12 @@ fn rewrite_content_links(
         let tag = &tag_onward[..tag_end];
         if tag.starts_with("<a ") && tag.ends_with('>') {
             out.push_str(&rewrite_anchor(tag, mentions, tags, wrap_external));
+        } else if (tag == "<pre>" || tag.starts_with("<pre "))
+            && !tag.contains(" tabindex=")
+            && tag.ends_with('>')
+        {
+            out.push_str(&tag[..tag.len() - 1]);
+            out.push_str(" tabindex=\"0\">");
         } else {
             out.push_str(tag);
         }
@@ -1730,6 +1741,9 @@ fn status_main(
     interactions: bool,
 ) -> Markup {
     let account = status.account();
+    let mut profile_args = FluentArgs::new();
+    profile_args.set("account", account.acct());
+    let profile_label = ctx.locale.text_with("status-view-profile", &profile_args);
     // A warn-filter match keeps the author line and action bar but collapses
     // everything the post says behind the "Filtered" bar, like Mastodon.
     let body = status_body(status, ctx, detail, verdict);
@@ -1740,7 +1754,7 @@ fn status_main(
     };
     html! {
         header.status__head {
-            a.status__avatar href=(account.profile_path()) {
+            a.status__avatar href=(account.profile_path()) aria-label=(profile_label) {
                 img src=(account.avatar()) alt="" width="48" height="48" loading="lazy";
             }
             div.status__author {
@@ -2647,7 +2661,7 @@ pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
     let count = media.len().min(4);
     html! {
         div.status__media data-count=(count) {
-            @for item in media {
+            @for (index, item) in media.iter().enumerate() {
                 @let url = item.get("url").and_then(Value::as_str).unwrap_or_default();
                 // The preview/thumbnail keeps the timeline light; the full file
                 // is only loaded when the viewer opens it. Falls back to the
@@ -2672,6 +2686,8 @@ pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
                         a.media__link href=(url) target="_blank" rel="noopener noreferrer" {
                             img src=(preview) alt=(alt) loading="lazy" width=[width] height=[height]
                                 data-blurhash=[blurhash];
+                            (attachment_link_name(
+                                ctx.locale, "status-open-image-attachment", index, count, alt))
                         }
                         (media_badges(alt, false))
                     },
@@ -2688,6 +2704,8 @@ pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
                             a.media__link data-gifv href=(url) target="_blank" rel="noopener noreferrer" {
                                 img src=(preview) alt=(alt) loading="lazy" width=[width] height=[height]
                                     data-blurhash=[blurhash];
+                                (attachment_link_name(
+                                    ctx.locale, "status-open-gifv-attachment", index, count, alt))
                             }
                         }
                         (media_badges(alt, true))
@@ -2755,6 +2773,32 @@ pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
                     },
                 }
             }
+        }
+    }
+}
+
+/// A linked attachment preview's action text. The image's own `alt` remains
+/// the author/federated description; this suffix names what activating the
+/// link does and distinguishes several attachments in the same post.
+fn attachment_link_action(locale: Locale, message: &str, index: usize, count: usize) -> String {
+    let mut args = FluentArgs::new();
+    args.set("position", i64::try_from(index + 1).unwrap_or(i64::MAX));
+    args.set("count", i64::try_from(count).unwrap_or(i64::MAX));
+    locale.text_with(message, &args)
+}
+
+fn attachment_link_name(
+    locale: Locale,
+    message: &str,
+    index: usize,
+    count: usize,
+    alt: &str,
+) -> Markup {
+    let action = attachment_link_action(locale, message, index, count);
+    html! {
+        span.visually-hidden {
+            @if !alt.is_empty() { " — " }
+            (action)
         }
     }
 }
@@ -5199,6 +5243,42 @@ mod tests {
         assert!(!rendered.contains("<noscript>"), "{rendered}");
     }
 
+    #[test]
+    fn linked_attachment_previews_have_type_aware_accessible_actions() {
+        let value = json!({
+            "media_attachments": [
+                {
+                    "type": "image",
+                    "url": "/media/full.png",
+                    "preview_url": "/media/preview.png",
+                    "description": null,
+                },
+                {
+                    "type": "gifv",
+                    "url": "/media/animated.mp4",
+                    "preview_url": "/media/animated.png",
+                    "description": "A waving cat",
+                },
+            ],
+        });
+        let rendered = media_gallery(&Status(&value), &view_ctx(None, None))
+            .into_string()
+            .replace(['\u{2068}', '\u{2069}'], "");
+
+        assert!(
+            rendered
+                .contains(r#"<span class="visually-hidden">Open image attachment 1 of 2</span>"#),
+            "undescribed image link needs its own name: {rendered}"
+        );
+        assert!(
+            rendered.contains(r#"alt="A waving cat""#)
+                && rendered.contains(
+                    r#"<span class="visually-hidden"> — Open animated image attachment 2 of 2</span>"#
+                ),
+            "described GIFV must retain its description and expose its action: {rendered}"
+        );
+    }
+
     fn bob_mention() -> Vec<Value> {
         vec![json!({
             "id": "17",
@@ -5221,6 +5301,23 @@ mod tests {
         assert_eq!(
             rewrite_content_links(html, &bob_mention(), &[], false),
             r#"<p><span class="h-card"><a href="/@bob@remote.example" class="u-url mention">@<span>bob</span></a></span> hi</p>"#
+        );
+    }
+
+    #[test]
+    fn scrollable_code_blocks_are_focusable_at_render_time() {
+        assert_eq!(
+            rewrite_content_links("<pre><code>a very long line</code></pre>", &[], &[], false),
+            "<pre tabindex=\"0\"><code>a very long line</code></pre>"
+        );
+        assert_eq!(
+            rewrite_content_links(
+                "<pre tabindex=\"0\"><code>already enhanced</code></pre>",
+                &[],
+                &[],
+                false,
+            ),
+            "<pre tabindex=\"0\"><code>already enhanced</code></pre>"
         );
     }
 
@@ -5550,6 +5647,8 @@ mod tests {
         for expected in [
             "Автоматизированный аккаунт",
             "Подписка требует одобрения",
+            "Открыть профиль @alice",
+            "Открыть вложенное изображение (1 из 1)",
             "изменено",
             "В ответ @bob",
             "Деликатный контент",

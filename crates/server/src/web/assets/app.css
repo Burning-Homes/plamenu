@@ -84,7 +84,7 @@
   --text-muted: light-dark(#5c6672, #93a0ad);
   --accent: light-dark(#3550d6, #7c97f6);
   --accent-soft: light-dark(#eaeefc, #1f2740);
-  --accent-contrast: #ffffff;
+  --accent-contrast: light-dark(#ffffff, #15191e);
   --danger: light-dark(#c93a2b, #ec7064);
   --danger-soft: color-mix(in srgb, var(--danger) 12%, var(--surface));
   --boost: light-dark(#179a63, #41c98c);
@@ -133,6 +133,21 @@ a {
   &:hover {
     text-decoration: underline;
   }
+}
+
+/* Links embedded in prose need a persistent non-colour cue. Navigation,
+   cards and button-shaped anchors keep their component styling; the external
+   link pill inside a post is likewise already distinguished by its border. */
+:where(
+  .status__content,
+  .profile__note,
+  .directory-card__note,
+  .settings-field__hint,
+  .auth-card__alt
+) a:not(.status__external-link) {
+  text-decoration-line: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.14em;
 }
 
 h1 {
@@ -2081,7 +2096,7 @@ a.edit-media__thumb--file {
   /* One booster of several muted or blocked in place: the name dims, the card
      does not — its post is in the feed on everyone else's account too. */
   a.is-moderated {
-    opacity: 0.45;
+    color: var(--text-muted);
     text-decoration: line-through;
   }
 }
@@ -3534,17 +3549,22 @@ img.reaction__emoji {
   background: var(--surface-2);
 }
 
-/* A card whose author (or server) the reader just muted or blocked in
-   place: dimmed as feedback, but still fully interactable so the verb is
-   one click to take back. Hover / focus mostly restores it for reading. */
+/* A card whose author (or server) the reader just muted or blocked in place:
+   the changed surface and border provide feedback without fading its text,
+   links and still-active undo controls below accessible contrast. */
 .status.is-moderated {
-  opacity: 0.45;
-  transition: opacity 0.15s ease;
+  background: var(--surface-2);
+  border-color: var(--text-muted);
+  border-style: dashed;
+  box-shadow: none;
+  transition:
+    background var(--transition),
+    border-color var(--transition);
 }
 
 .status.is-moderated:hover,
 .status.is-moderated:focus-within {
-  opacity: 0.85;
+  background: var(--surface-hover);
 }
 
 /* ---- Pager ------------------------------------------------------------ */
