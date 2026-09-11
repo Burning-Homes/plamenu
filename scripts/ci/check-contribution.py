@@ -52,7 +52,12 @@ def main():
     ).splitlines()
     if not revisions:
         raise SystemExit("Empty contribution range; provide an earlier base commit")
-    for revision in revisions:
+    # Forgejo-created merge commits do not carry DCO trailers. Exclude only
+    # those commits; rev-list still follows every parent and checks their work.
+    dco_revisions = git(
+        "rev-list", "--reverse", "--no-merges", f"{base}..{head}" if base else head
+    ).splitlines()
+    for revision in dco_revisions:
         message = git("show", "-s", "--format=%B", revision)
         trailers = subprocess.check_output(
             ["git", "interpret-trailers", "--parse"], input=message, text=True
@@ -76,7 +81,8 @@ def main():
                     check=True,
                 )
     print(
-        f"PASS DCO and seed-version range {base or 'root'}..{head} ({len(revisions)} commits)"
+        f"PASS DCO and seed-version range {base or 'root'}..{head} "
+        f"({len(dco_revisions)} non-merge DCO commits, {len(revisions)} total commits)"
     )
 
 

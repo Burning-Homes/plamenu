@@ -28,6 +28,7 @@ class ContributionTests(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "Initial", "--signoff")
         self.base = self.git("rev-parse", "HEAD").strip()
+        self.main_branch = self.git("branch", "--show-current").strip()
 
     def git(self, *args):
         return subprocess.check_output(["git", *args], cwd=self.root, text=True)
@@ -36,6 +37,14 @@ class ContributionTests(unittest.TestCase):
         (self.root / "change").write_text("changed\n")
         self.git("add", ".")
         self.git("commit", "-qm", "Change", *(["--signoff"] if signed else []))
+
+    def merge_change(self, signed=True):
+        self.git("switch", "-qc", "feature")
+        self.change(signed=signed)
+        feature = self.git("rev-parse", "HEAD").strip()
+        self.git("switch", "-q", self.main_branch)
+        self.git("merge", "--no-ff", "-qm", "Merge feature", "feature")
+        return feature
 
     def check(self, base=None, kind="push", manual_base=""):
 
@@ -70,6 +79,18 @@ class ContributionTests(unittest.TestCase):
     def test_unsigned_change_rejected(self):
         self.change(signed=False)
         self.assertIn("Missing DCO sign-off", self.check().stderr)
+
+    def test_unsigned_merge_commit_is_exempt(self):
+        self.merge_change()
+        result = self.check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("1 non-merge DCO commits, 2 total commits", result.stdout)
+
+    def test_unsigned_commit_behind_merge_is_rejected(self):
+        unsigned = self.merge_change(signed=False)
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(f"Missing DCO sign-off: {unsigned}", result.stderr)
 
     def test_missing_base_rejected(self):
         self.change()
