@@ -30,9 +30,12 @@ Installing `zstd` before restore and save keeps the cache format consistent.
 The repository protection configuration in
 [ci/codefloe-settings.json](https://codefloe.com/plamenu/plamenu/src/branch/main/ci/codefloe-settings.json) requires both PR
 statuses before merging into `main`, including for administrators. Direct and
-force pushes are disabled. The `maintainers` team controls `v*` tags. DCO
+force pushes are disabled, and signed commits are required. The `maintainers`
+team controls `v*` tags. DCO
 trailers and cryptographic signatures are separate checks: CI checks trailers;
-authored commits must also be signed and their signatures verified. New-branch
+authored commits must also be signed and their signatures verified. Only
+fast-forward pull-request merges are enabled so Codefloe cannot replace them
+with unsigned forge-generated commits. New-branch
 pushes and rewritten root commits check the complete history. A root commit introduces the benchmark
 seed; later dataset changes still require a seed-version bump. Manual checks
 also work when the selected commit has no parent.

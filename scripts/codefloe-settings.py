@@ -113,6 +113,12 @@ def main():
                         "default_branch",
                         "has_actions",
                         "has_releases",
+                        "default_merge_style",
+                        "allow_fast_forward_only_merge",
+                        "allow_merge_commits",
+                        "allow_rebase",
+                        "allow_rebase_explicit",
+                        "allow_squash_merge",
                     ]
                 },
                 "branch_protections": api(repo + "/branch_protections"),

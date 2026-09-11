@@ -6,7 +6,13 @@
     "has_releases": true,
     "has_packages": true,
     "description": "ActivityPub server with a Mastodon-compatible API",
-    "default_delete_branch_after_merge": true
+    "default_delete_branch_after_merge": true,
+    "default_merge_style": "fast-forward-only",
+    "allow_fast_forward_only_merge": true,
+    "allow_merge_commits": false,
+    "allow_rebase": false,
+    "allow_rebase_explicit": false,
+    "allow_squash_merge": false
   },
   "maintainers": [
     "lnkr"
@@ -16,6 +22,7 @@
     "enable_push": false,
     "apply_to_admins": true,
     "enable_force_push_allowlist": false,
+    "require_signed_commits": true,
     "enable_status_check": true,
     "status_check_contexts": [
       "Contribution checks / quick (pull_request)",

@@ -33,7 +33,13 @@ Keep the administration token outside CI.
 ## Protections
 
 - `main` accepts pull-request merges after both quick and Clippy checks pass.
-  Direct and force pushes are disabled, including for administrators.
+  Direct and force pushes are disabled, including for administrators, and the
+  branch rejects commits that Codefloe cannot verify as signed.
+- Pull requests merge fast-forward-only. Codefloe does not currently sign the
+  merge, squash, or rebase commits it generates, so those merge styles are
+  disabled: the reviewed, locally signed and forge-verified source commit must
+  become the new `main` tip unchanged. Rebase an outdated source branch onto
+  `main`, re-sign the rewritten commits, and rerun both checks before merging.
 - Rejected reviews and outdated branches block merging. New commits dismiss
   stale approvals. The independent-approval count is currently zero.
 - The `maintainers` team has write access and is named in `CODEOWNERS`.
@@ -45,8 +51,10 @@ rules and access after changing team membership or recreating the repository.
 ## Commit and release credentials
 
 Sign authored commits and include the DCO sign-off with `git commit -S -s`.
-Verify the signature locally and on Codefloe after pushing. DCO trailers are
-checked by contribution CI; they do not verify the cryptographic signature.
+Verify the signature locally and on Codefloe after pushing, and verify after
+the fast-forward that Codefloe's `main` SHA is that same commit. Wait for both
+the pull-request and resulting `main` push checks. DCO trailers are checked by
+contribution CI; they do not verify the cryptographic signature.
 
 [Release signing](RELEASING.md#publishing-setup) lists the
 publication secrets, trusted public keys, and key recovery procedure.

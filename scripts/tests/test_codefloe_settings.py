@@ -27,6 +27,12 @@ class SettingsTests(unittest.TestCase):
             "default_branch": "main",
             "has_actions": True,
             "has_releases": True,
+            "default_merge_style": "fast-forward-only",
+            "allow_fast_forward_only_merge": True,
+            "allow_merge_commits": False,
+            "allow_rebase": False,
+            "allow_rebase_explicit": False,
+            "allow_squash_merge": False,
         }
 
         class Opener:
@@ -89,9 +95,19 @@ class SettingsTests(unittest.TestCase):
                     path: body for method, path, body in requests if method == "PATCH"
                 }
                 self.assertNotIn("private", patches["/repos/plamenu/plamenu"])
+                repository = patches["/repos/plamenu/plamenu"]
+                self.assertEqual(
+                    repository["default_merge_style"], "fast-forward-only"
+                )
+                self.assertTrue(repository["allow_fast_forward_only_merge"])
+                self.assertFalse(repository["allow_merge_commits"])
+                self.assertFalse(repository["allow_rebase"])
+                self.assertFalse(repository["allow_rebase_explicit"])
+                self.assertFalse(repository["allow_squash_merge"])
                 rule = patches["/repos/plamenu/plamenu/branch_protections/main"]
                 self.assertFalse(rule["enable_push"])
                 self.assertTrue(rule["apply_to_admins"])
+                self.assertTrue(rule["require_signed_commits"])
                 self.assertEqual(len(rule["status_check_contexts"]), 2)
                 self.assertEqual(
                     patches["/repos/plamenu/plamenu/tag_protections/2"][
