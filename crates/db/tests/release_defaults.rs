@@ -4,6 +4,12 @@ use plamenu_db::{
 
 #[sqlx::test(migrations = false)]
 async fn upgrade_preserves_custom_settings_and_existing_user_preferences(pool: PgPool) {
+    // The development test runner seeds template1 for speed. Upgrade tests
+    // need a blank per-test database regardless of that runner optimization.
+    sqlx::raw_sql("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+        .execute(&pool)
+        .await
+        .unwrap();
     MIGRATOR.run_to(71, &pool).await.unwrap();
     let account = account::create_local(
         &pool,

@@ -15,7 +15,7 @@ use tokio::process::Command;
 
 use crate::config::Config;
 use crate::error::ApiError;
-use crate::media_processing::blurhash_for;
+use crate::media_processing::{avif_dimensions, blurhash_for, push_avif_encoder_args, read_pam};
 
 /// ffprobe answers in milliseconds on sane inputs; a longer run means a
 /// pathological file or a broken binary. Killed, not waited out — one hung
@@ -435,22 +435,87 @@ async fn transcode_video(
     run_ffmpeg(config, args, ENCODE_TIMEOUT).await
 }
 
-/// Extracts the poster frame (frame 0, scaled into 640x640) — the `small`
-/// style of Mastodon's `VIDEO_STYLES`.
-async fn extract_frame(config: &Config, input: &Path, output: &Path) -> Result<(), ApiError> {
+/// Produces a video's AVIF poster and its tiny blurhash source in one `FFmpeg`
+/// decode. The old path decoded into PNG, decoded that again in Rust, then
+/// launched `FFmpeg` a second time to encode AVIF.
+async fn extract_poster(
+    config: &Config,
+    work_dir: &Path,
+    input: &Path,
+    params: &TranscodeParams,
+) -> Result<(AvSmall, Option<String>), ApiError> {
+    let _permit = crate::media_gate::acquire().await;
+    let poster_path = work_dir.join("poster.avif");
+    let hash_path = work_dir.join("poster-hash.pam");
+    let args = poster_ffmpeg_args(input, &poster_path, &hash_path, params);
+    run_ffmpeg(config, args, FRAME_TIMEOUT).await?;
+
+    let bytes = tokio::fs::read(&poster_path)
+        .await
+        .map_err(|e| ApiError::Internal(Box::new(e)))?;
+    let (width, height) = avif_dimensions(&bytes)
+        .ok_or_else(|| transcode_failed("ffmpeg returned an invalid AVIF poster".into()))?;
+    let hash_image = read_pam(&hash_path)?;
+    Ok((
+        AvSmall {
+            bytes,
+            width,
+            height,
+        },
+        blurhash_for(&hash_image),
+    ))
+}
+
+fn poster_ffmpeg_args(
+    input: &Path,
+    poster_path: &Path,
+    hash_path: &Path,
+    params: &TranscodeParams,
+) -> Vec<std::ffi::OsString> {
     let mut args: Vec<std::ffi::OsString> =
         vec!["-ss".into(), "0".into(), "-i".into(), input.into()];
+    args.extend([
+        "-filter_complex".into(),
+        "[0:v:0]scale='min(640,iw)':'min(640,ih)':force_original_aspect_ratio=decrease,split=2[poster][hash_source];[hash_source]scale='min(64,iw)':'min(64,ih)':force_original_aspect_ratio=decrease[hash]".into(),
+        "-map".into(),
+        "[poster]".into(),
+    ]);
+    push_avif_encoder_args(&mut args, params.avif_speed_preview, params.avif_quality);
     args.extend(os_args(&[
-        "-vf",
-        "scale='min(640,iw)':'min(640,ih)':force_original_aspect_ratio=decrease",
-        "-f",
-        "image2",
+        "-pix_fmt",
+        "yuv444p",
+        "-color_range",
+        "pc",
+        "-colorspace",
+        "smpte170m",
+        "-color_primaries",
+        "bt709",
+        "-color_trc",
+        "iec61966-2-1",
+        "-map_metadata",
+        "-1",
         "-frames:v",
         "1",
+        "-f",
+        "avif",
+        "-y",
     ]));
-    args.push("-y".into());
-    args.push(output.into());
-    run_ffmpeg(config, args, FRAME_TIMEOUT).await
+    args.push(poster_path.as_os_str().into());
+    args.extend(os_args(&[
+        "-map",
+        "[hash]",
+        "-frames:v",
+        "1",
+        "-c:v",
+        "pam",
+        "-pix_fmt",
+        "rgba",
+        "-f",
+        "image2",
+        "-y",
+    ]));
+    args.push(hash_path.as_os_str().into());
+    args
 }
 
 /// Transcodes audio to the delivery mp3 (Mastodon's `AUDIO_STYLES`;
@@ -620,23 +685,7 @@ pub async fn process_remote_av(
     run_ffmpeg(config, args, ENCODE_TIMEOUT).await?;
 
     let out_probe = probe(config, &output).await?;
-    let frame_path = work_dir.join("remote-frame.png");
-    extract_frame(config, &output, &frame_path).await?;
-    let frame_bytes = tokio::fs::read(&frame_path)
-        .await
-        .map_err(|e| ApiError::Internal(Box::new(e)))?;
-    let frame =
-        image::load_from_memory(&frame_bytes).map_err(|e| ApiError::Internal(Box::new(e)))?;
-    let blurhash = blurhash_for(&frame);
-    let small = AvSmall {
-        width: frame.width(),
-        height: frame.height(),
-        bytes: crate::media_processing::encode_preview_avif(
-            &frame,
-            params.avif_speed_preview,
-            params.avif_quality,
-        )?,
-    };
+    let (small, blurhash) = extract_poster(config, work_dir, &output, params).await?;
     let soundless = audio_path.is_none();
     let short = out_probe.duration.unwrap_or(f64::MAX) <= params.gifv_max_seconds;
     let file_size = file_len(&output).await?;
@@ -761,26 +810,7 @@ pub async fn process_av(
             // `populate_meta` probing `queued_for_write`.
             let out_probe = probe(config, &output).await?;
 
-            let frame_path = dir.path().join("frame.png");
-            extract_frame(config, &output, &frame_path).await?;
-            let frame_bytes = tokio::fs::read(&frame_path)
-                .await
-                .map_err(|e| ApiError::Internal(Box::new(e)))?;
-            let frame = image::load_from_memory(&frame_bytes)
-                .map_err(|e| ApiError::Internal(Box::new(e)))?;
-            let blurhash = blurhash_for(&frame);
-            // Re-encode the ffmpeg PNG frame as AVIF — the poster is a
-            // feed-visible preview, so it gets the same size win as an image's
-            // small style.
-            let small = AvSmall {
-                width: frame.width(),
-                height: frame.height(),
-                bytes: crate::media_processing::encode_preview_avif(
-                    &frame,
-                    params.avif_speed_preview,
-                    params.avif_quality,
-                )?,
-            };
+            let (small, blurhash) = extract_poster(config, dir.path(), &output, params).await?;
 
             let file_size = file_len(&output).await?;
             Ok(ProcessedAv {
@@ -876,5 +906,45 @@ mod tests {
             classify(&video(width, at_limit + 1), 30.0),
             Err(ApiError::Unprocessable(message)) if message.contains("not supported")
         ));
+    }
+
+    #[test]
+    fn poster_command_emits_avif_and_small_blurhash_source_in_one_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("source.mp4");
+        let poster = dir.path().join("poster.avif");
+        let hash = dir.path().join("hash.pam");
+        let generated = std::process::Command::new("ffmpeg")
+            .args([
+                "-nostdin",
+                "-loglevel",
+                "fatal",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=red:size=800x450:duration=0.1",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-y",
+            ])
+            .arg(&input)
+            .status()
+            .expect("the required ffmpeg is installed");
+        assert!(generated.success());
+
+        let args = poster_ffmpeg_args(&input, &poster, &hash, &TranscodeParams::default());
+        let extracted = std::process::Command::new("ffmpeg")
+            .args(["-nostdin", "-loglevel", "fatal"])
+            .args(args)
+            .status()
+            .expect("the required ffmpeg is installed");
+        assert!(extracted.success());
+        let poster_bytes = std::fs::read(poster).unwrap();
+        assert_eq!(avif_dimensions(&poster_bytes), Some((640, 360)));
+        let hash_image = read_pam(&hash).unwrap();
+        assert_eq!((hash_image.width(), hash_image.height()), (64, 36));
+        assert!(blurhash_for(&hash_image).is_some());
     }
 }

@@ -47,6 +47,26 @@ class LemmyApi:
     def put(self, path: str, **json):
         return self._request("PUT", path, json=json)
 
+    def upload_image(
+        self, data: bytes, filename: str = "image.avif", mime: str = "image/avif"
+    ) -> dict:
+        """Upload one image through Lemmy's authenticated pict-rs proxy.
+        Returns the pict-rs file record plus its public Lemmy URL."""
+        r = self.http.post(
+            self.base_url + "/pictrs/image",
+            files={"images[]": (filename, data, mime)},
+            timeout=30,
+        )
+        if not r.ok:
+            raise LemmyError(f"POST /pictrs/image -> {r.status_code}: {r.text[:500]}")
+        response = r.json()
+        files = response.get("files") or []
+        if len(files) != 1:
+            raise LemmyError(f"unexpected pict-rs response: {response}")
+        uploaded = files[0]
+        uploaded["url"] = f"{self.base_url}/pictrs/image/{uploaded['file']}"
+        return uploaded
+
     # ── domain helpers ────────────────────────────────────────────────
 
     def login(self, user: str, password: str) -> str:

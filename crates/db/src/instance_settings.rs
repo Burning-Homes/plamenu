@@ -190,10 +190,12 @@ pub struct InstanceSettings {
     pub media_gifv_max_seconds: i32,
     /// AVIF encoder quality (1-100) for every AVIF rendition.
     pub media_avif_quality: i32,
-    /// rav1e speed (1-10, higher = faster/larger) for full renditions —
-    /// encoded inline on proxy cache-misses, so fast by default.
+    /// AVIF speed (1-10, higher = faster/larger) for full renditions. This is
+    /// mapped onto libaom's `cpu-used` range and is fast by default because
+    /// proxy cache misses encode inline.
     pub media_avif_speed_full: i32,
-    /// rav1e speed for preview/`small` renditions (denser, off the hot path).
+    /// AVIF/libaom speed for preview/`small` renditions (denser, off the hot
+    /// path).
     pub media_avif_speed_preview: i32,
     /// JPEG encoder quality (1-100) for photo renditions.
     pub media_jpeg_quality: i32,

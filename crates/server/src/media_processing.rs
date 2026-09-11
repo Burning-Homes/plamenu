@@ -14,6 +14,7 @@
 //! downscaled `small` style (Mastodon's preview) and a blurhash.
 
 use image::{AnimationDecoder, DynamicImage, GenericImageView, ImageFormat};
+use std::path::Path;
 
 use crate::error::ApiError;
 
@@ -253,7 +254,7 @@ fn unsupported(reason: &str) -> ApiError {
 /// both the upload endpoint and the remote-media download worker.
 #[must_use]
 pub fn is_still_image(input: &[u8]) -> bool {
-    if is_jxl(input) {
+    if parse_avif(input).is_some() || is_jxl(input) {
         return true;
     }
     match image::guess_format(input) {
@@ -261,6 +262,41 @@ pub fn is_still_image(input: &[u8]) -> bool {
         Ok(ImageFormat::Gif) => !is_animated_gif(input),
         _ => false,
     }
+}
+
+#[derive(Debug)]
+struct ParsedAvif {
+    data: avif_parse::AvifData,
+    premultiplied_alpha: bool,
+    width: u32,
+    height: u32,
+}
+
+/// Parses the AVIF item relationships before invoking `FFmpeg`. The `FFmpeg` 6.1
+/// build used in production exposes only the primary item, so Plamenu feeds
+/// its AV1 decoder the extracted colour and alpha OBUs directly. The parser
+/// also carries the `prem` relationship used when the planes are merged.
+fn parse_avif(input: &[u8]) -> Option<ParsedAvif> {
+    let data = avif_parse::read_avif(&mut std::io::Cursor::new(input)).ok()?;
+    let metadata = data.primary_item_metadata().ok()?;
+    if !metadata.still_picture {
+        return None;
+    }
+    let premultiplied_alpha = data.premultiplied_alpha;
+    Some(ParsedAvif {
+        data,
+        premultiplied_alpha,
+        width: metadata.max_frame_width.get(),
+        height: metadata.max_frame_height.get(),
+    })
+}
+
+/// Dimensions recorded by the AVIF primary item. Keeping this tiny parser
+/// available to the video pipeline avoids probing a poster that `FFmpeg` has
+/// just produced.
+#[must_use]
+pub(crate) fn avif_dimensions(input: &[u8]) -> Option<(u32, u32)> {
+    parse_avif(input).map(|avif| (avif.width, avif.height))
 }
 
 /// True when the bytes are JPEG XL: the bare codestream signature or the
@@ -271,35 +307,6 @@ pub fn is_jxl(input: &[u8]) -> bool {
         || input.starts_with(&[
             0x00, 0x00, 0x00, 0x0C, b'J', b'X', b'L', b' ', 0x0D, 0x0A, 0x87, 0x0A,
         ])
-}
-
-/// Decodes a JPEG XL image (first frame) via the pure-Rust `jxl-oxide` —
-/// the decode half of the optional JXL support; encoding goes through
-/// ffmpeg's libjxl. `None` for unparseable input or over-limit dimensions
-/// (checked from the headers, before any pixel is decoded).
-fn decode_jxl(input: &[u8]) -> Option<DynamicImage> {
-    let image = jxl_oxide::JxlImage::builder()
-        .read(std::io::Cursor::new(input))
-        .ok()?;
-    if u64::from(image.width()) * u64::from(image.height()) > MAX_PIXELS {
-        return None;
-    }
-    let render = image.render_frame(0).ok()?;
-    let frame = render.image_all_channels();
-    let (width, height, channels) = (frame.width(), frame.height(), frame.channels());
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let samples: Vec<u8> = frame
-        .buf()
-        .iter()
-        .map(|s| (s * 255.0 + 0.5).clamp(0.0, 255.0) as u8)
-        .collect();
-    let (width, height) = (u32::try_from(width).ok()?, u32::try_from(height).ok()?);
-    match channels {
-        1 => image::GrayImage::from_raw(width, height, samples).map(DynamicImage::ImageLuma8),
-        3 => image::RgbImage::from_raw(width, height, samples).map(DynamicImage::ImageRgb8),
-        4 => image::RgbaImage::from_raw(width, height, samples).map(DynamicImage::ImageRgba8),
-        _ => None,
-    }
 }
 
 /// True when the bytes are a multi-frame GIF — those transcode to `gifv`
@@ -409,16 +416,16 @@ pub fn blurhash_for(image: &DynamicImage) -> Option<String> {
     .ok()
 }
 
-/// Default AVIF quality (0–100, higher = better) for re-encoded media.
+/// Default AVIF quality (1–100, higher = better) for re-encoded media.
 const AVIF_QUALITY: u8 = 70;
-/// rav1e speed (0–10, higher = faster/larger) for full-size renditions. The
+/// AVIF speed (1–10, higher = faster/larger) for full-size renditions. The
 /// original may be re-encoded inline on the media proxy's cache-miss path, so
 /// speed is chosen to stay well inside `PROXY_FETCH_TIMEOUT` even for a
 /// max-edge image (≈2 s for 1920² on the staging box); the extra bytes over a
 /// slower speed are immaterial for a rendition loaded one-at-a-time (lightbox).
 const AVIF_SPEED_FULL: u8 = 10;
 /// The preview is tiny (≤640×360), so a slower speed buys better compression
-/// almost for free (~1.5 s) — and it is the feed-critical rendition where bytes
+/// almost for free — and it is the feed-critical rendition where bytes
 /// matter most.
 const AVIF_SPEED_PREVIEW: u8 = 6;
 
@@ -487,12 +494,15 @@ impl EncodeParams {
 /// How a processed rendition is encoded.
 #[derive(Clone, Copy)]
 enum Encode<'a> {
-    /// AVIF at the given rav1e speed and quality (re-encoded user media).
-    Avif { speed: u8, quality: u8 },
+    /// AVIF through `FFmpeg`'s libaom encoder.
+    Avif {
+        ffmpeg_path: &'a str,
+        speed: u8,
+        quality: u8,
+    },
     /// JPEG at the given quality, or PNG when the image carries alpha — the
     /// legacy codec kept for operator site uploads, whose favicon/app-icon
-    /// styles must stay PNG and whose original is re-decoded downstream (we
-    /// cannot decode AVIF).
+    /// styles must stay PNG and whose original is re-decoded downstream.
     Photo { quality: u8 },
     /// JPEG XL through ffmpeg's libjxl (the build cannot link libjxl — C++ —
     /// but the official image's ffmpeg carries the encoder).
@@ -511,13 +521,12 @@ fn encode_image(
 ) -> Result<(Vec<u8>, &'static str, &'static str), ApiError> {
     let mut bytes = Vec::new();
     match encode {
-        Encode::Avif { speed, quality } => {
-            let encoder = image::codecs::avif::AvifEncoder::new_with_speed_quality(
-                &mut bytes, speed, quality,
-            );
-            image
-                .write_with_encoder(encoder)
-                .map_err(|e| ApiError::Internal(Box::new(e)))?;
+        Encode::Avif {
+            ffmpeg_path,
+            speed,
+            quality,
+        } => {
+            let bytes = encode_avif(image, ffmpeg_path, speed, quality)?;
             Ok((bytes, "image/avif", "avif"))
         }
         Encode::Photo { .. } if image.color().has_alpha() => {
@@ -545,31 +554,54 @@ fn encode_image(
     }
 }
 
-/// Encodes an already-resized rendition as JPEG XL by shelling out to ffmpeg
-/// (libjxl). Runs on the blocking pool (the caller is `process_image`), so a
-/// blocking wait is fine; a poll-loop watchdog kills a wedged encoder.
-fn encode_jxl(
-    image: &DynamicImage,
-    ffmpeg_path: &str,
-    distance: f32,
-    effort: u8,
-) -> Result<Vec<u8>, ApiError> {
-    const JXL_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(1);
-    let dir = tempfile::tempdir().map_err(|e| ApiError::Internal(Box::new(e)))?;
-    let input = dir.path().join("in.png");
-    let output = dir.path().join("out.jxl");
-    image
-        .save_with_format(&input, ImageFormat::Png)
-        .map_err(|e| ApiError::Internal(Box::new(e)))?;
+const IMAGE_FFMPEG_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(1);
+
+/// Maps the public 1..=100 quality scale to libaom's inverse 63..=0 CRF.
+/// Keeping the full ranges aligned makes the setting predictable and avoids
+/// pretending rav1e's old quality scale was codec-independent.
+#[must_use]
+pub(crate) fn avif_crf(quality: u8) -> u8 {
+    let quality = u16::from(quality.clamp(1, 100));
+    u8::try_from((100 - quality) * 63 / 99).unwrap_or(63)
+}
+
+/// Maps Plamenu's historical 1..=10 AVIF speed knob onto libaom's 0..=8
+/// `cpu-used` range while preserving both endpoints.
+#[must_use]
+pub(crate) fn avif_cpu_used(speed: u8) -> u8 {
+    let speed = u16::from(speed.clamp(1, 10) - 1);
+    u8::try_from((speed * 8 + 4) / 9).unwrap_or(8)
+}
+
+/// Appends libaom still-image options for one output.
+pub(crate) fn push_avif_encoder_args(args: &mut Vec<std::ffi::OsString>, speed: u8, quality: u8) {
+    for (key, value) in [
+        ("-c:v", "libaom-av1".to_owned()),
+        ("-still-picture", "1".to_owned()),
+        ("-cpu-used", avif_cpu_used(speed).to_string()),
+        ("-crf", avif_crf(quality).to_string()),
+        ("-b:v", "0".to_owned()),
+    ] {
+        args.push(key.into());
+        args.push(value.into());
+    }
+}
+
+/// Runs a bounded blocking `FFmpeg` image operation. Image work already lives
+/// on Tokio's blocking pool and behind the process-wide media gate.
+fn run_image_ffmpeg(ffmpeg_path: &str, args: &[std::ffi::OsString]) -> Result<(), ApiError> {
     let mut child = std::process::Command::new(ffmpeg_path)
-        .args(["-nostdin", "-loglevel", "fatal", "-i"])
-        .arg(&input)
-        .args(["-frames:v", "1", "-c:v", "libjxl", "-distance"])
-        .arg(distance.to_string())
-        .arg("-effort")
-        .arg(effort.to_string())
-        .arg("-y")
-        .arg(&output)
+        .args([
+            "-nostdin",
+            "-loglevel",
+            "fatal",
+            // Per-allocation ceiling. The pixel cap is the primary guard;
+            // this also stops a hostile codec header requesting one enormous
+            // decoder buffer before dimensions are available.
+            "-max_alloc",
+            "268435456",
+        ])
+        .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -579,34 +611,264 @@ fn encode_jxl(
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) if started.elapsed() > JXL_TIMEOUT => {
+            Ok(None) if started.elapsed() > IMAGE_FFMPEG_TIMEOUT => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(ApiError::Internal("JPEG XL encode timed out".into()));
+                return Err(ApiError::Internal("image processing timed out".into()));
             }
-            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(25)),
             Err(e) => return Err(ApiError::Internal(Box::new(e))),
         }
     };
-    if !status.success() {
-        return Err(ApiError::Internal(
-            "ffmpeg failed to encode JPEG XL (is libjxl available?)".into(),
-        ));
+    if status.success() {
+        Ok(())
+    } else {
+        Err(ApiError::Internal("ffmpeg image processing failed".into()))
     }
-    std::fs::read(&output).map_err(|e| ApiError::Internal(Box::new(e)))
 }
 
-/// Encodes a preview/poster frame (a video's extracted still) as AVIF, using
-/// the same settings as an image's small style. Video posters are opaque and
-/// transcoded in the background, so the preview speed applies here too. The AV
-/// counterpart of the small style [`process_image`] produces.
-pub fn encode_preview_avif(
-    frame: &DynamicImage,
+/// Writes an RGBA PAM. It is deliberately uncompressed: this is a local
+/// `FFmpeg` hand-off, so avoiding a PNG encode/decode saves CPU and keeps alpha
+/// exact.
+fn write_pam(image: &DynamicImage, path: &Path) -> Result<(), ApiError> {
+    use std::io::Write as _;
+
+    let rgba = image.to_rgba8();
+    let mut file = std::fs::File::create(path).map_err(|e| ApiError::Internal(Box::new(e)))?;
+    write!(
+        file,
+        "P7\nWIDTH {}\nHEIGHT {}\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n",
+        rgba.width(),
+        rgba.height()
+    )
+    .map_err(|e| ApiError::Internal(Box::new(e)))?;
+    file.write_all(rgba.as_raw())
+        .map_err(|e| ApiError::Internal(Box::new(e)))
+}
+
+fn parse_pam(input: &[u8]) -> Result<DynamicImage, ApiError> {
+    const END: &[u8] = b"ENDHDR\n";
+    let header_end = input
+        .windows(END.len())
+        .position(|window| window == END)
+        .map(|position| position + END.len())
+        .ok_or_else(|| ApiError::Internal("ffmpeg returned an invalid PAM image".into()))?;
+    let header =
+        std::str::from_utf8(&input[..header_end]).map_err(|e| ApiError::Internal(Box::new(e)))?;
+    if !header.starts_with("P7\n")
+        || !header.lines().any(|line| line == "DEPTH 4")
+        || !header.lines().any(|line| line == "MAXVAL 255")
+    {
+        return Err(ApiError::Internal(
+            "ffmpeg returned an unsupported PAM layout".into(),
+        ));
+    }
+    let value = |name: &str| -> Option<u32> {
+        header
+            .lines()
+            .find_map(|line| line.strip_prefix(name))
+            .and_then(|value| value.trim().parse().ok())
+    };
+    let width = value("WIDTH ")
+        .ok_or_else(|| ApiError::Internal("ffmpeg PAM is missing its width".into()))?;
+    let height = value("HEIGHT ")
+        .ok_or_else(|| ApiError::Internal("ffmpeg PAM is missing its height".into()))?;
+    if width == 0 || height == 0 {
+        return Err(ApiError::Internal(
+            "ffmpeg PAM has zero-sized dimensions".into(),
+        ));
+    }
+    let pixels = u64::from(width) * u64::from(height);
+    if pixels > MAX_PIXELS {
+        return Err(unsupported("Image dimensions exceed the limit"));
+    }
+    let expected =
+        usize::try_from(pixels.saturating_mul(4)).map_err(|e| ApiError::Internal(Box::new(e)))?;
+    let samples = input
+        .get(header_end..)
+        .filter(|samples| samples.len() == expected)
+        .ok_or_else(|| ApiError::Internal("ffmpeg PAM has an invalid payload length".into()))?
+        .to_vec();
+    let rgba = image::RgbaImage::from_raw(width, height, samples)
+        .ok_or_else(|| ApiError::Internal("ffmpeg PAM dimensions are invalid".into()))?;
+    if rgba.pixels().all(|pixel| pixel[3] == u8::MAX) {
+        Ok(DynamicImage::ImageRgb8(
+            DynamicImage::ImageRgba8(rgba).to_rgb8(),
+        ))
+    } else {
+        Ok(DynamicImage::ImageRgba8(rgba))
+    }
+}
+
+pub(crate) fn read_pam(path: &Path) -> Result<DynamicImage, ApiError> {
+    let bytes = std::fs::read(path).map_err(|e| ApiError::Internal(Box::new(e)))?;
+    parse_pam(&bytes)
+}
+
+fn encode_avif(
+    image: &DynamicImage,
+    ffmpeg_path: &str,
     speed: u8,
     quality: u8,
 ) -> Result<Vec<u8>, ApiError> {
-    let (bytes, _, _) = encode_image(frame, Encode::Avif { speed, quality })?;
-    Ok(bytes)
+    let dir = tempfile::tempdir().map_err(|e| ApiError::Internal(Box::new(e)))?;
+    let input = dir.path().join("in.pam");
+    let color_output = dir.path().join("color.obu");
+    let alpha_output = dir.path().join("alpha.obu");
+    write_pam(image, &input)?;
+
+    let has_alpha = image.color().has_alpha();
+    let mut args: Vec<std::ffi::OsString> = vec!["-i".into(), input.into()];
+    if has_alpha {
+        args.extend([
+            "-filter_complex".into(),
+            "[0:v]split=2[color][alpha_source];[color]format=yuv444p[color_out];[alpha_source]alphaextract,format=gray,setparams=colorspace=bt709[alpha]".into(),
+            "-map".into(),
+            "[color_out]".into(),
+        ]);
+    } else {
+        args.extend(["-map".into(), "0:v:0".into()]);
+    }
+    push_avif_encoder_args(&mut args, speed, quality);
+    args.extend([
+        "-pix_fmt".into(),
+        "yuv444p".into(),
+        "-frames:v".into(),
+        "1".into(),
+        "-color_range".into(),
+        "pc".into(),
+        "-colorspace".into(),
+        "smpte170m".into(),
+        "-color_primaries".into(),
+        "bt709".into(),
+        "-color_trc".into(),
+        "iec61966-2-1".into(),
+        "-f".into(),
+        "obu".into(),
+        "-y".into(),
+        color_output.as_os_str().into(),
+    ]);
+    if has_alpha {
+        args.extend(["-map".into(), "[alpha]".into()]);
+        // Transparency edges must remain exact; a lossy mask creates visible
+        // halos even when the colour stream has ample quality.
+        push_avif_encoder_args(&mut args, speed, 100);
+        args.extend([
+            "-pix_fmt".into(),
+            "gray".into(),
+            "-colorspace".into(),
+            "bt709".into(),
+            "-frames:v".into(),
+            "1".into(),
+            "-f".into(),
+            "obu".into(),
+            "-y".into(),
+            alpha_output.as_os_str().into(),
+        ]);
+    }
+    run_image_ffmpeg(ffmpeg_path, &args)?;
+    let color = std::fs::read(color_output).map_err(|e| ApiError::Internal(Box::new(e)))?;
+    let alpha = has_alpha
+        .then(|| std::fs::read(alpha_output))
+        .transpose()
+        .map_err(|e| ApiError::Internal(Box::new(e)))?;
+    Ok(avif_serialize::serialize_to_vec(
+        &color,
+        alpha.as_deref(),
+        image.width(),
+        image.height(),
+        8,
+    ))
+}
+
+fn decode_ffmpeg_image(
+    input: &[u8],
+    extension: &str,
+    ffmpeg_path: &str,
+    avif: Option<&ParsedAvif>,
+) -> Result<DynamicImage, ApiError> {
+    if avif.is_some_and(|avif| u64::from(avif.width) * u64::from(avif.height) > MAX_PIXELS) {
+        return Err(unsupported("Image dimensions exceed the limit"));
+    }
+    let dir = tempfile::tempdir().map_err(|e| ApiError::Internal(Box::new(e)))?;
+    let output = dir.path().join("out.pam");
+    let mut args: Vec<std::ffi::OsString> =
+        vec!["-max_pixels".into(), MAX_PIXELS.to_string().into()];
+    if let Some(avif) = avif {
+        // FFmpeg 6.1's AVIF demuxer exposes only the primary item. Feed the
+        // parsed AV1 OBUs directly so its dav1d decoder also sees alpha.
+        let color = dir.path().join("color.obu");
+        std::fs::write(&color, &avif.data.primary_item)
+            .map_err(|e| ApiError::Internal(Box::new(e)))?;
+        args.extend(["-f".into(), "obu".into(), "-i".into(), color.into()]);
+        if let Some(alpha) = avif.data.alpha_item.as_deref() {
+            let alpha_path = dir.path().join("alpha.obu");
+            std::fs::write(&alpha_path, alpha).map_err(|e| ApiError::Internal(Box::new(e)))?;
+            args.extend(["-f".into(), "obu".into(), "-i".into(), alpha_path.into()]);
+        }
+    } else {
+        let source = dir.path().join(format!("in.{extension}"));
+        std::fs::write(&source, input).map_err(|e| ApiError::Internal(Box::new(e)))?;
+        args.extend(["-i".into(), source.into()]);
+    }
+    if let Some(avif) = avif.filter(|avif| avif.data.alpha_item.is_some()) {
+        let unpremultiply = if avif.premultiplied_alpha {
+            ",unpremultiply=inplace=1"
+        } else {
+            ""
+        };
+        args.extend([
+            "-filter_complex".into(),
+            format!("[0:v:0][1:v:0]alphamerge{unpremultiply}").into(),
+        ]);
+    }
+    args.extend([
+        "-frames:v".into(),
+        "1".into(),
+        "-c:v".into(),
+        "pam".into(),
+        "-pix_fmt".into(),
+        "rgba".into(),
+        "-f".into(),
+        "image2".into(),
+        "-y".into(),
+        output.as_os_str().into(),
+    ]);
+    run_image_ffmpeg(ffmpeg_path, &args)?;
+    read_pam(&output)
+}
+
+/// Encodes an already-resized rendition as JPEG XL by shelling out to ffmpeg
+/// (libjxl). Runs on the blocking pool (the caller is `process_image`), so a
+/// blocking wait is fine; a poll-loop watchdog kills a wedged encoder.
+fn encode_jxl(
+    image: &DynamicImage,
+    ffmpeg_path: &str,
+    distance: f32,
+    effort: u8,
+) -> Result<Vec<u8>, ApiError> {
+    let dir = tempfile::tempdir().map_err(|e| ApiError::Internal(Box::new(e)))?;
+    let input = dir.path().join("in.pam");
+    let output = dir.path().join("out.jxl");
+    write_pam(image, &input)?;
+    let args = vec![
+        "-i".into(),
+        input.into(),
+        "-frames:v".into(),
+        "1".into(),
+        "-c:v".into(),
+        "libjxl".into(),
+        "-distance".into(),
+        distance.to_string().into(),
+        "-effort".into(),
+        effort.to_string().into(),
+        "-map_metadata".into(),
+        "-1".into(),
+        "-y".into(),
+        output.as_os_str().into(),
+    ];
+    run_image_ffmpeg(ffmpeg_path, &args)?;
+    std::fs::read(&output).map_err(|e| ApiError::Internal(Box::new(e)))
 }
 
 /// Downscales to the `small` style: Mastodon caps the preview's *area*
@@ -781,10 +1043,14 @@ fn process_image(
     if input.len() > MAX_UPLOAD_BYTES.min(params.max_image_bytes) {
         return Err(unsupported("File size exceeds the limit"));
     }
-    // JPEG XL decodes through jxl-oxide and is ALWAYS re-encoded — under
-    // passthrough it falls to the photo branch below, so a format most
-    // clients cannot display never federates as an original.
-    let format = if is_jxl(input) {
+    // AVIF and JPEG XL decode through FFmpeg. JXL is ALWAYS re-encoded — under
+    // passthrough it falls to the photo branch below, so a format most clients
+    // cannot display never federates as an original. AVIF follows the same
+    // privacy-safe fallback because we cannot losslessly strip arbitrary
+    // ISOBMFF metadata from the original container.
+    let avif = parse_avif(input);
+    let jxl = avif.is_none() && is_jxl(input);
+    let format = if avif.is_some() || jxl {
         None
     } else {
         let format = image::guess_format(input)
@@ -806,10 +1072,16 @@ fn process_image(
     } else {
         full
     };
-    let decoded = match format {
-        Some(format) => image::load_from_memory_with_format(input, format)
+    let decoded = match (format, avif.as_ref(), jxl) {
+        (Some(format), None, false) => image::load_from_memory_with_format(input, format)
             .map_err(|_| unsupported("File is not a readable image"))?,
-        None => decode_jxl(input).ok_or_else(|| unsupported("File is not a readable image"))?,
+        (None, Some(avif), false) => {
+            decode_ffmpeg_image(input, "avif", &params.ffmpeg_path, Some(avif))
+                .map_err(|_| unsupported("File is not a readable image"))?
+        }
+        (None, None, true) => decode_ffmpeg_image(input, "jxl", &params.ffmpeg_path, None)
+            .map_err(|_| unsupported("File is not a readable image"))?,
+        _ => return Err(unsupported("File content type is not supported")),
     };
     let (width, height) = decoded.dimensions();
     if u64::from(width) * u64::from(height) > MAX_PIXELS {
@@ -842,6 +1114,7 @@ fn process_image(
             };
             let encode = match full {
                 FullMedia::Avif => Encode::Avif {
+                    ffmpeg_path: &params.ffmpeg_path,
                     speed: params.avif_speed_full,
                     quality: params.avif_quality,
                 },
@@ -884,6 +1157,7 @@ fn process_image(
         let (small_width, small_height) = small_image.dimensions();
         let small_encode = match preview {
             PreviewMedia::Avif => Encode::Avif {
+                ffmpeg_path: &params.ffmpeg_path,
                 speed: params.avif_speed_preview,
                 quality: params.avif_quality,
             },
@@ -981,14 +1255,22 @@ fn process_cached_image(
     if is_animated_image(input) {
         return None;
     }
-    let format = image::guess_format(input).ok()?;
-    if !matches!(
-        format,
-        ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::WebP | ImageFormat::Gif
-    ) {
-        return None;
-    }
-    let decoded = image::load_from_memory_with_format(input, format).ok()?;
+    let avif = parse_avif(input);
+    let jxl = avif.is_none() && is_jxl(input);
+    let decoded = if let Some(avif) = avif.as_ref() {
+        decode_ffmpeg_image(input, "avif", &params.ffmpeg_path, Some(avif)).ok()?
+    } else if jxl {
+        decode_ffmpeg_image(input, "jxl", &params.ffmpeg_path, None).ok()?
+    } else {
+        let format = image::guess_format(input).ok()?;
+        if !matches!(
+            format,
+            ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::WebP | ImageFormat::Gif
+        ) {
+            return None;
+        }
+        image::load_from_memory_with_format(input, format).ok()?
+    };
     let (width, height) = decoded.dimensions();
     if u64::from(width) * u64::from(height) > MAX_PIXELS {
         return None;
@@ -999,6 +1281,7 @@ fn process_cached_image(
         decoded
     };
     let encode = Encode::Avif {
+        ffmpeg_path: &params.ffmpeg_path,
         speed,
         quality: params.avif_quality,
     };
@@ -1028,10 +1311,13 @@ pub async fn process_cached_image_blocking(
 }
 
 /// The `(content_type, extension)` for storing an image as arrived, sniffed
-/// from the bytes: the four decodable raster formats plus AVIF (storable
-/// though not decodable). `None` for anything else.
+/// from the bytes: the raster formats supported by the Rust/FFmpeg image
+/// pipeline. `None` for anything else.
 #[must_use]
 pub fn sniffed_raw_format(input: &[u8]) -> Option<(&'static str, &'static str)> {
+    if parse_avif(input).is_some() {
+        return Some(("image/avif", "avif"));
+    }
     if is_jxl(input) {
         return Some(("image/jxl", "jxl"));
     }
@@ -1040,7 +1326,6 @@ pub fn sniffed_raw_format(input: &[u8]) -> Option<(&'static str, &'static str)> 
         ImageFormat::Gif => Some(("image/gif", "gif")),
         ImageFormat::Jpeg => Some(("image/jpeg", "jpg")),
         ImageFormat::WebP => Some(("image/webp", "webp")),
-        ImageFormat::Avif => Some(("image/avif", "avif")),
         _ => None,
     }
 }
@@ -1101,8 +1386,8 @@ fn process_site_upload(var: &str, input: &[u8]) -> Result<ProcessedSiteUpload, A
     // The original passes through the ordinary pipeline (bounds checks,
     // metadata strip); site images never need to exceed the retina thumbnail.
     // It stays JPEG/PNG (`Photo`), not AVIF: the favicon/app-icon styles below
-    // must be PNG, and we re-decode the original bytes here (we cannot decode
-    // AVIF).
+    // must be PNG, and the Rust style generator re-decodes these normalized
+    // original bytes.
     // Site uploads are rare operator actions; the default (historical)
     // encoder settings are deliberate — favicon/app-icon styles must stay
     // reproducible regardless of the media knobs.
@@ -1227,6 +1512,58 @@ mod tests {
         assert_eq!(alpha.content_type, "image/avif");
         // Large images downscale to the max edge.
         assert_eq!((alpha.width, alpha.height), (1920, 960));
+    }
+
+    #[test]
+    fn ffmpeg_avif_round_trip_preserves_dimensions_and_alpha() {
+        let params = EncodeParams::default();
+        let mut pixels = image::RgbaImage::new(3, 2);
+        for (x, y, pixel) in [
+            (0, 0, image::Rgba([255, 0, 0, 0])),
+            (1, 0, image::Rgba([0, 255, 0, 64])),
+            (2, 0, image::Rgba([0, 0, 255, 128])),
+            (0, 1, image::Rgba([20, 40, 60, 192])),
+            (1, 1, image::Rgba([80, 100, 120, 254])),
+            (2, 1, image::Rgba([140, 160, 180, 255])),
+        ] {
+            pixels.put_pixel(x, y, pixel);
+        }
+        let source = DynamicImage::ImageRgba8(pixels.clone());
+        let encoded = encode_avif(&source, &params.ffmpeg_path, 10, 100).unwrap();
+        let avif = parse_avif(&encoded).expect("libaom output is a still AVIF");
+        assert_eq!((avif.width, avif.height), (3, 2));
+        assert!(
+            avif.data.alpha_item.is_some(),
+            "the auxiliary alpha item must be present"
+        );
+
+        let decoded = decode_ffmpeg_image(&encoded, "avif", &params.ffmpeg_path, Some(&avif))
+            .expect("FFmpeg/dav1d decodes its AVIF output")
+            .to_rgba8();
+        assert_eq!(decoded.dimensions(), pixels.dimensions());
+        assert_eq!(
+            decoded.pixels().map(|pixel| pixel[3]).collect::<Vec<_>>(),
+            pixels.pixels().map(|pixel| pixel[3]).collect::<Vec<_>>(),
+            "alpha is encoded losslessly"
+        );
+    }
+
+    #[test]
+    fn avif_settings_map_to_libaom_ranges() {
+        assert_eq!((avif_crf(1), avif_crf(100)), (63, 0));
+        assert_eq!((avif_cpu_used(1), avif_cpu_used(10)), (0, 8));
+        assert_eq!(avif_crf(0), avif_crf(1));
+        assert_eq!(avif_cpu_used(u8::MAX), avif_cpu_used(10));
+    }
+
+    #[test]
+    fn pam_parser_checks_layout_dimensions_and_payload() {
+        let valid = b"P7\nWIDTH 1\nHEIGHT 1\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n\x01\x02\x03\x04";
+        assert_eq!(parse_pam(valid).unwrap().to_rgba8().as_raw(), &[1, 2, 3, 4]);
+        assert!(parse_pam(b"not pam").is_err());
+        assert!(parse_pam(b"P7\nWIDTH 0\nHEIGHT 1\nDEPTH 4\nMAXVAL 255\nENDHDR\n").is_err());
+        assert!(parse_pam(b"P7\nWIDTH 1\nHEIGHT 1\nDEPTH 4\nMAXVAL 255\nENDHDR\n\x01").is_err());
+        assert!(parse_pam(b"P7\nWIDTH 33177601\nHEIGHT 1\nDEPTH 4\nMAXVAL 255\nENDHDR\n").is_err());
     }
 
     #[test]
@@ -1443,7 +1780,7 @@ mod tests {
     fn jxl_uploads_decode_and_always_re_encode() {
         // Encode a sample through ffmpeg's libjxl (skip when this build
         // lacks the encoder), then feed the JXL back through the pipeline:
-        // it must decode via jxl-oxide and re-encode — never pass through,
+        // it must decode via FFmpeg/libjxl and re-encode — never pass through,
         // most clients cannot display JXL.
         let source = image::load_from_memory(&sample_png(64, 40, false)).unwrap();
         let params = EncodeParams::default();
@@ -1641,7 +1978,7 @@ mod tests {
             sniffed_raw_format(&sample_png(2, 2, false)),
             Some(("image/png", "png"))
         );
-        // AVIF is storable as arrived even though it cannot be decoded.
+        // AVIF is recognized for both passthrough storage and processing.
         let avif = process_cached_image(
             &sample_png(8, 8, false),
             EMOJI_MAX_EDGE,

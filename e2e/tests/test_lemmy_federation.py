@@ -13,6 +13,7 @@ import pytest
 from plamenu_e2e import config, unique
 from plamenu_e2e.api import Api, ApiError
 from plamenu_e2e.lemmy import FRANK_NICK, LemmyApi, LemmyError
+from plamenu_e2e.media import make_avif
 from plamenu_e2e.steps import step, wait_for
 
 
@@ -112,6 +113,78 @@ def test_community_follow_and_wrapped_announce_lifecycle(
             lambda: not plamenu_api.relationship(group["id"])["following"],
             desc="Undo(Follow) of the community",
         )
+        lemmy_frank.delete_community(community["id"])
+
+
+@pytest.mark.federation(
+    direction="inbound",
+    one_way_reason="Lemmy-specific inbound regression: multiple AVIF images are represented as inline HTML rather than structured attachments.",
+)
+def test_lemmy_post_with_two_inline_avifs_becomes_two_images(
+    lemmy_frank: LemmyApi, plamenu_api: Api, marker: str
+):
+    """Regression for lemmy.zip-style posts whose two pict-rs AVIFs live in
+    the Page body. They must be decoded, cached, and described as images — not
+    exposed as two application/octet-stream `.bin` downloads."""
+    name = unique("plamavif")
+    with step("create and follow a Lemmy image community"):
+        community = lemmy_frank.create_community(name, "Plamenu AVIF e2e")
+        group = _follow_community(plamenu_api, name)
+
+    with step("upload two real AVIFs and publish both inline"):
+        first = lemmy_frank.upload_image(make_avif(80, 48, (220, 40, 30)))
+        second = lemmy_frank.upload_image(make_avif(45, 75, (30, 80, 220)))
+        body = (
+            f"two AVIF images {marker}\n\n"
+            f"![wide red image]({first['url']})\n\n"
+            f"![tall blue image]({second['url']})"
+        )
+        lemmy_frank.create_post(community["id"], f"AVIF pair {marker}", body=body)
+
+    with step("Plamenu recovers and caches both images"):
+        boost = wait_for(
+            lambda: plamenu_api.home_reblog_containing(marker),
+            desc="the Lemmy AVIF post to reach Plamenu",
+        )
+
+        def cached_pair():
+            attachments = plamenu_api.get_status(boost["reblog"]["id"]).get(
+                "media_attachments", []
+            )
+            if len(attachments) != 2:
+                return None
+            if not all(
+                attachment["type"] == "image"
+                and attachment["url"].startswith(f"{config.PLAMENU_URL}/media/")
+                and attachment["url"].endswith(".avif")
+                and attachment.get("blurhash")
+                and attachment.get("meta", {}).get("original", {}).get("width")
+                for attachment in attachments
+            ):
+                return None
+            return attachments
+
+        attachments = wait_for(
+            cached_pair,
+            desc="both AVIF attachments to be decoded and cached as images",
+        )
+        assert [
+            (a["meta"]["original"]["width"], a["meta"]["original"]["height"])
+            for a in attachments
+        ] == [
+            (80, 48),
+            (45, 75),
+        ]
+
+    with step("both cached files serve as AVIF rather than binary downloads"):
+        for attachment in attachments:
+            response = plamenu_api.http.get(attachment["url"], timeout=30)
+            assert response.ok
+            assert response.headers["content-type"].startswith("image/avif")
+            assert b"ftypavif" in response.content[:64]
+
+    with step("leave and remove the disposable community"):
+        plamenu_api.unfollow(group["id"])
         lemmy_frank.delete_community(community["id"])
 
 

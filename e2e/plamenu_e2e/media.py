@@ -8,7 +8,10 @@ keep their own local copies; new peer modules import these.
 """
 
 import struct
+import subprocess
+import tempfile
 import zlib
+from pathlib import Path
 
 from . import config
 
@@ -36,6 +39,44 @@ def make_png(width: int = 64, height: int = 48, rgb=(200, 100, 50)) -> bytes:
 def tiny_png(rgb=(200, 30, 30)) -> bytes:
     """A 1x1 PNG — small enough for every avatar/emoji size limit."""
     return make_png(1, 1, rgb)
+
+
+def make_avif(width: int = 64, height: int = 48, rgb=(200, 100, 50)) -> bytes:
+    """A still AVIF encoded by the same required FFmpeg/libaom stack as
+    Plamenu. A real file (rather than a hand-built container) exercises both
+    Lemmy/pict-rs and Plamenu's decoder."""
+    with tempfile.TemporaryDirectory() as tmp:
+        source = Path(tmp) / "source.png"
+        output = Path(tmp) / "image.avif"
+        source.write_bytes(make_png(width, height, rgb))
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-loglevel",
+                "fatal",
+                "-i",
+                str(source),
+                "-frames:v",
+                "1",
+                "-c:v",
+                "libaom-av1",
+                "-still-picture",
+                "1",
+                "-cpu-used",
+                "8",
+                "-crf",
+                "30",
+                "-b:v",
+                "0",
+                "-pix_fmt",
+                "yuv444p",
+                "-y",
+                str(output),
+            ],
+            check=True,
+        )
+        return output.read_bytes()
 
 
 def cached_attachment(

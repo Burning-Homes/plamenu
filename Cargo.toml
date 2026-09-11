@@ -62,17 +62,15 @@ image = { version = "0.25", default-features = false, features = [
     "jpeg",
     "png",
     "webp",
-    # AVIF *encoder* only (pure-Rust rav1e via ravif) — re-encoded media (status
-    # attachments + their previews, avatars/headers) ships as AVIF, far smaller
-    # than JPEG/PNG. Decoding AVIF would need a C dep (dav1d); we never decode
-    # our own output, so the encoder alone keeps the static-musl build clean.
-    "avif",
 ] }
-# JPEG XL *decoding*, pure Rust (the encoder side shells out to ffmpeg's
-# libjxl instead — linking libjxl itself is C++ and off the table for the
-# static-musl build). Accepting JXL uploads and re-reading our own optional
-# JXL renditions both go through this.
-jxl-oxide = { version = "0.12", default-features = false }
+# Safe, codec-free AVIF container parsing. This extracts color/alpha OBUs and
+# their premultiplication relationship for FFmpeg versions whose demuxer only
+# exposes the primary item.
+avif-parse = "2.1"
+# Minimal AVIF container writer. AV1 compression still belongs to FFmpeg;
+# this assembles its color/alpha OBU streams on FFmpeg versions whose AVIF
+# muxer cannot represent alpha (including the current staging 6.1 build).
+avif-serialize = "0.8"
 # SMTP sending for the e-mail queue (M21). Reqwest's `rustls` feature selects
 # AWS-LC; Lettre and SQLx explicitly use the same provider so the binary does
 # not carry both AWS-LC and ring. All three use the system trust store.
@@ -140,7 +138,7 @@ sqlx = { version = "0.9", default-features = false, features = [
     "json",
     "time",
 ] }
-# Scratch files for the ffmpeg transcoding pipeline.
+# Scratch files for the ffmpeg image and A/V transcoding pipelines.
 tempfile = "3"
 thiserror = "2"
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
@@ -228,25 +226,9 @@ opt-level = 3
 [profile.dev.package.sha2]
 opt-level = 3
 
-# The AVIF encoder (rav1e via ravif) is our re-encode target for every uploaded
-# still and video poster. At opt-level 0 it is 10-30x slower — a single 1200²
-# noise upload takes ~28 s in the test suite unoptimized, vs ~1-2 s optimized —
-# so the media tests dominate the whole suite. Optimize the encoder crate and
-# the pixel-buffer helpers ravif drives in its hot loops, like the crypto math
-# above. (Compiled once, then cached; no effect on the release profile.)
-[profile.dev.package.rav1e]
-opt-level = 3
-[profile.dev.package.ravif]
-opt-level = 3
-[profile.dev.package.avif-serialize]
-opt-level = 3
-[profile.dev.package.imgref]
-opt-level = 3
-[profile.dev.package.loop9]
-opt-level = 3
-[profile.dev.package.rgb]
-opt-level = 3
-# `image` itself does the PNG/JPEG decode + Lanczos downscale before the encode.
+# `image` does the PNG/JPEG decode + Lanczos downscale before FFmpeg receives
+# an uncompressed PAM. Optimize those hot loops in dev/test builds like the
+# crypto math above. (No effect on the release profile.)
 [profile.dev.package.image]
 opt-level = 3
 

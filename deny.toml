@@ -9,8 +9,6 @@ unused-ignored-advisory = "warn"
 ignore = [
   # rsa: timing side-channel risk in RSA private-key operations, including federation signing.
   "RUSTSEC-2023-0071",
-  # paste: unmaintained build-time proc macro used by image -> ravif -> rav1e.
-  "RUSTSEC-2024-0436",
 ]
 
 [licenses]
@@ -28,7 +26,6 @@ allow = [
   "ISC",
   "MIT",
   "MPL-2.0",
-  "NCSA",
   "Unicode-3.0",
   "Zlib",
 ]

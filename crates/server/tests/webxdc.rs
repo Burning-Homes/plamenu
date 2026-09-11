@@ -2327,6 +2327,14 @@ async fn creation_permission_is_not_staff_and_admin_actions_require_permission_a
 
 #[sqlx::test(migrations = false)]
 async fn shared_storage_migration_preserves_existing_sessions_and_files(pool: PgPool) {
+    // `./dev test` seeds template1 so thousands of ordinary sqlx tests do not
+    // replay every migration. This upgrade test deliberately needs an empty
+    // database, so make its already-isolated per-test database independent of
+    // whether the surrounding runner uses that optimization.
+    sqlx::raw_sql("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+        .execute(&pool)
+        .await
+        .unwrap();
     let old = sqlx::migrate::Migrator {
         migrations: std::borrow::Cow::Owned(
             plamenu_db::MIGRATOR

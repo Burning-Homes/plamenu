@@ -1419,7 +1419,8 @@ async fn cache_account_image(
         (processed.bytes, processed.extension)
     } else if let Some((_, extension)) = media_processing::sniffed_raw_format(&fetched.bytes) {
         // Kept as arrived: the passthrough setting, an animation the still
-        // pipeline would freeze, or an AVIF we can store but not decode.
+        // pipeline would freeze, or a recognized image whose optional
+        // re-encode failed.
         (
             media_processing::strip_cached_metadata(fetched.bytes),
             extension,
