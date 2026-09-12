@@ -7,12 +7,12 @@ mod common;
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::http::{Request, header};
+use axum::http::{Request, StatusCode, header};
 use common::{RemoteUser, StubFederation, create_local_account, test_app_with, test_state_with};
 use http_body_util::BodyExt;
 use plamenu::actions::{self, EditParams, PostParams};
 use plamenu::{AppState, ingest, link_preview, remote};
-use plamenu_db::{PgPool, media, preview_card, status};
+use plamenu_db::{PgPool, instance_settings, media, preview_card, status, user};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -67,6 +67,16 @@ async fn status_json(state: &AppState, stub: &Arc<StubFederation>, status_id: i6
         .unwrap();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     serde_json::from_slice(&bytes).unwrap()
+}
+
+async fn response_text(state: &AppState, stub: &Arc<StubFederation>, uri: &str) -> String {
+    let response = test_app_with(state.pool.clone(), stub.clone())
+        .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
@@ -307,6 +317,51 @@ async fn editing_the_text_resets_and_recrawls_the_card(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn editing_a_link_post_removes_derived_audio_before_recrawl(pool: PgPool) {
+    let audio_page = "https://pod.example/episodes/one";
+    let audio_url = "https://cdn.pod.example/one.mp3";
+    let (state, stub) = state_with_news_page(&pool);
+    stub.serve_page(
+        audio_page,
+        &format!(
+            r#"<html><head><title>Episode</title><meta property="og:audio" content="{audio_url}"><meta property="og:audio:type" content="audio/mpeg"></head></html>"#,
+        ),
+    );
+    let stored = post_and_crawl(&state, "alice", &format!("listen {audio_page}")).await;
+    assert_eq!(
+        media::for_statuses(&pool, &[stored.id]).await.unwrap()[&stored.id].len(),
+        1
+    );
+
+    let alice = plamenu_db::account::find_local_by_username(&pool, "alice")
+        .await
+        .unwrap()
+        .unwrap();
+    actions::edit_status(
+        &state,
+        &alice,
+        stored.id,
+        EditParams {
+            text: Some(&format!("read {NEWS_URL} instead")),
+            ..EditParams::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        media::for_statuses(&pool, &[stored.id])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    link_preview::run_due(&state).await;
+    let entity = status_json(&state, &stub, stored.id).await;
+    assert!(entity["media_attachments"].as_array().unwrap().is_empty());
+    assert_eq!(entity["card"]["url"], NEWS_URL);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn remote_status_anchors_get_cards_skipping_tags_and_mentions(pool: PgPool) {
     let (state, stub) = state_with_news_page(&pool);
     create_local_account(&pool, "alice", "alice").await;
@@ -339,6 +394,169 @@ async fn remote_status_anchors_get_cards_skipping_tags_and_mentions(pool: PgPool
     let card = status_json(&state, &stub, stored.id).await["card"].clone();
     assert_eq!(card["url"], NEWS_URL);
     assert_eq!(card["title"], "OG Title");
+}
+
+/// Regression for #5: Castopod episode Notes carry only a page link, while the
+/// page advertises the actual episode through Open Graph. Promote that stream
+/// into the regular attachment pipeline so the web UI and Mastodon API both
+/// expose a player, with the existing cache/direct-fallback policy intact.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn castopod_episode_link_becomes_a_playable_audio_attachment(pool: PgPool) {
+    const EPISODE: &str = "https://solarcast.cc/@solarcast/episodes/invisible-internet";
+    const AUDIO: &str = "https://op3.dev/solarcast.cc/audio/invisible-internet.mp3?from=og";
+    const OEMBED: &str = "https://solarcast.cc/@solarcast/episodes/invisible-internet/oembed.json";
+    let stub = Arc::new(StubFederation::default());
+    stub.serve_page(
+        EPISODE,
+        concat!(
+            "<!doctype html><html lang=\"en\"><head>",
+            r#"<title>The Invisible Internet Project</title>"#,
+            r#"<meta property="og:title" content="The Invisible Internet Project">"#,
+            r#"<meta property="og:image" content="https://solarcast.cc/media/episode.png">"#,
+            r#"<meta property="og:audio" content="https://op3.dev/solarcast.cc/audio/invisible-internet.mp3?from=og">"#,
+            r#"<meta property="og:audio:type" content="audio/mpeg">"#,
+            r#"<meta name="twitter:card" content="player">"#,
+            r#"<meta name="twitter:player" content="/embed/light">"#,
+            r#"<link rel="alternate" type="application/json+oembed" href="/@solarcast/episodes/invisible-internet/oembed.json">"#,
+            "</head></html>",
+        ),
+    );
+    // Castopod's oEmbed is `rich`; Plamenu deliberately rejects script-based
+    // rich embeds and must still fall back to the page's safe OG audio URL.
+    stub.serve_page_as(
+        OEMBED,
+        OEMBED,
+        "application/json",
+        r#"{"type":"rich","html":"<iframe src=\"/embed/light\"></iframe>"}"#,
+    );
+    let state = test_state_with(pool.clone(), stub.clone());
+    let sender = RemoteUser::new("solarcast.cc", "solarcast");
+    let author = remote::store_remote_actor(&pool, &sender.actor)
+        .await
+        .unwrap();
+    let note = json!({
+        "id": "https://solarcast.cc/@solarcast/posts/episode-announcement",
+        "type": "Note",
+        "attributedTo": sender.actor.id,
+        "content": format!(r#"<p><a href="{EPISODE}">new episode</a></p>"#),
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+    });
+    let stored = ingest::ingest_remote_note(&state, &author, &note)
+        .await
+        .unwrap();
+    assert_eq!(link_preview::run_due(&state).await, 1);
+
+    let attachments = media::for_statuses(&pool, &[stored.id]).await.unwrap();
+    let audio = &attachments[&stored.id][0];
+    assert_eq!(audio.kind_or_derived(), "audio");
+    assert_eq!(audio.remote_url.as_deref(), Some(AUDIO));
+    assert_eq!(audio.content_type, "audio/mpeg");
+    assert!(
+        audio.download_on_demand,
+        "podcasts must not download on render"
+    );
+    assert_eq!(audio.processing, "complete");
+    let source_card: Option<i64> =
+        sqlx::query_scalar("SELECT preview_card_id FROM media_attachments WHERE id = $1")
+            .bind(audio.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        source_card.is_some(),
+        "derived-media provenance is retained"
+    );
+
+    // API clients receive a standard Mastodon audio attachment through the
+    // privacy-preserving proxy, not a static preview card or origin hotlink.
+    let entity = status_json(&state, &stub, stored.id).await;
+    assert_eq!(entity["card"], Value::Null);
+    let api_audio = &entity["media_attachments"][0];
+    assert_eq!(api_audio["type"], "audio");
+    let proxy_url = api_audio["url"].as_str().unwrap();
+    assert!(
+        proxy_url.starts_with("https://plamenu.test/media/proxy/attachment/"),
+        "{proxy_url}"
+    );
+    assert!(!proxy_url.contains("op3.dev"), "{proxy_url}");
+
+    // The same entity drives the first-party renderer, which must emit the
+    // native playable control rather than the old static link card.
+    let page = response_text(
+        &state,
+        &stub,
+        &format!("/@solarcast@solarcast.cc/{}", stored.id),
+    )
+    .await;
+    assert!(page.contains("media--audio"), "{page}");
+    assert!(page.contains("<audio"), "{page}");
+    assert!(page.contains(" controls"), "{page}");
+    assert!(page.contains("/media/proxy/attachment/"), "{page}");
+
+    // A signed-in reader's default direct-remote preference is encoded into
+    // the API URL. When long-form caching is disabled/over budget, that marker
+    // is what lets the proxy fall back to the episode origin.
+    let viewer = create_local_account(&pool, "listener", "Listener").await;
+    user::create(
+        &pool,
+        viewer.id,
+        Some("listener@example.test"),
+        "$argon2id$x",
+    )
+    .await
+    .unwrap();
+    let rendered = plamenu::entities::render_statuses(
+        &pool,
+        "plamenu.test",
+        std::slice::from_ref(&stored),
+        Some(viewer.id),
+    )
+    .await
+    .unwrap();
+    assert!(
+        rendered[0]["media_attachments"][0]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with("?d=1")
+    );
+    let current = instance_settings::get(&pool).await.unwrap();
+    instance_settings::save(
+        &pool,
+        instance_settings::SettingsUpdate {
+            remote_video_max_mb: 0,
+            ..current.as_update()
+        },
+    )
+    .await
+    .unwrap();
+    state.settings_cache.invalidate();
+    let fallback = test_app_with(pool.clone(), stub.clone())
+        .oneshot(
+            Request::builder()
+                .uri(format!("/media/proxy/attachment/{}?d=1", audio.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(fallback.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(fallback.headers()[header::LOCATION], AUDIO);
+
+    // The audio is derived rather than present on the signed Note. A remote
+    // Update that changes another field must therefore preserve it instead of
+    // mistaking it for a removed wire attachment.
+    let mut updated_note = note;
+    updated_note["summary"] = json!("Episode");
+    updated_note["updated"] = json!("2026-09-12T12:00:00Z");
+    ingest::update_remote_note(&state, &author, &stored, &updated_note)
+        .await
+        .unwrap();
+    let after_update = media::for_statuses(&pool, &[stored.id]).await.unwrap();
+    assert_eq!(after_update[&stored.id].len(), 1);
+    assert_eq!(
+        after_update[&stored.id][0].remote_url.as_deref(),
+        Some(AUDIO)
+    );
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

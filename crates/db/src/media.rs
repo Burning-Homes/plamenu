@@ -773,6 +773,10 @@ pub struct NewRemoteMedia<'a> {
     pub account_id: i64,
     pub status_id: i64,
     pub remote_url: &'a str,
+    /// Preview card that discovered this media. Link-preview audio is exposed
+    /// as a normal attachment, but remains distinguishable from media the
+    /// author explicitly attached so a later text edit can recrawl it.
+    pub preview_card_id: Option<i64>,
     pub content_type: &'a str,
     pub description: Option<&'a str>,
     pub blurhash: Option<&'a str>,
@@ -875,9 +879,10 @@ pub async fn create_remote(pool: &PgPool, new: NewRemoteMedia<'_>) -> Result<(),
                                        duration, download_on_demand,
                                        history_deferred,
                                        hls_master_url, live_state,
-                                       live_permanent, processing)
+                                       live_permanent, preview_card_id,
+                                       processing)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-                $17, $18, $19, $20,
+                $17, $18, $19, $20, $21,
                 CASE WHEN $16 OR $15 OR $17 THEN 'complete' ELSE 'queued' END)
         ON CONFLICT (status_id, remote_url) WHERE remote_url IS NOT NULL DO NOTHING
         RETURNING id
@@ -902,6 +907,7 @@ pub async fn create_remote(pool: &PgPool, new: NewRemoteMedia<'_>) -> Result<(),
         new.hls_master_url,
         new.live_state,
         new.live_permanent,
+        new.preview_card_id,
     )
     .fetch_optional(&mut *tx)
     .await?;
@@ -1441,11 +1447,36 @@ pub async fn abandon_remote_download(pool: &PgPool, media_id: i64) -> Result<(),
 /// them; local uploads are never touched).
 pub async fn delete_remote_for_status(pool: &PgPool, status_id: i64) -> Result<(), DbError> {
     sqlx::query!(
-        "DELETE FROM media_attachments WHERE status_id = $1 AND remote_url IS NOT NULL",
+        "DELETE FROM media_attachments
+         WHERE status_id = $1 AND remote_url IS NOT NULL AND preview_card_id IS NULL",
         status_id,
     )
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+/// Removes media synthesized by link-preview discovery before an edited body
+/// is crawled again. Explicitly attached media has no `preview_card_id` and is
+/// never touched.
+pub async fn delete_preview_media_for_status(
+    conn: &mut sqlx::PgConnection,
+    status_id: i64,
+) -> Result<(), DbError> {
+    let removed = sqlx::query!(
+        "DELETE FROM media_attachments
+         WHERE status_id = $1 AND preview_card_id IS NOT NULL
+         RETURNING file_name, small_file_name",
+        status_id,
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+    let mut stored_files = Vec::new();
+    for row in removed {
+        stored_files.extend(row.file_name);
+        stored_files.extend(row.small_file_name);
+    }
+    crate::media_cleanup::enqueue_many(&mut *conn, &stored_files).await?;
     Ok(())
 }
 
@@ -1521,9 +1552,30 @@ pub async fn set_attachments_conn(
     account_id: i64,
     media_ids: &[i64],
 ) -> Result<bool, DbError> {
+    // Link-preview media is derived, not an upload that can be reused on a
+    // different post. Removing it deletes the row instead of turning it into
+    // an immortal unattached remote-media record.
+    let removed = sqlx::query!(
+        "DELETE FROM media_attachments
+         WHERE status_id = $1 AND account_id = $3
+           AND preview_card_id IS NOT NULL AND NOT (id = ANY($2))
+         RETURNING file_name, small_file_name",
+        status_id,
+        media_ids,
+        account_id,
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+    let mut stored_files = Vec::new();
+    for row in removed {
+        stored_files.extend(row.file_name);
+        stored_files.extend(row.small_file_name);
+    }
+    crate::media_cleanup::enqueue_many(&mut *conn, &stored_files).await?;
     sqlx::query!(
         "UPDATE media_attachments SET status_id = NULL
-         WHERE status_id = $1 AND account_id = $3 AND NOT (id = ANY($2))",
+         WHERE status_id = $1 AND account_id = $3
+           AND preview_card_id IS NULL AND NOT (id = ANY($2))",
         status_id,
         media_ids,
         account_id,
@@ -2066,6 +2118,38 @@ mod tests {
         attach(&pool, &[kept, removed], status_id, account_id)
             .await
             .unwrap();
+        let card_id = id::next();
+        sqlx::query!(
+            "INSERT INTO preview_cards (id, url) VALUES ($1, 'https://pod.example/episode')",
+            card_id,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        create_remote(
+            &pool,
+            NewRemoteMedia {
+                account_id,
+                status_id,
+                remote_url: "https://pod.example/episode.mp3",
+                preview_card_id: Some(card_id),
+                content_type: "audio/mpeg",
+                download_on_demand: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sqlx::query!(
+            "UPDATE media_attachments
+             SET file_name = 'cached-audio.mp3', small_file_name = 'cached-cover.avif'
+             WHERE status_id = $1 AND preview_card_id = $2",
+            status_id,
+            card_id,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         assert!(
             set_attachments(&pool, status_id, account_id, &[kept, added])
@@ -2078,6 +2162,12 @@ mod tests {
         // The removed upload is unattached again, not deleted.
         let detached = find_owned(&pool, removed, account_id).await.unwrap();
         assert_eq!(detached.unwrap().status_id, None);
+        let cleanup_files =
+            sqlx::query_scalar!("SELECT file_name FROM media_cleanup_jobs ORDER BY file_name")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(cleanup_files, ["cached-audio.mp3", "cached-cover.avif"]);
 
         // Someone else's upload does not attach.
         assert!(

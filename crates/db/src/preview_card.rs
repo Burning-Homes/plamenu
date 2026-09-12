@@ -16,7 +16,7 @@ pub struct PreviewCard {
     pub url: String,
     pub title: String,
     pub description: String,
-    /// `link` | `photo` | `video`.
+    /// `link` | `photo` | `video` | `audio`.
     pub kind: String,
     pub author_name: String,
     pub author_url: String,

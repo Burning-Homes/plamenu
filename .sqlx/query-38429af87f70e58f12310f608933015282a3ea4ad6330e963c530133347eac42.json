@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM preview_cards\n        WHERE updated_at < now() - make_interval(days => $1)\n          AND NOT EXISTS (\n              SELECT 1 FROM preview_cards_statuses\n              WHERE preview_card_id = preview_cards.id\n          )\n          AND NOT EXISTS (\n              SELECT 1 FROM media_attachments\n              WHERE preview_card_id = preview_cards.id\n          )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "38429af87f70e58f12310f608933015282a3ea4ad6330e963c530133347eac42"
+}

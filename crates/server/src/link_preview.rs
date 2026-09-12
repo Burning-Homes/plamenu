@@ -277,15 +277,18 @@ struct CardDraft {
     image_url: Option<String>,
     image_description: String,
     embed_url: String,
+    /// MIME hint for an audio stream discovered in Open Graph metadata. The
+    /// media worker verifies it from the response when the file is cached.
+    audio_content_type: Option<String>,
     language: Option<String>,
     published_at: Option<OffsetDateTime>,
 }
 
 impl CardDraft {
-    /// A card is worth keeping when it has a title or embed HTML, like
-    /// Mastodon's `save … unless title.blank? && html.blank?`.
+    /// A card is worth keeping when it has a title, embed HTML, or a directly
+    /// playable media URL. The last case covers sparse podcast metadata.
     fn is_renderable(&self) -> bool {
-        !(self.title.trim().is_empty() && self.html.is_empty())
+        !(self.title.trim().is_empty() && self.html.is_empty() && self.embed_url.is_empty())
     }
 }
 
@@ -329,6 +332,15 @@ fn oembed_dimension(embed: &Value, key: &str) -> i32 {
 /// Builds a card from `OpenGraph` (and plain HTML) metadata, Mastodon's
 /// `LinkDetailsExtractor` minus JSON-LD structured data.
 fn opengraph_draft(scan: &PageScan, final_url: &Url) -> CardDraft {
+    let audio = scan
+        .meta("og:audio:secure_url")
+        .or_else(|| scan.meta("og:audio"))
+        .and_then(|v| resolve_url(final_url, v));
+    let audio_content_type = audio.as_ref().map(|url| {
+        scan.meta("og:audio:type")
+            .and_then(normalized_audio_content_type)
+            .unwrap_or_else(|| audio_content_type_from_url(url).to_owned())
+    });
     let player = scan
         .meta("twitter:player")
         .and_then(|v| resolve_url(final_url, v));
@@ -342,15 +354,16 @@ fn opengraph_draft(scan: &PageScan, final_url: &Url) -> CardDraft {
         .and_then(|v| v.parse().ok())
         .unwrap_or(0i32)
         .max(0);
-    let (kind, html) = match &player {
-        Some(src) => (
+    let (kind, html) = match (&audio, &player) {
+        (Some(_), _) => ("audio", String::new()),
+        (None, Some(src)) => (
             "video",
             format!(
                 r#"<iframe src="{}" width="{width}" height="{height}" allowfullscreen="true" allowtransparency="true" scrolling="no" frameborder="0"></iframe>"#,
                 escape_html(src),
             ),
         ),
-        None => ("link", String::new()),
+        (None, None) => ("link", String::new()),
     };
     // The canonical URL replaces the fetched one, but only on the same
     // origin — a page may not claim to canonically be another site.
@@ -407,13 +420,50 @@ fn opengraph_draft(scan: &PageScan, final_url: &Url) -> CardDraft {
             .meta("og:image")
             .and_then(|v| resolve_url(final_url, v)),
         image_description: truncated(scan.meta("og:image:alt").unwrap_or(""), TEXT_LIMIT),
-        embed_url: scan
-            .meta("twitter:player:stream")
-            .and_then(|v| resolve_url(final_url, v))
-            .unwrap_or_default(),
+        embed_url: audio.unwrap_or_else(|| {
+            scan.meta("twitter:player:stream")
+                .and_then(|v| resolve_url(final_url, v))
+                .unwrap_or_default()
+        }),
+        audio_content_type,
         language,
         published_at,
     }
+}
+
+/// A conservative audio MIME hint for cards reused from storage. Castopod's
+/// Open Graph URL ends in `.mp3`; other common podcast containers are covered,
+/// and an extensionless stream is provisionally MPEG until the cache worker
+/// probes the actual response.
+fn audio_content_type_from_url(url: &str) -> &'static str {
+    let path = Url::parse(url).ok().map(|url| url.path().to_owned());
+    let extension = path
+        .as_deref()
+        .and_then(|path| std::path::Path::new(path).extension())
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default();
+    match extension.to_ascii_lowercase().as_str() {
+        "aac" => "audio/aac",
+        "flac" => "audio/flac",
+        "m4a" | "mp4" => "audio/mp4",
+        "oga" | "ogg" | "opus" => "audio/ogg",
+        "wav" | "wave" => "audio/wav",
+        "webm" => "audio/webm",
+        _ => "audio/mpeg",
+    }
+}
+
+/// Normalizes a declared Open Graph audio MIME while rejecting non-audio or
+/// unreasonably large values. Parameters do not affect the media kind and the
+/// cache worker detects the authoritative type after download.
+fn normalized_audio_content_type(value: &str) -> Option<String> {
+    let base = value.split(';').next()?.trim();
+    (base.len() <= 100
+        && base.len() > "audio/".len()
+        && base
+            .get(.."audio/".len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("audio/")))
+    .then(|| base.to_ascii_lowercase())
 }
 
 /// Builds a card from a fetched oEmbed document, Mastodon's
@@ -555,6 +605,7 @@ pub async fn reset_for_edit_conn(
     content: &str,
     external_url: Option<&str>,
 ) -> Result<(), ApiError> {
+    media::delete_preview_media_for_status(&mut *conn, status_id).await?;
     preview_card::detach_all(&mut *conn, status_id).await?;
     if body_may_carry_link(content, external_url) {
         preview_card::enqueue_crawl(&mut *conn, status_id).await?;
@@ -653,7 +704,10 @@ fn is_html(content_type: &str) -> bool {
 /// Fetches `original_url` and stores a card for it, oEmbed before
 /// `OpenGraph`.
 /// Network and parse failures are quietly `None` — crawling is best-effort.
-async fn fetch_card(state: &AppState, original_url: &str) -> Result<Option<PreviewCard>, ApiError> {
+async fn fetch_card(
+    state: &AppState,
+    original_url: &str,
+) -> Result<Option<(PreviewCard, Option<String>)>, ApiError> {
     let page = match state.federation.fetch_page(original_url, "text/html").await {
         Ok(page) => page,
         Err(error) => {
@@ -691,6 +745,7 @@ async fn fetch_card(state: &AppState, original_url: &str) -> Result<Option<Previ
         Some(handle) => resolve_card_author(state, handle, &draft.url).await?,
         None => None,
     };
+    let audio_content_type = draft.audio_content_type.clone();
     let card = preview_card::upsert(
         &state.pool,
         NewPreviewCard {
@@ -714,7 +769,42 @@ async fn fetch_card(state: &AppState, original_url: &str) -> Result<Option<Previ
         },
     )
     .await?;
-    Ok(Some(card))
+    Ok(Some((card, audio_content_type)))
+}
+
+/// Attaches an ordinary card, or promotes Open Graph audio into the established
+/// remote-media pipeline. Audio is on-demand because podcast episodes are
+/// long-form: the first play caches it within `remote_video_max_mb`, while the
+/// viewer's `?d=1` preference remains the last-resort origin fallback.
+async fn attach_card_or_audio(
+    state: &AppState,
+    item: &Status,
+    card: &PreviewCard,
+    original_url: &str,
+    audio_content_type: Option<&str>,
+) -> Result<(), ApiError> {
+    if card.kind == "audio" && !card.embed_url.is_empty() {
+        let content_type =
+            audio_content_type.unwrap_or_else(|| audio_content_type_from_url(&card.embed_url));
+        media::create_remote(
+            &state.pool,
+            media::NewRemoteMedia {
+                account_id: item.account_id,
+                status_id: item.id,
+                remote_url: &card.embed_url,
+                preview_card_id: Some(card.id),
+                content_type,
+                description: (!card.title.is_empty()).then_some(card.title.as_str()),
+                thumbnail_remote_url: card.image_url.as_deref(),
+                download_on_demand: true,
+                ..Default::default()
+            },
+        )
+        .await?;
+    } else {
+        preview_card::attach(&state.pool, item.id, card.id, original_url).await?;
+    }
+    Ok(())
 }
 
 /// Resolves a page's `fediverse:creator` handle and verifies the attribution:
@@ -874,13 +964,20 @@ async fn crawl_status_inner(
     if let Some(existing) = preview_card::find_by_url(&state.pool, &original_url).await?
         && OffsetDateTime::now_utc() - existing.updated_at < REFRESH_AFTER
     {
-        preview_card::attach(&state.pool, item.id, existing.id, &original_url).await?;
+        attach_card_or_audio(state, &item, &existing, &original_url, None).await?;
         // Register link-trend usage (Mastodon's `Trends.links.register`).
         preview_card_trend::record_use(&state.pool, existing.id, item.id, today).await?;
         return Ok(());
     }
-    if let Some(card) = fetch_card(state, &original_url).await? {
-        preview_card::attach(&state.pool, item.id, card.id, &original_url).await?;
+    if let Some((card, audio_content_type)) = fetch_card(state, &original_url).await? {
+        attach_card_or_audio(
+            state,
+            &item,
+            &card,
+            &original_url,
+            audio_content_type.as_deref(),
+        )
+        .await?;
         preview_card_trend::record_use(&state.pool, card.id, item.id, today).await?;
         tracing::debug!(status = item.id, url = %original_url, "link preview attached");
     }
@@ -1033,6 +1130,26 @@ mod tests {
                 .contains(r#"src="https://video.example/embed/9""#),
             "{}",
             draft.html
+        );
+    }
+
+    #[test]
+    fn opengraph_audio_wins_over_an_iframe_player() {
+        let final_url = Url::parse("https://pod.example/@show/episodes/one").unwrap();
+        let scan = scan_html(concat!(
+            "<html><head><title>Episode one</title>",
+            r#"<meta name="twitter:player" content="/episodes/one/embed/light">"#,
+            r#"<meta property="og:audio" content="https://cdn.example/one.mp3?source=og">"#,
+            r#"<meta property="og:audio:type" content="audio/mpeg">"#,
+            "</head></html>",
+        ));
+        let draft = opengraph_draft(&scan, &final_url);
+        assert_eq!(draft.kind, "audio");
+        assert_eq!(draft.embed_url, "https://cdn.example/one.mp3?source=og");
+        assert_eq!(draft.audio_content_type.as_deref(), Some("audio/mpeg"));
+        assert!(
+            draft.html.is_empty(),
+            "the remote iframe must not be embedded"
         );
     }
 

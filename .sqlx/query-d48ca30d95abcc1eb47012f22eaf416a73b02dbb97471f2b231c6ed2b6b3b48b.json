@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_attachments\n             SET file_name = 'cached-audio.mp3', small_file_name = 'cached-cover.avif'\n             WHERE status_id = $1 AND preview_card_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d48ca30d95abcc1eb47012f22eaf416a73b02dbb97471f2b231c6ed2b6b3b48b"
+}

@@ -1868,14 +1868,22 @@ async fn stored_attachment_state(
     state: &AppState,
     status_id: i64,
 ) -> Result<(Vec<i64>, Vec<(String, Option<String>)>), ApiError> {
-    let stored = media::for_statuses(&state.pool, &[status_id])
-        .await?
-        .remove(&status_id)
-        .unwrap_or_default();
-    let ids = stored.iter().map(|m| m.id).collect();
+    let stored = sqlx::query!(
+        "SELECT id, remote_url, description, preview_card_id
+         FROM media_attachments WHERE status_id = $1",
+        status_id,
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(plamenu_db::DbError::from)?;
+    let ids = stored.iter().map(|item| item.id).collect();
+    // Preview-derived audio does not exist in the signed ActivityPub object.
+    // Exclude it from wire attachment diffing so an unrelated Update does not
+    // repeatedly rebuild—or accidentally discard—the derived player.
     let mut pairs: Vec<(String, Option<String>)> = stored
-        .iter()
-        .filter_map(|m| m.remote_url.clone().map(|url| (url, m.description.clone())))
+        .into_iter()
+        .filter(|item| item.preview_card_id.is_none())
+        .filter_map(|item| item.remote_url.map(|url| (url, item.description)))
         .collect();
     pairs.sort();
     Ok((ids, pairs))
@@ -3085,9 +3093,6 @@ async fn store_remote_attachments(
                 status_id: stored.id,
                 remote_url: primary.url,
                 content_type: primary.media_type,
-                description: None,
-                blurhash: None,
-                focus: None,
                 thumbnail_remote_url: primary.poster,
                 width: primary.width,
                 height: primary.height,
@@ -3107,6 +3112,7 @@ async fn store_remote_attachments(
                 renditions: primary.renditions,
                 live_state: primary.live.map(|live| live.state.as_str()),
                 live_permanent: primary.live.is_some_and(|live| live.permanent),
+                ..Default::default()
             },
         )
         .await?;

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO preview_cards (id, url) VALUES ($1, 'https://pod.example/episode')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "22ec5037aac8d9739744dfd087f8c5a9a672a20d28937a96184b70737d6bce40"
+}

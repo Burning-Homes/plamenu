@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM media_attachments\n         WHERE status_id = $1 AND remote_url IS NOT NULL AND preview_card_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ba3db820f1b6eb1eaa5905a0470c4032c143d3b29f972f92ec7527061728f482"
+}

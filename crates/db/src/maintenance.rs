@@ -129,9 +129,10 @@ pub async fn vacuum_oauth(pool: &PgPool) -> Result<u64, DbError> {
 /// Deletes link-preview cards no status references any more, once they are
 /// older than `retention_days` — Mastodon's `Vacuum::PreviewCardsVacuum`
 /// (orphaned cards past the media-cache retention). A card is shared by every
-/// status linking its URL through `preview_cards_statuses`; when the last such
-/// status is gone the card is dead. `retention_days = 0` (retention disabled)
-/// keeps every card forever, matching the media-cache convention.
+/// status linking its URL through `preview_cards_statuses`, or by preview media
+/// synthesized from the card. When both references are gone the card is dead.
+/// `retention_days = 0` (retention disabled) keeps every card forever, matching
+/// the media-cache convention.
 pub async fn vacuum_orphan_preview_cards(
     pool: &PgPool,
     retention_days: i32,
@@ -145,6 +146,10 @@ pub async fn vacuum_orphan_preview_cards(
         WHERE updated_at < now() - make_interval(days => $1)
           AND NOT EXISTS (
               SELECT 1 FROM preview_cards_statuses
+              WHERE preview_card_id = preview_cards.id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM media_attachments
               WHERE preview_card_id = preview_cards.id
           )
         "#,
@@ -483,8 +488,40 @@ mod tests {
         .await
         .unwrap();
 
+        // Old but referenced only by synthesized preview media → kept.
+        let media_referenced = sqlx::query_scalar!(
+            "INSERT INTO preview_cards (id, url, updated_at) VALUES ($1, 'https://a/4', now() - make_interval(days => 40)) RETURNING id",
+            id::next(),
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query!(
+            "INSERT INTO media_attachments
+                 (id, account_id, status_id, remote_url, content_type,
+                  download_on_demand, preview_card_id)
+             VALUES ($1, $2, $3, 'https://a/4.mp3', 'audio/mpeg', true, $4)",
+            id::next(),
+            acct,
+            st.id,
+            media_referenced,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
         let removed = vacuum_orphan_preview_cards(&pool, 14).await.unwrap();
         assert_eq!(removed, 1);
+        assert_eq!(
+            sqlx::query_scalar!(
+                "SELECT count(*) AS \"count!\" FROM preview_cards WHERE id = $1",
+                media_referenced,
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            1
+        );
         // Retention disabled keeps everything.
         assert_eq!(vacuum_orphan_preview_cards(&pool, 0).await.unwrap(), 0);
     }

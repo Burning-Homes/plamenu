@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO media_attachments (id, account_id, status_id, remote_url,\n                                       content_type, description, blurhash,\n                                       focus_x, focus_y, width, height,\n                                       thumbnail_remote_url, remote_audio_url,\n                                       duration, download_on_demand,\n                                       history_deferred,\n                                       hls_master_url, live_state,\n                                       live_permanent, preview_card_id,\n                                       processing)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,\n                $17, $18, $19, $20, $21,\n                CASE WHEN $16 OR $15 OR $17 THEN 'complete' ELSE 'queued' END)\n        ON CONFLICT (status_id, remote_url) WHERE remote_url IS NOT NULL DO NOTHING\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Float8",
+        "Float8",
+        "Int4",
+        "Int4",
+        "Text",
+        "Text",
+        "Float8",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Text",
+        "Text",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7f6370c48676457efb40058f38849ee730b5fa7b3515a646637a7f05da17c38a"
+}
