@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO media_attachments\n            (id, account_id, content_type, processing, download_on_demand, remote_url)\n        VALUES ($1, $2, 'audio/mpeg', 'complete', true, $3)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7eb13937bb14d26143839478a7950824fc484c246b6e33088fb25707d927154c"
+}

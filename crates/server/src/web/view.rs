@@ -2763,10 +2763,10 @@ pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
                         }
                     },
                     Some("audio") => figure.media.media--audio {
-                        // Remote podcast audio can be large and enters the
-                        // same play-triggered cache lane as remote video. Do
-                        // not let metadata preloading start that download just
-                        // because a timeline card scrolled into view.
+                        // Remote podcast audio can be large and enters a
+                        // play-triggered sparse cache. Do not let metadata
+                        // preloading contact its origin just because a timeline
+                        // card scrolled into view.
                         audio src=(url) controls preload="none"
                             title=[Some(alt).filter(|a| !a.is_empty())] {}
                     },

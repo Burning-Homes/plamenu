@@ -14,7 +14,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use common::{StubFederation, create_local_account, test_app_with, test_state_with};
 use http_body_util::BodyExt;
 use plamenu::build_router;
-use plamenu_db::{PgPool, id};
+use plamenu_db::{PgPool, id, instance_settings};
 use tower::ServiceExt;
 
 const MASTER: &str = "https://remote.example/static/streaming-playlists/hls/vid/master.m3u8";
@@ -41,6 +41,24 @@ async fn hls_media_row(pool: &PgPool, account_id: i64) -> i64 {
         account_id,
         RENDITION,
         MASTER,
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    media_id
+}
+
+async fn audio_media_row(pool: &PgPool, account_id: i64, origin: &str) -> i64 {
+    let media_id = id::next();
+    sqlx::query!(
+        r#"
+        INSERT INTO media_attachments
+            (id, account_id, content_type, processing, download_on_demand, remote_url)
+        VALUES ($1, $2, 'audio/mpeg', 'complete', true, $3)
+        "#,
+        media_id,
+        account_id,
+        origin,
     )
     .execute(pool)
     .await
@@ -392,6 +410,121 @@ async fn progressive_mp4_streams_and_caches_only_requested_blocks(pool: PgPool) 
     .await
     .unwrap();
     assert_eq!(jobs, 0, "playback never creates a detached media job");
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn progressive_audio_plays_while_its_first_block_is_still_caching(pool: PgPool) {
+    const PODCAST: &str = "https://podcast.example/episode.mp3";
+    let account = create_local_account(&pool, "alice", "Alice").await;
+    let media_id = audio_media_row(&pool, account.id, PODCAST).await;
+    let full: Vec<u8> = (0..1_200_000_u32).map(|n| (n % 251) as u8).collect();
+    let stub = StubFederation::with_actors([]);
+    stub.serve_media(PODCAST, "audio/mpeg", full.clone());
+    // Sixteen delayed chunks make it observable that the response starts
+    // before the complete aligned block has landed in the cache.
+    stub.slow_range_chunks(32 * 1024, 20);
+    let app = test_app_with(pool.clone(), stub.clone());
+    let uri = format!("/media/play/{media_id}/audio");
+
+    let head = request(&app, "HEAD", &uri, None).await;
+    assert_eq!(head.status(), StatusCode::OK);
+    assert_eq!(head.headers()[header::CONTENT_TYPE], "audio/mpeg");
+    assert_eq!(
+        head.headers()[header::CONTENT_LENGTH],
+        full.len().to_string()
+    );
+    assert_eq!(head.headers()[header::ACCEPT_RANGES], "bytes");
+
+    let response = request(&app, "GET", &uri, Some("bytes=0-99")).await;
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "audio/mpeg");
+    let mut body = response.into_body();
+    let first = body.frame().await.unwrap().unwrap().into_data().unwrap();
+    assert_eq!(&first[..], &full[..100]);
+    let cached_during_playback = sqlx::query_scalar!(
+        "SELECT count(*) AS \"count!\" FROM media_hls_segments WHERE media_id = $1",
+        media_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        cached_during_playback, 0,
+        "the listener received bytes before the block finished caching"
+    );
+    body.collect().await.unwrap();
+    let cached_after_block = sqlx::query_scalar!(
+        "SELECT count(*) AS \"count!\" FROM media_hls_segments WHERE media_id = $1",
+        media_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(cached_after_block, 1);
+
+    let replay = request(&app, "GET", &uri, Some("bytes=0-49")).await;
+    assert_eq!(replay.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(
+        &replay.into_body().collect().await.unwrap().to_bytes()[..],
+        &full[..50]
+    );
+    assert_eq!(
+        stub.range_fetches(),
+        [
+            (PODCAST.to_owned(), 0, 1),
+            (PODCAST.to_owned(), 0, 512 * 1024),
+        ],
+        "one metadata probe and one bounded fetch serve every listener"
+    );
+    let jobs = sqlx::query_scalar!(
+        "SELECT count(*) AS \"count!\" FROM media_processing_jobs WHERE media_id = $1",
+        media_id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(jobs, 0, "audio playback never waits on a whole-file job");
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn oversized_audio_requires_the_direct_media_opt_in(pool: PgPool) {
+    const PODCAST: &str = "https://podcast.example/huge.mp3";
+    let account = create_local_account(&pool, "alice", "Alice").await;
+    let media_id = audio_media_row(&pool, account.id, PODCAST).await;
+    let stub = StubFederation::with_actors([]);
+    stub.serve_media(PODCAST, "audio/mpeg", vec![0_u8; 1024 * 1024 + 1]);
+    let state = test_state_with(pool.clone(), stub.clone());
+    let current = instance_settings::get(&pool).await.unwrap();
+    instance_settings::save(
+        &pool,
+        instance_settings::SettingsUpdate {
+            remote_video_max_mb: 1,
+            ..current.as_update()
+        },
+    )
+    .await
+    .unwrap();
+    state.settings_cache.invalidate();
+    let app = build_router(state);
+    let uri = format!("/media/play/{media_id}/audio");
+
+    assert_eq!(
+        request(&app, "HEAD", &uri, None).await.status(),
+        StatusCode::NOT_FOUND
+    );
+    let direct = request(&app, "HEAD", &format!("{uri}?d=1"), None).await;
+    assert_eq!(direct.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(direct.headers()[header::LOCATION], PODCAST);
+    assert_eq!(
+        sqlx::query_scalar!(
+            "SELECT count(*) AS \"count!\" FROM media_hls_segments WHERE media_id = $1",
+            media_id,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

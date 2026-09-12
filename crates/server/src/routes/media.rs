@@ -651,7 +651,7 @@ fn redirect_local(domain: &str, file: &str) -> Response {
 /// A 302 to the true origin — the ONLY response that sends a client
 /// off-instance, reached only with the opt-in `?d=1` marker after we could
 /// not cache the file ourselves.
-fn redirect_origin(url: &str) -> Response {
+pub(super) fn redirect_origin(url: &str) -> Response {
     (
         [(header::CACHE_CONTROL, "no-store")],
         Redirect::temporary(url),

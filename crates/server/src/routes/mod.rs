@@ -1295,6 +1295,12 @@ pub fn router(state: AppState) -> Router {
             "/media/play/{media_id}/video.mp4",
             get(progressive::get).head(progressive::head),
         )
+        // Plain remote audio starts from the first bounded origin range while
+        // the same bytes are written into the shared media cache.
+        .route(
+            "/media/play/{media_id}/audio",
+            get(progressive::audio_get).head(progressive::audio_head),
+        )
         .layer(cors_any_origin().allow_methods([Method::GET, Method::HEAD]));
 
     Router::new()

@@ -774,8 +774,9 @@ async fn fetch_card(
 
 /// Attaches an ordinary card, or promotes Open Graph audio into the established
 /// remote-media pipeline. Audio is on-demand because podcast episodes are
-/// long-form: the first play caches it within `remote_video_max_mb`, while the
-/// viewer's `?d=1` preference remains the last-resort origin fallback.
+/// long-form: playback streams through a bounded sparse cache within
+/// `remote_video_max_mb`, while the viewer's `?d=1` preference remains the
+/// last-resort origin fallback.
 async fn attach_card_or_audio(
     state: &AppState,
     item: &Status,

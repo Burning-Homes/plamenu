@@ -1,21 +1,24 @@
-//! Stable progressive-MP4 compatibility gateway for HLS-native remote video.
+//! Stable sparse-range compatibility gateway for remote A/V.
 //!
 //! Conventional Mastodon clients only understand one `MediaAttachment.url`.
 //! For a `PeerTube` rendition that already contains audio + video, that URL can
 //! be a sparse, fixed-block Range proxy: it starts immediately, seeks like an
 //! ordinary MP4, caches watched blocks, and owns every upstream request so a
 //! disconnected viewer cannot leave a whole-file background download behind.
+//! Podcast audio uses the same lane: the first origin chunk reaches the listener
+//! while the aligned block is still being written to cache.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use futures_util::future::join_all;
 use futures_util::{StreamExt, stream};
 use plamenu_db::media;
+use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 
@@ -31,6 +34,7 @@ const BLOCK_BYTES: u64 = 512 * 1024;
 const IO_CHUNK: usize = 64 * 1024;
 const MAX_VIRTUAL_LAYOUTS: usize = 256;
 const MAX_FRAGMENT_HEADERS: usize = 2_048;
+const MAX_ORIGIN_TOTALS: usize = 4_096;
 
 static BLOCK_INFLIGHT: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
@@ -40,6 +44,8 @@ static FRAGMENT_HEADERS: LazyLock<tokio::sync::Mutex<HashMap<String, Arc<Vec<u8>
     LazyLock::new(|| tokio::sync::Mutex::new(HashMap::new()));
 static HEADER_INFLIGHT: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
+static ORIGIN_TOTALS: LazyLock<tokio::sync::Mutex<HashMap<String, u64>>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(HashMap::new()));
 
 struct BlockGuard(String);
 
@@ -87,7 +93,25 @@ enum SourceBody {
 
 struct Source {
     total: u64,
+    content_type: String,
     body: SourceBody,
+}
+
+enum AudioSource {
+    Stream(Source),
+    Origin(String),
+}
+
+#[derive(Deserialize)]
+pub struct AudioQuery {
+    #[serde(default)]
+    d: Option<String>,
+}
+
+impl AudioQuery {
+    fn allow_direct(&self) -> bool {
+        self.d.as_deref() == Some("1")
+    }
 }
 
 #[derive(Clone)]
@@ -153,6 +177,7 @@ async fn source(state: &AppState, media_id: i64) -> Result<Source, ApiError> {
     {
         return Ok(Source {
             total: opened.len,
+            content_type: "video/mp4".to_owned(),
             body: SourceBody::Local { file },
         });
     }
@@ -193,6 +218,7 @@ async fn source(state: &AppState, media_id: i64) -> Result<Source, ApiError> {
         let layout = virtual_layout(state, media_id, &origin, total, &audio, audio_total).await?;
         Ok(Source {
             total: layout.total,
+            content_type: "video/mp4".to_owned(),
             body: SourceBody::Virtual(layout),
         })
     } else {
@@ -203,14 +229,92 @@ async fn source(state: &AppState, media_id: i64) -> Result<Source, ApiError> {
         match muxed_virtual_layout(state, media_id, &origin, total).await {
             Ok(layout) => Ok(Source {
                 total: layout.total,
+                content_type: "video/mp4".to_owned(),
                 body: SourceBody::Virtual(layout),
             }),
             Err(_) => Ok(Source {
                 total,
+                content_type: "video/mp4".to_owned(),
                 body: SourceBody::Direct { origin },
             }),
         }
     }
+}
+
+/// Resolves an ordinary remote audio attachment into the same bounded sparse
+/// cache used by progressive video. The complete origin size is known before
+/// any body bytes are exposed, so the operator's A/V limit is still a hard
+/// ceiling. When caching is disabled, the file is oversized, or policy rejects
+/// its domain, only an explicitly opted-in viewer may be redirected upstream.
+async fn audio_source(
+    state: &AppState,
+    media_id: i64,
+    allow_direct: bool,
+) -> Result<AudioSource, ApiError> {
+    if media::owner_suspended(&state.pool, media_id).await? {
+        return Err(ApiError::NotFound);
+    }
+    let item = media::find_by_ids(&state.pool, &[media_id])
+        .await?
+        .into_iter()
+        .next()
+        .filter(|item| item.kind_or_derived() == "audio" && item.download_on_demand)
+        .ok_or(ApiError::NotFound)?;
+
+    let Some(origin) = item.remote_url else {
+        let file = item.file_name.ok_or(ApiError::NotFound)?;
+        let opened = state
+            .media
+            .open(&file)
+            .await
+            .map_err(|_| ApiError::NotFound)?;
+        return Ok(AudioSource::Stream(Source {
+            total: opened.len,
+            content_type: item.content_type,
+            body: SourceBody::Local { file },
+        }));
+    };
+    let fallback = || {
+        allow_direct
+            .then(|| AudioSource::Origin(origin.clone()))
+            .ok_or(ApiError::NotFound)
+    };
+    if plamenu_db::instance_policy::account_domain_rejects_media(&state.pool, item.account_id)
+        .await?
+    {
+        return fallback();
+    }
+    let settings = state.settings_cache.get(&state.pool).await?;
+    let budget = u64::try_from(settings.remote_video_max_mb)
+        .unwrap_or(0)
+        .saturating_mul(1024 * 1024);
+    if budget == 0 {
+        return fallback();
+    }
+    let total = match cached_origin_total(state, &origin).await {
+        Ok(total) if total > 0 && total <= budget => total,
+        Ok(_) | Err(_) => return fallback(),
+    };
+    Ok(AudioSource::Stream(Source {
+        total,
+        content_type: item.content_type,
+        body: SourceBody::Direct { origin },
+    }))
+}
+
+async fn cached_origin_total(state: &AppState, origin: &str) -> Result<u64, ApiError> {
+    if let Some(total) = ORIGIN_TOTALS.lock().await.get(origin).copied() {
+        return Ok(total);
+    }
+    let total = probe_total(state, origin).await?;
+    let mut totals = ORIGIN_TOTALS.lock().await;
+    if totals.len() >= MAX_ORIGIN_TOTALS
+        && let Some(evicted) = totals.keys().next().cloned()
+    {
+        totals.remove(&evicted);
+    }
+    totals.insert(origin.to_owned(), total);
+    Ok(total)
 }
 
 async fn probe_total(state: &AppState, origin: &str) -> Result<u64, ApiError> {
@@ -579,16 +683,20 @@ pub async fn head(
     Path(media_id): Path<i64>,
 ) -> Result<Response, ApiError> {
     let source = source(&state, media_id).await?;
-    Ok((
+    Ok(head_response(&source))
+}
+
+fn head_response(source: &Source) -> Response {
+    (
         [
-            (header::CONTENT_TYPE, "video/mp4"),
-            (header::CACHE_CONTROL, CACHE_CONTROL),
-            (header::ACCEPT_RANGES, "bytes"),
-            (header::CONTENT_LENGTH, &source.total.to_string()),
+            (header::CONTENT_TYPE, source.content_type.clone()),
+            (header::CACHE_CONTROL, CACHE_CONTROL.to_owned()),
+            (header::ACCEPT_RANGES, "bytes".to_owned()),
+            (header::CONTENT_LENGTH, source.total.to_string()),
         ],
         Body::empty(),
     )
-        .into_response())
+        .into_response()
 }
 
 pub async fn get(
@@ -597,6 +705,38 @@ pub async fn get(
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let source = source(&state, media_id).await?;
+    serve_source(state, media_id, headers, source).await
+}
+
+pub async fn audio_head(
+    State(state): State<AppState>,
+    Path(media_id): Path<i64>,
+    Query(query): Query<AudioQuery>,
+) -> Result<Response, ApiError> {
+    match audio_source(&state, media_id, query.allow_direct()).await? {
+        AudioSource::Stream(source) => Ok(head_response(&source)),
+        AudioSource::Origin(origin) => Ok(super::media::redirect_origin(&origin)),
+    }
+}
+
+pub async fn audio_get(
+    State(state): State<AppState>,
+    Path(media_id): Path<i64>,
+    Query(query): Query<AudioQuery>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    match audio_source(&state, media_id, query.allow_direct()).await? {
+        AudioSource::Stream(source) => serve_source(state, media_id, headers, source).await,
+        AudioSource::Origin(origin) => Ok(super::media::redirect_origin(&origin)),
+    }
+}
+
+async fn serve_source(
+    state: AppState,
+    media_id: i64,
+    headers: HeaderMap,
+    source: Source,
+) -> Result<Response, ApiError> {
     let (status, start, end) = match requested_range(&headers, source.total) {
         RequestedRange::Full => (StatusCode::OK, 0, source.total.saturating_sub(1)),
         RequestedRange::Partial(start, end) => (StatusCode::PARTIAL_CONTENT, start, end),
@@ -644,7 +784,7 @@ pub async fn get(
     let mut response = (
         status,
         [
-            (header::CONTENT_TYPE, "video/mp4".to_owned()),
+            (header::CONTENT_TYPE, source.content_type),
             (header::CACHE_CONTROL, CACHE_CONTROL.to_owned()),
             (header::ACCEPT_RANGES, "bytes".to_owned()),
             (header::CONTENT_LENGTH, len.to_string()),

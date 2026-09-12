@@ -468,17 +468,17 @@ async fn castopod_episode_link_becomes_a_playable_audio_attachment(pool: PgPool)
     );
 
     // API clients receive a standard Mastodon audio attachment through the
-    // privacy-preserving proxy, not a static preview card or origin hotlink.
+    // privacy-preserving sparse cache, not a static card or origin hotlink.
     let entity = status_json(&state, &stub, stored.id).await;
     assert_eq!(entity["card"], Value::Null);
     let api_audio = &entity["media_attachments"][0];
     assert_eq!(api_audio["type"], "audio");
-    let proxy_url = api_audio["url"].as_str().unwrap();
-    assert!(
-        proxy_url.starts_with("https://plamenu.test/media/proxy/attachment/"),
-        "{proxy_url}"
+    let playback_url = api_audio["url"].as_str().unwrap();
+    assert_eq!(
+        playback_url,
+        format!("https://plamenu.test/media/play/{}/audio", audio.id)
     );
-    assert!(!proxy_url.contains("op3.dev"), "{proxy_url}");
+    assert!(!playback_url.contains("op3.dev"), "{playback_url}");
 
     // The same entity drives the first-party renderer, which must emit the
     // native playable control rather than the old static link card.
@@ -492,7 +492,8 @@ async fn castopod_episode_link_becomes_a_playable_audio_attachment(pool: PgPool)
     assert!(page.contains("<audio"), "{page}");
     assert!(page.contains(" controls"), "{page}");
     assert!(page.contains("preload=\"none\""), "{page}");
-    assert!(page.contains("/media/proxy/attachment/"), "{page}");
+    assert!(page.contains("/media/play/"), "{page}");
+    assert!(page.contains("/audio"), "{page}");
 
     // A signed-in reader's default direct-remote preference is encoded into
     // the API URL. When long-form caching is disabled/over budget, that marker
@@ -534,7 +535,7 @@ async fn castopod_episode_link_becomes_a_playable_audio_attachment(pool: PgPool)
     let fallback = test_app_with(pool.clone(), stub.clone())
         .oneshot(
             Request::builder()
-                .uri(format!("/media/proxy/attachment/{}?d=1", audio.id))
+                .uri(format!("/media/play/{}/audio?d=1", audio.id))
                 .body(Body::empty())
                 .unwrap(),
         )

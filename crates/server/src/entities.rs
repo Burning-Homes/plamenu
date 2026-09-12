@@ -2427,6 +2427,10 @@ pub fn media_json_hls(
     let kind = item.kind_or_derived();
     let local_url = |file: &str| format!("https://{domain}/media/{file}");
     let proxy = |small: bool| media_proxy_url(domain, "attachment", item.id, small, allow_direct);
+    let sparse_audio = || {
+        let marker = if allow_direct { "?d=1" } else { "" };
+        format!("https://{domain}/media/play/{}/audio{marker}", item.id)
+    };
     // A live broadcast is HLS-native with an empty ladder: PeerTube publishes
     // no file Links for one, so its qualities exist only inside the playlist.
     // It is playable only while actually on air — an announced live has no
@@ -2458,6 +2462,12 @@ pub fn media_json_hls(
         on_air.then(progressive)
     } else if hls_native && item.remote_url.is_some() {
         Some(progressive())
+    } else if kind == "audio"
+        && item.download_on_demand
+        && item.remote_url.is_some()
+        && item.file_name.is_none()
+    {
+        Some(sparse_audio())
     } else if !item.not_processed() && item.file_name.is_some() {
         item.file_name.as_deref().map(local_url)
     } else {

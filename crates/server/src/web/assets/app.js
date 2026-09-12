@@ -3558,10 +3558,10 @@
 
   // ---- Remote A/V warm-up -----------------------------------------------
   //
-  // Large remote video and podcast audio are cached on first play: the proxy
-  // holds the request briefly, but a long download can outlive that window
-  // and 404 while caching keeps running server-side. The media element then
-  // fires an error; poll the proxy and retry once the cached copy has landed.
+  // Legacy proxy URLs for large remote A/V can outlive the proxy's brief wait
+  // and 404 while a whole-file cache job keeps running server-side. The media
+  // element then fires an error; poll the proxy and retry once the cached copy
+  // has landed. Current podcast URLs use the streaming sparse cache instead.
   function bindMediaWarmup(root) {
     root
       .querySelectorAll('video[src*="/media/proxy/"], audio[src*="/media/proxy/"]')
