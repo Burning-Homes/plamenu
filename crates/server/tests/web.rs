@@ -15222,6 +15222,66 @@ async fn reply_composers_inherit_the_parent_language(pool: PgPool) {
     );
 }
 
+/// Both reply entry points enable and prefill the parent's content warning.
+/// The value remains an ordinary editable field, so the author can change or
+/// clear it before posting.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn reply_composers_inherit_the_parent_content_warning(pool: PgPool) {
+    let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
+    seed_alice(&pool).await;
+    seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
+    let app = build_router(state.clone());
+
+    let (parent, _) = plamenu::actions::post_status(
+        &state,
+        plamenu::actions::PostParams {
+            username: "bob",
+            text: "the ending is discussed here",
+            visibility: "public",
+            spoiler_text: "Ending spoilers",
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let cookie = login(&app).await;
+    let expected = r#"name="spoiler_text" data-compose-spoiler value="Ending spoilers""#;
+
+    let thread = get(&app, &format!("/@bob/{}", parent.id), Some(&cookie)).await;
+    assert_eq!(thread.status, StatusCode::OK);
+    assert!(
+        thread.body.contains(expected),
+        "inline reply composer should inherit the parent's content warning"
+    );
+
+    let composer = get(
+        &app,
+        &format!("/compose?reply={}", parent.id),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(composer.status, StatusCode::OK);
+    assert!(
+        composer.body.contains(expected),
+        "full reply composer should inherit the parent's content warning"
+    );
+
+    // A redraft's explicit CW remains authoritative even when it is also a
+    // reply, matching the existing text and visibility precedence rules.
+    let redraft = get(
+        &app,
+        &format!("/compose?reply={}&cw=Replacement+warning", parent.id),
+        Some(&cookie),
+    )
+    .await;
+    assert!(
+        redraft
+            .body
+            .contains(r#"name="spoiler_text" data-compose-spoiler value="Replacement warning""#)
+    );
+}
+
 /// The RSVP cluster on an event post (E2), rendered rather than merely stored.
 ///
 /// Every state here is a *sentence* the viewer has to be able to act on, and

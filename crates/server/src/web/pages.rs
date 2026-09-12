@@ -4025,6 +4025,7 @@ pub(crate) async fn thread_view(
                     direct.as_ref(), defaults, compose.limits,
                     &view::ComposePrefill {
                         text: &reply_prefill,
+                        spoiler_text: &focus.spoiler_text,
                         ..view::ComposePrefill::default()
                     },
                     session.as_ref().map_or_else(Locale::default, |user| user.locale)))
@@ -4778,6 +4779,18 @@ pub async fn compose_page(
         .as_deref()
         .or(invitation_text.as_deref())
         .unwrap_or(&reply_prefill);
+    // A reply keeps the parent's content warning, just as it keeps the
+    // parent's language and restricted visibility. An explicit `?cw=` belongs
+    // to the redraft flow and therefore still takes precedence.
+    let spoiler_text = query
+        .cw
+        .as_deref()
+        .or_else(|| {
+            reply_parent
+                .as_ref()
+                .map(|parent| parent.spoiler_text.as_str())
+        })
+        .unwrap_or_default();
     let invitation = crate::webxdc::invitation_in_text(&state.pool, text)
         .await?
         .map(|(id, uri, name)| {
@@ -4790,7 +4803,7 @@ pub async fn compose_page(
     let prefill = view::ComposePrefill {
         invitation,
         text,
-        spoiler_text: query.cw.as_deref().unwrap_or_default(),
+        spoiler_text,
         ..view::ComposePrefill::default()
     };
     // The context card is fully live — date, favourite/bookmark/react and the
