@@ -440,6 +440,9 @@ async fn attempt(
         .await
         .map_err(db_err)?
         .ok_or_else(|| permanent("notification vanished"))?;
+    let reasons = notification::reasons(&state.pool, notification.id)
+        .await
+        .map_err(db_err)?;
 
     // Stale notifications are pointless to wake a phone for.
     if OffsetDateTime::now_utc() - notification.created_at > time::Duration::seconds(TTL_SECONDS) {
@@ -452,13 +455,15 @@ async fn attempt(
         &subscription,
         notification.account_id,
         notification.from_account_id,
-        &notification.kind,
+        &reasons,
     )
     .await
     .map_err(db_err)?
     {
         return Err(permanent("no longer pushable"));
     }
+    let push_kind = web_push::preferred_alert_kind(&subscription, &reasons)
+        .ok_or_else(|| permanent("no enabled notification reason"))?;
 
     let Some(keys) = parse_client_keys(&subscription.key_p256dh, &subscription.key_auth) else {
         // Pre-validation rows can't ever be delivered; Mastodon's worker
@@ -482,8 +487,7 @@ async fn attempt(
     } else {
         &from_account.display_name
     };
-    let title =
-        title(&notification.kind, name).ok_or_else(|| permanent("kind has no push rendering"))?;
+    let title = title(push_kind, name).ok_or_else(|| permanent("kind has no push rendering"))?;
     let body_source = match &target_status {
         Some(status) if !status.spoiler_text.is_empty() => status.spoiler_text.clone(),
         Some(status) => status.content.clone(),
@@ -504,7 +508,7 @@ async fn attempt(
         "access_token": subscription.access_token,
         "preferred_locale": preferred_locale,
         "notification_id": notification.id,
-        "notification_type": notification.kind,
+        "notification_type": push_kind,
         "icon": icon,
         "title": title,
         "body": body,

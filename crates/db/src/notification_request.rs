@@ -83,7 +83,7 @@ pub async fn record_filtered_many(
                (SELECT COUNT(*) FROM (
                     SELECT 1 FROM notifications n
                     WHERE n.account_id = v.account_id AND n.from_account_id = $3
-                      AND n.filtered AND n.kind = ANY($5)
+                      AND n.filtered AND n.reasons && $5
                     LIMIT 100
                ) capped)
         FROM unnest($1::bigint[], $2::bigint[]) AS v(id, account_id)
@@ -115,7 +115,7 @@ async fn count_filtered(
         SELECT COUNT(*) AS "count!" FROM (
             SELECT 1 FROM notifications
             WHERE account_id = $1 AND from_account_id = $2 AND filtered
-              AND kind = ANY($3)
+              AND reasons && $3
             LIMIT 100
         ) capped
         "#,
@@ -244,6 +244,62 @@ pub async fn accept(pool: &PgPool, account_id: i64, from_account_id: i64) -> Res
     .execute(&mut *tx)
     .await?;
     backfill_conversations(&mut tx, account_id, &direct_statuses).await?;
+    // A filtered mention/quote and an accepted notify-on-post reason may share
+    // one logical post. Merge the request-side reason into the existing main
+    // row before unfiltering, preserving the one-row invariant.
+    sqlx::query!(
+        r#"
+        UPDATE notifications accepted SET
+            reasons = ARRAY_REMOVE(ARRAY[
+                CASE WHEN 'mention' = ANY(accepted.reasons)
+                           OR 'mention' = ANY(filtered.reasons) THEN 'mention' END,
+                CASE WHEN 'quote' = ANY(accepted.reasons)
+                           OR 'quote' = ANY(filtered.reasons) THEN 'quote' END,
+                CASE WHEN 'status' = ANY(accepted.reasons)
+                           OR 'status' = ANY(filtered.reasons) THEN 'status' END
+            ], NULL),
+            kind = CASE
+                WHEN 'mention' = ANY(accepted.reasons)
+                  OR 'mention' = ANY(filtered.reasons) THEN 'mention'
+                WHEN 'quote' = ANY(accepted.reasons)
+                  OR 'quote' = ANY(filtered.reasons) THEN 'quote'
+                ELSE 'status'
+            END
+        FROM notifications filtered
+        WHERE accepted.account_id = $1
+          AND accepted.from_account_id = $2
+          AND NOT accepted.filtered
+          AND filtered.account_id = accepted.account_id
+          AND filtered.from_account_id = accepted.from_account_id
+          AND filtered.status_id = accepted.status_id
+          AND filtered.filtered
+          AND accepted.kind IN ('mention', 'quote', 'status')
+          AND filtered.kind IN ('mention', 'quote', 'status')
+        "#,
+        account_id,
+        from_account_id,
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!(
+        r#"
+        DELETE FROM notifications filtered
+        USING notifications accepted
+        WHERE accepted.account_id = $1
+          AND accepted.from_account_id = $2
+          AND NOT accepted.filtered
+          AND filtered.account_id = accepted.account_id
+          AND filtered.from_account_id = accepted.from_account_id
+          AND filtered.status_id = accepted.status_id
+          AND filtered.filtered
+          AND accepted.kind IN ('mention', 'quote', 'status')
+          AND filtered.kind IN ('mention', 'quote', 'status')
+        "#,
+        account_id,
+        from_account_id,
+    )
+    .execute(&mut *tx)
+    .await?;
     sqlx::query!(
         r#"
         UPDATE notifications SET filtered = FALSE

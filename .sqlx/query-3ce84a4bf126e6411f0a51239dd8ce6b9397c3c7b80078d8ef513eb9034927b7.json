@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, account_id, from_account_id, kind, status_id, collection_id, emoji, created_at, group_key, filtered, account_warning_id, report_id\n        FROM notifications n\n        WHERE account_id = $1\n          AND ($2::bigint IS NULL OR id < $2)\n          AND ($3::bigint IS NULL OR id > $3)\n          AND ($5::text[] IS NULL OR kind = ANY($5))\n          AND ($6::bigint IS NULL OR from_account_id = $6)\n          AND ($7 OR NOT filtered)\n          AND NOT sender_filtered($1, n.from_account_id)\n        ORDER BY id DESC\n        LIMIT $4\n        ",
+  "query": "\n        SELECT id, account_id, from_account_id,\n               notification_kind_for(reasons, $5) AS \"kind!\",\n               status_id, collection_id, emoji, created_at, group_key, filtered, account_warning_id, report_id\n        FROM notifications n\n        WHERE account_id = $1\n          AND ($2::bigint IS NULL OR id < $2)\n          AND ($3::bigint IS NULL OR id > $3)\n          AND notification_kind_for(reasons, $5) IS NOT NULL\n          AND ($6::bigint IS NULL OR from_account_id = $6)\n          AND ($7 OR NOT filtered)\n          AND NOT sender_filtered($1, n.from_account_id)\n        ORDER BY id DESC\n        LIMIT $4\n        ",
   "describe": {
     "columns": [
       {
@@ -38,14 +38,9 @@
       },
       {
         "ordinal": 3,
-        "name": "kind",
+        "name": "kind!",
         "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "notifications",
-            "name": "kind"
-          }
-        }
+        "origin": "Expression"
       },
       {
         "ordinal": 4,
@@ -151,7 +146,7 @@
       false,
       false,
       false,
-      false,
+      null,
       true,
       true,
       true,
@@ -162,5 +157,5 @@
       true
     ]
   },
-  "hash": "25c4afed991657e5196df5e0f7d9ab7e44df921ff70462b22c1b1a039e354c32"
+  "hash": "3ce84a4bf126e6411f0a51239dd8ce6b9397c3c7b80078d8ef513eb9034927b7"
 }

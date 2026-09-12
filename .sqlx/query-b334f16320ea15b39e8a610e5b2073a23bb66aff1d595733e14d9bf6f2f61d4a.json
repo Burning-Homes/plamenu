@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO notifications (id, account_id, from_account_id, kind, account_warning_id, reasons)\n        VALUES ($1, $2, $2, 'moderation_warning', $3, ARRAY['moderation_warning'])\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b334f16320ea15b39e8a610e5b2073a23bb66aff1d595733e14d9bf6f2f61d4a"
+}

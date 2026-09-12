@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM notifications filtered\n        USING notifications accepted\n        WHERE accepted.account_id = $1\n          AND accepted.from_account_id = $2\n          AND NOT accepted.filtered\n          AND filtered.account_id = accepted.account_id\n          AND filtered.from_account_id = accepted.from_account_id\n          AND filtered.status_id = accepted.status_id\n          AND filtered.filtered\n          AND accepted.kind IN ('mention', 'quote', 'status')\n          AND filtered.kind IN ('mention', 'quote', 'status')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "76a3769e17d8622d499cb1abd6533e6f54458bccaa63fea471ddd346a4a8c796"
+}

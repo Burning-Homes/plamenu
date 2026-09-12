@@ -3250,11 +3250,15 @@ async fn handle_create(
     if crate::polls::handle_inbound_vote(state, sender, object).await? {
         return Ok(());
     }
-    let ingested = crate::ingest::ingest_remote_note_delivery(state, sender, object).await?;
-    if !ingested.delivery_effects {
+    let crate::ingest::RemoteIngestResult {
+        status: stored,
+        delivery_effects,
+        mention_notify,
+        quote_notify,
+    } = crate::ingest::ingest_remote_note_delivery_deferred(state, sender, object).await?;
+    if !delivery_effects {
         return Ok(());
     }
-    let stored = ingested.status;
     // A submission addressed to one of our groups: validate the sender
     // and announce it to the group's followers, wrapping the delivered
     // activity verbatim. Only a *fresh* ingest reaches this point (the
@@ -3264,7 +3268,30 @@ async fn handle_create(
     // like local posting, only for the activity's own note (backfilled
     // ancestors are old posts), and even outside the realtime window,
     // matching Mastodon's fan-out.
-    crate::actions::notify_new_status_followers(state, &stored).await?;
+    let mut post_notifications: Vec<notification::PostNotification> = mention_notify
+        .into_iter()
+        .map(notification::PostNotification::mention)
+        .collect();
+    if let Some(account_id) = quote_notify {
+        post_notifications.push(notification::PostNotification {
+            account_id,
+            quote: true,
+            ..notification::PostNotification::default()
+        });
+    }
+    post_notifications.extend(
+        crate::actions::new_status_follower_ids(state, &stored)
+            .await?
+            .into_iter()
+            .map(notification::PostNotification::status),
+    );
+    notification::create_post_notifications_many(
+        &state.pool,
+        &post_notifications,
+        stored.account_id,
+        stored.id,
+    )
+    .await?;
     // Only the activity's own note is announced — backfilled thread
     // ancestors are old posts and must not surface as live updates — and
     // only while it is fresh (Mastodon's realtime window): a replayed

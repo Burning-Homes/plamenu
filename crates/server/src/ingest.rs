@@ -32,6 +32,11 @@ pub enum RemoteIngestContext {
 pub struct RemoteIngestResult {
     pub status: status::Status,
     pub delivery_effects: bool,
+    /// Fresh local recipients gathered while storing this delivery. The inbox
+    /// combines these with quote and per-follow reasons before one notification
+    /// write, so the built-in client never observes intermediate duplicates.
+    pub mention_notify: Vec<i64>,
+    pub quote_notify: Option<i64>,
 }
 
 impl RemoteIngestContext {
@@ -1364,8 +1369,51 @@ pub async fn ingest_remote_note_delivery(
     author: &Account,
     object: &Value,
 ) -> Result<RemoteIngestResult, ApiError> {
+    let result = ingest_remote_note_delivery_deferred(state, author, object).await?;
+    if result.delivery_effects {
+        create_deferred_post_notifications(state, &result).await?;
+    }
+    Ok(result)
+}
+
+/// Delivery ingest with mention/quote notifications returned to the caller.
+/// The inbox uses this form so it can add notify-on-post recipients before one
+/// canonical notification write; other callers use [`ingest_remote_note_delivery`]
+/// and retain its established notification side effects.
+pub(crate) async fn ingest_remote_note_delivery_deferred(
+    state: &AppState,
+    author: &Account,
+    object: &Value,
+) -> Result<RemoteIngestResult, ApiError> {
     ingest_remote_note_with_quote_depth(state, author, object, 0, RemoteIngestContext::Delivery)
         .await
+}
+
+async fn create_deferred_post_notifications(
+    state: &AppState,
+    result: &RemoteIngestResult,
+) -> Result<(), ApiError> {
+    let mut candidates: Vec<notification::PostNotification> = result
+        .mention_notify
+        .iter()
+        .copied()
+        .map(notification::PostNotification::mention)
+        .collect();
+    if let Some(account_id) = result.quote_notify {
+        candidates.push(notification::PostNotification {
+            account_id,
+            quote: true,
+            ..notification::PostNotification::default()
+        });
+    }
+    notification::create_post_notifications_many(
+        &state.pool,
+        &candidates,
+        result.status.account_id,
+        result.status.id,
+    )
+    .await?;
+    Ok(())
 }
 
 pub async fn ingest_remote_note_in_context(
@@ -1641,16 +1689,14 @@ async fn store_remote_note(
     ))
     .await?;
     store_remote_tags(state, author, &stored, object, !context.is_history()).await?;
-    if carries_mentions(object, &state.config.domain) {
+    let mention_notify = if carries_mentions(object, &state.config.domain) {
         Box::pin(reconcile_note_mentions(
-            state,
-            &stored,
-            object,
-            false,
-            delivery_effects,
+            state, &stored, object, false, false,
         ))
-        .await?;
-    }
+        .await?
+    } else {
+        Vec::new()
+    };
     // Register tag usage for the ranking engine, at ingest time like Mastodon's
     // inbound-Create `Trends.tags.register`. Edits (above) don't re-register.
     if delivery_effects {
@@ -1669,7 +1715,7 @@ async fn store_remote_note(
     // and polls: explicit resolution and cold history must preserve it even
     // though merely fetching a post must not trigger live-delivery effects.
     let fields = quote_fields(object);
-    if let Some(quoted_uri) = fields.quoted_uri {
+    let quote_notify = if let Some(quoted_uri) = fields.quoted_uri {
         link_inbound_quote(
             state,
             author,
@@ -1680,8 +1726,10 @@ async fn store_remote_note(
             quote_depth,
             delivery_effects,
         )
-        .await?;
-    }
+        .await?
+    } else {
+        None
+    };
     // Link preview crawl (Mastodon crawls remote statuses too); the worker
     // scans the stored HTML for an eligible anchor. Skipped outright when the
     // body has no `https://` in it and there is no main link, which is the
@@ -1693,6 +1741,12 @@ async fn store_remote_note(
     Ok(RemoteIngestResult {
         status: stored,
         delivery_effects,
+        mention_notify: if delivery_effects {
+            mention_notify
+        } else {
+            Vec::new()
+        },
+        quote_notify: delivery_effects.then_some(quote_notify).flatten(),
     })
 }
 
@@ -2070,6 +2124,7 @@ async fn refresh_inbound_quote(
                 delivery_effects,
             )
             .await
+            .map(|_| ())
         }
         (Some(row), None) => {
             // The edit dropped the quote.
@@ -2359,7 +2414,7 @@ async fn link_inbound_quote(
     legacy: bool,
     quote_depth: usize,
     delivery_effects: bool,
-) -> Result<(), ApiError> {
+) -> Result<Option<i64>, ApiError> {
     let stored_uri = stored.uri.as_deref().unwrap_or_default();
 
     // The QuoteRequest flow may have created the row before the post arrived.
@@ -2369,20 +2424,15 @@ async fn link_inbound_quote(
         // author — pointing at the quoting status, not their own post. This is
         // a live-delivery effect: an explicit fetch can link the row, while the
         // later Create owns the one notification through its delivery claim.
-        if delivery_effects
+        let notify = if delivery_effects
             && existing.state == "accepted"
             && let Some(quoted_account_id) = existing.quoted_account_id
         {
-            notification::create(
-                &state.pool,
-                quoted_account_id,
-                existing.account_id,
-                "quote",
-                Some(stored.id),
-            )
-            .await?;
-        }
-        return Ok(());
+            Some(quoted_account_id)
+        } else {
+            None
+        };
+        return Ok(notify);
     }
 
     let outcome = evaluate_inbound_quote(
@@ -2412,7 +2462,7 @@ async fn link_inbound_quote(
     )
     .await?;
     schedule_quote_verification(state, row.id, &outcome, legacy, authorization.is_some()).await?;
-    Ok(())
+    Ok(None)
 }
 
 /// The outcome of fetching + checking a `QuoteAuthorization` stamp.
@@ -2635,7 +2685,7 @@ async fn reconcile_note_mentions(
     object: &Value,
     rebuild: bool,
     notification_effects: bool,
-) -> Result<(), ApiError> {
+) -> Result<Vec<i64>, ApiError> {
     // Classify the tag Mention hrefs into local usernames and remote hrefs.
     let mut local_tag_uris: Vec<String> = Vec::new();
     let mut remote_mention_hrefs: Vec<&str> = Vec::new();
@@ -2735,7 +2785,7 @@ async fn reconcile_note_mentions(
         notification::create_mentions_many(&state.pool, &fresh, stored.account_id, stored.id)
             .await?;
     }
-    Ok(())
+    Ok(fresh)
 }
 
 /// The distinct local-looking usernames addressed by a Note's `to`/`cc`/

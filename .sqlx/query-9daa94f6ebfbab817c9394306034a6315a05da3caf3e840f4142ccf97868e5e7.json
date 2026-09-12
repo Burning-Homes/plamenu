@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) AS \"count!\"\n        FROM (\n            SELECT 1 AS one\n            FROM notifications n\n            WHERE account_id = $1 AND ($2::bigint IS NULL OR id > $2)\n              AND notification_kind_for(reasons, $4) IS NOT NULL\n              AND ($5::bigint IS NULL OR from_account_id = $5)\n              AND ($6 OR NOT filtered)\n              AND NOT sender_filtered($1, n.from_account_id)\n            LIMIT $3\n        ) AS capped\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "TextArray",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9daa94f6ebfbab817c9394306034a6315a05da3caf3e840f4142ccf97868e5e7"
+}

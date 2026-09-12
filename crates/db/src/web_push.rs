@@ -353,21 +353,42 @@ pub async fn delete(pool: &PgPool, id: i64) -> Result<(), DbError> {
     Ok(())
 }
 
-/// Mastodon's `pushable?` re-check at delivery time: the alert for the
-/// notification's kind is on, and the policy allows the sender.
+/// Highest-priority contributing reason enabled for this subscription. A
+/// mention wins over a quote, which wins over notify-on-post; other
+/// notifications carry their sole kind as their sole reason.
+#[must_use]
+pub fn preferred_alert_kind<'a>(
+    subscription: &Subscription,
+    reasons: &'a [String],
+) -> Option<&'a str> {
+    let enabled = |reason: &str| {
+        subscription
+            .alert_kinds
+            .iter()
+            .zip(&subscription.alert_values)
+            .any(|(stored_kind, enabled)| stored_kind == reason && *enabled)
+    };
+    ["mention", "quote", "status"]
+        .into_iter()
+        .find(|kind| reasons.iter().any(|reason| reason == kind) && enabled(kind))
+        .or_else(|| {
+            reasons
+                .iter()
+                .find(|reason| enabled(reason))
+                .map(String::as_str)
+        })
+}
+
+/// Mastodon's `pushable?` re-check at delivery time: at least one contributing
+/// reason's alert is on, and the subscription policy allows the sender.
 pub async fn pushable(
     pool: &PgPool,
     subscription: &Subscription,
     recipient_account_id: i64,
     from_account_id: i64,
-    kind: &str,
+    reasons: &[String],
 ) -> Result<bool, DbError> {
-    if !subscription
-        .alert_kinds
-        .iter()
-        .zip(&subscription.alert_values)
-        .any(|(stored_kind, enabled)| stored_kind == kind && *enabled)
-    {
+    if preferred_alert_kind(subscription, reasons).is_none() {
         return Ok(false);
     }
     let (follower, target) = match subscription.policy.as_str() {
@@ -532,6 +553,34 @@ mod tests {
 
     use super::*;
     use crate::account::{self, NewLocalAccount};
+
+    #[test]
+    fn coalesced_push_uses_highest_enabled_reason() {
+        let subscription = Subscription {
+            id: 1,
+            user_id: 1,
+            access_token_id: 1,
+            access_token: String::new(),
+            endpoint: String::new(),
+            key_p256dh: String::new(),
+            key_auth: String::new(),
+            standard: true,
+            policy: "all".to_owned(),
+            alert_kinds: vec![
+                "mention".to_owned(),
+                "quote".to_owned(),
+                "status".to_owned(),
+            ],
+            alert_values: vec![false, true, true],
+        };
+        let reasons = vec![
+            "mention".to_owned(),
+            "quote".to_owned(),
+            "status".to_owned(),
+        ];
+
+        assert_eq!(preferred_alert_kind(&subscription, &reasons), Some("quote"));
+    }
     use crate::{notification, oauth, user};
 
     /// A local account with a user and an access token; returns
@@ -624,6 +673,47 @@ mod tests {
         .fetch_one(pool)
         .await
         .unwrap()
+    }
+
+    #[sqlx::test]
+    async fn coalesced_reasons_enqueue_one_push_job(pool: PgPool) {
+        let (recipient, user_id, token_id) = local_user(&pool, "alice").await;
+        let (sender, _, _) = local_user(&pool, "bob").await;
+        replace_for_token(
+            &pool,
+            subscription(
+                user_id,
+                token_id,
+                &json!({
+                    "alerts": {"mention": true, "quote": true, "status": true},
+                    "policy": "all"
+                }),
+            ),
+        )
+        .await
+        .unwrap();
+        let post = crate::status::create_local(
+            &pool,
+            crate::status::NewLocalStatus::new(sender, "<p>hello</p>", "public", None),
+        )
+        .await
+        .unwrap();
+
+        notification::create_post_notifications_many(
+            &pool,
+            &[notification::PostNotification {
+                account_id: recipient,
+                mention: true,
+                quote: true,
+                status: true,
+            }],
+            sender,
+            post.id,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(pending_count(&pool).await.unwrap(), 1);
     }
 
     #[sqlx::test]

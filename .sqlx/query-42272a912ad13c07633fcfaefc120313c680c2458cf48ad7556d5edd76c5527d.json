@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT kind, filtered, reasons FROM notifications WHERE account_id = $1 ORDER BY filtered",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "filtered",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "filtered"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "reasons",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "notifications",
+            "name": "reasons"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "42272a912ad13c07633fcfaefc120313c680c2458cf48ad7556d5edd76c5527d"
+}

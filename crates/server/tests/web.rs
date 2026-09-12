@@ -13,11 +13,11 @@ use plamenu::{build_router, remote};
 use plamenu_db::{
     PgPool, account, account_domain_block, account_moderation_note, account_warning,
     admin_action_log, announcement, appeal, block, custom_emoji, custom_filter, email, endorsement,
-    featured_tag, follow, id, instance_policy, invite, media, mute, notification_policy,
-    notification_request, oauth, preview_card, preview_card_trend, reachability, reaction,
-    remote_history as history_db, report, report_note, role, rule as db_rule, scheduled_status,
-    software_update, status, status_trend, tag, tag_trend, terms_of_service, user, username_block,
-    warning_preset, webhook,
+    featured_tag, follow, id, instance_policy, invite, media, mute, notification,
+    notification_policy, notification_request, oauth, preview_card, preview_card_trend,
+    reachability, reaction, remote_history as history_db, report, report_note, role,
+    rule as db_rule, scheduled_status, software_update, status, status_trend, tag, tag_trend,
+    terms_of_service, user, username_block, warning_preset, webhook,
 };
 use tower::ServiceExt;
 
@@ -1875,6 +1875,55 @@ async fn notifications_page_lists_activity(pool: PgPool) {
     assert!(resp.body.contains("Bob"));
     assert!(resp.body.contains("followed you"));
     assert!(resp.body.contains("/@bob"));
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn notifications_page_coalesces_post_reasons_and_mentions_win(pool: PgPool) {
+    let alice = seed_alice(&pool).await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let post = status::create_local(
+        &pool,
+        status::NewLocalStatus::new(bob.id, "<p>one post, three reasons</p>", "public", None),
+    )
+    .await
+    .unwrap();
+    notification::create_post_notifications_many(
+        &pool,
+        &[notification::PostNotification {
+            account_id: alice.id,
+            mention: true,
+            quote: true,
+            status: true,
+        }],
+        bob.id,
+        post.id,
+    )
+    .await
+    .unwrap();
+    let app = common::test_app(pool.clone());
+    let cookie = login(&app).await;
+
+    let page = get(&app, "/notifications", Some(&cookie)).await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(
+        page.body
+            .matches(r#"<article class="notification""#)
+            .count(),
+        1
+    );
+    assert_eq!(page.body.matches("one post, three reasons").count(), 1);
+    assert!(page.body.contains("mentioned you"));
+    assert!(!page.body.contains("quoted your post"));
+    assert!(!page.body.contains(">posted<"));
+    let row = sqlx::query!(
+        "SELECT kind, reasons FROM notifications WHERE account_id = $1",
+        alice.id,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(row.kind, "mention");
+    assert_eq!(row.reasons, vec!["mention", "quote", "status"]);
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO notifications\n            (id, account_id, from_account_id, kind, status_id, filtered, reasons)\n        SELECT v.id, v.account_id, $7,\n               CASE WHEN v.mention THEN 'mention'\n                    WHEN v.quote THEN 'quote' ELSE 'status' END,\n               $8, v.filtered,\n               ARRAY_REMOVE(ARRAY[\n                   CASE WHEN v.mention THEN 'mention' END,\n                   CASE WHEN v.quote THEN 'quote' END,\n                   CASE WHEN v.status THEN 'status' END\n               ], NULL)\n        FROM unnest(\n            $1::bigint[], $2::bigint[], $3::boolean[], $4::boolean[],\n            $5::boolean[], $6::boolean[]\n        ) AS v(id, account_id, mention, quote, status, filtered)\n        ON CONFLICT (account_id, from_account_id, status_id, filtered)\n            WHERE status_id IS NOT NULL AND kind IN ('mention', 'quote', 'status')\n        DO UPDATE SET\n            reasons = ARRAY_REMOVE(ARRAY[\n                CASE WHEN 'mention' = ANY(notifications.reasons)\n                           OR 'mention' = ANY(EXCLUDED.reasons) THEN 'mention' END,\n                CASE WHEN 'quote' = ANY(notifications.reasons)\n                           OR 'quote' = ANY(EXCLUDED.reasons) THEN 'quote' END,\n                CASE WHEN 'status' = ANY(notifications.reasons)\n                           OR 'status' = ANY(EXCLUDED.reasons) THEN 'status' END\n            ], NULL),\n            kind = CASE\n                WHEN 'mention' = ANY(notifications.reasons)\n                  OR 'mention' = ANY(EXCLUDED.reasons) THEN 'mention'\n                WHEN 'quote' = ANY(notifications.reasons)\n                  OR 'quote' = ANY(EXCLUDED.reasons) THEN 'quote'\n                ELSE 'status'\n            END\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array",
+        "BoolArray",
+        "BoolArray",
+        "BoolArray",
+        "BoolArray",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f236494b953cde844e24ba75120a80391369af9ffa29de76581e4f5631a6faf2"
+}

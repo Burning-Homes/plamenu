@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO notifications (id, account_id, from_account_id, kind, status_id, reasons)\n        SELECT v.id, v.account_id, $4, $5, v.status_id, ARRAY[$5]\n        FROM unnest($1::bigint[], $2::bigint[], $3::bigint[]) AS v(id, account_id, status_id)\n        WHERE v.account_id <> $4\n          AND NOT EXISTS (\n              SELECT 1\n              FROM status_conversations sc\n              JOIN conversation_mutes cm ON cm.conversation_id = sc.conversation_id\n              WHERE sc.status_id = v.status_id AND cm.account_id = v.account_id\n          )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f07e1ec6ac02a09fba265414289264fe85052a7d2d55f727b8c9d4a5d2b96189"
+}

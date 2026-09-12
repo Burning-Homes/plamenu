@@ -1,6 +1,6 @@
 //! Notifications for local accounts.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use sqlx::{PgExecutor, PgPool};
 use time::OffsetDateTime;
@@ -44,6 +44,69 @@ pub struct Notification {
 /// `GROUPABLE_NOTIFICATION_TYPES` minus `admin.sign_up`, which Plamenu emits
 /// but never groups (staff see each applicant on their own row).
 pub const GROUPABLE_KINDS: &[&str] = &["favourite", "reblog", "follow"];
+
+const COALESCED_POST_KINDS: &[&str] = &["mention", "quote", "status"];
+
+/// All simultaneous reasons one post should notify one local account. These
+/// collapse to one visible notification while each reason remains available
+/// to policy and push-alert selection.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PostNotification {
+    pub account_id: i64,
+    pub mention: bool,
+    pub quote: bool,
+    pub status: bool,
+}
+
+impl PostNotification {
+    #[must_use]
+    pub const fn status(account_id: i64) -> Self {
+        Self {
+            account_id,
+            mention: false,
+            quote: false,
+            status: true,
+        }
+    }
+
+    #[must_use]
+    pub const fn mention(account_id: i64) -> Self {
+        Self {
+            account_id,
+            mention: true,
+            quote: false,
+            status: false,
+        }
+    }
+}
+
+#[derive(Default)]
+struct PostNotificationRows {
+    ids: Vec<i64>,
+    accounts: Vec<i64>,
+    mentions: Vec<bool>,
+    quotes: Vec<bool>,
+    statuses: Vec<bool>,
+    filtered: Vec<bool>,
+}
+
+impl PostNotificationRows {
+    fn push(&mut self, notification: PostNotification, filtered: bool) {
+        if !(notification.mention || notification.quote || notification.status) {
+            return;
+        }
+        self.ids.push(id::next());
+        self.accounts.push(notification.account_id);
+        self.mentions.push(notification.mention);
+        self.quotes.push(notification.quote);
+        self.statuses.push(notification.status);
+        self.filtered.push(filtered);
+    }
+
+    fn is_empty(&self) -> bool {
+        self.accounts.is_empty()
+    }
+}
 
 /// A group stops absorbing new notifications once it spans this many hours
 /// (Mastodon's `MAXIMUM_GROUP_SPAN_HOURS`).
@@ -116,6 +179,205 @@ pub async fn create(
     .await
 }
 
+fn merge_post_notifications(
+    candidates: &[PostNotification],
+    from_account_id: i64,
+) -> BTreeMap<i64, PostNotification> {
+    let mut merged: BTreeMap<i64, PostNotification> = BTreeMap::new();
+    for candidate in candidates {
+        if candidate.account_id == from_account_id
+            || !(candidate.mention || candidate.quote || candidate.status)
+        {
+            continue;
+        }
+        let entry = merged
+            .entry(candidate.account_id)
+            .or_insert(PostNotification {
+                account_id: candidate.account_id,
+                ..PostNotification::default()
+            });
+        entry.mention |= candidate.mention;
+        entry.quote |= candidate.quote;
+        entry.status |= candidate.status;
+    }
+    merged
+}
+
+async fn build_post_notification_rows(
+    pool: &PgPool,
+    merged: &BTreeMap<i64, PostNotification>,
+    from_account_id: i64,
+    status_id: i64,
+) -> Result<(PostNotificationRows, Vec<i64>), DbError> {
+    let mention_targets: Vec<i64> = merged
+        .values()
+        .filter(|candidate| candidate.mention)
+        .map(|candidate| candidate.account_id)
+        .collect();
+    let quote_targets: Vec<i64> = merged
+        .values()
+        .filter(|candidate| candidate.quote)
+        .map(|candidate| candidate.account_id)
+        .collect();
+    let mention_dispositions = crate::notification_policy::evaluate_many(
+        pool,
+        &mention_targets,
+        from_account_id,
+        "mention",
+        Some(status_id),
+    )
+    .await?;
+    let quote_dispositions = crate::notification_policy::evaluate_many(
+        pool,
+        &quote_targets,
+        from_account_id,
+        "quote",
+        Some(status_id),
+    )
+    .await?;
+    let mut rows = PostNotificationRows::default();
+    let mut filtered_accounts = Vec::new();
+    for candidate in merged.values() {
+        let mention = mention_dispositions
+            .get(&candidate.account_id)
+            .copied()
+            .unwrap_or(crate::notification_policy::Disposition::Accept);
+        let quote = quote_dispositions
+            .get(&candidate.account_id)
+            .copied()
+            .unwrap_or(crate::notification_policy::Disposition::Accept);
+        rows.push(
+            PostNotification {
+                account_id: candidate.account_id,
+                mention: candidate.mention
+                    && mention == crate::notification_policy::Disposition::Accept,
+                quote: candidate.quote && quote == crate::notification_policy::Disposition::Accept,
+                status: candidate.status,
+            },
+            false,
+        );
+        let filtered_mention =
+            candidate.mention && mention == crate::notification_policy::Disposition::Filter;
+        let filtered_quote =
+            candidate.quote && quote == crate::notification_policy::Disposition::Filter;
+        if filtered_mention || filtered_quote {
+            rows.push(
+                PostNotification {
+                    account_id: candidate.account_id,
+                    mention: filtered_mention,
+                    quote: filtered_quote,
+                    status: false,
+                },
+                true,
+            );
+            filtered_accounts.push(candidate.account_id);
+        }
+    }
+    Ok((rows, filtered_accounts))
+}
+
+async fn insert_post_notification_rows(
+    pool: &PgPool,
+    rows: &PostNotificationRows,
+    from_account_id: i64,
+    status_id: i64,
+) -> Result<(), DbError> {
+    sqlx::query!(
+        r#"
+        INSERT INTO notifications
+            (id, account_id, from_account_id, kind, status_id, filtered, reasons)
+        SELECT v.id, v.account_id, $7,
+               CASE WHEN v.mention THEN 'mention'
+                    WHEN v.quote THEN 'quote' ELSE 'status' END,
+               $8, v.filtered,
+               ARRAY_REMOVE(ARRAY[
+                   CASE WHEN v.mention THEN 'mention' END,
+                   CASE WHEN v.quote THEN 'quote' END,
+                   CASE WHEN v.status THEN 'status' END
+               ], NULL)
+        FROM unnest(
+            $1::bigint[], $2::bigint[], $3::boolean[], $4::boolean[],
+            $5::boolean[], $6::boolean[]
+        ) AS v(id, account_id, mention, quote, status, filtered)
+        ON CONFLICT (account_id, from_account_id, status_id, filtered)
+            WHERE status_id IS NOT NULL AND kind IN ('mention', 'quote', 'status')
+        DO UPDATE SET
+            reasons = ARRAY_REMOVE(ARRAY[
+                CASE WHEN 'mention' = ANY(notifications.reasons)
+                           OR 'mention' = ANY(EXCLUDED.reasons) THEN 'mention' END,
+                CASE WHEN 'quote' = ANY(notifications.reasons)
+                           OR 'quote' = ANY(EXCLUDED.reasons) THEN 'quote' END,
+                CASE WHEN 'status' = ANY(notifications.reasons)
+                           OR 'status' = ANY(EXCLUDED.reasons) THEN 'status' END
+            ], NULL),
+            kind = CASE
+                WHEN 'mention' = ANY(notifications.reasons)
+                  OR 'mention' = ANY(EXCLUDED.reasons) THEN 'mention'
+                WHEN 'quote' = ANY(notifications.reasons)
+                  OR 'quote' = ANY(EXCLUDED.reasons) THEN 'quote'
+                ELSE 'status'
+            END
+        "#,
+        &rows.ids,
+        &rows.accounts,
+        &rows.mentions,
+        &rows.quotes,
+        &rows.statuses,
+        &rows.filtered,
+        from_account_id,
+        status_id,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Stores one canonical notification per `(recipient, actor, status, policy
+/// surface)`, retaining every contributing post reason. The canonical label is
+/// `mention`, then `quote`, then `status`. Policy-filtered mention/quote reasons
+/// remain in the requests surface and never hide an accepted status reason.
+pub async fn create_post_notifications_many(
+    pool: &PgPool,
+    candidates: &[PostNotification],
+    from_account_id: i64,
+    status_id: i64,
+) -> Result<(), DbError> {
+    let mut merged = merge_post_notifications(candidates, from_account_id);
+    if merged.is_empty() {
+        return Ok(());
+    }
+
+    let recipients: Vec<i64> = merged.keys().copied().collect();
+    let muted: HashSet<i64> = crate::conversation::status_muted_of(pool, &recipients, status_id)
+        .await?
+        .into_iter()
+        .collect();
+    merged.retain(|account_id, _| !muted.contains(account_id));
+    if merged.is_empty() {
+        return Ok(());
+    }
+
+    let (rows, mut filtered_accounts) =
+        build_post_notification_rows(pool, &merged, from_account_id, status_id).await?;
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    insert_post_notification_rows(pool, &rows, from_account_id, status_id).await?;
+
+    filtered_accounts.sort_unstable();
+    filtered_accounts.dedup();
+    crate::notification_request::record_filtered_many(
+        pool,
+        &filtered_accounts,
+        from_account_id,
+        "mention",
+        Some(status_id),
+    )
+    .await?;
+    Ok(())
+}
+
 /// Batched [`create`] for the `status` kind — one statement notifies every
 /// follower who opted into per-follow `notify` about a fresh post.
 ///
@@ -132,31 +394,12 @@ pub async fn create_status_many(
     from_account_id: i64,
     status_id: i64,
 ) -> Result<(), DbError> {
-    if recipient_ids.is_empty() {
-        return Ok(());
-    }
-    let ids: Vec<i64> = recipient_ids.iter().map(|_| id::next()).collect();
-    sqlx::query!(
-        r#"
-        INSERT INTO notifications (id, account_id, from_account_id, kind, status_id)
-        SELECT v.id, v.account_id, $3, 'status', $4
-        FROM unnest($1::bigint[], $2::bigint[]) AS v(id, account_id)
-        WHERE v.account_id <> $3
-          AND NOT EXISTS (
-              SELECT 1
-              FROM status_conversations sc
-              JOIN conversation_mutes cm ON cm.conversation_id = sc.conversation_id
-              WHERE sc.status_id = $4 AND cm.account_id = v.account_id
-          )
-        "#,
-        &ids,
-        recipient_ids,
-        from_account_id,
-        status_id,
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
+    let candidates: Vec<PostNotification> = recipient_ids
+        .iter()
+        .copied()
+        .map(PostNotification::status)
+        .collect();
+    create_post_notifications_many(pool, &candidates, from_account_id, status_id).await
 }
 
 /// Batched [`create`] for any kind that is in neither
@@ -187,8 +430,8 @@ pub async fn create_ungroupable_many(
     let status_ids: Vec<i64> = recipients.iter().map(|(_, status)| *status).collect();
     sqlx::query!(
         r#"
-        INSERT INTO notifications (id, account_id, from_account_id, kind, status_id)
-        SELECT v.id, v.account_id, $4, $5, v.status_id
+        INSERT INTO notifications (id, account_id, from_account_id, kind, status_id, reasons)
+        SELECT v.id, v.account_id, $4, $5, v.status_id, ARRAY[$5]
         FROM unnest($1::bigint[], $2::bigint[], $3::bigint[]) AS v(id, account_id, status_id)
         WHERE v.account_id <> $4
           AND NOT EXISTS (
@@ -226,84 +469,12 @@ pub async fn create_mentions_many(
     from_account_id: i64,
     status_id: i64,
 ) -> Result<(), DbError> {
-    // Dedup (a repeated recipient must not double-notify, and the request
-    // upsert below may not hit one row twice in a statement) and self-skip.
-    let mut targets: Vec<i64> = recipient_ids
+    let candidates: Vec<PostNotification> = recipient_ids
         .iter()
         .copied()
-        .filter(|&id| id != from_account_id)
+        .map(PostNotification::mention)
         .collect();
-    targets.sort_unstable();
-    targets.dedup();
-    if targets.is_empty() {
-        return Ok(());
-    }
-    let muted: HashSet<i64> = crate::conversation::status_muted_of(pool, &targets, status_id)
-        .await?
-        .into_iter()
-        .collect();
-    targets.retain(|id| !muted.contains(id));
-    if targets.is_empty() {
-        return Ok(());
-    }
-    let dispositions = crate::notification_policy::evaluate_many(
-        pool,
-        &targets,
-        from_account_id,
-        "mention",
-        Some(status_id),
-    )
-    .await?;
-    let mut accounts: Vec<i64> = Vec::new();
-    let mut filtered_flags: Vec<bool> = Vec::new();
-    let mut filtered_accounts: Vec<i64> = Vec::new();
-    for &recipient in &targets {
-        match dispositions
-            .get(&recipient)
-            .copied()
-            .unwrap_or(crate::notification_policy::Disposition::Accept)
-        {
-            crate::notification_policy::Disposition::Drop => {}
-            crate::notification_policy::Disposition::Accept => {
-                accounts.push(recipient);
-                filtered_flags.push(false);
-            }
-            crate::notification_policy::Disposition::Filter => {
-                accounts.push(recipient);
-                filtered_flags.push(true);
-                filtered_accounts.push(recipient);
-            }
-        }
-    }
-    if accounts.is_empty() {
-        return Ok(());
-    }
-    let ids: Vec<i64> = accounts.iter().map(|_| id::next()).collect();
-    sqlx::query!(
-        r#"
-        INSERT INTO notifications (id, account_id, from_account_id, kind, status_id, filtered)
-        SELECT v.id, v.account_id, $4, 'mention', $5, v.filtered
-        FROM unnest($1::bigint[], $2::bigint[], $3::boolean[]) AS v(id, account_id, filtered)
-        "#,
-        &ids,
-        &accounts,
-        &filtered_flags,
-        from_account_id,
-        status_id,
-    )
-    .execute(pool)
-    .await?;
-    // After the INSERT, like the per-recipient path: the request row's count
-    // includes the notification just stored.
-    crate::notification_request::record_filtered_many(
-        pool,
-        &filtered_accounts,
-        from_account_id,
-        "mention",
-        Some(status_id),
-    )
-    .await?;
-    Ok(())
+    create_post_notifications_many(pool, &candidates, from_account_id, status_id).await
 }
 
 /// Records the Mastodon-compatible `admin.report` staff notification —
@@ -379,6 +550,18 @@ async fn create_inner(
     emoji: Option<&str>,
     report_id: Option<i64>,
 ) -> Result<(), DbError> {
+    if let Some(status_id) = status_id
+        && COALESCED_POST_KINDS.contains(&kind)
+    {
+        let candidate = PostNotification {
+            account_id,
+            mention: kind == "mention",
+            quote: kind == "quote",
+            status: kind == "status",
+        };
+        return create_post_notifications_many(pool, &[candidate], from_account_id, status_id)
+            .await;
+    }
     if account_id == from_account_id && kind != "poll" {
         return Ok(());
     }
@@ -403,8 +586,8 @@ async fn create_inner(
     let group_key = next_group_key(pool, account_id, kind, status_id).await?;
     sqlx::query!(
         r#"
-        INSERT INTO notifications (id, account_id, from_account_id, kind, status_id, emoji, group_key, filtered, report_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO notifications (id, account_id, from_account_id, kind, status_id, emoji, group_key, filtered, report_id, reasons)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$4])
         "#,
         id::next(),
         account_id,
@@ -443,8 +626,8 @@ pub async fn create_moderation_warning(
 ) -> Result<(), DbError> {
     sqlx::query!(
         r#"
-        INSERT INTO notifications (id, account_id, from_account_id, kind, account_warning_id)
-        VALUES ($1, $2, $2, 'moderation_warning', $3)
+        INSERT INTO notifications (id, account_id, from_account_id, kind, account_warning_id, reasons)
+        VALUES ($1, $2, $2, 'moderation_warning', $3, ARRAY['moderation_warning'])
         "#,
         id::next(),
         account_id,
@@ -518,7 +701,7 @@ pub async fn exists(
             SELECT 1 FROM notifications
             WHERE account_id = $1
               AND from_account_id = $2
-              AND kind = $3
+              AND $3 = ANY(reasons)
               AND status_id IS NOT DISTINCT FROM $4
         ) AS "found!"
         "#,
@@ -548,8 +731,8 @@ pub async fn create_for_collection(
     }
     sqlx::query!(
         r#"
-        INSERT INTO notifications (id, account_id, from_account_id, kind, collection_id)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO notifications (id, account_id, from_account_id, kind, collection_id, reasons)
+        VALUES ($1, $2, $3, $4, $5, ARRAY[$4])
         "#,
         id::next(),
         account_id,
@@ -604,11 +787,13 @@ pub async fn list(
         let mut notifications = sqlx::query_as!(
             Notification,
             r#"
-            SELECT id, account_id, from_account_id, kind, status_id, collection_id, emoji, created_at, group_key, filtered, account_warning_id, report_id
+            SELECT id, account_id, from_account_id,
+                   notification_kind_for(reasons, $5) AS "kind!",
+                   status_id, collection_id, emoji, created_at, group_key, filtered, account_warning_id, report_id
             FROM notifications n
             WHERE account_id = $1 AND id > $2
               AND ($3::bigint IS NULL OR id < $3)
-              AND ($5::text[] IS NULL OR kind = ANY($5))
+              AND notification_kind_for(reasons, $5) IS NOT NULL
               AND ($6::bigint IS NULL OR from_account_id = $6)
               AND ($7 OR NOT filtered)
               AND NOT sender_filtered($1, n.from_account_id)
@@ -631,12 +816,14 @@ pub async fn list(
     let notifications = sqlx::query_as!(
         Notification,
         r#"
-        SELECT id, account_id, from_account_id, kind, status_id, collection_id, emoji, created_at, group_key, filtered, account_warning_id, report_id
+        SELECT id, account_id, from_account_id,
+               notification_kind_for(reasons, $5) AS "kind!",
+               status_id, collection_id, emoji, created_at, group_key, filtered, account_warning_id, report_id
         FROM notifications n
         WHERE account_id = $1
           AND ($2::bigint IS NULL OR id < $2)
           AND ($3::bigint IS NULL OR id > $3)
-          AND ($5::text[] IS NULL OR kind = ANY($5))
+          AND notification_kind_for(reasons, $5) IS NOT NULL
           AND ($6::bigint IS NULL OR from_account_id = $6)
           AND ($7 OR NOT filtered)
           AND NOT sender_filtered($1, n.from_account_id)
@@ -687,17 +874,18 @@ pub async fn list_grouped(
         r#"
         WITH RECURSIVE grouped AS (
             (
-                SELECT n.id, n.account_id, n.from_account_id, n.kind, n.status_id,
+                SELECT n.id, n.account_id, n.from_account_id,
+                       notification_kind_for(n.reasons, $6) AS kind, n.status_id,
                        n.collection_id, n.emoji, n.created_at, n.group_key, n.filtered,
                        n.account_warning_id, n.report_id,
-                       ARRAY[COALESCE(CASE WHEN $5::text[] IS NULL OR n.kind = ANY($5)
+                       ARRAY[COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, $6) = ANY($5)
                                            THEN n.group_key END,
                                       'ungrouped-' || n.id)] AS seen
                 FROM notifications n
                 WHERE n.account_id = $1
                   AND ($2::bigint IS NULL OR n.id < $2)
                   AND ($3::bigint IS NULL OR n.id > $3)
-                  AND ($6::text[] IS NULL OR n.kind = ANY($6))
+                  AND notification_kind_for(n.reasons, $6) IS NOT NULL
                   AND ($7::bigint IS NULL OR n.from_account_id = $7)
                   AND ($8 OR NOT n.filtered)
                   AND NOT sender_filtered($1, n.from_account_id)
@@ -710,20 +898,21 @@ pub async fn list_grouped(
                    step.filtered, step.account_warning_id, step.report_id, wt.seen || step.gkey
             FROM (SELECT id, seen FROM grouped WHERE cardinality(seen) < $4::bigint) AS wt
             CROSS JOIN LATERAL (
-                SELECT n.id, n.account_id, n.from_account_id, n.kind, n.status_id,
+                SELECT n.id, n.account_id, n.from_account_id,
+                       notification_kind_for(n.reasons, $6) AS kind, n.status_id,
                        n.collection_id, n.emoji, n.created_at, n.group_key, n.filtered,
                        n.account_warning_id, n.report_id,
-                       COALESCE(CASE WHEN $5::text[] IS NULL OR n.kind = ANY($5)
+                       COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, $6) = ANY($5)
                                      THEN n.group_key END,
                                 'ungrouped-' || n.id) AS gkey
                 FROM notifications n
                 WHERE n.account_id = $1 AND n.id < wt.id
                   AND ($3::bigint IS NULL OR n.id > $3)
-                  AND ($6::text[] IS NULL OR n.kind = ANY($6))
+                  AND notification_kind_for(n.reasons, $6) IS NOT NULL
                   AND ($7::bigint IS NULL OR n.from_account_id = $7)
                   AND ($8 OR NOT n.filtered)
                   AND NOT sender_filtered($1, n.from_account_id)
-                  AND COALESCE(CASE WHEN $5::text[] IS NULL OR n.kind = ANY($5)
+                  AND COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, $6) = ANY($5)
                                     THEN n.group_key END,
                                'ungrouped-' || n.id) <> ALL(wt.seen)
                 ORDER BY n.id DESC
@@ -769,16 +958,17 @@ pub async fn list_grouped_above(
         r#"
         WITH RECURSIVE grouped AS (
             (
-                SELECT n.id, n.account_id, n.from_account_id, n.kind, n.status_id,
+                SELECT n.id, n.account_id, n.from_account_id,
+                       notification_kind_for(n.reasons, $6) AS kind, n.status_id,
                        n.collection_id, n.emoji, n.created_at, n.group_key, n.filtered,
                        n.account_warning_id, n.report_id,
-                       ARRAY[COALESCE(CASE WHEN $5::text[] IS NULL OR n.kind = ANY($5)
+                       ARRAY[COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, $6) = ANY($5)
                                            THEN n.group_key END,
                                       'ungrouped-' || n.id)] AS seen
                 FROM notifications n
                 WHERE n.account_id = $1 AND n.id > $2
                   AND ($3::bigint IS NULL OR n.id < $3)
-                  AND ($6::text[] IS NULL OR n.kind = ANY($6))
+                  AND notification_kind_for(n.reasons, $6) IS NOT NULL
                   AND ($7::bigint IS NULL OR n.from_account_id = $7)
                   AND ($8 OR NOT n.filtered)
                   AND NOT sender_filtered($1, n.from_account_id)
@@ -791,20 +981,21 @@ pub async fn list_grouped_above(
                    step.filtered, step.account_warning_id, step.report_id, wt.seen || step.gkey
             FROM (SELECT id, seen FROM grouped WHERE cardinality(seen) < $4::bigint) AS wt
             CROSS JOIN LATERAL (
-                SELECT n.id, n.account_id, n.from_account_id, n.kind, n.status_id,
+                SELECT n.id, n.account_id, n.from_account_id,
+                       notification_kind_for(n.reasons, $6) AS kind, n.status_id,
                        n.collection_id, n.emoji, n.created_at, n.group_key, n.filtered,
                        n.account_warning_id, n.report_id,
-                       COALESCE(CASE WHEN $5::text[] IS NULL OR n.kind = ANY($5)
+                       COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, $6) = ANY($5)
                                      THEN n.group_key END,
                                 'ungrouped-' || n.id) AS gkey
                 FROM notifications n
                 WHERE n.account_id = $1 AND n.id > wt.id
                   AND ($3::bigint IS NULL OR n.id < $3)
-                  AND ($6::text[] IS NULL OR n.kind = ANY($6))
+                  AND notification_kind_for(n.reasons, $6) IS NOT NULL
                   AND ($7::bigint IS NULL OR n.from_account_id = $7)
                   AND ($8 OR NOT n.filtered)
                   AND NOT sender_filtered($1, n.from_account_id)
-                  AND COALESCE(CASE WHEN $5::text[] IS NULL OR n.kind = ANY($5)
+                  AND COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, $6) = ANY($5)
                                     THEN n.group_key END,
                                'ungrouped-' || n.id) <> ALL(wt.seen)
                 ORDER BY n.id ASC
@@ -989,6 +1180,16 @@ pub async fn find(pool: &PgPool, id: i64) -> Result<Option<Notification>, DbErro
     .fetch_optional(pool)
     .await?;
     Ok(notification)
+}
+
+/// Contributing reasons of one canonical notification, in presentation order.
+pub async fn reasons(pool: &PgPool, id: i64) -> Result<Vec<String>, DbError> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT unnest(reasons) AS "reason!" FROM notifications WHERE id = $1"#,
+        id,
+    )
+    .fetch_all(pool)
+    .await?)
 }
 
 /// A single notification, scoped to its recipient.
@@ -1186,7 +1387,7 @@ pub async fn unread_count(
             SELECT 1 AS one
             FROM notifications n
             WHERE account_id = $1 AND ($2::bigint IS NULL OR id > $2)
-              AND ($4::text[] IS NULL OR kind = ANY($4))
+              AND notification_kind_for(reasons, $4) IS NOT NULL
               AND ($5::bigint IS NULL OR from_account_id = $5)
               AND ($6 OR NOT filtered)
               AND NOT sender_filtered($1, n.from_account_id)
@@ -1236,7 +1437,7 @@ pub async fn lemmy_unread_counts(
             SELECT n.id, n.status_id, n.from_account_id, n.filtered
             FROM notifications n CROSS JOIN marker_value m
             WHERE n.account_id = $2
-              AND n.kind = 'mention'
+              AND 'mention' = ANY(n.reasons)
               AND n.id > m.last_read_id
               AND NOT EXISTS (
                   SELECT 1 FROM lemmy_notification_read_overrides o
@@ -1250,7 +1451,7 @@ pub async fn lemmy_unread_counts(
             JOIN notifications n ON n.id = o.notification_id
             CROSS JOIN marker_value m
             WHERE o.account_id = $2 AND NOT o.read
-              AND n.account_id = $2 AND n.kind = 'mention'
+              AND n.account_id = $2 AND 'mention' = ANY(n.reasons)
               AND n.id <= m.last_read_id
         ), mention_counts AS (
             SELECT
@@ -1412,6 +1613,144 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(stored_status_rows(&pool).await, per_item);
+    }
+
+    #[sqlx::test]
+    async fn overlapping_post_reasons_coalesce_with_stable_precedence(pool: PgPool) {
+        let author = local(&pool, "author").await;
+        let recipient = local(&pool, "recipient").await;
+        let post = crate::status::create_local(
+            &pool,
+            crate::status::NewLocalStatus::new(author, "<p>hello</p>", "public", None),
+        )
+        .await
+        .unwrap();
+
+        for order in [
+            ["status", "quote", "mention"],
+            ["mention", "status", "quote"],
+            ["quote", "mention", "status"],
+        ] {
+            for kind in order {
+                create(&pool, recipient, author, kind, Some(post.id))
+                    .await
+                    .unwrap();
+            }
+            let rows = sqlx::query!(
+                "SELECT id, kind, reasons FROM notifications WHERE account_id = $1",
+                recipient,
+            )
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+            assert_eq!(rows.len(), 1, "one logical post notification");
+            assert_eq!(rows[0].kind, "mention");
+            assert_eq!(rows[0].reasons, vec!["mention", "quote", "status"]);
+
+            for expected in ["mention", "quote", "status"] {
+                let kinds = vec![expected.to_owned()];
+                let projected = list(
+                    &pool,
+                    recipient,
+                    None,
+                    None,
+                    None,
+                    NotificationFilter {
+                        kinds: Some(&kinds),
+                        ..NotificationFilter::default()
+                    },
+                    10,
+                )
+                .await
+                .unwrap();
+                assert_eq!(projected.len(), 1);
+                assert_eq!(projected[0].kind, expected);
+            }
+
+            sqlx::query!("DELETE FROM notifications")
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    }
+
+    #[sqlx::test]
+    async fn filtered_mention_does_not_hide_an_accepted_status_reason(pool: PgPool) {
+        use crate::notification_policy::{Disposition, Policy, upsert as upsert_policy};
+
+        let author = local(&pool, "author").await;
+        let recipient = local(&pool, "recipient").await;
+        upsert_policy(
+            &pool,
+            recipient,
+            Policy {
+                for_not_following: Disposition::Filter,
+                ..Policy::default()
+            },
+        )
+        .await
+        .unwrap();
+        let post = crate::status::create_local(
+            &pool,
+            crate::status::NewLocalStatus::new(author, "<p>hello</p>", "public", None),
+        )
+        .await
+        .unwrap();
+
+        create_post_notifications_many(
+            &pool,
+            &[PostNotification {
+                account_id: recipient,
+                mention: true,
+                quote: false,
+                status: true,
+            }],
+            author,
+            post.id,
+        )
+        .await
+        .unwrap();
+
+        let rows = sqlx::query!(
+            "SELECT kind, filtered, reasons FROM notifications WHERE account_id = $1 ORDER BY filtered",
+            recipient,
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 2, "one row per policy surface");
+        assert_eq!((rows[0].kind.as_str(), rows[0].filtered), ("status", false));
+        assert_eq!(rows[0].reasons, vec!["status"]);
+        assert_eq!((rows[1].kind.as_str(), rows[1].filtered), ("mention", true));
+        assert_eq!(rows[1].reasons, vec!["mention"]);
+        let request = crate::notification_request::list(&pool, recipient, None, None, None, 10)
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .expect("filtered mention request");
+        assert_eq!(request.notifications_count, 1);
+
+        crate::notification_request::accept(&pool, recipient, author)
+            .await
+            .unwrap();
+        let accepted = sqlx::query!(
+            "SELECT kind, filtered, reasons FROM notifications WHERE account_id = $1",
+            recipient,
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(accepted.len(), 1, "acceptance must merge the two surfaces");
+        assert_eq!(accepted[0].kind, "mention");
+        assert!(!accepted[0].filtered);
+        assert_eq!(accepted[0].reasons, vec!["mention", "status"]);
+        assert!(
+            crate::notification_request::list(&pool, recipient, None, None, None, 10)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     /// [`create_ungroupable_many`] must store exactly what per-recipient

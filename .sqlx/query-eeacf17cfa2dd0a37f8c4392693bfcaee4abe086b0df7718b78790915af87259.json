@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT COUNT(*) AS \"count!\" FROM (\n            SELECT 1 FROM notifications\n            WHERE account_id = $1 AND from_account_id = $2 AND filtered\n              AND kind = ANY($3)\n            LIMIT 100\n        ) capped\n        ",
+  "query": "\n        SELECT COUNT(*) AS \"count!\" FROM (\n            SELECT 1 FROM notifications\n            WHERE account_id = $1 AND from_account_id = $2 AND filtered\n              AND reasons && $3\n            LIMIT 100\n        ) capped\n        ",
   "describe": {
     "columns": [
       {
@@ -21,5 +21,5 @@
       null
     ]
   },
-  "hash": "42569cc63ef6e0e506307243ce18f271ff7b8264e47a0e339b7a8b31e2eb3b27"
+  "hash": "eeacf17cfa2dd0a37f8c4392693bfcaee4abe086b0df7718b78790915af87259"
 }

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE notifications accepted SET\n            reasons = ARRAY_REMOVE(ARRAY[\n                CASE WHEN 'mention' = ANY(accepted.reasons)\n                           OR 'mention' = ANY(filtered.reasons) THEN 'mention' END,\n                CASE WHEN 'quote' = ANY(accepted.reasons)\n                           OR 'quote' = ANY(filtered.reasons) THEN 'quote' END,\n                CASE WHEN 'status' = ANY(accepted.reasons)\n                           OR 'status' = ANY(filtered.reasons) THEN 'status' END\n            ], NULL),\n            kind = CASE\n                WHEN 'mention' = ANY(accepted.reasons)\n                  OR 'mention' = ANY(filtered.reasons) THEN 'mention'\n                WHEN 'quote' = ANY(accepted.reasons)\n                  OR 'quote' = ANY(filtered.reasons) THEN 'quote'\n                ELSE 'status'\n            END\n        FROM notifications filtered\n        WHERE accepted.account_id = $1\n          AND accepted.from_account_id = $2\n          AND NOT accepted.filtered\n          AND filtered.account_id = accepted.account_id\n          AND filtered.from_account_id = accepted.from_account_id\n          AND filtered.status_id = accepted.status_id\n          AND filtered.filtered\n          AND accepted.kind IN ('mention', 'quote', 'status')\n          AND filtered.kind IN ('mention', 'quote', 'status')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "731ef71ab5915151aceb578a266cf9a582ec941100457a639f6333d26ae090ef"
+}

@@ -950,7 +950,7 @@ struct PendingQuote {
 
 /// Validates and records a quote for a freshly created local status, on the
 /// transaction connection `conn`. Returns the pending-quote bookkeeping and, for
-/// a local target, the `(recipient, from)` of the "quote" notification to fire
+/// a local target, the recipient of the "quote" notification to fire
 /// after the transaction commits — the notification references the (still
 /// uncommitted) status, so it cannot be created mid-transaction.
 async fn begin_quote(
@@ -995,7 +995,6 @@ async fn begin_quote(
             },
             Some(QuoteNotify {
                 recipient: target_author.id,
-                from: author.id,
             }),
         ))
     } else {
@@ -1031,11 +1030,10 @@ async fn begin_quote(
     }
 }
 
-/// The recipient/sender of a local "quote" notification, deferred until the
+/// The recipient of a local "quote" notification, deferred until the
 /// status-creation transaction commits.
 struct QuoteNotify {
     recipient: i64,
-    from: i64,
 }
 
 /// A quote inlines the post for the quoted author; in a DM they must be a
@@ -1810,23 +1808,41 @@ async fn post_status_inner(
     // === Post-commit side effects: the post is durable, so these are best
     // effort — a failure is logged, never propagated as if the post failed. ===
     // Notifications reference the now-committed status.
-    if let Some(QuoteNotify { recipient, from }) = quote_notify {
-        notify_after_commit(state, recipient, from, "quote", Some(stored.id)).await;
+    let mut post_notifications: Vec<notification::PostNotification> = mention_notify
+        .into_iter()
+        .map(notification::PostNotification::mention)
+        .collect();
+    if let Some(QuoteNotify { recipient, .. }) = quote_notify {
+        post_notifications.push(notification::PostNotification {
+            account_id: recipient,
+            quote: true,
+            ..notification::PostNotification::default()
+        });
     }
-    if let Err(err) =
-        notification::create_mentions_many(&state.pool, &mention_notify, author.id, stored.id).await
-    {
-        tracing::warn!(
+    match new_status_follower_ids(state, &stored).await {
+        Ok(followers) => post_notifications.extend(
+            followers
+                .into_iter()
+                .map(notification::PostNotification::status),
+        ),
+        Err(err) => tracing::warn!(
             error = %err,
             status_id = stored.id,
-            "post-commit mention notifications failed"
-        );
+            "post-commit follower notification audience failed"
+        ),
+    }
+    if let Err(err) = notification::create_post_notifications_many(
+        &state.pool,
+        &post_notifications,
+        author.id,
+        stored.id,
+    )
+    .await
+    {
+        tracing::warn!(error = %err, status_id = stored.id, "post-commit post notifications failed");
     }
     for boost_id in group_streams {
         crate::streaming::status_created(state, boost_id).await;
-    }
-    if let Err(err) = notify_new_status_followers(state, &stored).await {
-        tracing::warn!(error = %err, status_id = stored.id, "post-commit follower notification failed");
     }
     crate::streaming::status_created(state, stored.id).await;
     crate::webhooks::status_event(state, plamenu_db::webhook::STATUS_CREATED, &stored).await;
@@ -1842,22 +1858,30 @@ pub async fn notify_new_status_followers(
     state: &AppState,
     stored: &Status,
 ) -> Result<(), ApiError> {
+    let followers = new_status_follower_ids(state, stored).await?;
+    notification::create_status_many(&state.pool, &followers, stored.account_id, stored.id).await?;
+    Ok(())
+}
+
+pub(crate) async fn new_status_follower_ids(
+    state: &AppState,
+    stored: &Status,
+) -> Result<Vec<i64>, ApiError> {
     if stored.reblog_of_id.is_some() || stored.visibility == "direct" {
-        return Ok(());
+        return Ok(Vec::new());
     }
     if let Some(parent_id) = stored.in_reply_to_id {
         let parent_author = status::find_by_id(&state.pool, parent_id)
             .await?
             .map(|parent| parent.account_id);
         if parent_author != Some(stored.account_id) {
-            return Ok(());
+            return Ok(Vec::new());
         }
     }
-    let followers =
+    Ok(
         follow::notify_follower_ids(&state.pool, stored.account_id, stored.language.as_deref())
-            .await?;
-    notification::create_status_many(&state.pool, &followers, stored.account_id, stored.id).await?;
-    Ok(())
+            .await?,
+    )
 }
 
 /// Delivers a fresh status' `Create` to its audience within the status-creation

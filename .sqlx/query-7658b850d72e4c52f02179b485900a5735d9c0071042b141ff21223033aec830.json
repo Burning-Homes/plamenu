@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO notification_requests\n            (id, account_id, from_account_id, last_status_id, notifications_count)\n        SELECT v.id, v.account_id, $3, $4,\n               (SELECT COUNT(*) FROM (\n                    SELECT 1 FROM notifications n\n                    WHERE n.account_id = v.account_id AND n.from_account_id = $3\n                      AND n.filtered AND n.reasons && $5\n                    LIMIT 100\n               ) capped)\n        FROM unnest($1::bigint[], $2::bigint[]) AS v(id, account_id)\n        ON CONFLICT (account_id, from_account_id) DO UPDATE SET\n            last_status_id = EXCLUDED.last_status_id,\n            notifications_count = EXCLUDED.notifications_count,\n            updated_at = now()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array",
+        "Int8",
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7658b850d72e4c52f02179b485900a5735d9c0071042b141ff21223033aec830"
+}

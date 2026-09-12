@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1 FROM notifications\n            WHERE account_id = $1\n              AND from_account_id = $2\n              AND $3 = ANY(reasons)\n              AND status_id IS NOT DISTINCT FROM $4\n        ) AS \"found!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "found!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e70f5119af16a469f8f20a11696d601c121ae06c62fa95d0bfa75d17cc59c225"
+}
