@@ -621,6 +621,69 @@ async fn url_search_follows_permalinks_to_canonical_id(pool: PgPool) {
     assert_eq!(section(&results, "statuses").len(), 1);
 }
 
+/// A post may predate support for media advertised by its linked page, or its
+/// original best-effort crawl may have failed. Resolving the already-known URL
+/// must repair that missing enrichment instead of returning the stale shell.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn url_search_backfills_audio_for_an_already_known_status(pool: PgPool) {
+    const POST: &str = "https://pod.example/@show/posts/episode";
+    const EPISODE: &str = "https://pod.example/@show/episodes/one";
+    const AUDIO: &str = "https://cdn.pod.example/one.mp3";
+    let show = RemoteUser::new("pod.example", "show");
+    let stub = StubFederation::with_users(&[&show]);
+    stub.objects.lock().unwrap().insert(
+        POST.to_owned(),
+        json!({
+            "id": POST,
+            "type": "Note",
+            "attributedTo": show.actor.id,
+            "content": format!(r#"<p><a href="{EPISODE}">Episode one</a></p>"#),
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "published": "2026-06-25T08:00:00Z",
+        }),
+    );
+    stub.serve_page(
+        EPISODE,
+        &format!(
+            r#"<html><head><meta property="og:title" content="Episode one"><meta property="og:audio" content="{AUDIO}"><meta property="og:audio:type" content="audio/mpeg"></head></html>"#,
+        ),
+    );
+    let (_, token) = user_with_token(&pool, "searcher", "read").await;
+    let query = format!("/api/v2/search?q={}&resolve=true", urlencode(POST));
+
+    // The first resolution ingests the post and queues its ordinary async
+    // crawl, so it models a status that was stored by an older Plamenu build.
+    let (_, first) = api(
+        test_app_with(pool.clone(), stub.clone()),
+        "GET",
+        &query,
+        Some(&token),
+        None,
+    )
+    .await;
+    assert!(
+        section(&first, "statuses")[0]["media_attachments"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    // A later exact resolution recognizes that the known post is still bare,
+    // crawls its episode link, and includes the player immediately.
+    let (_, repaired) = api(
+        test_app_with(pool.clone(), stub.clone()),
+        "GET",
+        &query,
+        Some(&token),
+        None,
+    )
+    .await;
+    let audio = &section(&repaired, "statuses")[0]["media_attachments"][0];
+    assert_eq!(audio["type"], "audio");
+    assert!(audio["url"].as_str().unwrap().contains("/media/play/"));
+    assert_eq!(stub.page_fetches(), vec![EPISODE.to_owned()]);
+}
+
 #[sqlx::test(migrations = "../db/migrations")]
 async fn exact_owncast_homepage_resolves_and_is_cached(pool: PgPool) {
     let mut caster = RemoteUser::new("owncast.example", "inex");

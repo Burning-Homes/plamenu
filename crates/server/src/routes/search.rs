@@ -701,6 +701,15 @@ pub async fn resolve_url(
 ) -> Result<Option<UrlResource>, ApiError> {
     let domain = &state.config.domain;
     match resolve_url_known(state, url, viewer).await? {
+        KnownUrl::Found(UrlResource::Status(found)) => {
+            // Exact resolution is also the repair path for posts stored before
+            // their linked page became crawlable (or before support for that
+            // page's media metadata existed). The crawler is a no-op when the
+            // status already has a card, attachment or quote, and performs no
+            // network request when its body has no eligible link.
+            crate::link_preview::crawl_status(state, found.id).await?;
+            return Ok(Some(UrlResource::Status(found)));
+        }
         KnownUrl::Found(found) => return Ok(Some(found)),
         KnownUrl::Refused => return Ok(None),
         KnownUrl::Unknown => {}
