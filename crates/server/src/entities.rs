@@ -5142,6 +5142,14 @@ const NOTIFICATION_STATUS_TYPES: &[&str] = &[
     "quoted_update",
     "quote",
     "live",
+    // Event notifications always reference the event status. Keep the full
+    // family here so API clients and the web renderer can identify the event
+    // instead of falling back to an account-only notification.
+    "event.participation",
+    "event.accepted",
+    "event.rejected",
+    "event.changed",
+    "event.invite",
     // Pleroma's reaction notification is a status-bearing extension: its
     // contract includes the post that received the reaction.
     "pleroma:emoji_reaction",

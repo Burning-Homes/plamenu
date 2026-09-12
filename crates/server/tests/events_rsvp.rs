@@ -21,7 +21,7 @@ use common::{
 };
 use http_body_util::BodyExt;
 use plamenu_db::status_participation::{self as participation, State};
-use plamenu_db::{PgPool, account, status, status_event};
+use plamenu_db::{PgPool, account, notification, status, status_event};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -488,6 +488,51 @@ async fn local_event(
     sidecar.max_attendees = capacity;
     status_event::upsert(pool, &sidecar).await.unwrap();
     item
+}
+
+/// Every event notification names the event it concerns. This is part of the
+/// API contract as well as what lets the web page render an event card instead
+/// of an unrelated account card.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn event_notifications_embed_the_referenced_event(pool: PgPool) {
+    let organizer = create_local_account(&pool, "grace", "Grace").await;
+    let attendee = create_local_account(&pool, "heidi", "Heidi").await;
+    let item = local_event(&pool, organizer.id, "free", None).await;
+    let kinds = [
+        plamenu::events::NOTIFY_PARTICIPATION,
+        plamenu::events::NOTIFY_ACCEPTED,
+        plamenu::events::NOTIFY_REJECTED,
+        plamenu::events::NOTIFY_CHANGED,
+        plamenu::events::NOTIFY_INVITED,
+    ];
+    for kind in kinds {
+        notification::create(&pool, organizer.id, attendee.id, kind, Some(item.id))
+            .await
+            .unwrap();
+    }
+
+    let notes = notification::list(
+        &pool,
+        organizer.id,
+        None,
+        None,
+        None,
+        notification::NotificationFilter::default(),
+        10,
+    )
+    .await
+    .unwrap();
+    let rendered =
+        plamenu::entities::render_notifications(&pool, TEST_DOMAIN, &notes, organizer.id)
+            .await
+            .unwrap();
+
+    assert_eq!(rendered.len(), kinds.len());
+    for note in rendered {
+        assert!(kinds.contains(&note["type"].as_str().unwrap()));
+        assert_eq!(note["status"]["id"], item.id.to_string());
+        assert_eq!(note["status"]["event"]["join_mode"], "free");
+    }
 }
 
 /// A remote attendee's `Join` of one of our events.

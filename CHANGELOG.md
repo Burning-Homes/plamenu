@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Include the referenced event card in RSVP and other event notifications.
 - Present podcast audio discovered through Open Graph (including Castopod
   episode posts) as playable, cacheable media in the web UI and API.
 - Improve WCAG 2.1 AA support for status avatars, attachment previews, prose
