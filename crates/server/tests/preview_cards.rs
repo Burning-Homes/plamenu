@@ -491,6 +491,7 @@ async fn castopod_episode_link_becomes_a_playable_audio_attachment(pool: PgPool)
     assert!(page.contains("media--audio"), "{page}");
     assert!(page.contains("<audio"), "{page}");
     assert!(page.contains(" controls"), "{page}");
+    assert!(page.contains("preload=\"none\""), "{page}");
     assert!(page.contains("/media/proxy/attachment/"), "{page}");
 
     // A signed-in reader's default direct-remote preference is encoded into

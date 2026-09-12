@@ -3556,30 +3556,32 @@
     });
   }
 
-  // ---- Remote video warm-up ---------------------------------------------
+  // ---- Remote A/V warm-up -----------------------------------------------
   //
-  // A large remote (PeerTube-style) video is cached on its first play: the
-  // proxy holds the request briefly, but a long video outlives that window
-  // and the request 404s while the download keeps running server-side. The
-  // <video> then fires an error; poll the proxy and swap the source back in
-  // once the cached copy has landed.
-  function bindVideoWarmup(root) {
-    root.querySelectorAll('video[src*="/media/proxy/"]').forEach((video) => {
-      if (video.dataset.warmupBound) return;
-      video.dataset.warmupBound = "1";
-      video.addEventListener("error", () => beginVideoWarmup(video));
-    });
+  // Large remote video and podcast audio are cached on first play: the proxy
+  // holds the request briefly, but a long download can outlive that window
+  // and 404 while caching keeps running server-side. The media element then
+  // fires an error; poll the proxy and retry once the cached copy has landed.
+  function bindMediaWarmup(root) {
+    root
+      .querySelectorAll('video[src*="/media/proxy/"], audio[src*="/media/proxy/"]')
+      .forEach((media) => {
+        if (media.dataset.warmupBound) return;
+        media.dataset.warmupBound = "1";
+        media.addEventListener("error", () => beginMediaWarmup(media));
+      });
   }
 
-  async function beginVideoWarmup(video) {
-    if (video.dataset.warming) return;
-    video.dataset.warming = "1";
+  async function beginMediaWarmup(media) {
+    if (media.dataset.warming) return;
+    media.dataset.warming = "1";
+    const kind = media instanceof HTMLAudioElement ? "audio" : "video";
     const note = document.createElement("span");
     note.className = "media__preparing";
-    note.textContent = "Preparing video…";
-    video.closest("figure")?.append(note);
-    const src = video.getAttribute("src");
-    // A long video can take minutes to fetch and remux; each probe is also
+    note.textContent = `Preparing ${kind}…`;
+    media.closest("figure")?.append(note);
+    const src = media.getAttribute("src");
+    // A long download can take minutes to fetch and remux; each probe is also
     // held briefly by the server, so this paces itself. Give up after ~30
     // minutes of trying.
     for (let attempt = 0; attempt < 120; attempt++) {
@@ -3588,16 +3590,16 @@
         const res = await fetch(src, { method: "HEAD" });
         if (res.ok) {
           note.remove();
-          delete video.dataset.warming;
-          video.load();
-          video.play().catch(() => {});
+          delete media.dataset.warming;
+          media.load();
+          media.play().catch(() => {});
           return;
         }
       } catch (_err) {
         // Transient network trouble: keep waiting.
       }
     }
-    note.textContent = "Video is still preparing — try again later.";
+    note.textContent = `${kind[0].toUpperCase()}${kind.slice(1)} is still preparing — try again later.`;
   }
 
   // ---- HLS video (PeerTube) --------------------------------------------
@@ -4324,7 +4326,7 @@
     bindLightboxes(root);
     bindBlurhashes(root);
     bindHlsVideos(root);
-    bindVideoWarmup(root);
+    bindMediaWarmup(root);
     bindCompose(root);
     bindComposeCombo(root);
     bindLanguageControls(root);
