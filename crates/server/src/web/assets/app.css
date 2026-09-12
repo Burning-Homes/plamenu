@@ -4106,6 +4106,12 @@ img.reaction__emoji {
 
 .notification {
   display: grid;
+  /* This card nests a complete status. Its implicit grid column would be
+     `auto`, so the status's max-content width (notably a side-image preview
+     card) could widen that track past the notification even though the outer
+     `.notifications` track was correctly pinned. Constrain every grid level:
+     the embedded status must size to this card, not to its widest child. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   background: var(--surface);

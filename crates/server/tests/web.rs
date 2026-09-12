@@ -1757,6 +1757,17 @@ async fn stylesheet_is_served(pool: PgPool) {
         .expect("stylesheet contains the media badge rule");
     assert!(media_badges.contains("inset-block-start: var(--space-2)"));
     assert!(!media_badges.contains("inset-block-end:"));
+
+    // A notification embeds a full status. Its own grid track must be
+    // shrinkable too; constraining only the outer notifications list lets a
+    // preview card's max-content width push the nested status past the card.
+    let notification = resp
+        .body
+        .split_once(".notification {")
+        .and_then(|(_, css)| css.split_once('}'))
+        .map(|(rule, _)| rule)
+        .expect("stylesheet contains the notification rule");
+    assert!(notification.contains("grid-template-columns: minmax(0, 1fr)"));
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
