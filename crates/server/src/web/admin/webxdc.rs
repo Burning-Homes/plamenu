@@ -79,68 +79,186 @@ pub async fn index(
     Ok(admin_shell(&admin, "/admin/webxdc", "Webxdc sessions", &body).into_response())
 }
 
+fn visibility_label(visibility: &str) -> &str {
+    match visibility {
+        "public" => "Public",
+        "instance" => "Instance only",
+        "hidden" => "Hidden",
+        _ => visibility,
+    }
+}
+
+fn source_label(source_kind: &str) -> &str {
+    match source_kind {
+        "external" => "External catalog",
+        "upload" => "Direct upload",
+        "promotion" => "Member promotion",
+        _ => source_kind,
+    }
+}
+
+fn owner_label(app: &webxdc::LibraryApp) -> String {
+    let Some(username) = app.owner_username.as_deref() else {
+        return "Unknown member".into();
+    };
+    let handle = match app.owner_domain.as_deref() {
+        Some(domain) => format!("@{username}@{domain}"),
+        None => format!("@{username}"),
+    };
+    match app
+        .owner_display_name
+        .as_deref()
+        .filter(|name| !name.is_empty())
+    {
+        Some(name) if name != username => format!("{name} ({handle})"),
+        _ => handle,
+    }
+}
+
+fn app_filter_text(app: &webxdc::LibraryApp) -> String {
+    format!(
+        "{} {} {} {} {} {} {}",
+        app.name,
+        app.summary,
+        app.version,
+        app.category.as_deref().unwrap_or_default(),
+        app.visibility,
+        source_label(&app.source_kind),
+        owner_label(app),
+    )
+}
+
+fn candidate_filter_text(candidate: &webxdc::CatalogCandidate) -> String {
+    format!(
+        "{} {} {} {}",
+        candidate.name,
+        candidate.summary,
+        candidate.version,
+        candidate.category.as_deref().unwrap_or_default(),
+    )
+}
+
+fn admin_app_icon(app: &webxdc::LibraryApp) -> Markup {
+    html! {
+        div.webxdc-admin-record__icon {
+            @if app.icon_path.is_some() {
+                img src={ "/web/admin/webxdc/apps/version/" (app.version_id) "/icon" }
+                    alt="" width="52" height="52" loading="lazy";
+            } @else {
+                span aria-hidden="true" { (crate::web::view::icon("apps")) }
+            }
+        }
+    }
+}
+
+fn library_search(placeholder: &str, filter_label: &str, states: &[(&str, &str)]) -> Markup {
+    html! {
+        div.admin-filter.webxdc-admin-filter hidden data-library-controls {
+            label.admin-filter__search {
+                span { "Search" }
+                span.webxdc-admin-search {
+                    (crate::web::view::icon("search"))
+                    input type="search" placeholder=(placeholder) autocomplete="off" data-library-search;
+                }
+            }
+            label {
+                span { (filter_label) }
+                select data-library-state-filter {
+                    @for (value, label) in states {
+                        option value=(value) { (label) }
+                    }
+                }
+            }
+            output.webxdc-admin-filter-count aria-live="polite" data-library-visible-count { }
+        }
+    }
+}
+
 fn instance_library_section(
     apps: &[webxdc::LibraryApp],
     csrf: &str,
     limits: webxdc::Limits,
 ) -> Markup {
     html! {
-        section.admin-form {
-            h3 { "Add an instance app" }
-            p { "Every package is validated locally. New sessions pin the selected version; adding an update never changes a running session." }
-            form method="post" action="/web/admin/webxdc/apps" enctype="multipart/form-data" {
-                input type="hidden" name="csrf" value=(csrf);
-                div.admin-form__grid {
-                    label { "Package" input required type="file" name="bundle" accept=".xdc,application/webxdc+zip,application/x-webxdc,application/zip"; }
-                    label { "Category" input name="category" maxlength="80"; }
-                    label { "Initial visibility" select name="visibility" {
-                        option value="hidden" { "Hidden for review" }
-                        option value="instance" { "Available on this instance" }
-                        option value="public" { "Public catalog" }
-                    } }
+        details.admin-form.webxdc-admin-add {
+            summary { (crate::web::view::icon("upload")) " Add an instance app" }
+            div.webxdc-admin-add__body {
+                p { "Every package is validated locally. New sessions pin the selected version; adding an update never changes a running session." }
+                form method="post" action="/web/admin/webxdc/apps" enctype="multipart/form-data" {
+                    input type="hidden" name="csrf" value=(csrf);
+                    div.admin-form__grid {
+                        label { "Package" input required type="file" name="bundle" accept=".xdc,application/webxdc+zip,application/x-webxdc,application/zip"; }
+                        label { "Category" input name="category" maxlength="80"; }
+                        label { "Initial visibility" select name="visibility" {
+                            option value="hidden" { "Hidden for review" }
+                            option value="instance" { "Available on this instance" }
+                            option value="public" { "Public catalog" }
+                        } }
+                    }
+                    label { "Description" textarea name="summary" maxlength="2000" rows="3" {} }
+                    p.settings-field__hint { "Maximum package size: " (limits.bundle_mb) " MiB." }
+                    button type="submit" { "Validate and add" }
                 }
-                label { "Description" textarea name="summary" maxlength="2000" rows="3" {} }
-                p.settings-field__hint { "Maximum package size: " (limits.bundle_mb) " MiB." }
-                button type="submit" { "Validate and add" }
             }
         }
-        section.admin-list {
-            h3 { "Instance library" }
+        section.admin-list.webxdc-admin-section id="instance-library" data-library-filter {
+            div.webxdc-admin-section__head {
+                div { h3 { "Instance library" } p { "Apps controlled by this instance." } }
+                span.webxdc-admin-count { (apps.len()) }
+            }
+            (library_search("Search instance apps", "Visibility", &[("", "All visibility"), ("hidden", "Hidden"), ("instance", "Instance only"), ("public", "Public")]))
             @if apps.is_empty() { p.empty { "No instance apps." } }
+            p.empty.webxdc-admin-filter-empty hidden { "No instance apps match." }
+            div.webxdc-admin-records {
             @for app in apps {
-                article.admin-record {
-                    div.admin-record__head {
-                        div { h4 { (&app.name) } p.admin-table__sub { (&app.visibility) " · " (size(app.package_bytes)) @if !app.version.is_empty() { " · " (&app.version) } } }
-                        @if app.icon_path.is_some() { img src={ "/web/admin/webxdc/apps/version/" (app.version_id) "/icon" } alt="" width="48" height="48" loading="lazy"; }
-                    }
-                    @if !app.summary.is_empty() { p { (&app.summary) } }
-                    @if app.update_available { p.admin-flash { "A newer personal version is ready for moderator review." } }
-                    p.admin-table__sub { code { (&app.digest_multibase) } }
-                    div.admin-actions {
-                        @for (value,label) in [("hidden","Hide"),("instance","Instance only"),("public","Publish")] {
-                            @if app.visibility != value {
-                                form method="post" action={ "/web/admin/webxdc/apps/" (app.id) "/op" } {
-                                    input type="hidden" name="csrf" value=(csrf);
-                                    input type="hidden" name="op" value=(value);
-                                    button type="submit" { (label) }
+                article.admin-record.webxdc-admin-record data-library-record data-library-state=(&app.visibility)
+                    data-library-text=(app_filter_text(app)) {
+                    (admin_app_icon(app))
+                    div.webxdc-admin-record__body {
+                        div.admin-record__head {
+                            h4 { (&app.name) }
+                            span.webxdc-badge data-visibility=(&app.visibility) { (visibility_label(&app.visibility)) }
+                        }
+                        @if !app.summary.is_empty() { p.webxdc-admin-record__summary title=(&app.summary) { (&app.summary) } }
+                        p.webxdc-admin-record__meta {
+                            @if !app.version.is_empty() { "Version " (&app.version) " · " }
+                            (size(app.package_bytes))
+                            @if let Some(category) = &app.category { " · " (category) }
+                            " · " (source_label(&app.source_kind))
+                        }
+                        @if app.update_available { p.webxdc-admin-notice { "New personal version available for review" } }
+                        div.webxdc-admin-record__actions {
+                            @for (value,label) in [("hidden","Hide"),("instance","Instance only"),("public","Publish publicly")] {
+                                @if app.visibility != value {
+                                    form method="post" action={ "/web/admin/webxdc/apps/" (app.id) "/op" } {
+                                        input type="hidden" name="csrf" value=(csrf);
+                                        input type="hidden" name="op" value=(value);
+                                        button.settings-button--plain type="submit" { (label) }
+                                    }
                                 }
                             }
                         }
-                    }
-                    details {
-                        summary { "Update or remove" }
-                        form method="post" action={ "/web/admin/webxdc/apps/" (app.id) "/version" } enctype="multipart/form-data" {
-                            input type="hidden" name="csrf" value=(csrf);
-                            label { "New .xdc version" input required type="file" name="bundle" accept=".xdc,application/webxdc+zip,application/x-webxdc,application/zip"; }
-                            button type="submit" { "Add version" }
-                        }
-                        form method="post" action={ "/web/admin/webxdc/apps/" (app.id) "/op" } {
-                            input type="hidden" name="csrf" value=(csrf);
-                            input type="hidden" name="op" value="delete";
-                            button.admin-danger type="submit" { "Remove app" }
+                        details.webxdc-admin-manage {
+                            summary { "Manage package" }
+                            dl.webxdc-admin-facts {
+                                div { dt { "File" } dd { (&app.filename) } }
+                                div { dt { "Digest" } dd { code { (&app.digest_multibase) } } }
+                                @if let Some(source) = &app.source_code_url { div { dt { "Source" } dd { a href=(source) rel="noopener noreferrer" { "Source code ↗" } } } }
+                            }
+                            form method="post" action={ "/web/admin/webxdc/apps/" (app.id) "/version" } enctype="multipart/form-data" {
+                                input type="hidden" name="csrf" value=(csrf);
+                                label { "New .xdc version" input required type="file" name="bundle" accept=".xdc,application/webxdc+zip,application/x-webxdc,application/zip"; }
+                                button type="submit" { "Add version" }
+                            }
+                            form method="post" action={ "/web/admin/webxdc/apps/" (app.id) "/op" } {
+                                input type="hidden" name="csrf" value=(csrf);
+                                input type="hidden" name="op" value="delete";
+                                button.admin-danger type="submit" { "Remove app" }
+                            }
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -148,24 +266,48 @@ fn instance_library_section(
 
 fn personal_promotions_section(apps: &[webxdc::LibraryApp], csrf: &str) -> Markup {
     html! {
-        section.admin-list {
-            h3 { "Personal apps eligible for promotion" }
-            p { "Promotion adds an instance-library reference. The member keeps their personal copy and existing sessions do not change." }
+        section.admin-list.webxdc-admin-section id="personal-apps" data-library-filter {
+            div.webxdc-admin-section__head {
+                div { h3 { "Personal apps" } p { "Review member apps for optional instance promotion." } }
+                span.webxdc-admin-count { (apps.len()) }
+            }
+            (library_search("Search personal apps or owners", "Status", &[("", "All status"), ("available", "Available"), ("promoted", "Promoted"), ("update", "Update available")]))
             @if apps.is_empty() { p.empty { "No personal apps." } }
+            p.empty.webxdc-admin-filter-empty hidden { "No personal apps match." }
+            div.webxdc-admin-records {
             @for app in apps {
-                article.admin-record {
-                    div.admin-record__head { h4 { (&app.name) } span.admin-table__sub { "Account #" (app.owner_account_id.unwrap_or_default()) } }
-                    p.admin-table__sub { (size(app.package_bytes)) @if !app.version.is_empty() { " · " (&app.version) } }
-                    @if app.promoted_instance_app_id.is_none() || app.update_available {
-                        form method="post" action={ "/web/admin/webxdc/apps/" (app.id) "/promote" } {
-                            input type="hidden" name="csrf" value=(csrf);
-                            button type="submit" { @if app.promoted_instance_app_id.is_some() { "Promote new version" } @else { "Promote to instance library" } }
+                @let state = if app.update_available { "update" } else if app.promoted_instance_app_id.is_some() { "promoted" } else { "available" };
+                article.admin-record.webxdc-admin-record data-library-record data-library-state=(state)
+                    data-library-text=(app_filter_text(app)) {
+                    (admin_app_icon(app))
+                    div.webxdc-admin-record__body {
+                        div.admin-record__head {
+                            h4 { (&app.name) }
+                            @if app.update_available { span.webxdc-badge { "Update available" } }
+                            @else if app.promoted_instance_app_id.is_some() { span.webxdc-badge { "Promoted" } }
+                            @else { span.webxdc-badge.webxdc-badge--ended { "Personal" } }
                         }
-                    } @else {
-                        span.webxdc-badge { "Promoted" }
+                        @if !app.summary.is_empty() { p.webxdc-admin-record__summary title=(&app.summary) { (&app.summary) } }
+                        p.webxdc-admin-record__meta {
+                            @if let Some(owner_id) = app.owner_account_id {
+                                a href={ "/admin/accounts/" (owner_id) } { (owner_label(app)) }
+                                " · "
+                            }
+                            @if !app.version.is_empty() { "Version " (&app.version) " · " }
+                            (size(app.package_bytes))
+                            @if let Some(category) = &app.category { " · " (category) }
+                        }
+                        @if app.promoted_instance_app_id.is_none() || app.update_available {
+                            form method="post" action={ "/web/admin/webxdc/apps/" (app.id) "/promote" } {
+                                input type="hidden" name="csrf" value=(csrf);
+                                button type="submit" { @if app.promoted_instance_app_id.is_some() { "Promote new version" } @else { "Promote to instance library" } }
+                            }
+                        }
                     }
                 }
             }
+            }
+            p.settings-field__hint { "Promotion adds an instance-library reference. The member's copy and existing sessions stay unchanged." }
         }
     }
 }
@@ -177,38 +319,51 @@ fn catalog_sources_section(
     csrf: &str,
 ) -> Markup {
     html! {
-        section.admin-form {
-            h3 { "External catalog sources" }
-            p { "Catalogs are opt-in and refresh only when a moderator asks. Discovery metadata is advisory; imported packages pass the same guarded download and ZIP validation as uploads." }
-            form method="post" action="/web/admin/webxdc/catalog-sources" {
-                input type="hidden" name="csrf" value=(csrf);
-                div.admin-form__grid {
-                    label { "Name" input required name="name" maxlength="120" placeholder="Webxdc apps"; }
-                    label { "JSON feed URL" input required type="url" name="feed_url" maxlength="2048" placeholder="https://example.org/catalog.json"; }
-                }
-                button type="submit" { "Add source" }
+        section.admin-list.webxdc-admin-section {
+            div.webxdc-admin-section__head {
+                div { h3 { "Catalog sources" } p { "External catalogs available to members and moderators." } }
+                span.webxdc-admin-count { (sources.len()) }
             }
-            @for source in sources {
-                article.admin-record {
-                    div.admin-record__head {
-                        div { h4 { (&source.name) } p.admin-table__sub { (&source.feed_url) } }
-                        @if selected_source == Some(source.id) { span.webxdc-badge { "Selected" } }
-                    }
-                    p.admin-table__sub {
-                        @if let Some(at) = source.last_fetched_at { "Last refreshed " (admin.clock().element(at)) }
-                        @else { "Not refreshed yet" }
-                        @if let Some(error) = &source.last_error { " · Last error: " (error) }
-                    }
-                    div.admin-actions {
-                        a.pill-button href={ "/admin/webxdc/apps?source=" (source.id) } { "Browse" }
-                        form method="post" action={ "/web/admin/webxdc/catalog-sources/" (source.id) "/refresh" } {
-                            input type="hidden" name="csrf" value=(csrf);
-                            button type="submit" { "Refresh" }
+            div.webxdc-admin-sources {
+                @for source in sources {
+                    article.admin-record.webxdc-admin-source {
+                        div.admin-record__head {
+                            div { h4 { (&source.name) } p.webxdc-admin-record__meta title=(&source.feed_url) { (&source.feed_url) } }
+                            @if selected_source == Some(source.id) { span.webxdc-badge { "Viewing" } }
                         }
-                        form method="post" action={ "/web/admin/webxdc/catalog-sources/" (source.id) "/delete" } {
-                            input type="hidden" name="csrf" value=(csrf);
-                            button.settings-button--plain type="submit" { "Remove source" }
+                        p.webxdc-admin-record__meta {
+                            @if let Some(at) = source.last_fetched_at { "Refreshed " (admin.clock().element(at)) }
+                            @else { "Not refreshed yet" }
                         }
+                        @if let Some(error) = &source.last_error { p.webxdc-admin-error { (error) } }
+                        div.webxdc-admin-record__actions {
+                            @if selected_source != Some(source.id) { a.pill-button href={ "/admin/webxdc/apps?source=" (source.id) "#catalog-apps" } { "Browse apps" } }
+                            form method="post" action={ "/web/admin/webxdc/catalog-sources/" (source.id) "/refresh" } {
+                                input type="hidden" name="csrf" value=(csrf);
+                                button.settings-button--plain type="submit" { "Refresh" }
+                            }
+                            details.webxdc-admin-source__remove {
+                                summary { "More" }
+                                form method="post" action={ "/web/admin/webxdc/catalog-sources/" (source.id) "/delete" } {
+                                    input type="hidden" name="csrf" value=(csrf);
+                                    button.settings-button--plain type="submit" { "Remove source" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            details.admin-form.webxdc-admin-add {
+                summary { "Add a catalog source" }
+                div.webxdc-admin-add__body {
+                    p { "Catalogs refresh only when a moderator asks. Feed metadata is advisory; imported packages still pass guarded download and ZIP validation." }
+                    form method="post" action="/web/admin/webxdc/catalog-sources" {
+                        input type="hidden" name="csrf" value=(csrf);
+                        div.admin-form__grid {
+                            label { "Name" input required name="name" maxlength="120" placeholder="Webxdc apps"; }
+                            label { "JSON feed URL" input required type="url" name="feed_url" maxlength="2048" placeholder="https://example.org/catalog.json"; }
+                        }
+                        button type="submit" { "Add source" }
                     }
                 }
             }
@@ -219,27 +374,48 @@ fn catalog_sources_section(
 fn catalog_candidates_section(
     candidates: &[webxdc::CatalogCandidate],
     source_id: Option<i64>,
+    source_name: Option<&str>,
     csrf: &str,
 ) -> Markup {
     html! {
         @if let Some(source_id) = source_id {
-            section.admin-list {
-                h3 { "Catalog apps" }
+            section.admin-list.webxdc-admin-section id="catalog-apps" data-library-filter {
+                div.webxdc-admin-section__head {
+                    div { h3 { "Catalog apps" } p { "Review " @if let Some(name) = source_name { (name) " " } "feed entries before importing them." } }
+                    span.webxdc-admin-count { (candidates.len()) }
+                }
+                (library_search("Search catalog apps", "Status", &[("", "All status"), ("available", "Not imported"), ("imported", "Imported")]))
                 @if candidates.is_empty() { p.empty { "Refresh this source to browse its apps." } }
+                p.empty.webxdc-admin-filter-empty hidden { "No catalog apps match." }
+                div.webxdc-admin-records {
                 @for candidate in candidates {
-                    article.admin-record {
-                        div.admin-record__head {
-                            div { h4 { (&candidate.name) } p.admin-table__sub { @if !candidate.version.is_empty() { (&candidate.version) " · " } @if let Some(size) = candidate.advertised_size { (crate::web::webxdc::storage_size(size)) } } }
-                            @if candidate.imported_app_id.is_some() { span.webxdc-badge { "Imported" } }
-                        }
-                        @if !candidate.summary.is_empty() { p { (&candidate.summary) } }
-                        @if let Some(source) = &candidate.source_code_url { p { a href=(source) rel="noopener noreferrer" { "Source code" } } }
-                        form method="post" action={ "/web/admin/webxdc/catalog-sources/" (source_id) "/import" } {
-                            input type="hidden" name="csrf" value=(csrf);
-                            input type="hidden" name="external_app_id" value=(&candidate.external_app_id);
-                            button type="submit" { @if candidate.imported_app_id.is_some() { "Check for update" } @else { "Import for review" } }
+                    @let state = if candidate.imported_app_id.is_some() { "imported" } else { "available" };
+                    article.admin-record.webxdc-admin-record data-library-record data-library-state=(state)
+                        data-library-text=(candidate_filter_text(candidate)) {
+                        div.webxdc-admin-record__icon aria-hidden="true" { (crate::web::view::icon("apps")) }
+                        div.webxdc-admin-record__body {
+                            div.admin-record__head {
+                                h4 { (&candidate.name) }
+                                @if candidate.imported_app_id.is_some() { span.webxdc-badge { "Imported" } }
+                                @else { span.webxdc-badge.webxdc-badge--ended { "Unreviewed" } }
+                            }
+                            @if !candidate.summary.is_empty() { p.webxdc-admin-record__summary title=(&candidate.summary) { (&candidate.summary) } }
+                            p.webxdc-admin-record__meta {
+                                @if !candidate.version.is_empty() { "Version " (&candidate.version) }
+                                @if let Some(candidate_size) = candidate.advertised_size { " · About " (size(candidate_size)) }
+                                @if let Some(category) = &candidate.category { " · " (category) }
+                            }
+                            div.webxdc-admin-record__actions {
+                                form method="post" action={ "/web/admin/webxdc/catalog-sources/" (source_id) "/import" } {
+                                    input type="hidden" name="csrf" value=(csrf);
+                                    input type="hidden" name="external_app_id" value=(&candidate.external_app_id);
+                                    button type="submit" { @if candidate.imported_app_id.is_some() { "Revalidate / check update" } @else { "Import for review" } }
+                                }
+                                @if let Some(source) = &candidate.source_code_url { a href=(source) rel="noopener noreferrer" { "Source ↗" } }
+                            }
                         }
                     }
+                }
                 }
             }
         }
@@ -269,14 +445,28 @@ pub async fn apps(
             .map_err(api_err)?,
         None => Vec::new(),
     };
+    let selected_source_name = sources
+        .iter()
+        .find(|source| Some(source.id) == selected_source)
+        .map(|source| source.name.as_str());
     let csrf = admin.user.csrf.as_str();
     let body = html! {
         (super::flash_banner(query.flash.as_deref(), "The app-library action could not be completed."))
-        p { a href="/admin/webxdc" { "← Webxdc sessions and storage" } }
+        nav.webxdc-admin-nav aria-label="Webxdc administration" {
+            a href="/admin/webxdc" { "← Sessions and storage" }
+            a href="#instance-library" { "Instance" }
+            a href="#personal-apps" { "Personal" }
+            a href="#catalog-apps" { "Catalog" }
+        }
+        p.admin__lead {
+            (apps.len()) @if apps.len() == 1 { " instance app" } @else { " instance apps" }
+            " · " (personal.len()) @if personal.len() == 1 { " personal app" } @else { " personal apps" }
+            " · " (candidates.len()) @if candidates.len() == 1 { " catalog entry" } @else { " catalog entries" }
+        }
         (instance_library_section(&apps, csrf, limits))
         (personal_promotions_section(&personal, csrf))
         (catalog_sources_section(&admin, &sources, selected_source, csrf))
-        (catalog_candidates_section(&candidates, selected_source, csrf))
+        (catalog_candidates_section(&candidates, selected_source, selected_source_name, csrf))
     };
     Ok(admin_shell(&admin, "/admin/webxdc", "Webxdc app library", &body).into_response())
 }

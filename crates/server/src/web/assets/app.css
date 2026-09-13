@@ -6446,6 +6446,326 @@ a.settings-button--plain {
   font-weight: 600;
 }
 
+/* ---- Compact Webxdc library administration -------------------------- */
+
+.webxdc-admin-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-block-end: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.webxdc-admin-section {
+  scroll-margin-block-start: var(--space-4);
+}
+
+.webxdc-admin-section__head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-3);
+
+  & :is(h3, p) {
+    margin: 0;
+  }
+
+  & p {
+    margin-block-start: var(--space-1);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+}
+
+.webxdc-admin-count {
+  display: inline-grid;
+  flex: none;
+  min-inline-size: 2rem;
+  min-block-size: 2rem;
+  place-items: center;
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.webxdc-admin-filter[hidden],
+.webxdc-admin-filter-empty[hidden],
+.webxdc-admin-record[hidden] {
+  display: none;
+}
+
+.webxdc-admin-filter {
+  align-items: end;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+
+  & label {
+    margin: 0;
+  }
+
+  & select {
+    min-block-size: 2.5rem;
+  }
+}
+
+.webxdc-admin-search {
+  position: relative;
+  display: block;
+
+  & > svg {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: var(--space-3);
+    inline-size: 1.1rem;
+    block-size: 1.1rem;
+    translate: 0 -50%;
+    color: var(--text-muted);
+    pointer-events: none;
+  }
+
+  & input {
+    min-block-size: 2.5rem;
+    padding-inline-start: 2.35rem;
+  }
+}
+
+.webxdc-admin-filter-count {
+  align-self: center;
+  min-inline-size: 5rem;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: end;
+}
+
+.webxdc-admin-records,
+.webxdc-admin-sources {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+  gap: var(--space-3);
+  margin-block: var(--space-3);
+}
+
+.admin-record.webxdc-admin-record {
+  grid-template-columns: 3.25rem minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-3);
+  min-inline-size: 0;
+  padding: var(--space-3);
+  margin: 0;
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 11rem;
+}
+
+.webxdc-admin-record__icon {
+  display: grid;
+  inline-size: 3.25rem;
+  block-size: 3.25rem;
+  place-items: center;
+  overflow: hidden;
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--surface-2);
+  color: var(--text-muted);
+
+  & img {
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: cover;
+  }
+
+  & svg {
+    inline-size: 1.65rem;
+    block-size: 1.65rem;
+  }
+}
+
+.webxdc-admin-record__body {
+  display: grid;
+  min-inline-size: 0;
+  gap: var(--space-2);
+
+  & .admin-record__head {
+    flex-wrap: nowrap;
+    gap: var(--space-2);
+  }
+
+  & h4 {
+    min-inline-size: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-size: 1rem;
+  }
+}
+
+.webxdc-admin-record__summary {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.webxdc-admin-record__meta {
+  min-inline-size: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.webxdc-admin-record__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+
+  & form {
+    margin: 0;
+  }
+
+  & :is(button, .pill-button) {
+    min-block-size: 2.25rem;
+    margin: 0;
+    padding: 0.45rem var(--space-3);
+    font-size: var(--text-sm);
+  }
+}
+
+.webxdc-admin-notice,
+.webxdc-admin-error {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.webxdc-admin-notice {
+  color: var(--accent);
+}
+
+.webxdc-admin-error {
+  color: var(--danger);
+}
+
+.webxdc-admin-manage {
+  border-block-start: 1px solid var(--border);
+  padding-block-start: var(--space-2);
+
+  & > summary {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  &[open] {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  & form {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-2);
+    margin: 0;
+  }
+
+  & form label {
+    inline-size: 100%;
+  }
+}
+
+.webxdc-admin-facts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+
+  & div {
+    display: grid;
+    grid-template-columns: 4rem minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  & :is(dt, dd) {
+    min-inline-size: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  & dt {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+}
+
+.webxdc-admin-source {
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin: 0;
+
+  & h4 {
+    margin: 0;
+    font-size: 1rem;
+  }
+}
+
+.webxdc-admin-source__remove {
+  position: relative;
+
+  & > summary {
+    padding: 0.45rem var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  & form {
+    margin-block-start: var(--space-2);
+  }
+}
+
+.webxdc-admin-add {
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+
+  & > summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 700;
+  }
+
+  & > summary svg {
+    inline-size: 1.1rem;
+    block-size: 1.1rem;
+  }
+}
+
+.webxdc-admin-add__body {
+  padding-block-start: var(--space-3);
+}
+
+@media (max-width: 34rem) {
+  .webxdc-admin-filter {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+
+    & .admin-filter__search {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .webxdc-admin-filter-count {
+    min-inline-size: 0;
+  }
+}
+
 /* ---- Collapsible settings groups (admin/settings.rs) ------------------ *
  * The instance settings page is ~90 knobs. Each group is a <details> with its
  * own form and Save button, so the page opens as a short index of headings

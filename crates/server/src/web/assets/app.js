@@ -4338,9 +4338,47 @@
     });
   }
 
+  // The app-library page is complete server-rendered HTML. On capable clients,
+  // reveal local search and status filters so large catalogs can be narrowed
+  // without another request or displacing the moderator's current position.
+  function bindLibraryFilters(root) {
+    root.querySelectorAll("[data-library-filter]").forEach((section) => {
+      if (section.dataset.libraryFilterBound) return;
+      section.dataset.libraryFilterBound = "1";
+      const controls = section.querySelector("[data-library-controls]");
+      const search = section.querySelector("[data-library-search]");
+      const state = section.querySelector("[data-library-state-filter]");
+      const output = section.querySelector("[data-library-visible-count]");
+      const empty = section.querySelector(".webxdc-admin-filter-empty");
+      const records = [...section.querySelectorAll("[data-library-record]")];
+      if (!controls || !search || !state || !output) return;
+
+      const apply = () => {
+        const needle = search.value.trim().toLocaleLowerCase();
+        const selectedState = state.value;
+        let visible = 0;
+        records.forEach((record) => {
+          const matchesText = !needle || (record.dataset.libraryText || "")
+            .toLocaleLowerCase().includes(needle);
+          const matchesState = !selectedState || record.dataset.libraryState === selectedState;
+          record.hidden = !(matchesText && matchesState);
+          if (!record.hidden) visible += 1;
+        });
+        output.value = `${visible} ${visible === 1 ? "result" : "results"}`;
+        if (empty) empty.hidden = visible !== 0 || records.length === 0;
+      };
+
+      controls.hidden = false;
+      search.addEventListener("input", apply);
+      state.addEventListener("change", apply);
+      apply();
+    });
+  }
+
   // ---- Wiring -----------------------------------------------------------
   function enhance(root) {
     bindFileLimits(root);
+    bindLibraryFilters(root);
     bindActionForms(root);
     bindPollForms(root);
     bindRsvpForms(root);

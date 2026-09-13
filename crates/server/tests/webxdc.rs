@@ -2483,6 +2483,105 @@ async fn admin_request(
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn admin_app_library_is_compact_searchable_and_identifies_owners(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice Admin").await;
+    plamenu_db::user::create(&pool, alice.id, None, "unused")
+        .await
+        .unwrap();
+    plamenu_db::role::assign_to_account(&pool, alice.id, Some(3))
+        .await
+        .unwrap();
+    let state = test_state_with(pool.clone(), Arc::<StubFederation>::default());
+    let bytes = library_package("Shared Chess", "v2.4.0", "https://code.example/chess");
+    let personal = protocol::save_personal_app(
+        &state,
+        protocol::LibraryUpload {
+            actor: &alice,
+            bundle_name: "chess.xdc",
+            bundle_bytes: &bytes,
+            summary: "Play together",
+            category: Some("Game"),
+        },
+    )
+    .await
+    .unwrap();
+    let instance = protocol::save_instance_app(
+        &state,
+        protocol::LibraryUpload {
+            actor: &alice,
+            bundle_name: "chess.xdc",
+            bundle_bytes: &bytes,
+            summary: "For the public catalog",
+            category: Some("Game"),
+        },
+        "public",
+    )
+    .await
+    .unwrap();
+    let source = db::create_catalog_source(
+        &pool,
+        "Community catalog",
+        "https://catalog.example/apps.json",
+    )
+    .await
+    .unwrap();
+    db::replace_catalog_candidates(
+        &pool,
+        source.id,
+        &[db::NewCatalogCandidate {
+            external_app_id: "notes".into(),
+            version: "1.2.0".into(),
+            bundle_url: "https://catalog.example/notes.xdc".into(),
+            name: "Shared Notes".into(),
+            summary: "Collaborative notes".into(),
+            category: Some("Productivity".into()),
+            source_code_url: Some("https://code.example/notes".into()),
+            advertised_size: Some(12_345),
+            published_at: None,
+        }],
+    )
+    .await
+    .unwrap();
+
+    let app = build_router(state);
+    let cookie = ephemeral_account_cookie(&pool, &alice).await;
+    let page = admin_request(
+        &app,
+        &cookie,
+        &format!("/admin/webxdc/apps?source={}", source.id),
+        None,
+    )
+    .await;
+    assert_eq!(page.status(), StatusCode::OK);
+    let html = String::from_utf8(
+        page.into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(html.contains("data-library-filter"));
+    assert!(html.contains("data-library-search"));
+    assert!(html.contains("data-library-state-filter"));
+    assert!(html.contains("Search catalog apps"));
+    assert!(html.contains("Alice Admin (@alice)"));
+    assert!(!html.contains("Account #"));
+    assert!(html.contains(&format!(
+        "/web/admin/webxdc/apps/version/{}/icon",
+        personal.version_id
+    )));
+    assert!(html.contains(&format!(
+        "/web/admin/webxdc/apps/version/{}/icon",
+        instance.version_id
+    )));
+    assert!(html.contains("Shared Notes"));
+    assert!(html.contains("Collaborative notes"));
+    assert!(html.contains("Unreviewed"));
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn creation_permission_is_not_staff_and_admin_actions_require_permission_and_csrf(
     pool: PgPool,
 ) {

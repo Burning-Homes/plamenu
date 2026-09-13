@@ -486,6 +486,9 @@ const LIBRARY_APP_SELECT: &str = "SELECT a.id, a.owner_account_id, a.name, a.sum
             v.source_url AS version_source_url, v.created_at AS version_created_at,
             p.storage_bytes AS package_bytes,
             octet_length(p.bundle_bytes)::bigint AS bundle_bytes,
+            owner.username AS owner_username,
+            owner.domain AS owner_domain,
+            owner.display_name AS owner_display_name,
             (SELECT promoted.id FROM webxdc_apps promoted
               WHERE promoted.promoted_from_app_id=a.id
                 AND promoted.owner_account_id IS NULL) AS promoted_instance_app_id,
@@ -504,7 +507,8 @@ const LIBRARY_APP_SELECT: &str = "SELECT a.id, a.owner_account_id, a.name, a.sum
             END AS update_available
        FROM webxdc_apps a
        JOIN webxdc_app_versions v ON v.app_id=a.id AND v.current
-       JOIN webxdc_packages p ON p.digest_multibase=v.digest_multibase";
+       JOIN webxdc_packages p ON p.digest_multibase=v.digest_multibase
+       LEFT JOIN accounts owner ON owner.id=a.owner_account_id";
 
 #[derive(Debug, Clone, FromRow)]
 pub struct LibraryApp {
@@ -533,6 +537,9 @@ pub struct LibraryApp {
     pub version_created_at: OffsetDateTime,
     pub package_bytes: i64,
     pub bundle_bytes: i64,
+    pub owner_username: Option<String>,
+    pub owner_domain: Option<String>,
+    pub owner_display_name: Option<String>,
     pub promoted_instance_app_id: Option<i64>,
     pub update_available: bool,
 }
