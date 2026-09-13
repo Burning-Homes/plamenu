@@ -116,28 +116,58 @@ fn require_csrf(user: &WebUser, submitted: &str) -> Result<(), ApiError> {
     }
 }
 
-fn session_card(state: &AppState, session: &Session, membership: &Membership) -> Markup {
+fn session_card(
+    state: &AppState,
+    user: &WebUser,
+    session: &Session,
+    membership: &Membership,
+    meta: &webxdc::SessionListMeta,
+) -> Markup {
     let href = local_url(state, session);
     html! {
-        article.webxdc-card {
-            div.webxdc-card__body {
-                h2.webxdc-card__title { a href=(href) { (&session.name) } }
-                @if !session.summary.is_empty() {
-                    p.webxdc-card__summary { (&session.summary) }
+        article.webxdc-session-card {
+            div.webxdc-session-card__icon {
+                @if meta.has_icon {
+                    img src={ "/webxdc/session/" (session.id) "/icon" }
+                        alt="" width="56" height="56" loading="lazy";
+                } @else {
+                    span aria-hidden="true" { (super::view::icon("apps")) }
                 }
-                p.webxdc-card__meta {
+            }
+            div.webxdc-session-card__body {
+                div.webxdc-session-card__head {
+                    h2 { a href=(&href) { (&session.name) } }
                     span.webxdc-badge {
                         @if session.ended() { "Ended" }
                         @else if membership.accepted { "Joined" }
-                        @else { "Waiting for approval" }
+                        @else { "Waiting" }
                     }
-
+                }
+                @if !session.summary.is_empty() {
+                    p.webxdc-session-card__summary title=(&session.summary) { (&session.summary) }
+                }
+                div.webxdc-session-card__meta aria-label="Session information" {
+                    span {
+                        (super::view::icon("calendar"))
+                        "Created " (user.clock.element_date(session.published_at))
+                    }
+                    span {
+                        (super::view::icon("feeds"))
+                        "Activity " (user.clock.element(meta.last_activity_at))
+                    }
+                    span {
+                        (super::view::icon("group"))
+                        (meta.participants) " " @if meta.participants == 1 { "participant" } @else { "participants" }
+                    }
                 }
             }
-            @if membership.accepted && !session.ended() {
-                a.pill-button.webxdc-open href={ "/webxdc/session/" (session.id) "/play" } { "Open app" }
-            } @else {
-                a.pill-button href=(href) { "View session" }
+            div.webxdc-session-card__actions {
+                @if membership.accepted && !session.ended() {
+                    a.pill-button.webxdc-open href={ "/webxdc/session/" (session.id) "/play" } { "Open app" }
+                }
+                a.webxdc-session-details href=(href) {
+                    (super::view::icon("settings")) " Session details"
+                }
             }
         }
     }
@@ -189,8 +219,8 @@ pub async fn index(
                 }
             } @else {
                 div.webxdc-grid {
-                    @for (session, membership) in &sessions {
-                        (session_card(&state, session, membership))
+                    @for (session, membership, meta) in &sessions {
+                        (session_card(&state, &user, session, membership, meta))
                     }
                 }
             }
@@ -843,6 +873,24 @@ pub async fn library_icon(
     Path(version_id): Path<i64>,
 ) -> Result<Response, ApiError> {
     let asset = webxdc::library_icon_for_account(&state.pool, version_id, user.current.account.id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, asset.media_type),
+            (header::CACHE_CONTROL, "private, max-age=86400".to_owned()),
+        ],
+        asset.bytes,
+    )
+        .into_response())
+}
+
+pub async fn session_icon(
+    State(state): State<AppState>,
+    user: WebUser,
+    Path(session_id): Path<i64>,
+) -> Result<Response, ApiError> {
+    let asset = webxdc::session_icon_for_account(&state.pool, session_id, user.current.account.id)
         .await?
         .ok_or(ApiError::NotFound)?;
     Ok((

@@ -2513,6 +2513,65 @@ async fn admin_request(
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn app_index_cards_show_identity_activity_people_and_explicit_details(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    plamenu_db::user::create(&pool, alice.id, None, "unused")
+        .await
+        .unwrap();
+    let state = test_state_with(pool.clone(), Arc::<StubFederation>::default());
+    let bytes = library_package("Shared Chess", "v2.4.0", "https://code.example/chess");
+    let session = protocol::create_local(
+        &state,
+        protocol::CreateLocal {
+            creator: &alice,
+            name: "Friday chess",
+            summary: "A weekly game with friends",
+            bundle_name: "chess.xdc",
+            bundle_bytes: &bytes,
+            membership_policy: "open",
+            send_update_interval: 0,
+            send_update_max_size: 32_768,
+        },
+    )
+    .await
+    .unwrap();
+    let app = build_router(state);
+    let cookie = ephemeral_account_cookie(&pool, &alice).await;
+    let page = admin_request(&app, &cookie, "/webxdc", None).await;
+    assert_eq!(page.status(), StatusCode::OK);
+    let html = String::from_utf8(
+        page.into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(html.contains("Friday chess"));
+    assert!(html.contains("A weekly game with friends"));
+    assert!(html.contains(&format!("/webxdc/session/{}/icon", session.id)));
+    assert!(html.contains("Created "));
+    assert!(html.contains("Activity "));
+    assert!(html.contains("1 participant"));
+    assert!(html.contains("Session details"));
+
+    let icon = admin_request(
+        &app,
+        &cookie,
+        &format!("/webxdc/session/{}/icon", session.id),
+        None,
+    )
+    .await;
+    assert_eq!(icon.status(), StatusCode::OK);
+    assert_eq!(icon.headers()[header::CONTENT_TYPE], "image/png");
+    assert_eq!(
+        icon.into_body().collect().await.unwrap().to_bytes(),
+        &b"not-decoded-by-library"[..]
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn admin_app_library_is_compact_searchable_and_identifies_owners(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice Admin").await;
     plamenu_db::user::create(&pool, alice.id, None, "unused")

@@ -95,6 +95,13 @@ pub struct Session {
     pub ended_at: Option<OffsetDateTime>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SessionListMeta {
+    pub last_activity_at: OffsetDateTime,
+    pub participants: i64,
+    pub has_icon: bool,
+}
+
 impl Session {
     #[must_use]
     pub fn is_local(&self, account: &Account) -> bool {
@@ -1059,6 +1066,30 @@ pub async fn library_icon_for_account(
     .await?)
 }
 
+/// A package icon is visible only to an account that has a membership in the
+/// session. This keeps session cards same-origin without making private app
+/// artwork addressable through the public catalog route.
+pub async fn session_icon_for_account(
+    pool: &PgPool,
+    session_id: i64,
+    account_id: i64,
+) -> Result<Option<PackageAsset>, DbError> {
+    Ok(sqlx::query_as(
+        "SELECT f.media_type,f.bytes
+         FROM webxdc_memberships m
+         JOIN webxdc_sessions s ON s.id=m.session_id
+         JOIN webxdc_package_files f ON f.digest_multibase=s.digest_multibase
+         WHERE m.session_id=$1 AND m.participant_account_id=$2
+           AND f.path IN ('icon.png','icon.jpg')
+         ORDER BY CASE f.path WHEN 'icon.png' THEN 0 ELSE 1 END
+         LIMIT 1",
+    )
+    .bind(session_id)
+    .bind(account_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
 pub async fn public_library_bundle(
     pool: &PgPool,
     version_id: i64,
@@ -1691,15 +1722,23 @@ pub async fn list_for_participant(
     pool: &PgPool,
     participant_account_id: i64,
     ended: bool,
-) -> Result<Vec<(Session, Membership)>, DbError> {
+) -> Result<Vec<(Session, Membership, SessionListMeta)>, DbError> {
     let rows = sqlx::query!(
-        "SELECT s.id, s.account_id, s.coordinator_uri, s.creator_account_id,
+        r#"SELECT s.id, s.account_id, s.coordinator_uri, s.creator_account_id,
                 s.creator_uri, s.name, s.summary, s.bundle_id, s.bundle_url,
                 s.bundle_name, s.bundle_media_type, s.digest_multibase,
                 s.send_update_interval, s.send_update_max_size,
                 s.membership_policy, s.last_serial, s.published_at, s.ended_at,
                 m.participant_uri, m.follow_id, m.accepted, m.replay_boundary,
-                m.self_addr, m.joined_at, m.accepted_at, m.last_submitted_at
+                m.self_addr, m.joined_at, m.accepted_at, m.last_submitted_at,
+                s.last_activity_at,
+                ((SELECT count(*) FROM webxdc_memberships accepted
+                    WHERE accepted.session_id=s.id AND accepted.accepted) +
+                 (SELECT count(*) FROM webxdc_guests guest
+                    WHERE guest.session_id=s.id AND guest.accepted)) AS "participants!",
+                EXISTS(SELECT 1 FROM webxdc_package_files icon
+                       WHERE icon.digest_multibase=s.digest_multibase
+                         AND icon.path IN ('icon.png','icon.jpg')) AS "has_icon!"
          FROM webxdc_memberships m
          JOIN webxdc_sessions s ON s.id = m.session_id
          WHERE m.participant_account_id = $1
@@ -1707,7 +1746,7 @@ pub async fn list_for_participant(
            AND NOT EXISTS (
                SELECT 1 FROM webxdc_tombstones t WHERE t.session_id = s.id
            )
-         ORDER BY s.published_at DESC",
+         ORDER BY s.published_at DESC"#,
         participant_account_id,
         ended,
     )
@@ -1748,7 +1787,12 @@ pub async fn list_for_participant(
                 accepted_at: row.accepted_at,
                 last_submitted_at: row.last_submitted_at,
             };
-            (session, membership)
+            let meta = SessionListMeta {
+                last_activity_at: row.last_activity_at,
+                participants: row.participants,
+                has_icon: row.has_icon,
+            };
+            (session, membership, meta)
         })
         .collect())
 }

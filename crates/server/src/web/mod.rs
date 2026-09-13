@@ -165,6 +165,7 @@ pub fn router() -> Router<AppState> {
             "/webxdc/library/version/{id}/icon",
             get(webxdc::library_icon),
         )
+        .route("/webxdc/session/{id}/icon", get(webxdc::session_icon))
         .route("/webxdc/library/catalog-icon", get(webxdc::catalog_icon))
         .route("/webxdc/new", get(webxdc::new_page))
         .route("/webxdc/open", get(webxdc::open_page))
