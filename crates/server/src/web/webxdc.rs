@@ -168,6 +168,7 @@ pub async fn index(
             }
             nav.webxdc-actions aria-label="App session actions" {
                 @if user.can(permission::CREATE_WEBXDC) { a.pill-button href="/webxdc/new" { "New session" } }
+                a.pill-button href="/webxdc/library" { "App library" }
                 a.pill-button href="/webxdc/open" { "Open invitation" }
                 @if query.ended {
                     a.pill-button href="/webxdc" { "Active sessions" }
@@ -178,7 +179,7 @@ pub async fn index(
             @if user.can(permission::CREATE_WEBXDC) || storage.sessions > 0 {
                 details {
                     summary { "Your app storage: " (storage_size(storage.total_bytes())) " of " (limits.account_mb) " MiB" }
-                    p { "Identical apps count once across sessions you create. Session updates count separately. Delete unused sessions to free space; shared app files are released after your last session using them is deleted." }
+                    p { "Identical apps count once across sessions and your personal library. Session updates count separately. Package files are released after the last session or saved app version using them is removed." }
                 }
             }
             @if sessions.is_empty() {
@@ -208,23 +209,42 @@ fn require_create(user: &WebUser) -> Result<(), ApiError> {
     }
 }
 
-pub async fn new_page(State(state): State<AppState>, user: WebUser) -> Result<Response, ApiError> {
+#[derive(Deserialize, Default)]
+pub struct NewQuery {
+    version: Option<i64>,
+}
+
+pub async fn new_page(
+    State(state): State<AppState>,
+    user: WebUser,
+    Query(query): Query<NewQuery>,
+) -> Result<Response, ApiError> {
     require_create(&user)?;
     let limits = webxdc::limits(&state.pool).await?;
-    Ok(create_page(&user, &CreateForm::default(), limits, None))
+    let apps = webxdc::library_for_account(&state.pool, user.current.account.id).await?;
+    let mut form = CreateForm::default();
+    if let Some(app) = query
+        .version
+        .and_then(|version| apps.iter().find(|app| app.version_id == version))
+    {
+        form.version_id = Some(app.version_id);
+        app.name.clone_into(&mut form.name);
+    }
+    Ok(create_page(&user, &form, limits, &apps, None))
 }
 
 fn create_page(
     user: &WebUser,
     form: &CreateForm,
     limits: webxdc::Limits,
+    apps: &[webxdc::LibraryApp],
     error: Option<&str>,
 ) -> Response {
     let body = html! {
         section.column.settings {
             header.settings__head { h1 { "Create an app session" } }
             div.settings__body {
-                p { "Upload a .xdc app to start using it together." }
+                p { "Choose a saved app or upload a .xdc package to start using it together." }
                 @if let Some(error) = error {
                     p.settings__error role="alert" { (error) " Select the package again to retry." }
                 }
@@ -232,6 +252,22 @@ fn create_page(
                     input type="hidden" name="csrf" value=(&user.csrf);
                     fieldset.settings-form__group {
                         legend { "Session" }
+                        @if !apps.is_empty() {
+                            label.settings-field {
+                                span.settings-field__label { "App" }
+                                select name="version_id" {
+                                    option value="" selected[form.version_id.is_none()] { "One-off package upload" }
+                                    @for app in apps {
+                                        option value=(app.version_id) selected[form.version_id == Some(app.version_id)] {
+                                            (&app.name)
+                                            @if !app.version.is_empty() { " · " (&app.version) }
+                                            @if app.owner_account_id.is_some() { " · Personal" } @else { " · Instance" }
+                                        }
+                                    }
+                                }
+                                span.settings-field__hint { "Saved packages are reused without uploading or copying them." }
+                            }
+                        }
                         label.settings-field {
                             span.settings-field__label { "Name" }
                             input required name="name" maxlength="120" placeholder="Shopping list" value=(&form.name);
@@ -242,8 +278,8 @@ fn create_page(
                         }
                         label.settings-field {
                             span.settings-field__label { "Webxdc package" }
-                            input required type="file" name="bundle" data-max-bytes=(limits.bundle_bytes()) accept=".xdc,application/webxdc+zip,application/x-webxdc,application/zip";
-                            span.settings-field__hint { "Choose a .xdc file, up to " (limits.bundle_bytes() / (1024 * 1024)) " MiB." }
+                            input type="file" name="bundle" data-max-bytes=(limits.bundle_bytes()) accept=".xdc,application/webxdc+zip,application/x-webxdc,application/zip";
+                            span.settings-field__hint { "Required only for a one-off upload. Choose a .xdc file up to " (limits.bundle_bytes() / (1024 * 1024)) " MiB." }
                         }
                         label.settings-field {
                             span.settings-field__label { "Joining" }
@@ -272,6 +308,7 @@ fn create_page(
                         a.settings-button--plain href="/webxdc" { "Cancel" }
                         button type="submit" { "Create session" }
                     }
+                    p.settings-field__hint { "Want to reuse an upload later? " a href="/webxdc/library" { "Save it to your app library first." } }
                 }
             }
         }
@@ -288,6 +325,7 @@ struct CreateForm {
     send_update_max_size: i32,
     bundle_name: String,
     bundle: axum::body::Bytes,
+    version_id: Option<i64>,
 }
 
 impl Default for CreateForm {
@@ -301,6 +339,7 @@ impl Default for CreateForm {
             send_update_max_size: 32_768,
             bundle_name: String::new(),
             bundle: axum::body::Bytes::new(),
+            version_id: None,
         }
     }
 }
@@ -312,6 +351,7 @@ pub async fn create(
 ) -> Result<Response, ApiError> {
     require_create(&user)?;
     let limits = webxdc::limits(&state.pool).await?;
+    let apps = webxdc::library_for_account(&state.pool, user.current.account.id).await?;
     DefaultBodyLimit::max(limits.bundle_bytes() + 1024 * 1024).apply(&mut request);
     let mut form = CreateForm::default();
     let result = match Multipart::from_request(request, &state).await {
@@ -330,7 +370,7 @@ pub async fn create(
             if response.status().is_client_error() {
                 (
                     response.status(),
-                    create_page(&user, &form, limits, Some(&message)),
+                    create_page(&user, &form, limits, &apps, Some(&message)),
                 )
                     .into_response()
             } else {
@@ -360,13 +400,11 @@ fn multipart_error(
     }
 }
 
-async fn create_uploaded(
-    state: &AppState,
-    user: &WebUser,
+async fn parse_create_fields(
     multipart: &mut Multipart,
     form: &mut CreateForm,
     limits: webxdc::Limits,
-) -> Result<Response, ApiError> {
+) -> Result<(), ApiError> {
     while let Some(field) = multipart
         .next_field()
         .await
@@ -408,11 +446,38 @@ async fn create_uploaded(
                     .parse()
                     .map_err(|_| ApiError::Unprocessable("Invalid update size".into()))?;
             }
+            "version_id" => {
+                form.version_id = if value.is_empty() {
+                    None
+                } else {
+                    Some(
+                        value
+                            .parse()
+                            .map_err(|_| ApiError::Unprocessable("Invalid saved app".into()))?,
+                    )
+                };
+            }
             _ => {}
         }
     }
+    Ok(())
+}
+
+async fn create_uploaded(
+    state: &AppState,
+    user: &WebUser,
+    multipart: &mut Multipart,
+    form: &mut CreateForm,
+    limits: webxdc::Limits,
+) -> Result<Response, ApiError> {
+    parse_create_fields(multipart, form, limits).await?;
     require_csrf(user, &form.csrf)?;
-    if form.bundle.is_empty() {
+    if form.version_id.is_some() && !form.bundle.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "Choose either a saved app or a one-off package, not both.".into(),
+        ));
+    }
+    if form.version_id.is_none() && form.bundle.is_empty() {
         return Err(ApiError::Unprocessable(
             "Choose a non-empty .xdc package.".into(),
         ));
@@ -427,21 +492,442 @@ async fn create_uploaded(
             "Invalid durable update limits".into(),
         ));
     }
-    let session = protocol::create_local(
-        state,
-        protocol::CreateLocal {
-            creator: &user.current.account,
-            name: &form.name,
-            summary: &form.summary,
+    let session = if let Some(version_id) = form.version_id {
+        protocol::create_local_from_library(
+            state,
+            protocol::CreateLocalFromLibrary {
+                creator: &user.current.account,
+                name: &form.name,
+                summary: &form.summary,
+                version_id,
+                membership_policy: &form.membership_policy,
+                send_update_interval: form.send_update_interval,
+                send_update_max_size: form.send_update_max_size,
+            },
+        )
+        .await?
+    } else {
+        protocol::create_local(
+            state,
+            protocol::CreateLocal {
+                creator: &user.current.account,
+                name: &form.name,
+                summary: &form.summary,
+                bundle_name: &form.bundle_name,
+                bundle_bytes: &form.bundle,
+                membership_policy: &form.membership_policy,
+                send_update_interval: form.send_update_interval,
+                send_update_max_size: form.send_update_max_size,
+            },
+        )
+        .await?
+    };
+    Ok(Redirect::to(&local_url(state, &session)).into_response())
+}
+
+#[derive(Deserialize, Default)]
+pub struct LibraryQuery {
+    flash: Option<String>,
+}
+
+#[derive(Default)]
+struct LibraryUploadForm {
+    csrf: String,
+    summary: String,
+    category: String,
+    bundle_name: String,
+    bundle: axum::body::Bytes,
+}
+
+fn library_card(user: &WebUser, app: &webxdc::LibraryApp) -> Markup {
+    let personal = app.owner_account_id.is_some();
+    html! {
+        article.webxdc-library-card {
+            div.webxdc-library-card__icon {
+                @if app.icon_path.is_some() {
+                    img src={ "/webxdc/library/version/" (app.version_id) "/icon" }
+                        alt="" loading="lazy" width="72" height="72";
+                } @else {
+                    span aria-hidden="true" { (super::view::icon("apps")) }
+                }
+            }
+            div.webxdc-library-card__body {
+                div.webxdc-library-card__head {
+                    h2 { (&app.name) }
+                    span.webxdc-badge { @if personal { "Personal" } @else { "Instance" } }
+                }
+                @if !app.summary.is_empty() { p { (&app.summary) } }
+                p.webxdc-card__meta {
+                    @if !app.version.is_empty() { "Version " (&app.version) " · " }
+                    (storage_size(app.package_bytes))
+                    @if let Some(category) = &app.category { " · " (category) }
+                }
+                @if app.update_available { p.webxdc-card__meta { "A newer version is awaiting instance review." } }
+                div.webxdc-actions {
+                    a.pill-button href={ "/webxdc/new?version=" (app.version_id) } { "New session" }
+                    @if let Some(source) = &app.source_code_url {
+                        a href=(source) rel="noopener noreferrer" { "Source code" }
+                    }
+                }
+                details.webxdc-library-details {
+                    summary { "Package details" }
+                    dl.webxdc-facts {
+                        div { dt { "File" } dd { (&app.filename) } }
+                        div { dt { "Digest" } dd { code { (&app.digest_multibase) } } }
+                    }
+                    @if personal {
+                        form.settings-form method="post" action={ "/web/webxdc/library/" (app.id) "/version" } enctype="multipart/form-data" {
+                            input type="hidden" name="csrf" value=(&user.csrf);
+                            label.settings-field {
+                                span.settings-field__label { "Add a new version" }
+                                input required type="file" name="bundle" accept=".xdc,application/webxdc+zip,application/x-webxdc,application/zip";
+                            }
+                            button type="submit" { "Add version" }
+                        }
+                        form method="post" action={ "/web/webxdc/library/" (app.id) "/delete" } {
+                            input type="hidden" name="csrf" value=(&user.csrf);
+                            button.settings-button--plain type="submit" { "Remove from my library" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn library_response(
+    state: &AppState,
+    user: &WebUser,
+    form: &LibraryUploadForm,
+    flash: Option<&str>,
+    error: Option<&str>,
+) -> Result<Response, ApiError> {
+    let apps = webxdc::library_for_account(&state.pool, user.current.account.id).await?;
+    let storage = webxdc::storage_usage(&state.pool, Some(user.current.account.id)).await?;
+    let limits = webxdc::limits(&state.pool).await?;
+    let sources = webxdc::catalog_sources(&state.pool).await?;
+    let personal: Vec<_> = apps
+        .iter()
+        .filter(|app| app.owner_account_id.is_some())
+        .collect();
+    let instance: Vec<_> = apps
+        .iter()
+        .filter(|app| app.owner_account_id.is_none())
+        .collect();
+    let body = html! {
+        section.column.webxdc-page {
+            a.webxdc-back href="/webxdc" { "← App sessions" }
+            header.webxdc-page__head {
+                div { h1 { "App library" } p { "Save trusted packages once and start new sessions without uploading them again." } }
+                a.pill-button href="/webxdc/new" { "New session" }
+            }
+            @if flash == Some("saved") { p.admin-flash role="status" { "App saved to your library." } }
+            @if flash == Some("updated") { p.admin-flash role="status" { "The new version is now selected for future sessions." } }
+            @if flash == Some("removed") { p.admin-flash role="status" { "App removed from your library. Existing sessions were not changed." } }
+            @if let Some(error) = error { p.settings__error role="alert" { (error) } }
+            details.webxdc-details open[personal.is_empty()] {
+                summary { "Save a personal app" }
+                div.webxdc-details__body {
+                    p.webxdc-muted { "The package is private to you until a moderator promotes it. Running sessions always keep the exact version they started with." }
+                    form.settings-form method="post" action="/web/webxdc/library" enctype="multipart/form-data" {
+                        input type="hidden" name="csrf" value=(&user.csrf);
+                        label.settings-field {
+                            span.settings-field__label { "Webxdc package" }
+                            input required type="file" name="bundle" data-max-bytes=(limits.bundle_bytes()) accept=".xdc,application/webxdc+zip,application/x-webxdc,application/zip";
+                            span.settings-field__hint { "Name, source link, version label and icon are read from the package. Maximum " (limits.bundle_mb) " MiB." }
+                        }
+                        label.settings-field {
+                            span.settings-field__label { "Description" }
+                            textarea name="summary" maxlength="2000" rows="3" { (&form.summary) }
+                        }
+                        label.settings-field {
+                            span.settings-field__label { "Category" }
+                            input name="category" maxlength="80" value=(&form.category) placeholder="Game, tool, productivity…";
+                        }
+                        button type="submit" { "Save app" }
+                    }
+                }
+            }
+            p.webxdc-muted { (personal.len()) " of " (limits.personal_apps) " personal apps · " (storage_size(storage.total_bytes())) " of " (limits.account_mb) " MiB account storage" }
+            section {
+                h2 { "Your apps" }
+                @if personal.is_empty() { p.webxdc-muted { "No personal apps saved yet." } }
+                div.webxdc-library-grid { @for app in personal { (library_card(user, app)) } }
+            }
+            section {
+                h2 { "From this instance" }
+                @if instance.is_empty() { p.webxdc-muted { "No instance apps are available yet." } }
+                div.webxdc-library-grid { @for app in instance { (library_card(user, app)) } }
+            }
+            @if !sources.is_empty() {
+                section {
+                    h2 { "Browse external catalogs" }
+                    p.webxdc-muted { "Catalog details come from external sources. Plamenu downloads and validates a package only when you choose to save it." }
+                    div.webxdc-actions {
+                        @for source in sources.iter().filter(|source| source.enabled) {
+                            a.pill-button href={ "/webxdc/library/catalog/" (source.id) } { (&source.name) }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    Ok(layout::shell("Webxdc app library", Some(user), &body).into_response())
+}
+
+pub async fn library(
+    State(state): State<AppState>,
+    user: WebUser,
+    Query(query): Query<LibraryQuery>,
+) -> Result<Response, ApiError> {
+    library_response(
+        &state,
+        &user,
+        &LibraryUploadForm::default(),
+        query.flash.as_deref(),
+        None,
+    )
+    .await
+}
+
+async fn parse_library_upload(
+    multipart: &mut Multipart,
+    form: &mut LibraryUploadForm,
+    limits: webxdc::Limits,
+) -> Result<(), ApiError> {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|error| multipart_error(&error, limits))?
+    {
+        let name = field.name().unwrap_or_default().to_owned();
+        if name == "bundle" {
+            if !form.bundle.is_empty() {
+                return Err(ApiError::BadRequest(
+                    "Upload one Webxdc package at a time.".into(),
+                ));
+            }
+            field
+                .file_name()
+                .unwrap_or("application.xdc")
+                .clone_into(&mut form.bundle_name);
+            form.bundle = field
+                .bytes()
+                .await
+                .map_err(|error| multipart_error(&error, limits))?;
+            continue;
+        }
+        let value = field
+            .text()
+            .await
+            .map_err(|error| multipart_error(&error, limits))?;
+        match name.as_str() {
+            "csrf" => form.csrf = value,
+            "summary" => form.summary = value,
+            "category" => form.category = value,
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+pub async fn save_library_app(
+    State(state): State<AppState>,
+    user: WebUser,
+    mut request: Request,
+) -> Result<Response, ApiError> {
+    require_create(&user)?;
+    let limits = webxdc::limits(&state.pool).await?;
+    DefaultBodyLimit::max(limits.bundle_bytes() + 1024 * 1024).apply(&mut request);
+    let mut form = LibraryUploadForm::default();
+    let result = async {
+        let mut multipart = Multipart::from_request(request, &state)
+            .await
+            .map_err(|error| {
+                if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                    upload_too_large(limits)
+                } else {
+                    ApiError::BadRequest("The package upload was malformed.".into())
+                }
+            })?;
+        parse_library_upload(&mut multipart, &mut form, limits).await?;
+        require_csrf(&user, &form.csrf)?;
+        if form.bundle.is_empty() {
+            return Err(ApiError::Unprocessable(
+                "Choose a non-empty .xdc package.".into(),
+            ));
+        }
+        protocol::save_personal_app(
+            &state,
+            protocol::LibraryUpload {
+                actor: &user.current.account,
+                bundle_name: &form.bundle_name,
+                bundle_bytes: &form.bundle,
+                summary: &form.summary,
+                category: (!form.category.trim().is_empty()).then_some(form.category.as_str()),
+            },
+        )
+        .await?;
+        Ok::<_, ApiError>(Redirect::to("/webxdc/library?flash=saved").into_response())
+    }
+    .await;
+    match result {
+        Ok(response) => Ok(response),
+        Err(error) => {
+            let message = error.to_string();
+            let status = error.into_response().status();
+            let mut response = library_response(&state, &user, &form, None, Some(&message)).await?;
+            *response.status_mut() = status;
+            Ok(response)
+        }
+    }
+}
+
+pub async fn add_library_version(
+    State(state): State<AppState>,
+    user: WebUser,
+    Path(app_id): Path<i64>,
+    mut request: Request,
+) -> Result<Response, ApiError> {
+    require_create(&user)?;
+    let limits = webxdc::limits(&state.pool).await?;
+    DefaultBodyLimit::max(limits.bundle_bytes() + 1024 * 1024).apply(&mut request);
+    let mut form = LibraryUploadForm::default();
+    let mut multipart = Multipart::from_request(request, &state)
+        .await
+        .map_err(|error| {
+            if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                upload_too_large(limits)
+            } else {
+                ApiError::BadRequest("The package upload was malformed.".into())
+            }
+        })?;
+    parse_library_upload(&mut multipart, &mut form, limits).await?;
+    require_csrf(&user, &form.csrf)?;
+    if form.bundle.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "Choose a non-empty .xdc package.".into(),
+        ));
+    }
+    protocol::add_personal_app_version(
+        &state,
+        app_id,
+        protocol::LibraryUpload {
+            actor: &user.current.account,
             bundle_name: &form.bundle_name,
             bundle_bytes: &form.bundle,
-            membership_policy: &form.membership_policy,
-            send_update_interval: form.send_update_interval,
-            send_update_max_size: form.send_update_max_size,
+            summary: "",
+            category: None,
         },
     )
     .await?;
-    Ok(Redirect::to(&local_url(state, &session)).into_response())
+    Ok(Redirect::to("/webxdc/library?flash=updated").into_response())
+}
+
+pub async fn delete_library_app(
+    State(state): State<AppState>,
+    user: WebUser,
+    Path(app_id): Path<i64>,
+    Form(form): Form<CsrfForm>,
+) -> Result<Response, ApiError> {
+    require_csrf(&user, &form.csrf)?;
+    if !webxdc::delete_personal_app(&state.pool, app_id, user.current.account.id).await? {
+        return Err(ApiError::NotFound);
+    }
+    Ok(Redirect::to("/webxdc/library?flash=removed").into_response())
+}
+
+pub async fn library_icon(
+    State(state): State<AppState>,
+    user: WebUser,
+    Path(version_id): Path<i64>,
+) -> Result<Response, ApiError> {
+    let asset = webxdc::library_icon_for_account(&state.pool, version_id, user.current.account.id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, asset.media_type),
+            (header::CACHE_CONTROL, "private, max-age=86400".to_owned()),
+        ],
+        asset.bytes,
+    )
+        .into_response())
+}
+
+pub async fn external_catalog(
+    State(state): State<AppState>,
+    user: WebUser,
+    Path(source_id): Path<i64>,
+) -> Result<Response, ApiError> {
+    require_create(&user)?;
+    let source = webxdc::catalog_source(&state.pool, source_id)
+        .await?
+        .filter(|source| source.enabled)
+        .ok_or(ApiError::NotFound)?;
+    let candidates = webxdc::catalog_candidates(&state.pool, source_id).await?;
+    let personal = webxdc::personal_library(&state.pool, user.current.account.id).await?;
+    let body = html! {
+        section.column.webxdc-page {
+            a.webxdc-back href="/webxdc/library" { "← App library" }
+            header.webxdc-page__head {
+                div { h1 { (&source.name) } p { "External catalog · package details are verified only when you save an app." } }
+            }
+            @if candidates.is_empty() {
+                div.webxdc-empty { h2 { "No catalog entries" } p { "A moderator has not refreshed this source yet." } }
+            } @else {
+                div.webxdc-library-grid {
+                    @for candidate in &candidates {
+                        @let saved = personal.iter().find(|app| app.catalog_source_id == Some(source_id)
+                            && app.external_app_id.as_deref() == Some(candidate.external_app_id.as_str()));
+                        article.webxdc-library-card {
+                            div.webxdc-library-card__icon { span aria-hidden="true" { (super::view::icon("apps")) } }
+                            div.webxdc-library-card__body {
+                                div.webxdc-library-card__head { h2 { (&candidate.name) } @if saved.is_some() { span.webxdc-badge { "Saved" } } }
+                                @if !candidate.summary.is_empty() { p { (&candidate.summary) } }
+                                p.webxdc-card__meta {
+                                    @if !candidate.version.is_empty() { (&candidate.version) }
+                                    @if let Some(size) = candidate.advertised_size { " · About " (storage_size(size)) }
+                                    @if let Some(category) = &candidate.category { " · " (category) }
+                                }
+                                @if let Some(source_url) = &candidate.source_code_url { a href=(source_url) rel="noopener noreferrer" { "Source listed by catalog" } }
+                                form method="post" action={ "/web/webxdc/library/catalog/" (source_id) "/import" } {
+                                    input type="hidden" name="csrf" value=(&user.csrf);
+                                    input type="hidden" name="external_app_id" value=(&candidate.external_app_id);
+                                    button type="submit" { @if saved.is_some() { "Revalidate / check update" } @else { "Validate and save" } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    Ok(layout::shell(&source.name, Some(&user), &body).into_response())
+}
+
+#[derive(Deserialize)]
+pub struct CatalogImportForm {
+    csrf: String,
+    external_app_id: String,
+}
+
+pub async fn import_external_catalog_app(
+    State(state): State<AppState>,
+    user: WebUser,
+    Path(source_id): Path<i64>,
+    Form(form): Form<CatalogImportForm>,
+) -> Result<Response, ApiError> {
+    require_create(&user)?;
+    require_csrf(&user, &form.csrf)?;
+    protocol::import_personal_catalog_candidate(
+        &state,
+        &user.current.account,
+        source_id,
+        &form.external_app_id,
+    )
+    .await?;
+    Ok(Redirect::to("/webxdc/library?flash=saved").into_response())
 }
 
 #[derive(Deserialize, Default)]

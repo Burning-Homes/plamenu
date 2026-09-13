@@ -894,7 +894,38 @@ fn moderation_router() -> Router<AppState> {
             post(accounts::delete_note),
         )
         .route("/admin/webxdc", get(webxdc::index))
+        .route("/admin/webxdc/apps", get(webxdc::apps))
         .route("/admin/webxdc/{id}", get(webxdc::show))
+        .route("/web/admin/webxdc/apps", post(webxdc::create_app))
+        .route(
+            "/web/admin/webxdc/apps/version/{id}/icon",
+            get(webxdc::app_icon),
+        )
+        .route(
+            "/web/admin/webxdc/apps/{id}/version",
+            post(webxdc::add_app_version),
+        )
+        .route("/web/admin/webxdc/apps/{id}/op", post(webxdc::app_op))
+        .route(
+            "/web/admin/webxdc/apps/{id}/promote",
+            post(webxdc::promote_app),
+        )
+        .route(
+            "/web/admin/webxdc/catalog-sources",
+            post(webxdc::create_catalog_source),
+        )
+        .route(
+            "/web/admin/webxdc/catalog-sources/{id}/refresh",
+            post(webxdc::refresh_catalog_source),
+        )
+        .route(
+            "/web/admin/webxdc/catalog-sources/{id}/delete",
+            post(webxdc::delete_catalog_source),
+        )
+        .route(
+            "/web/admin/webxdc/catalog-sources/{id}/import",
+            post(webxdc::import_catalog_app),
+        )
         .route("/web/admin/webxdc/{id}/op", post(webxdc::op))
         .route("/admin/groups", get(groups::index))
         .route("/admin/groups/{id}", get(groups::show))

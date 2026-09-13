@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use serde_json::Value;
-use sqlx::{FromRow, PgConnection, PgPool};
+use sqlx::{FromRow, PgConnection, PgPool, Postgres, QueryBuilder};
 use time::OffsetDateTime;
 
 use crate::account::Account;
@@ -19,6 +19,7 @@ pub struct Limits {
     pub session_mb: i32,
     pub account_mb: i32,
     pub total_mb: i32,
+    pub personal_apps: i32,
 }
 
 impl Default for Limits {
@@ -30,6 +31,7 @@ impl Default for Limits {
             session_mb: 1024,
             account_mb: 1024,
             total_mb: 10240,
+            personal_apps: 50,
         }
     }
 }
@@ -43,6 +45,7 @@ impl Limits {
             && (1..=65_536).contains(&self.session_mb)
             && (1..=1_048_576).contains(&self.account_mb)
             && (1..=1_048_576).contains(&self.total_mb)
+            && (0..=10_000).contains(&self.personal_apps)
             && self.file_mb <= self.expanded_mb
             && self.session_mb >= self.bundle_mb + self.expanded_mb
             && self.account_mb >= self.session_mb
@@ -55,7 +58,7 @@ impl Limits {
 }
 
 pub async fn limits<'e, E: sqlx::PgExecutor<'e>>(executor: E) -> Result<Limits, DbError> {
-    Ok(sqlx::query_as("SELECT bundle_mb, expanded_mb, file_mb, session_mb, account_mb, total_mb FROM webxdc_settings WHERE singleton")
+    Ok(sqlx::query_as("SELECT bundle_mb, expanded_mb, file_mb, session_mb, account_mb, total_mb, personal_apps FROM webxdc_settings WHERE singleton")
         .fetch_one(executor).await?)
 }
 
@@ -63,9 +66,10 @@ pub async fn set_limits(pool: &PgPool, limits: Limits) -> Result<(), DbError> {
     if !limits.valid() {
         return Err(DbError::Protocol("Invalid Webxdc limits".into()));
     }
-    sqlx::query("UPDATE webxdc_settings SET bundle_mb=$1, expanded_mb=$2, file_mb=$3, session_mb=$4, account_mb=$5, total_mb=$6 WHERE singleton")
+    sqlx::query("UPDATE webxdc_settings SET bundle_mb=$1, expanded_mb=$2, file_mb=$3, session_mb=$4, account_mb=$5, total_mb=$6, personal_apps=$7 WHERE singleton")
         .bind(limits.bundle_mb).bind(limits.expanded_mb).bind(limits.file_mb)
-        .bind(limits.session_mb).bind(limits.account_mb).bind(limits.total_mb).execute(pool).await?;
+        .bind(limits.session_mb).bind(limits.account_mb).bind(limits.total_mb)
+        .bind(limits.personal_apps).execute(pool).await?;
     Ok(())
 }
 
@@ -175,14 +179,24 @@ pub struct NewLocalSession<'a> {
     pub bundle_url: &'a str,
     pub bundle_name: &'a str,
     pub bundle_media_type: &'a str,
-    pub digest_multibase: &'a str,
-    pub bundle_bytes: &'a [u8],
+    pub package: SessionPackage<'a>,
     pub send_update_interval: i32,
     pub send_update_max_size: i32,
     pub membership_policy: &'a str,
     pub public_key_pem: &'a str,
     pub self_addr: &'a str,
-    pub files: &'a [(String, String, Vec<u8>)],
+}
+
+#[derive(Debug)]
+pub enum SessionPackage<'a> {
+    Upload {
+        digest_multibase: &'a str,
+        bundle_bytes: &'a [u8],
+        files: &'a [(String, String, Vec<u8>)],
+    },
+    Existing {
+        digest_multibase: &'a str,
+    },
 }
 
 #[derive(Debug)]
@@ -285,8 +299,9 @@ impl StorageUsage {
 }
 
 /// Retained payload, excluding PostgreSQL row/index overhead and browser storage.
-/// An account pays for each distinct package it uses once, even if another
-/// account also uses it. Instance totals count each physical package once.
+/// An account pays for each distinct package referenced by one of its sessions
+/// or personal library versions once, even if another account also uses it.
+/// Instance totals count each physical package once.
 pub async fn storage_usage<'e, E: sqlx::PgExecutor<'e>>(
     executor: E,
     creator: Option<i64>,
@@ -294,14 +309,31 @@ pub async fn storage_usage<'e, E: sqlx::PgExecutor<'e>>(
     Ok(sqlx::query_as(
         "SELECT
            (SELECT coalesce(sum(p.storage_bytes),0)::bigint FROM webxdc_packages p
-            WHERE $1::bigint IS NULL OR EXISTS (SELECT 1 FROM webxdc_sessions s
-              WHERE s.digest_multibase=p.digest_multibase AND s.creator_account_id=$1)) AS package_bytes,
+            WHERE $1::bigint IS NULL
+               OR EXISTS (SELECT 1 FROM webxdc_sessions owned_session
+                  WHERE owned_session.digest_multibase=p.digest_multibase
+                    AND owned_session.creator_account_id=$1)
+               OR EXISTS (SELECT 1 FROM webxdc_app_versions owned_version
+                  JOIN webxdc_apps owned_app ON owned_app.id=owned_version.app_id
+                  WHERE owned_version.digest_multibase=p.digest_multibase
+                    AND owned_app.owner_account_id=$1)) AS package_bytes,
            coalesce(sum(greatest(s.storage_bytes-p.storage_bytes,0)),0)::bigint AS data_bytes,
-           count(DISTINCT s.digest_multibase)::bigint AS packages,
+           (SELECT count(*)::bigint FROM webxdc_packages counted_package
+            WHERE $1::bigint IS NULL
+               OR EXISTS (SELECT 1 FROM webxdc_sessions counted_session
+                  WHERE counted_session.digest_multibase=counted_package.digest_multibase
+                    AND counted_session.creator_account_id=$1)
+               OR EXISTS (SELECT 1 FROM webxdc_app_versions counted_version
+                  JOIN webxdc_apps counted_app ON counted_app.id=counted_version.app_id
+                  WHERE counted_version.digest_multibase=counted_package.digest_multibase
+                    AND counted_app.owner_account_id=$1)) AS packages,
            count(*)::bigint AS sessions
          FROM webxdc_sessions s JOIN webxdc_packages p USING (digest_multibase)
-         WHERE $1::bigint IS NULL OR s.creator_account_id=$1")
-        .bind(creator).fetch_one(executor).await?)
+         WHERE $1::bigint IS NULL OR s.creator_account_id=$1",
+    )
+    .bind(creator)
+    .fetch_one(executor)
+    .await?)
 }
 
 fn check_session_quota(limits: Limits, current: i64, additional: i64) -> Result<(), DbError> {
@@ -371,7 +403,7 @@ async fn reserve_package(
     bundle: &[u8],
     files: &[(String, String, Vec<u8>)],
     size: i64,
-) -> Result<(), DbError> {
+) -> Result<i64, DbError> {
     storage_lock(conn).await?;
     let limits = limits(&mut *conn).await?;
     check_session_quota(limits, 0, size)?;
@@ -381,8 +413,17 @@ async fn reserve_package(
     .bind(digest)
     .fetch_one(&mut *conn)
     .await?;
-    let owned: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM webxdc_sessions WHERE creator_account_id=$1 AND digest_multibase=$2)")
-        .bind(creator).bind(digest).fetch_one(&mut *conn).await?;
+    let owned: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+        SELECT 1 FROM webxdc_sessions WHERE creator_account_id=$1 AND digest_multibase=$2
+        UNION ALL
+        SELECT 1 FROM webxdc_app_versions v JOIN webxdc_apps a ON a.id=v.app_id
+         WHERE a.owner_account_id=$1 AND v.digest_multibase=$2)",
+    )
+    .bind(creator)
+    .bind(digest)
+    .fetch_one(&mut *conn)
+    .await?;
     check_retained_quota(
         conn,
         limits,
@@ -399,12 +440,839 @@ async fn reserve_package(
                 .bind(digest).bind(path).bind(media_type).bind(bytes).execute(&mut *conn).await?;
         }
     }
-    Ok(())
+    Ok(size)
+}
+
+async fn reserve_existing_package(
+    conn: &mut PgConnection,
+    creator: Option<i64>,
+    digest: &str,
+) -> Result<i64, DbError> {
+    storage_lock(conn).await?;
+    let limits = limits(&mut *conn).await?;
+    let size: i64 =
+        sqlx::query_scalar("SELECT storage_bytes FROM webxdc_packages WHERE digest_multibase=$1")
+            .bind(digest)
+            .fetch_optional(&mut *conn)
+            .await?
+            .ok_or_else(|| DbError::Protocol("Webxdc package is no longer available".into()))?;
+    check_session_quota(limits, 0, size)?;
+    let owned: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+           SELECT 1 FROM webxdc_sessions WHERE creator_account_id=$1 AND digest_multibase=$2
+           UNION ALL
+           SELECT 1 FROM webxdc_app_versions v JOIN webxdc_apps a ON a.id=v.app_id
+            WHERE a.owner_account_id=$1 AND v.digest_multibase=$2)",
+    )
+    .bind(creator)
+    .bind(digest)
+    .fetch_one(&mut *conn)
+    .await?;
+    check_retained_quota(conn, limits, creator, if owned { 0 } else { size }, 0).await?;
+    Ok(size)
 }
 
 pub async fn bundle(pool: &PgPool, session_id: i64) -> Result<Option<Vec<u8>>, DbError> {
     Ok(sqlx::query_scalar("SELECT p.bundle_bytes FROM webxdc_sessions s JOIN webxdc_packages p USING (digest_multibase) WHERE s.id=$1")
         .bind(session_id).fetch_optional(pool).await?)
+}
+
+const LIBRARY_APP_SELECT: &str = "SELECT a.id, a.owner_account_id, a.name, a.summary, a.category,
+            a.visibility, a.source_kind, a.source_url, a.catalog_source_id,
+            a.external_app_id, a.promoted_from_app_id, a.created_by_account_id,
+            a.created_at, a.updated_at,
+            v.id AS version_id, v.digest_multibase, v.version, v.filename,
+            v.manifest_name, v.source_code_url, v.icon_path,
+            v.source_url AS version_source_url, v.created_at AS version_created_at,
+            p.storage_bytes AS package_bytes,
+            octet_length(p.bundle_bytes)::bigint AS bundle_bytes,
+            (SELECT promoted.id FROM webxdc_apps promoted
+              WHERE promoted.promoted_from_app_id=a.id
+                AND promoted.owner_account_id IS NULL) AS promoted_instance_app_id,
+            CASE WHEN a.promoted_from_app_id IS NOT NULL THEN EXISTS(
+                SELECT 1 FROM webxdc_apps source
+                JOIN webxdc_app_versions source_version
+                  ON source_version.app_id=source.id AND source_version.current
+                WHERE source.id=a.promoted_from_app_id
+                  AND source_version.digest_multibase<>v.digest_multibase)
+              ELSE EXISTS(
+                SELECT 1 FROM webxdc_apps promoted
+                JOIN webxdc_app_versions promoted_version
+                  ON promoted_version.app_id=promoted.id AND promoted_version.current
+                WHERE promoted.promoted_from_app_id=a.id
+                  AND promoted_version.digest_multibase<>v.digest_multibase)
+            END AS update_available
+       FROM webxdc_apps a
+       JOIN webxdc_app_versions v ON v.app_id=a.id AND v.current
+       JOIN webxdc_packages p ON p.digest_multibase=v.digest_multibase";
+
+#[derive(Debug, Clone, FromRow)]
+pub struct LibraryApp {
+    pub id: i64,
+    pub owner_account_id: Option<i64>,
+    pub name: String,
+    pub summary: String,
+    pub category: Option<String>,
+    pub visibility: String,
+    pub source_kind: String,
+    pub source_url: Option<String>,
+    pub catalog_source_id: Option<i64>,
+    pub external_app_id: Option<String>,
+    pub promoted_from_app_id: Option<i64>,
+    pub created_by_account_id: Option<i64>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+    pub version_id: i64,
+    pub digest_multibase: String,
+    pub version: String,
+    pub filename: String,
+    pub manifest_name: String,
+    pub source_code_url: Option<String>,
+    pub icon_path: Option<String>,
+    pub version_source_url: Option<String>,
+    pub version_created_at: OffsetDateTime,
+    pub package_bytes: i64,
+    pub bundle_bytes: i64,
+    pub promoted_instance_app_id: Option<i64>,
+    pub update_available: bool,
+}
+
+#[derive(Debug)]
+pub struct NewLibraryApp<'a> {
+    pub owner_account_id: Option<i64>,
+    pub name: &'a str,
+    pub summary: &'a str,
+    pub category: Option<&'a str>,
+    pub visibility: &'a str,
+    pub source_kind: &'a str,
+    pub source_url: Option<&'a str>,
+    pub catalog_source_id: Option<i64>,
+    pub external_app_id: Option<&'a str>,
+    pub promoted_from_app_id: Option<i64>,
+    pub created_by_account_id: i64,
+    pub version: NewLibraryVersion<'a>,
+}
+
+#[derive(Debug)]
+pub struct NewLibraryVersion<'a> {
+    pub digest_multibase: &'a str,
+    pub version: &'a str,
+    pub filename: &'a str,
+    pub manifest_name: &'a str,
+    pub source_code_url: Option<&'a str>,
+    pub icon_path: Option<&'a str>,
+    pub source_url: Option<&'a str>,
+    pub bundle_bytes: &'a [u8],
+    pub files: &'a [(String, String, Vec<u8>)],
+}
+
+fn validate_library_shape(new: &NewLibraryApp<'_>) -> Result<(), DbError> {
+    let personal = new.owner_account_id.is_some();
+    if new.name.trim().is_empty()
+        || new.name.chars().count() > 120
+        || new.summary.chars().count() > 2000
+        || new
+            .category
+            .is_some_and(|value| value.is_empty() || value.chars().count() > 80)
+        || new.version.filename.is_empty()
+        || new.version.filename.chars().count() > 255
+        || new.version.manifest_name.is_empty()
+        || new.version.manifest_name.chars().count() > 120
+        || new.version.version.chars().count() > 120
+        || (personal && new.visibility != "private")
+        || (!personal && !matches!(new.visibility, "hidden" | "instance" | "public"))
+    {
+        return Err(DbError::Protocol("Invalid Webxdc library metadata".into()));
+    }
+    Ok(())
+}
+
+async fn library_app_with<'e, E: sqlx::PgExecutor<'e>>(
+    executor: E,
+    id: i64,
+) -> Result<Option<LibraryApp>, DbError> {
+    let sql = format!("{LIBRARY_APP_SELECT} WHERE a.id=$1");
+    Ok(sqlx::query_as::<_, LibraryApp>(sqlx::AssertSqlSafe(sql))
+        .bind(id)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub async fn create_library_app(
+    pool: &PgPool,
+    new: NewLibraryApp<'_>,
+) -> Result<LibraryApp, DbError> {
+    validate_library_shape(&new)?;
+    let mut tx = pool.begin().await?;
+    storage_lock(&mut tx).await?;
+    let limits = limits(&mut *tx).await?;
+    if let Some(owner) = new.owner_account_id {
+        let count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM webxdc_apps WHERE owner_account_id=$1")
+                .bind(owner)
+                .fetch_one(&mut *tx)
+                .await?;
+        if count >= i64::from(limits.personal_apps) {
+            return Err(DbError::Protocol(format!(
+                "Personal Webxdc app limit reached ({} apps).",
+                limits.personal_apps
+            )));
+        }
+    }
+    let storage_bytes = package_storage_bytes(new.version.bundle_bytes, new.version.files);
+    reserve_package(
+        &mut tx,
+        new.owner_account_id,
+        new.version.digest_multibase,
+        new.version.bundle_bytes,
+        new.version.files,
+        storage_bytes,
+    )
+    .await?;
+    let app_id = id::next();
+    sqlx::query(
+        "INSERT INTO webxdc_apps
+           (id, owner_account_id, name, summary, category, visibility,
+            source_kind, source_url, catalog_source_id, external_app_id,
+            promoted_from_app_id, created_by_account_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+    )
+    .bind(app_id)
+    .bind(new.owner_account_id)
+    .bind(new.name.trim())
+    .bind(new.summary.trim())
+    .bind(new.category)
+    .bind(new.visibility)
+    .bind(new.source_kind)
+    .bind(new.source_url)
+    .bind(new.catalog_source_id)
+    .bind(new.external_app_id)
+    .bind(new.promoted_from_app_id)
+    .bind(new.created_by_account_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO webxdc_app_versions
+           (id, app_id, digest_multibase, version, filename, manifest_name,
+            source_code_url, icon_path, source_url, created_by_account_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+    )
+    .bind(id::next())
+    .bind(app_id)
+    .bind(new.version.digest_multibase)
+    .bind(new.version.version)
+    .bind(new.version.filename)
+    .bind(new.version.manifest_name)
+    .bind(new.version.source_code_url)
+    .bind(new.version.icon_path)
+    .bind(new.version.source_url)
+    .bind(new.created_by_account_id)
+    .execute(&mut *tx)
+    .await?;
+    let app = library_app_with(&mut *tx, app_id)
+        .await?
+        .expect("new library app has a current version");
+    tx.commit().await?;
+    Ok(app)
+}
+
+pub async fn add_library_version(
+    pool: &PgPool,
+    app_id: i64,
+    expected_owner: Option<i64>,
+    actor_id: i64,
+    version: NewLibraryVersion<'_>,
+) -> Result<LibraryApp, DbError> {
+    let mut tx = pool.begin().await?;
+    let owner: Option<i64> =
+        sqlx::query_scalar("SELECT owner_account_id FROM webxdc_apps WHERE id=$1 FOR UPDATE")
+            .bind(app_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| DbError::Protocol("Webxdc library app was not found".into()))?;
+    if owner != expected_owner {
+        return Err(DbError::Protocol(
+            "Webxdc library app is not editable".into(),
+        ));
+    }
+    let size = package_storage_bytes(version.bundle_bytes, version.files);
+    reserve_package(
+        &mut tx,
+        owner,
+        version.digest_multibase,
+        version.bundle_bytes,
+        version.files,
+        size,
+    )
+    .await?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM webxdc_app_versions
+                       WHERE app_id=$1 AND digest_multibase=$2)",
+    )
+    .bind(app_id)
+    .bind(version.digest_multibase)
+    .fetch_one(&mut *tx)
+    .await?;
+    if exists {
+        return Err(DbError::Protocol(
+            "That Webxdc package is already a version of this app".into(),
+        ));
+    }
+    sqlx::query("UPDATE webxdc_app_versions SET current=false WHERE app_id=$1 AND current")
+        .bind(app_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "INSERT INTO webxdc_app_versions
+           (id, app_id, digest_multibase, version, filename, manifest_name,
+            source_code_url, icon_path, source_url, created_by_account_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+    )
+    .bind(id::next())
+    .bind(app_id)
+    .bind(version.digest_multibase)
+    .bind(version.version)
+    .bind(version.filename)
+    .bind(version.manifest_name)
+    .bind(version.source_code_url)
+    .bind(version.icon_path)
+    .bind(version.source_url)
+    .bind(actor_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE webxdc_apps SET name=$2, updated_at=now() WHERE id=$1")
+        .bind(app_id)
+        .bind(version.manifest_name)
+        .execute(&mut *tx)
+        .await?;
+    let app = library_app_with(&mut *tx, app_id)
+        .await?
+        .expect("updated library app has a current version");
+    tx.commit().await?;
+    Ok(app)
+}
+
+async fn create_promoted_app(
+    conn: &mut PgConnection,
+    source_app_id: i64,
+    source: &LibraryApp,
+    actor_id: i64,
+) -> Result<LibraryApp, DbError> {
+    storage_lock(conn).await?;
+    let app_id = id::next();
+    sqlx::query(
+        "INSERT INTO webxdc_apps
+           (id,name,summary,category,visibility,source_kind,source_url,
+            promoted_from_app_id,created_by_account_id)
+         VALUES ($1,$2,$3,$4,'instance','promotion',$5,$6,$7)",
+    )
+    .bind(app_id)
+    .bind(&source.name)
+    .bind(&source.summary)
+    .bind(&source.category)
+    .bind(&source.source_url)
+    .bind(source_app_id)
+    .bind(actor_id)
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query(
+        "INSERT INTO webxdc_app_versions
+           (id,app_id,digest_multibase,version,filename,manifest_name,
+            source_code_url,icon_path,source_url,created_by_account_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+    )
+    .bind(id::next())
+    .bind(app_id)
+    .bind(&source.digest_multibase)
+    .bind(&source.version)
+    .bind(&source.filename)
+    .bind(&source.manifest_name)
+    .bind(&source.source_code_url)
+    .bind(&source.icon_path)
+    .bind(&source.version_source_url)
+    .bind(actor_id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(library_app_with(&mut *conn, app_id)
+        .await?
+        .expect("promoted app has a current version"))
+}
+
+async fn update_promoted_app(
+    conn: &mut PgConnection,
+    app_id: i64,
+    source: &LibraryApp,
+    actor_id: i64,
+) -> Result<LibraryApp, DbError> {
+    let target = library_app_with(&mut *conn, app_id)
+        .await?
+        .ok_or_else(|| DbError::Protocol("Promoted Webxdc app is incomplete".into()))?;
+    if target.digest_multibase == source.digest_multibase {
+        return Ok(target);
+    }
+    storage_lock(conn).await?;
+    sqlx::query("UPDATE webxdc_app_versions SET current=false WHERE app_id=$1 AND current")
+        .bind(app_id)
+        .execute(&mut *conn)
+        .await?;
+    let restored = sqlx::query(
+        "UPDATE webxdc_app_versions SET current=true
+         WHERE app_id=$1 AND digest_multibase=$2",
+    )
+    .bind(app_id)
+    .bind(&source.digest_multibase)
+    .execute(&mut *conn)
+    .await?
+    .rows_affected();
+    if restored == 0 {
+        sqlx::query(
+            "INSERT INTO webxdc_app_versions
+               (id,app_id,digest_multibase,version,filename,manifest_name,
+                source_code_url,icon_path,source_url,created_by_account_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+        )
+        .bind(id::next())
+        .bind(app_id)
+        .bind(&source.digest_multibase)
+        .bind(&source.version)
+        .bind(&source.filename)
+        .bind(&source.manifest_name)
+        .bind(&source.source_code_url)
+        .bind(&source.icon_path)
+        .bind(&source.version_source_url)
+        .bind(actor_id)
+        .execute(&mut *conn)
+        .await?;
+    }
+    sqlx::query(
+        "UPDATE webxdc_apps SET name=$2,summary=$3,category=$4,updated_at=now()
+         WHERE id=$1",
+    )
+    .bind(app_id)
+    .bind(&source.name)
+    .bind(&source.summary)
+    .bind(&source.category)
+    .execute(&mut *conn)
+    .await?;
+    Ok(library_app_with(&mut *conn, app_id)
+        .await?
+        .expect("updated promotion has a current version"))
+}
+
+pub async fn promote_personal_app(
+    pool: &PgPool,
+    source_app_id: i64,
+    actor_id: i64,
+) -> Result<LibraryApp, DbError> {
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "SELECT id FROM webxdc_apps
+         WHERE id=$1 AND owner_account_id IS NOT NULL FOR SHARE",
+    )
+    .bind(source_app_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| DbError::Protocol("Personal Webxdc app was not found".into()))?;
+    let source = library_app_with(&mut *tx, source_app_id)
+        .await?
+        .filter(|app| app.owner_account_id.is_some())
+        .ok_or_else(|| DbError::Protocol("Personal Webxdc app was not found".into()))?;
+    let existing =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM webxdc_apps WHERE promoted_from_app_id=$1")
+            .bind(source_app_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let app = match existing {
+        Some(app_id) => update_promoted_app(&mut tx, app_id, &source, actor_id).await?,
+        None => create_promoted_app(&mut tx, source_app_id, &source, actor_id).await?,
+    };
+    tx.commit().await?;
+    Ok(app)
+}
+
+pub async fn library_app(pool: &PgPool, app_id: i64) -> Result<Option<LibraryApp>, DbError> {
+    library_app_with(pool, app_id).await
+}
+
+async fn list_library_where(
+    pool: &PgPool,
+    clause: &str,
+    account_id: Option<i64>,
+) -> Result<Vec<LibraryApp>, DbError> {
+    let sql = format!(
+        "{LIBRARY_APP_SELECT} WHERE {clause}
+         ORDER BY (a.owner_account_id IS NULL) DESC, lower(a.name), a.id"
+    );
+    let query = sqlx::query_as::<_, LibraryApp>(sqlx::AssertSqlSafe(sql));
+    Ok(match account_id {
+        Some(account_id) => query.bind(account_id).fetch_all(pool).await?,
+        None => query.fetch_all(pool).await?,
+    })
+}
+
+pub async fn library_for_account(
+    pool: &PgPool,
+    account_id: i64,
+) -> Result<Vec<LibraryApp>, DbError> {
+    list_library_where(
+        pool,
+        "a.owner_account_id=$1 OR (a.owner_account_id IS NULL AND a.visibility IN ('instance','public'))",
+        Some(account_id),
+    )
+    .await
+}
+
+pub async fn personal_library(pool: &PgPool, account_id: i64) -> Result<Vec<LibraryApp>, DbError> {
+    list_library_where(pool, "a.owner_account_id=$1", Some(account_id)).await
+}
+
+pub async fn admin_library(pool: &PgPool) -> Result<Vec<LibraryApp>, DbError> {
+    list_library_where(pool, "a.owner_account_id IS NULL", None).await
+}
+
+pub async fn public_library(pool: &PgPool) -> Result<Vec<LibraryApp>, DbError> {
+    list_library_where(
+        pool,
+        "a.owner_account_id IS NULL AND a.visibility='public'",
+        None,
+    )
+    .await
+}
+
+pub async fn personal_apps_for_admin(pool: &PgPool) -> Result<Vec<LibraryApp>, DbError> {
+    list_library_where(pool, "a.owner_account_id IS NOT NULL", None).await
+}
+
+pub async fn usable_version(
+    pool: &PgPool,
+    version_id: i64,
+    account_id: i64,
+) -> Result<Option<LibraryApp>, DbError> {
+    let sql = format!(
+        "{LIBRARY_APP_SELECT} WHERE v.id=$1 AND
+         (a.owner_account_id=$2 OR (a.owner_account_id IS NULL
+          AND a.visibility IN ('instance','public')))"
+    );
+    Ok(sqlx::query_as::<_, LibraryApp>(sqlx::AssertSqlSafe(sql))
+        .bind(version_id)
+        .bind(account_id)
+        .fetch_optional(pool)
+        .await?)
+}
+
+pub async fn set_library_visibility(
+    pool: &PgPool,
+    app_id: i64,
+    visibility: &str,
+) -> Result<Option<LibraryApp>, DbError> {
+    if !matches!(visibility, "hidden" | "instance" | "public") {
+        return Err(DbError::Protocol("Invalid Webxdc app visibility".into()));
+    }
+    let updated = sqlx::query_scalar::<_, i64>(
+        "UPDATE webxdc_apps SET visibility=$2,updated_at=now()
+         WHERE id=$1 AND owner_account_id IS NULL RETURNING id",
+    )
+    .bind(app_id)
+    .bind(visibility)
+    .fetch_optional(pool)
+    .await?;
+    match updated {
+        Some(id) => library_app(pool, id).await,
+        None => Ok(None),
+    }
+}
+
+pub async fn delete_personal_app(
+    pool: &PgPool,
+    app_id: i64,
+    owner_id: i64,
+) -> Result<bool, DbError> {
+    Ok(
+        sqlx::query("DELETE FROM webxdc_apps WHERE id=$1 AND owner_account_id=$2")
+            .bind(app_id)
+            .bind(owner_id)
+            .execute(pool)
+            .await?
+            .rows_affected()
+            == 1,
+    )
+}
+
+pub async fn delete_instance_app(pool: &PgPool, app_id: i64) -> Result<bool, DbError> {
+    Ok(
+        sqlx::query("DELETE FROM webxdc_apps WHERE id=$1 AND owner_account_id IS NULL")
+            .bind(app_id)
+            .execute(pool)
+            .await?
+            .rows_affected()
+            == 1,
+    )
+}
+
+#[derive(Debug, FromRow)]
+pub struct PackageAsset {
+    pub media_type: String,
+    pub bytes: Vec<u8>,
+}
+
+pub async fn library_icon(
+    pool: &PgPool,
+    version_id: i64,
+    public_only: bool,
+) -> Result<Option<PackageAsset>, DbError> {
+    Ok(sqlx::query_as(
+        "SELECT f.media_type,f.bytes FROM webxdc_app_versions v
+         JOIN webxdc_apps a ON a.id=v.app_id
+         JOIN webxdc_package_files f ON f.digest_multibase=v.digest_multibase
+                                   AND f.path=v.icon_path
+         WHERE v.id=$1 AND (NOT $2 OR a.visibility='public')",
+    )
+    .bind(version_id)
+    .bind(public_only)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn library_icon_for_account(
+    pool: &PgPool,
+    version_id: i64,
+    account_id: i64,
+) -> Result<Option<PackageAsset>, DbError> {
+    Ok(sqlx::query_as(
+        "SELECT f.media_type,f.bytes FROM webxdc_app_versions v
+         JOIN webxdc_apps a ON a.id=v.app_id
+         JOIN webxdc_package_files f ON f.digest_multibase=v.digest_multibase
+                                   AND f.path=v.icon_path
+         WHERE v.id=$1 AND (a.owner_account_id=$2 OR
+              (a.owner_account_id IS NULL AND a.visibility IN ('instance','public')))",
+    )
+    .bind(version_id)
+    .bind(account_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn public_library_bundle(
+    pool: &PgPool,
+    version_id: i64,
+) -> Result<Option<Vec<u8>>, DbError> {
+    Ok(sqlx::query_scalar(
+        "SELECT p.bundle_bytes FROM webxdc_app_versions v
+         JOIN webxdc_apps a ON a.id=v.app_id
+         JOIN webxdc_packages p USING(digest_multibase)
+         WHERE v.id=$1 AND a.visibility='public'",
+    )
+    .bind(version_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct CatalogSource {
+    pub id: i64,
+    pub name: String,
+    pub feed_url: String,
+    pub adapter: String,
+    pub enabled: bool,
+    pub last_fetched_at: Option<OffsetDateTime>,
+    pub last_error: Option<String>,
+    pub created_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct CatalogCandidate {
+    pub source_id: i64,
+    pub external_app_id: String,
+    pub version: String,
+    pub bundle_url: String,
+    pub name: String,
+    pub summary: String,
+    pub category: Option<String>,
+    pub source_code_url: Option<String>,
+    pub advertised_size: Option<i64>,
+    pub published_at: Option<OffsetDateTime>,
+    pub seen_at: OffsetDateTime,
+    pub imported_app_id: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewCatalogCandidate {
+    pub external_app_id: String,
+    pub version: String,
+    pub bundle_url: String,
+    pub name: String,
+    pub summary: String,
+    pub category: Option<String>,
+    pub source_code_url: Option<String>,
+    pub advertised_size: Option<i64>,
+    pub published_at: Option<OffsetDateTime>,
+}
+
+pub async fn catalog_sources(pool: &PgPool) -> Result<Vec<CatalogSource>, DbError> {
+    Ok(sqlx::query_as(
+        "SELECT id,name,feed_url,adapter,enabled,last_fetched_at,last_error,
+                created_at,updated_at
+         FROM webxdc_catalog_sources ORDER BY lower(name),id",
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn catalog_source(
+    pool: &PgPool,
+    source_id: i64,
+) -> Result<Option<CatalogSource>, DbError> {
+    Ok(sqlx::query_as(
+        "SELECT id,name,feed_url,adapter,enabled,last_fetched_at,last_error,
+                created_at,updated_at
+         FROM webxdc_catalog_sources WHERE id=$1",
+    )
+    .bind(source_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn create_catalog_source(
+    pool: &PgPool,
+    name: &str,
+    feed_url: &str,
+) -> Result<CatalogSource, DbError> {
+    let mut tx = pool.begin().await?;
+    storage_lock(&mut tx).await?;
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM webxdc_catalog_sources")
+        .fetch_one(&mut *tx)
+        .await?;
+    if count >= 20 {
+        return Err(DbError::Protocol(
+            "At most 20 external Webxdc catalog sources may be configured".into(),
+        ));
+    }
+    let id = id::next();
+    sqlx::query(
+        "INSERT INTO webxdc_catalog_sources(id,name,feed_url)
+         VALUES($1,$2,$3)",
+    )
+    .bind(id)
+    .bind(name)
+    .bind(feed_url)
+    .execute(&mut *tx)
+    .await?;
+    let source = sqlx::query_as(
+        "SELECT id,name,feed_url,adapter,enabled,last_fetched_at,last_error,
+                created_at,updated_at
+         FROM webxdc_catalog_sources WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(source)
+}
+
+pub async fn delete_catalog_source(pool: &PgPool, source_id: i64) -> Result<bool, DbError> {
+    Ok(
+        sqlx::query("DELETE FROM webxdc_catalog_sources WHERE id=$1")
+            .bind(source_id)
+            .execute(pool)
+            .await?
+            .rows_affected()
+            == 1,
+    )
+}
+
+pub async fn replace_catalog_candidates(
+    pool: &PgPool,
+    source_id: i64,
+    candidates: &[NewCatalogCandidate],
+) -> Result<(), DbError> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM webxdc_catalog_candidates WHERE source_id=$1")
+        .bind(source_id)
+        .execute(&mut *tx)
+        .await?;
+    if !candidates.is_empty() {
+        let mut query = QueryBuilder::<Postgres>::new(
+            "INSERT INTO webxdc_catalog_candidates
+             (source_id,external_app_id,version,bundle_url,name,summary,category,
+              source_code_url,advertised_size,published_at) ",
+        );
+        query.push_values(candidates, |mut row, candidate| {
+            row.push_bind(source_id)
+                .push_bind(&candidate.external_app_id)
+                .push_bind(&candidate.version)
+                .push_bind(&candidate.bundle_url)
+                .push_bind(&candidate.name)
+                .push_bind(&candidate.summary)
+                .push_bind(&candidate.category)
+                .push_bind(&candidate.source_code_url)
+                .push_bind(candidate.advertised_size)
+                .push_bind(candidate.published_at);
+        });
+        query.build().execute(&mut *tx).await?;
+    }
+    sqlx::query(
+        "UPDATE webxdc_catalog_sources
+         SET last_fetched_at=now(),last_error=NULL,updated_at=now() WHERE id=$1",
+    )
+    .bind(source_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn record_catalog_source_error(
+    pool: &PgPool,
+    source_id: i64,
+    error: &str,
+) -> Result<(), DbError> {
+    sqlx::query("UPDATE webxdc_catalog_sources SET last_error=$2,updated_at=now() WHERE id=$1")
+        .bind(source_id)
+        .bind(error.chars().take(1000).collect::<String>())
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+const CATALOG_CANDIDATE_SELECT: &str =
+    "SELECT c.source_id,c.external_app_id,c.version,c.bundle_url,c.name,
+            c.summary,c.category,c.source_code_url,c.advertised_size,
+            c.published_at,c.seen_at,
+            (SELECT a.id FROM webxdc_apps a WHERE a.catalog_source_id=c.source_id
+               AND a.external_app_id=c.external_app_id
+               AND a.owner_account_id IS NULL) AS imported_app_id
+       FROM webxdc_catalog_candidates c";
+
+pub async fn catalog_candidates(
+    pool: &PgPool,
+    source_id: i64,
+) -> Result<Vec<CatalogCandidate>, DbError> {
+    let sql = format!(
+        "{CATALOG_CANDIDATE_SELECT} WHERE c.source_id=$1
+         ORDER BY lower(c.name),c.external_app_id LIMIT 500"
+    );
+    Ok(
+        sqlx::query_as::<_, CatalogCandidate>(sqlx::AssertSqlSafe(sql))
+            .bind(source_id)
+            .fetch_all(pool)
+            .await?,
+    )
+}
+
+pub async fn catalog_candidate(
+    pool: &PgPool,
+    source_id: i64,
+    external_app_id: &str,
+) -> Result<Option<CatalogCandidate>, DbError> {
+    let sql = format!("{CATALOG_CANDIDATE_SELECT} WHERE c.source_id=$1 AND c.external_app_id=$2");
+    Ok(
+        sqlx::query_as::<_, CatalogCandidate>(sqlx::AssertSqlSafe(sql))
+            .bind(source_id)
+            .bind(external_app_id)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 async fn reserve_update_storage(
@@ -452,6 +1320,37 @@ url, discoverable, feature_approval_policy, is_bot, indexable, hide_collections,
 avatar_description, header_description, suspended_at, silenced_at, sensitized_at, \
 suspension_origin, show_media, show_media_replies, show_featured, memorial, actor_type";
 
+async fn reserve_session_package<'a>(
+    conn: &mut PgConnection,
+    creator_account_id: i64,
+    package: SessionPackage<'a>,
+) -> Result<(&'a str, i64), DbError> {
+    match package {
+        SessionPackage::Upload {
+            digest_multibase,
+            bundle_bytes,
+            files,
+        } => {
+            let storage_bytes = package_storage_bytes(bundle_bytes, files);
+            let reserved = reserve_package(
+                conn,
+                Some(creator_account_id),
+                digest_multibase,
+                bundle_bytes,
+                files,
+                storage_bytes,
+            )
+            .await?;
+            Ok((digest_multibase, reserved))
+        }
+        SessionPackage::Existing { digest_multibase } => {
+            let reserved =
+                reserve_existing_package(conn, Some(creator_account_id), digest_multibase).await?;
+            Ok((digest_multibase, reserved))
+        }
+    }
+}
+
 /// Inserts the coordinator Group account, immutable session metadata, expanded
 /// package and creator membership inside the caller's key-provisioning
 /// transaction.
@@ -460,16 +1359,8 @@ pub async fn create_local_tx(
     new: NewLocalSession<'_>,
 ) -> Result<(Account, Session), DbError> {
     let session_id = new.session_id;
-    let storage_bytes = package_storage_bytes(new.bundle_bytes, new.files);
-    reserve_package(
-        conn,
-        Some(new.creator_account_id),
-        new.digest_multibase,
-        new.bundle_bytes,
-        new.files,
-        storage_bytes,
-    )
-    .await?;
+    let (digest_multibase, storage_bytes) =
+        reserve_session_package(conn, new.creator_account_id, new.package).await?;
     let username = format!("webxdc_{session_id}");
     let account_sql = format!(
         "INSERT INTO accounts
@@ -519,7 +1410,7 @@ pub async fn create_local_tx(
         new.bundle_url,
         new.bundle_name,
         new.bundle_media_type,
-        new.digest_multibase,
+        digest_multibase,
         new.send_update_interval,
         new.send_update_max_size,
         new.membership_policy,
@@ -562,6 +1453,24 @@ pub async fn find(pool: &PgPool, session_id: i64) -> Result<Option<Session>, DbE
     )
     .fetch_optional(pool)
     .await?)
+}
+
+pub async fn external_library_app(
+    pool: &PgPool,
+    source_id: i64,
+    external_app_id: &str,
+    owner_account_id: Option<i64>,
+) -> Result<Option<LibraryApp>, DbError> {
+    let sql = format!(
+        "{LIBRARY_APP_SELECT} WHERE a.catalog_source_id=$1
+         AND a.external_app_id=$2 AND a.owner_account_id IS NOT DISTINCT FROM $3"
+    );
+    Ok(sqlx::query_as::<_, LibraryApp>(sqlx::AssertSqlSafe(sql))
+        .bind(source_id)
+        .bind(external_app_id)
+        .bind(owner_account_id)
+        .fetch_optional(pool)
+        .await?)
 }
 
 pub async fn find_by_uri(pool: &PgPool, uri: &str) -> Result<Option<Session>, DbError> {

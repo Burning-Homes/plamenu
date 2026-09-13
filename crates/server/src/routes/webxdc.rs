@@ -125,6 +125,92 @@ pub async fn bundle(
         .into_response())
 }
 
+/// Public, operator-curated xdcget-compatible catalog. Extra integrity and
+/// provenance fields are additive so existing catalog browsers can consume it
+/// while Plamenu peers retain the locally verified digest.
+pub async fn catalog(State(state): State<AppState>) -> Result<Response, ApiError> {
+    let apps = webxdc::public_library(&state.pool).await?;
+    let values: Vec<_> = apps
+        .into_iter()
+        .map(|app| {
+            let bundle_url = format!(
+                "https://{}/webxdc/catalog/version/{}/bundle.xdc",
+                state.config.domain, app.version_id
+            );
+            let icon_url = app.icon_path.as_ref().map(|_| {
+                format!(
+                    "https://{}/webxdc/catalog/version/{}/icon",
+                    state.config.domain, app.version_id
+                )
+            });
+            json!({
+                "app_id": format!("plamenu-{}", app.id),
+                "tag_name": app.version,
+                "url": bundle_url,
+                "date": app.version_created_at.format(&Rfc3339).unwrap_or_default(),
+                "description": app.summary,
+                "source_code_url": app.source_code_url,
+                "name": app.name,
+                "category": app.category,
+                "size": app.bundle_bytes,
+                "icon": icon_url,
+                "cache_relname": format!("catalog/version/{}/bundle.xdc", app.version_id),
+                "icon_relname": app.icon_path.as_ref().map(|_| format!("catalog/version/{}/icon", app.version_id)),
+                "digest_multibase": app.digest_multibase,
+                "provenance": {
+                    "kind": app.source_kind,
+                    "source": app.version_source_url.or(app.source_url),
+                },
+            })
+        })
+        .collect();
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/json; charset=utf-8"),
+            (header::CACHE_CONTROL, "public, max-age=300"),
+        ],
+        Json(values),
+    )
+        .into_response())
+}
+
+pub async fn catalog_bundle(
+    State(state): State<AppState>,
+    Path(version_id): Path<i64>,
+) -> Result<Response, ApiError> {
+    let bytes = webxdc::public_library_bundle(&state.pool, version_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, protocol::MEDIA_TYPE),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+pub async fn catalog_icon(
+    State(state): State<AppState>,
+    Path(version_id): Path<i64>,
+) -> Result<Response, ApiError> {
+    let asset = webxdc::library_icon(&state.pool, version_id, true)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, asset.media_type),
+            (
+                header::CACHE_CONTROL,
+                "public, max-age=31536000, immutable".to_owned(),
+            ),
+        ],
+        asset.bytes,
+    )
+        .into_response())
+}
+
 pub async fn outbox(
     State(state): State<AppState>,
     Path(id): Path<i64>,
