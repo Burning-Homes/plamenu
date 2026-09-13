@@ -38,29 +38,6 @@ fn package() -> Vec<u8> {
     writer.finish().unwrap().into_inner()
 }
 
-fn library_package(name: &str, version: &str, source: &str) -> Vec<u8> {
-    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    writer
-        .start_file("index.html", SimpleFileOptions::default())
-        .unwrap();
-    writer
-        .write_all(b"<!doctype html><title>Library app</title>")
-        .unwrap();
-    writer
-        .start_file("manifest.toml", SimpleFileOptions::default())
-        .unwrap();
-    write!(
-        writer,
-        "name = {name:?}\nsource_code_url = {source:?}\ntag_name = {version:?}\n"
-    )
-    .unwrap();
-    writer
-        .start_file("icon.png", SimpleFileOptions::default())
-        .unwrap();
-    writer.write_all(b"not-decoded-by-library").unwrap();
-    writer.finish().unwrap().into_inner()
-}
-
 async fn local_session(
     pool: &PgPool,
 ) -> (plamenu::AppState, plamenu_db::account::Account, db::Session) {
@@ -2039,7 +2016,7 @@ async fn admin_webxdc_limits_save_independently_and_validate_storage_budget(pool
             .uri("/web/admin/settings").header(header::HOST, "plamenu.test")
             .header(header::COOKIE, &cookie)
             .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-            .body(Body::from(format!("csrf={csrf}&section=webxdc&webxdc_bundle_mb=200&webxdc_expanded_mb=400&webxdc_file_mb=200&webxdc_session_mb={session_mb}&webxdc_account_mb=1600&webxdc_total_mb=10240&webxdc_personal_apps=75")))
+            .body(Body::from(format!("csrf={csrf}&section=webxdc&webxdc_bundle_mb=200&webxdc_expanded_mb=400&webxdc_file_mb=200&webxdc_session_mb={session_mb}&webxdc_account_mb=1600&webxdc_total_mb=10240")))
             .unwrap()).await.unwrap();
         assert_eq!(response.status(), expected);
         let saved = db::limits(&pool).await.unwrap();
@@ -2162,241 +2139,6 @@ async fn identical_packages_share_storage_and_cleanup_preserves_other_sessions(p
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
-async fn personal_library_promotes_reuses_and_retains_immutable_packages(pool: PgPool) {
-    let alice = create_local_account(&pool, "alice", "Alice").await;
-    plamenu_db::user::create(&pool, alice.id, None, "unused")
-        .await
-        .unwrap();
-    let state = test_state_with(pool.clone(), Arc::<StubFederation>::default());
-    let bytes = library_package("Shared Chess", "v2.4.0", "https://code.example/apps/chess");
-    let personal = protocol::save_personal_app(
-        &state,
-        protocol::LibraryUpload {
-            actor: &alice,
-            bundle_name: "chess-release.xdc",
-            bundle_bytes: &bytes,
-            summary: "Play together",
-            category: Some("Game"),
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(personal.name, "Shared Chess");
-    assert_eq!(personal.version, "v2.4.0");
-    assert_eq!(personal.icon_path.as_deref(), Some("icon.png"));
-    assert_eq!(
-        personal.source_code_url.as_deref(),
-        Some("https://code.example/apps/chess")
-    );
-    assert_eq!(
-        db::personal_library(&pool, alice.id).await.unwrap().len(),
-        1
-    );
-
-    let session = protocol::create_local_from_library(
-        &state,
-        protocol::CreateLocalFromLibrary {
-            creator: &alice,
-            name: "Friday chess",
-            summary: "Pinned session",
-            version_id: personal.version_id,
-            membership_policy: "open",
-            send_update_interval: 0,
-            send_update_max_size: 32_768,
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(session.digest_multibase, personal.digest_multibase);
-    assert_eq!(db::bundle(&pool, session.id).await.unwrap().unwrap(), bytes);
-    assert_eq!(db::storage_usage(&pool, None).await.unwrap().packages, 1);
-
-    let promoted = db::promote_personal_app(&pool, personal.id, alice.id)
-        .await
-        .unwrap();
-    assert_eq!(promoted.visibility, "instance");
-    assert_eq!(promoted.digest_multibase, personal.digest_multibase);
-    db::set_library_visibility(&pool, promoted.id, "public")
-        .await
-        .unwrap();
-
-    let updated_bytes =
-        library_package("Shared Chess", "v2.5.0", "https://code.example/apps/chess");
-    let updated_personal = protocol::add_personal_app_version(
-        &state,
-        personal.id,
-        protocol::LibraryUpload {
-            actor: &alice,
-            bundle_name: "chess-release-2.xdc",
-            bundle_bytes: &updated_bytes,
-            summary: "",
-            category: None,
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(updated_personal.id, personal.id);
-    assert_ne!(updated_personal.digest_multibase, personal.digest_multibase);
-    assert!(updated_personal.update_available);
-    assert_eq!(db::bundle(&pool, session.id).await.unwrap().unwrap(), bytes);
-    let updated_promoted = db::promote_personal_app(&pool, personal.id, alice.id)
-        .await
-        .unwrap();
-    assert_eq!(updated_promoted.id, promoted.id);
-    assert_eq!(updated_promoted.visibility, "public");
-    assert_eq!(
-        updated_promoted.digest_multibase,
-        updated_personal.digest_multibase
-    );
-    assert!(!updated_promoted.update_available);
-    assert_eq!(db::storage_usage(&pool, None).await.unwrap().packages, 2);
-
-    let app = build_router(state.clone());
-    let catalog = response(&app, "/webxdc/catalog.json", "plamenu.test", None).await;
-    assert_eq!(catalog.status(), StatusCode::OK);
-    let value: Value =
-        serde_json::from_slice(&catalog.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(value.as_array().unwrap().len(), 1);
-    assert_eq!(value[0]["name"], "Shared Chess");
-    assert_eq!(
-        value[0]["digest_multibase"],
-        updated_personal.digest_multibase
-    );
-
-    assert!(
-        db::delete_personal_app(&pool, personal.id, alice.id)
-            .await
-            .unwrap()
-    );
-    assert!(db::delete_instance_app(&pool, promoted.id).await.unwrap());
-    assert_eq!(db::storage_usage(&pool, None).await.unwrap().packages, 1);
-    protocol::delete_local(&state, &session).await.unwrap();
-    assert_eq!(db::storage_usage(&pool, None).await.unwrap().packages, 0);
-}
-
-#[test]
-fn package_metadata_is_bounded_and_filename_fallback_is_portable() {
-    let bytes = library_package("Chess", "v1", "https://code.example/chess");
-    let package = protocol::validate_package(&bytes, None).unwrap();
-    assert_eq!(package.metadata.name.as_deref(), Some("Chess"));
-    assert_eq!(package.metadata.version.as_deref(), Some("v1"));
-    assert_eq!(package.metadata.icon_path.as_deref(), Some("icon.png"));
-    assert_eq!(
-        protocol::package_fallback_name(r"C:\fakepath\useful-app.xdc"),
-        "useful-app"
-    );
-    let credentialed = library_package("Chess", "v1", "https://user:secret@code.example/chess");
-    assert!(protocol::validate_package(&credentialed, None).is_err());
-
-    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    writer
-        .start_file("index.html", SimpleFileOptions::default())
-        .unwrap();
-    writer.write_all(b"ok").unwrap();
-    writer
-        .start_file("manifest.toml", SimpleFileOptions::default())
-        .unwrap();
-    writer.write_all(b"name = [broken").unwrap();
-    let malformed = writer.finish().unwrap().into_inner();
-    assert!(
-        protocol::validate_package(&malformed, None)
-            .unwrap_err()
-            .to_string()
-            .contains("manifest.toml")
-    );
-}
-
-#[sqlx::test(migrations = "../db/migrations")]
-async fn external_catalog_is_advisory_guarded_and_imported_hidden(pool: PgPool) {
-    let moderator = create_local_account(&pool, "moderator", "Moderator").await;
-    plamenu_db::user::create(&pool, moderator.id, None, "unused")
-        .await
-        .unwrap();
-    plamenu_db::role::assign_to_account(&pool, moderator.id, Some(3))
-        .await
-        .unwrap();
-    let stub = Arc::new(StubFederation::default());
-    let state = test_state_with(pool.clone(), stub.clone());
-    let source =
-        db::create_catalog_source(&pool, "Test catalog", "https://catalog.example/apps.json")
-            .await
-            .unwrap();
-    let bytes = library_package(
-        "Canonical package name",
-        "v7",
-        "https://code.example/canonical",
-    );
-    stub.serve_page_as(
-        &source.feed_url,
-        &source.feed_url,
-        "application/json; charset=utf-8",
-        &json!([{
-            "app_id": "example-game",
-            "tag_name": "advisory-v6",
-            "url": "https://downloads.example/game.xdc",
-            "date": "2026-09-12T10:00:00Z",
-            "description": "Catalog description",
-            "source_code_url": "https://code.example/advisory",
-            "name": "Advisory name",
-            "category": "game",
-            "size": bytes.len(),
-        }])
-        .to_string(),
-    );
-    stub.serve_media(
-        "https://downloads.example/game.xdc",
-        protocol::MEDIA_TYPE,
-        bytes,
-    );
-
-    assert_eq!(
-        protocol::refresh_catalog_source(&state, source.id)
-            .await
-            .unwrap(),
-        1
-    );
-    let imported =
-        protocol::import_catalog_candidate(&state, &moderator, source.id, "example-game")
-            .await
-            .unwrap();
-    assert_eq!(imported.name, "Canonical package name");
-    assert_eq!(imported.version, "v7");
-    assert_eq!(imported.visibility, "hidden");
-    assert_eq!(imported.summary, "Catalog description");
-    assert_eq!(
-        imported.source_code_url.as_deref(),
-        Some("https://code.example/canonical")
-    );
-    assert!(db::public_library(&pool).await.unwrap().is_empty());
-    let again = protocol::import_catalog_candidate(&state, &moderator, source.id, "example-game")
-        .await
-        .unwrap();
-    assert_eq!(again.id, imported.id);
-
-    let personal =
-        protocol::import_personal_catalog_candidate(&state, &moderator, source.id, "example-game")
-            .await
-            .unwrap();
-    assert_eq!(personal.owner_account_id, Some(moderator.id));
-    assert_eq!(personal.visibility, "private");
-    assert_eq!(personal.digest_multibase, imported.digest_multibase);
-    assert_eq!(db::storage_usage(&pool, None).await.unwrap().packages, 1);
-
-    assert!(db::delete_catalog_source(&pool, source.id).await.unwrap());
-    let orphaned = db::library_app(&pool, imported.id).await.unwrap().unwrap();
-    assert_eq!(orphaned.source_kind, "external");
-    assert!(orphaned.catalog_source_id.is_none());
-    assert!(
-        db::library_app(&pool, personal.id)
-            .await
-            .unwrap()
-            .unwrap()
-            .catalog_source_id
-            .is_none()
-    );
-}
-
-#[sqlx::test(migrations = "../db/migrations")]
 async fn account_quota_counts_distinct_apps_and_server_quota_serializes_creations(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     plamenu_db::user::create(&pool, alice.id, None, "unused")
@@ -2412,7 +2154,6 @@ async fn account_quota_counts_distinct_apps_and_server_quota_serializes_creation
             session_mb: 2,
             account_mb: 2,
             total_mb: 10,
-            personal_apps: 50,
         },
     )
     .await
@@ -2440,7 +2181,6 @@ async fn account_quota_counts_distinct_apps_and_server_quota_serializes_creation
             session_mb: 2,
             account_mb: 2,
             total_mb: 1,
-            personal_apps: 50,
         },
     )
     .await
@@ -2617,15 +2357,6 @@ async fn shared_storage_migration_preserves_existing_sessions_and_files(pool: Pg
     }
     sqlx::raw_sql(include_str!(
         "../../db/migrations/0070_webxdc_shared_storage.sql"
-    ))
-    .execute(&pool)
-    .await
-    .unwrap();
-    // Install the library layer too: current storage accounting includes
-    // reusable versions as well as sessions, while the assertions below still
-    // prove migration 0070 preserved the legacy package and expanded files.
-    sqlx::raw_sql(include_str!(
-        "../../db/migrations/0077_webxdc_app_library.sql"
     ))
     .execute(&pool)
     .await

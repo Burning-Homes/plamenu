@@ -9,7 +9,6 @@ use hmac::{Hmac, KeyInit, Mac};
 use plamenu_db::account::{self, Account};
 use plamenu_db::webxdc::{self, Membership, Session, Update};
 use plamenu_db::{actor_key, id, job};
-use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -66,8 +65,6 @@ pub enum PackageError {
     ResourceLimit,
     #[error("the Webxdc bundle has no index.html")]
     MissingEntry,
-    #[error("the Webxdc manifest.toml is invalid or exceeds metadata limits")]
-    Manifest,
     #[error("the Webxdc package exceeds the {kind} limit of {limit_mb} MiB")]
     SizeLimit { kind: &'static str, limit_mb: i32 },
 }
@@ -76,17 +73,6 @@ pub enum PackageError {
 pub struct ValidatedPackage {
     pub digest_multibase: String,
     pub files: Vec<(String, String, Vec<u8>)>,
-    pub metadata: PackageMetadata,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct PackageMetadata {
-    pub name: Option<String>,
-    pub source_code_url: Option<String>,
-    /// Widely deployed xdcget extension. Webxdc itself does not currently
-    /// standardize a version field, so callers must treat this as a label.
-    pub version: Option<String>,
-    pub icon_path: Option<String>,
 }
 
 #[derive(Debug)]
@@ -96,17 +82,6 @@ pub struct CreateLocal<'a> {
     pub summary: &'a str,
     pub bundle_name: &'a str,
     pub bundle_bytes: &'a [u8],
-    pub membership_policy: &'a str,
-    pub send_update_interval: i32,
-    pub send_update_max_size: i32,
-}
-
-#[derive(Debug)]
-pub struct CreateLocalFromLibrary<'a> {
-    pub creator: &'a Account,
-    pub name: &'a str,
-    pub summary: &'a str,
-    pub version_id: i64,
     pub membership_policy: &'a str,
     pub send_update_interval: i32,
     pub send_update_max_size: i32,
@@ -188,101 +163,6 @@ fn package_media_type(path: &str) -> &'static str {
     }
 }
 
-#[derive(Deserialize)]
-struct Manifest {
-    name: Option<String>,
-    source_code_url: Option<String>,
-    tag_name: Option<String>,
-}
-
-fn bounded_manifest_text(
-    value: Option<String>,
-    max: usize,
-) -> Result<Option<String>, PackageError> {
-    value
-        .map(|value| {
-            let trimmed = value.trim();
-            if trimmed.is_empty() || trimmed.chars().count() > max {
-                Err(PackageError::Manifest)
-            } else {
-                Ok(trimmed.to_owned())
-            }
-        })
-        .transpose()
-}
-
-fn package_metadata(files: &[(String, String, Vec<u8>)]) -> Result<PackageMetadata, PackageError> {
-    const MAX_MANIFEST_BYTES: usize = 64 * 1024;
-    let manifest = files.iter().find(|(path, _, _)| path == "manifest.toml");
-    let (name, source_code_url, version) = if let Some((_, _, bytes)) = manifest {
-        if bytes.len() > MAX_MANIFEST_BYTES {
-            return Err(PackageError::Manifest);
-        }
-        let text = std::str::from_utf8(bytes).map_err(|_| PackageError::Manifest)?;
-        let parsed: Manifest = toml::from_str(text).map_err(|_| PackageError::Manifest)?;
-        let name = bounded_manifest_text(parsed.name, 120)?;
-        let source_code_url = bounded_manifest_text(parsed.source_code_url, 2048)?;
-        if let Some(source) = source_code_url.as_deref() {
-            let parsed = url::Url::parse(source).map_err(|_| PackageError::Manifest)?;
-            if !matches!(parsed.scheme(), "http" | "https")
-                || parsed.host_str().is_none()
-                || !parsed.username().is_empty()
-                || parsed.password().is_some()
-            {
-                return Err(PackageError::Manifest);
-            }
-        }
-        (
-            name,
-            source_code_url,
-            bounded_manifest_text(parsed.tag_name, 120)?,
-        )
-    } else {
-        (None, None, None)
-    };
-    let icon_path = ["icon.png", "icon.jpg"]
-        .into_iter()
-        .find(|candidate| files.iter().any(|(path, _, _)| path == candidate))
-        .map(str::to_owned);
-    Ok(PackageMetadata {
-        name,
-        source_code_url,
-        version,
-        icon_path,
-    })
-}
-
-#[must_use]
-pub fn package_fallback_name(filename: &str) -> String {
-    let leaf = filename
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(filename)
-        .trim();
-    let stem = leaf
-        .strip_suffix(".xdc")
-        .or_else(|| leaf.strip_suffix(".XDC"))
-        .unwrap_or(leaf)
-        .trim();
-    let fallback = if stem.is_empty() { "Webxdc app" } else { stem };
-    fallback.chars().take(120).collect()
-}
-
-#[must_use]
-pub fn package_filename(filename: &str) -> String {
-    let leaf = filename
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(filename)
-        .trim();
-    let leaf = if leaf.is_empty() {
-        "application.xdc"
-    } else {
-        leaf
-    };
-    leaf.chars().take(255).collect()
-}
-
 /// Verifies and expands one package under strict ZIP-bomb and path controls.
 pub fn validate_package(
     bytes: &[u8],
@@ -362,11 +242,9 @@ pub fn validate_package_with_limits(
     if !has_index {
         return Err(PackageError::MissingEntry);
     }
-    let metadata = package_metadata(&files)?;
     Ok(ValidatedPackage {
         digest_multibase: digest,
         files,
-        metadata,
     })
 }
 
@@ -390,445 +268,6 @@ async fn validate_package_async(
     .await
     .map_err(|error| ApiError::Internal(Box::new(error)))?
     .map_err(|error| ApiError::Unprocessable(error.to_string()))
-}
-
-#[derive(Debug)]
-pub struct LibraryUpload<'a> {
-    pub actor: &'a Account,
-    pub bundle_name: &'a str,
-    pub bundle_bytes: &'a [u8],
-    pub summary: &'a str,
-    pub category: Option<&'a str>,
-}
-
-fn library_text_valid(summary: &str, category: Option<&str>) -> bool {
-    summary.chars().count() <= 2000
-        && category.is_none_or(|value| {
-            let value = value.trim();
-            !value.is_empty() && value.chars().count() <= 80
-        })
-}
-
-fn new_library_version<'a>(
-    package: &'a ValidatedPackage,
-    filename: &'a str,
-    canonical_name: &'a str,
-    bundle_bytes: &'a [u8],
-    source_url: Option<&'a str>,
-) -> webxdc::NewLibraryVersion<'a> {
-    webxdc::NewLibraryVersion {
-        digest_multibase: &package.digest_multibase,
-        version: package.metadata.version.as_deref().unwrap_or_default(),
-        filename,
-        manifest_name: canonical_name,
-        source_code_url: package.metadata.source_code_url.as_deref(),
-        icon_path: package.metadata.icon_path.as_deref(),
-        source_url,
-        bundle_bytes,
-        files: &package.files,
-    }
-}
-
-async fn validate_library_upload(
-    state: &AppState,
-    upload: &LibraryUpload<'_>,
-) -> Result<(ValidatedPackage, String, String), ApiError> {
-    if !library_text_valid(upload.summary, upload.category) {
-        return Err(ApiError::Unprocessable(
-            "Invalid Webxdc library description or category".into(),
-        ));
-    }
-    let limits = webxdc::limits(&state.pool).await?;
-    let package = validate_package_async(upload.bundle_bytes, None, limits).await?;
-    let filename = package_filename(upload.bundle_name);
-    let name = package
-        .metadata
-        .name
-        .clone()
-        .unwrap_or_else(|| package_fallback_name(&filename));
-    Ok((package, filename, name))
-}
-
-pub async fn save_personal_app(
-    state: &AppState,
-    upload: LibraryUpload<'_>,
-) -> Result<webxdc::LibraryApp, ApiError> {
-    if !plamenu_db::role::for_account(&state.pool, upload.actor.id)
-        .await?
-        .is_some_and(|role| role.can(plamenu_db::role::permission::CREATE_WEBXDC))
-    {
-        return Err(ApiError::Forbidden(
-            "Your role cannot save Webxdc apps".into(),
-        ));
-    }
-    let (package, filename, name) = validate_library_upload(state, &upload).await?;
-    webxdc::create_library_app(
-        &state.pool,
-        webxdc::NewLibraryApp {
-            owner_account_id: Some(upload.actor.id),
-            name: &name,
-            summary: upload.summary,
-            category: upload.category.map(str::trim),
-            visibility: "private",
-            source_kind: "upload",
-            source_url: None,
-            catalog_source_id: None,
-            external_app_id: None,
-            promoted_from_app_id: None,
-            created_by_account_id: upload.actor.id,
-            version: new_library_version(&package, &filename, &name, upload.bundle_bytes, None),
-        },
-    )
-    .await
-    .map_err(protocol_db_error)
-}
-
-pub async fn save_instance_app(
-    state: &AppState,
-    upload: LibraryUpload<'_>,
-    visibility: &str,
-) -> Result<webxdc::LibraryApp, ApiError> {
-    if !plamenu_db::role::for_account(&state.pool, upload.actor.id)
-        .await?
-        .is_some_and(|role| role.can(plamenu_db::role::permission::MANAGE_WEBXDC))
-    {
-        return Err(ApiError::Forbidden(
-            "Missing Webxdc management permission".into(),
-        ));
-    }
-    let (package, filename, name) = validate_library_upload(state, &upload).await?;
-    webxdc::create_library_app(
-        &state.pool,
-        webxdc::NewLibraryApp {
-            owner_account_id: None,
-            name: &name,
-            summary: upload.summary,
-            category: upload.category.map(str::trim),
-            visibility,
-            source_kind: "upload",
-            source_url: None,
-            catalog_source_id: None,
-            external_app_id: None,
-            promoted_from_app_id: None,
-            created_by_account_id: upload.actor.id,
-            version: new_library_version(&package, &filename, &name, upload.bundle_bytes, None),
-        },
-    )
-    .await
-    .map_err(protocol_db_error)
-}
-
-pub async fn add_personal_app_version(
-    state: &AppState,
-    app_id: i64,
-    upload: LibraryUpload<'_>,
-) -> Result<webxdc::LibraryApp, ApiError> {
-    let (package, filename, name) = validate_library_upload(state, &upload).await?;
-    let version = new_library_version(&package, &filename, &name, upload.bundle_bytes, None);
-    webxdc::add_library_version(
-        &state.pool,
-        app_id,
-        Some(upload.actor.id),
-        upload.actor.id,
-        version,
-    )
-    .await
-    .map_err(protocol_db_error)
-}
-
-pub async fn add_instance_app_version(
-    state: &AppState,
-    app_id: i64,
-    upload: LibraryUpload<'_>,
-) -> Result<webxdc::LibraryApp, ApiError> {
-    if !plamenu_db::role::for_account(&state.pool, upload.actor.id)
-        .await?
-        .is_some_and(|role| role.can(plamenu_db::role::permission::MANAGE_WEBXDC))
-    {
-        return Err(ApiError::Forbidden(
-            "Missing Webxdc management permission".into(),
-        ));
-    }
-    let (package, filename, name) = validate_library_upload(state, &upload).await?;
-    let version = new_library_version(&package, &filename, &name, upload.bundle_bytes, None);
-    webxdc::add_library_version(&state.pool, app_id, None, upload.actor.id, version)
-        .await
-        .map_err(protocol_db_error)
-}
-
-#[derive(Deserialize)]
-struct XdcgetEntry {
-    app_id: String,
-    #[serde(default)]
-    tag_name: String,
-    url: String,
-    #[serde(default)]
-    date: String,
-    #[serde(default)]
-    description: String,
-    #[serde(default)]
-    source_code_url: String,
-    name: String,
-    #[serde(default)]
-    category: String,
-    #[serde(default)]
-    size: Option<i64>,
-}
-
-fn is_hidden_service_host(host: &str) -> bool {
-    host.rsplit_once('.').is_some_and(|(_, suffix)| {
-        suffix.eq_ignore_ascii_case("onion") || suffix.eq_ignore_ascii_case("i2p")
-    })
-}
-
-pub(crate) fn catalog_url(value: &str) -> Option<String> {
-    let parsed = url::Url::parse(value).ok()?;
-    let host = parsed.host_str()?;
-    let allowed =
-        parsed.scheme() == "https" || (parsed.scheme() == "http" && is_hidden_service_host(host));
-    (allowed
-        && parsed.username().is_empty()
-        && parsed.password().is_none()
-        && parsed.fragment().is_none())
-    .then(|| parsed.to_string())
-}
-
-fn json_content_type(content_type: &str) -> bool {
-    let mime = content_type
-        .split(';')
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_ascii_lowercase();
-    mime == "application/json" || mime.ends_with("+json")
-}
-
-pub async fn refresh_catalog_source(state: &AppState, source_id: i64) -> Result<usize, ApiError> {
-    let result = async {
-        let source = webxdc::catalog_source(&state.pool, source_id)
-            .await?
-            .filter(|source| source.enabled)
-            .ok_or(ApiError::NotFound)?;
-        let fetched = state
-            .federation
-            .fetch_page(&source.feed_url, "application/json")
-            .await
-            .map_err(|error| ApiError::BadGateway(error.to_string()))?;
-        if !json_content_type(&fetched.content_type) {
-            return Err(ApiError::Unprocessable(
-                "The catalog did not return a JSON content type".into(),
-            ));
-        }
-        let entries: Vec<XdcgetEntry> = serde_json::from_str(&fetched.body).map_err(|_| {
-            ApiError::Unprocessable("The catalog JSON is malformed or too large".into())
-        })?;
-        if entries.len() > 2000 {
-            return Err(ApiError::PayloadTooLargeWithMessage(
-                "An external Webxdc catalog may contain at most 2000 apps.".into(),
-            ));
-        }
-        let mut ids = HashSet::with_capacity(entries.len());
-        let mut candidates = Vec::with_capacity(entries.len());
-        for entry in entries {
-            let app_id = entry.app_id.trim();
-            let name = entry.name.trim();
-            let bundle_url = catalog_url(entry.url.trim()).ok_or_else(|| {
-                ApiError::Unprocessable("The catalog contains an unsafe bundle URL".into())
-            })?;
-            if app_id.is_empty()
-                || app_id.chars().count() > 240
-                || !ids.insert(app_id.to_owned())
-                || name.is_empty()
-                || name.chars().count() > 120
-                || entry.tag_name.chars().count() > 120
-                || entry.description.chars().count() > 2000
-                || entry.category.chars().count() > 80
-                || entry.size.is_some_and(|size| size < 0)
-            {
-                return Err(ApiError::Unprocessable(
-                    "The catalog contains invalid or duplicate app metadata".into(),
-                ));
-            }
-            let source_code_url = if entry.source_code_url.trim().is_empty() {
-                None
-            } else {
-                catalog_url(entry.source_code_url.trim())
-            };
-            let published_at = if entry.date.trim().is_empty() {
-                None
-            } else {
-                Some(
-                    OffsetDateTime::parse(entry.date.trim(), &Rfc3339).map_err(|_| {
-                        ApiError::Unprocessable("The catalog contains an invalid date".into())
-                    })?,
-                )
-            };
-            candidates.push(webxdc::NewCatalogCandidate {
-                external_app_id: app_id.to_owned(),
-                version: entry.tag_name.trim().to_owned(),
-                bundle_url,
-                name: name.to_owned(),
-                summary: entry.description.trim().to_owned(),
-                category: (!entry.category.trim().is_empty())
-                    .then(|| entry.category.trim().to_owned()),
-                source_code_url,
-                advertised_size: entry.size,
-                published_at,
-            });
-        }
-        webxdc::replace_catalog_candidates(&state.pool, source_id, &candidates).await?;
-        Ok(candidates.len())
-    }
-    .await;
-    if let Err(error) = &result {
-        let _ =
-            webxdc::record_catalog_source_error(&state.pool, source_id, &error.to_string()).await;
-    }
-    result
-}
-
-fn webxdc_download_content_type(content_type: &str) -> bool {
-    matches!(
-        content_type
-            .split(';')
-            .next()
-            .unwrap_or_default()
-            .trim()
-            .to_ascii_lowercase()
-            .as_str(),
-        MEDIA_TYPE | LEGACY_MEDIA_TYPE | "application/zip" | "application/octet-stream"
-    )
-}
-
-pub async fn import_catalog_candidate(
-    state: &AppState,
-    actor: &Account,
-    source_id: i64,
-    external_app_id: &str,
-) -> Result<webxdc::LibraryApp, ApiError> {
-    if !plamenu_db::role::for_account(&state.pool, actor.id)
-        .await?
-        .is_some_and(|role| role.can(plamenu_db::role::permission::MANAGE_WEBXDC))
-    {
-        return Err(ApiError::Forbidden(
-            "Missing Webxdc management permission".into(),
-        ));
-    }
-    import_catalog_for_owner(state, actor, source_id, external_app_id, None).await
-}
-
-pub async fn import_personal_catalog_candidate(
-    state: &AppState,
-    actor: &Account,
-    source_id: i64,
-    external_app_id: &str,
-) -> Result<webxdc::LibraryApp, ApiError> {
-    if !plamenu_db::role::for_account(&state.pool, actor.id)
-        .await?
-        .is_some_and(|role| role.can(plamenu_db::role::permission::CREATE_WEBXDC))
-    {
-        return Err(ApiError::Forbidden(
-            "Your role cannot save Webxdc apps".into(),
-        ));
-    }
-    import_catalog_for_owner(state, actor, source_id, external_app_id, Some(actor.id)).await
-}
-
-async fn import_catalog_for_owner(
-    state: &AppState,
-    actor: &Account,
-    source_id: i64,
-    external_app_id: &str,
-    owner_account_id: Option<i64>,
-) -> Result<webxdc::LibraryApp, ApiError> {
-    let source = webxdc::catalog_source(&state.pool, source_id)
-        .await?
-        .filter(|source| source.enabled)
-        .ok_or(ApiError::NotFound)?;
-    let candidate = webxdc::catalog_candidate(&state.pool, source_id, external_app_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    let limits = webxdc::limits(&state.pool).await?;
-    let fetched = state
-        .federation
-        .fetch_media_limited(&candidate.bundle_url, limits.bundle_bytes() as u64)
-        .await
-        .map_err(|error| ApiError::BadGateway(error.to_string()))?;
-    if !webxdc_download_content_type(&fetched.content_type) {
-        return Err(ApiError::Unprocessable(
-            "The catalog bundle has an unsupported content type".into(),
-        ));
-    }
-    let package = validate_package_async(&fetched.bytes, None, limits).await?;
-    let filename = url::Url::parse(&fetched.final_url)
-        .ok()
-        .and_then(|url| {
-            url.path_segments()
-                .and_then(Iterator::last)
-                .map(package_filename)
-        })
-        .unwrap_or_else(|| "application.xdc".to_owned());
-    let name = package
-        .metadata
-        .name
-        .clone()
-        .unwrap_or_else(|| package_fallback_name(&filename));
-    let version_label = package
-        .metadata
-        .version
-        .as_deref()
-        .unwrap_or(candidate.version.as_str());
-    let version = webxdc::NewLibraryVersion {
-        digest_multibase: &package.digest_multibase,
-        version: version_label,
-        filename: &filename,
-        manifest_name: &name,
-        source_code_url: package.metadata.source_code_url.as_deref(),
-        icon_path: package.metadata.icon_path.as_deref(),
-        source_url: Some(&fetched.final_url),
-        bundle_bytes: &fetched.bytes,
-        files: &package.files,
-    };
-    if let Some(existing) =
-        webxdc::external_library_app(&state.pool, source_id, external_app_id, owner_account_id)
-            .await?
-    {
-        if existing.digest_multibase == package.digest_multibase {
-            return Ok(existing);
-        }
-        return webxdc::add_library_version(
-            &state.pool,
-            existing.id,
-            owner_account_id,
-            actor.id,
-            version,
-        )
-        .await
-        .map_err(protocol_db_error);
-    }
-    webxdc::create_library_app(
-        &state.pool,
-        webxdc::NewLibraryApp {
-            owner_account_id,
-            name: &name,
-            summary: &candidate.summary,
-            category: candidate.category.as_deref(),
-            visibility: if owner_account_id.is_some() {
-                "private"
-            } else {
-                "hidden"
-            },
-            source_kind: "external",
-            source_url: Some(&source.feed_url),
-            catalog_source_id: Some(source.id),
-            external_app_id: Some(&candidate.external_app_id),
-            promoted_from_app_id: None,
-            created_by_account_id: actor.id,
-            version,
-        },
-    )
-    .await
-    .map_err(protocol_db_error)
 }
 
 fn https_uri(value: &Value, field: &str) -> Result<String, ApiError> {
@@ -979,79 +418,7 @@ fn session_self_addr(state: &AppState, participant_uri: &str, session_uri: &str)
 /// Creates a hosted session with its own signing actor and admits the creator
 /// through the same durable membership state used for remote participants.
 pub async fn create_local(state: &AppState, input: CreateLocal<'_>) -> Result<Session, ApiError> {
-    validate_local_session_input(
-        state,
-        input.creator,
-        input.name,
-        input.summary,
-        input.membership_policy,
-        input.send_update_interval,
-        input.send_update_max_size,
-    )
-    .await?;
-    let limits = webxdc::limits(&state.pool).await?;
-    let package = validate_package_async(input.bundle_bytes, None, limits).await?;
-    create_local_with_package(
-        state,
-        input.creator,
-        input.name,
-        input.summary,
-        input.bundle_name,
-        input.membership_policy,
-        input.send_update_interval,
-        input.send_update_max_size,
-        webxdc::SessionPackage::Upload {
-            digest_multibase: &package.digest_multibase,
-            bundle_bytes: input.bundle_bytes,
-            files: &package.files,
-        },
-    )
-    .await
-}
-
-pub async fn create_local_from_library(
-    state: &AppState,
-    input: CreateLocalFromLibrary<'_>,
-) -> Result<Session, ApiError> {
-    validate_local_session_input(
-        state,
-        input.creator,
-        input.name,
-        input.summary,
-        input.membership_policy,
-        input.send_update_interval,
-        input.send_update_max_size,
-    )
-    .await?;
-    let app = webxdc::usable_version(&state.pool, input.version_id, input.creator.id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    create_local_with_package(
-        state,
-        input.creator,
-        input.name,
-        input.summary,
-        &app.filename,
-        input.membership_policy,
-        input.send_update_interval,
-        input.send_update_max_size,
-        webxdc::SessionPackage::Existing {
-            digest_multibase: &app.digest_multibase,
-        },
-    )
-    .await
-}
-
-async fn validate_local_session_input(
-    state: &AppState,
-    creator: &Account,
-    name: &str,
-    summary: &str,
-    membership_policy: &str,
-    send_update_interval: i32,
-    send_update_max_size: i32,
-) -> Result<(), ApiError> {
-    if !plamenu_db::role::for_account(&state.pool, creator.id)
+    if !plamenu_db::role::for_account(&state.pool, input.creator.id)
         .await?
         .is_some_and(|role| role.can(plamenu_db::role::permission::CREATE_WEBXDC))
     {
@@ -1059,47 +426,33 @@ async fn validate_local_session_input(
             "Your role cannot create Webxdc sessions".into(),
         ));
     }
-    let name = name.trim();
+    let name = input.name.trim();
     if name.is_empty() || name.chars().count() > 120 {
         return Err(ApiError::Unprocessable(
             "A session name of at most 120 characters is required".into(),
         ));
     }
-    if summary.chars().count() > 2000 {
+    if input.summary.chars().count() > 2000 {
         return Err(ApiError::Unprocessable(
             "The session description is too long".into(),
         ));
     }
-    if !matches!(membership_policy, "open" | "approval") {
+    if !matches!(input.membership_policy, "open" | "approval") {
         return Err(ApiError::Unprocessable(
             "Unknown session membership policy".into(),
         ));
     }
-    if send_update_interval < 0 || send_update_max_size <= 0 {
+    if input.send_update_interval < 0 || input.send_update_max_size <= 0 {
         return Err(ApiError::Unprocessable(
             "Invalid durable update limits".into(),
         ));
     }
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn create_local_with_package(
-    state: &AppState,
-    creator: &Account,
-    name: &str,
-    summary: &str,
-    bundle_name: &str,
-    membership_policy: &str,
-    send_update_interval: i32,
-    send_update_max_size: i32,
-    package: webxdc::SessionPackage<'_>,
-) -> Result<Session, ApiError> {
-    let name = name.trim();
+    let limits = webxdc::limits(&state.pool).await?;
+    let package = validate_package_async(input.bundle_bytes, None, limits).await?;
     let session_id = id::next();
     let session_uri = format!("https://{}/webxdc/{session_id}", state.config.domain);
     let bundle_url = format!("{session_uri}/bundle.xdc");
-    let creator_uri = crate::entities::account_uri(&state.config.domain, creator);
+    let creator_uri = crate::entities::account_uri(&state.config.domain, input.creator);
     let self_addr = session_self_addr(state, &creator_uri, &session_uri);
     let rsa = crate::auth::generate_keypair_gated().await?;
     let ed25519 = plamenu_ap::keys::generate_ed25519_keypair();
@@ -1118,20 +471,22 @@ async fn create_local_with_package(
         webxdc::NewLocalSession {
             session_id,
             name,
-            summary: summary.trim(),
+            summary: input.summary.trim(),
             coordinator_uri: &session_uri,
-            creator_account_id: creator.id,
+            creator_account_id: input.creator.id,
             creator_uri: &creator_uri,
             bundle_id: &bundle_url,
             bundle_url: &bundle_url,
-            bundle_name,
+            bundle_name: input.bundle_name,
             bundle_media_type: MEDIA_TYPE,
-            package,
-            send_update_interval,
-            send_update_max_size,
-            membership_policy,
+            digest_multibase: &package.digest_multibase,
+            bundle_bytes: input.bundle_bytes,
+            send_update_interval: input.send_update_interval,
+            send_update_max_size: input.send_update_max_size,
+            membership_policy: input.membership_policy,
             public_key_pem: &rsa.public_pem,
             self_addr: &self_addr,
+            files: &package.files,
         },
     )
     .await

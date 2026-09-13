@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.id\n        FROM accounts a\n        LEFT JOIN users u ON u.account_id = a.id\n        WHERE NOT a.is_internal\n          AND ($1::text IS NULL\n                OR ($1 = 'local'  AND (a.domain IS NULL OR a.portable))\n                OR ($1 = 'remote' AND a.domain IS NOT NULL AND NOT a.portable))\n          AND ($2::text IS NULL\n                OR ($2 = 'active'     AND a.suspended_at IS NULL)\n                OR ($2 = 'pending'    AND u.approved = false)\n                OR ($2 = 'disabled'   AND u.disabled = true)\n                OR ($2 = 'silenced'   AND a.silenced_at IS NOT NULL)\n                OR ($2 = 'suspended'  AND a.suspended_at IS NOT NULL)\n                OR ($2 = 'sensitized' AND a.sensitized_at IS NOT NULL))\n          AND ($3::text IS NULL OR lower(a.domain) = lower($3))\n          AND ($4::text IS NULL OR a.username ILIKE $4)\n          AND ($5::text IS NULL OR a.display_name ILIKE $5)\n          AND ($6::text IS NULL OR u.email ILIKE $6)\n          AND (cardinality($7::bigint[]) = 0 OR u.role_id = ANY($7))\n          AND ($8::bigint IS NULL OR a.id < $8)\n          AND ($9::bigint IS NULL OR a.id > $9)\n          AND ($10::bigint IS NULL OR a.id > $10)\n        ORDER BY a.id * (CASE WHEN $11 THEN 1 ELSE -1 END)\n        LIMIT $12\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int8Array",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7f94ea5122db24f67d0b9ad3def0b18b0d65a5f30b2cc923dc636583cd797559"
+}

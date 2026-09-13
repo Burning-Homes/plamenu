@@ -156,15 +156,6 @@ pub fn router() -> Router<AppState> {
         .route("/bookmarks", get(pages::bookmarks))
         .route("/favourites", get(pages::favourites))
         .route("/webxdc", get(webxdc::index))
-        .route("/webxdc/library", get(webxdc::library))
-        .route(
-            "/webxdc/library/catalog/{id}",
-            get(webxdc::external_catalog),
-        )
-        .route(
-            "/webxdc/library/version/{id}/icon",
-            get(webxdc::library_icon),
-        )
         .route("/webxdc/new", get(webxdc::new_page))
         .route("/webxdc/open", get(webxdc::open_page))
         .route("/webxdc/session/{id}", get(webxdc::remote_landing))
@@ -172,19 +163,6 @@ pub fn router() -> Router<AppState> {
         .route("/webxdc/{id}/updates", get(webxdc::updates))
         .route("/webxdc/{id}/realtime", get(webxdc::realtime))
         .route("/web/webxdc", post(webxdc::create))
-        .route("/web/webxdc/library", post(webxdc::save_library_app))
-        .route(
-            "/web/webxdc/library/catalog/{id}/import",
-            post(webxdc::import_external_catalog_app),
-        )
-        .route(
-            "/web/webxdc/library/{id}/version",
-            post(webxdc::add_library_version),
-        )
-        .route(
-            "/web/webxdc/library/{id}/delete",
-            post(webxdc::delete_library_app),
-        )
         .route("/web/webxdc/open", post(webxdc::open))
         .route("/web/webxdc/{id}/join", post(webxdc::join))
         .route("/web/webxdc/{id}/leave", post(webxdc::leave))

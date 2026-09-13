@@ -30,26 +30,6 @@ impl Target {
         }
     }
 
-    #[must_use]
-    pub fn webxdc_app(app: &plamenu_db::webxdc::LibraryApp) -> Self {
-        Self {
-            kind: "WebxdcApp",
-            id: app.id,
-            human: app.name.clone(),
-            permalink: Some("/admin/webxdc/apps".to_owned()),
-        }
-    }
-
-    #[must_use]
-    pub fn webxdc_catalog(source: &plamenu_db::webxdc::CatalogSource) -> Self {
-        Self {
-            kind: "WebxdcCatalog",
-            id: source.id,
-            human: source.name.clone(),
-            permalink: Some("/admin/webxdc/apps".to_owned()),
-        }
-    }
-
     /// A moderated account (`suspend`, `silence`, `unsuspend`, …).
     #[must_use]
     pub fn account(account: &Account) -> Self {
