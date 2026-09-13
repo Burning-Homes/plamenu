@@ -855,6 +855,78 @@ pub async fn library_icon(
         .into_response())
 }
 
+const CATALOG_ICON_MAX_BYTES: u64 = 512 * 1024;
+
+#[derive(Deserialize)]
+pub struct CatalogIconQuery {
+    source_id: i64,
+    external_app_id: String,
+}
+
+fn catalog_icon_media_type(bytes: &[u8]) -> Option<&'static str> {
+    match image::guess_format(bytes).ok()? {
+        image::ImageFormat::Png => Some("image/png"),
+        image::ImageFormat::Jpeg => Some("image/jpeg"),
+        image::ImageFormat::Gif => Some("image/gif"),
+        image::ImageFormat::WebP => Some("image/webp"),
+        _ => None,
+    }
+}
+
+/// Same-origin, lazy catalog-icon delivery. External discovery metadata never
+/// becomes a direct browser request: the guarded federation client applies
+/// SSRF/redirect/timeout limits, validates a small raster image, then the
+/// candidate row caches it until the next manual catalog refresh.
+pub async fn catalog_icon(
+    State(state): State<AppState>,
+    _user: WebUser,
+    Query(query): Query<CatalogIconQuery>,
+) -> Result<Response, ApiError> {
+    let icon =
+        webxdc::catalog_candidate_icon(&state.pool, query.source_id, query.external_app_id.trim())
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    let icon_url = icon.icon_url.ok_or(ApiError::NotFound)?;
+    let (media_type, bytes) = match (icon.icon_media_type, icon.icon_bytes) {
+        (Some(media_type), Some(bytes)) => (media_type, bytes),
+        _ => {
+            let fetched = state
+                .federation
+                .fetch_media_limited(&icon_url, CATALOG_ICON_MAX_BYTES)
+                .await
+                .map_err(|error| ApiError::BadGateway(error.to_string()))?;
+            let media_type = catalog_icon_media_type(&fetched.bytes)
+                .ok_or_else(|| {
+                    ApiError::Unprocessable(
+                        "The catalog icon is not a supported raster image".into(),
+                    )
+                })?
+                .to_owned();
+            if !webxdc::cache_catalog_candidate_icon(
+                &state.pool,
+                query.source_id,
+                query.external_app_id.trim(),
+                &icon_url,
+                &media_type,
+                &fetched.bytes,
+            )
+            .await?
+            {
+                return Err(ApiError::NotFound);
+            }
+            (media_type, fetched.bytes)
+        }
+    };
+    Ok((
+        [
+            (header::CONTENT_TYPE, media_type),
+            (header::CACHE_CONTROL, "private, max-age=86400".to_owned()),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
 pub async fn external_catalog(
     State(state): State<AppState>,
     user: WebUser,
@@ -881,7 +953,18 @@ pub async fn external_catalog(
                         @let saved = personal.iter().find(|app| app.catalog_source_id == Some(source_id)
                             && app.external_app_id.as_deref() == Some(candidate.external_app_id.as_str()));
                         article.webxdc-library-card {
-                            div.webxdc-library-card__icon { span aria-hidden="true" { (super::view::icon("apps")) } }
+                            div.webxdc-library-card__icon {
+                                @if candidate.icon_url.is_some() {
+                                    @let query = url::form_urlencoded::Serializer::new(String::new())
+                                        .append_pair("source_id", &candidate.source_id.to_string())
+                                        .append_pair("external_app_id", &candidate.external_app_id)
+                                        .finish();
+                                    img src={ "/webxdc/library/catalog-icon?" (query) }
+                                        alt="" width="72" height="72" loading="lazy";
+                                } @else {
+                                    span aria-hidden="true" { (super::view::icon("apps")) }
+                                }
+                            }
                             div.webxdc-library-card__body {
                                 div.webxdc-library-card__head { h2 { (&candidate.name) } @if saved.is_some() { span.webxdc-badge { "Saved" } } }
                                 @if !candidate.summary.is_empty() { p { (&candidate.summary) } }

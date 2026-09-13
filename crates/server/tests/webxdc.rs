@@ -2326,6 +2326,8 @@ async fn external_catalog_is_advisory_guarded_and_imported_hidden(pool: PgPool) 
         "v7",
         "https://code.example/canonical",
     );
+    let icon_url = "https://catalog.example/example-game-icon.png";
+    let icon_bytes = include_bytes!("../src/web/assets/pwa/badge-96.png").to_vec();
     stub.serve_page_as(
         &source.feed_url,
         &source.feed_url,
@@ -2337,6 +2339,7 @@ async fn external_catalog_is_advisory_guarded_and_imported_hidden(pool: PgPool) 
             "date": "2026-09-12T10:00:00Z",
             "description": "Catalog description",
             "source_code_url": "https://code.example/advisory",
+            "icon_relname": "example-game-icon.png",
             "name": "Advisory name",
             "category": "game",
             "size": bytes.len(),
@@ -2348,6 +2351,7 @@ async fn external_catalog_is_advisory_guarded_and_imported_hidden(pool: PgPool) 
         protocol::MEDIA_TYPE,
         bytes,
     );
+    stub.serve_media(icon_url, "image/png", icon_bytes.clone());
 
     assert_eq!(
         protocol::refresh_catalog_source(&state, source.id)
@@ -2355,6 +2359,32 @@ async fn external_catalog_is_advisory_guarded_and_imported_hidden(pool: PgPool) 
             .unwrap(),
         1
     );
+    let candidate = db::catalog_candidate(&pool, source.id, "example-game")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(candidate.icon_url.as_deref(), Some(icon_url));
+
+    let app = build_router(state.clone());
+    let cookie = ephemeral_account_cookie(&pool, &moderator).await;
+    let icon_path = format!(
+        "/webxdc/library/catalog-icon?source_id={}&external_app_id=example-game",
+        source.id
+    );
+    for _ in 0..2 {
+        let response = admin_request(&app, &cookie, &icon_path, None).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            header::HeaderValue::from_static("image/png")
+        );
+        assert_eq!(
+            response.into_body().collect().await.unwrap().to_bytes(),
+            icon_bytes
+        );
+    }
+    assert_eq!(stub.media_fetches(), vec![icon_url]);
+
     let imported =
         protocol::import_catalog_candidate(&state, &moderator, source.id, "example-game")
             .await
@@ -2536,6 +2566,7 @@ async fn admin_app_library_is_compact_searchable_and_identifies_owners(pool: PgP
             summary: "Collaborative notes".into(),
             category: Some("Productivity".into()),
             source_code_url: Some("https://code.example/notes".into()),
+            icon_url: Some("https://catalog.example/notes.png".into()),
             advertised_size: Some(12_345),
             published_at: None,
         }],
@@ -2577,6 +2608,10 @@ async fn admin_app_library_is_compact_searchable_and_identifies_owners(pool: PgP
         instance.version_id
     )));
     assert!(html.contains("Shared Notes"));
+    assert!(html.contains(&format!(
+        "/webxdc/library/catalog-icon?source_id={}&amp;external_app_id=notes",
+        source.id
+    )));
     assert!(html.contains("Collaborative notes"));
     assert!(html.contains("Unreviewed"));
     assert!(html.contains("Remove this catalog source? Imported apps remain"));

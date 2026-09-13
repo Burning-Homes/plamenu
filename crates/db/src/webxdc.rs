@@ -1097,6 +1097,7 @@ pub struct CatalogCandidate {
     pub summary: String,
     pub category: Option<String>,
     pub source_code_url: Option<String>,
+    pub icon_url: Option<String>,
     pub advertised_size: Option<i64>,
     pub published_at: Option<OffsetDateTime>,
     pub seen_at: OffsetDateTime,
@@ -1112,6 +1113,7 @@ pub struct NewCatalogCandidate {
     pub summary: String,
     pub category: Option<String>,
     pub source_code_url: Option<String>,
+    pub icon_url: Option<String>,
     pub advertised_size: Option<i64>,
     pub published_at: Option<OffsetDateTime>,
 }
@@ -1202,7 +1204,7 @@ pub async fn replace_catalog_candidates(
         let mut query = QueryBuilder::<Postgres>::new(
             "INSERT INTO webxdc_catalog_candidates
              (source_id,external_app_id,version,bundle_url,name,summary,category,
-              source_code_url,advertised_size,published_at) ",
+              source_code_url,icon_url,advertised_size,published_at) ",
         );
         query.push_values(candidates, |mut row, candidate| {
             row.push_bind(source_id)
@@ -1213,6 +1215,7 @@ pub async fn replace_catalog_candidates(
                 .push_bind(&candidate.summary)
                 .push_bind(&candidate.category)
                 .push_bind(&candidate.source_code_url)
+                .push_bind(&candidate.icon_url)
                 .push_bind(candidate.advertised_size)
                 .push_bind(candidate.published_at);
         });
@@ -1244,7 +1247,7 @@ pub async fn record_catalog_source_error(
 
 const CATALOG_CANDIDATE_SELECT: &str =
     "SELECT c.source_id,c.external_app_id,c.version,c.bundle_url,c.name,
-            c.summary,c.category,c.source_code_url,c.advertised_size,
+            c.summary,c.category,c.source_code_url,c.icon_url,c.advertised_size,
             c.published_at,c.seen_at,
             (SELECT a.id FROM webxdc_apps a WHERE a.catalog_source_id=c.source_id
                AND a.external_app_id=c.external_app_id
@@ -1280,6 +1283,58 @@ pub async fn catalog_candidate(
             .fetch_optional(pool)
             .await?,
     )
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct CatalogCandidateIcon {
+    pub icon_url: Option<String>,
+    pub icon_media_type: Option<String>,
+    pub icon_bytes: Option<Vec<u8>>,
+}
+
+/// Fetches icon cache data independently from catalog list rows, keeping a
+/// page of candidates cheap even after many icons have been cached.
+pub async fn catalog_candidate_icon(
+    pool: &PgPool,
+    source_id: i64,
+    external_app_id: &str,
+) -> Result<Option<CatalogCandidateIcon>, DbError> {
+    Ok(sqlx::query_as(
+        "SELECT icon_url,icon_media_type,icon_bytes
+         FROM webxdc_catalog_candidates
+         WHERE source_id=$1 AND external_app_id=$2",
+    )
+    .bind(source_id)
+    .bind(external_app_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+/// Stores a lazily fetched catalog icon only if the candidate still points at
+/// the URL that was downloaded. A concurrent feed refresh cannot attach stale
+/// bytes to a replacement entry.
+pub async fn cache_catalog_candidate_icon(
+    pool: &PgPool,
+    source_id: i64,
+    external_app_id: &str,
+    icon_url: &str,
+    media_type: &str,
+    bytes: &[u8],
+) -> Result<bool, DbError> {
+    Ok(sqlx::query(
+        "UPDATE webxdc_catalog_candidates
+         SET icon_media_type=$4,icon_bytes=$5
+         WHERE source_id=$1 AND external_app_id=$2 AND icon_url=$3",
+    )
+    .bind(source_id)
+    .bind(external_app_id)
+    .bind(icon_url)
+    .bind(media_type)
+    .bind(bytes)
+    .execute(pool)
+    .await?
+    .rows_affected()
+        == 1)
 }
 
 async fn reserve_update_storage(

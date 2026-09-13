@@ -138,6 +138,14 @@ fn candidate_filter_text(candidate: &webxdc::CatalogCandidate) -> String {
     )
 }
 
+fn catalog_icon_url(candidate: &webxdc::CatalogCandidate) -> String {
+    let query = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("source_id", &candidate.source_id.to_string())
+        .append_pair("external_app_id", &candidate.external_app_id)
+        .finish();
+    format!("/webxdc/library/catalog-icon?{query}")
+}
+
 fn admin_app_icon(app: &webxdc::LibraryApp) -> Markup {
     html! {
         div.webxdc-admin-record__icon {
@@ -394,7 +402,13 @@ fn catalog_candidates_section(
                     @let state = if candidate.imported_app_id.is_some() { "imported" } else { "available" };
                     article.admin-record.webxdc-admin-record data-library-record data-library-state=(state)
                         data-library-text=(candidate_filter_text(candidate)) {
-                        div.webxdc-admin-record__icon aria-hidden="true" { (crate::web::view::icon("apps")) }
+                        div.webxdc-admin-record__icon {
+                            @if candidate.icon_url.is_some() {
+                                img src=(catalog_icon_url(candidate)) alt="" width="52" height="52" loading="lazy";
+                            } @else {
+                                span aria-hidden="true" { (crate::web::view::icon("apps")) }
+                            }
+                        }
                         div.webxdc-admin-record__body {
                             div.admin-record__head {
                                 h4 { (&candidate.name) }

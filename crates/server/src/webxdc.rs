@@ -568,6 +568,10 @@ struct XdcgetEntry {
     description: String,
     #[serde(default)]
     source_code_url: String,
+    #[serde(default)]
+    icon: Option<String>,
+    #[serde(default)]
+    icon_relname: Option<String>,
     name: String,
     #[serde(default)]
     category: String,
@@ -591,6 +595,15 @@ pub(crate) fn catalog_url(value: &str) -> Option<String> {
         && parsed.password().is_none()
         && parsed.fragment().is_none())
     .then(|| parsed.to_string())
+}
+
+fn catalog_asset_url(base_url: &str, value: Option<&str>) -> Option<String> {
+    let value = value?.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let absolute = url::Url::parse(base_url).ok()?.join(value).ok()?;
+    catalog_url(absolute.as_str())
 }
 
 fn json_content_type(content_type: &str) -> bool {
@@ -654,6 +667,8 @@ pub async fn refresh_catalog_source(state: &AppState, source_id: i64) -> Result<
             } else {
                 catalog_url(entry.source_code_url.trim())
             };
+            let icon_url = catalog_asset_url(&fetched.final_url, entry.icon.as_deref())
+                .or_else(|| catalog_asset_url(&fetched.final_url, entry.icon_relname.as_deref()));
             let published_at = if entry.date.trim().is_empty() {
                 None
             } else {
@@ -672,6 +687,7 @@ pub async fn refresh_catalog_source(state: &AppState, source_id: i64) -> Result<
                 category: (!entry.category.trim().is_empty())
                     .then(|| entry.category.trim().to_owned()),
                 source_code_url,
+                icon_url,
                 advertised_size: entry.size,
                 published_at,
             });
