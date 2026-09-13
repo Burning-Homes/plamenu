@@ -5051,6 +5051,7 @@ img.reaction__emoji {
   border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-2);
   cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease;
 }
+.webxdc-app-choice[hidden] { display: none; }
 .webxdc-app-choice:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 .webxdc-app-choice:has(input:checked) {
   border-color: var(--accent); background: var(--accent-soft);
