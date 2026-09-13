@@ -6705,9 +6705,36 @@ a.settings-button--plain {
 }
 
 .webxdc-admin-source {
-  gap: var(--space-2);
+  grid-template-columns: 2.75rem minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-3);
   padding: var(--space-3);
   margin: 0;
+
+  & .webxdc-admin-record__actions {
+    margin-block-start: var(--space-1);
+  }
+}
+
+.webxdc-admin-source__icon {
+  display: grid;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  place-items: center;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-muted);
+
+  & svg {
+    inline-size: 1.35rem;
+    block-size: 1.35rem;
+  }
+}
+
+.webxdc-admin-source__body {
+  display: grid;
+  min-inline-size: 0;
+  gap: var(--space-1);
 
   & h4 {
     margin: 0;
@@ -6715,18 +6742,8 @@ a.settings-button--plain {
   }
 }
 
-.webxdc-admin-source__remove {
-  position: relative;
-
-  & > summary {
-    padding: 0.45rem var(--space-2);
-    color: var(--text-muted);
-    font-size: var(--text-sm);
-  }
-
-  & form {
-    margin-block-start: var(--space-2);
-  }
+.webxdc-admin-remove {
+  color: var(--danger);
 }
 
 .webxdc-admin-add {

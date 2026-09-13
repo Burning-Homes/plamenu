@@ -327,26 +327,28 @@ fn catalog_sources_section(
             div.webxdc-admin-sources {
                 @for source in sources {
                     article.admin-record.webxdc-admin-source {
-                        div.admin-record__head {
-                            div { h4 { (&source.name) } p.webxdc-admin-record__meta title=(&source.feed_url) { (&source.feed_url) } }
-                            @if selected_source == Some(source.id) { span.webxdc-badge { "Viewing" } }
-                        }
-                        p.webxdc-admin-record__meta {
-                            @if let Some(at) = source.last_fetched_at { "Refreshed " (admin.clock().element(at)) }
-                            @else { "Not refreshed yet" }
-                        }
-                        @if let Some(error) = &source.last_error { p.webxdc-admin-error { (error) } }
-                        div.webxdc-admin-record__actions {
-                            @if selected_source != Some(source.id) { a.pill-button href={ "/admin/webxdc/apps?source=" (source.id) "#catalog-apps" } { "Browse apps" } }
-                            form method="post" action={ "/web/admin/webxdc/catalog-sources/" (source.id) "/refresh" } {
-                                input type="hidden" name="csrf" value=(csrf);
-                                button.settings-button--plain type="submit" { "Refresh" }
+                        div.webxdc-admin-source__icon aria-hidden="true" { (crate::web::view::icon("link")) }
+                        div.webxdc-admin-source__body {
+                            div.admin-record__head {
+                                h4 { (&source.name) }
+                                @if selected_source == Some(source.id) { span.webxdc-badge { "Viewing" } }
                             }
-                            details.webxdc-admin-source__remove {
-                                summary { "More" }
-                                form method="post" action={ "/web/admin/webxdc/catalog-sources/" (source.id) "/delete" } {
+                            p.webxdc-admin-record__meta title=(&source.feed_url) { (&source.feed_url) }
+                            p.webxdc-admin-record__meta {
+                                @if let Some(at) = source.last_fetched_at { "Refreshed " (admin.clock().element(at)) }
+                                @else { "Not refreshed yet" }
+                            }
+                            @if let Some(error) = &source.last_error { p.webxdc-admin-error { (error) } }
+                            div.webxdc-admin-record__actions {
+                                @if selected_source != Some(source.id) { a.pill-button href={ "/admin/webxdc/apps?source=" (source.id) "#catalog-apps" } { "Browse apps" } }
+                                form method="post" action={ "/web/admin/webxdc/catalog-sources/" (source.id) "/refresh" } {
                                     input type="hidden" name="csrf" value=(csrf);
-                                    button.settings-button--plain type="submit" { "Remove source" }
+                                    button.settings-button--plain type="submit" { "Refresh" }
+                                }
+                                form method="post" action={ "/web/admin/webxdc/catalog-sources/" (source.id) "/delete" }
+                                    data-confirm="Remove this catalog source? Imported apps remain in the instance library." {
+                                    input type="hidden" name="csrf" value=(csrf);
+                                    button.settings-button--plain.webxdc-admin-remove type="submit" { "Remove source" }
                                 }
                             }
                         }

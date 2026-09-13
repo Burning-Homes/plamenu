@@ -2579,6 +2579,8 @@ async fn admin_app_library_is_compact_searchable_and_identifies_owners(pool: PgP
     assert!(html.contains("Shared Notes"));
     assert!(html.contains("Collaborative notes"));
     assert!(html.contains("Unreviewed"));
+    assert!(html.contains("Remove this catalog source? Imported apps remain"));
+    assert!(!html.contains(">More</summary>"));
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
