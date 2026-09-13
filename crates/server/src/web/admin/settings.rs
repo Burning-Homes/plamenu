@@ -422,6 +422,12 @@ fn webxdc_fields(limits: plamenu_db::webxdc::Limits) -> Markup {
         p.settings-field__hint { "Sizes are in MiB. Package limits apply to uploads and apps fetched from other servers. Changes apply to new uploads, fetches and updates; existing apps remain available." }
         p { a href="/admin/webxdc" { "Manage sessions and storage →" } }
         div.admin-form__grid {
+            label {
+                "Personal apps per member"
+                input type="number" name="webxdc_personal_apps" min="0" max="10000"
+                    step="1" value=(limits.personal_apps) required;
+                span.settings-field__hint { "0 disables saving apps to personal libraries. One-off session uploads remain available." }
+            }
             @for (name, label, value, max) in [
                 ("webxdc_bundle_mb", "Package upload", limits.bundle_mb, 512),
                 ("webxdc_expanded_mb", "Expanded package", limits.expanded_mb, 1024),
@@ -433,7 +439,7 @@ fn webxdc_fields(limits: plamenu_db::webxdc::Limits) -> Markup {
                 label { (label) input type="number" name=(name) min="1" max=(max) step="1" value=(value) required; }
             }
         }
-        p.settings-field__hint { "Session storage counts the original package, expanded files and durable updates. Allow at least the package and expanded limits combined. Account storage must cover at least one session. Identical packages count once per account and once across the server; durable updates count separately per session. Deleting the last session using a package releases its bytes." }
+        p.settings-field__hint { "Session storage counts the original package, expanded files and durable updates. Allow at least the package and expanded limits combined. Account storage must cover at least one session. Identical packages count once per account and once across the server; durable updates count separately per session. A package is released only after its last session and saved app version are removed." }
     }
 }
 
@@ -1442,6 +1448,8 @@ pub struct SettingsForm {
     webxdc_account_mb: String,
     #[serde(default)]
     webxdc_total_mb: String,
+    #[serde(default)]
+    webxdc_personal_apps: String,
 
     #[serde(default)]
     custom_emoji_max_file_size_kb: String,
@@ -1845,6 +1853,7 @@ pub async fn save(
             session_mb: form.webxdc_session_mb.parse().unwrap_or(0),
             account_mb: form.webxdc_account_mb.parse().unwrap_or(0),
             total_mb: form.webxdc_total_mb.parse().unwrap_or(0),
+            personal_apps: form.webxdc_personal_apps.parse().unwrap_or(0),
         };
         if !limits.valid() {
             return Ok(redirect_section("error", section));

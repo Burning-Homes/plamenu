@@ -39,6 +39,7 @@
 - [Lemmy API (experimental)](LEMMY_API_COMPATIBILITY.md)
 - [ActivityPub protocol and extensions](federation/protocol.md)
   - [Webxdc FEP draft](fep/fep-752d.md)
+  - [Webxdc app libraries and catalogs](WEBXDC-LIBRARY.md)
 - [Interoperability testing](INTEROPERABILITY.md)
 
 # Contribute and maintain

@@ -1338,6 +1338,15 @@ pub fn router(state: AppState) -> Router {
         .route("/inbox", post(inbox::shared_inbox))
         .route("/actor/inbox", post(inbox::shared_inbox))
         .route("/actor/outbox", get(crate::instance_actor::get_outbox))
+        .route("/webxdc/catalog.json", get(webxdc::catalog))
+        .route(
+            "/webxdc/catalog/version/{id}/bundle.xdc",
+            get(webxdc::catalog_bundle),
+        )
+        .route(
+            "/webxdc/catalog/version/{id}/icon",
+            get(webxdc::catalog_icon),
+        )
         .route("/webxdc/{id}", get(webxdc::session))
         .route("/webxdc/{id}/bundle.xdc", get(webxdc::bundle))
         .route("/webxdc/{id}/outbox", get(webxdc::outbox))
