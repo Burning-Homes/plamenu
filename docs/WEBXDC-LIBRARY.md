@@ -47,10 +47,12 @@ being copied into the social-site media store. See the upstream
 
 ## External catalogs
 
-External catalogs are disabled until a moderator explicitly adds a source.
-Plamenu currently provides an `xdcget-v1` adapter for the JSON shape consumed by
-webxdc.org. Refresh is manual and bounded to 2,000 entries. It caches advisory
-metadata only; browsing a feed does not download or execute packages.
+Plamenu installs the `Webxdc Apps` source at
+`https://apps.testrun.org/xdcget-lock.json` by default. A moderator may remove
+it or add other sources. Plamenu currently provides an `xdcget-v1` adapter for
+the JSON shape consumed by webxdc.org. Refresh is manual and bounded to 2,000
+entries. It caches advisory metadata only; browsing a feed does not download or
+execute packages.
 
 Signed-in members may browse sources that a moderator has configured and
 refreshed, then validate and save an entry to their personal library. Moderators

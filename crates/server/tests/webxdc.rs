@@ -2690,6 +2690,12 @@ async fn admin_app_library_is_compact_searchable_and_identifies_owners(pool: PgP
     plamenu_db::role::assign_to_account(&pool, alice.id, Some(3))
         .await
         .unwrap();
+    let default_sources = db::catalog_sources(&pool).await.unwrap();
+    assert!(default_sources.iter().any(|source| {
+        source.name == "Webxdc Apps"
+            && source.feed_url == "https://apps.testrun.org/xdcget-lock.json"
+            && source.enabled
+    }));
     let state = test_state_with(pool.clone(), Arc::<StubFederation>::default());
     let bytes = library_package("Shared Chess", "v2.4.0", "https://code.example/chess");
     let personal = protocol::save_personal_app(
