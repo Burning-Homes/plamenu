@@ -3302,7 +3302,7 @@ pub async fn ancestors(pool: &PgPool, status_id: i64) -> Result<Vec<Status>, DbE
 /// Descendants of a status (replies below it) in depth-first tree order —
 /// each reply directly followed by its own replies, branches in id order.
 /// This is Mastodon's context shape (its recursive CTE `ORDER BY path`);
-/// callers replicating Mastodon then hoist self-replies via
+/// callers replicating Mastodon then hoist the root author's continuations via
 /// [`promote_self_replies`].
 pub async fn descendants(pool: &PgPool, status_id: i64) -> Result<Vec<Status>, DbError> {
     let statuses = sqlx::query_as!(
@@ -3421,55 +3421,94 @@ async fn thread_flat_by_tree(pool: &PgPool, status_id: i64) -> Result<Vec<Status
     Ok(statuses)
 }
 
-/// Which members of `descendants` are self-replies (author replying to their
-/// own post) — Mastodon's promotion predicate (`in_reply_to_account_id ==
-/// account_id`). Every parent is the focal status or another descendant, so
-/// the full (unfiltered) descendant list resolves all parents. Compute this
-/// before visibility filtering, then promote the filtered list.
+/// Which members of `descendants` continue the thread root author's own
+/// uninterrupted chain.
+///
+/// Mastodon represents that distinction through carried-over semantics on
+/// `in_reply_to_account_id`: when somebody replies to their own reply to a
+/// different author, the different author's id is retained. Plamenu's column
+/// deliberately identifies the direct parent's author instead, so reproduce
+/// the carried-over predicate from the tree itself. A descendant qualifies
+/// only when it has the root's author and its parent already belongs to the
+/// root's continuation. This keeps a participant's nested self-reply in its
+/// branch rather than promoting it as though the participant wrote the root.
+///
+/// `ancestors` must be root-first and `descendants` parent-before-child, the
+/// orders returned by [`ancestors`] and [`descendants`]. If the oldest loaded
+/// ancestor still has a parent, the depth limit hid the real root; fail closed
+/// rather than promoting against a guessed root. Compute this over the
+/// unfiltered tree, then promote the filtered descendant list.
 #[must_use]
-pub fn self_reply_ids(
-    focal_id: i64,
-    focal_account_id: i64,
+pub fn root_self_reply_ids(
+    ancestors: &[Status],
+    focal: &Status,
     descendants: &[Status],
 ) -> HashSet<i64> {
-    let mut authors: HashMap<i64, i64> = HashMap::with_capacity(descendants.len() + 1);
-    authors.insert(focal_id, focal_account_id);
-    for status in descendants {
-        authors.insert(status.id, status.account_id);
+    let root = ancestors.first().unwrap_or(focal);
+    if root.in_reply_to_id.is_some() {
+        return HashSet::new();
     }
-    descendants
-        .iter()
-        .filter(|status| {
-            status
+
+    let root_account_id = root.account_id;
+    let capacity = ancestors
+        .len()
+        .saturating_add(descendants.len())
+        .saturating_add(1);
+    let mut continuation = HashSet::with_capacity(capacity);
+    continuation.insert(root.id);
+
+    for status in ancestors.iter().skip(1).chain(std::iter::once(focal)) {
+        if status.account_id == root_account_id
+            && status
                 .in_reply_to_id
-                .is_some_and(|parent| authors.get(&parent) == Some(&status.account_id))
-        })
-        .map(|status| status.id)
-        .collect()
+                .is_some_and(|parent| continuation.contains(&parent))
+        {
+            continuation.insert(status.id);
+        }
+    }
+
+    let mut promoted = HashSet::new();
+    for status in descendants {
+        if status.account_id == root_account_id
+            && status
+                .in_reply_to_id
+                .is_some_and(|parent| continuation.contains(&parent))
+        {
+            continuation.insert(status.id);
+            promoted.insert(status.id);
+        }
+    }
+    promoted
 }
 
-/// Bring self-replies to the top of a descendant list, preserving relative
-/// order on both sides of the split — a faithful port of Mastodon's
+/// Bring root-author self-replies to the top of a descendant list, preserving
+/// relative order on both sides of the split. A two-bucket stable partition
+/// avoids the quadratic repeated `Vec::remove`/`Vec::insert` form of Mastodon's
 /// `promote_by!` (`Status::ThreadingConcern`).
 pub fn promote_self_replies<S: std::hash::BuildHasher>(
     statuses: &mut Vec<Status>,
     self_replies: &HashSet<i64, S>,
 ) {
-    let Some(mut insert_at) = statuses
+    let promoted_len = statuses
         .iter()
-        .position(|status| !self_replies.contains(&status.id))
-    else {
+        .filter(|status| self_replies.contains(&status.id))
+        .count();
+    if promoted_len == 0 || promoted_len == statuses.len() {
         return;
-    };
-    let mut index = insert_at + 1;
-    while index < statuses.len() {
-        if self_replies.contains(&statuses[index].id) {
-            let status = statuses.remove(index);
-            statuses.insert(insert_at, status);
-            insert_at += 1;
-        }
-        index += 1;
     }
+
+    let original = std::mem::take(statuses);
+    let mut promoted = Vec::with_capacity(promoted_len);
+    let mut remaining = Vec::with_capacity(original.len() - promoted_len);
+    for status in original {
+        if self_replies.contains(&status.id) {
+            promoted.push(status);
+        } else {
+            remaining.push(status);
+        }
+    }
+    promoted.append(&mut remaining);
+    *statuses = promoted;
 }
 
 /// Reply/boost/favourite/quote/dislike counters for a batch of statuses.
@@ -4288,9 +4327,21 @@ mod tests {
         )
         .await
         .unwrap();
+        let r1b = create_local(
+            &pool,
+            NewLocalStatus::new(bob, "<p>r1b</p>", "public", Some(r1.id)),
+        )
+        .await
+        .unwrap();
         let r2 = create_local(
             &pool,
             NewLocalStatus::new(alice, "<p>r2</p>", "public", Some(root.id)),
+        )
+        .await
+        .unwrap();
+        let r2a = create_local(
+            &pool,
+            NewLocalStatus::new(alice, "<p>r2a</p>", "public", Some(r2.id)),
         )
         .await
         .unwrap();
@@ -4306,26 +4357,33 @@ mod tests {
         let down = descendants(&pool, root.id).await.unwrap();
         assert_eq!(
             down.iter().map(|s| s.id).collect::<Vec<_>>(),
-            [r1.id, r1a.id, r2.id]
+            [r1.id, r1b.id, r1a.id, r2.id, r2a.id]
         );
 
-        // Mastodon's promotion: only r2 replies to its own author (alice →
-        // alice); r1 answers alice as bob, r1a answers bob as alice.
-        let self_replies = self_reply_ids(root.id, alice, &down);
-        assert_eq!(self_replies, HashSet::from([r2.id]));
+        // Mastodon's promotion intent: r2 continues the root author. Although
+        // r1b answers another bob post, that participant self-reply remains in
+        // its branch because the branch did not originate at bob's own root.
+        let self_replies = root_self_reply_ids(&[], &root, &down);
+        assert_eq!(self_replies, HashSet::from([r2.id, r2a.id]));
         let mut promoted = down.clone();
         promote_self_replies(&mut promoted, &self_replies);
         assert_eq!(
             promoted.iter().map(|s| s.id).collect::<Vec<_>>(),
-            [r2.id, r1.id, r1a.id]
+            [r2.id, r2a.id, r1.id, r1b.id, r1a.id]
         );
+
+        // Opening the participant's branch still resolves alice's actual root;
+        // the focal post does not become a synthetic root for promotion.
+        let up = ancestors(&pool, r1.id).await.unwrap();
+        let branch = descendants(&pool, r1.id).await.unwrap();
+        assert!(root_self_reply_ids(&up, &r1, &branch).is_empty());
 
         // Flat from the root: everything below in arrival order, unsplit.
         let (up, down) = thread_flat(&pool, root.id).await.unwrap();
         assert!(up.is_empty());
         assert_eq!(
             down.iter().map(|s| s.id).collect::<Vec<_>>(),
-            [r1.id, r2.id, r1a.id]
+            [r1.id, r1b.id, r2.id, r2a.id, r1a.id]
         );
 
         // Flat from a leaf: ancestors are the whole older conversation —
@@ -4333,7 +4391,7 @@ mod tests {
         let (up, down) = thread_flat(&pool, r1a.id).await.unwrap();
         assert_eq!(
             up.iter().map(|s| s.id).collect::<Vec<_>>(),
-            [root.id, r1.id, r2.id]
+            [root.id, r1.id, r1b.id, r2.id, r2a.id]
         );
         assert!(down.is_empty());
     }

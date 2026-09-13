@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep nested participant replies in their branch when displaying threaded
+  conversations, while still promoting the root author's self-thread.
 - Add searchable pending-account registration context and safe bulk rejection
   across every filtered result page.
 - Include the referenced event card in RSVP and other event notifications.

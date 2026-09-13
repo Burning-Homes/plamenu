@@ -3876,12 +3876,12 @@ pub(crate) async fn thread_view(
         ),
         user::ThreadOrder::Flat => status::thread_flat(&state.pool, status_id).await?,
     };
-    // Same shaping as the API: self-reply promotion is computed on the
-    // unfiltered tree, then applied after visibility filtering; flat mode
-    // (Pleroma) never reorders.
+    // Same shaping as the API: root-author continuation promotion is computed
+    // on the unfiltered tree, then applied after visibility filtering; flat
+    // mode (Pleroma) never reorders.
     let self_replies = match thread_order {
         user::ThreadOrder::Tree => {
-            status::self_reply_ids(status_id, focus.account_id, &raw_descendants)
+            status::root_self_reply_ids(&raw_ancestors, &focus, &raw_descendants)
         }
         user::ThreadOrder::Flat => std::collections::HashSet::new(),
     };

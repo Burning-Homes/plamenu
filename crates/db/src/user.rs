@@ -174,9 +174,9 @@ impl TimelineOrder {
 
 /// Stored reply/thread ordering preference. `Tree` is what Mastodon serves
 /// from `/context`: ancestors are the direct reply chain, descendants come in
-/// depth-first tree order with self-replies promoted to the front. `Flat` is
-/// Pleroma's shape: the whole conversation in arrival order, split at the
-/// focal post into ancestors and descendants.
+/// depth-first tree order with the root author's uninterrupted self-replies
+/// promoted to the front. `Flat` is Pleroma's shape: the whole conversation in
+/// arrival order, split at the focal post into ancestors and descendants.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ThreadOrder {
     #[default]

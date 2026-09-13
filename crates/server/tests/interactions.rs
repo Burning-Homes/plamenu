@@ -507,7 +507,7 @@ async fn context_open_chases_a_history_orphan_parent(pool: PgPool) {
 
 /// The thread-order preference reshapes `/context` for every client of that
 /// user: `tree` (default) serves Mastodon's shape — chain ancestors,
-/// depth-first descendants with the author's self-replies promoted — while
+/// depth-first descendants with the root author's self-thread promoted — while
 /// `flat` serves Pleroma's — the whole conversation in arrival order split at
 /// the focal post, sibling branches included above it.
 #[sqlx::test(migrations = "../db/migrations")]
@@ -522,17 +522,28 @@ async fn thread_order_setting_reshapes_context(pool: PgPool) {
         assert_eq!(code, StatusCode::OK, "{status:?}");
         status["id"].as_str().unwrap().to_owned()
     };
-    // alice: root — bob: r1 — alice: r2 (self-reply, posted after r1) —
-    // carol: r1a (deep in bob's branch).
+    // alice: root — bob: r1 — bob: r1b (a participant's nested self-reply) —
+    // alice: r2 — alice: r2a (the root author's self-thread) — carol: r1a
+    // (deep in bob's branch). Only r2 and r2a may be promoted.
     let root = post(alice_token.clone(), json!({"status": "root"})).await;
     let r1 = post(
         bob_token.clone(),
         json!({"status": "r1", "in_reply_to_id": root}),
     )
     .await;
+    let r1b = post(
+        bob_token.clone(),
+        json!({"status": "r1b", "in_reply_to_id": r1}),
+    )
+    .await;
     let r2 = post(
         alice_token.clone(),
         json!({"status": "r2", "in_reply_to_id": root}),
+    )
+    .await;
+    let r2a = post(
+        alice_token.clone(),
+        json!({"status": "r2a", "in_reply_to_id": r2}),
     )
     .await;
     let r1a = post(
@@ -550,8 +561,8 @@ async fn thread_order_setting_reshapes_context(pool: PgPool) {
             .collect()
     };
 
-    // Tree (default): depth-first (r1 before its child r1a, sibling r2 after
-    // the branch) and then alice's self-reply r2 promoted to the top.
+    // Tree (default): alice's continuation r2 is promoted, while bob's nested
+    // self-reply r1b stays directly after its parent inside bob's branch.
     let (_, context) = api(
         app(),
         "GET",
@@ -562,7 +573,13 @@ async fn thread_order_setting_reshapes_context(pool: PgPool) {
     .await;
     assert_eq!(
         ids(&context["descendants"]),
-        [r2.as_str(), r1.as_str(), r1a.as_str()]
+        [
+            r2.as_str(),
+            r2a.as_str(),
+            r1.as_str(),
+            r1b.as_str(),
+            r1a.as_str()
+        ]
     );
 
     // Tree ancestors: just the reply chain, root first.
@@ -602,7 +619,13 @@ async fn thread_order_setting_reshapes_context(pool: PgPool) {
     .await;
     assert_eq!(
         ids(&context["descendants"]),
-        [r1.as_str(), r2.as_str(), r1a.as_str()]
+        [
+            r1.as_str(),
+            r1b.as_str(),
+            r2.as_str(),
+            r2a.as_str(),
+            r1a.as_str()
+        ]
     );
 
     // Flat ancestors: everything older in the conversation — including the
@@ -618,7 +641,13 @@ async fn thread_order_setting_reshapes_context(pool: PgPool) {
     .await;
     assert_eq!(
         ids(&context["ancestors"]),
-        [root.as_str(), r1.as_str(), r2.as_str()]
+        [
+            root.as_str(),
+            r1.as_str(),
+            r1b.as_str(),
+            r2.as_str(),
+            r2a.as_str()
+        ]
     );
     assert!(context["descendants"].as_array().unwrap().is_empty());
 
@@ -633,7 +662,13 @@ async fn thread_order_setting_reshapes_context(pool: PgPool) {
     .await;
     assert_eq!(
         ids(&context["descendants"]),
-        [r2.as_str(), r1.as_str(), r1a.as_str()]
+        [
+            r2.as_str(),
+            r2a.as_str(),
+            r1.as_str(),
+            r1b.as_str(),
+            r1a.as_str()
+        ]
     );
 }
 

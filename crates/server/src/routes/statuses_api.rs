@@ -848,8 +848,9 @@ pub async fn show(
 
 /// `GET /api/v1/statuses/{id}/context` — ancestors and descendants, shaped by
 /// the viewer's thread-order preference: `tree` (Mastodon's chain + depth-first
-/// replies with self-replies promoted) or `flat` (Pleroma's whole conversation
-/// in arrival order, split at this status). Anonymous viewers get `tree`.
+/// replies with the root author's self-thread promoted) or `flat` (Pleroma's
+/// whole conversation in arrival order, split at this status). Anonymous
+/// viewers get `tree`.
 pub async fn context(
     State(state): State<AppState>,
     MaybeUser(viewer): MaybeUser,
@@ -885,13 +886,11 @@ pub async fn context(
         ),
         user::ThreadOrder::Flat => status::thread_flat(&state.pool, status_id).await?,
     };
-    // Mastodon promotes self-replies over the unfiltered tree (its predicate
-    // reads a denormalized parent-author column), so compute the set before
-    // visibility filtering. Flat mode (Pleroma) never reorders.
+    // Promote the root author's uninterrupted continuation over the unfiltered
+    // tree, then apply it after visibility filtering. Flat mode (Pleroma)
+    // never reorders.
     let self_replies = match thread_order {
-        user::ThreadOrder::Tree => {
-            status::self_reply_ids(status_id, stored.account_id, &descendants)
-        }
+        user::ThreadOrder::Tree => status::root_self_reply_ids(&ancestors, &stored, &descendants),
         user::ThreadOrder::Flat => HashSet::new(),
     };
     // Drop thread members the viewer is not allowed to see, plus authors
