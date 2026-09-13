@@ -39,6 +39,15 @@ fn package() -> Vec<u8> {
 }
 
 fn library_package(name: &str, version: &str, source: &str) -> Vec<u8> {
+    library_package_with_description(name, version, source, None)
+}
+
+fn library_package_with_description(
+    name: &str,
+    version: &str,
+    source: &str,
+    description: Option<&str>,
+) -> Vec<u8> {
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
     writer
         .start_file("index.html", SimpleFileOptions::default())
@@ -54,11 +63,112 @@ fn library_package(name: &str, version: &str, source: &str) -> Vec<u8> {
         "name = {name:?}\nsource_code_url = {source:?}\ntag_name = {version:?}\n"
     )
     .unwrap();
+    if let Some(description) = description {
+        writeln!(writer, "description = {description:?}").unwrap();
+    }
     writer
         .start_file("icon.png", SimpleFileOptions::default())
         .unwrap();
     writer.write_all(b"not-decoded-by-library").unwrap();
     writer.finish().unwrap().into_inner()
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn session_creation_unifies_app_choice_metadata_and_standard_defaults(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    plamenu_db::user::create(&pool, alice.id, None, "unused")
+        .await
+        .unwrap();
+    let state = test_state_with(pool.clone(), Arc::<StubFederation>::default());
+    let bytes = library_package_with_description(
+        "Shared Notes",
+        "v1.2.3",
+        "https://code.example/apps/notes",
+        Some("Write together from the package"),
+    );
+    let personal = protocol::save_personal_app(
+        &state,
+        protocol::LibraryUpload {
+            actor: &alice,
+            bundle_name: "shared-notes.xdc",
+            bundle_bytes: &bytes,
+            summary: "Plan the next release together",
+            category: Some("Productivity"),
+        },
+    )
+    .await
+    .unwrap();
+    let cookie = ephemeral_account_cookie(&pool, &alice).await;
+    let app = build_router(state.clone());
+    let page = admin_request(
+        &app,
+        &cookie,
+        &format!("/webxdc/new?version={}", personal.version_id),
+        None,
+    )
+    .await;
+    assert_eq!(page.status(), StatusCode::OK);
+    let html = String::from_utf8(
+        page.into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(html.contains("data-webxdc-create"));
+    assert!(html.contains("data-webxdc-app-browser"));
+    assert!(html.contains("Search available apps"));
+    assert!(html.contains("data-webxdc-app-choice"));
+    assert!(html.contains("data-webxdc-upload-choice"));
+    assert!(html.contains(&format!(
+        "/webxdc/library/version/{}/icon",
+        personal.version_id
+    )));
+    assert!(html.contains("value=\"Shared Notes\""));
+    assert!(html.contains("Plan the next release together"));
+    assert!(!html.contains("<select name=\"version_id\""));
+    assert!(html.contains("Who can join"));
+    assert!(html.contains("value=\"10000\""));
+    assert!(html.contains("value=\"128000\""));
+    assert!(html.contains("allowed range 0–86,400,000"));
+    assert!(html.contains("allowed range 256–1,048,576"));
+
+    let uploaded = protocol::create_local(
+        &state,
+        protocol::CreateLocal {
+            creator: &alice,
+            name: None,
+            summary: None,
+            bundle_name: "downloaded-notes.xdc",
+            bundle_bytes: &bytes,
+            membership_policy: "open",
+            send_update_interval: protocol::DEFAULT_SEND_UPDATE_INTERVAL,
+            send_update_max_size: protocol::DEFAULT_SEND_UPDATE_MAX_SIZE,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(uploaded.name, "Shared Notes");
+    assert_eq!(uploaded.summary, "Write together from the package");
+
+    let reused = protocol::create_local_from_library(
+        &state,
+        protocol::CreateLocalFromLibrary {
+            creator: &alice,
+            name: None,
+            summary: None,
+            version_id: personal.version_id,
+            membership_policy: "open",
+            send_update_interval: protocol::DEFAULT_SEND_UPDATE_INTERVAL,
+            send_update_max_size: protocol::DEFAULT_SEND_UPDATE_MAX_SIZE,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(reused.name, "Shared Notes");
+    assert_eq!(reused.summary, "Plan the next release together");
 }
 
 async fn local_session(
@@ -74,8 +184,8 @@ async fn local_session(
         &state,
         protocol::CreateLocal {
             creator: &alice,
-            name: "Chess",
-            summary: "A durable test game",
+            name: Some("Chess"),
+            summary: Some("A durable test game"),
             bundle_name: "chess.xdc",
             bundle_bytes: &bytes,
             membership_policy: "open",
@@ -574,8 +684,8 @@ async fn signed_inbox_requires_the_marker_sequences_once_and_honors_undo(pool: P
         &state,
         protocol::CreateLocal {
             creator: &alice,
-            name: "Inbox game",
-            summary: "signed protocol traffic",
+            name: Some("Inbox game"),
+            summary: Some("signed protocol traffic"),
             bundle_name: "inbox.xdc",
             bundle_bytes: &bytes,
             membership_policy: "open",
@@ -2082,8 +2192,8 @@ async fn create_with_package(
         state,
         protocol::CreateLocal {
             creator,
-            name: "Storage test",
-            summary: "",
+            name: Some("Storage test"),
+            summary: Some(""),
             bundle_name: "test.xdc",
             bundle_bytes: bytes,
             membership_policy: "open",
@@ -2197,8 +2307,8 @@ async fn personal_library_promotes_reuses_and_retains_immutable_packages(pool: P
         &state,
         protocol::CreateLocalFromLibrary {
             creator: &alice,
-            name: "Friday chess",
-            summary: "Pinned session",
+            name: Some("Friday chess"),
+            summary: Some("Pinned session"),
             version_id: personal.version_id,
             membership_policy: "open",
             send_update_interval: 0,
@@ -2524,8 +2634,8 @@ async fn app_index_cards_show_identity_activity_people_and_explicit_details(pool
         &state,
         protocol::CreateLocal {
             creator: &alice,
-            name: "Friday chess",
-            summary: "A weekly game with friends",
+            name: Some("Friday chess"),
+            summary: Some("A weekly game with friends"),
             bundle_name: "chess.xdc",
             bundle_bytes: &bytes,
             membership_policy: "open",

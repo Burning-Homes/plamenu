@@ -4375,10 +4375,97 @@
     });
   }
 
+  // Session creation keeps the complete app choice usable as ordinary radio
+  // controls. Enhancement adds quick filtering, switches the upload panel,
+  // and carries library metadata into the editable session fields.
+  function bindWebxdcCreate(root) {
+    root.querySelectorAll("form[data-webxdc-create]").forEach((form) => {
+      if (form.dataset.webxdcCreateBound) return;
+      form.dataset.webxdcCreateBound = "1";
+      const choices = [...form.querySelectorAll("[data-webxdc-app-choice], [data-webxdc-upload-choice]")];
+      const radios = choices.map((choice) => choice.querySelector('input[name="version_id"]'))
+        .filter(Boolean);
+      const uploadChoice = form.querySelector("[data-webxdc-upload-choice]");
+      const uploadPanel = form.querySelector("[data-webxdc-package-upload]");
+      const appBrowser = form.querySelector("[data-webxdc-app-browser]");
+      const appBrowserLabel = form.querySelector("[data-webxdc-app-browser-label]");
+      const appBrowserMeta = form.querySelector("[data-webxdc-app-browser-meta]");
+      const file = uploadPanel?.querySelector('input[type="file"]');
+      const name = form.querySelector('input[name="name"]');
+      const summary = form.querySelector('textarea[name="summary"]');
+      const nameFromApp = form.querySelector("[data-webxdc-name-from-app]");
+      const summaryFromApp = form.querySelector("[data-webxdc-summary-from-app]");
+      const enhanced = form.querySelector("[data-webxdc-create-enhanced]");
+      if (!uploadChoice || !uploadPanel || !file || !name || !summary || !nameFromApp || !summaryFromApp) return;
+      if (enhanced) enhanced.value = "1";
+
+      let autoName = radios.find((radio) => radio.checked)?.closest("label")?.dataset.appName || "";
+      let autoSummary = radios.find((radio) => radio.checked)?.closest("label")?.dataset.appSummary || "";
+      const uploadedName = () => {
+        const filename = file.files?.[0]?.name || "";
+        return filename.replace(/\.xdc$/i, "").replace(/[-_]+/g, " ").trim();
+      };
+      const applyChoice = () => {
+        const radio = radios.find((candidate) => candidate.checked);
+        const choice = radio?.closest("label");
+        const uploading = choice === uploadChoice;
+        uploadPanel.hidden = !uploading;
+        file.required = uploading;
+        let nextName = choice?.dataset.appName || "";
+        const nextSummary = choice?.dataset.appSummary || "";
+        if (uploading) nextName = uploadedName();
+        if (nameFromApp.value === "1" || !name.value.trim() || name.value === autoName) {
+          name.value = nextName;
+          nameFromApp.value = "1";
+        }
+        if (summaryFromApp.value === "1" || !summary.value.trim() || summary.value === autoSummary) {
+          summary.value = nextSummary;
+          summaryFromApp.value = "1";
+        }
+        autoName = nextName;
+        autoSummary = nextSummary;
+        if (appBrowserLabel && appBrowserMeta) {
+          appBrowserLabel.textContent = uploading ? "Choose from app library" : nextName;
+          appBrowserMeta.textContent = uploading
+            ? appBrowserMeta.dataset.default
+            : "Selected from app library";
+        }
+        if (!uploading && appBrowser) appBrowser.open = false;
+      };
+      radios.forEach((radio) => radio.addEventListener("change", applyChoice));
+      file.addEventListener("change", applyChoice);
+      name.addEventListener("input", () => { nameFromApp.value = "0"; });
+      summary.addEventListener("input", () => { summaryFromApp.value = "0"; });
+      applyChoice();
+
+      const searchWrap = form.querySelector("[data-webxdc-create-search-wrap]");
+      const search = form.querySelector("[data-webxdc-create-search]");
+      const noResults = form.querySelector("[data-webxdc-create-no-results]");
+      const savedChoices = choices.filter((choice) => choice.hasAttribute("data-webxdc-app-choice"));
+      if (searchWrap && search && noResults) {
+        searchWrap.hidden = false;
+        const filter = () => {
+          const needle = search.value.trim().toLocaleLowerCase();
+          let visible = 0;
+          savedChoices.forEach((choice) => {
+            const matches = !needle || (choice.dataset.appSearch || "")
+              .toLocaleLowerCase().includes(needle);
+            choice.hidden = !matches;
+            if (matches) visible += 1;
+          });
+          noResults.hidden = visible !== 0;
+        };
+        search.addEventListener("input", filter);
+        filter();
+      }
+    });
+  }
+
   // ---- Wiring -----------------------------------------------------------
   function enhance(root) {
     bindFileLimits(root);
     bindLibraryFilters(root);
+    bindWebxdcCreate(root);
     bindActionForms(root);
     bindPollForms(root);
     bindRsvpForms(root);

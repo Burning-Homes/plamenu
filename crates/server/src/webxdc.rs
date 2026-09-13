@@ -26,6 +26,12 @@ pub const MEDIA_TYPE: &str = "application/webxdc+zip";
 pub const LEGACY_MEDIA_TYPE: &str = "application/x-webxdc";
 
 pub const MAX_UPDATE_BYTES: i32 = 1024 * 1024;
+pub const DEFAULT_SEND_UPDATE_INTERVAL: i32 = 10_000;
+pub const DEFAULT_SEND_UPDATE_MAX_SIZE: i32 = 128_000;
+pub const MIN_SEND_UPDATE_INTERVAL: i32 = 0;
+pub const MAX_SEND_UPDATE_INTERVAL: i32 = 86_400_000;
+pub const MIN_SEND_UPDATE_MAX_SIZE: i32 = 256;
+pub const MAX_SEND_UPDATE_MAX_SIZE: i32 = MAX_UPDATE_BYTES;
 const MAX_FILES: usize = 1024;
 const MAX_PATH_BYTES: usize = 240;
 const MAX_PATH_DEPTH: usize = 32;
@@ -82,6 +88,9 @@ pub struct ValidatedPackage {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PackageMetadata {
     pub name: Option<String>,
+    /// Non-standard but harmless extension used when a package includes a
+    /// human-readable description alongside its Webxdc manifest name.
+    pub summary: Option<String>,
     pub source_code_url: Option<String>,
     /// Widely deployed xdcget extension. Webxdc itself does not currently
     /// standardize a version field, so callers must treat this as a label.
@@ -92,8 +101,10 @@ pub struct PackageMetadata {
 #[derive(Debug)]
 pub struct CreateLocal<'a> {
     pub creator: &'a Account,
-    pub name: &'a str,
-    pub summary: &'a str,
+    /// `None` adopts package metadata (or the package filename as a fallback).
+    pub name: Option<&'a str>,
+    /// `None` adopts a compatible package-description extension when present.
+    pub summary: Option<&'a str>,
     pub bundle_name: &'a str,
     pub bundle_bytes: &'a [u8],
     pub membership_policy: &'a str,
@@ -104,8 +115,10 @@ pub struct CreateLocal<'a> {
 #[derive(Debug)]
 pub struct CreateLocalFromLibrary<'a> {
     pub creator: &'a Account,
-    pub name: &'a str,
-    pub summary: &'a str,
+    /// `None` adopts the saved app name.
+    pub name: Option<&'a str>,
+    /// `None` adopts the saved app description.
+    pub summary: Option<&'a str>,
     pub version_id: i64,
     pub membership_policy: &'a str,
     pub send_update_interval: i32,
@@ -191,6 +204,8 @@ fn package_media_type(path: &str) -> &'static str {
 #[derive(Deserialize)]
 struct Manifest {
     name: Option<String>,
+    #[serde(alias = "summary")]
+    description: Option<String>,
     source_code_url: Option<String>,
     tag_name: Option<String>,
 }
@@ -214,7 +229,7 @@ fn bounded_manifest_text(
 fn package_metadata(files: &[(String, String, Vec<u8>)]) -> Result<PackageMetadata, PackageError> {
     const MAX_MANIFEST_BYTES: usize = 64 * 1024;
     let manifest = files.iter().find(|(path, _, _)| path == "manifest.toml");
-    let (name, source_code_url, version) = if let Some((_, _, bytes)) = manifest {
+    let (name, summary, source_code_url, version) = if let Some((_, _, bytes)) = manifest {
         if bytes.len() > MAX_MANIFEST_BYTES {
             return Err(PackageError::Manifest);
         }
@@ -234,11 +249,12 @@ fn package_metadata(files: &[(String, String, Vec<u8>)]) -> Result<PackageMetada
         }
         (
             name,
+            bounded_manifest_text(parsed.description, 2000)?,
             source_code_url,
             bounded_manifest_text(parsed.tag_name, 120)?,
         )
     } else {
-        (None, None, None)
+        (None, None, None, None)
     };
     let icon_path = ["icon.png", "icon.jpg"]
         .into_iter()
@@ -246,6 +262,7 @@ fn package_metadata(files: &[(String, String, Vec<u8>)]) -> Result<PackageMetada
         .map(str::to_owned);
     Ok(PackageMetadata {
         name,
+        summary,
         source_code_url,
         version,
         icon_path,
@@ -995,23 +1012,28 @@ fn session_self_addr(state: &AppState, participant_uri: &str, session_uri: &str)
 /// Creates a hosted session with its own signing actor and admits the creator
 /// through the same durable membership state used for remote participants.
 pub async fn create_local(state: &AppState, input: CreateLocal<'_>) -> Result<Session, ApiError> {
-    validate_local_session_input(
-        state,
-        input.creator,
-        input.name,
-        input.summary,
+    require_local_session_permission(state, input.creator).await?;
+    let limits = webxdc::limits(&state.pool).await?;
+    let package = validate_package_async(input.bundle_bytes, None, limits).await?;
+    let fallback_name = package_fallback_name(input.bundle_name);
+    let name = input
+        .name
+        .unwrap_or_else(|| package.metadata.name.as_deref().unwrap_or(&fallback_name));
+    let summary = input
+        .summary
+        .unwrap_or_else(|| package.metadata.summary.as_deref().unwrap_or(""));
+    validate_local_session_fields(
+        name,
+        summary,
         input.membership_policy,
         input.send_update_interval,
         input.send_update_max_size,
-    )
-    .await?;
-    let limits = webxdc::limits(&state.pool).await?;
-    let package = validate_package_async(input.bundle_bytes, None, limits).await?;
+    )?;
     create_local_with_package(
         state,
         input.creator,
-        input.name,
-        input.summary,
+        name,
+        summary,
         input.bundle_name,
         input.membership_policy,
         input.send_update_interval,
@@ -1029,24 +1051,24 @@ pub async fn create_local_from_library(
     state: &AppState,
     input: CreateLocalFromLibrary<'_>,
 ) -> Result<Session, ApiError> {
-    validate_local_session_input(
-        state,
-        input.creator,
-        input.name,
-        input.summary,
-        input.membership_policy,
-        input.send_update_interval,
-        input.send_update_max_size,
-    )
-    .await?;
+    require_local_session_permission(state, input.creator).await?;
     let app = webxdc::usable_version(&state.pool, input.version_id, input.creator.id)
         .await?
         .ok_or(ApiError::NotFound)?;
+    let name = input.name.unwrap_or(&app.name);
+    let summary = input.summary.unwrap_or(&app.summary);
+    validate_local_session_fields(
+        name,
+        summary,
+        input.membership_policy,
+        input.send_update_interval,
+        input.send_update_max_size,
+    )?;
     create_local_with_package(
         state,
         input.creator,
-        input.name,
-        input.summary,
+        name,
+        summary,
         &app.filename,
         input.membership_policy,
         input.send_update_interval,
@@ -1058,23 +1080,29 @@ pub async fn create_local_from_library(
     .await
 }
 
-async fn validate_local_session_input(
+async fn require_local_session_permission(
     state: &AppState,
     creator: &Account,
+) -> Result<(), ApiError> {
+    if plamenu_db::role::for_account(&state.pool, creator.id)
+        .await?
+        .is_some_and(|role| role.can(plamenu_db::role::permission::CREATE_WEBXDC))
+    {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden(
+            "Your role cannot create Webxdc sessions".into(),
+        ))
+    }
+}
+
+fn validate_local_session_fields(
     name: &str,
     summary: &str,
     membership_policy: &str,
     send_update_interval: i32,
     send_update_max_size: i32,
 ) -> Result<(), ApiError> {
-    if !plamenu_db::role::for_account(&state.pool, creator.id)
-        .await?
-        .is_some_and(|role| role.can(plamenu_db::role::permission::CREATE_WEBXDC))
-    {
-        return Err(ApiError::Forbidden(
-            "Your role cannot create Webxdc sessions".into(),
-        ));
-    }
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 120 {
         return Err(ApiError::Unprocessable(
@@ -1091,7 +1119,9 @@ async fn validate_local_session_input(
             "Unknown session membership policy".into(),
         ));
     }
-    if send_update_interval < 0 || send_update_max_size <= 0 {
+    if !(MIN_SEND_UPDATE_INTERVAL..=MAX_SEND_UPDATE_INTERVAL).contains(&send_update_interval)
+        || !(MIN_SEND_UPDATE_MAX_SIZE..=MAX_SEND_UPDATE_MAX_SIZE).contains(&send_update_max_size)
+    {
         return Err(ApiError::Unprocessable(
             "Invalid durable update limits".into(),
         ));

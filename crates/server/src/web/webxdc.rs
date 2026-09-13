@@ -244,6 +244,25 @@ pub struct NewQuery {
     version: Option<i64>,
 }
 
+fn session_app_choices(
+    available: Vec<webxdc::LibraryApp>,
+    preferred_version: Option<i64>,
+) -> Vec<webxdc::LibraryApp> {
+    let mut apps = Vec::with_capacity(available.len());
+    let mut digests = std::collections::HashMap::<String, usize>::new();
+    for app in available {
+        if let Some(index) = digests.get(&app.digest_multibase).copied() {
+            if preferred_version == Some(app.version_id) {
+                apps[index] = app;
+            }
+        } else {
+            digests.insert(app.digest_multibase.clone(), apps.len());
+            apps.push(app);
+        }
+    }
+    apps
+}
+
 pub async fn new_page(
     State(state): State<AppState>,
     user: WebUser,
@@ -251,7 +270,12 @@ pub async fn new_page(
 ) -> Result<Response, ApiError> {
     require_create(&user)?;
     let limits = webxdc::limits(&state.pool).await?;
-    let apps = webxdc::library_for_account(&state.pool, user.current.account.id).await?;
+    let available = webxdc::library_for_account(&state.pool, user.current.account.id).await?;
+    // Promotion can make the same immutable package visible through both a
+    // personal and instance entry. It is one app for session creation; retain
+    // the explicitly linked version when there is one, otherwise the first
+    // library entry, so the picker never presents identical choices.
+    let apps = session_app_choices(available, query.version);
     let mut form = CreateForm::default();
     if let Some(app) = query
         .version
@@ -259,6 +283,7 @@ pub async fn new_page(
     {
         form.version_id = Some(app.version_id);
         app.name.clone_into(&mut form.name);
+        app.summary.clone_into(&mut form.summary);
     }
     Ok(create_page(&user, &form, limits, &apps, None))
 }
@@ -270,67 +295,145 @@ fn create_page(
     apps: &[webxdc::LibraryApp],
     error: Option<&str>,
 ) -> Response {
+    let advanced_changed = form.membership_policy != "open"
+        || form.send_update_interval != protocol::DEFAULT_SEND_UPDATE_INTERVAL
+        || form.send_update_max_size != protocol::DEFAULT_SEND_UPDATE_MAX_SIZE;
+    let name_from_app = if form.name_from_app { "1" } else { "0" };
+    let summary_from_app = if form.summary_from_app { "1" } else { "0" };
+    let selected_app = form
+        .version_id
+        .and_then(|version| apps.iter().find(|app| app.version_id == version));
+    let library_choice_label = selected_app
+        .map(|app| app.name.as_str())
+        .unwrap_or("Choose from app library");
+    let library_default_meta = format!(
+        "{} {} available",
+        apps.len(),
+        if apps.len() == 1 { "app" } else { "apps" }
+    );
+    let library_choice_meta = if selected_app.is_some() {
+        "Selected from app library".to_owned()
+    } else {
+        library_default_meta.clone()
+    };
     let body = html! {
-        section.column.settings {
-            header.settings__head { h1 { "Create an app session" } }
+        section.column.settings.webxdc-create {
+            a.webxdc-back href="/webxdc" { "← App sessions" }
+            header.settings__head {
+                h1 { "Create an app session" }
+                p { "Pick an app, give the shared session a purpose, and invite people when you are ready." }
+            }
             div.settings__body {
-                p { "Choose a saved app or upload a .xdc package to start using it together." }
                 @if let Some(error) = error {
-                    p.settings__error role="alert" { (error) " Select the package again to retry." }
+                    p.settings__error role="alert" { (error) }
                 }
-                form.settings-form method="post" action="/web/webxdc" enctype="multipart/form-data" {
+                form.settings-form method="post" action="/web/webxdc" enctype="multipart/form-data" data-webxdc-create {
                     input type="hidden" name="csrf" value=(&user.csrf);
-                    fieldset.settings-form__group {
-                        legend { "Session" }
+                    input type="hidden" name="enhanced" value="0" data-webxdc-create-enhanced;
+                    input type="hidden" name="name_from_app" value=(name_from_app) data-webxdc-name-from-app;
+                    input type="hidden" name="summary_from_app" value=(summary_from_app) data-webxdc-summary-from-app;
+                    fieldset.settings-form__group.webxdc-create__apps {
+                        legend { "Choose an app" }
+                        p.webxdc-muted { "Start with an app that is already available, or upload one from your device." }
                         @if !apps.is_empty() {
-                            label.settings-field {
-                                span.settings-field__label { "App" }
-                                select name="version_id" {
-                                    option value="" selected[form.version_id.is_none()] { "One-off package upload" }
-                                    @for app in apps {
-                                        option value=(app.version_id) selected[form.version_id == Some(app.version_id)] {
-                                            (&app.name)
-                                            @if !app.version.is_empty() { " · " (&app.version) }
-                                            @if app.owner_account_id.is_some() { " · Personal" } @else { " · Instance" }
+                            details.webxdc-app-browser data-webxdc-app-browser {
+                                summary.webxdc-app-browser__summary {
+                                    span.webxdc-app-choice__icon aria-hidden="true" { (super::view::icon("apps")) }
+                                    span.webxdc-app-choice__body {
+                                        strong data-webxdc-app-browser-label { (library_choice_label) }
+                                        span.webxdc-app-choice__summary data-webxdc-app-browser-meta data-default=(library_default_meta) { (library_choice_meta) }
+                                    }
+                                    span.webxdc-app-choice__check aria-hidden="true" { (super::view::icon("check")) }
+                                }
+                                div.webxdc-app-browser__body {
+                                    label.settings-field.webxdc-create__search hidden data-webxdc-create-search-wrap {
+                                        span.settings-field__label { "Find an app" }
+                                        input type="search" placeholder="Search available apps" autocomplete="off" data-webxdc-create-search;
+                                    }
+                                    div.webxdc-app-picker data-webxdc-app-picker {
+                                        @for app in apps {
+                                            label.webxdc-app-choice data-webxdc-app-choice data-app-name=(&app.name) data-app-summary=(&app.summary) data-app-search={ (&app.name) " " (&app.summary) " " (&app.version) } {
+                                                input required type="radio" name="version_id" value=(app.version_id) checked[form.version_id == Some(app.version_id)];
+                                                span.webxdc-app-choice__icon aria-hidden="true" {
+                                                    @if app.icon_path.is_some() {
+                                                        img src={ "/webxdc/library/version/" (app.version_id) "/icon" } alt="" loading="lazy" width="52" height="52";
+                                                    } @else {
+                                                        (super::view::icon("apps"))
+                                                    }
+                                                }
+                                                span.webxdc-app-choice__body {
+                                                    strong { (&app.name) }
+                                                    @if !app.summary.is_empty() {
+                                                        span.webxdc-app-choice__summary { (&app.summary) }
+                                                    }
+                                                    span.webxdc-app-choice__meta {
+                                                        @if !app.version.is_empty() { (&app.version) " · " }
+                                                        @if app.owner_account_id.is_some() { "Your library" } @else { "Instance library" }
+                                                    }
+                                                }
+                                                span.webxdc-app-choice__check aria-hidden="true" { (super::view::icon("check")) }
+                                            }
                                         }
                                     }
+                                    p.webxdc-create__no-results hidden data-webxdc-create-no-results { "No available apps match that search." }
                                 }
-                                span.settings-field__hint { "Saved packages are reused without uploading or copying them." }
                             }
                         }
-                        label.settings-field {
-                            span.settings-field__label { "Name" }
-                            input required name="name" maxlength="120" placeholder="Shopping list" value=(&form.name);
-                        }
-                        label.settings-field {
-                            span.settings-field__label { "Description" }
-                            textarea name="summary" maxlength="2000" rows="3" placeholder="What this session is for" { (&form.summary) }
-                        }
-                        label.settings-field {
-                            span.settings-field__label { "Webxdc package" }
-                            input type="file" name="bundle" data-max-bytes=(limits.bundle_bytes()) accept=".xdc,application/webxdc+zip,application/x-webxdc,application/zip";
-                            span.settings-field__hint { "Required only for a one-off upload. Choose a .xdc file up to " (limits.bundle_bytes() / (1024 * 1024)) " MiB." }
-                        }
-                        label.settings-field {
-                            span.settings-field__label { "Joining" }
-                            select name="membership_policy" {
-                                option value="open" selected[form.membership_policy == "open"] { "Anyone with the link can join" }
-                                option value="approval" selected[form.membership_policy == "approval"] { "I approve each join request" }
+                        label.webxdc-app-choice.webxdc-app-choice--upload data-webxdc-upload-choice data-app-name="" data-app-summary="" {
+                            input required type="radio" name="version_id" value="" checked[form.version_id.is_none()];
+                            span.webxdc-app-choice__icon aria-hidden="true" { (super::view::icon("upload")) }
+                            span.webxdc-app-choice__body {
+                                strong { "Upload an app" }
+                                span.webxdc-app-choice__summary { "Choose a .xdc package from this device." }
+                                span.webxdc-app-choice__meta { "One-off package" }
                             }
+                            span.webxdc-app-choice__check aria-hidden="true" { (super::view::icon("check")) }
+                        }
+                        div.webxdc-package-upload data-webxdc-package-upload {
+                            label.settings-field {
+                                span.settings-field__label { "App file (.xdc)" }
+                                input type="file" name="bundle" data-max-bytes=(limits.bundle_bytes()) accept=".xdc,application/webxdc+zip,application/x-webxdc,application/zip";
+                                span.settings-field__hint { "Choose a .xdc file up to " (limits.bundle_bytes() / (1024 * 1024)) " MiB. Its app name will be used automatically when available." }
+                            }
+                            @if !form.bundle_name.is_empty() {
+                                p.settings-field__hint { "Select " strong { (&form.bundle_name) } " again to retry." }
+                            }
+                        }
+                        a.webxdc-create__library-link href="/webxdc/library" { "Browse or manage your app library →" }
+                    }
+                    fieldset.settings-form__group {
+                        legend { "Session details" }
+                        label.settings-field {
+                            span.settings-field__label { "Session name" }
+                            input name="name" maxlength="120" placeholder="Filled from the selected app" value=(&form.name);
+                            span.settings-field__hint { "Starts with the app name. Change it to help people distinguish this session." }
+                        }
+                        label.settings-field {
+                            span.settings-field__label { "Session description" }
+                            textarea name="summary" maxlength="2000" rows="3" placeholder="What will people use this session for?" { (&form.summary) }
+                            span.settings-field__hint { "Starts with the saved app description when one is available." }
                         }
                     }
-                    details.webxdc-advanced {
+                    details.webxdc-advanced open[advanced_changed] {
                         summary { "Advanced settings" }
                         div.settings-form__group {
                             label.settings-field {
+                                span.settings-field__label { "Who can join" }
+                                select name="membership_policy" {
+                                    option value="open" selected[form.membership_policy == "open"] { "Anyone with the link" }
+                                    option value="approval" selected[form.membership_policy == "approval"] { "Only people I approve" }
+                                }
+                                span.settings-field__hint { "The default lets anyone with the invitation link enter the session." }
+                            }
+                            label.settings-field {
                                 span.settings-field__label { "Minimum interval between updates" }
-                                input type="number" name="send_update_interval" value=(form.send_update_interval) min="0" max="86400000";
-                                span.settings-field__hint { "Milliseconds. Most apps should keep the default." }
+                                input type="number" name="send_update_interval" value=(form.send_update_interval) min=(protocol::MIN_SEND_UPDATE_INTERVAL) max=(protocol::MAX_SEND_UPDATE_INTERVAL);
+                                span.settings-field__hint { "Milliseconds between durable updates. Default 10,000 (10 seconds); allowed range 0–86,400,000." }
                             }
                             label.settings-field {
                                 span.settings-field__label { "Maximum update size" }
-                                input type="number" name="send_update_max_size" value=(form.send_update_max_size) min="256" max="1048576";
-                                span.settings-field__hint { "Bytes of JSON per durable update." }
+                                input type="number" name="send_update_max_size" value=(form.send_update_max_size) min=(protocol::MIN_SEND_UPDATE_MAX_SIZE) max=(protocol::MAX_SEND_UPDATE_MAX_SIZE);
+                                span.settings-field__hint { "Maximum JSON bytes per durable update. Default 128,000; allowed range 256–1,048,576 (1 MiB)." }
                             }
                         }
                     }
@@ -338,7 +441,6 @@ fn create_page(
                         a.settings-button--plain href="/webxdc" { "Cancel" }
                         button type="submit" { "Create session" }
                     }
-                    p.settings-field__hint { "Want to reuse an upload later? " a href="/webxdc/library" { "Save it to your app library first." } }
                 }
             }
         }
@@ -356,6 +458,9 @@ struct CreateForm {
     bundle_name: String,
     bundle: axum::body::Bytes,
     version_id: Option<i64>,
+    name_from_app: bool,
+    summary_from_app: bool,
+    enhanced: bool,
 }
 
 impl Default for CreateForm {
@@ -365,11 +470,14 @@ impl Default for CreateForm {
             name: String::new(),
             summary: String::new(),
             membership_policy: "open".into(),
-            send_update_interval: 1000,
-            send_update_max_size: 32_768,
+            send_update_interval: protocol::DEFAULT_SEND_UPDATE_INTERVAL,
+            send_update_max_size: protocol::DEFAULT_SEND_UPDATE_MAX_SIZE,
             bundle_name: String::new(),
             bundle: axum::body::Bytes::new(),
             version_id: None,
+            name_from_app: false,
+            summary_from_app: false,
+            enhanced: false,
         }
     }
 }
@@ -398,6 +506,7 @@ pub async fn create(
             let message = error.to_string();
             let response = error.into_response();
             if response.status().is_client_error() {
+                let apps = session_app_choices(apps, form.version_id);
                 (
                     response.status(),
                     create_page(&user, &form, limits, &apps, Some(&message)),
@@ -465,6 +574,9 @@ async fn parse_create_fields(
             "csrf" => form.csrf = value,
             "name" => form.name = value,
             "summary" => form.summary = value,
+            "name_from_app" => form.name_from_app = value == "1",
+            "summary_from_app" => form.summary_from_app = value == "1",
+            "enhanced" => form.enhanced = value == "1",
             "membership_policy" => form.membership_policy = value,
             "send_update_interval" => {
                 form.send_update_interval = value
@@ -515,20 +627,25 @@ async fn create_uploaded(
     if form.bundle.len() > limits.bundle_bytes() {
         return Err(upload_too_large(limits));
     }
-    if form.send_update_interval > 86_400_000
-        || !(256..=1_048_576).contains(&form.send_update_max_size)
+    if !(protocol::MIN_SEND_UPDATE_INTERVAL..=protocol::MAX_SEND_UPDATE_INTERVAL)
+        .contains(&form.send_update_interval)
+        || !(protocol::MIN_SEND_UPDATE_MAX_SIZE..=protocol::MAX_SEND_UPDATE_MAX_SIZE)
+            .contains(&form.send_update_max_size)
     {
         return Err(ApiError::Unprocessable(
             "Invalid durable update limits".into(),
         ));
     }
     let session = if let Some(version_id) = form.version_id {
+        let adopt_name = form.name_from_app || form.name.trim().is_empty();
+        let adopt_summary =
+            form.summary_from_app || (!form.enhanced && form.summary.trim().is_empty());
         protocol::create_local_from_library(
             state,
             protocol::CreateLocalFromLibrary {
                 creator: &user.current.account,
-                name: &form.name,
-                summary: &form.summary,
+                name: (!adopt_name).then_some(form.name.as_str()),
+                summary: (!adopt_summary).then_some(form.summary.as_str()),
                 version_id,
                 membership_policy: &form.membership_policy,
                 send_update_interval: form.send_update_interval,
@@ -537,12 +654,15 @@ async fn create_uploaded(
         )
         .await?
     } else {
+        let adopt_name = form.name_from_app || form.name.trim().is_empty();
+        let adopt_summary =
+            form.summary_from_app || (!form.enhanced && form.summary.trim().is_empty());
         protocol::create_local(
             state,
             protocol::CreateLocal {
                 creator: &user.current.account,
-                name: &form.name,
-                summary: &form.summary,
+                name: (!adopt_name).then_some(form.name.as_str()),
+                summary: (!adopt_summary).then_some(form.summary.as_str()),
                 bundle_name: &form.bundle_name,
                 bundle_bytes: &form.bundle,
                 membership_policy: &form.membership_policy,
