@@ -266,6 +266,62 @@ pub async fn record_account_deletion(
     .await
 }
 
+/// Revalidates and rejects one account from a materialized bulk selection,
+/// marking its selection row in the same transaction as deletion and audit.
+/// Row locks make the pending/local and role-rank checks authoritative at the
+/// instant of deletion, not merely when the confirmation page rendered.
+pub async fn record_bulk_pending_rejection(
+    pool: &PgPool,
+    selection_token: &str,
+    moderator_account_id: i64,
+    moderator_position: i32,
+    target: &Target,
+) -> Result<bool, DbError> {
+    let mut tx = pool.begin().await?;
+    let eligibility = sqlx::query_as::<_, (bool, Option<i32>)>(
+        "SELECT u.approved, r.position
+         FROM accounts a
+         JOIN users u ON u.account_id = a.id
+         LEFT JOIN user_roles r ON r.id = u.role_id
+         WHERE a.id = $1 AND a.domain IS NULL AND NOT a.portable
+         FOR UPDATE OF a, u",
+    )
+    .bind(target.id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let eligible = eligibility.is_some_and(|(approved, position)| {
+        !approved
+            && target.id != moderator_account_id
+            && position.is_none_or(|position| position < moderator_position)
+    });
+
+    let deleted = if eligible {
+        let deleted = account::delete_by_id_tx(&mut tx, target.id).await?;
+        if deleted {
+            admin_action_log::record_tx(&mut tx, new_line(moderator_account_id, "reject", target))
+                .await?;
+        }
+        deleted
+    } else {
+        false
+    };
+    let outcome = if deleted { "rejected" } else { "skipped" };
+    sqlx::query(
+        "UPDATE admin_account_bulk_selections
+         SET outcome = $4
+         WHERE token = $1 AND moderator_account_id = $2
+           AND account_id = $3 AND outcome IS NULL",
+    )
+    .bind(selection_token)
+    .bind(moderator_account_id)
+    .bind(target.id)
+    .bind(outcome)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(deleted)
+}
+
 /// Builds the audit line for a mutation whose DB function records it inside the
 /// same transaction (e.g. [`plamenu_db::user::set_credentials_and_revoke`] for
 /// the admin set-password path), so the action and its trail

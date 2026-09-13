@@ -6003,6 +6003,14 @@ a.settings-button--plain {
   }
 }
 
+.admin-filter__search {
+  flex: 1 1 18rem;
+}
+
+.admin-filter__search input {
+  inline-size: 100%;
+}
+
 /* The scroll container every data table is wrapped in (`view::data_table`).
    It is the ONE place a table's horizontal overflow is resolved: the table
    below keeps its natural column widths and this box scrolls. Being an
@@ -6158,6 +6166,70 @@ a.settings-button--plain {
   & a {
     color: var(--text-muted);
   }
+}
+
+.admin-table :is(th, td).is-check {
+  inline-size: 1%;
+  padding-inline-end: 0;
+  text-align: center;
+}
+
+.admin-registration {
+  min-inline-size: 16rem;
+  max-inline-size: 28rem;
+}
+
+.admin-registration__reason {
+  display: -webkit-box;
+  margin: 0 0 var(--space-2);
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.admin-registration__meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0 var(--space-2);
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82em;
+
+  & dt {
+    font-weight: 700;
+  }
+
+  & dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.admin-bulk__controls {
+  display: grid;
+  gap: var(--space-2);
+  margin-block: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+
+  & legend {
+    padding-inline: var(--space-1);
+    font-weight: 700;
+  }
+
+  & button {
+    justify-self: start;
+  }
+}
+
+.admin-bulk-confirm {
+  max-inline-size: 42rem;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
 }
 
 .admin-pager {

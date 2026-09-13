@@ -628,6 +628,40 @@
     });
   }
 
+  // The pending-application table exposes two deliberately distinct scopes:
+  // visible row checkboxes and an all-matching snapshot. Keep the convenience
+  // toggles mutually exclusive; the server remains authoritative without JS.
+  function bindApplicationBulkSelection(root) {
+    root.querySelectorAll("form.admin-bulk").forEach((form) => {
+      if (form.dataset.bulkBound) return;
+      form.dataset.bulkBound = "1";
+      const page = form.querySelector("[data-bulk-page]");
+      const matching = form.querySelector("[data-bulk-matching]");
+      if (page) {
+        page.addEventListener("change", () => {
+          form.querySelectorAll("[data-bulk-row]").forEach((row) => {
+            row.checked = page.checked;
+          });
+          if (page.checked && matching) matching.checked = false;
+        });
+      }
+      if (matching) {
+        matching.addEventListener("change", () => {
+          if (!matching.checked) return;
+          if (page) page.checked = false;
+          form.querySelectorAll("[data-bulk-row]").forEach((row) => {
+            row.checked = false;
+          });
+        });
+      }
+    });
+    root.querySelectorAll("form[data-bulk-continue]").forEach((form) => {
+      if (form.dataset.bulkContinueBound) return;
+      form.dataset.bulkContinueBound = "1";
+      queueMicrotask(() => form.requestSubmit());
+    });
+  }
+
   // ---- In-place moderation (mute / block / domain block) ----------------
   //
   // The status-menu moderation verbs are real POST forms marked data-mod.
@@ -4317,6 +4351,7 @@
     bindStandaloneExternalLinks(root);
     bindCopyLinks(root);
     bindConfirms(root);
+    bindApplicationBulkSelection(root);
     bindModerationForms(root);
     bindReportForms(root);
     bindAnnouncementDismiss(root);

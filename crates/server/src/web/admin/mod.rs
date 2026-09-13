@@ -876,6 +876,14 @@ fn moderation_router() -> Router<AppState> {
         .route("/admin", get(overview))
         .route("/admin/accounts", get(accounts::index))
         .route("/admin/accounts/{id}", get(accounts::show))
+        .route(
+            "/web/admin/accounts/bulk/confirm",
+            post(accounts::bulk_confirm),
+        )
+        .route(
+            "/web/admin/accounts/bulk/reject",
+            post(accounts::bulk_reject),
+        )
         .route("/web/admin/accounts/{id}/action", post(accounts::action))
         .route("/web/admin/accounts/{id}/op", post(accounts::op))
         .route("/web/admin/accounts/{id}/user-op", post(accounts::user_op))

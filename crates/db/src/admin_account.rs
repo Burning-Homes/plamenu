@@ -67,7 +67,7 @@ pub struct AdminAccountIp {
 /// normalized (the v1/v2 controllers translate their param spellings into
 /// these). `username`/`display_name`/`email` are `ILIKE` patterns supplied by
 /// the caller (Mastodon matches case-insensitively).
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct AdminAccountFilter {
     /// `"local"` or `"remote"`; `None` for either.
     pub origin: Option<String>,
@@ -77,6 +77,10 @@ pub struct AdminAccountFilter {
     pub username: Option<String>,
     pub display_name: Option<String>,
     pub email: Option<String>,
+    /// Plamenu's moderation search across registration and identity metadata.
+    /// This is an `ILIKE` pattern supplied by the caller; Mastodon-compatible
+    /// API handlers leave it unset.
+    pub search: Option<String>,
     /// Restrict to accounts whose user holds one of these roles; empty = any.
     pub role_ids: Vec<i64>,
     pub max_id: Option<i64>,
@@ -92,14 +96,38 @@ pub async fn list(
     pool: &PgPool,
     filter: &AdminAccountFilter,
 ) -> Result<Vec<AdminAccountView>, DbError> {
-    // Mastodon paginates by account id; `min_id` walks forward (ascending),
-    // every other cursor walks back (descending).
+    let ids = ids(pool, filter).await?;
+
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // `find_by_ids` returns rows in arbitrary order; reassemble in cursor order.
+    let mut accounts = account::find_by_ids(pool, &ids).await?;
+    let mut overlays = overlay_for(pool, &ids).await?;
+    let mut views = Vec::with_capacity(ids.len());
+    for account_id in &ids {
+        let Some(pos) = accounts.iter().position(|a| a.id == *account_id) else {
+            continue;
+        };
+        let account = accounts.swap_remove(pos);
+        let overlay = overlays.remove(account_id).unwrap_or_default();
+        views.push(overlay.into_view(account));
+    }
+    Ok(views)
+}
+
+/// Returns matching account ids in the same keyset order as [`list`]. This is
+/// also used by the web moderation confirmation step to snapshot an exact,
+/// bounded set without loading sensitive registration overlays twice.
+pub async fn ids(pool: &PgPool, filter: &AdminAccountFilter) -> Result<Vec<i64>, DbError> {
     let ascending = filter.min_id.is_some();
-    let ids: Vec<i64> = sqlx::query_scalar!(
-        r#"
+    sqlx::query_scalar::<_, i64>(
+        r"
         SELECT a.id
         FROM accounts a
         LEFT JOIN users u ON u.account_id = a.id
+        LEFT JOIN oauth_apps signup_app ON signup_app.id = u.created_by_application_id
         WHERE NOT a.is_internal
           AND ($1::text IS NULL
                 OR ($1 = 'local'  AND (a.domain IS NULL OR a.portable))
@@ -119,42 +147,227 @@ pub async fn list(
           AND ($8::bigint IS NULL OR a.id < $8)
           AND ($9::bigint IS NULL OR a.id > $9)
           AND ($10::bigint IS NULL OR a.id > $10)
+          AND ($12::text IS NULL OR
+               a.username ILIKE $12 OR
+               a.display_name ILIKE $12 OR
+               u.email ILIKE $12 OR
+               u.invite_request_text ILIKE $12 OR
+               u.sign_up_ip ILIKE $12 OR
+               u.locale ILIKE $12 OR
+               signup_app.name ILIKE $12)
         ORDER BY a.id * (CASE WHEN $11 THEN 1 ELSE -1 END)
-        LIMIT $12
-        "#,
-        filter.origin,
-        filter.status,
-        filter.by_domain,
-        filter.username,
-        filter.display_name,
-        filter.email,
-        &filter.role_ids,
-        filter.max_id,
-        filter.since_id,
-        filter.min_id,
-        ascending,
-        filter.limit,
+        LIMIT $13
+        ",
     )
+    .bind(&filter.origin)
+    .bind(&filter.status)
+    .bind(&filter.by_domain)
+    .bind(&filter.username)
+    .bind(&filter.display_name)
+    .bind(&filter.email)
+    .bind(&filter.role_ids)
+    .bind(filter.max_id)
+    .bind(filter.since_id)
+    .bind(filter.min_id)
+    .bind(ascending)
+    .bind(&filter.search)
+    .bind(filter.limit)
     .fetch_all(pool)
+    .await
+    .map_err(Into::into)
+}
+
+/// Count and newest id for a filter. Pagination cursors are honored, allowing
+/// callers to impose a snapshot boundary while deliberately ignoring `limit`.
+pub async fn stats(
+    pool: &PgPool,
+    filter: &AdminAccountFilter,
+) -> Result<(i64, Option<i64>), DbError> {
+    sqlx::query_as::<_, (i64, Option<i64>)>(
+        r"
+        SELECT COUNT(*)::bigint, MAX(a.id)
+        FROM accounts a
+        LEFT JOIN users u ON u.account_id = a.id
+        LEFT JOIN oauth_apps signup_app ON signup_app.id = u.created_by_application_id
+        WHERE NOT a.is_internal
+          AND ($1::text IS NULL
+                OR ($1 = 'local'  AND (a.domain IS NULL OR a.portable))
+                OR ($1 = 'remote' AND a.domain IS NOT NULL AND NOT a.portable))
+          AND ($2::text IS NULL
+                OR ($2 = 'active'     AND a.suspended_at IS NULL)
+                OR ($2 = 'pending'    AND u.approved = false)
+                OR ($2 = 'disabled'   AND u.disabled = true)
+                OR ($2 = 'silenced'   AND a.silenced_at IS NOT NULL)
+                OR ($2 = 'suspended'  AND a.suspended_at IS NOT NULL)
+                OR ($2 = 'sensitized' AND a.sensitized_at IS NOT NULL))
+          AND ($3::text IS NULL OR lower(a.domain) = lower($3))
+          AND ($4::text IS NULL OR a.username ILIKE $4)
+          AND ($5::text IS NULL OR a.display_name ILIKE $5)
+          AND ($6::text IS NULL OR u.email ILIKE $6)
+          AND (cardinality($7::bigint[]) = 0 OR u.role_id = ANY($7))
+          AND ($8::bigint IS NULL OR a.id < $8)
+          AND ($9::bigint IS NULL OR a.id > $9)
+          AND ($10::bigint IS NULL OR a.id > $10)
+          AND ($11::text IS NULL OR
+               a.username ILIKE $11 OR
+               a.display_name ILIKE $11 OR
+               u.email ILIKE $11 OR
+               u.invite_request_text ILIKE $11 OR
+               u.sign_up_ip ILIKE $11 OR
+               u.locale ILIKE $11 OR
+               signup_app.name ILIKE $11)
+        ",
+    )
+    .bind(&filter.origin)
+    .bind(&filter.status)
+    .bind(&filter.by_domain)
+    .bind(&filter.username)
+    .bind(&filter.display_name)
+    .bind(&filter.email)
+    .bind(&filter.role_ids)
+    .bind(filter.max_id)
+    .bind(filter.since_id)
+    .bind(filter.min_id)
+    .bind(&filter.search)
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
+}
+
+/// Outcome counters for one materialized bulk-selection snapshot.
+#[derive(Debug, Clone, Copy)]
+pub struct BulkSelectionStats {
+    pub total: i64,
+    pub rejected: i64,
+    pub skipped: i64,
+    pub failed: i64,
+    pub pending: i64,
+}
+
+/// Materializes an exact account-id selection for later confirmation and
+/// chunked execution. Expired abandoned selections are opportunistically
+/// removed; completed selections are removed after reporting.
+pub async fn create_bulk_selection(
+    pool: &PgPool,
+    token: &str,
+    moderator_account_id: i64,
+    account_ids: &[i64],
+) -> Result<i64, DbError> {
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "DELETE FROM admin_account_bulk_selections
+         WHERE created_at < now() - interval '24 hours'",
+    )
+    .execute(&mut *tx)
     .await?;
+    let result = sqlx::query(
+        "INSERT INTO admin_account_bulk_selections
+             (token, moderator_account_id, account_id)
+         SELECT $1, $2, id
+         FROM unnest($3::bigint[]) AS selected(id)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(token)
+    .bind(moderator_account_id)
+    .bind(account_ids)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(i64::try_from(result.rows_affected()).unwrap_or(i64::MAX))
+}
 
-    if ids.is_empty() {
-        return Ok(Vec::new());
-    }
+/// The next bounded set of unresolved ids in a materialized selection.
+pub async fn bulk_selection_next(
+    pool: &PgPool,
+    token: &str,
+    moderator_account_id: i64,
+    limit: i64,
+) -> Result<Vec<i64>, DbError> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT account_id
+         FROM admin_account_bulk_selections
+         WHERE token = $1 AND moderator_account_id = $2 AND outcome IS NULL
+         ORDER BY account_id
+         LIMIT $3",
+    )
+    .bind(token)
+    .bind(moderator_account_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(Into::into)
+}
 
-    // `find_by_ids` returns rows in arbitrary order; reassemble in cursor order.
-    let mut accounts = account::find_by_ids(pool, &ids).await?;
-    let mut overlays = overlay_for(pool, &ids).await?;
-    let mut views = Vec::with_capacity(ids.len());
-    for account_id in &ids {
-        let Some(pos) = accounts.iter().position(|a| a.id == *account_id) else {
-            continue;
-        };
-        let account = accounts.swap_remove(pos);
-        let overlay = overlays.remove(account_id).unwrap_or_default();
-        views.push(overlay.into_view(account));
+/// Marks a target that was skipped or failed outside the atomic delete path.
+pub async fn mark_bulk_selection(
+    pool: &PgPool,
+    token: &str,
+    moderator_account_id: i64,
+    account_id: i64,
+    outcome: &str,
+) -> Result<(), DbError> {
+    sqlx::query(
+        "UPDATE admin_account_bulk_selections
+         SET outcome = $4
+         WHERE token = $1 AND moderator_account_id = $2
+           AND account_id = $3 AND outcome IS NULL
+           AND $4 IN ('skipped', 'failed')",
+    )
+    .bind(token)
+    .bind(moderator_account_id)
+    .bind(account_id)
+    .bind(outcome)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Aggregate progress for the confirmation, progress, and result UI.
+pub async fn bulk_selection_stats(
+    pool: &PgPool,
+    token: &str,
+    moderator_account_id: i64,
+) -> Result<Option<BulkSelectionStats>, DbError> {
+    let row = sqlx::query_as::<_, (i64, i64, i64, i64, i64)>(
+        "SELECT COUNT(*)::bigint,
+                COUNT(*) FILTER (WHERE outcome = 'rejected')::bigint,
+                COUNT(*) FILTER (WHERE outcome = 'skipped')::bigint,
+                COUNT(*) FILTER (WHERE outcome = 'failed')::bigint,
+                COUNT(*) FILTER (WHERE outcome IS NULL)::bigint
+         FROM admin_account_bulk_selections
+         WHERE token = $1 AND moderator_account_id = $2",
+    )
+    .bind(token)
+    .bind(moderator_account_id)
+    .fetch_one(pool)
+    .await?;
+    if row.0 == 0 {
+        return Ok(None);
     }
-    Ok(views)
+    Ok(Some(BulkSelectionStats {
+        total: row.0,
+        rejected: row.1,
+        skipped: row.2,
+        failed: row.3,
+        pending: row.4,
+    }))
+}
+
+/// Removes a completed or cancelled materialized selection.
+pub async fn delete_bulk_selection(
+    pool: &PgPool,
+    token: &str,
+    moderator_account_id: i64,
+) -> Result<(), DbError> {
+    sqlx::query(
+        "DELETE FROM admin_account_bulk_selections
+         WHERE token = $1 AND moderator_account_id = $2",
+    )
+    .bind(token)
+    .bind(moderator_account_id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// A single account's admin view, or `None` when the id is unknown.

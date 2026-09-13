@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add searchable pending-account registration context and safe bulk rejection
+  across every filtered result page.
 - Include the referenced event card in RSVP and other event notifications.
 - Present podcast audio discovered through Open Graph (including Castopod
   episode posts) as playable, cacheable media in the web UI and API.

@@ -7134,6 +7134,286 @@ async fn admin_account_page_shows_saved_registration_metadata(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn admin_pending_applications_searches_and_previews_registration_reason(pool: PgPool) {
+    let alice = seed_alice(&pool).await;
+    make_staff(&pool, alice.id).await;
+    let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
+    let carol = seed_user(&pool, "carol", "carol@example.com", PASSWORD).await;
+    sqlx::query(
+        "UPDATE users
+         SET approved = false,
+             invite_request_text = CASE account_id
+                 WHEN $1 THEN 'Automated protocol deliverability probe'
+                 ELSE 'I would like to join the community'
+             END,
+             sign_up_ip = CASE account_id
+                 WHEN $1 THEN '203.0.113.42'
+                 ELSE '203.0.113.43'
+             END
+         WHERE account_id = ANY($2)",
+    )
+    .bind(bob.id)
+    .bind(vec![bob.id, carol.id])
+    .execute(&pool)
+    .await
+    .unwrap();
+    let app = common::test_app(pool);
+    let cookie = login(&app).await;
+
+    // Search is a case-insensitive substring over the saved reason and keeps
+    // the queue filter in the rendered pager/form state.
+    let page = get(
+        &app,
+        "/admin/accounts?origin=local&status=pending&q=DELIVERABILITY%20PROBE",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    assert!(page.body.contains("@bob"), "{}", page.body);
+    assert!(!page.body.contains("@carol"), "{}", page.body);
+    assert!(
+        page.body
+            .contains("Automated protocol deliverability probe"),
+        "{}",
+        page.body
+    );
+    assert!(page.body.contains("bob@example.com"), "{}", page.body);
+    assert!(page.body.contains("203.0.113.42"), "{}", page.body);
+    assert!(page.body.contains(r#"name="account_id""#), "{}", page.body);
+    assert!(page.body.contains("Reject selected"), "{}", page.body);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn admin_pending_queue_distinguishes_page_and_all_matching_selection(pool: PgPool) {
+    let alice = seed_alice(&pool).await;
+    make_staff(&pool, alice.id).await;
+    let hash = plamenu::auth::hash_password(PASSWORD).unwrap();
+    let mut ids = Vec::new();
+    for n in 0..51 {
+        let username = format!("probe{n:02}");
+        let account = create_local_account(&pool, &username, &username).await;
+        user::create(&pool, account.id, None, &hash).await.unwrap();
+        ids.push(account.id);
+    }
+    sqlx::query(
+        "UPDATE users
+         SET approved = false, invite_request_text = 'shared probe signature'
+         WHERE account_id = ANY($1)",
+    )
+    .bind(&ids)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let app = common::test_app(pool);
+    let cookie = login(&app).await;
+
+    let page = get(
+        &app,
+        "/admin/accounts?origin=local&status=pending&q=probe",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(page.status, StatusCode::OK, "{}", page.body);
+    assert_eq!(page.body.matches(r#"name="account_id""#).count(), 50);
+    assert!(
+        page.body
+            .contains("Select all currently loaded applications"),
+        "{}",
+        page.body
+    );
+    assert!(
+        page.body
+            .contains("Select all 51 matching applications across every result page"),
+        "{}",
+        page.body
+    );
+    assert!(page.body.contains("Older →"), "{}", page.body);
+
+    let csrf = csrf_of(&page.body);
+    let snapshot_marker = r#"name="snapshot_max_id" value=""#;
+    let snapshot_start =
+        page.body.find(snapshot_marker).expect("snapshot boundary") + snapshot_marker.len();
+    let snapshot = page.body[snapshot_start..]
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned();
+    let confirmation = post_form(
+        &app,
+        "/web/admin/accounts/bulk/confirm",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("all_matching", "1"),
+            ("snapshot_max_id", &snapshot),
+            ("q", "probe"),
+            ("username", ""),
+            ("domain", ""),
+        ],
+    )
+    .await;
+    assert!(
+        confirmation
+            .body
+            .contains("Reject 51 selected applications?"),
+        "{}",
+        confirmation.body
+    );
+    let selection_marker = r#"name="selection" value=""#;
+    let selection_start = confirmation
+        .body
+        .find(selection_marker)
+        .expect("server-side selection token")
+        + selection_marker.len();
+    let selection = confirmation.body[selection_start..]
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned();
+    let progress = post_form(
+        &app,
+        "/web/admin/accounts/bulk/reject",
+        &cookie,
+        &[("csrf", &csrf), ("selection", &selection)],
+    )
+    .await;
+    assert_eq!(progress.status, StatusCode::OK, "{}", progress.body);
+    assert!(
+        progress.body.contains("25 of 51 processed"),
+        "{}",
+        progress.body
+    );
+    assert!(
+        progress.body.contains("Continue with the next batch"),
+        "{}",
+        progress.body
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn admin_bulk_rejection_snapshots_revalidates_and_audits(pool: PgPool) {
+    let alice = seed_alice(&pool).await;
+    make_staff(&pool, alice.id).await;
+    let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
+    let carol = seed_user(&pool, "carol", "carol@example.com", PASSWORD).await;
+    sqlx::query(
+        "UPDATE users
+         SET approved = false, invite_request_text = 'Automated protocol deliverability probe'
+         WHERE account_id = ANY($1)",
+    )
+    .bind(vec![bob.id, carol.id])
+    .execute(&pool)
+    .await
+    .unwrap();
+    let app = common::test_app(pool.clone());
+    let cookie = login(&app).await;
+
+    let page = get(
+        &app,
+        "/admin/accounts?origin=local&status=pending&q=deliverability",
+        Some(&cookie),
+    )
+    .await;
+    let csrf = csrf_of(&page.body);
+    let marker = r#"name="snapshot_max_id" value=""#;
+    let start = page.body.find(marker).expect("snapshot boundary") + marker.len();
+    let snapshot = page.body[start..].split('"').next().unwrap().to_owned();
+
+    // A matching application that arrives after the list was rendered must
+    // not be silently swept into the all-matching selection.
+    let dave = seed_user(&pool, "dave", "dave@example.com", PASSWORD).await;
+    sqlx::query(
+        "UPDATE users
+         SET approved = false, invite_request_text = 'Automated protocol deliverability probe'
+         WHERE account_id = $1",
+    )
+    .bind(dave.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let confirmation = post_form(
+        &app,
+        "/web/admin/accounts/bulk/confirm",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("all_matching", "1"),
+            ("snapshot_max_id", &snapshot),
+            ("q", "deliverability"),
+            ("username", ""),
+            ("domain", ""),
+        ],
+    )
+    .await;
+    assert_eq!(confirmation.status, StatusCode::OK, "{}", confirmation.body);
+    assert!(
+        confirmation
+            .body
+            .contains("Reject 2 selected applications?"),
+        "{}",
+        confirmation.body
+    );
+    let selection_marker = r#"name="selection" value=""#;
+    let selection_start = confirmation
+        .body
+        .find(selection_marker)
+        .expect("server-side selection token")
+        + selection_marker.len();
+    let selection = confirmation.body[selection_start..]
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned();
+    let selected_ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT account_id
+         FROM admin_account_bulk_selections
+         WHERE token = $1
+         ORDER BY account_id",
+    )
+    .bind(&selection)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(selected_ids, vec![bob.id, carol.id]);
+    assert!(!selected_ids.contains(&dave.id));
+
+    // Carol is approved between confirmation and execution. Revalidation
+    // skips her while rejecting Bob and reports both outcomes.
+    assert!(user::approve(&pool, carol.id).await.unwrap());
+    let result = post_form(
+        &app,
+        "/web/admin/accounts/bulk/reject",
+        &cookie,
+        &[("csrf", &csrf), ("selection", &selection)],
+    )
+    .await;
+    assert_eq!(result.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        result.location.as_deref(),
+        Some(
+            "/admin/accounts?origin=local&status=pending&flash=bulk&rejected=1&skipped=1&failed=0"
+        )
+    );
+    assert!(account::find_by_id(&pool, bob.id).await.unwrap().is_none());
+    assert!(
+        account::find_by_id(&pool, carol.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(account::find_by_id(&pool, dave.id).await.unwrap().is_some());
+    let audit_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM admin_action_logs WHERE action = 'reject' AND target_id = $1",
+    )
+    .bind(bob.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit_count, 1);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn admin_suspends_account_via_web(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;

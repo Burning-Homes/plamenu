@@ -4,6 +4,7 @@
 //! [`crate::moderation`] helper, so a suspension applied here federates exactly
 //! as one applied through the API. All pages require `MANAGE_USERS`.
 
+use axum::body::Bytes;
 use axum::extract::{Form, Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -21,6 +22,8 @@ use crate::{AppState, admin_log};
 
 /// Page size for the account listing.
 const PAGE_LIMIT: i64 = 50;
+/// Each continuation request handles at most this many snapshotted accounts.
+const BULK_REJECT_BATCH: i64 = 25;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct IndexQuery {
@@ -28,8 +31,12 @@ pub struct IndexQuery {
     status: Option<String>,
     username: Option<String>,
     domain: Option<String>,
+    q: Option<String>,
     max_id: Option<i64>,
     flash: Option<String>,
+    rejected: Option<i64>,
+    skipped: Option<i64>,
+    failed: Option<i64>,
 }
 
 /// `GET /admin/accounts` — the moderation listing, filterable by origin,
@@ -45,12 +52,14 @@ pub async fn index(
     let origin = non_empty(query.origin.as_deref());
     let status = non_empty(query.status.as_deref());
     let domain = non_empty(query.domain.as_deref());
+    let search = non_empty(query.q.as_deref());
     let filter = AdminAccountFilter {
         origin: origin.clone(),
         status: status.clone(),
         username: non_empty(query.username.as_deref())
             .map(|u| format!("{}%", u.replace('%', "\\%").replace('_', "\\_"))),
         by_domain: domain.clone(),
+        search: search.as_deref().map(contains_pattern),
         max_id: query.max_id,
         limit: PAGE_LIMIT,
         ..AdminAccountFilter::default()
@@ -61,10 +70,31 @@ pub async fn index(
     let next_max = (i64::try_from(views.len()).unwrap_or(i64::MAX) == PAGE_LIMIT)
         .then(|| views.last().map(|v| v.account.id))
         .flatten();
+    let pending_queue = status.as_deref() == Some("pending");
+    let (matching_count, snapshot_max_id) = if pending_queue {
+        let mut complete_filter = filter.clone();
+        complete_filter.max_id = None;
+        complete_filter.since_id = None;
+        complete_filter.min_id = None;
+        admin_account::stats(&state.pool, &complete_filter)
+            .await
+            .map_err(api_err)?
+    } else {
+        (0, None)
+    };
 
     let username = query.username.clone().unwrap_or_default();
+    let search_value = query.q.clone().unwrap_or_default();
     let body = html! {
         (super::flash_banner(query.flash.as_deref(), "That action could not be completed."))
+        @if query.flash.as_deref() == Some("bulk") {
+            p.admin-flash role="status" {
+                "Bulk rejection finished: "
+                strong { (query.rejected.unwrap_or(0)) " rejected" }
+                ", " (query.skipped.unwrap_or(0)) " skipped, and "
+                (query.failed.unwrap_or(0)) " failed."
+            }
+        }
         form.admin-filter method="get" action="/admin/accounts" {
             label {
                 "Origin"
@@ -93,58 +123,356 @@ pub async fn index(
                 "Domain"
                 input type="text" name="domain" value=(domain.as_deref().unwrap_or_default()) placeholder="exact";
             }
+            label.admin-filter__search {
+                "Search registration data"
+                input type="search" name="q" value=(search_value) placeholder="reason, name, e-mail, IP, or app";
+            }
             button type="submit" { "Filter" }
         }
-        (crate::web::view::data_table(&html! {
-            thead { tr { th scope="col" { "Account" } th scope="col" { "Origin" } th scope="col" { "Status" } th scope="col" { "Role" } } }
-            tbody data-paged {
-                @if views.is_empty() {
-                    tr { td colspan="4" { "No accounts match." } }
-                }
-                @for view in &views {
-                    tr {
-                        td {
-                            div.admin-table__account {
-                                img.admin-table__avatar src=(avatar_src(&state.config.domain, &view.account)) alt="" loading="lazy" width="32" height="32";
-                                div {
-                                    a href=(format!("/admin/accounts/{}", view.account.id)) {
-                                        (account_handle(&view.account, view.portable))
+        form.admin-bulk method="post" action="/web/admin/accounts/bulk/confirm" {
+            input type="hidden" name="csrf" value=(admin.user.csrf.as_str());
+            input type="hidden" name="q" value=(query.q.as_deref().unwrap_or_default());
+            input type="hidden" name="username" value=(&username);
+            input type="hidden" name="domain" value=(domain.as_deref().unwrap_or_default());
+            @if let Some(snapshot) = snapshot_max_id {
+                input type="hidden" name="snapshot_max_id" value=(snapshot);
+            }
+            (crate::web::view::data_table(&html! {
+                thead { tr {
+                    @if pending_queue { th.is-check scope="col" { span.visually-hidden { "Select" } } }
+                    th scope="col" { "Account" }
+                    th scope="col" { "Registration" }
+                    th scope="col" { "Origin" }
+                    th scope="col" { "Status" }
+                    th scope="col" { "Role" }
+                } }
+                tbody data-paged {
+                    @if views.is_empty() {
+                        tr { td colspan=(if pending_queue { "6" } else { "5" }) { "No accounts match." } }
+                    }
+                    @for view in &views {
+                        tr {
+                            @if pending_queue {
+                                td.is-check {
+                                    label {
+                                        input type="checkbox" name="account_id" value=(view.account.id) data-bulk-row;
+                                        span.visually-hidden { "Select " (account_handle(&view.account, view.portable)) }
                                     }
-                                    @if view.portable {
-                                        " " span.admin-badge { "Portable" }
-                                    }
-                                    @if let Some(kind) = special_kind(&view.account) {
-                                        " " span.admin-badge { (kind) }
-                                    }
-                                    @if !view.account.display_name.is_empty() {
-                                        span.admin-table__sub { (view.account.display_name) }
-                                    }
-                                    span.admin-table__links {
-                                        a href=(account_profile_path(&view.account, view.portable)) { "Profile" }
-                                        @if let Some(url) = origin_url(&view.account) {
-                                            " · "
-                                            a href=(url) rel="noopener noreferrer" { "Origin" }
+                                }
+                            }
+                            td {
+                                div.admin-table__account {
+                                    img.admin-table__avatar src=(avatar_src(&state.config.domain, &view.account)) alt="" loading="lazy" width="32" height="32";
+                                    div {
+                                        a href=(format!("/admin/accounts/{}", view.account.id)) {
+                                            (account_handle(&view.account, view.portable))
+                                        }
+                                        @if view.portable {
+                                            " " span.admin-badge { "Portable" }
+                                        }
+                                        @if let Some(kind) = special_kind(&view.account) {
+                                            " " span.admin-badge { (kind) }
+                                        }
+                                        @if !view.account.display_name.is_empty() {
+                                            span.admin-table__sub { (view.account.display_name) }
+                                        }
+                                        span.admin-table__links {
+                                            a href=(account_profile_path(&view.account, view.portable)) { "Profile" }
+                                            @if let Some(url) = origin_url(&view.account) {
+                                                " · "
+                                                a href=(url) rel="noopener noreferrer" { "Origin" }
+                                            }
                                         }
                                     }
                                 }
                             }
+                            td.admin-registration { (registration_summary(view)) }
+                            td.is-tight { (if view.portable { "Portable" } else if view.account.is_local() { "Local" } else { "Remote" }) }
+                            td.is-tight { (status_badge(view)) }
+                            td.is-tight { (view.role.as_ref().map_or("—", |r| r.name.as_str())) }
                         }
-                        td.is-tight { (if view.portable { "Portable" } else if view.account.is_local() { "Local" } else { "Remote" }) }
-                        td.is-tight { (status_badge(view)) }
-                        td.is-tight { (view.role.as_ref().map_or("—", |r| r.name.as_str())) }
                     }
                 }
+            }))
+            @if pending_queue && !views.is_empty() {
+                fieldset.admin-bulk__controls {
+                    legend { "Bulk selection" }
+                    label.admin-check {
+                        input type="checkbox" data-bulk-page;
+                        "Select all currently loaded applications"
+                    }
+                    @if matching_count > i64::try_from(views.len()).unwrap_or(i64::MAX) {
+                        label.admin-check {
+                            input type="checkbox" name="all_matching" value="1" data-bulk-matching;
+                            "Select all " (matching_count) " matching applications across every result page"
+                        }
+                    }
+                    button.admin-danger type="submit" { "Reject selected" }
+                }
             }
-        }))
+        }
         @if let Some(max) = next_max {
             p.admin-pager {
-                a href=(format!("/admin/accounts?max_id={max}{}", carry(origin.as_deref(), status.as_deref(), &username, domain.as_deref()))) {
+                a href=(format!("/admin/accounts?max_id={max}{}", carry(origin.as_deref(), status.as_deref(), &username, domain.as_deref(), query.q.as_deref()))) {
                     "Older →"
                 }
             }
         }
     };
     Ok(admin_shell(&admin, "/admin/accounts", "Accounts", &body).into_response())
+}
+
+/// URL-encoded fields shared by the two bulk-rejection POSTs. A vector is used
+/// because HTML checkboxes submit the same `account_id` name more than once.
+fn form_pairs(body: &[u8]) -> Result<Vec<(String, String)>, Response> {
+    serde_urlencoded::from_bytes(body).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            "The bulk-selection form could not be read.",
+        )
+            .into_response()
+    })
+}
+
+fn pair<'a>(pairs: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    pairs
+        .iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.as_str())
+}
+
+fn selected_ids(pairs: &[(String, String)]) -> Vec<i64> {
+    let mut seen = std::collections::HashSet::new();
+    pairs
+        .iter()
+        .filter(|(key, _)| key == "account_id")
+        .filter_map(|(_, value)| value.parse::<i64>().ok())
+        .filter(|id| seen.insert(*id))
+        .collect()
+}
+
+fn pending_filter(pairs: &[(String, String)], snapshot_max_id: Option<i64>) -> AdminAccountFilter {
+    AdminAccountFilter {
+        origin: Some("local".to_owned()),
+        status: Some("pending".to_owned()),
+        username: non_empty(pair(pairs, "username"))
+            .map(|value| format!("{}%", escape_like(&value))),
+        by_domain: non_empty(pair(pairs, "domain")),
+        search: non_empty(pair(pairs, "q")).map(|value| contains_pattern(&value)),
+        // `max_id` is exclusive. Adding one turns the newest id shown when the
+        // list rendered into an inclusive snapshot boundary.
+        max_id: snapshot_max_id.map(|id| id.saturating_add(1)),
+        limit: i64::MAX,
+        ..AdminAccountFilter::default()
+    }
+}
+
+fn eligible_pending_application(view: &AdminAccountView) -> bool {
+    view.account.is_local() && view.has_user && !view.approved
+}
+
+fn moderator_can_reject_pending(admin: &WebAdmin, view: &AdminAccountView) -> bool {
+    eligible_pending_application(view)
+        && crate::moderation::authorize_account_action(
+            &admin.role,
+            admin.user.current.account.id,
+            view.account.id,
+            view.role.as_ref(),
+            crate::moderation::ActionKind::Reject,
+        )
+        .is_ok()
+}
+
+/// `POST /web/admin/accounts/bulk/confirm` — resolves the visible selection or
+/// filtered cross-page scope into an immutable server-side id snapshot, then
+/// renders an explicit destructive confirmation page.
+pub async fn bulk_confirm(
+    State(state): State<AppState>,
+    admin: WebAdmin,
+    body: Bytes,
+) -> Result<Response, Response> {
+    admin.require(permission::MANAGE_USERS)?;
+    let pairs = form_pairs(&body)?;
+    if !admin.user.csrf_ok(pair(&pairs, "csrf").unwrap_or_default()) {
+        return Err(csrf_rejection());
+    }
+
+    let all_matching = pair(&pairs, "all_matching") == Some("1");
+    let selected = if all_matching {
+        let snapshot = pair(&pairs, "snapshot_max_id").and_then(|value| value.parse().ok());
+        let Some(snapshot) = snapshot else {
+            return Ok(redirect_to(
+                "/admin/accounts?origin=local&status=pending&flash=error",
+            ));
+        };
+        // Snapshot ids directly rather than loading every registration
+        // overlay into memory. Eligibility and moderator rank are deliberately
+        // revalidated only when each bounded execution batch runs.
+        admin_account::ids(&state.pool, &pending_filter(&pairs, Some(snapshot)))
+            .await
+            .map_err(api_err)?
+    } else {
+        let ids = selected_ids(&pairs);
+        let mut eligible = Vec::with_capacity(ids.len());
+        for id in ids {
+            let Ok(Some(view)) = admin_account::show(&state.pool, id).await else {
+                continue;
+            };
+            if eligible_pending_application(&view) {
+                eligible.push(id);
+            }
+        }
+        eligible
+    };
+    if selected.is_empty() {
+        return Ok(redirect_to(
+            "/admin/accounts?origin=local&status=pending&flash=error",
+        ));
+    }
+
+    let token = crate::auth::generate_secret();
+    let count = admin_account::create_bulk_selection(
+        &state.pool,
+        &token,
+        admin.user.current.account.id,
+        &selected,
+    )
+    .await
+    .map_err(api_err)?;
+    if count == 0 {
+        return Ok(redirect_to(
+            "/admin/accounts?origin=local&status=pending&flash=error",
+        ));
+    }
+    let body = html! {
+        p.admin-back { a href="/admin/accounts?origin=local&status=pending" { "← Back to applications" } }
+        section.admin-bulk-confirm {
+            h3 { "Reject " (count) " selected " (if count == 1 { "application" } else { "applications" }) "?" }
+            p {
+                "Rejection permanently deletes "
+                strong { (count) " pending " (if count == 1 { "account" } else { "accounts" }) }
+                ". This cannot be undone."
+            }
+            p.admin-table__sub {
+                "Only this snapshotted set is included. Applications received after selection are not included. "
+                "Targets are checked again when the action runs; changed or unauthorized accounts are skipped."
+            }
+            form method="post" action="/web/admin/accounts/bulk/reject" {
+                input type="hidden" name="csrf" value=(admin.user.csrf.as_str());
+                input type="hidden" name="selection" value=(&token);
+                div.admin-actions {
+                    button.admin-danger type="submit" { "Reject " (count) }
+                    a.pill-button href="/admin/accounts?origin=local&status=pending" { "Cancel" }
+                }
+            }
+        }
+    };
+    Ok(admin_shell(&admin, "/admin/accounts", "Confirm rejection", &body).into_response())
+}
+
+/// `POST /web/admin/accounts/bulk/reject` — executes the confirmed snapshot.
+/// Each request handles one bounded chunk. The response automatically
+/// continues while work remains, with a real button as the no-JavaScript
+/// fallback. Every target is independently revalidated and audited.
+pub async fn bulk_reject(
+    State(state): State<AppState>,
+    admin: WebAdmin,
+    body: Bytes,
+) -> Result<Response, Response> {
+    admin.require(permission::MANAGE_USERS)?;
+    let pairs = form_pairs(&body)?;
+    if !admin.user.csrf_ok(pair(&pairs, "csrf").unwrap_or_default()) {
+        return Err(csrf_rejection());
+    }
+    let token = pair(&pairs, "selection").unwrap_or_default();
+    if token.is_empty() || token.len() > 128 {
+        return Ok(redirect_to(
+            "/admin/accounts?origin=local&status=pending&flash=error",
+        ));
+    }
+
+    let moderator = admin.user.current.account.id;
+    if admin_account::bulk_selection_stats(&state.pool, token, moderator)
+        .await
+        .map_err(api_err)?
+        .is_none()
+    {
+        return Ok(redirect_to(
+            "/admin/accounts?origin=local&status=pending&flash=error",
+        ));
+    }
+    let ids = admin_account::bulk_selection_next(&state.pool, token, moderator, BULK_REJECT_BATCH)
+        .await
+        .map_err(api_err)?;
+    for id in ids {
+        let view = match admin_account::show(&state.pool, id).await {
+            Ok(Some(view)) => view,
+            Ok(None) => {
+                admin_account::mark_bulk_selection(&state.pool, token, moderator, id, "skipped")
+                    .await
+                    .map_err(api_err)?;
+                continue;
+            }
+            Err(_) => {
+                admin_account::mark_bulk_selection(&state.pool, token, moderator, id, "failed")
+                    .await
+                    .map_err(api_err)?;
+                continue;
+            }
+        };
+        if !moderator_can_reject_pending(&admin, &view) {
+            admin_account::mark_bulk_selection(&state.pool, token, moderator, id, "skipped")
+                .await
+                .map_err(api_err)?;
+            continue;
+        }
+        if admin_log::record_bulk_pending_rejection(
+            &state.pool,
+            token,
+            moderator,
+            admin.role.position,
+            &admin_log::Target::user(&view.account),
+        )
+        .await
+        .is_err()
+        {
+            admin_account::mark_bulk_selection(&state.pool, token, moderator, id, "failed")
+                .await
+                .map_err(api_err)?;
+        }
+    }
+
+    let selection_stats = admin_account::bulk_selection_stats(&state.pool, token, moderator)
+        .await
+        .map_err(api_err)?
+        .ok_or_else(|| redirect_to("/admin/accounts?origin=local&status=pending&flash=error"))?;
+    if selection_stats.pending > 0 {
+        let completed = selection_stats.total - selection_stats.pending;
+        let body = html! {
+            section.admin-bulk-confirm aria-live="polite" {
+                h3 { "Rejecting selected applications" }
+                progress value=(completed) max=(selection_stats.total) { (completed) " of " (selection_stats.total) }
+                p {
+                    (completed) " of " (selection_stats.total) " processed — "
+                    (selection_stats.rejected) " rejected, " (selection_stats.skipped) " skipped, "
+                    (selection_stats.failed) " failed."
+                }
+                form method="post" action="/web/admin/accounts/bulk/reject" data-bulk-continue {
+                    input type="hidden" name="csrf" value=(admin.user.csrf.as_str());
+                    input type="hidden" name="selection" value=(token);
+                    button type="submit" { "Continue with the next batch" }
+                }
+            }
+        };
+        return Ok(admin_shell(&admin, "/admin/accounts", "Bulk rejection", &body).into_response());
+    }
+    admin_account::delete_bulk_selection(&state.pool, token, moderator)
+        .await
+        .map_err(api_err)?;
+    Ok(redirect_to(&format!(
+        "/admin/accounts?origin=local&status=pending&flash=bulk&rejected={}&skipped={}&failed={}",
+        selection_stats.rejected, selection_stats.skipped, selection_stats.failed
+    )))
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -1297,6 +1625,27 @@ fn status_badge(view: &AdminAccountView) -> Markup {
     html! { span.admin-badge class=(format!("admin-badge {class}")) { (label) } }
 }
 
+/// Compact registration context for list review. Raw values remain inside the
+/// existing admin permission boundary and are never copied into logs.
+fn registration_summary(view: &AdminAccountView) -> Markup {
+    if !view.has_user {
+        return html! { span.admin-table__sub { "Not a local registration" } };
+    }
+    html! {
+        @if let Some(reason) = view.invite_request_text.as_deref().filter(|value| !value.is_empty()) {
+            p.admin-registration__reason title=(reason) { (reason) }
+        } @else {
+            p.admin-registration__reason.admin-table__sub { "No sign-up reason" }
+        }
+        dl.admin-registration__meta {
+            @if let Some(email) = &view.email { dt { "E-mail" } dd { (email) } }
+            @if let Some(ip) = &view.sign_up_ip { dt { "IP" } dd { (ip) } }
+            @if let Some(app) = &view.sign_up_application { dt { "App" } dd { (app) } }
+            @if let Some(locale) = &view.locale { dt { "Locale" } dd { (locale) } }
+        }
+    }
+}
+
 fn yes_no(value: bool) -> &'static str {
     if value { "Yes" } else { "No" }
 }
@@ -1306,28 +1655,42 @@ fn non_empty(value: Option<&str>) -> Option<String> {
     value.filter(|v| !v.is_empty()).map(ToOwned::to_owned)
 }
 
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+fn contains_pattern(value: &str) -> String {
+    format!("%{}%", escape_like(value))
+}
+
 /// Re-appends the active list filters to a pager link.
 fn carry(
     origin: Option<&str>,
     status: Option<&str>,
     username: &str,
     domain: Option<&str>,
+    search: Option<&str>,
 ) -> String {
-    use std::fmt::Write;
-    let mut q = String::new();
+    let mut pairs = Vec::new();
     if let Some(o) = origin {
-        let _ = write!(q, "&origin={o}");
+        pairs.push(("origin", o));
     }
     if let Some(s) = status {
-        let _ = write!(q, "&status={s}");
+        pairs.push(("status", s));
     }
     if !username.is_empty() {
-        let _ = write!(q, "&username={username}");
+        pairs.push(("username", username));
     }
     if let Some(d) = domain {
-        let _ = write!(q, "&domain={d}");
+        pairs.push(("domain", d));
     }
-    q
+    if let Some(search) = search.filter(|value| !value.is_empty()) {
+        pairs.push(("q", search));
+    }
+    serde_urlencoded::to_string(pairs).map_or_else(|_| String::new(), |q| format!("&{q}"))
 }
 
 fn redirect_show(id: i64, flash: &str) -> Response {
