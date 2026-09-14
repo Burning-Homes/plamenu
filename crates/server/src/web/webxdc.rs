@@ -288,6 +288,99 @@ pub async fn new_page(
     Ok(create_page(&user, &form, limits, &apps, None))
 }
 
+fn create_app_picker(
+    form: &CreateForm,
+    limits: webxdc::Limits,
+    apps: &[webxdc::LibraryApp],
+) -> Markup {
+    let selected_app = form
+        .version_id
+        .and_then(|version| apps.iter().find(|app| app.version_id == version));
+    let library_choice_label =
+        selected_app.map_or("Choose from app library", |app| app.name.as_str());
+    let library_default_meta = format!(
+        "{} {} available",
+        apps.len(),
+        if apps.len() == 1 { "app" } else { "apps" }
+    );
+    let library_choice_meta = if selected_app.is_some() {
+        "Selected from app library".to_owned()
+    } else {
+        library_default_meta.clone()
+    };
+    html! {
+        fieldset.settings-form__group.webxdc-create__apps {
+            legend { "Choose an app" }
+            p.webxdc-muted { "Start with an app that is already available, or upload one from your device." }
+            @if !apps.is_empty() {
+                details.webxdc-app-browser data-webxdc-app-browser {
+                    summary.webxdc-app-browser__summary {
+                        span.webxdc-app-choice__icon aria-hidden="true" { (super::view::icon("apps")) }
+                        span.webxdc-app-choice__body {
+                            strong data-webxdc-app-browser-label { (library_choice_label) }
+                            span.webxdc-app-choice__summary data-webxdc-app-browser-meta data-default=(library_default_meta) { (library_choice_meta) }
+                        }
+                        span.webxdc-app-choice__check aria-hidden="true" { (super::view::icon("check")) }
+                    }
+                    div.webxdc-app-browser__body {
+                        label.settings-field.webxdc-create__search hidden data-webxdc-create-search-wrap {
+                            span.settings-field__label { "Find an app" }
+                            input type="search" placeholder="Search available apps" autocomplete="off" data-webxdc-create-search;
+                        }
+                        div.webxdc-app-picker data-webxdc-app-picker {
+                            @for app in apps {
+                                label.webxdc-app-choice data-webxdc-app-choice data-app-name=(&app.name) data-app-summary=(&app.summary) data-app-search={ (&app.name) " " (&app.summary) " " (&app.version) } {
+                                    input required type="radio" name="version_id" value=(app.version_id) checked[form.version_id == Some(app.version_id)];
+                                    span.webxdc-app-choice__icon aria-hidden="true" {
+                                        @if app.icon_path.is_some() {
+                                            img src={ "/webxdc/library/version/" (app.version_id) "/icon" } alt="" loading="lazy" width="52" height="52";
+                                        } @else {
+                                            (super::view::icon("apps"))
+                                        }
+                                    }
+                                    span.webxdc-app-choice__body {
+                                        strong { (&app.name) }
+                                        @if !app.summary.is_empty() {
+                                            span.webxdc-app-choice__summary { (&app.summary) }
+                                        }
+                                        span.webxdc-app-choice__meta {
+                                            @if !app.version.is_empty() { (&app.version) " · " }
+                                            @if app.owner_account_id.is_some() { "Your library" } @else { "Instance library" }
+                                        }
+                                    }
+                                    span.webxdc-app-choice__check aria-hidden="true" { (super::view::icon("check")) }
+                                }
+                            }
+                        }
+                        p.webxdc-create__no-results hidden data-webxdc-create-no-results { "No available apps match that search." }
+                    }
+                }
+            }
+            label.webxdc-app-choice.webxdc-app-choice--upload data-webxdc-upload-choice data-app-name="" data-app-summary="" {
+                input required type="radio" name="version_id" value="" checked[form.version_id.is_none()];
+                span.webxdc-app-choice__icon aria-hidden="true" { (super::view::icon("upload")) }
+                span.webxdc-app-choice__body {
+                    strong { "Upload an app" }
+                    span.webxdc-app-choice__summary { "Choose a .xdc package from this device." }
+                    span.webxdc-app-choice__meta { "One-off package" }
+                }
+                span.webxdc-app-choice__check aria-hidden="true" { (super::view::icon("check")) }
+            }
+            div.webxdc-package-upload data-webxdc-package-upload {
+                label.settings-field {
+                    span.settings-field__label { "App file (.xdc)" }
+                    input type="file" name="bundle" data-max-bytes=(limits.bundle_bytes()) accept=".xdc,application/webxdc+zip,application/x-webxdc,application/zip";
+                    span.settings-field__hint { "Choose a .xdc file up to " (limits.bundle_bytes() / (1024 * 1024)) " MiB. Its app name will be used automatically when available." }
+                }
+                @if !form.bundle_name.is_empty() {
+                    p.settings-field__hint { "Select " strong { (&form.bundle_name) } " again to retry." }
+                }
+            }
+            a.webxdc-create__library-link href="/webxdc/library" { "Browse or manage your app library →" }
+        }
+    }
+}
+
 fn create_page(
     user: &WebUser,
     form: &CreateForm,
@@ -300,22 +393,7 @@ fn create_page(
         || form.send_update_max_size != protocol::DEFAULT_SEND_UPDATE_MAX_SIZE;
     let name_from_app = if form.name_from_app { "1" } else { "0" };
     let summary_from_app = if form.summary_from_app { "1" } else { "0" };
-    let selected_app = form
-        .version_id
-        .and_then(|version| apps.iter().find(|app| app.version_id == version));
-    let library_choice_label = selected_app
-        .map(|app| app.name.as_str())
-        .unwrap_or("Choose from app library");
-    let library_default_meta = format!(
-        "{} {} available",
-        apps.len(),
-        if apps.len() == 1 { "app" } else { "apps" }
-    );
-    let library_choice_meta = if selected_app.is_some() {
-        "Selected from app library".to_owned()
-    } else {
-        library_default_meta.clone()
-    };
+    let app_picker = create_app_picker(form, limits, apps);
     let body = html! {
         section.column.settings.webxdc-create {
             a.webxdc-back href="/webxdc" { "← App sessions" }
@@ -332,75 +410,7 @@ fn create_page(
                     input type="hidden" name="enhanced" value="0" data-webxdc-create-enhanced;
                     input type="hidden" name="name_from_app" value=(name_from_app) data-webxdc-name-from-app;
                     input type="hidden" name="summary_from_app" value=(summary_from_app) data-webxdc-summary-from-app;
-                    fieldset.settings-form__group.webxdc-create__apps {
-                        legend { "Choose an app" }
-                        p.webxdc-muted { "Start with an app that is already available, or upload one from your device." }
-                        @if !apps.is_empty() {
-                            details.webxdc-app-browser data-webxdc-app-browser {
-                                summary.webxdc-app-browser__summary {
-                                    span.webxdc-app-choice__icon aria-hidden="true" { (super::view::icon("apps")) }
-                                    span.webxdc-app-choice__body {
-                                        strong data-webxdc-app-browser-label { (library_choice_label) }
-                                        span.webxdc-app-choice__summary data-webxdc-app-browser-meta data-default=(library_default_meta) { (library_choice_meta) }
-                                    }
-                                    span.webxdc-app-choice__check aria-hidden="true" { (super::view::icon("check")) }
-                                }
-                                div.webxdc-app-browser__body {
-                                    label.settings-field.webxdc-create__search hidden data-webxdc-create-search-wrap {
-                                        span.settings-field__label { "Find an app" }
-                                        input type="search" placeholder="Search available apps" autocomplete="off" data-webxdc-create-search;
-                                    }
-                                    div.webxdc-app-picker data-webxdc-app-picker {
-                                        @for app in apps {
-                                            label.webxdc-app-choice data-webxdc-app-choice data-app-name=(&app.name) data-app-summary=(&app.summary) data-app-search={ (&app.name) " " (&app.summary) " " (&app.version) } {
-                                                input required type="radio" name="version_id" value=(app.version_id) checked[form.version_id == Some(app.version_id)];
-                                                span.webxdc-app-choice__icon aria-hidden="true" {
-                                                    @if app.icon_path.is_some() {
-                                                        img src={ "/webxdc/library/version/" (app.version_id) "/icon" } alt="" loading="lazy" width="52" height="52";
-                                                    } @else {
-                                                        (super::view::icon("apps"))
-                                                    }
-                                                }
-                                                span.webxdc-app-choice__body {
-                                                    strong { (&app.name) }
-                                                    @if !app.summary.is_empty() {
-                                                        span.webxdc-app-choice__summary { (&app.summary) }
-                                                    }
-                                                    span.webxdc-app-choice__meta {
-                                                        @if !app.version.is_empty() { (&app.version) " · " }
-                                                        @if app.owner_account_id.is_some() { "Your library" } @else { "Instance library" }
-                                                    }
-                                                }
-                                                span.webxdc-app-choice__check aria-hidden="true" { (super::view::icon("check")) }
-                                            }
-                                        }
-                                    }
-                                    p.webxdc-create__no-results hidden data-webxdc-create-no-results { "No available apps match that search." }
-                                }
-                            }
-                        }
-                        label.webxdc-app-choice.webxdc-app-choice--upload data-webxdc-upload-choice data-app-name="" data-app-summary="" {
-                            input required type="radio" name="version_id" value="" checked[form.version_id.is_none()];
-                            span.webxdc-app-choice__icon aria-hidden="true" { (super::view::icon("upload")) }
-                            span.webxdc-app-choice__body {
-                                strong { "Upload an app" }
-                                span.webxdc-app-choice__summary { "Choose a .xdc package from this device." }
-                                span.webxdc-app-choice__meta { "One-off package" }
-                            }
-                            span.webxdc-app-choice__check aria-hidden="true" { (super::view::icon("check")) }
-                        }
-                        div.webxdc-package-upload data-webxdc-package-upload {
-                            label.settings-field {
-                                span.settings-field__label { "App file (.xdc)" }
-                                input type="file" name="bundle" data-max-bytes=(limits.bundle_bytes()) accept=".xdc,application/webxdc+zip,application/x-webxdc,application/zip";
-                                span.settings-field__hint { "Choose a .xdc file up to " (limits.bundle_bytes() / (1024 * 1024)) " MiB. Its app name will be used automatically when available." }
-                            }
-                            @if !form.bundle_name.is_empty() {
-                                p.settings-field__hint { "Select " strong { (&form.bundle_name) } " again to retry." }
-                            }
-                        }
-                        a.webxdc-create__library-link href="/webxdc/library" { "Browse or manage your app library →" }
-                    }
+                    (app_picker)
                     fieldset.settings-form__group {
                         legend { "Session details" }
                         label.settings-field {
@@ -1055,35 +1065,34 @@ pub async fn catalog_icon(
             .await?
             .ok_or(ApiError::NotFound)?;
     let icon_url = icon.icon_url.ok_or(ApiError::NotFound)?;
-    let (media_type, bytes) = match (icon.icon_media_type, icon.icon_bytes) {
-        (Some(media_type), Some(bytes)) => (media_type, bytes),
-        _ => {
-            let fetched = state
-                .federation
-                .fetch_media_limited(&icon_url, CATALOG_ICON_MAX_BYTES)
-                .await
-                .map_err(|error| ApiError::BadGateway(error.to_string()))?;
-            let media_type = catalog_icon_media_type(&fetched.bytes)
-                .ok_or_else(|| {
-                    ApiError::Unprocessable(
-                        "The catalog icon is not a supported raster image".into(),
-                    )
-                })?
-                .to_owned();
-            if !webxdc::cache_catalog_candidate_icon(
-                &state.pool,
-                query.source_id,
-                query.external_app_id.trim(),
-                &icon_url,
-                &media_type,
-                &fetched.bytes,
-            )
-            .await?
-            {
-                return Err(ApiError::NotFound);
-            }
-            (media_type, fetched.bytes)
+    let (media_type, bytes) = if let (Some(media_type), Some(bytes)) =
+        (icon.icon_media_type, icon.icon_bytes)
+    {
+        (media_type, bytes)
+    } else {
+        let fetched = state
+            .federation
+            .fetch_media_limited(&icon_url, CATALOG_ICON_MAX_BYTES)
+            .await
+            .map_err(|error| ApiError::BadGateway(error.to_string()))?;
+        let media_type = catalog_icon_media_type(&fetched.bytes)
+            .ok_or_else(|| {
+                ApiError::Unprocessable("The catalog icon is not a supported raster image".into())
+            })?
+            .to_owned();
+        if !webxdc::cache_catalog_candidate_icon(
+            &state.pool,
+            query.source_id,
+            query.external_app_id.trim(),
+            &icon_url,
+            &media_type,
+            &fetched.bytes,
+        )
+        .await?
+        {
+            return Err(ApiError::NotFound);
         }
+        (media_type, fetched.bytes)
     };
     Ok((
         [
