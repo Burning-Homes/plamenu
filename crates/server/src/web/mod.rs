@@ -650,6 +650,7 @@ pub fn router() -> Router<AppState> {
         .route("/offline", get(assets::offline))
         .route("/pwa/{asset}", get(assets::pwa_image))
         .route("/apple-touch-icon.png", get(assets::apple_touch_icon))
+        .route("/thumbnail.png", get(assets::instance_thumbnail))
         .route("/custom.css", get(assets::custom_css))
         .route("/favicon.ico", get(assets::favicon))
         .route("/static/missing.png", get(assets::missing_image))

@@ -258,6 +258,24 @@ pub async fn apple_touch_icon() -> impl IntoResponse {
     )
 }
 
+/// `GET /thumbnail.png` — the bundled instance thumbnail advertised by the
+/// Mastodon v2 instance API until the operator uploads a custom thumbnail.
+/// Use the largest non-maskable PWA icon so clients receive a useful branding
+/// image rather than a broken URL.
+pub async fn instance_thumbnail() -> impl IntoResponse {
+    let bytes = PWA_IMAGES
+        .iter()
+        .find(|(name, _)| *name == "icon-512.png")
+        .map_or(&[][..], |(_, bytes)| *bytes);
+    (
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        bytes,
+    )
+}
+
 /// Network-failure destination for service-worker navigations. It is a real,
 /// same-origin HTML page (rather than a synthetic response), so the normal CSP
 /// and the same responsive/themed CSS apply when it is shown from `CacheStorage`.

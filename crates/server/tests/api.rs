@@ -568,10 +568,29 @@ async fn instance_entities_reflect_operator_settings(pool: PgPool) {
 async fn instance_serves_site_upload_thumbnail_and_icon(pool: PgPool) {
     // Without uploads: v1 thumbnail is null, v2 keeps the static fallback and
     // omits `icon` (Mastodon falls back to bundled frontend assets there).
-    let (_, _, body) = get(test_app(pool.clone()), "/api/v1/instance", None).await;
+    let app = test_app(pool.clone());
+    let (_, _, body) = get(app.clone(), "/api/v1/instance", None).await;
     assert!(body["thumbnail"].is_null());
-    let (_, _, body) = get(test_app(pool.clone()), "/api/v2/instance", None).await;
-    assert!(body["thumbnail"]["url"].is_string());
+    let (_, _, body) = get(app.clone(), "/api/v2/instance", None).await;
+    let fallback_url = body["thumbnail"]["url"].as_str().unwrap();
+    assert_eq!(fallback_url, format!("https://{TEST_DOMAIN}/thumbnail.png"));
+    let fallback_path = fallback_url
+        .strip_prefix(&format!("https://{TEST_DOMAIN}"))
+        .unwrap();
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(fallback_path)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let image = image::load_from_memory(&bytes).unwrap();
+    assert_eq!((image.width(), image.height()), (512, 512));
     assert!(body.get("icon").is_none());
 
     plamenu_db::site_upload::upsert(

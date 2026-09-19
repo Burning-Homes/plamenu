@@ -89,6 +89,7 @@ async fn gate_serves_410_except_wind_down_allowlist(pool: PgPool) {
         "/sw.js",
         "/offline",
         "/favicon.ico",
+        "/thumbnail.png",
         "/health",
         "/ready",
     ] {

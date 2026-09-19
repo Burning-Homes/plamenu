@@ -102,6 +102,7 @@ fn exempt(path: &str) -> bool {
         || path == "/custom.css"
         || path == "/favicon.ico"
         || path == "/apple-touch-icon.png"
+        || path == "/thumbnail.png"
         || path == "/manifest.webmanifest"
         || path == "/sw.js"
         || path == "/offline"
