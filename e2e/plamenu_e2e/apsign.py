@@ -12,6 +12,7 @@ a bypass.
 
 import base64
 import functools
+import json
 import re
 from email.utils import formatdate
 from urllib.parse import urlsplit
@@ -30,7 +31,7 @@ AP = "application/activity+json"
 # read with psql. Ask Rails for it instead, keeping the pre-4.7 column as a
 # fallback so the harness stays usable against older peers.
 _PRIVATE_KEY_RUNNER = """
-account = Account.find_by(username: 'alice', domain: nil)
+account = Account.find_by(username: __USERNAME__, domain: nil)
 keypair = account.keypairs.where(revoked: false).order(:created_at).first if account.respond_to?(:keypairs)
 fragment = keypair&.local_fragment || '#main-key'
 private_key = keypair&.private_key
@@ -41,15 +42,15 @@ puts(private_key)
 
 
 @functools.cache
-def _mastodon_signer() -> tuple[str, str]:
-    """`(keyId, private_key_pem)` for alice@mastodon.local, resolved once per run.
+def mastodon_signer(username: str = "alice") -> tuple[str, str]:
+    """`(keyId, private_key_pem)` for a local Mastodon actor, cached per user.
 
     Both halves are version-agnostic: the actor URI comes from webfinger, the
     private key from a Rails runner that reads 4.7's active `keypairs` row and falls
     back to the legacy `accounts.private_key` column."""
     wf = requests.get(
         f"{config.MASTODON_URL}/.well-known/webfinger",
-        params={"resource": f"acct:alice@{config.MASTODON_DOMAIN}"},
+        params={"resource": f"acct:{username}@{config.MASTODON_DOMAIN}"},
         verify=False,
         timeout=30,
     )
@@ -63,7 +64,7 @@ def _mastodon_signer() -> tuple[str, str]:
         "web",
         "bin/rails",
         "runner",
-        _PRIVATE_KEY_RUNNER,
+        _PRIVATE_KEY_RUNNER.replace("__USERNAME__", json.dumps(username)),
     )
     # Rails may print boot noise around the key; keep the PEM block alone.
     match = re.search(
@@ -71,9 +72,9 @@ def _mastodon_signer() -> tuple[str, str]:
         out,
         re.DOTALL,
     )
-    assert match, f"no private key for alice in the Mastodon DB: {out[:200]!r}"
+    assert match, f"no private key for {username} in the Mastodon DB: {out[:200]!r}"
     fragment = re.search(r"^PLAMENU_E2E_KEY_FRAGMENT=(#[^\s]+)$", out, re.MULTILINE)
-    assert fragment, f"no key fragment for alice in the Mastodon DB: {out[:200]!r}"
+    assert fragment, f"no key fragment for {username} in the Mastodon DB: {out[:200]!r}"
     return actor_uri + fragment.group(1), match.group(0) + "\n"
 
 
@@ -86,7 +87,7 @@ def signed_ap_get(url: str) -> requests.Response:
     parts = urlsplit(url)
     host = parts.netloc
     path_and_query = parts.path + (f"?{parts.query}" if parts.query else "")
-    key_id, pem = _mastodon_signer()
+    key_id, pem = mastodon_signer()
     date = formatdate(usegmt=True)
     signing_string = (
         f"(request-target): get {path_and_query}\n"

@@ -17,8 +17,11 @@ use time::format_description::well_known::Rfc3339;
 
 use crate::AppState;
 use crate::error::ApiError;
-use crate::ingest::{is_ingestible_note, resolve_status_ref, update_remote_note};
-use crate::remote::refresh_remote_actor;
+use crate::ingest::{
+    fetch_remote_status_value, is_ingestible_note, resolve_status_ref, signed_fetch_recipient,
+    update_remote_note,
+};
+use crate::remote::{host_of, refresh_remote_actor};
 
 // Keep the dispatch body available at the signed HTTP inbox without adding
 // another async poll frame to its already deep verification/ingestion stack.
@@ -26,12 +29,13 @@ use crate::remote::refresh_remote_actor;
 // exact same logic. This is a macro rather than a second implementation so the
 // two authenticated entry points cannot drift.
 macro_rules! dispatch_authenticated_activity {
-    ($state:expr, $sender:expr, $activity:expr, $raw:expr) => {{
+    ($state:expr, $sender:expr, $activity:expr, $raw:expr, $delivered_to_account_id:expr) => {{
         'dispatch: {
             let state = $state;
             let sender = $sender;
             let activity = $activity;
             let raw = $raw;
+            let delivered_to_account_id = $delivered_to_account_id;
             let actor_id = activity.actor_id().unwrap_or_default();
 
             // Keep the small recovery/control subset Mastodon accepts from a
@@ -78,7 +82,9 @@ macro_rules! dispatch_authenticated_activity {
             match activity.kind.as_str() {
                 "Follow" => handle_follow(state, sender, activity, raw).await?,
                 "Undo" => handle_undo(state, sender, activity, raw).await?,
-                "Create" => handle_create(state, sender, activity, raw).await?,
+                "Create" => {
+                    handle_create(state, sender, activity, raw, delivered_to_account_id).await?
+                }
                 "Update" => handle_update(state, sender, activity, raw).await?,
                 "Delete" => handle_delete(state, sender, activity, raw).await?,
                 "Like" => handle_like(state, sender, activity, raw).await?,
@@ -120,7 +126,7 @@ pub async fn shared_inbox(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<StatusCode, ApiError> {
-    Box::pin(process(state, uri, headers, body)).await
+    Box::pin(process(state, uri, headers, body, None)).await
 }
 
 /// Per-user inbox: `POST /users/{username}/inbox`. Processing is identical to
@@ -132,8 +138,9 @@ pub async fn user_inbox(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<StatusCode, ApiError> {
-    super::local_actor_account(&state, &username, &uri).await?;
-    Box::pin(process(state, uri, headers, body)).await
+    let recipient = super::local_actor_account(&state, &username, &uri).await?;
+    let recipient_id = recipient.id;
+    Box::pin(process(state, uri, headers, body, Some(recipient_id))).await
 }
 
 #[allow(clippy::too_many_lines)] // the inbox activity dispatch match
@@ -142,6 +149,7 @@ async fn process(
     uri: Uri,
     headers: HeaderMap,
     body: Bytes,
+    delivered_to_account_id: Option<i64>,
 ) -> Result<StatusCode, ApiError> {
     let raw: Value = serde_json::from_slice(&body)
         .map_err(|_| ApiError::BadRequest("body is not valid JSON".into()))?;
@@ -277,7 +285,7 @@ async fn process(
         return Ok(StatusCode::ACCEPTED);
     };
 
-    dispatch_authenticated_activity!(&state, &sender, &activity, &raw)
+    dispatch_authenticated_activity!(&state, &sender, &activity, &raw, delivered_to_account_id)
 }
 
 /// Projects an already-authenticated activity through Plamenu's ordinary
@@ -290,7 +298,7 @@ pub(crate) async fn dispatch_authenticated(
     activity: &Activity,
     raw: &Value,
 ) -> Result<StatusCode, ApiError> {
-    dispatch_authenticated_activity!(state, sender, activity, raw)
+    dispatch_authenticated_activity!(state, sender, activity, raw, None)
 }
 
 /// Inbound `Like`: a favourite from a remote account — unless it carries a
@@ -990,7 +998,7 @@ async fn handle_group_announce(
         // wholesale: dispatch it as if delivered directly (Mitra signs the
         // activities its groups relay).
         match inner.kind.as_str() {
-            "Create" => handle_create(state, &proven, &inner, &activity.object).await?,
+            "Create" => handle_create(state, &proven, &inner, &activity.object, None).await?,
             "Update" => handle_update(state, &proven, &inner, &activity.object).await?,
             "Delete" => handle_delete(state, &proven, &inner, &activity.object).await?,
             "Like" => handle_like(state, &proven, &inner, &activity.object).await?,
@@ -2328,7 +2336,7 @@ async fn handle_container_add(
     .await?
     {
         match inner.kind.as_str() {
-            "Create" => handle_create(state, &proven, &inner, &activity.object).await?,
+            "Create" => handle_create(state, &proven, &inner, &activity.object, None).await?,
             "Update" => handle_update(state, &proven, &inner, &activity.object).await?,
             "Delete" => handle_delete(state, &proven, &inner, &activity.object).await?,
             "Like" => handle_like(state, &proven, &inner, &activity.object).await?,
@@ -3233,8 +3241,41 @@ async fn handle_create(
     sender: &Account,
     activity: &Activity,
     raw: &Value,
+    delivered_to_account_id: Option<i64>,
 ) -> Result<(), ApiError> {
-    let object = &activity.object;
+    let fetched_object = if let Some(object_uri) = activity.object.as_str() {
+        let Some(sender_uri) = sender.uri.as_deref() else {
+            return Ok(());
+        };
+        let (Some(object_host), Some(sender_host)) = (host_of(object_uri), host_of(sender_uri))
+        else {
+            tracing::debug!(
+                uri = object_uri,
+                "ignoring Create with an invalid object origin"
+            );
+            return Ok(());
+        };
+        if object_host != sender_host {
+            tracing::debug!(
+                uri = object_uri,
+                actor = sender_uri,
+                "ignoring Create whose object is hosted by another origin"
+            );
+            return Ok(());
+        }
+        let fetch_account_id = match delivered_to_account_id {
+            Some(account_id) => Some(account_id),
+            None => signed_fetch_recipient(state, sender, raw).await?,
+        };
+        let Some(object) = fetch_remote_status_value(state, object_uri, fetch_account_id).await?
+        else {
+            return Ok(());
+        };
+        Some(object)
+    } else {
+        None
+    };
+    let object = fetched_object.as_ref().unwrap_or(&activity.object);
     if !crate::ingest::is_ingestible_note(object) {
         return Ok(());
     }

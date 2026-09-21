@@ -857,6 +857,293 @@ async fn create_note_stores_status_idempotently(pool: PgPool) {
     assert_eq!(again.id, stored.id);
 }
 
+#[sqlx::test(migrations = "../db/migrations")]
+async fn iri_create_matches_inline_delivery_and_uses_inbox_recipient(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = RemoteUser::new("remote.example", "bob");
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let inline_uri = format!("{}/statuses/inline-create", bob.actor.id);
+    let referenced_uri = format!("{}/statuses/referenced-create", bob.actor.id);
+    let note = |uri: &str| {
+        json!({
+            "id": uri,
+            "type": "Note",
+            "attributedTo": bob.actor.id,
+            "content": "<p>equivalent delivery</p>",
+            "published": "2026-06-01T12:00:00Z",
+            "to": [ALICE_URI, "https://www.w3.org/ns/activitystreams#Public"],
+            "tag": [{"type": "Mention", "href": ALICE_URI, "name": "@alice"}],
+        })
+    };
+    let inline_object = note(&inline_uri);
+    let referenced_object = note(&referenced_uri);
+    stub.objects
+        .lock()
+        .unwrap()
+        .insert(referenced_uri.clone(), referenced_object);
+
+    let inline_create = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{inline_uri}/activity"),
+        "type": "Create",
+        "actor": bob.actor.id,
+        "object": inline_object,
+    });
+    let referenced_create = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{referenced_uri}/activity"),
+        "type": "Create",
+        "actor": bob.actor.id,
+        "object": referenced_uri,
+    });
+    let app = || test_app_with(pool.clone(), stub.clone());
+    assert_eq!(
+        post_signed(app(), "/users/alice/inbox", &inline_create, &bob.signer()).await,
+        StatusCode::ACCEPTED,
+    );
+    assert_eq!(
+        post_signed(
+            app(),
+            "/users/alice/inbox",
+            &referenced_create,
+            &bob.signer(),
+        )
+        .await,
+        StatusCode::ACCEPTED,
+    );
+
+    let inline = status::find_by_uri(&pool, &inline_uri)
+        .await
+        .unwrap()
+        .expect("the inline object is ingested");
+    let referenced = status::find_by_uri(&pool, &referenced_uri)
+        .await
+        .unwrap()
+        .expect("the IRI-valued object is dereferenced and ingested");
+    assert_eq!(referenced.account_id, inline.account_id);
+    assert_eq!(referenced.content, inline.content);
+    assert_eq!(referenced.visibility, inline.visibility);
+    assert!(
+        plamenu_db::mention::exists(&pool, inline.id, alice.id)
+            .await
+            .unwrap()
+    );
+    assert!(
+        plamenu_db::mention::exists(&pool, referenced.id, alice.id)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        stub.account_fetches(),
+        [(referenced_uri.clone(), alice.id)],
+        "the per-user inbox recipient must sign the object dereference"
+    );
+
+    let notifications = || async {
+        plamenu_db::notification::list(
+            &pool,
+            alice.id,
+            None,
+            None,
+            None,
+            plamenu_db::notification::NotificationFilter {
+                include_filtered: true,
+                ..Default::default()
+            },
+            10,
+        )
+        .await
+        .unwrap()
+    };
+    assert_eq!(notifications().await.len(), 2);
+
+    // Dereferencing a replay is harmless: it neither duplicates storage nor
+    // repeats any one-shot delivery effects.
+    assert_eq!(
+        post_signed(
+            app(),
+            "/users/alice/inbox",
+            &referenced_create,
+            &bob.signer(),
+        )
+        .await,
+        StatusCode::ACCEPTED,
+    );
+    assert_eq!(
+        status::find_by_uri(&pool, &referenced_uri)
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        referenced.id
+    );
+    assert_eq!(notifications().await.len(), 2);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn iri_create_shared_inbox_uses_addressed_recipient(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = RemoteUser::new("remote.example", "bob");
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let note_uri = format!("{}/statuses/shared-reference", bob.actor.id);
+    stub.objects.lock().unwrap().insert(
+        note_uri.clone(),
+        json!({
+            "id": note_uri,
+            "type": "Note",
+            "attributedTo": bob.actor.id,
+            "content": "<p>shared inbox</p>",
+            "to": [ALICE_URI],
+        }),
+    );
+    let create = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{note_uri}/activity"),
+        "type": "Create",
+        "actor": bob.actor.id,
+        "to": [ALICE_URI],
+        "object": note_uri,
+    });
+
+    assert_eq!(
+        post_signed(
+            test_app_with(pool.clone(), stub.clone()),
+            "/inbox",
+            &create,
+            &bob.signer(),
+        )
+        .await,
+        StatusCode::ACCEPTED,
+    );
+    assert!(
+        status::find_by_uri(&pool, &note_uri)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        stub.account_fetches(),
+        [(note_uri.clone(), alice.id)],
+        "top-level Create addressing must select the local fetch signer"
+    );
+
+    // The audit's exact public/shared-inbox shape has no recipient principal;
+    // it falls back to the ordinary instance signer and still ingests.
+    let public_uri = format!("{}/statuses/public-reference", bob.actor.id);
+    stub.objects.lock().unwrap().insert(
+        public_uri.clone(),
+        json!({
+            "id": public_uri,
+            "type": "Note",
+            "attributedTo": bob.actor.id,
+            "content": "<p>public reference</p>",
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        }),
+    );
+    let public_create = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{public_uri}/activity"),
+        "type": "Create",
+        "actor": bob.actor.id,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "object": public_uri,
+    });
+    assert_eq!(
+        post_signed(
+            test_app_with(pool.clone(), stub.clone()),
+            "/inbox",
+            &public_create,
+            &bob.signer(),
+        )
+        .await,
+        StatusCode::ACCEPTED,
+    );
+    assert!(
+        status::find_by_uri(&pool, &public_uri)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        stub.account_fetches(),
+        [(note_uri, alice.id)],
+        "a public Create with no local audience must use the instance signer"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn iri_create_rejects_cross_origin_and_foreign_attribution(pool: PgPool) {
+    create_local_account(&pool, "alice", "Alice").await;
+    let bob = RemoteUser::new("remote.example", "bob");
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let cross_origin_uri = "https://unrelated.example/statuses/forged";
+    stub.objects.lock().unwrap().insert(
+        cross_origin_uri.to_owned(),
+        json!({
+            "id": cross_origin_uri,
+            "type": "Note",
+            "attributedTo": bob.actor.id,
+            "content": "<p>wrong origin</p>",
+        }),
+    );
+    let cross_origin = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{}/activities/cross-origin", bob.actor.id),
+        "type": "Create",
+        "actor": bob.actor.id,
+        "object": cross_origin_uri,
+    });
+    assert_eq!(
+        post_signed(
+            test_app_with(pool.clone(), stub.clone()),
+            "/users/alice/inbox",
+            &cross_origin,
+            &bob.signer(),
+        )
+        .await,
+        StatusCode::ACCEPTED,
+    );
+    assert!(
+        !stub.fetches().iter().any(|uri| uri == cross_origin_uri),
+        "a foreign origin must be rejected before dereferencing"
+    );
+
+    let foreign_author_uri = format!("{}/statuses/foreign-author", bob.actor.id);
+    stub.objects.lock().unwrap().insert(
+        foreign_author_uri.clone(),
+        json!({
+            "id": foreign_author_uri,
+            "type": "Note",
+            "attributedTo": "https://remote.example/users/carol",
+            "content": "<p>not Bob's words</p>",
+        }),
+    );
+    let foreign_author = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{foreign_author_uri}/activity"),
+        "type": "Create",
+        "actor": bob.actor.id,
+        "object": foreign_author_uri,
+    });
+    assert_eq!(
+        post_signed(
+            test_app_with(pool.clone(), stub.clone()),
+            "/users/alice/inbox",
+            &foreign_author,
+            &bob.signer(),
+        )
+        .await,
+        StatusCode::ACCEPTED,
+    );
+    assert!(
+        status::find_by_uri(&pool, &foreign_author_uri)
+            .await
+            .unwrap()
+            .is_none(),
+        "the fetched object must be attributed to the authenticated sender"
+    );
+}
+
 /// A mention-less reply can still address its parent author in `to`. It
 /// threads and grants silent audience access, but—like Mastodon—does not turn
 /// that delivery address into a mention notification. An edit stays silent,

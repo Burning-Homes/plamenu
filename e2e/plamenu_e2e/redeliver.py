@@ -63,7 +63,13 @@ def fetch_ap(uri: str) -> dict:
     return r.json()
 
 
-def deliver(activity: dict, *, actor_uri: str, private_key_pem: str) -> int:
+def deliver(
+    activity: dict,
+    *,
+    actor_uri: str,
+    private_key_pem: str,
+    key_id: str | None = None,
+) -> int:
     """Sign `activity` as `actor_uri` (cavage HTTP signature over the header
     set Mastodon and Pleroma both sign: `(request-target) host date digest`)
     and POST it to Plamenu's shared inbox. Returns the HTTP status code —
@@ -80,6 +86,7 @@ def deliver(activity: dict, *, actor_uri: str, private_key_pem: str) -> int:
     signature = base64.b64encode(
         key.sign(signing_string.encode(), padding.PKCS1v15(), hashes.SHA256())
     ).decode()
+    signing_key_id = key_id or f"{actor_uri}#main-key"
     r = requests.post(
         f"{config.PLAMENU_URL}/inbox",
         data=body,
@@ -87,7 +94,7 @@ def deliver(activity: dict, *, actor_uri: str, private_key_pem: str) -> int:
             "Date": date,
             "Digest": digest,
             "Signature": (
-                f'keyId="{actor_uri}#main-key",algorithm="rsa-sha256",'
+                f'keyId="{signing_key_id}",algorithm="rsa-sha256",'
                 f'headers="(request-target) host date digest",'
                 f'signature="{signature}"'
             ),

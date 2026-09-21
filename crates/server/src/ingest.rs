@@ -269,45 +269,9 @@ async fn fetch_remote_status_object(
     uri: &str,
     fetch_account_id: Option<i64>,
 ) -> Result<Option<(Value, Account)>, ApiError> {
-    if !crate::instance_policy::can_federate_url(&state.pool, &state.config.domain, uri).await? {
-        // A best-effort fetch that fails is silently dropped, but the reason
-        // matters when a thread arrives orphaned: without this an unreachable
-        // parent, a policy block, a 403, a non-AP content type and a malformed
-        // object all look identical. `category` lets an operator tell them
-        // apart (this is the whole diagnostic trail an orphaned reply leaves).
-        tracing::debug!(uri, category = "policy", "remote status fetch skipped");
+    let Some(object) = fetch_remote_status_value(state, uri, fetch_account_id).await? else {
         return Ok(None);
-    }
-    // `fetch_object` verifies the returned id matches `uri`. Its error carries
-    // the concrete reason — an HTTP 403, a `text/html` content type (Lemmy and
-    // others serve their web page to AP requests), a signature rejection, a
-    // timeout, an SSRF-policy denial — so surface it rather than discard it.
-    let fetched = match fetch_account_id {
-        Some(account_id) => {
-            state
-                .federation
-                .fetch_object_for_account(uri, account_id)
-                .await
-        }
-        None => state.federation.fetch_object(uri).await,
     };
-    let object = match fetched {
-        Ok(object) => object,
-        Err(err) => {
-            tracing::info!(uri, category = "fetch", error = %err, "remote status fetch failed");
-            return Ok(None);
-        }
-    };
-    if !is_ingestible_note(&object) {
-        let object_type = object.get("type").and_then(Value::as_str).unwrap_or("?");
-        tracing::info!(
-            uri,
-            category = "not-a-note",
-            object_type,
-            "remote status fetch returned a non-ingestible object"
-        );
-        return Ok(None);
-    }
     let Some(attributed_to) = plamenu_ap::activity::attributed_to_id(&object) else {
         tracing::info!(
             uri,
@@ -367,6 +331,57 @@ async fn fetch_remote_status_object(
         refresh_remote_actor(state, &author).await?
     };
     Ok(Some((object, author)))
+}
+
+/// Fetches and type-checks one remote status object without resolving its
+/// author. The signed inbox already holds a verified sender and uses this
+/// narrower form for an IRI-valued `Create`, then applies its stronger exact
+/// sender/origin ownership checks before delivery ingestion.
+pub(crate) async fn fetch_remote_status_value(
+    state: &AppState,
+    uri: &str,
+    fetch_account_id: Option<i64>,
+) -> Result<Option<Value>, ApiError> {
+    if !crate::instance_policy::can_federate_url(&state.pool, &state.config.domain, uri).await? {
+        // A best-effort fetch that fails is silently dropped, but the reason
+        // matters when a thread arrives orphaned: without this an unreachable
+        // parent, a policy block, a 403, a non-AP content type and a malformed
+        // object all look identical. `category` lets an operator tell them
+        // apart (this is the whole diagnostic trail an orphaned reply leaves).
+        tracing::debug!(uri, category = "policy", "remote status fetch skipped");
+        return Ok(None);
+    }
+    // `fetch_object` verifies the returned id matches `uri`. Its error carries
+    // the concrete reason — an HTTP 403, a `text/html` content type (Lemmy and
+    // others serve their web page to AP requests), a signature rejection, a
+    // timeout, an SSRF-policy denial — so surface it rather than discard it.
+    let fetched = match fetch_account_id {
+        Some(account_id) => {
+            state
+                .federation
+                .fetch_object_for_account(uri, account_id)
+                .await
+        }
+        None => state.federation.fetch_object(uri).await,
+    };
+    let object = match fetched {
+        Ok(object) => object,
+        Err(err) => {
+            tracing::info!(uri, category = "fetch", error = %err, "remote status fetch failed");
+            return Ok(None);
+        }
+    };
+    if !is_ingestible_note(&object) {
+        let object_type = object.get("type").and_then(Value::as_str).unwrap_or("?");
+        tracing::info!(
+            uri,
+            category = "not-a-note",
+            object_type,
+            "remote status fetch returned a non-ingestible object"
+        );
+        return Ok(None);
+    }
+    Ok(Some(object))
 }
 
 pub(crate) fn object_type_in(object: &Value, allowed: &[&str]) -> bool {
@@ -1439,7 +1454,7 @@ pub(crate) async fn ingest_remote_note_delivery_deferred(
 /// from an inbound delivery. Prefer an explicitly addressed local recipient;
 /// otherwise use the first accepted local follower of the remote author,
 /// matching Mastodon's signed-fetch selection.
-async fn signed_fetch_recipient(
+pub(crate) async fn signed_fetch_recipient(
     state: &AppState,
     author: &Account,
     object: &Value,
