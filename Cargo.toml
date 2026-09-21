@@ -16,7 +16,7 @@ plamenu-federation = { path = "crates/federation" }
 
 aes-gcm = "0.11"
 ammonia = "4"
-argon2 = "0.5"
+argon2 = "0.6"
 axum = { version = "0.8", default-features = false, features = [
     "form",
     "http1",
@@ -54,7 +54,7 @@ hmac = "0.13"
 sha1 = "0.11"
 # Already in-tree through ammonia; used directly (tokenizer only) to read
 # link-preview metadata out of fetched pages.
-html5ever = "0.39"
+html5ever = "0.40"
 http = "1"
 httpdate = "1"
 image = { version = "0.25", default-features = false, features = [

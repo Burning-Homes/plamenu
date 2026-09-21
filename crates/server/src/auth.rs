@@ -8,8 +8,7 @@ use std::net::SocketAddr;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use argon2::password_hash::rand_core::OsRng;
-use argon2::password_hash::{PasswordHash, SaltString};
+use argon2::password_hash::phc::PasswordHash;
 use argon2::{Argon2, PasswordHasher, PasswordVerifier};
 use axum::extract::{ConnectInfo, FromRequestParts};
 use axum::http::header::AUTHORIZATION;
@@ -40,9 +39,8 @@ pub fn password_hash_count() -> u64 {
 /// Hashes a password with argon2id (default = current OWASP parameters).
 pub fn hash_password(password: &str) -> Result<String, ApiError> {
     PASSWORD_HASH_COUNT.fetch_add(1, Ordering::Relaxed);
-    let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map(|hash| hash.to_string())
         .map_err(|e| ApiError::Internal(e.to_string().into()))
 }
@@ -934,6 +932,16 @@ mod tests {
         assert!(verify_password("hunter2!", &hash));
         assert!(!verify_password("hunter3!", &hash));
         assert!(!verify_password("hunter2!", "not-a-phc-string"));
+    }
+
+    #[test]
+    fn password_hashes_from_argon2_0_5_still_verify() {
+        // RustCrypto Argon2 0.5's published Argon2id vector. Stored PHC
+        // strings must remain valid when the hashing library is upgraded.
+        let old_hash = "$argon2id$v=19$m=65536,t=2,p=1$c29tZXNhbHQ$\
+                        CTFhFdXPJO1aFaMaO6Mm5c8y7cJHAph8ArZWb2GRPPc";
+        assert!(verify_password("password", old_hash));
+        assert!(!verify_password("sassword", old_hash));
     }
 
     #[test]
