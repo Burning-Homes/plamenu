@@ -13,6 +13,7 @@ behavior. Optional: skips when plup isn't running.
 """
 
 import pytest
+
 from plamenu_e2e import config, plup, unique
 from plamenu_e2e.steps import step, wait_for
 
@@ -178,6 +179,45 @@ def test_plamenu_post_edit_delete_reach_plup(
             lambda: plup_mari.get_status_or_none(got["id"]) is None,
             desc="the deleted status to disappear from upstream Pleroma",
         )
+
+
+@pytest.mark.federation(
+    direction="inbound",
+    one_way_reason="Upstream Pleroma's reply serializer is the producer behavior under test; Plamenu's reverse reply path is already covered against the Pleroma-family peer.",
+)
+def test_plup_reply_without_typed_mention_reaches_plamenu(
+    plup_mari, plamenu_user, plamenu_api, db, marker
+):
+    """Upstream Pleroma adds a real Mention tag for a reply parent found in
+    `to`, even when the author typed no @handle. Plamenu therefore needs no
+    notification fallback based on bare audience addressing."""
+    with step("mari resolves a fresh Plamenu post"):
+        local = plamenu_api.post_status(f"reply to me from plup {marker}")
+        remote = wait_for(
+            lambda: plup_mari.resolve_status(local["uri"]),
+            desc="upstream Pleroma to resolve the Plamenu post",
+        )
+
+    with step("mari replies without typing the Plamenu author's handle"):
+        plup_mari.post_status(
+            f"reply from upstream Pleroma {marker}r",
+            in_reply_to_id=remote["id"],
+        )
+        reply_id = wait_for(
+            lambda: db.status_id_containing(f"{marker}r"),
+            desc="the upstream Pleroma reply to reach Plamenu",
+        )
+        assert db.status_parent_id(reply_id) == int(local["id"])
+
+    with step("Pleroma's generated Mention tag produces the notification"):
+        notifications = wait_for(
+            lambda: plamenu_api.notifications_from(MARI, "mention"),
+            desc="the parent author to receive a mention notification",
+        )
+        assert notifications[0]["status"]["id"] == str(reply_id)
+        assert plamenu_user.username in [
+            mention["acct"] for mention in notifications[0]["status"]["mentions"]
+        ]
 
 
 # ── favourites & boosts ───────────────────────────────────────────────

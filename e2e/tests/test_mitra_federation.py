@@ -5,7 +5,10 @@ subscriptions and Monero features are explicit Plamenu non-goals; portable
 actors, groups and conversation containers have their own future milestones.
 """
 
+import uuid
+
 import pytest
+
 from plamenu_e2e import config, mitra, unique
 from plamenu_e2e.api import Api
 from plamenu_e2e.media import cached_attachment, make_png
@@ -400,10 +403,13 @@ def test_reply_and_mention_both_directions(
             desc="Mitra to resolve the Plamenu status",
         )
 
-    with step("erin replies, mentioning the plamenu author"):
-        mitra_erin.post_status(
-            f"@{plamenu_user.acct} a reply from mitra {marker}2r",
+    with step("erin replies without typing the plamenu author's handle"):
+        reply = mitra_erin.post_status(
+            f"a reply from mitra {marker}2r",
             in_reply_to_id=remote["id"],
+        )
+        assert plamenu_user.acct in [m["acct"] for m in reply["mentions"]], (
+            "Mitra should add the parent author as a real Mention tag itself"
         )
 
     with step("the reply arrives threaded under the plamenu post"):
@@ -423,6 +429,58 @@ def test_reply_and_mention_both_directions(
             m["acct"] for m in notifs[0]["status"]["mentions"]
         ]
         assert plamenu_api.get_status(local2["id"])["replies_count"] >= 1
+
+
+@pytest.mark.federation(
+    direction="inbound",
+    one_way_reason="Mitra's normal API adds a Mention tag to replies, so its real signer CLI is used to reproduce the Incise-style top-level personalized-delivery shape.",
+)
+def test_to_addressed_non_reply_from_mitra_does_not_notify(
+    mitra_erin, plamenu_user, plamenu_api, db, marker
+):
+    """A real peer-signed top-level Note may name the inbox owner in `to` for
+    delivery without mentioning them. It is ingested with silent audience
+    access but must not produce a false "mentioned you" notification."""
+    with step("Mitra learns the Plamenu recipient"):
+        _erin_follows(mitra_erin, plamenu_user.acct)
+        recipient = db.local_actor_uri(plamenu_user.username)
+        assert recipient, "the fresh Plamenu user's canonical actor ID is missing"
+
+    with step("Mitra signs and sends an Incise-style personalized public Note"):
+        object_id = f"{config.MITRA_URL}/objects/{uuid.uuid4()}"
+        actor_id = f"{config.MITRA_URL}/users/{mitra.ERIN_NICK}"
+        activity = {
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": f"{object_id}/activity",
+            "type": "Create",
+            "actor": actor_id,
+            "to": [recipient, "https://www.w3.org/ns/activitystreams#Public"],
+            "object": {
+                "id": object_id,
+                "type": "Note",
+                "attributedTo": actor_id,
+                "content": f"<p>personalized delivery {marker}</p>",
+                "to": [recipient, "https://www.w3.org/ns/activitystreams#Public"],
+                "cc": [f"{actor_id}/followers"],
+            },
+        }
+        result = mitra.send_activity_rfc9421(activity, recipient)
+        assert "202" in result, f"Plamenu rejected Mitra's signed Create: {result!r}"
+        status_id = wait_for(
+            lambda: db.status_id_containing(marker),
+            desc="the personalized top-level Note to be ingested",
+        )
+        assert db.status_parent_id(status_id) is None
+
+    with step("the audience remains silent and creates no mention notification"):
+        stored = plamenu_api.get_status(str(status_id))
+        assert stored["mentions"] == [], stored["mentions"]
+        false_mentions = [
+            notification
+            for notification in plamenu_api.notifications_from(ERIN, "mention")
+            if notification.get("status", {}).get("id") == str(status_id)
+        ]
+        assert false_mentions == [], false_mentions
 
 
 @pytest.mark.federation(

@@ -185,6 +185,13 @@ class Db:
             "SELECT in_reply_to_id FROM statuses WHERE id = %s", status_id
         )
 
+    def local_actor_uri(self, username: str) -> str | None:
+        """Canonical ActivityPub actor ID for a local account."""
+        return self._value(
+            "SELECT uri FROM accounts WHERE username = %s AND domain IS NULL",
+            username,
+        )
+
     def status_visibility(self, status_id: int) -> str | None:
         return self._value("SELECT visibility FROM statuses WHERE id = %s", status_id)
 

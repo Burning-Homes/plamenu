@@ -2654,12 +2654,11 @@ async fn store_remote_tags(
 /// #18.) Notifications fire only after the commit; they are additive and, on an
 /// edit, are suppressed for any recipient the status already had.
 ///
-/// Addressing semantics match Mastodon's `process_audience` with Akkoma's
-/// `maybe_notify_to_recipients` extension: a local account named in `to` is
-/// notified even without a Mention tag (Pleroma/Mitra address a reply's parent
-/// author in `to` only), while `cc`/`audience` grant silent access — delivery
-/// and private-post visibility — without a notification. A real (`tag`) mention
-/// always outranks a silent audience one for the same account.
+/// Addressing semantics match Mastodon's `process_audience`: `to`, `cc`, and
+/// `audience` grant silent access — delivery and private-post visibility —
+/// without a notification. A real (`tag`) mention always outranks a silent
+/// audience one for the same account and is the only audience-related source
+/// of a mention notification.
 fn carries_mentions(object: &Value, domain: &str) -> bool {
     one_or_many(object.get("tag"))
         .iter()
@@ -2752,13 +2751,12 @@ async fn reconcile_note_mentions(
     for &id in &remote_mention_ids {
         record_mention(&mut order, &mut silent_by_id, id, false);
     }
-    // Audience: silent access; only `to` recipients notify.
-    for (uri, in_to) in &audience {
+    // Audience addressing grants silent access but never manufactures a
+    // notification. Current Pleroma and Mitra serializers emit a real Mention
+    // tag for ordinary replies; arbitrary `to` has broader delivery meanings.
+    for (uri, _) in &audience {
         if let Some(&id) = audience_by_uri.get(uri) {
             record_mention(&mut order, &mut silent_by_id, id, true);
-            if *in_to && notify_seen.insert(id) {
-                notify.push(id);
-            }
         }
     }
     let mention_rows: Vec<(i64, bool)> = order.iter().map(|id| (*id, silent_by_id[id])).collect();
@@ -2797,10 +2795,9 @@ async fn reconcile_note_mentions(
 }
 
 /// The distinct local-looking usernames addressed by a Note's `to`/`cc`/
-/// `audience`, each paired with whether it first appeared in `to` (only `to`
-/// recipients are notified). Public sentinels are dropped; duplicates collapse
-/// to their first occurrence (so `to` wins over a later `cc`, preserving the
-/// notify-once contract). Deduplicated and capped at
+/// `audience`, each paired with whether it first appeared in `to`. Public
+/// sentinels are dropped; duplicates collapse to their first occurrence, so
+/// `to` wins over a later `cc`. Deduplicated and capped at
 /// [`MAX_AUDIENCE_RECIPIENTS`] so a hostile actor can't drive an unbounded
 /// serial lookup / mention / notification fan-out from one delivery. `audience`
 /// is FEP-1b12's community claim: Lemmy stamps the group there

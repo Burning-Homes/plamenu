@@ -857,13 +857,12 @@ async fn create_note_stores_status_idempotently(pool: PgPool) {
     assert_eq!(again.id, stored.id);
 }
 
-/// A Pleroma/Mitra-style mention-less reply: the parent author rides `to`
-/// but there is no Mention tag and no `@`-anchor in the content. The local
-/// author must still be notified (Akkoma's `maybe_notify_to_recipients`) —
-/// once, an edit must not re-notify, and `cc` alone must not notify (that's
-/// copied bystanders, not addressees).
+/// A mention-less reply can still address its parent author in `to`. It
+/// threads and grants silent audience access, but—like Mastodon—does not turn
+/// that delivery address into a mention notification. An edit stays silent,
+/// as does a `cc`-only bystander.
 #[sqlx::test(migrations = "../db/migrations")]
-async fn to_addressed_reply_notifies_without_mention_tag(pool: PgPool) {
+async fn to_addressed_reply_without_mention_tag_stays_silent(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);
@@ -902,6 +901,24 @@ async fn to_addressed_reply_notifies_without_mention_tag(pool: PgPool) {
         post_signed(app(), "/inbox", &create, &bob.signer()).await,
         StatusCode::ACCEPTED
     );
+    let stored = status::find_by_uri(&pool, &note_uri)
+        .await
+        .unwrap()
+        .expect("the reply is ingested");
+    assert_eq!(stored.in_reply_to_id, Some(parent.id));
+    assert!(
+        plamenu_db::mention::exists(&pool, stored.id, alice.id)
+            .await
+            .unwrap(),
+        "the parent author remains a silent audience recipient",
+    );
+    assert!(
+        plamenu_db::mention::for_statuses(&pool, &[stored.id], true)
+            .await
+            .unwrap()
+            .is_empty(),
+        "the address must not become an active mention",
+    );
     let notifications = |pool: PgPool| async move {
         plamenu_db::notification::list(
             &pool,
@@ -916,8 +933,10 @@ async fn to_addressed_reply_notifies_without_mention_tag(pool: PgPool) {
         .unwrap()
     };
     let items = notifications(pool.clone()).await;
-    assert_eq!(items.len(), 1, "the addressed reply notifies: {items:?}");
-    assert_eq!(items[0].kind, "mention");
+    assert!(
+        items.is_empty(),
+        "a tagless addressed reply must not notify: {items:?}",
+    );
 
     // An edit re-runs audience processing but must not re-notify.
     let update = json!({
@@ -942,8 +961,8 @@ async fn to_addressed_reply_notifies_without_mention_tag(pool: PgPool) {
     );
     assert_eq!(
         notifications(pool.clone()).await.len(),
-        1,
-        "edits don't re-notify"
+        0,
+        "the edit must not manufacture a notification"
     );
 
     // A local user only copied in `cc` is stored as a silent mention row but
@@ -982,6 +1001,75 @@ async fn to_addressed_reply_notifies_without_mention_tag(pool: PgPool) {
     assert!(
         carol_items.is_empty(),
         "cc alone must not notify: {carol_items:?}"
+    );
+}
+
+/// Incise-style personalized fan-out puts the receiving follower in a public
+/// top-level Note's `to` without a Mention tag. That is delivery/access
+/// addressing, not a reply or a mention: retain the silent audience row but do
+/// not manufacture a "mentioned you" notification.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn to_addressed_non_reply_is_silent_and_does_not_notify(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = RemoteUser::new("remote.example", "bob");
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let note_uri = format!("{}/statuses/personalized-fanout", bob.actor.id);
+    let create = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{note_uri}/activity"),
+        "type": "Create",
+        "actor": bob.actor.id,
+        "object": {
+            "id": note_uri,
+            "type": "Note",
+            "attributedTo": bob.actor.id,
+            "content": "<p>ordinary follower delivery</p>",
+            "to": [ALICE_URI, "https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [format!("{}/followers", bob.actor.id)],
+        },
+    });
+
+    assert_eq!(
+        post_signed(
+            test_app_with(pool.clone(), stub),
+            "/users/alice/inbox",
+            &create,
+            &bob.signer(),
+        )
+        .await,
+        StatusCode::ACCEPTED,
+    );
+    let stored = status::find_by_uri(&pool, &note_uri)
+        .await
+        .unwrap()
+        .expect("the addressed Note is ingested");
+    assert!(
+        plamenu_db::mention::exists(&pool, stored.id, alice.id)
+            .await
+            .unwrap(),
+        "the inbox owner remains a silent audience recipient",
+    );
+    assert!(
+        plamenu_db::mention::for_statuses(&pool, &[stored.id], true)
+            .await
+            .unwrap()
+            .is_empty(),
+        "a silent audience recipient must not appear as an active mention",
+    );
+    let notifications = plamenu_db::notification::list(
+        &pool,
+        alice.id,
+        None,
+        None,
+        None,
+        plamenu_db::notification::NotificationFilter::default(),
+        10,
+    )
+    .await
+    .unwrap();
+    assert!(
+        notifications.is_empty(),
+        "an ordinary to-addressed post must not notify: {notifications:?}",
     );
 }
 

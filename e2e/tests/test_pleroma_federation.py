@@ -11,6 +11,7 @@ optional and skips when the instance is down.
 """
 
 import pytest
+
 from plamenu_e2e import config, pleroma, unique
 from plamenu_e2e.media import cached_attachment, make_png, tiny_png
 from plamenu_e2e.steps import step, wait_for
@@ -310,8 +311,12 @@ def test_plamenu_votes_on_pleroma_poll(pleroma_bob, plamenu_api, db, marker):
 def test_reply_and_mention_pleroma_to_plamenu(
     pleroma_bob, plamenu_user, plamenu_api, db, marker
 ):
-    """Akkoma -> Plamenu: a reply mentioning the local author threads under the
-    parent, notifies the author, and shows in replies_count / context."""
+    """Akkoma -> Plamenu: a reply without an @handle still carries a wire
+    Mention tag and notifies the parent author.
+
+    The final Pleroma-family ActivityPub serializer derives Mention tags from
+    known actors in `to`, independently of the visible reply text.
+    """
     with step("plamenu posts; bob resolves it"):
         local = plamenu_api.post_status(f"reply to me from akkoma {marker}")
         got = wait_for(
@@ -319,9 +324,9 @@ def test_reply_and_mention_pleroma_to_plamenu(
             desc="bob to resolve the plamenu post",
         )
 
-    with step("bob replies, mentioning the plamenu author"):
+    with step("bob replies without typing a mention"):
         pleroma_bob.post_status(
-            f"@{plamenu_user.acct} a reply from akkoma {marker}r",
+            f"a tagless reply from akkoma {marker}r",
             in_reply_to_id=got["id"],
         )
 
@@ -340,7 +345,7 @@ def test_reply_and_mention_pleroma_to_plamenu(
         assert notifs[0]["status"]["id"] == str(reply_id)
         assert plamenu_user.username in [
             m["acct"] for m in notifs[0]["status"]["mentions"]
-        ]
+        ], "Akkoma's serializer should emit the parent as a Mention tag"
         assert plamenu_api.get_status(local["id"])["replies_count"] >= 1
         assert any(
             f"{marker}r" in s["content"]
