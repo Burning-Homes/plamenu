@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, account_id, status_id, file_name, remote_url, content_type,\n               description, width, height, created_at, kind, blurhash,\n               focus_x, focus_y, small_file_name, small_width, small_height,\n               thumbnail_remote_url, duration, frame_rate, bitrate, processing,\n               remote_audio_url, download_on_demand, live_state, live_permanent,\n                  hls_master_url\n        FROM media_attachments\n        WHERE id = ANY($1)\n        ORDER BY id\n        ",
+  "query": "\n        SELECT id, account_id, status_id, file_name, remote_url, content_type,\n               description, width, height, created_at, kind, blurhash,\n               focus_x, focus_y, small_file_name, small_width, small_height,\n               thumbnail_remote_url, duration, frame_rate, bitrate, processing,\n               remote_audio_url, download_on_demand, live_state, live_permanent,\n                  hls_master_url, transcript, caption_vtt, decorative,\n                  audio_described, visuals_conveyed_in_audio\n        FROM media_attachments\n        WHERE status_id = ANY($1)\n        ORDER BY id\n        ",
   "describe": {
     "columns": [
       {
@@ -299,6 +299,61 @@
             "name": "hls_master_url"
           }
         }
+      },
+      {
+        "ordinal": 27,
+        "name": "transcript",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "transcript"
+          }
+        }
+      },
+      {
+        "ordinal": 28,
+        "name": "caption_vtt",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "caption_vtt"
+          }
+        }
+      },
+      {
+        "ordinal": 29,
+        "name": "decorative",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "decorative"
+          }
+        }
+      },
+      {
+        "ordinal": 30,
+        "name": "audio_described",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "audio_described"
+          }
+        }
+      },
+      {
+        "ordinal": 31,
+        "name": "visuals_conveyed_in_audio",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "visuals_conveyed_in_audio"
+          }
+        }
       }
     ],
     "parameters": {
@@ -333,8 +388,13 @@
       false,
       true,
       false,
-      true
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
     ]
   },
-  "hash": "ef0d95bf871ae669f1dac127391c48fec53e1a9db389e1261a23df563c8a3fdf"
+  "hash": "887549c5bda88ab649e57e9b099443ebb5f80596442de702621f6f6ac5104113"
 }

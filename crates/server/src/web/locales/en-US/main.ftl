@@ -1,4 +1,5 @@
 nav-primary = Primary
+nav-skip-to-content = Skip to main content
 nav-home = Home
 nav-live-feeds = Live feeds
 nav-search = Search
@@ -67,6 +68,10 @@ page-load-more = Load more
 
 common-save = Save
 common-back = Back
+confirmation-title = Confirm this action
+confirmation-lead = Review the consequence before continuing.
+confirmation-continue = Confirm and continue
+confirmation-cancel = Cancel
 
 settings-sections = Settings sections
 settings-section-profile = Profile
@@ -386,6 +391,17 @@ compose-keep = Keep
 compose-alt-text = Alt text
 compose-alt-description = Describe for people who are blind or have low vision
 compose-alt-file = Alt text for file { $number }
+compose-decorative = This image doesn’t add information to the post
+compose-decorative-image = If this file is an image, it doesn’t add information to the post
+compose-description-missing = This image has neither a description nor a decorative declaration.
+compose-transcript = Transcript or media alternative
+compose-transcript-description = For video, include important visual information as well as dialogue and sounds
+compose-captions = Timed captions (WebVTT)
+compose-captions-attached = Timed captions attached
+compose-visual-audio = Access to important visuals
+compose-visual-audio-none = Not specified
+compose-audio-described = This video includes audio description
+compose-visuals-in-audio = The soundtrack already conveys every important visual
 compose-file = File { $number }
 compose-media = Media
 compose-sensitive = Mark media as sensitive
@@ -426,6 +442,10 @@ compose-remove-option = Remove option
 compose-poll-choice-template = Choice __number__
 compose-poll-option-template = Poll option __number__
 compose-preview-failed = Preview failed. Try again.
+status-captions = Captions
+status-audio-described = Audio described
+status-visuals-in-audio = Important visual information is conveyed in the soundtrack
+status-transcript = Transcript and visual description
 compose-visibility-locked = { $visibility } — visibility can't be changed after posting
 
 visibility-public = Public

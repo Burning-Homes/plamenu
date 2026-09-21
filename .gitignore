@@ -1,4 +1,9 @@
 /target
+/accessibility/node_modules/
+/accessibility/playwright-report/
+/accessibility/blob-report/
+/accessibility/test-results/
+/accessibility/.ruff_cache/
 /AGENTS.md
 .dev/
 .env

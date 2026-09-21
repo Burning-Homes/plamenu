@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE media_attachments\n        SET description = CASE WHEN $3 THEN $4 ELSE description END,\n            focus_x = COALESCE($5, focus_x),\n            focus_y = COALESCE($6, focus_y)\n        WHERE id = $1 AND account_id = $2\n        RETURNING id, account_id, status_id, file_name, remote_url, content_type,\n                  description, width, height, created_at, kind, blurhash,\n                  focus_x, focus_y, small_file_name, small_width, small_height,\n                  thumbnail_remote_url, duration, frame_rate, bitrate, processing,\n                  remote_audio_url, download_on_demand, live_state, live_permanent,\n                  hls_master_url\n        ",
+  "query": "\n        UPDATE media_attachments\n        SET file_name = $2, content_type = $3, kind = $4, width = $5,\n            height = $6, blurhash = $7, small_file_name = $8, small_width = $9,\n            small_height = $10, duration = $11, frame_rate = $12, bitrate = $13,\n            processing = 'complete',\n            -- Mark when a remote file was cached so retention can evict it;\n            -- local uploads keep cached_at NULL (never evicted).\n            cached_at = CASE WHEN remote_url IS NOT NULL THEN now() ELSE cached_at END\n        WHERE id = $1 AND processing = 'queued'\n        RETURNING id, account_id, status_id, file_name, remote_url, content_type,\n                  description, width, height, created_at, kind, blurhash,\n                  focus_x, focus_y, small_file_name, small_width, small_height,\n                  thumbnail_remote_url, duration, frame_rate, bitrate, processing,\n                  remote_audio_url, download_on_demand, live_state, live_permanent,\n                  hls_master_url, transcript, caption_vtt, decorative,\n                  audio_described, visuals_conveyed_in_audio\n        ",
   "describe": {
     "columns": [
       {
@@ -299,16 +299,78 @@
             "name": "hls_master_url"
           }
         }
+      },
+      {
+        "ordinal": 27,
+        "name": "transcript",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "transcript"
+          }
+        }
+      },
+      {
+        "ordinal": 28,
+        "name": "caption_vtt",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "caption_vtt"
+          }
+        }
+      },
+      {
+        "ordinal": 29,
+        "name": "decorative",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "decorative"
+          }
+        }
+      },
+      {
+        "ordinal": 30,
+        "name": "audio_described",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "audio_described"
+          }
+        }
+      },
+      {
+        "ordinal": 31,
+        "name": "visuals_conveyed_in_audio",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "visuals_conveyed_in_audio"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
         "Int8",
-        "Int8",
-        "Bool",
         "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
         "Float8",
-        "Float8"
+        "Text",
+        "Int8"
       ]
     },
     "nullable": [
@@ -338,8 +400,13 @@
       false,
       true,
       false,
-      true
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
     ]
   },
-  "hash": "93425bc88368d1637a409bd5d272ce550f2f23a8923ce293c89187aebdb7c60f"
+  "hash": "7c3007acbdcaefb373927d6a1315a1254a62660d14ec727b0b6af1a6da7f39f2"
 }

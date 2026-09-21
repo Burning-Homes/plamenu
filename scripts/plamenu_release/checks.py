@@ -8,6 +8,7 @@ import secrets
 import shutil
 import subprocess
 import time
+from pathlib import Path
 
 import tomllib
 
@@ -29,6 +30,7 @@ def static(runner, folder):
             "warnings",
         ),
         ("python3", "scripts/ci/check-static.py"),
+        ("python3", "scripts/accessibility-evidence.py", "matrix"),
         ("python3", "-m", "unittest", "discover", "-s", "scripts/tests"),
         ("python3", "-m", "pytest", "bench/test_bench_budgets.py", "-q"),
         (
@@ -155,9 +157,26 @@ def application(runner, folder):
         sqlx.check(runner, folder, url)
 
 
-def performance_machine(source):
-    from pathlib import Path
+def accessibility(runner, folder, evidence, revision):
+    evidence = evidence.resolve()
+    runner.run(
+        "python3",
+        "scripts/accessibility-evidence.py",
+        "validate",
+        "--release",
+        "--revision",
+        revision,
+        evidence,
+    )
+    record = json.loads(evidence.read_text())
+    automated = Path(record["automated_report"]["path"])
+    if not automated.is_absolute():
+        automated = (evidence.parent / automated).resolve()
+    shutil.copy2(evidence, folder / "accessibility-evidence.json")
+    shutil.copy2(automated, folder / "accessibility-automated.json")
 
+
+def performance_machine(source):
     policy = tomllib.loads((source / "bench/release-policy.toml").read_text())[
         "machine"
     ]

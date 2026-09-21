@@ -11,10 +11,24 @@ Use **Preview** to check formatting before publishing.
 ## Text and media
 
 Choose plain text, Markdown, or HTML from the text-format menu. HTML is
-sanitized. Attach images, audio, or video and add descriptions for people who
-cannot see the media. Upload limits are set by your server; video processing
-may take time. Use the sensitive-media checkbox and content-warning field
-when appropriate.
+sanitized. Attach images, audio, or video and add a short description when the
+attachment conveys information. For an image that only adds visual decoration
+or repeats the nearby post text, select **This image doesn't add information to
+the post** instead. Upload limits are set by your server; video processing may
+take time. Use the sensitive-media checkbox and content-warning field when
+appropriate.
+
+For audio, add a transcript including dialogue and meaningful sounds. For
+video, add a transcript/media alternative that also describes important visual
+information, and attach timed captions as a UTF-8 WebVTT (`.vtt`) file when the
+video contains speech or other meaningful audio. Captions should identify
+speakers when needed and include meaningful non-speech sound.
+
+For video, choose **This video includes audio description** only when the
+uploaded video actually contains it. If ordinary dialogue and narration already
+convey every important visual, choose the separate soundtrack option. A
+transcript does not replace audio description for prerecorded synchronized
+video at WCAG Level AA.
 
 ## Visibility
 

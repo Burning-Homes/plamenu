@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO media_attachments (id, account_id, file_name, content_type,\n                                       description, kind, focus_x, focus_y,\n                                       processing)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued')\n        RETURNING id, account_id, status_id, file_name, remote_url, content_type,\n                  description, width, height, created_at, kind, blurhash,\n                  focus_x, focus_y, small_file_name, small_width, small_height,\n                  thumbnail_remote_url, duration, frame_rate, bitrate, processing,\n                  remote_audio_url, download_on_demand, live_state, live_permanent,\n                  hls_master_url\n        ",
+  "query": "\n        INSERT INTO media_attachments (id, account_id, file_name, content_type,\n                                       description, kind, focus_x, focus_y,\n                                       processing)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued')\n        RETURNING id, account_id, status_id, file_name, remote_url, content_type,\n                  description, width, height, created_at, kind, blurhash,\n                  focus_x, focus_y, small_file_name, small_width, small_height,\n                  thumbnail_remote_url, duration, frame_rate, bitrate, processing,\n                  remote_audio_url, download_on_demand, live_state, live_permanent,\n                  hls_master_url, transcript, caption_vtt, decorative,\n                  audio_described, visuals_conveyed_in_audio\n        ",
   "describe": {
     "columns": [
       {
@@ -299,6 +299,61 @@
             "name": "hls_master_url"
           }
         }
+      },
+      {
+        "ordinal": 27,
+        "name": "transcript",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "transcript"
+          }
+        }
+      },
+      {
+        "ordinal": 28,
+        "name": "caption_vtt",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "caption_vtt"
+          }
+        }
+      },
+      {
+        "ordinal": 29,
+        "name": "decorative",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "decorative"
+          }
+        }
+      },
+      {
+        "ordinal": 30,
+        "name": "audio_described",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "audio_described"
+          }
+        }
+      },
+      {
+        "ordinal": 31,
+        "name": "visuals_conveyed_in_audio",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "visuals_conveyed_in_audio"
+          }
+        }
       }
     ],
     "parameters": {
@@ -340,8 +395,13 @@
       false,
       true,
       false,
-      true
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
     ]
   },
-  "hash": "44ee323b96b92960c54fe76b66dbab78e3b7d4e84f5e86f50ae11ba43251392e"
+  "hash": "c43172e46233e77a1623a133ccb7328bcb27ccf5396708841066d2afb456e322"
 }

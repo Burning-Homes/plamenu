@@ -106,7 +106,7 @@ async fn interact_page(
             p { (lead) }
             p { (locale.text("interact-explainer")) }
             @if !errors.is_empty() {
-                ul.form-error role="alert" {
+                ul.form-error id="interact-errors" role="alert" {
                     @for error in errors { li { (error) } }
                 }
             }
@@ -115,8 +115,16 @@ async fn interact_page(
                 label {
                     (locale.text("interact-handle-label"))
                     input type="text" name="handle" value=(handle)
-                        placeholder="user@example.org" autocomplete="off" required autofocus;
-                    span.settings-field__hint { (locale.text("interact-handle-hint")) }
+                        placeholder="user@example.org" autocomplete="off" required autofocus
+                        aria-invalid=[(!errors.is_empty()).then_some("true")]
+                        aria-describedby=(if errors.is_empty() {
+                            "interact-handle-hint"
+                        } else {
+                            "interact-handle-hint interact-errors"
+                        });
+                    span.settings-field__hint id="interact-handle-hint" {
+                        (locale.text("interact-handle-hint"))
+                    }
                 }
                 button type="submit" { (locale.text("interact-submit")) }
             }

@@ -32,6 +32,8 @@ services; see [Releasing](RELEASING.md).
 | `./dev sqlx` | Regenerate `.sqlx` query metadata after SQL or migration changes |
 | `./dev sqlx-check` | Check query metadata without updating it |
 | `./dev docs-check` | Build the application, check CLI help and documentation examples, and build/check the book |
+| `./dev a11y` | Run the full Chromium, Firefox, WebKit, mobile, and no-JavaScript accessibility regression matrix |
+| `./dev a11y-matrix` | Validate complete WCAG 2.2 A/AA criterion-to-evidence coverage |
 | `./dev ci` | Local check, docs-check, test, and dependency policy when cargo-deny is installed |
 
 `./dev test` prepares PostgreSQL's `template1` so SQLx tests can create isolated
@@ -74,7 +76,11 @@ tests should check the captured recipients. See [architecture](ARCHITECTURE.md).
 
 For web changes, check the rendered controls and interactions in a browser;
 server-response assertions cannot detect controls hidden by CSS or broken by
-JavaScript.
+JavaScript. Run `./dev a11y-install` once for the pinned browser container, then
+`./dev a11y`. The gate uses a digest-pinned browser container and an isolated
+disposable database rather than the standing development data. The manual and
+release protocol is documented in
+[Accessibility release verification](ACCESSIBILITY_RELEASE.md).
 
 For federation changes, check serialization and the relevant peer exchange.
 The Python E2E suite is currently specific to one developer's machine and is

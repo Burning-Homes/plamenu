@@ -112,6 +112,14 @@ fn field<'a>(pairs: &'a [(String, String)], name: &str) -> Option<&'a str> {
         .map(|(_, v)| v.as_str())
 }
 
+fn field_last<'a>(pairs: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    pairs
+        .iter()
+        .rev()
+        .find(|(k, _)| k == name)
+        .map(|(_, v)| v.as_str())
+}
+
 fn truthy(value: &str) -> bool {
     !matches!(
         value,
@@ -226,12 +234,70 @@ fn parse_id(raw: Option<&str>) -> Result<Option<i64>, ()> {
     }
 }
 
-/// One uploaded file from the compose form, with its optional alt text. The
-/// text field carrying the description (`media_alt[]`) precedes its file part
-/// in the form, so it is buffered and attached to the next file seen.
+const MAX_TRANSCRIPT_CHARS: usize = 50_000;
+const MAX_CAPTION_BYTES: usize = 256 * 1024;
+
+/// A validated `WebVTT` sidecar. Full cue parsing remains the browser's job, but
+/// rejecting non-VTT text and files without any timed cue prevents an author
+/// from accidentally publishing a transcript as if it were captions.
+fn parse_caption_vtt(bytes: &[u8]) -> Result<Option<String>, ApiError> {
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    if bytes.len() > MAX_CAPTION_BYTES {
+        return Err(ApiError::Unprocessable(
+            "Captions must be a WebVTT file no larger than 256 KiB".into(),
+        ));
+    }
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| ApiError::Unprocessable("Captions must be UTF-8 WebVTT".into()))?;
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let header = text
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches('\r');
+    let valid_header =
+        header == "WEBVTT" || header.starts_with("WEBVTT ") || header.starts_with("WEBVTT\t");
+    if !valid_header || !text.contains("-->") || text.contains('\0') {
+        return Err(ApiError::Unprocessable(
+            "Captions must be a WebVTT file with at least one timed cue".into(),
+        ));
+    }
+    Ok(Some(text.to_owned()))
+}
+
+fn compose_transcript(raw: &str) -> Result<Option<String>, ApiError> {
+    let trimmed = raw.trim();
+    if trimmed.chars().count() > MAX_TRANSCRIPT_CHARS {
+        return Err(ApiError::Unprocessable(
+            "Transcript must be 50,000 characters or fewer".into(),
+        ));
+    }
+    Ok((!trimmed.is_empty()).then(|| trimmed.to_owned()))
+}
+
+/// The two WCAG-valid reasons that additional visual narration is unnecessary
+/// are distinct author claims: actual audio description must not be advertised
+/// when the ordinary soundtrack simply already conveys the visuals.
+fn visual_audio_state(raw: Option<&str>) -> (bool, bool) {
+    match raw.map(str::trim) {
+        Some("audio_description") => (true, false),
+        Some("soundtrack") => (false, true),
+        _ => (false, false),
+    }
+}
+
+/// One uploaded file with the accessibility alternatives that precede its
+/// file part in the multipart form.
 struct UploadPart {
     bytes: Vec<u8>,
     description: Option<String>,
+    transcript: Option<String>,
+    caption_vtt: Option<String>,
+    decorative: bool,
+    audio_described: bool,
+    visuals_conveyed_in_audio: bool,
 }
 
 /// Reads the compose multipart body into ordinary `(name, value)` text pairs
@@ -244,6 +310,10 @@ async fn read_compose(
     let mut pairs = Vec::new();
     let mut files = Vec::new();
     let mut pending_alt: Option<String> = None;
+    let mut pending_transcript: Option<String> = None;
+    let mut pending_caption_vtt: Option<String> = None;
+    let mut pending_decorative = false;
+    let mut pending_visual_audio = String::new();
     while let Some(field) = multipart
         .next_field()
         .await
@@ -260,16 +330,52 @@ async fn read_compose(
                 // attachment-free post still goes through.
                 if bytes.is_empty() {
                     pending_alt = None;
+                    pending_transcript = None;
+                    pending_caption_vtt = None;
+                    pending_decorative = false;
+                    pending_visual_audio.clear();
                 } else {
+                    let (audio_described, visuals_conveyed_in_audio) =
+                        visual_audio_state(Some(&pending_visual_audio));
                     files.push(UploadPart {
                         bytes: bytes.to_vec(),
                         description: pending_alt.take().filter(|d| !d.trim().is_empty()),
+                        transcript: pending_transcript.take(),
+                        caption_vtt: pending_caption_vtt.take(),
+                        decorative: std::mem::take(&mut pending_decorative),
+                        audio_described,
+                        visuals_conveyed_in_audio,
                     });
+                    pending_visual_audio.clear();
                 }
             }
             "media_alt[]" | "media_alt" => {
                 let text = field.text().await.unwrap_or_default();
                 pending_alt = Some(text);
+            }
+            "media_transcript[]" | "media_transcript" => {
+                let text = field.text().await.unwrap_or_default();
+                pending_transcript = compose_transcript(&text)?;
+            }
+            "media_captions[]" | "media_captions" => {
+                let bytes = field
+                    .bytes()
+                    .await
+                    .map_err(|e| ApiError::BadRequest(format!("invalid caption upload: {e}")))?;
+                pending_caption_vtt = parse_caption_vtt(&bytes)?;
+            }
+            "media_decorative[]" | "media_decorative" => {
+                pending_decorative = truthy(&field.text().await.unwrap_or_default());
+            }
+            "media_visual_audio[]" | "media_visual_audio" => {
+                pending_visual_audio = field.text().await.unwrap_or_default();
+            }
+            // Accept forms opened before this upgrade as genuine audio
+            // description instead of silently discarding their checked value.
+            "media_audio_described[]" | "media_audio_described" => {
+                if truthy(&field.text().await.unwrap_or_default()) {
+                    "audio_description".clone_into(&mut pending_visual_audio);
+                }
             }
             _ => {
                 let value = field.text().await.unwrap_or_default();
@@ -293,11 +399,15 @@ async fn store_compose_media(
     actions::ensure_media_count(files.len(), limits.max_media_attachments)?;
     let mut media_ids = Vec::with_capacity(files.len());
     for part in files {
+        // Decorative intent is the semantic alternative to a description, not
+        // an extra flag on described content. Normalize conflicting no-JS or
+        // forged submissions before the media entity can federate.
+        let description = part.description.filter(|_| !part.decorative);
         let (_, entity) = crate::routes::media::store_upload(
             state,
             account_id,
             part.bytes,
-            part.description,
+            description,
             None,
             false,
         )
@@ -307,6 +417,19 @@ async fn store_compose_media(
             .and_then(Value::as_str)
             .and_then(|s| s.parse::<i64>().ok())
         {
+            media::update_accessibility(
+                &state.pool,
+                id,
+                account_id,
+                media::AccessibilityUpdate {
+                    transcript: part.transcript.as_deref(),
+                    caption_vtt: Some(part.caption_vtt.as_deref()),
+                    decorative: part.decorative,
+                    audio_described: part.audio_described,
+                    visuals_conveyed_in_audio: part.visuals_conveyed_in_audio,
+                },
+            )
+            .await?;
             media_ids.push(id);
         }
     }
@@ -644,8 +767,14 @@ async fn reconcile_compose_media(
     let mut set_description = Vec::with_capacity(media_keep.len());
     let mut descriptions: Vec<Option<String>> = Vec::with_capacity(media_keep.len());
     for id in media_keep {
-        let description = field(pairs, &format!("media_alt_{id}"))
-            .map(|alt| (!alt.trim().is_empty()).then(|| alt.to_owned()));
+        let decorative = field_last(pairs, &format!("media_decorative_{id}")).is_some_and(truthy);
+        let description = if decorative {
+            // An explicit decorative choice wins over stale description text.
+            Some(None)
+        } else {
+            field(pairs, &format!("media_alt_{id}"))
+                .map(|alt| (!alt.trim().is_empty()).then(|| alt.to_owned()))
+        };
         set_description.push(description.is_some());
         descriptions.push(description.flatten());
     }
@@ -657,6 +786,28 @@ async fn reconcile_compose_media(
         &descriptions,
     )
     .await?;
+    for id in media_keep {
+        let transcript = field(pairs, &format!("media_transcript_{id}"))
+            .map(compose_transcript)
+            .transpose()?
+            .flatten();
+        let decorative = field_last(pairs, &format!("media_decorative_{id}")).is_some_and(truthy);
+        let (audio_described, visuals_conveyed_in_audio) =
+            visual_audio_state(field_last(pairs, &format!("media_visual_audio_{id}")));
+        media::update_accessibility(
+            &state.pool,
+            *id,
+            account_id,
+            media::AccessibilityUpdate {
+                transcript: transcript.as_deref(),
+                decorative,
+                audio_described,
+                visuals_conveyed_in_audio,
+                ..Default::default()
+            },
+        )
+        .await?;
+    }
     let new_ids = store_compose_media(state, account_id, files).await?;
     let mut media_ids = media_keep.to_vec();
     media_ids.extend(new_ids);
@@ -1298,6 +1449,7 @@ pub async fn translate(
         "media_attachments": translation.get("media_attachments").cloned()
             .unwrap_or_else(|| Value::Array(Vec::new())),
         "attribution": attribution,
+        "language": text("language"),
     }))
     .into_response()
 }
@@ -1683,7 +1835,7 @@ async fn edit_media_echo(
     )
     .await?;
     for item in &mut media {
-        let Some(id) = item.get("id").and_then(Value::as_str) else {
+        let Some(id) = item.get("id").and_then(Value::as_str).map(str::to_owned) else {
             continue;
         };
         let Some(description) = field(pairs, &format!("media_alt_{id}")) else {
@@ -1694,6 +1846,19 @@ async fn edit_media_echo(
         } else {
             Value::String(description.trim().to_owned())
         };
+        if let Some(transcript) = field(pairs, &format!("media_transcript_{id}")) {
+            item["transcript"] = if transcript.trim().is_empty() {
+                Value::Null
+            } else {
+                Value::String(transcript.trim().to_owned())
+            };
+        }
+        item["decorative"] =
+            Value::Bool(field_last(pairs, &format!("media_decorative_{id}")).is_some_and(truthy));
+        let (audio_described, visuals_conveyed_in_audio) =
+            visual_audio_state(field_last(pairs, &format!("media_visual_audio_{id}")));
+        item["audio_described"] = Value::Bool(audio_described);
+        item["visuals_conveyed_in_audio"] = Value::Bool(visuals_conveyed_in_audio);
     }
     Ok(media)
 }
@@ -1725,12 +1890,43 @@ pub async fn edit(
     }
     let media_attributes = media_keep
         .iter()
-        .map(|media_id| actions::MediaEditAttributes {
-            id: *media_id,
-            description: field(&pairs, &format!("media_alt_{media_id}")).map(str::to_owned),
-            focus: None,
+        .map(|media_id| {
+            let decorative =
+                field_last(&pairs, &format!("media_decorative_{media_id}")).is_some_and(truthy);
+            actions::MediaEditAttributes {
+                id: *media_id,
+                description: if decorative {
+                    Some(String::new())
+                } else {
+                    field(&pairs, &format!("media_alt_{media_id}")).map(str::to_owned)
+                },
+                focus: None,
+            }
         })
         .collect();
+    let mut media_accessibility = Vec::with_capacity(media_keep.len());
+    for media_id in &media_keep {
+        let transcript = match field(&pairs, &format!("media_transcript_{media_id}"))
+            .map(compose_transcript)
+            .transpose()
+        {
+            Ok(value) => value.flatten(),
+            Err(err) => return err.into_response(),
+        };
+        let decorative =
+            field_last(&pairs, &format!("media_decorative_{media_id}")).is_some_and(truthy);
+        let (audio_described, visuals_conveyed_in_audio) = visual_audio_state(field_last(
+            &pairs,
+            &format!("media_visual_audio_{media_id}"),
+        ));
+        media_accessibility.push((
+            *media_id,
+            transcript,
+            decorative,
+            audio_described,
+            visuals_conveyed_in_audio,
+        ));
+    }
     // The sensitive checkbox rides over a hidden `false`, so the last value
     // wins; no field at all (a post without media) keeps the current flag.
     let sensitive = pairs
@@ -1837,7 +2033,29 @@ pub async fn edit(
 
     let result = actions::edit_status(&state, &user.current.account, id, params).await;
     match result {
-        Ok(_) => redirect_to(&format!("/@{}/{id}", user.current.account.username)),
+        Ok(_) => {
+            for (media_id, transcript, decorative, audio_described, visuals_conveyed_in_audio) in
+                media_accessibility
+            {
+                if let Err(err) = media::update_edit_accessibility(
+                    &state.pool,
+                    media_id,
+                    user.current.account.id,
+                    media::AccessibilityUpdate {
+                        transcript: transcript.as_deref(),
+                        decorative,
+                        audio_described,
+                        visuals_conveyed_in_audio,
+                        ..Default::default()
+                    },
+                )
+                .await
+                {
+                    return ApiError::from(err).into_response();
+                }
+            }
+            redirect_to(&format!("/@{}/{id}", user.current.account.username))
+        }
         Err(err) => err.into_response(),
     }
 }
@@ -2509,4 +2727,39 @@ pub async fn unblock_domain(
 
 async fn load_target(state: &AppState, account_id: i64) -> Result<Option<Account>, ApiError> {
     Ok(account::find_by_id(&state.pool, account_id).await?)
+}
+
+#[cfg(test)]
+mod accessibility_tests {
+    use super::*;
+
+    #[test]
+    fn caption_validation_accepts_timed_webvtt_only() {
+        let valid = b"WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello\n";
+        assert_eq!(
+            parse_caption_vtt(valid).unwrap().as_deref(),
+            std::str::from_utf8(valid).ok()
+        );
+        assert!(parse_caption_vtt(b"WEBVTTX\n\n00:00:00.000 --> 00:00:02.000\nHello").is_err());
+        assert!(parse_caption_vtt(b"WEBVTT\n\nTranscript only").is_err());
+        assert!(parse_caption_vtt(b"1\n00:00:00,000 --> 00:00:02,000\nHello").is_err());
+    }
+
+    #[test]
+    fn transcript_is_trimmed_and_bounded() {
+        assert_eq!(
+            compose_transcript("  hello  ").unwrap().as_deref(),
+            Some("hello")
+        );
+        assert_eq!(compose_transcript("  ").unwrap(), None);
+        assert!(compose_transcript(&"x".repeat(MAX_TRANSCRIPT_CHARS + 1)).is_err());
+    }
+
+    #[test]
+    fn video_visual_audio_states_are_mutually_exclusive() {
+        assert_eq!(visual_audio_state(None), (false, false));
+        assert_eq!(visual_audio_state(Some("audio_description")), (true, false));
+        assert_eq!(visual_audio_state(Some("soundtrack")), (false, true));
+        assert_eq!(visual_audio_state(Some("unexpected")), (false, false));
+    }
 }

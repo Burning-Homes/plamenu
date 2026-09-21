@@ -106,12 +106,16 @@ Development:
   bench-concurrency             Run the fan-out contention tripwire (cores/2 load)
   e2e [PYTEST_ARGS...]          Run live federation tests against available peers
   e2e-full [PYTEST_ARGS...]     Require every configured peer, then run all E2E tests
+  a11y-install                  Install pinned browser packages and container
+  a11y [PLAYWRIGHT_ARGS...]     Run the WCAG browser regression matrix
+  a11y-matrix                   Validate WCAG criterion-to-evidence coverage
+  a11y-evidence OUTPUT          Create a pending release-evidence record
   provision-peers [--no-start|--check]
                                 Fetch pinned peer sources and prepare the live fleet
   smoke-install                 Rehearse a clean production-shaped container install
   backup-restore               Destroy and restore a disposable container install
   deploy-staging                Build and deploy using ignored .staging.env settings
-  release [--publish] [--arm64-on codefloe] [--skip-e2e]
+  release --accessibility-evidence FILE [--publish] [--arm64-on codefloe] [--skip-e2e]
                                 Check and package locally; optionally sign and publish
   mirror-release TAG            Mirror an existing Codefloe release to GitHub
   doctor                        Check local tools and optional peer-harness wiring
@@ -398,6 +402,15 @@ run_e2e() {
   )
 }
 
+run_a11y() {
+  have npm || { echo "npm is required for accessibility browser tests" >&2; return 1; }
+  [[ -d "$ROOT/accessibility/node_modules" ]] || {
+    echo ">> Installing pinned accessibility test packages"
+    npm --prefix "$ROOT/accessibility" ci --ignore-scripts
+  }
+  exec python3 "$ROOT/scripts/run-accessibility-tests.py" "$@"
+}
+
 doctor() {
   local failed=0 optional=0 tool
   for tool in cargo cargo-nextest docker curl; do
@@ -408,7 +421,7 @@ doctor() {
       failed=1
     fi
   done
-  for tool in uv ffmpeg ffprobe cargo-deny mdbook shellcheck; do
+  for tool in uv ffmpeg ffprobe cargo-deny mdbook shellcheck npm; do
     if have "$tool"; then
       printf 'ok       %s\n' "$tool"
     else
@@ -535,6 +548,18 @@ case "$action" in
   bench-concurrency) db_up; cargo bench --locked -p plamenu --bench contention "$@" ;;
   e2e) run_e2e false "$@" ;;
   e2e-full) run_e2e true "$@" ;;
+  a11y-install)
+    have npm || { echo "npm is required for accessibility browser tests" >&2; exit 1; }
+    npm --prefix "$ROOT/accessibility" ci --ignore-scripts
+    docker pull mcr.microsoft.com/playwright@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+    ;;
+  a11y) run_a11y "$@" ;;
+  a11y-matrix) exec python3 "$ROOT/scripts/accessibility-evidence.py" matrix ;;
+  a11y-evidence)
+    [[ $# -eq 1 ]] || { echo "Usage: ./dev a11y-evidence OUTPUT" >&2; exit 2; }
+    exec python3 "$ROOT/scripts/accessibility-evidence.py" init \
+      --automated "$ROOT/target/accessibility/automated.json" "$1"
+    ;;
   provision-peers) exec "$PEER_PROVISIONER" "$@" ;;
   smoke-install) exec "$ROOT/scripts/rehearse-deployment.sh" install ;;
   backup-restore) exec "$ROOT/scripts/rehearse-deployment.sh" restore ;;

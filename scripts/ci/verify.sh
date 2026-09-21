@@ -13,6 +13,7 @@ done
 psql "$DATABASE_URL" -XAtc 'select version()'
 measure() { /usr/bin/time -v "$@"; }
 measure python3 -m unittest discover -s scripts/tests
+measure python3 scripts/accessibility-evidence.py matrix
 measure python3 -m pytest bench/test_bench_budgets.py -q
 measure cargo deny --locked fetch all
 measure cargo deny --locked check --deny warnings

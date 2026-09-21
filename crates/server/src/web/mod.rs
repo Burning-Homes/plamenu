@@ -16,6 +16,7 @@ mod cleanup;
 pub(crate) mod clock;
 mod collapse;
 mod collections;
+mod confirmation;
 mod explore;
 mod export;
 mod featured_tags;
@@ -106,6 +107,7 @@ pub fn router() -> Router<AppState> {
         .route("/rules", get(landing::rules_page))
         .route("/staff", get(landing::staff_page))
         .route("/announcements", get(announcements::page))
+        .route("/web/confirm", post(confirmation::review))
         .route(
             "/web/announcements/{id}/reactions",
             get(announcements::reactions_fragment),

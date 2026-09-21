@@ -14,6 +14,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::session::{WebUser, csrf_rejection};
+use super::view;
 use crate::AppState;
 use crate::media_processing::validate_emoji_image;
 
@@ -182,8 +183,13 @@ fn personal_row(state: &AppState, user: &WebUser, emoji: &ManagedCustomEmoji) ->
                 @if !emoji.borrowed {
                     button type="submit" form=(&edit_form_id) { "Save" }
                 }
-                form.settings-inline-form method="post" action=(format!("/web/settings/custom-emojis/{}/delete", emoji.id)) data-confirm="Delete this personal emoji? Existing posts keep their historical image." {
+                @let delete_action = format!("/web/settings/custom-emojis/{}/delete", emoji.id);
+                @let delete_message = "Delete this personal emoji? Existing posts keep their historical image.";
+                form.settings-inline-form method="post" action=(view::CONFIRM_PATH)
+                    data-confirm=(delete_message) data-confirm-action=(&delete_action) {
                     input type="hidden" name="csrf" value=(&user.csrf);
+                    input type="hidden" name="return_to" value="/settings/custom-emojis";
+                    (view::confirmation_fields(&delete_action, Some(delete_message)))
                     button.admin-danger type="submit" { "Delete" }
                 }
             }

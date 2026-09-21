@@ -583,6 +583,48 @@ async fn compose_attaches_uploaded_media(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn compose_accepts_and_records_decorative_image_intent(pool: PgPool) {
+    let app = app_with_alice(pool.clone()).await;
+    let cookie = login(&app).await;
+    let csrf = csrf_of(&get(&app, "/compose", Some(&cookie)).await.body);
+    let png = sample_png_bytes();
+    let posted = post_multipart_file(
+        &app,
+        "/web/compose",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("status", "decorative picture"),
+            ("visibility", "public"),
+            // A no-JS client can submit both fields; decorative intent wins.
+            ("media_alt[]", "stale description"),
+            ("media_decorative[]", "true"),
+        ],
+        ("media[]", "flourish.png", "image/png", &png),
+    )
+    .await;
+    assert_eq!(posted.status, StatusCode::SEE_OTHER);
+    let permalink = posted.location.expect("redirect to the new post");
+    let status_id: i64 = permalink.rsplit('/').next().unwrap().parse().unwrap();
+    let attached = media::for_statuses(&pool, &[status_id])
+        .await
+        .unwrap()
+        .remove(&status_id)
+        .expect("decorative attachment");
+    assert_eq!(attached.len(), 1);
+    assert!(attached[0].decorative);
+    assert_eq!(attached[0].description, None);
+
+    let thread = get(&app, &permalink, Some(&cookie)).await;
+    assert_eq!(thread.status, StatusCode::OK);
+    assert!(
+        thread.body.contains(r#"alt="""#),
+        "decorative image must be ignored by assistive technology: {}",
+        thread.body
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn compose_accepts_media_over_the_default_body_limit(pool: PgPool) {
     // A single realistic photo already exceeds axum's 2 MB default body limit.
     // The compose route disables that default and sizes its own limit from the
@@ -10651,6 +10693,35 @@ async fn edit_updates_media_alt_text_and_drops_unkept(pool: PgPool) {
     assert_eq!(row.status_id, Some(status_id));
     let stored = status::find_by_id(&pool, status_id).await.unwrap().unwrap();
     assert!(stored.edited_at.is_some(), "alt change should mark an edit");
+
+    // Explicitly marking the image decorative clears stale alt text even if a
+    // no-JS client submits both values.
+    let page = get(&app, &edit_uri, Some(&cookie)).await;
+    let csrf = csrf_of(&page.body);
+    let decorative_key = format!("media_decorative_{media_id}");
+    let saved = post_form(
+        &app,
+        &edit_uri,
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("status", "with a picture"),
+            ("spoiler_text", ""),
+            ("language", "en"),
+            ("sensitive", "false"),
+            ("media_keep[]", &keep),
+            (&alt_key, "stale alt"),
+            (&decorative_key, "true"),
+        ],
+    )
+    .await;
+    assert_eq!(saved.status, StatusCode::SEE_OTHER, "{}", saved.body);
+    let row = media::find_owned(&pool, media_id, alice_id(&pool).await)
+        .await
+        .unwrap()
+        .expect("attachment kept");
+    assert!(row.decorative);
+    assert_eq!(row.description, None);
 
     // Unchecking the attachment removes it from the post.
     let page = get(&app, &edit_uri, Some(&cookie)).await;

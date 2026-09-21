@@ -377,3 +377,101 @@ pub async fn custom_css(
         settings.custom_css,
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::APP_CSS;
+
+    fn property(name: &str) -> &'static str {
+        APP_CSS
+            .lines()
+            .find_map(|line| line.trim().strip_prefix(name))
+            .and_then(|value| value.strip_prefix(':'))
+            .and_then(|value| value.trim().strip_suffix(';'))
+            .unwrap_or_else(|| panic!("missing CSS property {name}"))
+    }
+
+    fn light_dark(name: &str) -> (&'static str, &'static str) {
+        let value = property(name);
+        let pair = value
+            .strip_prefix("light-dark(")
+            .and_then(|value| value.strip_suffix(')'))
+            .unwrap_or_else(|| panic!("{name} is not a light-dark() pair: {value}"));
+        let (light, dark) = pair
+            .split_once(',')
+            .unwrap_or_else(|| panic!("{name} has no dark value: {value}"));
+        (light.trim(), dark.trim())
+    }
+
+    fn luminance(hex: &str) -> f64 {
+        assert_eq!(hex.len(), 7, "expected #rrggbb, got {hex}");
+        let channel = |start| {
+            let byte = u8::from_str_radix(&hex[start..start + 2], 16)
+                .unwrap_or_else(|_| panic!("invalid colour {hex}"));
+            let value = f64::from(byte) / 255.0;
+            if value <= 0.04045 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
+    }
+
+    fn contrast(a: &str, b: &str) -> f64 {
+        let (a, b) = (luminance(a), luminance(b));
+        let (lighter, darker) = if a > b { (a, b) } else { (b, a) };
+        (lighter + 0.05) / (darker + 0.05)
+    }
+
+    #[test]
+    fn accessibility_palette_keeps_required_contrast() {
+        let (control_light, control_dark) = light_dark("--control-border");
+        let (surface_light, surface_dark) = light_dark("--surface");
+        for (name, foreground, background) in [
+            ("light control boundary", control_light, surface_light),
+            ("dark control boundary", control_dark, surface_dark),
+        ] {
+            let actual = contrast(foreground, background);
+            assert!(actual >= 3.0, "{name} is only {actual:.2}:1");
+        }
+
+        let danger_solid = property("--danger-solid");
+        let danger_contrast = property("--danger-contrast");
+        let actual = contrast(danger_solid, danger_contrast);
+        assert!(actual >= 4.5, "danger button text is only {actual:.2}:1");
+
+        for token in ["--boost", "--favourite", "--accent", "--danger"] {
+            let (light, dark) = light_dark(token);
+            for (scheme, foreground, background) in [
+                ("light", light, surface_light),
+                ("dark", dark, surface_dark),
+            ] {
+                let actual = contrast(foreground, background);
+                assert!(
+                    actual >= 4.5,
+                    "{scheme} {token} active text is only {actual:.2}:1"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn accessibility_state_rules_are_bundled() {
+        assert!(APP_CSS.contains(".action.is-active {"));
+        assert!(APP_CSS.contains("box-shadow: inset 0 0 0 2px currentColor;"));
+        assert!(APP_CSS.contains(
+            ".webxdc-app-choice:has(input:focus-visible) { outline: 2px solid var(--accent);"
+        ));
+        assert!(APP_CSS.contains(".compose__combo-option.is-active {"));
+        assert!(APP_CSS.contains("scroll-padding-block-end: calc("));
+        assert!(APP_CSS.contains("env(safe-area-inset-bottom, 0px)"));
+        assert!(APP_CSS.contains(
+            ".status__name {\n    display: flex;\n    align-items: center;\n    min-block-size: 1.5rem;"
+        ));
+        assert!(APP_CSS.contains(
+            ".status__acct {\n    display: flex;\n    align-items: center;\n    min-block-size: 1.5rem;"
+        ));
+        assert!(!APP_CSS.contains("var(--focus)"));
+    }
+}

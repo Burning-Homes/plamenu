@@ -8,6 +8,7 @@ use time::OffsetDateTime;
 use crate::{DbError, id};
 
 #[derive(Debug, Clone, sqlx::FromRow)]
+#[allow(clippy::struct_excessive_bools)] // direct row shape; PostgreSQL stores these independent flags
 pub struct Media {
     pub id: i64,
     pub account_id: i64,
@@ -57,6 +58,30 @@ pub struct Media {
     /// HLS-native remote video (`PeerTube`): the origin master playlist URL.
     /// `None` for plain-mp4 media, and for a live that has not started yet.
     pub hls_master_url: Option<String>,
+    /// Plain-text transcript (video transcripts should also describe important
+    /// visual information). Local authoring only; federated support has no
+    /// interoperable `ActivityPub` field yet.
+    pub transcript: Option<String>,
+    /// Author-supplied `WebVTT` captions, served from a same-origin media route.
+    pub caption_vtt: Option<String>,
+    /// The author intentionally marked an image as adding no information.
+    pub decorative: bool,
+    /// The author confirms that an integrated audio description is present.
+    pub audio_described: bool,
+    /// The ordinary soundtrack already conveys all important visual
+    /// information, so no additional audio description is necessary.
+    pub visuals_conveyed_in_audio: bool,
+}
+
+/// Author-supplied accessibility intent stored alongside one attachment.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AccessibilityUpdate<'a> {
+    pub transcript: Option<&'a str>,
+    /// Outer `None` keeps existing captions; `Some(None)` clears them.
+    pub caption_vtt: Option<Option<&'a str>>,
+    pub decorative: bool,
+    pub audio_described: bool,
+    pub visuals_conveyed_in_audio: bool,
 }
 
 impl Media {
@@ -215,7 +240,8 @@ pub async fn create_local(pool: &PgPool, new: NewLocalMedia<'_>) -> Result<Media
                   focus_x, focus_y, small_file_name, small_width, small_height,
                   thumbnail_remote_url, duration, frame_rate, bitrate, processing,
                   remote_audio_url, download_on_demand, live_state, live_permanent,
-                  hls_master_url
+                  hls_master_url, transcript, caption_vtt, decorative,
+                  audio_described, visuals_conveyed_in_audio
         "#,
         new.media_id,
         new.account_id,
@@ -273,7 +299,8 @@ pub async fn create_queued(pool: &PgPool, new: NewQueuedMedia<'_>) -> Result<Med
                   focus_x, focus_y, small_file_name, small_width, small_height,
                   thumbnail_remote_url, duration, frame_rate, bitrate, processing,
                   remote_audio_url, download_on_demand, live_state, live_permanent,
-                  hls_master_url
+                  hls_master_url, transcript, caption_vtt, decorative,
+                  audio_described, visuals_conveyed_in_audio
         "#,
         new.media_id,
         new.account_id,
@@ -479,7 +506,8 @@ pub async fn complete_processing(
                   focus_x, focus_y, small_file_name, small_width, small_height,
                   thumbnail_remote_url, duration, frame_rate, bitrate, processing,
                   remote_audio_url, download_on_demand, live_state, live_permanent,
-                  hls_master_url
+                  hls_master_url, transcript, caption_vtt, decorative,
+                  audio_described, visuals_conveyed_in_audio
         "#,
         done.media_id,
         done.file_name,
@@ -1611,7 +1639,8 @@ pub async fn find_by_ids(pool: &PgPool, media_ids: &[i64]) -> Result<Vec<Media>,
                focus_x, focus_y, small_file_name, small_width, small_height,
                thumbnail_remote_url, duration, frame_rate, bitrate, processing,
                remote_audio_url, download_on_demand, live_state, live_permanent,
-                  hls_master_url
+                  hls_master_url, transcript, caption_vtt, decorative,
+                  audio_described, visuals_conveyed_in_audio
         FROM media_attachments
         WHERE id = ANY($1)
         ORDER BY id
@@ -1651,7 +1680,8 @@ pub async fn update_attributes(
                   focus_x, focus_y, small_file_name, small_width, small_height,
                   thumbnail_remote_url, duration, frame_rate, bitrate, processing,
                   remote_audio_url, download_on_demand, live_state, live_permanent,
-                  hls_master_url
+                  hls_master_url, transcript, caption_vtt, decorative,
+                  audio_described, visuals_conveyed_in_audio
         "#,
         media_id,
         account_id,
@@ -1699,6 +1729,88 @@ pub async fn update_attributes_many(
     Ok(())
 }
 
+/// Stores the web composer's structured alternatives on an owned, unattached
+/// upload. Transcript/audio-description state is replaced; an outer `None`
+/// keeps existing captions while `Some(None)` clears them. Callers validate
+/// `WebVTT` and length limits before this database boundary.
+pub async fn update_accessibility(
+    pool: &PgPool,
+    media_id: i64,
+    account_id: i64,
+    update: AccessibilityUpdate<'_>,
+) -> Result<bool, DbError> {
+    let updated = sqlx::query_scalar!(
+        r#"
+        UPDATE media_attachments
+        SET transcript = $3,
+            caption_vtt = CASE WHEN $4 THEN $5 ELSE caption_vtt END,
+            decorative = $6,
+            audio_described = $7,
+            visuals_conveyed_in_audio = $8
+        WHERE id = $1 AND account_id = $2 AND status_id IS NULL
+        RETURNING id
+        "#,
+        media_id,
+        account_id,
+        update.transcript,
+        update.caption_vtt.is_some(),
+        update.caption_vtt.flatten(),
+        update.decorative,
+        update.audio_described,
+        update.visuals_conveyed_in_audio,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(updated.is_some())
+}
+
+/// Updates alternatives on an attachment after the status-edit path has
+/// validated that it belongs to the edited local status. Captions are retained:
+/// the urlencoded edit form cannot carry a replacement file.
+pub async fn update_edit_accessibility(
+    pool: &PgPool,
+    media_id: i64,
+    account_id: i64,
+    update: AccessibilityUpdate<'_>,
+) -> Result<bool, DbError> {
+    let updated = sqlx::query_scalar!(
+        r#"
+        UPDATE media_attachments
+        SET transcript = $3, decorative = $4, audio_described = $5,
+            visuals_conveyed_in_audio = $6
+        WHERE id = $1 AND account_id = $2
+        RETURNING id
+        "#,
+        media_id,
+        account_id,
+        update.transcript,
+        update.decorative,
+        update.audio_described,
+        update.visuals_conveyed_in_audio,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(updated.is_some())
+}
+
+/// The captions exposed by the public same-origin `WebVTT` route. Suspended
+/// accounts fail closed exactly like their media bytes.
+pub async fn public_caption_vtt(pool: &PgPool, media_id: i64) -> Result<Option<String>, DbError> {
+    let captions = sqlx::query_scalar!(
+        r#"
+        SELECT m.caption_vtt
+        FROM media_attachments m
+        JOIN accounts a ON a.id = m.account_id
+        WHERE m.id = $1 AND a.suspended_at IS NULL
+        "#,
+        media_id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .flatten();
+    Ok(captions)
+}
+
 /// Updates the mutable attributes of an attachment during a status edit
 /// (Mastodon's `PUT /api/v1/statuses/{id}` `media_attributes`). Unlike
 /// [`update_attributes`] this reaches media already attached to a status —
@@ -1727,7 +1839,8 @@ pub async fn update_edit_attributes(
                   focus_x, focus_y, small_file_name, small_width, small_height,
                   thumbnail_remote_url, duration, frame_rate, bitrate, processing,
                   remote_audio_url, download_on_demand, live_state, live_permanent,
-                  hls_master_url
+                  hls_master_url, transcript, caption_vtt, decorative,
+                  audio_described, visuals_conveyed_in_audio
         "#,
         media_id,
         account_id,
@@ -1793,7 +1906,8 @@ pub async fn find_owned(
                focus_x, focus_y, small_file_name, small_width, small_height,
                thumbnail_remote_url, duration, frame_rate, bitrate, processing,
                remote_audio_url, download_on_demand, live_state, live_permanent,
-                  hls_master_url
+                  hls_master_url, transcript, caption_vtt, decorative,
+                  audio_described, visuals_conveyed_in_audio
         FROM media_attachments
         WHERE id = $1 AND account_id = $2
         "#,
@@ -1823,7 +1937,8 @@ pub async fn find_owned_many(
                focus_x, focus_y, small_file_name, small_width, small_height,
                thumbnail_remote_url, duration, frame_rate, bitrate, processing,
                remote_audio_url, download_on_demand, live_state, live_permanent,
-                  hls_master_url
+                  hls_master_url, transcript, caption_vtt, decorative,
+                  audio_described, visuals_conveyed_in_audio
         FROM media_attachments
         WHERE id = ANY($1) AND account_id = $2
         "#,
@@ -1853,7 +1968,8 @@ pub async fn delete_unattached(
                   focus_x, focus_y, small_file_name, small_width, small_height,
                   thumbnail_remote_url, duration, frame_rate, bitrate, processing,
                   remote_audio_url, download_on_demand, live_state, live_permanent,
-                  hls_master_url
+                  hls_master_url, transcript, caption_vtt, decorative,
+                  audio_described, visuals_conveyed_in_audio
         "#,
         media_id,
         account_id,
@@ -1885,7 +2001,8 @@ pub async fn for_statuses_conn(
                focus_x, focus_y, small_file_name, small_width, small_height,
                thumbnail_remote_url, duration, frame_rate, bitrate, processing,
                remote_audio_url, download_on_demand, live_state, live_permanent,
-                  hls_master_url
+                  hls_master_url, transcript, caption_vtt, decorative,
+                  audio_described, visuals_conveyed_in_audio
         FROM media_attachments
         WHERE status_id = ANY($1)
         ORDER BY id
@@ -2102,6 +2219,65 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[sqlx::test]
+    async fn accessibility_alternatives_are_owned_and_public_until_suspension(pool: PgPool) {
+        let (account_id, _status_id) = fixture(&pool).await;
+        let media_id = id::next();
+        create_local(&pool, upload(account_id, media_id))
+            .await
+            .unwrap();
+        let vtt = "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n";
+
+        assert!(
+            update_accessibility(
+                &pool,
+                media_id,
+                account_id,
+                AccessibilityUpdate {
+                    transcript: Some("A transcript"),
+                    caption_vtt: Some(Some(vtt)),
+                    decorative: true,
+                    audio_described: true,
+                    visuals_conveyed_in_audio: false,
+                },
+            )
+            .await
+            .unwrap()
+        );
+        assert!(
+            !update_accessibility(
+                &pool,
+                media_id,
+                account_id + 1,
+                AccessibilityUpdate::default(),
+            )
+            .await
+            .unwrap()
+        );
+
+        let stored = find_by_ids(&pool, &[media_id]).await.unwrap().remove(0);
+        assert_eq!(stored.transcript.as_deref(), Some("A transcript"));
+        assert!(stored.decorative);
+        assert!(stored.audio_described);
+        assert!(!stored.visuals_conveyed_in_audio);
+        assert_eq!(
+            public_caption_vtt(&pool, media_id)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(vtt)
+        );
+
+        sqlx::query!(
+            "UPDATE accounts SET suspended_at = now() WHERE id = $1",
+            account_id
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert_eq!(public_caption_vtt(&pool, media_id).await.unwrap(), None);
     }
 
     #[sqlx::test]

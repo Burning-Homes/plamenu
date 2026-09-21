@@ -556,6 +556,27 @@ pub async fn serve(
     .await
 }
 
+/// `GET /media/{id}/captions.vtt` — mutable, author-supplied timed captions.
+/// Caption URLs are same-origin so native players do not need cross-origin
+/// track credentials. Unlike immutable media bytes, edits may replace the
+/// cues, hence `no-cache` rather than a year-long immutable policy.
+pub async fn captions(
+    State(state): State<AppState>,
+    Path(media_id): Path<i64>,
+) -> Result<Response, ApiError> {
+    let body = media::public_caption_vtt(&state.pool, media_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/vtt; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        body,
+    )
+        .into_response())
+}
+
 /// Streams a stored file with single-range `Range` support (206) and constant
 /// memory. Shared by `/media/{file}` and the HLS segment cache; the caller
 /// supplies the content type and cache policy (uploads and cached HLS segments

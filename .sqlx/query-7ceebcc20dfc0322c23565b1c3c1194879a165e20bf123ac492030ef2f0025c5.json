@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT m.caption_vtt\n        FROM media_attachments m\n        JOIN accounts a ON a.id = m.account_id\n        WHERE m.id = $1 AND a.suspended_at IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "caption_vtt",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "caption_vtt"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "7ceebcc20dfc0322c23565b1c3c1194879a165e20bf123ac492030ef2f0025c5"
+}

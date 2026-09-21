@@ -46,6 +46,8 @@
 
 - [Contributing](contributing/index.md)
 - [Development](DEVELOPMENT.md)
+  - [WCAG 2.2 accessibility programme](ACCESSIBILITY.md)
+  - [Accessibility release verification](ACCESSIBILITY_RELEASE.md)
   - [Known query fan-outs](NPLUS1_INVENTORY.md)
 - [Architecture](ARCHITECTURE.md)
 - [Localization](LOCALIZATION.md)

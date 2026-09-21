@@ -353,9 +353,13 @@ fn catalog_sources_section(
                                     input type="hidden" name="csrf" value=(csrf);
                                     button.settings-button--plain type="submit" { "Refresh" }
                                 }
-                                form method="post" action={ "/web/admin/webxdc/catalog-sources/" (source.id) "/delete" }
-                                    data-confirm="Remove this catalog source? Imported apps remain in the instance library." {
+                                @let delete_action = format!("/web/admin/webxdc/catalog-sources/{}/delete", source.id);
+                                @let delete_message = "Remove this catalog source? Imported apps remain in the instance library.";
+                                form method="post" action=(crate::web::view::CONFIRM_PATH)
+                                    data-confirm=(delete_message) data-confirm-action=(&delete_action) {
                                     input type="hidden" name="csrf" value=(csrf);
+                                    input type="hidden" name="return_to" value="/admin/webxdc/apps";
+                                    (crate::web::view::confirmation_fields(&delete_action, Some(delete_message)))
                                     button.settings-button--plain.webxdc-admin-remove type="submit" { "Remove source" }
                                 }
                             }

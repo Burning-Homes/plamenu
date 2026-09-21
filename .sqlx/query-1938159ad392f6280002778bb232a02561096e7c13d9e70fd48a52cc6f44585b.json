@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_attachments\n        SET transcript = $3,\n            caption_vtt = CASE WHEN $4 THEN $5 ELSE caption_vtt END,\n            decorative = $6,\n            audio_described = $7,\n            visuals_conveyed_in_audio = $8\n        WHERE id = $1 AND account_id = $2 AND status_id IS NULL\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1938159ad392f6280002778bb232a02561096e7c13d9e70fd48a52cc6f44585b"
+}

@@ -2323,7 +2323,7 @@ fn profile_menu(
     html! {
         details.status__menu.profile__menu data-status-menu {
             summary.action title=(locale.text("status-more-options")) { (view::icon("more")) }
-            div.status__menu-pop role="menu" {
+            div.status__menu-pop {
                 @if !url.is_empty() {
                     button.status__menu-item.status__menu-item--js type="button"
                         data-copy-link=(url) { (locale.text("profile-copy-link")) }
@@ -2431,11 +2431,14 @@ fn profile_domain_form(
     csrf: &str,
     return_to: &str,
 ) -> Markup {
+    let form_action = confirm.map_or(action, |_| view::CONFIRM_PATH);
     html! {
-        form.status__menu-form method="post" action=(action) data-confirm=[confirm] {
+        form.status__menu-form method="post" action=(form_action) data-confirm=[confirm]
+            data-confirm-action=[confirm.map(|_| action)] {
             input type="hidden" name="csrf" value=(csrf);
             input type="hidden" name="return_to" value=(return_to);
             input type="hidden" name="domain" value=(domain);
+            (view::confirmation_fields(action, confirm))
             button.status__menu-item.is-danger[confirm.is_some()] type="submit" { (label) }
         }
     }
@@ -3090,12 +3093,14 @@ pub async fn engagement(
                         @for value in &quoting {
                             (view::status_card(&view::Status(value), &ctx))
                             @if let Some(csrf) = owner_csrf {
-                                form.quote-revoke method="post"
-                                    action=(format!("/web/statuses/{status_id}/quotes/{}/revoke",
-                                        view::Status(value).id()))
-                                    data-confirm=(locale.plain("engagement-revoke-confirm")) {
+                                @let revoke_action = format!("/web/statuses/{status_id}/quotes/{}/revoke",
+                                    view::Status(value).id());
+                                @let revoke_message = locale.plain("engagement-revoke-confirm");
+                                form.quote-revoke method="post" action=(view::CONFIRM_PATH)
+                                    data-confirm=(&revoke_message) data-confirm-action=(&revoke_action) {
                                     input type="hidden" name="csrf" value=(csrf);
                                     input type="hidden" name="return_to" value=(base);
+                                    (view::confirmation_fields(&revoke_action, Some(&revoke_message)))
                                     button.quote-revoke__btn type="submit" {
                                         (locale.text("engagement-revoke"))
                                     }
@@ -3572,6 +3577,8 @@ fn report_form(
 /// The post-submission view: Mastodon's "thanks for reporting" step, with its
 /// take-action-while-we-review mute/block shortcuts.
 fn report_done(user: &WebUser, target: &Account, acct: &str, back: &str) -> Markup {
+    let block_action = format!("/web/accounts/{}/block", target.id);
+    let block_message = format!("Block @{acct}?");
     html! {
         section.column {
             h1 { "Thanks for reporting" }
@@ -3586,10 +3593,11 @@ fn report_done(user: &WebUser, target: &Account, acct: &str, back: &str) -> Mark
                     input type="hidden" name="return_to" value=(back);
                     button type="submit" { "Mute @" (acct) }
                 }
-                form method="post" action=(format!("/web/accounts/{}/block", target.id))
-                    data-confirm=(format!("Block @{acct}?")) {
+                form method="post" action=(view::CONFIRM_PATH)
+                    data-confirm=(&block_message) data-confirm-action=(&block_action) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     input type="hidden" name="return_to" value=(back);
+                    (view::confirmation_fields(&block_action, Some(&block_message)))
                     button.settings-button--danger type="submit" { "Block @" (acct) }
                 }
             }

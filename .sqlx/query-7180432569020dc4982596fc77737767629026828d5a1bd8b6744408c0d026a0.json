@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE media_attachments\n        SET file_name = $2, content_type = $3, kind = $4, width = $5,\n            height = $6, blurhash = $7, small_file_name = $8, small_width = $9,\n            small_height = $10, duration = $11, frame_rate = $12, bitrate = $13,\n            processing = 'complete',\n            -- Mark when a remote file was cached so retention can evict it;\n            -- local uploads keep cached_at NULL (never evicted).\n            cached_at = CASE WHEN remote_url IS NOT NULL THEN now() ELSE cached_at END\n        WHERE id = $1 AND processing = 'queued'\n        RETURNING id, account_id, status_id, file_name, remote_url, content_type,\n                  description, width, height, created_at, kind, blurhash,\n                  focus_x, focus_y, small_file_name, small_width, small_height,\n                  thumbnail_remote_url, duration, frame_rate, bitrate, processing,\n                  remote_audio_url, download_on_demand, live_state, live_permanent,\n                  hls_master_url\n        ",
+  "query": "\n        SELECT id, account_id, status_id, file_name, remote_url, content_type,\n               description, width, height, created_at, kind, blurhash,\n               focus_x, focus_y, small_file_name, small_width, small_height,\n               thumbnail_remote_url, duration, frame_rate, bitrate, processing,\n               remote_audio_url, download_on_demand, live_state, live_permanent,\n                  hls_master_url, transcript, caption_vtt, decorative,\n                  audio_described, visuals_conveyed_in_audio\n        FROM media_attachments\n        WHERE id = ANY($1)\n        ORDER BY id\n        ",
   "describe": {
     "columns": [
       {
@@ -299,23 +299,66 @@
             "name": "hls_master_url"
           }
         }
+      },
+      {
+        "ordinal": 27,
+        "name": "transcript",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "transcript"
+          }
+        }
+      },
+      {
+        "ordinal": 28,
+        "name": "caption_vtt",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "caption_vtt"
+          }
+        }
+      },
+      {
+        "ordinal": 29,
+        "name": "decorative",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "decorative"
+          }
+        }
+      },
+      {
+        "ordinal": 30,
+        "name": "audio_described",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "audio_described"
+          }
+        }
+      },
+      {
+        "ordinal": 31,
+        "name": "visuals_conveyed_in_audio",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "visuals_conveyed_in_audio"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Text",
-        "Text",
-        "Text",
-        "Int4",
-        "Int4",
-        "Text",
-        "Text",
-        "Int4",
-        "Int4",
-        "Float8",
-        "Text",
-        "Int8"
+        "Int8Array"
       ]
     },
     "nullable": [
@@ -345,8 +388,13 @@
       false,
       true,
       false,
-      true
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
     ]
   },
-  "hash": "cd568e8fc77ddd5e0c6d534302785c13d885cb9c1603a669cb4575a279d089c5"
+  "hash": "7180432569020dc4982596fc77737767629026828d5a1bd8b6744408c0d026a0"
 }

@@ -27,6 +27,7 @@ use super::session::{WebUser, csrf_rejection};
 use super::settings::{
     bad_form, checked, error_flash, field, form_pairs, redirect_to, saved_flash, settings_shell,
 };
+use super::view;
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -384,10 +385,13 @@ pub async fn edit_form(
                 a href="/settings/filters" { (locale.text("filters-back")) }
             }
         }
-        form.settings-form method="post"
-            action=(format!("/web/settings/filters/{}/delete", filter.id))
-            data-confirm=(locale.text("filters-delete-confirm")) {
+        @let delete_action = format!("/web/settings/filters/{}/delete", filter.id);
+        @let delete_message = locale.text("filters-delete-confirm");
+        form.settings-form method="post" action=(view::CONFIRM_PATH)
+            data-confirm=(&delete_message) data-confirm-action=(&delete_action) {
             input type="hidden" name="csrf" value=(user.csrf);
+            input type="hidden" name="return_to" value=(format!("/settings/filters/{}", filter.id));
+            (view::confirmation_fields(&delete_action, Some(&delete_message)))
             div.settings-form__actions {
                 button.settings-button--danger type="submit" { (locale.text("filters-delete")) }
             }

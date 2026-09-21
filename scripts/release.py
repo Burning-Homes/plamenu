@@ -168,6 +168,16 @@ def parser():
         help="Run calibrated timing benchmarks on their designated machine",
     )
     p.add_argument(
+        "--accessibility-evidence",
+        type=Path,
+        default=(
+            Path(os.environ["PLAMENU_A11Y_EVIDENCE"]).expanduser()
+            if os.environ.get("PLAMENU_A11Y_EVIDENCE")
+            else None
+        ),
+        help="Completed WCAG 2.2 AA evidence record for this exact revision",
+    )
+    p.add_argument(
         "--config",
         type=Path,
         default=Path(
@@ -199,6 +209,8 @@ def run(args):
         "e2e": args.with_e2e,
         "performance": args.with_performance,
     }
+    if args.accessibility_evidence and args.accessibility_evidence.is_file():
+        identity["accessibility_evidence"] = digest(args.accessibility_evidence)
     if args.with_e2e:
         identity["e2e_config"] = (
             digest(origin / ".env") if (origin / ".env").exists() else "absent"
@@ -206,6 +218,10 @@ def run(args):
     config = tomllib.loads(args.config.read_text()) if args.config.exists() else {}
     missing = prerequisites(args)
     config_errors = configuration_errors(args, config)
+    if not args.accessibility_evidence:
+        config_errors.append("missing --accessibility-evidence")
+    elif not args.accessibility_evidence.is_file():
+        config_errors.append("--accessibility-evidence does not name a regular file")
     print(
         f"Plamenu {version}, {identity['source'][:12]}, Linux AMD64 + ARM64", flush=True
     )
@@ -361,6 +377,16 @@ def run(args):
             checks.application,
             rerun=args.rerun,
             env=cargo_env,
+        )
+        statuses["accessibility"] = stage(
+            source,
+            root,
+            "accessibility",
+            identity,
+            lambda r, p: checks.accessibility(
+                r, p, args.accessibility_evidence, identity["source"]
+            ),
+            rerun=args.rerun,
         )
         for name, enabled, action in (
             ("e2e", args.with_e2e, lambda r, p: checks.e2e(r, p, origin)),

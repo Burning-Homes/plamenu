@@ -1,4 +1,5 @@
 nav-primary = Основная навигация
+nav-skip-to-content = Перейти к содержимому
 nav-home = Главная
 nav-live-feeds = Ленты
 nav-search = Поиск
@@ -67,6 +68,10 @@ page-load-more = Загрузить ещё
 
 common-save = Сохранить
 common-back = Назад
+confirmation-title = Подтвердите действие
+confirmation-lead = Проверьте последствия, прежде чем продолжить.
+confirmation-continue = Подтвердить и продолжить
+confirmation-cancel = Отмена
 
 settings-sections = Разделы настроек
 settings-section-profile = Профиль
@@ -396,6 +401,17 @@ compose-keep = Оставить
 compose-alt-text = Альтернативный текст
 compose-alt-description = Опишите содержимое для незрячих и слабовидящих людей
 compose-alt-file = Альтернативный текст для файла { $number }
+compose-decorative = Это изображение не добавляет информации к публикации
+compose-decorative-image = Если это изображение, оно не добавляет информации к публикации
+compose-description-missing = У изображения нет ни описания, ни отметки о декоративности.
+compose-transcript = Расшифровка или медиаальтернатива
+compose-transcript-description = Для видео опишите важную визуальную информацию, а также речь и звуки
+compose-captions = Синхронные субтитры (WebVTT)
+compose-captions-attached = Синхронные субтитры прикреплены
+compose-visual-audio = Доступ к важной визуальной информации
+compose-visual-audio-none = Не указано
+compose-audio-described = В видео есть аудиодескрипция
+compose-visuals-in-audio = Звуковая дорожка передаёт всю важную визуальную информацию
 compose-file = Файл { $number }
 compose-media = Медиафайлы
 compose-sensitive = Отметить медиафайлы как деликатные
@@ -436,6 +452,10 @@ compose-remove-option = Удалить вариант
 compose-poll-choice-template = Вариант __number__
 compose-poll-option-template = Вариант ответа __number__
 compose-preview-failed = Не удалось создать предпросмотр. Попробуйте ещё раз.
+status-captions = Субтитры
+status-audio-described = С аудиодескрипцией
+status-visuals-in-audio = Важная визуальная информация передаётся звуковой дорожкой
+status-transcript = Расшифровка и описание визуального ряда
 compose-visibility-locked = { $visibility } — видимость нельзя изменить после публикации
 
 visibility-public = Для всех

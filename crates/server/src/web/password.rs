@@ -267,7 +267,7 @@ async fn edit_page(state: &AppState, token: &str, errors: &[String], locale: Loc
         section.auth-card {
             h1 { (locale.text("password-reset-choose-title")) }
             @if !errors.is_empty() {
-                ul.form-error role="alert" {
+                ul.form-error id="password-reset-errors" role="alert" {
                     @for error in errors { li { (error) } }
                 }
             }
@@ -277,13 +277,17 @@ async fn edit_page(state: &AppState, token: &str, errors: &[String], locale: Loc
                     (locale.text("password-reset-new"))
                     input type="password" name="password"
                         autocomplete="new-password" minlength=(auth::PASSWORD_MIN)
-                        maxlength=(auth::PASSWORD_MAX) required autofocus;
+                        maxlength=(auth::PASSWORD_MAX) required autofocus
+                        aria-invalid=[(!errors.is_empty()).then_some("true")]
+                        aria-describedby=[(!errors.is_empty()).then_some("password-reset-errors")];
                 }
                 label {
                     (locale.text("password-reset-confirm"))
                     input type="password" name="password_confirmation"
                         autocomplete="new-password" minlength=(auth::PASSWORD_MIN)
-                        maxlength=(auth::PASSWORD_MAX) required;
+                        maxlength=(auth::PASSWORD_MAX) required
+                        aria-invalid=[(!errors.is_empty()).then_some("true")]
+                        aria-describedby=[(!errors.is_empty()).then_some("password-reset-errors")];
                 }
                 button type="submit" { (locale.text("password-reset-change")) }
             }

@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "checks": [
+    {
+      "id": "manual-non-text",
+      "name": "Non-text alternatives",
+      "criteria": ["1.1.1"],
+      "procedure": "Sample informative, functional, decorative, avatar, emoji, chart, and CAPTCHA-like content. Confirm each alternative conveys the same purpose, decorative content is ignored, and long or missing author descriptions have an understandable UI state."
+    },
+    {
+      "id": "manual-media",
+      "name": "Prerecorded and live media alternatives",
+      "criteria": ["1.2.1", "1.2.2", "1.2.3", "1.2.4", "1.2.5"],
+      "procedure": "Publish representative audio-only, video-only, and synchronized media. Verify accurate transcripts, captions including meaningful sounds, audio description or an already-descriptive soundtrack, keyboard playback, and equivalent access in each supported browser and screen reader. Record live-media applicability explicitly."
+    },
+    {
+      "id": "manual-structure",
+      "name": "Structure, reading order, and sensory instructions",
+      "criteria": ["1.3.1", "1.3.2", "1.3.3"],
+      "procedure": "Inspect headings, landmarks, lists, tables, form grouping, labels, and the accessibility tree on representative pages. Read linearly with styles disabled and confirm instructions never depend only on shape, colour, location, orientation, or sound."
+    },
+    {
+      "id": "manual-adaptation",
+      "name": "Orientation, input purpose, reflow, and text spacing",
+      "criteria": ["1.3.4", "1.3.5", "1.4.4", "1.4.10", "1.4.12"],
+      "procedure": "Complete representative processes in portrait and landscape, at 200% text size, 400% browser zoom, and 320 CSS-pixel width. Apply WCAG text-spacing overrides and verify no information or operation is lost and recognized personal-data fields expose the right purpose."
+    },
+    {
+      "id": "manual-contrast-visual",
+      "name": "Colour, contrast, audio control, and hover/focus content",
+      "criteria": ["1.4.1", "1.4.2", "1.4.3", "1.4.5", "1.4.11", "1.4.13"],
+      "procedure": "Measure every text, control, focus, and state colour in light, dark, high-contrast, forced-colours, visited, hover, active, disabled, and error states. Confirm colour is not the only cue, text is not needlessly rasterized, audio can be stopped, and hover/focus disclosures are dismissible, hoverable, and persistent."
+    },
+    {
+      "id": "manual-keyboard-timing",
+      "name": "Keyboard, timing, motion, and flashing",
+      "criteria": ["2.1.1", "2.1.2", "2.1.4", "2.2.1", "2.2.2", "2.3.1"],
+      "procedure": "Complete every representative process with keyboard only, including custom selectors, disclosures, tables, media, dialogs, Webxdc launcher controls, and destructive confirmation. Verify no trap, editable single-key shortcuts, adequate timeout warning/extension, pause/stop controls, preserved data after reauthentication, and no prohibited flashes."
+    },
+    {
+      "id": "manual-navigation",
+      "name": "Navigation, labels, focus order, visibility, and obscuring",
+      "criteria": ["2.4.1", "2.4.2", "2.4.3", "2.4.4", "2.4.5", "2.4.6", "2.4.7", "2.4.11"],
+      "procedure": "Traverse each representative page and complete process using keyboard and screen-reader navigation. Verify bypass links, descriptive titles/headings/labels/link purposes, multiple location mechanisms, logical focus order, visible focus, correct restoration, and that sticky or authored content never fully obscures focus."
+    },
+    {
+      "id": "manual-input",
+      "name": "Pointer, gesture, motion, drag, and target behavior",
+      "criteria": ["2.5.1", "2.5.2", "2.5.3", "2.5.4", "2.5.7", "2.5.8"],
+      "procedure": "On mouse, touch, stylus, and coarse-pointer layouts, verify multipoint/path gestures, down-event cancellation, visible-label/name agreement, motion alternatives, single-pointer drag alternatives, and 24 by 24 CSS-pixel target sizing or a documented criterion exception."
+    },
+    {
+      "id": "manual-language-predictability",
+      "name": "Language and predictable operation",
+      "criteria": ["3.1.1", "3.1.2", "3.2.1", "3.2.2", "3.2.3", "3.2.4", "3.2.6"],
+      "procedure": "Test English, Russian, and content-language changes with assistive technology. Confirm focus/input do not cause surprising context changes, navigation and component identification stay consistent, and repeated help mechanisms retain their order."
+    },
+    {
+      "id": "manual-errors-authentication",
+      "name": "Instructions, errors, irreversible actions, and authentication",
+      "criteria": ["3.3.1", "3.3.2", "3.3.3", "3.3.4", "3.3.7", "3.3.8"],
+      "procedure": "Exercise empty, malformed, duplicate, expired, server, and network failures across registration, sign-in, OTP, password reset, posting, settings, moderation, and deletion. Confirm errors are identified and suggested, entries are not needlessly repeated, irreversible actions can be reviewed/corrected, and authentication has an accessible non-cognitive route."
+    },
+    {
+      "id": "manual-compatibility",
+      "name": "Accessible names, states, relationships, and status messages",
+      "criteria": ["4.1.2", "4.1.3"],
+      "procedure": "Inspect platform accessibility trees and operate all native and custom controls with screen readers. Verify names, roles, values, relationships, state changes, errors, progress, and success messages are announced without unexpectedly moving focus."
+    },
+    {
+      "id": "manual-cross-platform",
+      "name": "Browser and assistive-technology matrix",
+      "criteria": ["1.1.1", "1.2.1", "1.2.2", "1.2.3", "1.2.4", "1.2.5", "1.3.1", "1.3.2", "1.3.3", "1.3.4", "1.3.5", "1.4.1", "1.4.2", "1.4.3", "1.4.4", "1.4.5", "1.4.10", "1.4.11", "1.4.12", "1.4.13", "2.1.1", "2.1.2", "2.1.4", "2.2.1", "2.2.2", "2.3.1", "2.4.1", "2.4.2", "2.4.3", "2.4.4", "2.4.5", "2.4.6", "2.4.7", "2.4.11", "2.5.1", "2.5.2", "2.5.3", "2.5.4", "2.5.7", "2.5.8", "3.1.1", "3.1.2", "3.2.1", "3.2.2", "3.2.3", "3.2.4", "3.2.6", "3.3.1", "3.3.2", "3.3.3", "3.3.4", "3.3.7", "3.3.8", "4.1.2", "4.1.3"],
+      "procedure": "Run the applicable procedures in Chromium, Firefox, and WebKit at desktop and mobile viewports; NVDA with Firefox and Chrome; VoiceOver with Safari on macOS and iOS; and TalkBack with Chrome on Android. Record exact OS, browser, assistive-technology versions, outcomes, and artifact links."
+    },
+    {
+      "id": "manual-content-boundaries",
+      "name": "No-JavaScript, authored content, and third-party boundaries",
+      "criteria": ["1.1.1", "1.2.1", "1.2.2", "1.2.3", "1.2.4", "1.2.5", "1.3.1", "1.3.2", "1.3.3", "2.1.1", "2.1.2", "2.4.3", "2.4.7", "3.3.1", "3.3.2", "3.3.3", "3.3.4", "4.1.2", "4.1.3"],
+      "procedure": "Repeat core processes with JavaScript disabled and sample long/translated text, missing and long descriptions, tables, captions, validation failures, federated content, and Webxdc boundaries. Record exactly which third-party content is outside Plamenu's control and whether WCAG partial-conformance conditions are met."
+    }
+  ]
+}

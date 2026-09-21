@@ -186,7 +186,7 @@ pub(super) fn saved_flash(show: bool, message: &str) -> Markup {
 pub(super) fn error_flash(message: Option<&str>) -> Markup {
     html! {
         @if let Some(message) = message {
-            p.settings__error role="alert" { (message) }
+            p.settings__error id="form-error" role="alert" { (message) }
         }
     }
 }
@@ -280,7 +280,7 @@ pub async fn profile_form(user: WebUser, Query(query): Query<SettingsQuery>) -> 
                 label.settings-field {
                     span.settings-field__label { (locale.text("settings-profile-display-name")) }
                     input type="text" name="display_name" maxlength=(MAX_DISPLAY_NAME_CHARS)
-                        value=(account.display_name);
+                        value=(account.display_name) autocomplete="nickname";
                 }
                 label.settings-field {
                     span.settings-field__label { (locale.text("settings-profile-bio")) }
@@ -1424,7 +1424,9 @@ pub async fn update_privacy_action(
 
 fn account_error(locale: Locale, code: Option<&str>) -> Option<String> {
     match code {
-        Some("current_password") => Some(locale.text("settings-account-error-password")),
+        Some("current_password" | "email_password" | "delete_password") => {
+            Some(locale.text("settings-account-error-password"))
+        }
         Some("email_taken") => Some(locale.text("settings-account-error-email-taken")),
         Some("delete_confirm") => Some(locale.text("settings-account-error-delete-confirm")),
         _ => None,
@@ -1444,6 +1446,12 @@ pub async fn account(user: WebUser, Query(query): Query<SettingsQuery>) -> Marku
     let handle = format!("@{}", user.current.account.username);
     let saved = account_saved(locale, query.saved.as_deref());
     let error = account_error(locale, query.error.as_deref());
+    let error_code = query.error.as_deref();
+    let email_invalid = error_code == Some("email_taken");
+    let email_password_invalid = matches!(error_code, Some("email_password" | "current_password"));
+    let delete_handle_invalid = error_code == Some("delete_confirm");
+    let delete_password_invalid =
+        matches!(error_code, Some("delete_password" | "current_password"));
     let mut delete_args = FluentArgs::new();
     delete_args.set("handle", handle.as_str());
     let body = html! {
@@ -1461,8 +1469,14 @@ pub async fn account(user: WebUser, Query(query): Query<SettingsQuery>) -> Marku
                         }
                         input type="email" name="email"
                             value=(user.current.user.email.as_deref().unwrap_or(""))
-                            autocomplete="email";
-                        span.settings-field__hint {
+                            autocomplete="email"
+                            aria-invalid=[email_invalid.then_some("true")]
+                            aria-describedby=(if email_invalid {
+                                "settings-email-hint form-error"
+                            } else {
+                                "settings-email-hint"
+                            });
+                        span.settings-field__hint id="settings-email-hint" {
                             (locale.text("settings-account-email-hint"))
                         }
                     }
@@ -1471,7 +1485,9 @@ pub async fn account(user: WebUser, Query(query): Query<SettingsQuery>) -> Marku
                             (locale.text("settings-account-current-password"))
                         }
                         input type="password" name="current_password"
-                            autocomplete="current-password" required;
+                            autocomplete="current-password" required
+                            aria-invalid=[email_password_invalid.then_some("true")]
+                            aria-describedby=[email_password_invalid.then_some("form-error")];
                     }
                 }
                 div.settings-form__actions {
@@ -1483,7 +1499,7 @@ pub async fn account(user: WebUser, Query(query): Query<SettingsQuery>) -> Marku
                 input type="hidden" name="csrf" value=(user.csrf);
                 fieldset.settings-form__group.settings-form__group--danger {
                     legend { (locale.text("settings-account-danger-zone")) }
-                    p.settings-field__hint {
+                    p.settings-field__hint id="settings-delete-hint" {
                         (locale.text_with("settings-account-delete-hint", &delete_args))
                     }
                     label.settings-field {
@@ -1491,14 +1507,22 @@ pub async fn account(user: WebUser, Query(query): Query<SettingsQuery>) -> Marku
                             (locale.text("settings-account-type-handle"))
                         }
                         input type="text" name="confirm_handle" autocomplete="off"
-                            placeholder=(handle) required;
+                            placeholder=(handle) required
+                            aria-invalid=[delete_handle_invalid.then_some("true")]
+                            aria-describedby=(if delete_handle_invalid {
+                                "settings-delete-hint form-error"
+                            } else {
+                                "settings-delete-hint"
+                            });
                     }
                     label.settings-field {
                         span.settings-field__label {
                             (locale.text("settings-account-current-password"))
                         }
                         input type="password" name="current_password"
-                            autocomplete="current-password" required;
+                            autocomplete="current-password" required
+                            aria-invalid=[delete_password_invalid.then_some("true")]
+                            aria-describedby=[delete_password_invalid.then_some("form-error")];
                     }
                 }
                 div.settings-form__actions {
@@ -1537,7 +1561,7 @@ pub async fn update_email_action(
     )
     .await
     {
-        return redirect_to("/settings/account?error=current_password");
+        return redirect_to("/settings/account?error=email_password");
     }
     // Empty removes the address: e-mail is optional, so an account may go
     // back to signing in by username only.
@@ -1576,7 +1600,7 @@ pub async fn delete_account_action(
     )
     .await
     {
-        return redirect_to("/settings/account?error=current_password");
+        return redirect_to("/settings/account?error=delete_password");
     }
     let expected = format!("@{}", user.current.account.username);
     if field(&pairs, "confirm_handle").unwrap_or_default().trim() != expected {

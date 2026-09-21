@@ -255,6 +255,8 @@ async fn collections_featuring(
 /// handle, and a "Remove me" button that revokes the membership.
 fn featuring_row(entry: &Featuring, csrf: &str, locale: Locale) -> Markup {
     let public = format!("{}/collections/{}", entry.owner_path, entry.collection.id);
+    let leave_action = format!("/web/collections/{}/leave", entry.collection.id);
+    let leave_message = locale.text("collections-leave-confirm");
     let mut args = FluentArgs::new();
     args.set("handle", entry.owner_handle.as_str());
     html! {
@@ -264,10 +266,11 @@ fn featuring_row(entry: &Featuring, csrf: &str, locale: Locale) -> Markup {
                 span { (entry.collection.name) }
             }
             span.list-index__manage { (locale.text_with("collections-owner", &args)) }
-            form.settings-form method="post"
-                action=(format!("/web/collections/{}/leave", entry.collection.id))
-                data-confirm=(locale.text("collections-leave-confirm")) {
+            form.settings-form method="post" action=(view::CONFIRM_PATH)
+                data-confirm=(&leave_message) data-confirm-action=(&leave_action) {
                 input type="hidden" name="csrf" value=(csrf);
+                input type="hidden" name="return_to" value="/settings/collections";
+                (view::confirmation_fields(&leave_action, Some(&leave_message)))
                 button.settings-button--danger type="submit" {
                     (locale.text("collections-leave"))
                 }
@@ -501,10 +504,13 @@ pub async fn manage_page(
             }
         }
 
-        form.settings-form method="post"
-            action=(format!("/web/settings/collections/{}/delete", collection.id))
-            data-confirm=(locale.text("collections-delete-confirm")) {
+        @let delete_action = format!("/web/settings/collections/{}/delete", collection.id);
+        @let delete_message = locale.text("collections-delete-confirm");
+        form.settings-form method="post" action=(view::CONFIRM_PATH)
+            data-confirm=(&delete_message) data-confirm-action=(&delete_action) {
             input type="hidden" name="csrf" value=(user.csrf);
+            input type="hidden" name="return_to" value=(format!("/settings/collections/{}", collection.id));
+            (view::confirmation_fields(&delete_action, Some(&delete_message)))
             div.settings-form__actions {
                 button.settings-button--danger type="submit" {
                     (locale.text("collections-delete"))

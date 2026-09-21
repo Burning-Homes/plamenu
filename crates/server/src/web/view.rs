@@ -26,6 +26,17 @@ use crate::web::i18n::Locale;
 use crate::web::session::AdminCapabilities;
 use crate::web::thread;
 
+pub(crate) const CONFIRM_PATH: &str = "/web/confirm";
+
+pub(crate) fn confirmation_fields(action: &str, message: Option<&str>) -> Markup {
+    html! {
+        @if let Some(message) = message {
+            input type="hidden" name="confirm_action" value=(action);
+            input type="hidden" name="confirm_message" value=(message);
+        }
+    }
+}
+
 /// Swaps `:shortcode:` references for the entity's custom-emoji images —
 /// what Mastodon's client-side `emojify` does, applied at render time.
 /// `html` is already-sanitised markup: text between tags is rewritten,
@@ -72,17 +83,17 @@ pub(super) fn emojify(html: &str, emojis: &[Value]) -> Markup {
 /// page. Links either way open in a new tab (locally-composed HTML already
 /// carries `target="_blank"`, remote sanitised HTML gets `rel` from ammonia).
 ///
-/// The same pass makes `<pre>` blocks focusable. They deliberately scroll
-/// horizontally rather than wrapping source code, so keyboard users must be
-/// able to focus and scroll them too. Doing this at render time also covers
-/// content stored before this enhancement existed.
+/// The same pass makes `<pre>` blocks and author-supplied `<table>` elements
+/// focusable. They deliberately scroll horizontally rather than wrapping, so
+/// keyboard users must be able to focus and scroll them too. Doing this at
+/// render time also covers content stored before this enhancement existed.
 fn rewrite_content_links(
     html: &str,
     mentions: &[Value],
     tags: &[Value],
     wrap_external: bool,
 ) -> String {
-    if !html.contains("<a ") && !html.contains("<pre") {
+    if !html.contains("<a ") && !html.contains("<pre") && !html.contains("<table") {
         return html.to_owned();
     }
     let mut out = String::with_capacity(html.len() + 64);
@@ -94,7 +105,10 @@ fn rewrite_content_links(
         let tag = &tag_onward[..tag_end];
         if tag.starts_with("<a ") && tag.ends_with('>') {
             out.push_str(&rewrite_anchor(tag, mentions, tags, wrap_external));
-        } else if (tag == "<pre>" || tag.starts_with("<pre "))
+        } else if (tag == "<pre>"
+            || tag.starts_with("<pre ")
+            || tag == "<table>"
+            || tag.starts_with("<table "))
             && !tag.contains(" tabindex=")
             && tag.ends_with('>')
         {
@@ -643,6 +657,17 @@ impl<'a> Status<'a> {
             .get("language")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
+    }
+
+    /// The language of the text currently rendered. A server-applied
+    /// translation carries its target under `_translation.language`; the
+    /// original status language remains the fallback.
+    pub fn rendered_language(&self) -> Option<&str> {
+        self.translation()
+            .and_then(|translation| translation.get("language"))
+            .and_then(Value::as_str)
+            .filter(|language| !language.is_empty())
+            .or_else(|| self.language())
     }
 
     /// The posting application's name — present only where the entity carries
@@ -1308,10 +1333,10 @@ pub fn account_privileged_menu(
     let title = locale.text("moderation-tools");
     Some(html! {
         details.status__menu.privileged-menu data-status-menu data-privileged-menu {
-            summary.action title=(title) aria-label=(title) aria-haspopup="menu" {
+            summary.action title=(title) aria-label=(title) {
                 (icon("shield"))
             }
-            div.status__menu-pop role="menu" {
+            div.status__menu-pop {
                 @if let Some(href) = manage_group_href {
                     a.status__menu-item href=(href) { (locale.text("profile-manage-group")) }
                 }
@@ -1832,7 +1857,9 @@ fn status_body(status: &Status, ctx: &Ctx, detail: bool, verdict: &FilterVerdict
             // The title heading and external-link pill are folded into `content`
             // by the entity serializer (so stock Mastodon clients see them too),
             // so the card renders them straight out of the content markup.
-            div.status__content { (status.content_markup(ctx.viewer_id.is_some())) }
+            div.status__content lang=[status.rendered_language()] {
+                (status.content_markup(ctx.viewer_id.is_some()))
+            }
             (quote_section(status, ctx, detail))
             @if status.poll().is_some() {
                 (poll_view(status, ctx))
@@ -1845,10 +1872,12 @@ fn status_body(status: &Status, ctx: &Ctx, detail: bool, verdict: &FilterVerdict
             // poll and media all live inside one toggle, so a sensitive post
             // never shows a second, separate media spoiler.
             details.status__cw open[ctx.prefs.expand_spoilers] {
-                summary { (status.spoiler_markup()) }
+                summary lang=[status.rendered_language()] { (status.spoiler_markup()) }
                 (event_box(status, ctx))
                 // Title/link folded into `content` (see the non-CW branch).
-                div.status__content { (status.content_markup(ctx.viewer_id.is_some())) }
+                div.status__content lang=[status.rendered_language()] {
+                    (status.content_markup(ctx.viewer_id.is_some()))
+                }
                 @if status.poll().is_some() {
                     (poll_view(status, ctx))
                 }
@@ -2044,11 +2073,11 @@ fn event_box(status: &Status, ctx: &Ctx) -> Markup {
                     @if let Some(url) = field("location_url") {
                         span {
                             a href=(url) target="_blank" rel="noopener noreferrer" {
-                                (venue)
+                                span lang=[status.rendered_language()] { (venue) }
                             }
                         }
                     } @else {
-                        span { (venue) }
+                        span lang=[status.rendered_language()] { (venue) }
                     }
                 }
                 // Attendance: whichever of the count/capacity pair the origin
@@ -2073,7 +2102,7 @@ fn event_box(status: &Status, ctx: &Ctx) -> Markup {
                 // A category is an open vocabulary from the origin (Mobilizon's
                 // `MEETING`, `SPORTS`, …) — shown, never acted on.
                 @if let Some(category) = field("category") {
-                    span.status__event-category { (category) }
+                    span.status__event-category lang=[status.rendered_language()] { (category) }
                 }
                 @if cancelled {
                     span.status__event-cancelled { (locale.text("status-event-cancelled")) }
@@ -2511,7 +2540,7 @@ fn cited_status_card_with(status: &Status, signed_in: bool, tail: &Markup) -> Ma
                 span.quote-card__name { (account.name_markup()) }
                 span.quote-card__acct { (account.handle_prefix()) (account.acct()) }
             }
-            div.status__content { (status.content_markup(signed_in)) }
+            div.status__content lang=[status.rendered_language()] { (status.content_markup(signed_in)) }
             (tail)
         }
     }
@@ -2648,13 +2677,18 @@ fn blur_gated_gallery(status: &Status, ctx: &Ctx, blur: &[String]) -> Markup {
 }
 
 fn media_gallery(status: &Status, ctx: &Ctx) -> Markup {
-    standalone_media(status.media(), ctx)
+    media_markup(status.media(), ctx, status.rendered_language())
 }
 
 /// A media gallery that is not owned by a status card. `Owncast` uses this for
 /// the account-level player of an already-running stream discovered by its
 /// homepage; all player/HLS/live rendering stays identical to timeline media.
 pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
+    media_markup(media, ctx, None)
+}
+
+#[allow(clippy::too_many_lines)] // one exhaustive media-kind renderer keeps shared semantics aligned
+fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
     if media.is_empty() {
         return html! {};
     }
@@ -2671,7 +2705,35 @@ pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
                     .and_then(Value::as_str)
                     .filter(|s| !s.is_empty())
                     .unwrap_or(url);
-                @let alt = item.get("description").and_then(Value::as_str).unwrap_or_default();
+                @let decorative = item
+                    .get("decorative")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                @let declared_alt = item
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                // A deliberate decorative choice is different from an omitted
+                // description, but both remain interoperable with clients that
+                // only understand Mastodon's nullable `description` field.
+                @let alt = if decorative { "" } else { declared_alt };
+                @let caption_url = item
+                    .get("caption_url")
+                    .and_then(Value::as_str)
+                    .filter(|url| !url.is_empty());
+                @let audio_described = item
+                    .get("audio_described")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                @let visuals_conveyed_in_audio = item
+                    .get("visuals_conveyed_in_audio")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                @let video_badges = [
+                    caption_url.map(|_| MediaBadge::Captions),
+                    audio_described.then_some(MediaBadge::AudioDescribed),
+                    visuals_conveyed_in_audio.then_some(MediaBadge::VisualsInAudio),
+                ];
                 @let blurhash = item
                     .get("blurhash")
                     .and_then(Value::as_str)
@@ -2684,12 +2746,13 @@ pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
                         // The new-tab link is the no-JS behavior; JS upgrades
                         // the click into the in-page lightbox.
                         a.media__link href=(url) target="_blank" rel="noopener noreferrer" {
-                            img src=(preview) alt=(alt) loading="lazy" width=[width] height=[height]
+                            img src=(preview) alt=(alt) lang=[language]
+                                loading="lazy" width=[width] height=[height]
                                 data-blurhash=[blurhash];
                             (attachment_link_name(
                                 ctx.locale, "status-open-image-attachment", index, count, alt))
                         }
-                        (media_badges(alt, false))
+                        (media_badges(alt, &[], ctx.locale))
                     },
                     // A gifv is a soundless clip standing in for a GIF. With
                     // the viewer's auto-play preference on it loops as a
@@ -2699,16 +2762,18 @@ pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
                     Some("gifv") => figure.media {
                         @if ctx.prefs.autoplay_gifs {
                             video.media__gifv src=(url) poster=(preview) autoplay muted loop playsinline
-                                width=[width] height=[height] title=[Some(alt).filter(|a| !a.is_empty())] {}
+                                width=[width] height=[height] lang=[language]
+                                title=[Some(alt).filter(|a| !a.is_empty())] {}
                         } @else {
                             a.media__link data-gifv href=(url) target="_blank" rel="noopener noreferrer" {
-                                img src=(preview) alt=(alt) loading="lazy" width=[width] height=[height]
+                                img src=(preview) alt=(alt) lang=[language]
+                                    loading="lazy" width=[width] height=[height]
                                     data-blurhash=[blurhash];
                                 (attachment_link_name(
                                     ctx.locale, "status-open-gifv-attachment", index, count, alt))
                             }
                         }
-                        (media_badges(alt, true))
+                        (media_badges(alt, &[Some(MediaBadge::Gif)], ctx.locale))
                     },
                     Some("video") => {
                         // HLS-native video (PeerTube): `data-hls` is the caching
@@ -2736,18 +2801,33 @@ pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
                             .and_then(|l| l.get("state"))
                             .and_then(Value::as_str);
                         @match live_state {
-                            Some("waiting" | "ended") => (offline_live(item, preview, alt, width, height, ctx)),
+                            Some("waiting" | "ended") => (offline_live(
+                                item, preview, alt, width, height, language, ctx)),
                             _ => figure.media.media--video {
                                 @if let Some(master) = hls_master {
                                     video src=(url) poster=(preview) controls playsinline preload="none"
                                         data-hls=(master) data-src=(url)
                                         data-live=[live_state]
                                         width=[width] height=[height]
-                                        title=[Some(alt).filter(|a| !a.is_empty())] {}
+                                        lang=[language]
+                                        title=[Some(alt).filter(|a| !a.is_empty())] {
+                                        @if let Some(captions) = caption_url {
+                                            track kind="captions" src=(captions)
+                                                srclang=(language.unwrap_or("und"))
+                                                label=(ctx.locale.text("status-captions")) default;
+                                        }
+                                    }
                                 } @else {
                                     video src=(url) poster=(preview) controls playsinline preload="none"
                                         width=[width] height=[height]
-                                        title=[Some(alt).filter(|a| !a.is_empty())] {}
+                                        lang=[language]
+                                        title=[Some(alt).filter(|a| !a.is_empty())] {
+                                        @if let Some(captions) = caption_url {
+                                            track kind="captions" src=(captions)
+                                                srclang=(language.unwrap_or("und"))
+                                                label=(ctx.locale.text("status-captions")) default;
+                                        }
+                                    }
                                 }
                                 @if live_state == Some("live") {
                                     div.media__badges {
@@ -2755,10 +2835,23 @@ pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
                                         @if !alt.is_empty() {
                                             span.media__badge title=(alt) { "ALT" }
                                         }
+                                        @if caption_url.is_some() {
+                                            span.media__badge title=(ctx.locale.text("status-captions")) { "CC" }
+                                        }
+                                        @if audio_described {
+                                            span.media__badge title=(ctx.locale.text("status-audio-described")) { "AD" }
+                                        }
+                                        @if visuals_conveyed_in_audio {
+                                            span.media__badge title=(ctx.locale.text("status-visuals-in-audio")) {
+                                                span aria-hidden="true" { "A/V" }
+                                                span.visually-hidden { (ctx.locale.text("status-visuals-in-audio")) }
+                                            }
+                                        }
                                     }
                                 } @else {
-                                    (media_badges(alt, false))
+                                    (media_badges(alt, &video_badges, ctx.locale))
                                 }
+                                (media_transcript(item, language, ctx.locale))
                             },
                         }
                     },
@@ -2768,7 +2861,9 @@ pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
                         // preloading contact its origin just because a timeline
                         // card scrolled into view.
                         audio src=(url) controls preload="none"
+                            lang=[language]
                             title=[Some(alt).filter(|a| !a.is_empty())] {}
+                        (media_transcript(item, language, ctx.locale))
                     },
                     _ => figure.media {
                         a href=(url) target="_blank" rel="noopener noreferrer" {
@@ -2820,6 +2915,7 @@ fn offline_live(
     alt: &str,
     width: Option<i64>,
     height: Option<i64>,
+    language: Option<&str>,
     ctx: &Ctx,
 ) -> Markup {
     let live = item.get("live");
@@ -2839,27 +2935,65 @@ fn offline_live(
     };
     html! {
         figure.media.media--video.media--live-offline {
-            img src=(preview) alt=(alt) loading="lazy" width=[width] height=[height];
+            img src=(preview) alt=(alt) lang=[language]
+                loading="lazy" width=[width] height=[height];
             figcaption.media__live-state { (ctx.locale.text(caption)) }
-            (media_badges(alt, false))
+            (media_badges(alt, &[], ctx.locale))
         }
     }
 }
 
-/// The badge row overlaid on a media tile: "GIF" for gifv clips and "ALT"
-/// (with the description as its tooltip) when the attachment is described.
-fn media_badges(alt: &str, gif: bool) -> Markup {
-    if alt.is_empty() && !gif {
+#[derive(Clone, Copy)]
+enum MediaBadge {
+    Gif,
+    Captions,
+    AudioDescribed,
+    VisualsInAudio,
+}
+
+/// The badge row overlaid on a media tile. Optional enum entries make the
+/// caller's conditional state explicit without a cluster of boolean flags.
+fn media_badges(alt: &str, badges: &[Option<MediaBadge>], locale: Locale) -> Markup {
+    if alt.is_empty() && badges.iter().all(Option::is_none) {
         return html! {};
     }
     html! {
         div.media__badges {
-            @if gif {
-                span.media__badge { "GIF" }
-            }
             @if !alt.is_empty() {
                 span.media__badge title=(alt) { "ALT" }
             }
+            @for badge in badges.iter().flatten() {
+                @match badge {
+                    MediaBadge::Gif => span.media__badge { "GIF" },
+                    MediaBadge::Captions => span.media__badge { "CC" },
+                    MediaBadge::AudioDescribed => span.media__badge
+                        title=(locale.text("status-audio-described")) { "AD" },
+                    MediaBadge::VisualsInAudio => span.media__badge
+                        title=(locale.text("status-visuals-in-audio")) {
+                        span aria-hidden="true" { "A/V" }
+                        span.visually-hidden { (locale.text("status-visuals-in-audio")) }
+                    },
+                }
+            }
+        }
+    }
+}
+
+/// A visible, keyboard-native alternative for people who cannot use the
+/// player. For video, authoring guidance requires this text to include the
+/// important visual information as well as dialogue and meaningful sounds.
+fn media_transcript(item: &Value, language: Option<&str>, locale: Locale) -> Markup {
+    let Some(transcript) = item
+        .get("transcript")
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+    else {
+        return html! {};
+    };
+    html! {
+        details.media__transcript {
+            summary { (locale.text("status-transcript")) }
+            p lang=[language] { (transcript) }
         }
     }
 }
@@ -2914,7 +3048,9 @@ pub(crate) fn poll_view(status: &Status, ctx: &Ctx) -> Markup {
                     @for (index, option) in options.iter().enumerate() {
                         label.poll__choice {
                             input type=(input) name="choices[]" value=(index);
-                            span { (emojify_text(option.get("title").and_then(Value::as_str).unwrap_or_default(), status.emojis())) }
+                            span lang=[status.rendered_language()] {
+                                (emojify_text(option.get("title").and_then(Value::as_str).unwrap_or_default(), status.emojis()))
+                            }
                         }
                     }
                     button.poll__vote type="submit" { (ctx.locale.text("status-poll-vote")) }
@@ -2927,7 +3063,9 @@ pub(crate) fn poll_view(status: &Status, ctx: &Ctx) -> Markup {
                         @let mine = own.contains(&i64::try_from(index).unwrap_or(-1));
                         div class=(if mine { "poll__result is-own" } else { "poll__result" }) {
                             div.poll__bar style=(format!("--pct:{pct}%")) {}
-                            span.poll__title { (emojify_text(option.get("title").and_then(Value::as_str).unwrap_or_default(), status.emojis())) }
+                            span.poll__title lang=[status.rendered_language()] {
+                                (emojify_text(option.get("title").and_then(Value::as_str).unwrap_or_default(), status.emojis()))
+                            }
                             span.poll__pct { (pct) "%" }
                         }
                     }
@@ -3037,10 +3175,10 @@ fn status_privileged_menu(status: &Status, ctx: &Ctx) -> Option<Markup> {
     let title = ctx.locale.text("moderation-tools");
     Some(html! {
         details.status__menu.privileged-menu data-status-menu data-privileged-menu {
-            summary.action title=(title) aria-label=(title) aria-haspopup="menu" {
+            summary.action title=(title) aria-label=(title) {
                 (icon("shield"))
             }
-            div.status__menu-pop role="menu" {
+            div.status__menu-pop {
                 (links.markup())
                 @if let Some(href) = &borrow_href {
                     a.status__menu-item href=(href) {
@@ -3069,7 +3207,7 @@ fn overflow_menu(status: &Status, ctx: &Ctx) -> Markup {
     html! {
         details.status__menu data-status-menu {
             summary.action title=(ctx.locale.text("status-more-options")) { (icon("more")) }
-            div.status__menu-pop role="menu" {
+            div.status__menu-pop {
                 @if !url.is_empty() {
                     button.status__menu-item.status__menu-item--js type="button"
                         data-copy-link=(url) { (ctx.locale.text("status-copy-link")) }
@@ -3235,8 +3373,9 @@ fn group_mod_items(
     }
 }
 
-/// One overflow-menu verb as a POST form; `confirm` invites the JS
-/// confirmation prompt (a no-JS submit just posts).
+/// One overflow-menu verb as a POST form. JavaScript uses the compact native
+/// confirmation prompt; without it the first submit reaches the shared review
+/// page and only the explicit second submit reaches `action_path`.
 pub fn menu_form(
     action_path: &str,
     label: &str,
@@ -3245,10 +3384,13 @@ pub fn menu_form(
     csrf: &str,
     return_to: &str,
 ) -> Markup {
+    let form_action = confirm.map_or(action_path, |_| CONFIRM_PATH);
     html! {
-        form.status__menu-form method="post" action=(action_path) data-confirm=[confirm] {
+        form.status__menu-form method="post" action=(form_action) data-confirm=[confirm]
+            data-confirm-action=[confirm.map(|_| action_path)] {
             input type="hidden" name="csrf" value=(csrf);
             input type="hidden" name="return_to" value=(return_to);
+            (confirmation_fields(action_path, confirm))
             button.status__menu-item.is-danger[danger] type="submit" { (label) }
         }
     }
@@ -3308,9 +3450,14 @@ fn moderation_form(form: &ModForm, csrf: &str, return_to: &str) -> Markup {
     // Only the confirmed (destructive) direction gets danger styling; the
     // JS drops both together when it flips the form to the undo verb.
     let danger = form.confirm.is_some();
+    let form_action = form
+        .confirm
+        .as_ref()
+        .map_or(form.action.as_str(), |_| CONFIRM_PATH);
     html! {
-        form.status__menu-form method="post" action=(form.action)
+        form.status__menu-form method="post" action=(form_action)
             data-confirm=[form.confirm.as_deref()]
+            data-confirm-action=[form.confirm.as_ref().map(|_| form.action.as_str())]
             data-mod=(form.kind)
             data-mod-account=[form.account]
             data-mod-domain=[form.domain]
@@ -3318,6 +3465,7 @@ fn moderation_form(form: &ModForm, csrf: &str, return_to: &str) -> Markup {
             data-mod-undo-label=(form.undo_label) {
             input type="hidden" name="csrf" value=(csrf);
             input type="hidden" name="return_to" value=(return_to);
+            (confirmation_fields(&form.action, form.confirm.as_deref()))
             @if let Some(domain) = form.domain {
                 input type="hidden" name="domain" value=(domain);
             }
@@ -3727,6 +3875,7 @@ fn compose_menu(
     options: &[(&str, &str, &str, &str)],
     locale: Locale,
 ) -> Markup {
+    let list_id = format!("compose-{name}-options");
     let current_glyph = options
         .iter()
         .find(|(value, ..)| *value == selected)
@@ -3743,14 +3892,16 @@ fn compose_menu(
                 }
             }
             button.compose__menu-trigger type="button" data-menu-trigger
-                aria-haspopup="listbox" aria-expanded="false" title=(label) {
+                aria-haspopup="listbox" aria-expanded="false"
+                aria-controls=(list_id) title=(label) {
                 span.compose__menu-icon data-menu-icon { (icon(current_glyph)) }
                 span.compose__menu-caret { (icon("chevron")) }
                 span.visually-hidden { (label) }
             }
-            div.compose__menu-pop role="listbox" aria-label=(label) data-menu-pop hidden {
+            div.compose__menu-pop id=(list_id) role="listbox" aria-label=(label)
+                data-menu-pop hidden {
                 @for &(value, label_id, glyph, desc_id) in options {
-                    button.compose__menu-option type="button" role="option"
+                    button.compose__menu-option type="button" role="option" tabindex="-1"
                         data-value=(value)
                         aria-selected=(if value == selected { "true" } else { "false" }) {
                         span.compose__menu-option-icon { (icon(glyph)) }
@@ -3800,6 +3951,7 @@ pub fn language_combo(
     selected: &str,
     locale: Locale,
 ) -> Markup {
+    let list_id = format!("compose-{name}-options");
     let current_label =
         languages::find(selected).map_or_else(|| selected.to_string(), Language::label);
     html! {
@@ -3812,7 +3964,8 @@ pub fn language_combo(
                 }
             }
             button.compose__combo-trigger type="button" data-combo-trigger
-                aria-haspopup="listbox" aria-expanded="false" title=(label) {
+                aria-haspopup="listbox" aria-expanded="false"
+                aria-controls=(list_id) title=(label) {
                 span.compose__combo-label data-combo-label { (current_label) }
                 span.compose__combo-caret { (icon("chevron")) }
             }
@@ -3820,8 +3973,11 @@ pub fn language_combo(
                 input.compose__combo-search type="text" data-combo-search
                     placeholder=(locale.text("compose-search-languages"))
                     aria-label=(locale.text("compose-search-languages"))
+                    role="combobox" aria-autocomplete="list" aria-expanded="false"
+                    aria-controls=(list_id)
                     autocomplete="off";
-                ul.compose__combo-list role="listbox" aria-label=(label) data-combo-list {}
+                ul.compose__combo-list id=(list_id) role="listbox"
+                    aria-label=(label) data-combo-list {}
             }
         }
     }
@@ -3837,6 +3993,7 @@ pub fn language_combo_optional(
     selected: Option<&str>,
     none_label: &str,
 ) -> Markup {
+    let list_id = format!("compose-{name}-options");
     let current_label = match selected {
         Some(code) => languages::find(code).map_or_else(|| code.to_string(), Language::label),
         None => none_label.to_owned(),
@@ -3856,15 +4013,19 @@ pub fn language_combo_optional(
                 }
             }
             button.compose__combo-trigger type="button" data-combo-trigger
-                aria-haspopup="listbox" aria-expanded="false" title=(label) {
+                aria-haspopup="listbox" aria-expanded="false"
+                aria-controls=(list_id) title=(label) {
                 span.compose__combo-label data-combo-label { (current_label) }
                 span.compose__combo-caret { (icon("chevron")) }
             }
             div.compose__combo-pop data-combo-pop hidden {
                 input.compose__combo-search type="text" data-combo-search
                     placeholder="Search languages" aria-label="Search languages"
+                    role="combobox" aria-autocomplete="list" aria-expanded="false"
+                    aria-controls=(list_id)
                     autocomplete="off";
-                ul.compose__combo-list role="listbox" aria-label=(label) data-combo-list {}
+                ul.compose__combo-list id=(list_id) role="listbox"
+                    aria-label=(label) data-combo-list {}
             }
         }
     }
@@ -3938,6 +4099,27 @@ fn attachment_keep_row(item: &Value, locale: Locale) -> Markup {
         .get("description")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    let transcript = item
+        .get("transcript")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let decorative = item
+        .get("decorative")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let audio_described = item
+        .get("audio_described")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let visuals_conveyed_in_audio = item
+        .get("visuals_conveyed_in_audio")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let has_captions = item
+        .get("caption_url")
+        .and_then(Value::as_str)
+        .is_some_and(|url| !url.is_empty());
+    let kind = item.get("type").and_then(Value::as_str).unwrap_or_default();
     html! {
         div.edit-media__row {
             @match preview {
@@ -3959,6 +4141,46 @@ fn attachment_keep_row(item: &Value, locale: Locale) -> Markup {
                     input type="text" name=(format!("media_alt_{id}"))
                         value=(alt) maxlength="1500"
                         placeholder=(locale.text("compose-alt-description"));
+                }
+                @if matches!(kind, "image" | "gifv") {
+                    label.compose__inline {
+                        input type="hidden" name=(format!("media_decorative_{id}")) value="false";
+                        input type="checkbox" name=(format!("media_decorative_{id}")) value="true"
+                            checked[decorative];
+                        span { (locale.text("compose-decorative")) }
+                    }
+                    @if alt.is_empty() && !decorative {
+                        p.compose__media-note { (locale.text("compose-description-missing")) }
+                    }
+                }
+                @if matches!(kind, "audio" | "video") {
+                    label.compose__field {
+                        span { (locale.text("compose-transcript")) }
+                        textarea name=(format!("media_transcript_{id}")) rows="3"
+                            maxlength="50000"
+                            placeholder=(locale.text("compose-transcript-description")) {
+                            (transcript)
+                        }
+                    }
+                }
+                @if kind == "video" && has_captions {
+                    p.compose__media-note { (locale.text("compose-captions-attached")) }
+                }
+                @if kind == "video" {
+                    label.compose__field {
+                        span { (locale.text("compose-visual-audio")) }
+                        select name=(format!("media_visual_audio_{id}")) {
+                            option value="" selected[!audio_described && !visuals_conveyed_in_audio] {
+                                (locale.text("compose-visual-audio-none"))
+                            }
+                            option value="audio_description" selected[audio_described] {
+                                (locale.text("compose-audio-described"))
+                            }
+                            option value="soundtrack" selected[visuals_conveyed_in_audio] {
+                                (locale.text("compose-visuals-in-audio"))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -4138,6 +4360,14 @@ pub fn full_compose_form(
             data-i18n-media-drop-help=(locale.text("compose-media-drop-help"))
             data-i18n-alt-description=(locale.text("compose-alt-description"))
             data-i18n-alt-named=(locale.text("compose-alt-named-template"))
+            data-i18n-decorative=(locale.text("compose-decorative"))
+            data-i18n-transcript=(locale.text("compose-transcript"))
+            data-i18n-transcript-description=(locale.text("compose-transcript-description"))
+            data-i18n-captions=(locale.text("compose-captions"))
+            data-i18n-visual-audio=(locale.text("compose-visual-audio"))
+            data-i18n-visual-audio-none=(locale.text("compose-visual-audio-none"))
+            data-i18n-audio-described=(locale.text("compose-audio-described"))
+            data-i18n-visuals-in-audio=(locale.text("compose-visuals-in-audio"))
             data-i18n-remove-named=(locale.text("compose-remove-named-template"))
             data-i18n-add-option=(locale.text("compose-add-option"))
             data-i18n-remove-option=(locale.text("compose-remove-option"))
@@ -4317,6 +4547,34 @@ pub fn full_compose_form(
                                             }
                                             input type="text" name="media_alt[]" maxlength="1500"
                                                 placeholder=(numbered("compose-alt-file", index + 1));
+                                        }
+                                        label.compose__inline {
+                                            input type="hidden" name="media_decorative[]" value="false";
+                                            input type="checkbox" name="media_decorative[]" value="true";
+                                            span { (locale.text("compose-decorative-image")) }
+                                        }
+                                        label.compose__field {
+                                            span { (locale.text("compose-transcript")) }
+                                            textarea name="media_transcript[]" rows="3" maxlength="50000"
+                                                placeholder=(locale.text("compose-transcript-description")) {}
+                                        }
+                                        label.compose__field {
+                                            span { (locale.text("compose-captions")) }
+                                            input type="file" name="media_captions[]" accept=".vtt,text/vtt";
+                                        }
+                                        label.compose__field {
+                                            span { (locale.text("compose-visual-audio")) }
+                                            select name="media_visual_audio[]" {
+                                                option value="" {
+                                                    (locale.text("compose-visual-audio-none"))
+                                                }
+                                                option value="audio_description" {
+                                                    (locale.text("compose-audio-described"))
+                                                }
+                                                option value="soundtrack" {
+                                                    (locale.text("compose-visuals-in-audio"))
+                                                }
+                                            }
                                         }
                                         label.compose__field {
                                             span.visually-hidden {
@@ -4630,9 +4888,13 @@ pub fn edit_history(versions: &[Value], clock: &ViewerClock, locale: Locale) -> 
                         (clock.element_absolute_iso(&when))
                     }
                     @if !spoiler.is_empty() {
-                        p.history__spoiler { (emojify_text(&spoiler, emojis)) }
+                        p.history__spoiler lang=[version.get("language").and_then(Value::as_str)] {
+                            (emojify_text(&spoiler, emojis))
+                        }
                     }
-                    div.status__content { (emojify(&field(version, "content"), emojis)) }
+                    div.status__content lang=[version.get("language").and_then(Value::as_str)] {
+                        (emojify(&field(version, "content"), emojis))
+                    }
                     @let media = version
                         .get("media_attachments")
                         .and_then(Value::as_array)
@@ -4647,7 +4909,9 @@ pub fn edit_history(versions: &[Value], clock: &ViewerClock, locale: Locale) -> 
                                     .filter(|s| !s.is_empty());
                                 @match preview {
                                     Some(preview) => {
-                                        img.history__thumb src=(preview) alt=(alt) loading="lazy";
+                                        img.history__thumb src=(preview) alt=(alt)
+                                            lang=[version.get("language").and_then(Value::as_str)]
+                                            loading="lazy";
                                     }
                                     None => span.history__thumb.history__thumb--file { (icon("upload")) }
                                 }
@@ -4725,7 +4989,7 @@ pub fn tab_strip(aria_label: &str, tabs: &[Tab]) -> Markup {
 /// table announces itself with no JavaScript.
 pub fn data_table(rows: &Markup) -> Markup {
     html! {
-        div.table-scroll {
+        div.table-scroll tabindex="0" {
             table.admin-table {
                 (rows)
             }
@@ -5087,7 +5351,7 @@ pub fn conversation_row(conversation: &Value, ctx: &Ctx) -> Markup {
                 @if let Some(csrf) = ctx.csrf {
                     details.status__menu.conversation__menu data-status-menu {
                         summary.action title="Conversation options" { (icon("more")) }
-                        div.status__menu-pop role="menu" {
+                        div.status__menu-pop {
                             @if unread {
                                 (menu_form(&format!("/web/conversations/{row_id}/read"),
                                     "Mark as read", false, None, csrf, ctx.return_to))
@@ -5248,6 +5512,73 @@ mod tests {
     }
 
     #[test]
+    fn video_exposes_captions_transcript_and_audio_description() {
+        let value = json!({
+            "language": "fr",
+            "media_attachments": [{
+                "type": "video",
+                "url": "/media/video.mp4",
+                "preview_url": "/media/poster.jpg",
+                "description": "Une démonstration",
+                "caption_url": "/media/7/captions.vtt",
+                "transcript": "La personne montre le bouton <Publier>.",
+                "audio_described": true,
+            }],
+        });
+        let rendered = media_gallery(&Status(&value), &view_ctx(None, None)).into_string();
+        assert!(rendered.contains(r#"<track kind="captions" src="/media/7/captions.vtt" srclang="fr" label="Captions" default>"#), "{rendered}");
+        assert!(
+            rendered.contains("Transcript and visual description"),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains(r#"lang="fr">La personne montre le bouton &lt;Publier&gt;."#),
+            "{rendered}"
+        );
+        assert!(rendered.contains(">CC</span>"), "{rendered}");
+        assert!(rendered.contains(">AD</span>"), "{rendered}");
+        assert!(!rendered.contains("A/V"), "{rendered}");
+    }
+
+    #[test]
+    fn decorative_images_and_soundtrack_complete_video_keep_distinct_semantics() {
+        let value = json!({
+            "media_attachments": [
+                {
+                    "type": "image",
+                    "url": "/media/decorative.png",
+                    "preview_url": "/media/decorative-small.png",
+                    "description": "This stale text must not be announced",
+                    "decorative": true,
+                },
+                {
+                    "type": "video",
+                    "url": "/media/video.mp4",
+                    "preview_url": "/media/poster.jpg",
+                    "description": "A narrated demonstration",
+                    "audio_described": false,
+                    "visuals_conveyed_in_audio": true,
+                }
+            ],
+        });
+        let rendered = media_gallery(&Status(&value), &view_ctx(None, None)).into_string();
+        assert!(
+            rendered.contains(r#"src="/media/decorative-small.png" alt="""#),
+            "{rendered}"
+        );
+        assert!(
+            !rendered.contains("This stale text must not be announced"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("A/V"), "{rendered}");
+        assert!(
+            rendered.contains("Important visual information is conveyed in the soundtrack"),
+            "{rendered}"
+        );
+        assert!(!rendered.contains(">AD</span>"), "{rendered}");
+    }
+
+    #[test]
     fn linked_attachment_previews_have_type_aware_accessible_actions() {
         let value = json!({
             "media_attachments": [
@@ -5322,6 +5653,29 @@ mod tests {
                 false,
             ),
             "<pre tabindex=\"0\"><code>already enhanced</code></pre>"
+        );
+    }
+
+    #[test]
+    fn scrollable_tables_are_focusable_at_render_time() {
+        assert_eq!(
+            rewrite_content_links("<table><tr><td>wide</td></tr></table>", &[], &[], false),
+            "<table tabindex=\"0\"><tr><td>wide</td></tr></table>"
+        );
+        assert_eq!(
+            rewrite_content_links(
+                "<table class=\"remote\" tabindex=\"0\"><tr></tr></table>",
+                &[],
+                &[],
+                false,
+            ),
+            "<table class=\"remote\" tabindex=\"0\"><tr></tr></table>"
+        );
+
+        let table = data_table(&html! { tbody { tr { td { "wide" } } } }).into_string();
+        assert!(
+            table.contains(r#"<div class="table-scroll" tabindex="0">"#),
+            "{table}"
         );
     }
 
@@ -5585,6 +5939,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn russian_locale_flows_through_shared_status_card_controls() {
         let value = json!({
             "id": "17",
@@ -5593,6 +5948,8 @@ mod tests {
             "visibility": "public",
             "url": "https://plamenu.test/@alice/17",
             "content": "<p>Привет</p>",
+            "language": "ru",
+            "spoiler_text": "Предупреждение",
             "sensitive": true,
             "in_reply_to_id": "12",
             "in_reply_to_account_id": "8",
@@ -5655,7 +6012,6 @@ mod tests {
             "Открыть вложенное изображение (1 из 1)",
             "изменено",
             "В ответ @bob",
-            "Деликатный контент",
             "5 голосов",
             "Завершён",
             "Ответить",
@@ -5670,6 +6026,61 @@ mod tests {
         }
         assert!(!card.contains("Sensitive content"));
         assert!(!card.contains("More options"));
+        assert!(
+            card.contains(r#"<summary lang="ru">Предупреждение</summary>"#),
+            "content warning language: {card}"
+        );
+        assert!(
+            card.contains(r#"<div class="status__content" lang="ru"><p>Привет</p></div>"#),
+            "status language: {card}"
+        );
+        assert_eq!(
+            card.matches(r#"class="poll__title" lang="ru""#).count(),
+            2,
+            "poll option languages: {card}"
+        );
+        assert!(
+            card.contains(r#"alt="описание" lang="ru""#),
+            "media description language: {card}"
+        );
+    }
+
+    #[test]
+    fn rendered_status_language_prefers_the_active_translation() {
+        let value = json!({
+            "language": "de",
+            "_translation": {
+                "content": "<p>Bonjour</p>",
+                "language": "fr",
+            },
+        });
+        assert_eq!(Status(&value).rendered_language(), Some("fr"));
+    }
+
+    #[test]
+    fn confirmed_menu_forms_have_script_and_no_script_paths() {
+        let rendered = menu_form(
+            "/web/statuses/17/delete",
+            "Delete",
+            true,
+            Some("Delete this post?"),
+            "token",
+            "/@alice/17",
+        )
+        .into_string();
+        assert!(rendered.contains(r#"action="/web/confirm""#), "{rendered}");
+        assert!(
+            rendered.contains(r#"data-confirm-action="/web/statuses/17/delete""#),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains(r#"name="confirm_action" value="/web/statuses/17/delete""#),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains(r#"name="confirm_message" value="Delete this post?""#),
+            "{rendered}"
+        );
     }
 
     // ---- Contextual privileged-tools menus ------------------------------
@@ -5822,6 +6233,60 @@ mod tests {
         assert!(
             card.contains(r#"data-active-title="Remove upvote""#),
             "{card}"
+        );
+        assert!(
+            card.contains(r#"class="action action__btn is-active" aria-pressed="true""#),
+            "{card}"
+        );
+        assert!(!card.contains(r#"role="menu""#), "{card}");
+        assert!(!card.contains(r#"aria-haspopup="menu""#), "{card}");
+    }
+
+    #[test]
+    fn custom_selectors_expose_linked_composite_semantics() {
+        let menu = compose_menu(
+            "visibility",
+            "Visibility",
+            "public",
+            &VISIBILITY_LEVELS,
+            Locale::default(),
+        )
+        .into_string();
+        assert!(
+            menu.contains(r#"aria-controls="compose-visibility-options""#),
+            "{menu}"
+        );
+        assert!(
+            menu.contains(
+                r#"id="compose-visibility-options" role="listbox" aria-label="Visibility""#
+            ),
+            "{menu}"
+        );
+        assert!(menu.contains(r#"role="option" tabindex="-1""#), "{menu}");
+
+        let languages = crate::languages::LANGUAGES
+            .iter()
+            .take(3)
+            .collect::<Vec<_>>();
+        let combo = language_combo(
+            "language",
+            "Post language",
+            &languages,
+            languages[0].code,
+            Locale::default(),
+        )
+        .into_string();
+        assert!(
+            combo.contains(
+                r#"role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="compose-language-options""#
+            ),
+            "{combo}"
+        );
+        assert!(
+            combo.contains(
+                r#"id="compose-language-options" role="listbox" aria-label="Post language""#
+            ),
+            "{combo}"
         );
     }
 

@@ -999,9 +999,14 @@ fn personal_moderation_row(
                 }
                 div.admin-actions.admin-emoji__actions {
                     button type="submit" form=(&edit_form_id) { "Save moderation" }
-                    form.settings-inline-form method="post" action=(format!("/web/admin/custom-emojis/{}/retire", emoji.id)) data-confirm="Remove this emoji from the user's collection?" {
+                    @let retire_action = format!("/web/admin/custom-emojis/{}/retire", emoji.id);
+                    @let retire_message = "Remove this emoji from the user's collection?";
+                    form.settings-inline-form method="post" action=(crate::web::view::CONFIRM_PATH)
+                        data-confirm=(retire_message) data-confirm-action=(&retire_action) {
                         input type="hidden" name="csrf" value=(&admin.user.csrf);
                         input type="hidden" name="owner_id" value=(owner.id);
+                        input type="hidden" name="return_to" value=(format!("/admin/custom-emojis/users/{}", owner.id));
+                        (crate::web::view::confirmation_fields(&retire_action, Some(retire_message)))
                         button.admin-danger type="submit" { "Remove" }
                     }
                 }

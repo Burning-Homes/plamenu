@@ -436,17 +436,28 @@
 
   function applyTranslation(article, note, form, data) {
     const restores = [];
+    const swapLanguage = (el) => {
+      if (!el || !data.language) return;
+      const original = el.getAttribute("lang");
+      restores.push(() => {
+        if (original == null) el.removeAttribute("lang");
+        else el.setAttribute("lang", original);
+      });
+      el.setAttribute("lang", data.language);
+    };
     const swapHtml = (el, html) => {
       if (!el || !html) return;
       const original = el.innerHTML;
       restores.push(() => { el.innerHTML = original; });
       el.innerHTML = html;
+      swapLanguage(el);
     };
     const swapText = (el, text) => {
       if (!el || !text) return;
       const original = el.innerHTML;
       restores.push(() => { el.innerHTML = original; });
       el.textContent = text;
+      swapLanguage(el);
     };
     // The main content div precedes any quoted status' in DOM order.
     swapHtml(article.querySelector(".status__content"), data.content);
@@ -613,11 +624,17 @@
   }
 
   // Destructive menu verbs (delete, redraft, block) carry data-confirm; gate
-  // the POST behind a confirmation prompt. Without JS the form just submits.
+  // the POST behind a confirmation prompt. Without JS the rendered action
+  // leads to the server's equivalent review step.
   function bindConfirms(root) {
     root.querySelectorAll("form[data-confirm]").forEach((form) => {
       if (form.dataset.confirmBound) return;
       form.dataset.confirmBound = "1";
+      // The server-rendered action is the no-JS review step. Once this
+      // enhancement is active, restore the real endpoint and use the compact
+      // native prompt; all later action-form code therefore sees the same
+      // endpoint it did before progressive enhancement.
+      if (form.dataset.confirmAction) form.action = form.dataset.confirmAction;
       form.addEventListener("submit", (event) => {
         // Read at submit time: the moderation toggle below removes the
         // prompt while a form is flipped to its (harmless) undo direction.
@@ -956,9 +973,15 @@
     if (closeOpenPopup) closeOpenPopup();
     pop.hidden = false;
     trigger.setAttribute("aria-expanded", "true");
+    const combobox = pop.querySelector('[role="combobox"]');
+    if (combobox) combobox.setAttribute("aria-expanded", "true");
     function close() {
       pop.hidden = true;
       trigger.setAttribute("aria-expanded", "false");
+      if (combobox) {
+        combobox.setAttribute("aria-expanded", "false");
+        combobox.removeAttribute("aria-activedescendant");
+      }
       pop.classList.remove("is-above", "is-below", "is-end");
       document.removeEventListener("click", onDocClick, true);
       document.removeEventListener("keydown", onKey);
@@ -972,6 +995,14 @@
       if (event.key === "Escape") {
         close();
         trigger.focus();
+      } else if (event.key === "Tab") {
+        // Let the browser move focus first, then dismiss once it has left both
+        // the trigger and popup. Do not pull focus back on an ordinary Tab.
+        setTimeout(() => {
+          if (!pop.contains(document.activeElement) && document.activeElement !== trigger) {
+            close();
+          }
+        }, 0);
       }
     }
     function onReflow() {
@@ -1006,13 +1037,57 @@
       const iconSlot = menu.querySelector("[data-menu-icon]");
       if (!select || !trigger || !pop) return;
       const options = [...pop.querySelectorAll("[data-value]")];
-
-      togglePopup(trigger, pop, () => {
+      const focusSelected = () => {
         const active = options.find((o) => o.dataset.value === select.value);
-        if (active) active.focus();
+        (active || options[0])?.focus();
+      };
+
+      togglePopup(trigger, pop, focusSelected);
+      trigger.addEventListener("keydown", (event) => {
+        if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+        event.preventDefault();
+        if (trigger.getAttribute("aria-expanded") !== "true") {
+          openPopup(trigger, pop, focusSelected);
+        }
       });
 
-      options.forEach((option) => {
+      let typeahead = "";
+      let typeaheadTimer = null;
+      const focusAt = (index) => {
+        options[(index + options.length) % options.length]?.focus();
+      };
+
+      options.forEach((option, index) => {
+        option.addEventListener("keydown", (event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            focusAt(index + 1);
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            focusAt(index - 1);
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            focusAt(0);
+          } else if (event.key === "End") {
+            event.preventDefault();
+            focusAt(options.length - 1);
+          } else if (
+            event.key.length === 1 &&
+            !event.altKey && !event.ctrlKey && !event.metaKey
+          ) {
+            typeahead += event.key.toLocaleLowerCase();
+            clearTimeout(typeaheadTimer);
+            typeaheadTimer = setTimeout(() => { typeahead = ""; }, 700);
+            const match = options.find((candidate) =>
+              candidate.querySelector(".compose__menu-option-label")?.textContent
+                .trim().toLocaleLowerCase().startsWith(typeahead)
+            );
+            if (match) {
+              event.preventDefault();
+              match.focus();
+            }
+          }
+        });
         option.addEventListener("click", () => {
           select.value = option.dataset.value;
           select.dispatchEvent(new Event("change", { bubbles: true }));
@@ -1046,6 +1121,33 @@
         value: option.value,
         label: option.textContent,
       }));
+      let activeIndex = -1;
+
+      const options = () => [
+        ...list.querySelectorAll('.compose__combo-option[role="option"]'),
+      ];
+      const setActive = (index) => {
+        const current = options();
+        current.forEach((option) => option.classList.remove("is-active"));
+        if (!current.length) {
+          activeIndex = -1;
+          if (search) search.removeAttribute("aria-activedescendant");
+          return;
+        }
+        activeIndex = Math.max(0, Math.min(index, current.length - 1));
+        const active = current[activeIndex];
+        active.classList.add("is-active");
+        if (search) search.setAttribute("aria-activedescendant", active.id);
+        active.scrollIntoView({ block: "nearest" });
+      };
+
+      const choose = (option) => {
+        select.value = option.dataset.value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+        if (labelSlot) labelSlot.textContent = option.textContent;
+        if (closeOpenPopup) closeOpenPopup();
+        trigger.focus();
+      };
 
       const render = (filter) => {
         const needle = filter.trim().toLowerCase();
@@ -1060,29 +1162,26 @@
         if (!kept.length) {
           const empty = document.createElement("li");
           empty.className = "compose__combo-empty";
+          empty.setAttribute("role", "option");
+          empty.setAttribute("aria-disabled", "true");
           empty.textContent = combo.dataset.emptyLabel || "No languages found";
           list.append(empty);
+          setActive(-1);
           return;
         }
-        kept.forEach((entry) => {
-          const li = document.createElement("li");
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "compose__combo-option";
-          button.setAttribute("role", "option");
-          button.dataset.value = entry.value;
-          button.textContent = entry.label;
-          button.setAttribute("aria-selected", String(entry.value === select.value));
-          button.addEventListener("click", () => {
-            select.value = entry.value;
-            select.dispatchEvent(new Event("change", { bubbles: true }));
-            if (labelSlot) labelSlot.textContent = entry.label;
-            if (closeOpenPopup) closeOpenPopup();
-            trigger.focus();
-          });
-          li.append(button);
-          list.append(li);
+        kept.forEach((entry, index) => {
+          const option = document.createElement("li");
+          option.id = `${list.id}-option-${index}`;
+          option.className = "compose__combo-option";
+          option.setAttribute("role", "option");
+          option.dataset.value = entry.value;
+          option.textContent = entry.label;
+          option.setAttribute("aria-selected", String(entry.value === select.value));
+          option.addEventListener("click", () => choose(option));
+          list.append(option);
         });
+        const selected = kept.findIndex((entry) => entry.value === select.value);
+        setActive(selected >= 0 ? selected : 0);
       };
 
       togglePopup(trigger, pop, () => {
@@ -1090,7 +1189,40 @@
         if (search) search.focus();
       });
 
-      if (search) search.addEventListener("input", () => render(search.value));
+      trigger.addEventListener("keydown", (event) => {
+        if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+        event.preventDefault();
+        if (trigger.getAttribute("aria-expanded") !== "true") {
+          openPopup(trigger, pop, () => {
+            render(search ? search.value : "");
+            if (search) search.focus();
+          });
+        }
+      });
+
+      if (search) {
+        search.addEventListener("input", () => render(search.value));
+        search.addEventListener("keydown", (event) => {
+          const current = options();
+          if (!current.length) return;
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setActive(activeIndex < current.length - 1 ? activeIndex + 1 : 0);
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setActive(activeIndex > 0 ? activeIndex - 1 : current.length - 1);
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            setActive(0);
+          } else if (event.key === "End") {
+            event.preventDefault();
+            setActive(current.length - 1);
+          } else if (event.key === "Enter" && activeIndex >= 0) {
+            event.preventDefault();
+            choose(current[activeIndex]);
+          }
+        });
+      }
     });
   }
 
@@ -1661,6 +1793,10 @@
         );
       }
 
+      const altLabel = document.createElement("label");
+      altLabel.className = "compose__field";
+      const altName = document.createElement("span");
+      altName.textContent = form.dataset.i18nAltDescription || "Describe this attachment";
       const alt = document.createElement("textarea");
       alt.name = "media_alt[]";
       alt.rows = 2;
@@ -1676,6 +1812,89 @@
           file.name
         )
       );
+      altLabel.append(altName, alt);
+
+      const decorativeLabel = document.createElement("label");
+      decorativeLabel.className = "compose__inline compose__media-extra";
+      const decorativeDefault = document.createElement("input");
+      decorativeDefault.type = "hidden";
+      decorativeDefault.name = "media_decorative[]";
+      decorativeDefault.value = "false";
+      const decorative = document.createElement("input");
+      decorative.type = "checkbox";
+      decorative.name = "media_decorative[]";
+      decorative.value = "true";
+      const decorativeText = document.createElement("span");
+      decorativeText.textContent =
+        form.dataset.i18nDecorative || "This image doesn’t add information";
+      decorativeLabel.append(decorativeDefault, decorative, decorativeText);
+      decorative.addEventListener("change", () => {
+        if (decorative.checked) alt.value = "";
+        alt.disabled = decorative.checked;
+      });
+
+      const transcriptLabel = document.createElement("label");
+      transcriptLabel.className = "compose__field compose__media-extra";
+      const transcriptName = document.createElement("span");
+      transcriptName.textContent = form.dataset.i18nTranscript || "Transcript";
+      const transcript = document.createElement("textarea");
+      transcript.name = "media_transcript[]";
+      transcript.rows = 3;
+      transcript.maxLength = 50000;
+      transcript.placeholder =
+        form.dataset.i18nTranscriptDescription ||
+        "For video, include important visual information";
+      transcriptLabel.append(transcriptName, transcript);
+
+      const captionsLabel = document.createElement("label");
+      captionsLabel.className = "compose__field compose__media-extra";
+      const captionsName = document.createElement("span");
+      captionsName.textContent = form.dataset.i18nCaptions || "WebVTT captions";
+      const captions = document.createElement("input");
+      captions.type = "file";
+      captions.name = "media_captions[]";
+      captions.accept = ".vtt,text/vtt";
+      captionsLabel.append(captionsName, captions);
+
+      const visualAudioLabel = document.createElement("label");
+      visualAudioLabel.className = "compose__field compose__media-extra";
+      const visualAudioName = document.createElement("span");
+      visualAudioName.textContent =
+        form.dataset.i18nVisualAudio || "Access to important visuals";
+      const visualAudio = document.createElement("select");
+      visualAudio.name = "media_visual_audio[]";
+      for (const [value, label] of [
+        ["", form.dataset.i18nVisualAudioNone || "Not specified"],
+        ["audio_description", form.dataset.i18nAudioDescribed || "Audio description included"],
+        ["soundtrack", form.dataset.i18nVisualsInAudio || "Soundtrack already explains the visuals"],
+      ]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        visualAudio.appendChild(option);
+      }
+      visualAudioLabel.append(visualAudioName, visualAudio);
+
+      if (file.type.startsWith("image/")) {
+        transcriptLabel.hidden = true;
+        transcript.disabled = true;
+        captionsLabel.hidden = true;
+        captions.disabled = true;
+        visualAudioLabel.hidden = true;
+        visualAudio.disabled = true;
+      } else if (file.type.startsWith("audio/")) {
+        decorativeLabel.hidden = true;
+        decorativeDefault.disabled = true;
+        decorative.disabled = true;
+        captionsLabel.hidden = true;
+        captions.disabled = true;
+        visualAudioLabel.hidden = true;
+        visualAudio.disabled = true;
+      } else {
+        decorativeLabel.hidden = true;
+        decorativeDefault.disabled = true;
+        decorative.disabled = true;
+      }
 
       // The File rides on a real file input so the plain form submit carries it;
       // it follows its alt box in document order, matching the backend pairing.
@@ -1701,7 +1920,14 @@
 
       const bodyEl = document.createElement("div");
       bodyEl.className = "compose__attachment-body";
-      bodyEl.append(alt, fileInput);
+      bodyEl.append(
+        altLabel,
+        decorativeLabel,
+        transcriptLabel,
+        captionsLabel,
+        visualAudioLabel,
+        fileInput
+      );
 
       li.append(preview, bodyEl, remove);
 

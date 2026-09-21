@@ -135,7 +135,7 @@ pub async fn index(
         @if !diagnostics.top_origins.is_empty() {
             section.admin-history__section {
                 h3 { "Queued origins" }
-                div.table-scroll {
+                div.table-scroll tabindex="0" {
                     table.admin-table {
                         thead { tr { th { "Origin" } th { "Jobs" } th { "Oldest" } } }
                         tbody {
@@ -154,7 +154,7 @@ pub async fn index(
         @if !diagnostics.top_storage_origins.is_empty() {
             section.admin-history__section {
                 h3 { "Cold storage by origin" }
-                div.table-scroll {
+                div.table-scroll tabindex="0" {
                     table.admin-table {
                         thead { tr { th { "Origin" } th { "Posts" } th { "Text" } } }
                         tbody {

@@ -1270,6 +1270,7 @@ pub fn router(state: AppState) -> Router {
     // we do it here so the header travels with the response.
     let media_routes = Router::new()
         .route("/media/{file_name}", get(media::serve))
+        .route("/media/{media_id}/captions.vtt", get(media::captions))
         // Proxy every kind of remote media through the instance (no origin URL
         // ever reaches a client). Public, like `/media/{file}` itself.
         .route("/media/proxy/{kind}/{id}", get(media::proxy))

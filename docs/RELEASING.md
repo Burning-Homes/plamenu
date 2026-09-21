@@ -3,13 +3,15 @@
 Prepare and test a release locally, then publish those same bytes:
 
 ```sh
-./dev release
-./dev release --publish
+./dev release --accessibility-evidence /secure/release-evidence.json
+./dev release --accessibility-evidence /secure/release-evidence.json --publish
 ```
 
 The second command reuses verified completed stages. It can also be used alone
 to prepare and publish in one invocation. No CI run IDs, artifact downloads,
 handwritten approval files, or separate promotion step are needed.
+Set `PLAMENU_A11Y_EVIDENCE=/secure/release-evidence.json` if you prefer not to
+repeat the accessibility option in the later examples on this page.
 
 ## Before the first run
 
@@ -23,6 +25,8 @@ ARM64. It needs:
 - FFmpeg/ffprobe and binutils (`readelf`);
 - cargo-nextest, cargo-sqlx matching the workspace's SQLx version, cargo-deny,
   mdbook, ShellCheck, Ruff, and the Python `pytest` and `PyYAML` packages.
+- a completed WCAG 2.2 AA evidence record for the exact release commit; create
+  it through the [accessibility release protocol](ACCESSIBILITY_RELEASE.md).
 
 The pinned binary installer can install cargo-nextest, cargo-deny, mdbook, and
 Cosign: `python3 scripts/ci/install-tools.py`. Add
@@ -70,8 +74,9 @@ does not change the running release.
 ## What preparation checks
 
 The command runs formatting, Clippy, script and budget tests, dependency policy,
-static checks, documentation checks, Rust application tests, and SQLx metadata
-validation. Database checks use a disposable PostgreSQL 18 container bound to a
+static checks, documentation checks, Rust application tests, SQLx metadata
+validation, and the required accessibility-evidence gate. Database checks use a
+disposable PostgreSQL 18 container bound to a
 random loopback port, with an empty template database for migration tests.
 SQLx validation compares fresh query metadata while respecting explicit `!`/`?`
 nullability annotations, so query-plan differences on an empty database do not
@@ -88,7 +93,11 @@ fresh Debian hosts, including a real reboot and restore into empty storage.
 After publication, check anonymous downloads and image pulls; a deployed server
 also needs public DNS, TLS, and readiness checks for its actual domain.
 
-Outputs and logs live under `release-artifacts/vVERSION/INPUT-ID/`.
+Accessibility evidence is validated against the exact source revision and its
+automated-report digest, then copied into the hashed `accessibility/` stage.
+Missing, pending, failed, skipped, dirty-source, or wrong-revision evidence
+stops preparation before any build. Outputs and logs live under
+`release-artifacts/vVERSION/INPUT-ID/`.
 The `assets/` directory contains:
 
 | File | Contents |

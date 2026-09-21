@@ -2418,6 +2418,7 @@ fn hls_ext(domain: &str, media_id: i64, renditions: &[MediaRendition]) -> Value 
 /// [`plamenu_db::media::renditions_for`], loaded in a batch by the status
 /// serializer). Non-HLS attachments get exactly the Mastodon shape.
 #[must_use]
+#[allow(clippy::too_many_lines)] // one serializer keeps the Mastodon and extension shape aligned
 pub fn media_json_hls(
     domain: &str,
     item: &Media,
@@ -2530,7 +2531,24 @@ pub fn media_json_hls(
         }),
         "preview_remote_url": item.thumbnail_remote_url.as_ref().map(|_| proxy(true)),
         "text_url": null,
-        "description": item.description,
+        // Decorative intent and a text alternative are mutually exclusive.
+        // Suppress stale legacy data so API and federated consumers see the
+        // same semantics as the first-party renderer.
+        "description": if item.decorative {
+            None
+        } else {
+            item.description.as_deref()
+        },
+        // Plamenu extensions for accessible time-based media. Standard
+        // Mastodon clients ignore these additive keys; the first-party web UI
+        // renders the transcript and same-origin WebVTT track.
+        "transcript": item.transcript,
+        "caption_url": item.caption_vtt.as_ref().map(|_| {
+            format!("https://{domain}/media/{}/captions.vtt", item.id)
+        }),
+        "decorative": item.decorative,
+        "audio_described": item.audio_described,
+        "visuals_conveyed_in_audio": item.visuals_conveyed_in_audio,
         "blurhash": item.blurhash,
         "meta": meta,
     });

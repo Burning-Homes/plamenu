@@ -162,6 +162,8 @@ class PipelineTests(TemporaryTest):
         (self.source / ".gitignore").write_text("/release-artifacts/\n")
         git("add", ".")
         git("commit", "-qm", "fixture")
+        self.accessibility_evidence = self.root / "accessibility-evidence.json"
+        self.accessibility_evidence.write_text('{"fixture":true}\n')
         self.original_run = subprocess.run
         self.calls = []
 
@@ -186,6 +188,11 @@ class PipelineTests(TemporaryTest):
         )
         self.app = self.start_patch(
             patch.object(checks, "application", side_effect=self.check("application"))
+        )
+        self.accessibility = self.start_patch(
+            patch.object(
+                checks, "accessibility", side_effect=self.check("accessibility")
+            )
         )
         self.artifacts = self.start_patch(
             patch.object(checks, "artifacts", side_effect=self.check("artifacts"))
@@ -225,7 +232,13 @@ class PipelineTests(TemporaryTest):
 
     def args(self, *flags):
         return CLI.parser().parse_args(
-            ["--config", str(self.root / "absent.toml"), *flags]
+            [
+                "--config",
+                str(self.root / "absent.toml"),
+                "--accessibility-evidence",
+                str(self.accessibility_evidence),
+                *flags,
+            ]
         )
 
     def test_prepare_then_publish_automatically_reuses_exact_checked_bytes(self):
@@ -235,6 +248,7 @@ class PipelineTests(TemporaryTest):
             [
                 "static",
                 "application",
+                "accessibility",
                 "build-amd64",
                 "artifacts",
                 "build-arm64",

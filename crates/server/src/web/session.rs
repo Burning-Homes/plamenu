@@ -767,18 +767,21 @@ async fn login_page(
             }
             h1 { (locale.text("nav-sign-in")) }
             @if let Some(message) = error {
-                p.form-error role="alert" { (message) }
+                p.form-error id="login-error" role="alert" { (message) }
             }
             form.auth-form method="post" action="/login" {
                 label {
                     (locale.text("auth-identifier"))
                     input type="text" name="identifier" autocomplete="username"
-                        required autofocus;
+                        required autofocus aria-invalid=[error.map(|_| "true")]
+                        aria-describedby=[error.map(|_| "login-error")];
                 }
                 label {
                     (locale.text("auth-password"))
                     input type="password" name="password"
-                        autocomplete="current-password" required;
+                        autocomplete="current-password" required
+                        aria-invalid=[error.map(|_| "true")]
+                        aria-describedby=[error.map(|_| "login-error")];
                 }
                 button type="submit" { (locale.text("nav-sign-in")) }
             }
@@ -829,7 +832,7 @@ pub(crate) async fn challenge_page(
         section.auth-card {
             h1 { (locale.text("auth-two-factor")) }
             @if let Some(message) = error {
-                p.form-error role="alert" { (message) }
+                p.form-error id="challenge-error" role="alert" { (message) }
             }
             @if show_webauthn {
                 (super::webauthn::login_prompt(challenge_token, None, locale))
@@ -842,7 +845,9 @@ pub(crate) async fn challenge_page(
                 label {
                     (locale.text("auth-code"))
                     input type="text" name="code" inputmode="numeric"
-                        autocomplete="one-time-code" autofocus required;
+                        autocomplete="one-time-code" autofocus required
+                        aria-invalid=[error.map(|_| "true")]
+                        aria-describedby=[error.map(|_| "challenge-error")];
                 }
                 button type="submit" { (locale.text("auth-verify")) }
             }
@@ -1050,7 +1055,7 @@ pub(crate) fn oauth_challenge_page(
         section.auth-card {
             h1 { (locale.text("auth-two-factor")) }
             @if let Some(message) = error {
-                p.form-error role="alert" { (message) }
+                p.form-error id="oauth-challenge-error" role="alert" { (message) }
             }
             @if show_webauthn {
                 (super::webauthn::login_prompt(
@@ -1073,7 +1078,9 @@ pub(crate) fn oauth_challenge_page(
                 label {
                     (locale.text("auth-code"))
                     input type="text" name="code" inputmode="numeric"
-                        autocomplete="one-time-code" autofocus required;
+                        autocomplete="one-time-code" autofocus required
+                        aria-invalid=[error.map(|_| "true")]
+                        aria-describedby=[error.map(|_| "oauth-challenge-error")];
                 }
                 button type="submit" { (locale.text("auth-verify")) }
             }

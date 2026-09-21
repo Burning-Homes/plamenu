@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_attachments\n        SET transcript = $3, decorative = $4, audio_described = $5,\n            visuals_conveyed_in_audio = $6\n        WHERE id = $1 AND account_id = $2\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Bool",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8e0482742c3e6f99a99d37c1f797d12ef178c6f73731e1c48a19ea0f2d900578"
+}

@@ -289,6 +289,7 @@ fn render_with_locale(
             body data-live-notifications=(live_notifications)
                 data-notification-sound=(notification_sound)
                 data-notification-volume=(notification_volume) {
+                a.skip-link href="#main-content" { (locale.text("nav-skip-to-content")) }
                 // The tab bar is `position: fixed`, so its slot in the flow
                 // doesn't matter visually — but its slot in the *source* does.
                 // The browser paints as it parses, so a bar emitted after the
@@ -300,7 +301,7 @@ fn render_with_locale(
                 (tabbar(user, anon, locale))
                 div.app-shell {
                     (sidebar(user, anon, locale))
-                    main.app-main { (content) }
+                    main.app-main id="main-content" tabindex="-1" { (content) }
                 }
             }
         }
@@ -559,5 +560,33 @@ fn display_name(user: &WebUser) -> String {
         format!("@{}", account.username)
     } else {
         account.display_name.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn full_shell_starts_with_a_localized_main_content_bypass() {
+        let content = html! { h1 { "Example" } };
+        let rendered = shell_visitor_localized(
+            "Example",
+            None,
+            AnonNav::default(),
+            &content,
+            Locale::negotiate(Some("ru"), None),
+        )
+        .into_string();
+
+        let skip = rendered
+            .find(r##"<a class="skip-link" href="#main-content">Перейти к содержимому</a>"##)
+            .expect("localized skip link");
+        let navigation = rendered.find("<nav").expect("navigation");
+        assert!(
+            skip < navigation,
+            "skip link must precede repeated navigation"
+        );
+        assert!(rendered.contains(r#"<main class="app-main" id="main-content" tabindex="-1">"#));
     }
 }

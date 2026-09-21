@@ -119,12 +119,97 @@ fn time_zone_field(current: &str, locale: Locale) -> Markup {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct SignupError {
+    field: Option<String>,
+    message: String,
+}
+
+impl SignupError {
+    fn for_field(field: &str, message: String) -> Self {
+        Self {
+            field: Some(field.to_owned()),
+            message,
+        }
+    }
+
+    fn form(message: String) -> Self {
+        Self {
+            field: None,
+            message,
+        }
+    }
+}
+
+fn field_invalid(errors: &[SignupError], field: &str) -> bool {
+    errors
+        .iter()
+        .any(|error| error.field.as_deref() == Some(field))
+}
+
+fn field_description(errors: &[SignupError], field: &str, hint: Option<&str>) -> Option<String> {
+    match (hint, field_invalid(errors, field)) {
+        (Some(hint), true) => Some(format!("{hint} signup-errors")),
+        (Some(hint), false) => Some(hint.to_owned()),
+        (None, true) => Some("signup-errors".to_owned()),
+        (None, false) => None,
+    }
+}
+
+fn birth_date_field(minimum_age_help: &str, errors: &[SignupError], locale: Locale) -> Markup {
+    html! {
+        label {
+            (locale.text("signup-date-of-birth"))
+            input type="date" name="date_of_birth" autocomplete="bday" required
+                aria-invalid=[field_invalid(errors, "date_of_birth").then_some("true")]
+                aria-describedby=[field_description(errors, "date_of_birth", Some("signup-bday-hint"))];
+            span.settings-field__hint id="signup-bday-hint" {
+                (minimum_age_help)
+            }
+        }
+    }
+}
+
+fn signup_identity_fields(
+    state: &AppState,
+    values: &FormValues,
+    errors: &[SignupError],
+    locale: Locale,
+) -> Markup {
+    html! {
+        label {
+            (locale.text("signup-username"))
+            input type="text" name="username" value=(values.username)
+                autocomplete="username" required autofocus
+                aria-invalid=[field_invalid(errors, "username").then_some("true")]
+                aria-describedby=[field_description(errors, "username", Some("signup-username-hint"))];
+            span.settings-field__hint id="signup-username-hint" {
+                (locale.text("signup-username-help"))
+            }
+        }
+        label {
+            (locale.text("signup-email"))
+            input type="email" name="email" value=(values.email)
+                autocomplete="email"
+                aria-invalid=[field_invalid(errors, "email").then_some("true")]
+                aria-describedby=[field_description(errors, "email", Some("signup-email-hint"))];
+            span.settings-field__hint id="signup-email-hint" {
+                @if crate::mailer::enabled(state) {
+                    (locale.text("signup-email-help-enabled"))
+                } @else {
+                    (locale.text("signup-email-help-disabled"))
+                }
+            }
+        }
+    }
+}
+
 async fn signup_page(
     state: &AppState,
     mode: RegistrationsMode,
     min_age: i32,
     values: &FormValues,
-    errors: &[String],
+    errors: &[SignupError],
     signed_in: bool,
     locale: Locale,
 ) -> Markup {
@@ -143,62 +228,47 @@ async fn signup_page(
                 p { (locale.text("signup-reviewed")) }
             }
             @if !errors.is_empty() {
-                ul.form-error role="alert" {
-                    @for error in errors { li { (error) } }
+                ul.form-error id="signup-errors" role="alert" {
+                    @for error in errors { li { (&error.message) } }
                 }
             }
             form.auth-form method="post" action="/signup" {
                 @if !values.invite_code.is_empty() {
                     input type="hidden" name="invite_code" value=(values.invite_code);
                 }
-                label {
-                    (locale.text("signup-username"))
-                    input type="text" name="username" value=(values.username)
-                        autocomplete="username" required autofocus;
-                    span.settings-field__hint { (locale.text("signup-username-help")) }
-                }
-                label {
-                    (locale.text("signup-email"))
-                    input type="email" name="email" value=(values.email)
-                        autocomplete="email";
-                    span.settings-field__hint {
-                        @if crate::mailer::enabled(state) {
-                            (locale.text("signup-email-help-enabled"))
-                        } @else {
-                            (locale.text("signup-email-help-disabled"))
-                        }
-                    }
-                }
+                (signup_identity_fields(state, values, errors, locale))
                 label {
                     (locale.text("auth-password"))
                     input type="password" name="password"
-                        autocomplete="new-password" minlength="8" required;
+                        autocomplete="new-password" minlength="8" required
+                        aria-invalid=[field_invalid(errors, "password").then_some("true")]
+                        aria-describedby=[field_description(errors, "password", None)];
                 }
                 label {
                     (locale.text("signup-confirm-password"))
                     input type="password" name="password_confirmation"
-                        autocomplete="new-password" minlength="8" required;
+                        autocomplete="new-password" minlength="8" required
+                        aria-invalid=[field_invalid(errors, "password_confirmation").then_some("true")]
+                        aria-describedby=[field_description(errors, "password_confirmation", None)];
                 }
                 @if min_age > 0 {
-                    label {
-                        (locale.text("signup-date-of-birth"))
-                        input type="date" name="date_of_birth" required;
-                        span.settings-field__hint {
-                            (minimum_age_help)
-                        }
-                    }
+                    (birth_date_field(&minimum_age_help, errors, locale))
                 }
                 (time_zone_field(&values.time_zone, locale))
                 @if mode == RegistrationsMode::Approved {
                     label {
                         (locale.text("signup-reason"))
-                        textarea name="reason" rows="3" maxlength="420" {
-                            (values.reason)
-                        }
+                    textarea name="reason" rows="3" maxlength="420"
+                        aria-invalid=[field_invalid(errors, "reason").then_some("true")]
+                        aria-describedby=[field_description(errors, "reason", None)] {
+                        (values.reason)
+                    }
                     }
                 }
                 label.form-check {
-                    input type="checkbox" name="agreement" value="1" required;
+                    input type="checkbox" name="agreement" value="1" required
+                        aria-invalid=[field_invalid(errors, "agreement").then_some("true")]
+                        aria-describedby=[field_description(errors, "agreement", None)];
                     span {
                         (locale.text("signup-agreement-prefix")) " "
                         a href="/rules" target="_blank" { (locale.text("signup-server-rules")) }
@@ -208,7 +278,9 @@ async fn signup_page(
                     challenge="/signup/altcha/challenge"
                     name="altcha"
                     auto="onsubmit"
-                    language=(locale.tag().split('-').next().unwrap_or("en")) {}
+                    language=(locale.tag().split('-').next().unwrap_or("en"))
+                    aria-invalid=[field_invalid(errors, "altcha").then_some("true")]
+                    aria-describedby=[field_description(errors, "altcha", None)] {}
                 button type="submit" { (locale.text("auth-sign-up")) }
             }
             script type="module"
@@ -339,7 +411,10 @@ pub async fn signup_submit(
             mode,
             settings.min_age,
             &values,
-            &[interface_locale.text("signup-error-altcha")],
+            &[SignupError::for_field(
+                "altcha",
+                interface_locale.text("signup-error-altcha"),
+            )],
             signed_in,
             interface_locale,
         )
@@ -353,7 +428,10 @@ pub async fn signup_submit(
             mode,
             settings.min_age,
             &values,
-            &[interface_locale.text("security-error-password-mismatch")],
+            &[SignupError::for_field(
+                "password_confirmation",
+                interface_locale.text("security-error-password-mismatch"),
+            )],
             signed_in,
             interface_locale,
         )
@@ -428,23 +506,26 @@ pub async fn signup_submit(
 /// (clients parse it); the web form re-states the same failures from the
 /// catalog, keyed by attribute and error code. An unrecognized pair falls back
 /// to the English description rather than dropping the failure silently.
-fn validation_messages(details: &serde_json::Value, locale: Locale) -> Vec<String> {
+fn validation_messages(details: &serde_json::Value, locale: Locale) -> Vec<SignupError> {
     let Some(map) = details.as_object() else {
-        return vec![locale.text("signup-error-generic")];
+        return vec![SignupError::form(locale.text("signup-error-generic"))];
     };
     let mut messages = Vec::new();
     for (attribute, entries) in map {
         for entry in entries.as_array().into_iter().flatten() {
             let code = entry["error"].as_str().unwrap_or_default();
             if let Some(message) = validation_message(attribute, code, locale) {
-                messages.push(message);
+                messages.push(SignupError::for_field(attribute, message));
             } else if let Some(description) = entry["description"].as_str() {
-                messages.push(format!("{attribute} {description}."));
+                messages.push(SignupError::for_field(
+                    attribute,
+                    format!("{attribute} {description}."),
+                ));
             }
         }
     }
     if messages.is_empty() {
-        messages.push(locale.text("signup-error-generic"));
+        messages.push(SignupError::form(locale.text("signup-error-generic")));
     }
     messages
 }
@@ -599,4 +680,59 @@ async fn confirmation_page(state: &AppState, outcome: ConfirmOutcome, locale: Lo
 
 fn api_err(err: plamenu_db::DbError) -> Response {
     ApiError::from(err).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn signup_validation_errors_keep_their_field_association() {
+        let errors = validation_messages(
+            &json!({
+                "username": [{"error": "ERR_TAKEN", "description": "is already taken"}],
+                "email": [{"error": "ERR_INVALID", "description": "is invalid"}],
+            }),
+            Locale::default(),
+        );
+        assert!(field_invalid(&errors, "username"));
+        assert!(field_invalid(&errors, "email"));
+        assert!(!field_invalid(&errors, "password"));
+        assert_eq!(
+            field_description(&errors, "username", Some("signup-username-hint")),
+            Some("signup-username-hint signup-errors".to_owned())
+        );
+        assert_eq!(field_description(&errors, "password", None), None,);
+    }
+
+    #[test]
+    fn unknown_signup_errors_still_target_the_reported_field() {
+        let errors = validation_messages(
+            &json!({
+                "reason": [{"error": "ERR_FUTURE", "description": "cannot be accepted"}],
+            }),
+            Locale::default(),
+        );
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].field.as_deref(), Some("reason"));
+        assert!(errors[0].message.contains("cannot be accepted"));
+    }
+
+    #[test]
+    fn birthday_field_exposes_the_standard_input_purpose_and_error_contract() {
+        let errors = vec![SignupError::for_field(
+            "date_of_birth",
+            "Enter a valid date".to_owned(),
+        )];
+        let rendered =
+            birth_date_field("You must be 18.", &errors, Locale::default()).into_string();
+        assert!(rendered.contains(r#"autocomplete="bday""#), "{rendered}");
+        assert!(rendered.contains(r#"aria-invalid="true""#), "{rendered}");
+        assert!(
+            rendered.contains(r#"aria-describedby="signup-bday-hint signup-errors""#),
+            "{rendered}"
+        );
+    }
 }

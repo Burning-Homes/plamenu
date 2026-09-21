@@ -135,8 +135,10 @@ pub async fn index(
                     }
                 }
                 tbody {
-                    @for app in &apps {
-                        tr {
+                        @for app in &apps {
+                            @let delete_action = format!("/web/settings/applications/{}/delete", app.id);
+                            @let delete_message = locale.text("applications-delete-confirm");
+                            tr {
                             td {
                                 a href=(format!("/settings/applications/{}", app.id)) {
                                     (app.name)
@@ -150,9 +152,11 @@ pub async fn index(
                             }
                             td {
                                 form.settings-inline-form method="post"
-                                    action=(format!("/web/settings/applications/{}/delete", app.id))
-                                    data-confirm=(locale.text("applications-delete-confirm")) {
+                                    action=(view::CONFIRM_PATH)
+                                    data-confirm=(&delete_message) data-confirm-action=(&delete_action) {
                                     input type="hidden" name="csrf" value=(user.csrf);
+                                    input type="hidden" name="return_to" value="/settings/applications";
+                                    (view::confirmation_fields(&delete_action, Some(&delete_message)))
                                     button.link-button type="submit" {
                                         (locale.text("applications-delete"))
                                     }
@@ -404,10 +408,13 @@ pub async fn manage_page(
                     }
                 }
             }))
-            form.settings-inline-form method="post"
-                action=(format!("/web/settings/applications/{}/regenerate", app.id))
-                data-confirm=(locale.text("applications-regenerate-confirm")) {
+            @let regenerate_action = format!("/web/settings/applications/{}/regenerate", app.id);
+            @let regenerate_message = locale.text("applications-regenerate-confirm");
+            form.settings-inline-form method="post" action=(view::CONFIRM_PATH)
+                data-confirm=(&regenerate_message) data-confirm-action=(&regenerate_action) {
                 input type="hidden" name="csrf" value=(user.csrf);
+                input type="hidden" name="return_to" value=(format!("/settings/applications/{}", app.id));
+                (view::confirmation_fields(&regenerate_action, Some(&regenerate_message)))
                 button type="submit" {
                     @if token.is_some() { (locale.text("applications-regenerate-token")) }
                     @else { (locale.text("applications-generate-token")) }
@@ -425,10 +432,13 @@ pub async fn manage_page(
             }
         }
 
-        form.settings-form method="post"
-            action=(format!("/web/settings/applications/{}/delete", app.id))
-            data-confirm=(locale.text("applications-delete-confirm")) {
+        @let delete_action = format!("/web/settings/applications/{}/delete", app.id);
+        @let delete_message = locale.text("applications-delete-confirm");
+        form.settings-form method="post" action=(view::CONFIRM_PATH)
+            data-confirm=(&delete_message) data-confirm-action=(&delete_action) {
             input type="hidden" name="csrf" value=(user.csrf);
+            input type="hidden" name="return_to" value=(format!("/settings/applications/{}", app.id));
+            (view::confirmation_fields(&delete_action, Some(&delete_message)))
             div.settings-form__actions {
                 button.settings-button--danger type="submit" {
                     (locale.text("applications-delete-application"))

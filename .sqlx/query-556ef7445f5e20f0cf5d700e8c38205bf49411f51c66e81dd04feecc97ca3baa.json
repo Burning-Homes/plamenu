@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, account_id, status_id, file_name, remote_url, content_type,\n               description, width, height, created_at, kind, blurhash,\n               focus_x, focus_y, small_file_name, small_width, small_height,\n               thumbnail_remote_url, duration, frame_rate, bitrate, processing,\n               remote_audio_url, download_on_demand, live_state, live_permanent,\n                  hls_master_url\n        FROM media_attachments\n        WHERE id = $1 AND account_id = $2\n        ",
+  "query": "\n        SELECT id, account_id, status_id, file_name, remote_url, content_type,\n               description, width, height, created_at, kind, blurhash,\n               focus_x, focus_y, small_file_name, small_width, small_height,\n               thumbnail_remote_url, duration, frame_rate, bitrate, processing,\n               remote_audio_url, download_on_demand, live_state, live_permanent,\n                  hls_master_url, transcript, caption_vtt, decorative,\n                  audio_described, visuals_conveyed_in_audio\n        FROM media_attachments\n        WHERE id = $1 AND account_id = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -299,6 +299,61 @@
             "name": "hls_master_url"
           }
         }
+      },
+      {
+        "ordinal": 27,
+        "name": "transcript",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "transcript"
+          }
+        }
+      },
+      {
+        "ordinal": 28,
+        "name": "caption_vtt",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "caption_vtt"
+          }
+        }
+      },
+      {
+        "ordinal": 29,
+        "name": "decorative",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "decorative"
+          }
+        }
+      },
+      {
+        "ordinal": 30,
+        "name": "audio_described",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "audio_described"
+          }
+        }
+      },
+      {
+        "ordinal": 31,
+        "name": "visuals_conveyed_in_audio",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "visuals_conveyed_in_audio"
+          }
+        }
       }
     ],
     "parameters": {
@@ -334,8 +389,13 @@
       false,
       true,
       false,
-      true
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
     ]
   },
-  "hash": "c2ab40d0aa45c288dd463035f34b86bd6706c1b8ebe04aa5253a51bc90da3c2f"
+  "hash": "556ef7445f5e20f0cf5d700e8c38205bf49411f51c66e81dd04feecc97ca3baa"
 }

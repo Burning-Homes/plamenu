@@ -439,9 +439,13 @@ pub async fn edit_form(
                     button type="submit" { (locale.text("lists-save")) }
                 }
             }
-            form.settings-form method="post" action=(format!("/web/lists/{}/delete", list.id))
-                data-confirm=(locale.plain("lists-delete-confirm")) {
+            @let delete_action = format!("/web/lists/{}/delete", list.id);
+            @let delete_message = locale.plain("lists-delete-confirm");
+            form.settings-form method="post" action=(view::CONFIRM_PATH)
+                data-confirm=(&delete_message) data-confirm-action=(&delete_action) {
                 input type="hidden" name="csrf" value=(user.csrf);
+                input type="hidden" name="return_to" value=(format!("/lists/{}/edit", list.id));
+                (view::confirmation_fields(&delete_action, Some(&delete_message)))
                 div.settings-form__actions {
                     button.settings-button--danger type="submit" {
                         (locale.text("lists-delete"))
