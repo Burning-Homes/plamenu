@@ -595,6 +595,12 @@ pub fn test_config() -> Config {
         encryption_secret: Some("test-encryption-secret-at-least-32-bytes".into()),
         encryption_secret_version: 1,
         encryption_previous_secrets: Vec::new(),
+        altcha: plamenu::config::AltchaConfig {
+            cost: 1,
+            min_counter: 1,
+            max_counter: 2,
+            expires_seconds: 60,
+        },
         update_check_url: None,
         translation: None,
         conversation_containers: false,

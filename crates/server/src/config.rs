@@ -134,6 +134,16 @@ encryption_secret = ""
 encryption_secret_version = 1
 # encryption_previous_secrets = ["2:replace-with-an-independent-32-byte-random-secret"]
 
+# Proof-of-work protecting the browser sign-up form. Defaults follow the
+# official ALTCHA v2 PBKDF2 example: clients search counters 5,000–10,000 with
+# 5,000 PBKDF2 rounds per attempt, and each signed challenge expires in five
+# minutes. Lower values reduce sign-up latency but also reduce bot resistance.
+# [altcha]
+# cost = 5000
+# min_counter = 5000
+# max_counter = 10000
+# expires_seconds = 300
+
 # JSON release feed polled for software-update notices. Unset disables checks.
 # update_check_url = "https://example.com/plamenu-releases.json"
 
@@ -252,12 +262,33 @@ pub struct Config {
     pub encryption_secret_version: i32,
     /// Versioned decrypt-only keys used during rolling at-rest key rotation.
     pub encryption_previous_secrets: Vec<(i32, SecretString)>,
+    pub altcha: AltchaConfig,
     pub update_check_url: Option<String>,
     pub translation: Option<TranslationConfig>,
     pub conversation_containers: bool,
     /// Whether HTML CSPs advertise, and the router exposes, `/csp-report`.
     pub csp_reporting: bool,
     pub federation: FederationConfig,
+}
+
+/// Work and lifetime limits for browser sign-up proof-of-work challenges.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AltchaConfig {
+    pub cost: u32,
+    pub min_counter: u32,
+    pub max_counter: u32,
+    pub expires_seconds: u64,
+}
+
+impl Default for AltchaConfig {
+    fn default() -> Self {
+        Self {
+            cost: 5_000,
+            min_counter: 5_000,
+            max_counter: 10_000,
+            expires_seconds: 300,
+        }
+    }
 }
 
 /// Outbound proxy routing (`[federation]`). Infrastructure settings in the
@@ -352,6 +383,7 @@ impl std::fmt::Debug for Config {
                     .collect::<Vec<_>>(),
             )
             .field("encryption_secret_version", &self.encryption_secret_version)
+            .field("altcha", &self.altcha)
             .field(
                 "update_check_url_configured",
                 &self.update_check_url.is_some(),
@@ -452,12 +484,63 @@ struct FileConfig {
     encryption_secret: Option<String>,
     encryption_secret_version: Option<i32>,
     encryption_previous_secrets: Option<Vec<String>>,
+    altcha: Option<FileAltchaConfig>,
     update_check_url: Option<String>,
     conversation_containers: Option<bool>,
     csp_reporting: Option<bool>,
     smtp: Option<FileSmtpConfig>,
     translation: Option<FileTranslationConfig>,
     federation: Option<FileFederationConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileAltchaConfig {
+    cost: Option<u32>,
+    min_counter: Option<u32>,
+    max_counter: Option<u32>,
+    expires_seconds: Option<u64>,
+}
+
+impl FileAltchaConfig {
+    fn build(self) -> Result<AltchaConfig, ConfigError> {
+        let defaults = AltchaConfig::default();
+        let config = AltchaConfig {
+            cost: self.cost.unwrap_or(defaults.cost),
+            min_counter: self.min_counter.unwrap_or(defaults.min_counter),
+            max_counter: self.max_counter.unwrap_or(defaults.max_counter),
+            expires_seconds: self.expires_seconds.unwrap_or(defaults.expires_seconds),
+        };
+        if config.cost == 0 || config.cost > 100_000 {
+            return Err(ConfigError::Invalid(
+                "altcha.cost",
+                "must be between 1 and 100000".to_owned(),
+            ));
+        }
+        if config.min_counter == 0
+            || config.max_counter < config.min_counter
+            || config.max_counter > 1_000_000
+        {
+            return Err(ConfigError::Invalid(
+                "altcha.min_counter",
+                "counter range must be ordered, non-zero, and no higher than 1000000".to_owned(),
+            ));
+        }
+        if !(60..=3_600).contains(&config.expires_seconds) {
+            return Err(ConfigError::Invalid(
+                "altcha.expires_seconds",
+                "must be between 60 and 3600".to_owned(),
+            ));
+        }
+        Ok(config)
+    }
+}
+
+fn build_altcha_config(config: Option<FileAltchaConfig>) -> Result<AltchaConfig, ConfigError> {
+    config
+        .map(FileAltchaConfig::build)
+        .transpose()
+        .map(Option::unwrap_or_default)
 }
 
 #[derive(Debug, Deserialize)]
@@ -672,6 +755,7 @@ impl Config {
             .translation
             .map(FileTranslationConfig::build)
             .transpose()?;
+        let altcha = build_altcha_config(file.altcha)?;
 
         let encryption_secret_value = required(file.encryption_secret, "encryption_secret")?;
         if encryption_secret_value.len() < 32 {
@@ -751,6 +835,7 @@ impl Config {
             encryption_secret,
             encryption_secret_version,
             encryption_previous_secrets,
+            altcha,
             update_check_url: nonempty(file.update_check_url),
             translation,
             conversation_containers: file.conversation_containers.unwrap_or(false),

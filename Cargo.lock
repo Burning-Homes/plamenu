@@ -112,6 +112,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "altcha"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d81f4a0f21c4145fdee4fb09dbb665da446c7af0ca0ec685e1651b0f96a84fab"
+dependencies = [
+ "digest 0.10.7",
+ "hex",
+ "hmac 0.12.1",
+ "pbkdf2",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ammonia"
 version = "4.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3259,6 +3277,7 @@ name = "plamenu"
 version = "0.6.0"
 dependencies = [
  "aes-gcm 0.11.0",
+ "altcha",
  "argon2 0.6.0",
  "avif-parse",
  "avif-serialize",

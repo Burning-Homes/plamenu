@@ -6,7 +6,7 @@
 
 use axum::extract::{Form, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse, Json, Response};
 use fluent_bundle::FluentArgs;
 use maud::{Markup, html};
 use plamenu_db::instance_settings::{self, RegistrationsMode};
@@ -204,8 +204,15 @@ async fn signup_page(
                         a href="/rules" target="_blank" { (locale.text("signup-server-rules")) }
                     }
                 }
+                altcha-widget
+                    challenge="/signup/altcha/challenge"
+                    name="altcha"
+                    auto="onsubmit"
+                    language=(locale.tag().split('-').next().unwrap_or("en")) {}
                 button type="submit" { (locale.text("auth-sign-up")) }
             }
+            script type="module"
+                src={ "/assets/altcha.min.js?v=" (super::assets::ALTCHA_VERSION) } {}
             p.auth-card__alt {
                 (locale.text("signup-have-account")) " "
                 a href="/login" { (locale.text("nav-sign-in")) }
@@ -250,6 +257,26 @@ pub struct SignupForm {
     /// `TIMEZONE_HANDOFF.md`.
     #[serde(default)]
     date_of_birth: String,
+    /// Base64 JSON proof populated by the self-hosted ALTCHA widget.
+    #[serde(default)]
+    altcha: String,
+}
+
+/// `GET /signup/altcha/challenge` — a fresh, signed, non-cacheable proof-of-work
+/// challenge for the widget. It is intentionally same-origin and needs no CORS.
+pub async fn altcha_challenge(State(state): State<AppState>) -> Result<Response, Response> {
+    let challenge = state.altcha.challenge().map_err(|error| {
+        tracing::error!(%error, "failed to issue ALTCHA sign-up challenge");
+        ApiError::Internal("could not issue anti-spam challenge".into()).into_response()
+    })?;
+    Ok((
+        [
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+            (axum::http::header::PRAGMA, "no-cache"),
+        ],
+        Json(challenge),
+    )
+        .into_response())
 }
 
 /// `POST /signup`.
@@ -261,6 +288,10 @@ pub struct SignupForm {
 /// choosing and leave the victim's browser holding a session for an
 /// attacker-controlled account — login CSRF / session swapping,
 /// which covered the other credential POSTs but not this one).
+#[allow(
+    clippy::too_many_lines,
+    reason = "the handler preserves form state across origin, proof, and account validation"
+)]
 pub async fn signup_submit(
     State(state): State<AppState>,
     RemoteIp(remote_ip): RemoteIp,
@@ -296,6 +327,25 @@ pub async fn signup_submit(
             .to_owned(),
     };
     let mode = settings.registrations_mode();
+
+    // Preserve the established closed-registration response for ordinary
+    // unsolicited POSTs. Open registrations and invite attempts must prove
+    // browser work before any credential hashing or account validation.
+    if (mode != RegistrationsMode::None || !values.invite_code.is_empty())
+        && state.altcha.verify_and_consume(&form.altcha).is_err()
+    {
+        let page = signup_page(
+            &state,
+            mode,
+            settings.min_age,
+            &values,
+            &[interface_locale.text("signup-error-altcha")],
+            signed_in,
+            interface_locale,
+        )
+        .await;
+        return Ok((StatusCode::UNPROCESSABLE_ENTITY, page).into_response());
+    }
 
     if form.password != form.password_confirmation {
         let page = signup_page(

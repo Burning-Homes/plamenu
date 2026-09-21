@@ -8,9 +8,12 @@ mod common;
 
 use std::sync::Arc;
 
+use altcha::{Challenge, Payload, SolveChallengeOptions, solve_challenge};
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use common::{
     StubFederation, TEST_DOMAIN, create_local_account, test_app, test_app_smtp, test_config,
     test_state_smtp,
@@ -153,6 +156,7 @@ async fn get_page_in_russian(app: &Router, uri: &str) -> Page {
 
 /// A Russian-preferring form POST.
 async fn post_form_in_russian(app: &Router, uri: &str, fields: &[(&str, &str)]) -> Page {
+    let fields = form_with_altcha(app, uri, fields).await;
     let request = Request::builder()
         .method("POST")
         .uri(uri)
@@ -178,6 +182,7 @@ async fn get_page_accept(app: &Router, uri: &str, accept: &str) -> Page {
 }
 
 async fn post_form(app: &Router, uri: &str, fields: &[(&str, &str)]) -> Page {
+    let fields = form_with_altcha(app, uri, fields).await;
     let request = Request::builder()
         .method("POST")
         .uri(uri)
@@ -185,6 +190,47 @@ async fn post_form(app: &Router, uri: &str, fields: &[(&str, &str)]) -> Page {
         .body(Body::from(serde_urlencoded::to_string(fields).unwrap()))
         .unwrap();
     send_page(app, request).await
+}
+
+async fn form_with_altcha(
+    app: &Router,
+    uri: &str,
+    fields: &[(&str, &str)],
+) -> Vec<(String, String)> {
+    let mut fields: Vec<_> = fields
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    if uri == "/signup" && !fields.iter().any(|(name, _)| name == "altcha") {
+        fields.push(("altcha".to_owned(), altcha_payload(app).await));
+    }
+    fields
+}
+
+async fn altcha_payload(app: &Router) -> String {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/signup/altcha/challenge")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let challenge: Challenge = serde_json::from_slice(&bytes).unwrap();
+    let solution = solve_challenge(SolveChallengeOptions::new(&challenge))
+        .unwrap()
+        .expect("test ALTCHA challenge is solvable");
+    STANDARD.encode(
+        serde_json::to_vec(&Payload {
+            challenge,
+            solution,
+        })
+        .unwrap(),
+    )
 }
 
 async fn web_login(app: &Router, email: &str, password: &str) -> Page {
@@ -1360,6 +1406,11 @@ async fn web_signup_form_registers_and_confirms(pool: PgPool) {
     let form = get_page(&app, "/signup").await;
     assert_eq!(form.status, StatusCode::OK);
     assert!(form.body.contains(r#"action="/signup""#));
+    assert!(
+        form.body
+            .contains(r#"challenge="/signup/altcha/challenge""#)
+    );
+    assert!(form.body.contains("/assets/altcha.min.js?v=3.2.3"));
 
     // Mismatched password confirmation re-renders the form.
     let mismatch = post_form(
@@ -1431,6 +1482,62 @@ async fn web_signup_form_registers_and_confirms(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn web_signup_requires_a_valid_single_use_altcha_proof(pool: PgPool) {
+    set_registrations_mode(&pool, RegistrationsMode::Open).await;
+    let app = test_app_smtp(pool.clone());
+    let fields = [
+        ("username", "vesna"),
+        ("email", ""),
+        ("password", "correct horse battery"),
+        ("password_confirmation", "correct horse battery"),
+        ("agreement", "1"),
+    ];
+
+    let missing = send_page(
+        &app,
+        Request::builder()
+            .method("POST")
+            .uri("/signup")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(serde_urlencoded::to_string(fields).unwrap()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(missing.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(missing.body.contains("Complete the anti-spam verification"));
+    assert!(
+        account::find_local_by_username(&pool, "vesna")
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let proof = altcha_payload(&app).await;
+    let mut accepted_fields = fields.to_vec();
+    accepted_fields.push(("altcha", proof.as_str()));
+    let accepted = post_form(&app, "/signup", &accepted_fields).await;
+    assert_eq!(accepted.status, StatusCode::SEE_OTHER);
+
+    let replay_fields = [
+        ("username", "mira"),
+        ("email", ""),
+        ("password", "correct horse battery"),
+        ("password_confirmation", "correct horse battery"),
+        ("agreement", "1"),
+        ("altcha", proof.as_str()),
+    ];
+    let replay = post_form(&app, "/signup", &replay_fields).await;
+    assert_eq!(replay.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(replay.body.contains("Complete the anti-spam verification"));
+    assert!(
+        account::find_local_by_username(&pool, "mira")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn web_signup_without_email_is_ready_immediately(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());
@@ -1472,14 +1579,16 @@ async fn cross_site_signup_cannot_sign_this_browser_in(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());
 
-    let fields = [
-        ("username", "mallory"),
-        ("email", ""),
-        ("password", "correct horse battery"),
-        ("password_confirmation", "correct horse battery"),
-        ("agreement", "1"),
-    ];
+    let proof = altcha_payload(&app).await;
     let signup_from = |origin: &str| {
+        let fields = [
+            ("username", "mallory"),
+            ("email", ""),
+            ("password", "correct horse battery"),
+            ("password_confirmation", "correct horse battery"),
+            ("agreement", "1"),
+            ("altcha", proof.as_str()),
+        ];
         Request::builder()
             .method("POST")
             .uri("/signup")

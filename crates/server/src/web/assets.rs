@@ -15,6 +15,11 @@ use maud::{Markup, html};
 
 const APP_CSS: &str = include_str!("assets/app.css");
 const APP_JS: &str = include_str!("assets/app.js");
+/// ALTCHA widget v3.2.3, pinned and vendored from the official npm package.
+/// Kept separate because only the sign-up page needs its Web Component and
+/// workers; ordinary browsing should not download CAPTCHA code.
+const ALTCHA_JS: &[u8] = include_bytes!("assets/altcha.min.js");
+pub(crate) const ALTCHA_VERSION: &str = "3.2.3";
 /// Unicode Emoji 17.0's complete RGI set, kept out of `app.js` so an ordinary
 /// timeline never downloads the 3,953-entry reaction catalog. The picker
 /// fetches this versioned asset only when it opens; the no-JS picker reads the
@@ -134,6 +139,7 @@ pub static ASSET_VERSION: LazyLock<String> = LazyLock::new(|| {
     let mut hasher = DefaultHasher::new();
     APP_CSS.hash(&mut hasher);
     APP_JS.hash(&mut hasher);
+    ALTCHA_JS.hash(&mut hasher);
     EMOJI_CATALOG.hash(&mut hasher);
     SW_JS.hash(&mut hasher);
     WEB_MANIFEST.hash(&mut hasher);
@@ -164,6 +170,16 @@ pub async fn js() -> impl IntoResponse {
             (header::CACHE_CONTROL, CACHE),
         ],
         APP_JS,
+    )
+}
+
+pub async fn altcha_js() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, CACHE),
+        ],
+        ALTCHA_JS,
     )
 }
 

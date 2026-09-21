@@ -537,6 +537,7 @@ pub fn router() -> Router<AppState> {
             "/signup",
             get(register::signup_form).post(register::signup_submit),
         )
+        .route("/signup/altcha/challenge", get(register::altcha_challenge))
         .route("/auth/confirmation", get(register::confirm))
         .route("/auth/password/new", get(password::request_form))
         .route("/auth/password", post(password::request_submit))
@@ -642,6 +643,7 @@ pub fn router() -> Router<AppState> {
         .route("/web/domains/unblock", post(actions::unblock_domain))
         .route("/assets/app.css", get(assets::css))
         .route("/assets/app.js", get(assets::js))
+        .route("/assets/altcha.min.js", get(assets::altcha_js))
         .route(assets::EMOJI_CATALOG_PATH, get(assets::emoji_catalog))
         .route("/assets/webxdc-host.js", get(assets::webxdc_host_js))
         .route("/assets/hls.min.js", get(assets::hls_js))

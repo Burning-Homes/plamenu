@@ -2,6 +2,7 @@
 
 pub mod actions;
 pub mod admin_log;
+pub mod altcha;
 pub mod archive;
 pub mod archive_worker;
 pub mod auth;
@@ -206,9 +207,12 @@ fn is_credential_path(path: &str) -> bool {
 /// direct-media variant admits remote HTTPS images and media; it is selected only
 /// after the browser session resolves a user whose direct-media preference is
 /// on. Anonymous and opted-out pages retain the same-origin policy.
-/// `style-src-attr
-/// 'unsafe-inline'` covers the three validated computed `style=` attributes
-/// (role colour, role swatch, poll bar). CSP violation reporting is optional:
+/// The second `style-src` hash admits the exact stylesheet injected by the
+/// pinned ALTCHA 3.2.3 widget. This keeps the signup widget functional without
+/// opening every page to arbitrary inline styles; an ALTCHA upgrade must update
+/// the hash as well. `style-src-attr 'unsafe-inline'` covers the three validated
+/// computed `style=` attributes (role colour, role swatch, poll bar). CSP
+/// violation reporting is optional:
 /// its directive is emitted only when the default-off `csp_reporting` config
 /// flag deliberately enables the matching route.
 fn content_security_policy(
@@ -237,7 +241,8 @@ fn content_security_policy(
     );
     axum::http::HeaderValue::from_str(&format!(
         "default-src 'none'; script-src 'self' blob: 'sha256-{hash}'; \
-             style-src 'self'; style-src-attr 'unsafe-inline'; \
+             style-src 'self' 'sha256-ZgqGuQlekW98cv0XQjYUGCLTvc3q5MkU+2SkqlFGoTM='; \
+             style-src-attr 'unsafe-inline'; \
              img-src {media_sources}; media-src {media_sources}; connect-src 'self'; \
              worker-src 'self' blob:; frame-src https://*.{webxdc_domain}; \
              manifest-src 'self'; form-action {form_action}; \

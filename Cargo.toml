@@ -15,6 +15,10 @@ plamenu-db = { path = "crates/db" }
 plamenu-federation = { path = "crates/federation" }
 
 aes-gcm = "0.11"
+# Official ALTCHA Proof-of-Work v2 implementation. The web sign-up uses its
+# signed deterministic challenges and key-signature fast path, keeping
+# verification cheap enough to run inline without weakening the client work.
+altcha = "0.2.0"
 ammonia = "4"
 argon2 = "0.6"
 axum = { version = "0.8", default-features = false, features = [

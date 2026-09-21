@@ -1278,6 +1278,7 @@ signup-error-email-taken = That e-mail address is already in use.
 signup-error-reason-too-long = The reason is too long (maximum is { $limit } characters).
 signup-error-birth-date-blank = Enter your date of birth.
 signup-error-birth-date-invalid = That date of birth is not valid, or you are too young to sign up here.
+signup-error-altcha = Complete the anti-spam verification and try again.
 
 email-confirm-subject = { $site }: Confirmation instructions
 email-confirm-greeting = Hi @{ $username },

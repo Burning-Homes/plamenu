@@ -19,6 +19,7 @@ bench = false
 
 [dependencies]
 aes-gcm = { workspace = true }
+altcha = { workspace = true }
 argon2 = { workspace = true }
 axum = { workspace = true }
 avif-parse = { workspace = true }

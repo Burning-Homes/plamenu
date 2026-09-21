@@ -1284,6 +1284,7 @@ signup-error-email-taken = Этот адрес электронной почты
 signup-error-reason-too-long = Пояснение слишком длинное (максимум — { $limit } символов).
 signup-error-birth-date-blank = Укажите дату рождения.
 signup-error-birth-date-invalid = Дата рождения некорректна, либо вы слишком молоды для регистрации здесь.
+signup-error-altcha = Пройдите проверку от спама и попробуйте снова.
 
 email-confirm-subject = { $site }: подтверждение адреса
 email-confirm-greeting = Здравствуйте, @{ $username }!

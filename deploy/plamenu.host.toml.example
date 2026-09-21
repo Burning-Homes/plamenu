@@ -19,6 +19,13 @@ authorized_fetch_unsigned = "profile"
 csp_reporting = false
 encryption_secret = "replace-with-output-of-openssl-rand-hex-32"
 encryption_secret_version = 1
+
+# Optional ALTCHA sign-up proof-of-work tuning (defaults shown).
+# [altcha]
+# cost = 5000
+# min_counter = 5000
+# max_counter = 10000
+# expires_seconds = 300
 # encryption_previous_secrets = []
 
 # Add SMTP before enabling registration or password reset.

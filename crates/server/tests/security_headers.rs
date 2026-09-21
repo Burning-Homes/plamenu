@@ -257,6 +257,26 @@ async fn enforced_csp_covers_html_and_admits_only_the_bootstrap(pool: PgPool) {
     }
 }
 
+/// ALTCHA injects its bundled stylesheet into the document. Admit that exact
+/// pinned stylesheet by hash instead of weakening `style-src` with
+/// `unsafe-inline`; a widget upgrade that changes the CSS must update this
+/// assertion and receive a real-browser CSP pass.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn enforced_csp_admits_only_the_pinned_altcha_stylesheet(pool: PgPool) {
+    let app = test_app(pool);
+    let (_, _, _, csp, _) = head(&app, "/signup").await;
+    let policy = csp.expect("signup HTML must carry the policy");
+
+    assert!(
+        policy.contains("style-src 'self' 'sha256-ZgqGuQlekW98cv0XQjYUGCLTvc3q5MkU+2SkqlFGoTM=';"),
+        "the exact ALTCHA 3.2.3 stylesheet hash must be allowed: {policy}"
+    );
+    assert!(
+        !policy.contains("style-src 'self' 'unsafe-inline'"),
+        "element styles must not gain a blanket inline exception: {policy}"
+    );
+}
+
 /// The policy is HTML-only — on an asset or API response it would be dead
 /// weight on every attachment byte served.
 #[sqlx::test(migrations = "../db/migrations")]

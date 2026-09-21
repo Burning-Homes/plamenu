@@ -5,9 +5,12 @@
 
 mod common;
 
+use altcha::{Challenge, Payload, SolveChallengeOptions, solve_challenge};
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use common::{create_local_account, test_app_smtp};
 use http_body_util::BodyExt;
 use plamenu::auth::{generate_secret, hash_password, hash_secret};
@@ -167,6 +170,13 @@ async fn get_page(app: &Router, uri: &str, cookie: Option<&str>) -> Page {
 }
 
 async fn post_form(app: &Router, uri: &str, cookie: Option<&str>, fields: &[(&str, &str)]) -> Page {
+    let mut fields: Vec<_> = fields
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    if uri == "/signup" && !fields.iter().any(|(name, _)| name == "altcha") {
+        fields.push(("altcha".to_owned(), altcha_payload(app).await));
+    }
     let mut builder = Request::builder()
         .method("POST")
         .uri(uri)
@@ -181,6 +191,32 @@ async fn post_form(app: &Router, uri: &str, cookie: Option<&str>, fields: &[(&st
             .unwrap(),
     )
     .await
+}
+
+async fn altcha_payload(app: &Router) -> String {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/signup/altcha/challenge")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let challenge: Challenge = serde_json::from_slice(&bytes).unwrap();
+    let solution = solve_challenge(SolveChallengeOptions::new(&challenge))
+        .unwrap()
+        .expect("test ALTCHA challenge is solvable");
+    STANDARD.encode(
+        serde_json::to_vec(&Payload {
+            challenge,
+            solution,
+        })
+        .unwrap(),
+    )
 }
 
 fn csrf_of(body: &str) -> String {

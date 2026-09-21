@@ -390,6 +390,8 @@ pub struct AppState {
     /// The `WebAuthn` relying party. Its `rp_id`/origin are pinned to
     /// [`Config::domain`], so security-key ceremonies are bound to this host.
     pub webauthn: Arc<Webauthn>,
+    /// Self-hosted proof-of-work signer and replay ledger for browser sign-up.
+    pub altcha: Arc<crate::altcha::Altcha>,
     /// Caches the translation backend's language map and per-status
     /// translations (M25).
     pub translation_cache: Arc<TranslationCache>,
@@ -451,6 +453,7 @@ impl AppState {
             try_build_webauthn(&config.domain)
                 .map_err(|reason| format!("domain {:?}: {reason}", config.domain))?,
         );
+        let altcha = Arc::new(crate::altcha::Altcha::from_config(&config));
         let federation_keyring = if config.encryption_secret.is_some() {
             Some(Arc::new(
                 crate::crypto::FederationKeyring::from_config(&config)
@@ -471,6 +474,7 @@ impl AppState {
             rate_limiter: Arc::new(RateLimiter::default()),
             settings_cache: Arc::new(SettingsCache::default()),
             webauthn,
+            altcha,
             translation_cache: Arc::new(TranslationCache::default()),
             remote_refresh: Arc::new(crate::remote::RemoteRefreshCoordinator::default()),
             remote_history_intent: Arc::new(crate::remote_history::IntentCoordinator::default()),

@@ -4,6 +4,13 @@ Plamenu depends on the Rust crates recorded in `Cargo.lock`. Their applicable
 licenses are checked by `cargo-deny`; source and license links are available
 from each crate's package metadata.
 
+`crates/server/src/web/assets/altcha.min.js` is the ALTCHA 3.2.3 widget
+distribution artifact from the official npm package `altcha@3.2.3`. Its
+SHA-256 is
+`102bb89eb6ee4556068e2514880b7755495b23d90438c751809cb4f0ecbd4efb`.
+The exact upstream MIT license is included as
+`LICENSES/ALTCHA-LICENSE.txt`.
+
 `crates/server/src/web/assets/hls.min.js` is the hls.js 1.6.16 distribution
 artifact from
 <https://cdn.jsdelivr.net/npm/hls.js@1.6.16/dist/hls.min.js>. The unavailable
