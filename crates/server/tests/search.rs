@@ -489,7 +489,7 @@ async fn url_search_resolves_local_and_remote_resources(pool: PgPool) {
             "published": "2026-06-11T08:00:00Z",
         }),
     );
-    let (_, token) = user_with_token(&pool, "searcher", "read write").await;
+    let (searcher, token) = user_with_token(&pool, "searcher", "read write").await;
     create_local_account(&pool, "author", "Author").await;
     let local_status = post_status(&pool, "author", "hello local", "public").await;
     let private_status = post_status(&pool, "author", "hello hidden", "private").await;
@@ -526,6 +526,11 @@ async fn url_search_resolves_local_and_remote_resources(pool: PgPool) {
     assert_eq!(statuses[0]["content"], "<p>hello from afar</p>");
     assert_eq!(statuses[0]["account"]["acct"], "bob@remote.example");
     assert!(stub.fetches().contains(&note_uri.to_owned()));
+    assert!(
+        stub.account_fetches()
+            .contains(&(note_uri.to_owned(), searcher.id)),
+        "URL resolution must fetch as the authenticated local recipient"
+    );
 
     // A remote actor URL resolves to an account (served as a plain object).
     let actor_uri = "https://remote.example/users/carol";

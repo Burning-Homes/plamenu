@@ -94,8 +94,27 @@ pub trait FederationApi: Send + Sync {
         &'a self,
         uri: &'a str,
     ) -> BoxFuture<'a, Result<RemoteActor, FederationError>>;
+    /// Fetches an actor on behalf of one local account. Test doubles that do
+    /// not model HTTP signatures inherit the ordinary fetch behavior.
+    fn fetch_actor_for_account<'a>(
+        &'a self,
+        uri: &'a str,
+        account_id: i64,
+    ) -> BoxFuture<'a, Result<RemoteActor, FederationError>> {
+        let _ = account_id;
+        self.fetch_actor(uri)
+    }
     /// Fetches an arbitrary AP object (id-checked), e.g. a `QuoteAuthorization`.
     fn fetch_object<'a>(&'a self, uri: &'a str) -> BoxFuture<'a, Result<Value, FederationError>>;
+    /// Fetches an object signed by the local account entitled to see it.
+    fn fetch_object_for_account<'a>(
+        &'a self,
+        uri: &'a str,
+        account_id: i64,
+    ) -> BoxFuture<'a, Result<Value, FederationError>> {
+        let _ = account_id;
+        self.fetch_object(uri)
+    }
     /// Conditional signed AP fetch with transport metadata. Defaulted for test
     /// doubles; production overrides it to retain `ETag`, final URL, and bytes.
     fn fetch_activitypub<'a>(
@@ -121,6 +140,15 @@ pub trait FederationApi: Send + Sync {
         &'a self,
         uri: &'a str,
     ) -> BoxFuture<'a, Result<Value, FederationError>>;
+    /// Permalink-following object fetch signed by one local account.
+    fn fetch_object_following_for_account<'a>(
+        &'a self,
+        uri: &'a str,
+        account_id: i64,
+    ) -> BoxFuture<'a, Result<Value, FederationError>> {
+        let _ = account_id;
+        self.fetch_object_following(uri)
+    }
     /// [`Self::fetch_object_following`], but attempted even when the target's
     /// finite failure budget would refuse it — the federation-debug page needs
     /// the *underlying* error, which a pre-flight suppression never shows.
@@ -228,6 +256,7 @@ pub struct HttpFederation {
     client: FederationClient,
     pool: plamenu_db::PgPool,
     local_domain: String,
+    keyring: Arc<crate::crypto::FederationKeyring>,
     fetch_permits: Arc<Semaphore>,
 }
 
@@ -235,13 +264,59 @@ const MAX_CONCURRENT_REMOTE_FETCHES: usize = 32;
 
 impl HttpFederation {
     #[must_use]
-    pub fn new(client: FederationClient, pool: plamenu_db::PgPool, local_domain: String) -> Self {
+    pub fn new(
+        client: FederationClient,
+        pool: plamenu_db::PgPool,
+        local_domain: String,
+        keyring: Arc<crate::crypto::FederationKeyring>,
+    ) -> Self {
         Self {
             client,
             pool,
             local_domain,
+            keyring,
             fetch_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_REMOTE_FETCHES)),
         }
+    }
+
+    async fn account_fetch_signer(
+        &self,
+        account_id: i64,
+    ) -> Result<RequestSigner, FederationError> {
+        let records = plamenu_db::actor_key::usable_for_account(&self.pool, account_id)
+            .await
+            .map_err(|error| FederationError::Admission(error.to_string()))?;
+        let rsa_record = records
+            .iter()
+            .find(|key| key.algorithm == "rsa" && key.encrypted_private_key.is_some())
+            .cloned()
+            .ok_or_else(|| {
+                FederationError::Admission(format!(
+                    "local account {account_id} has no usable RSA signing key"
+                ))
+            })?;
+        let rsa = crate::key_store::decrypt_record(&self.keyring, rsa_record)
+            .map_err(|error| FederationError::Admission(error.to_string()))?;
+        let mut signer = RequestSigner::from_pkcs8_pem(
+            rsa.private
+                .expose_str()
+                .map_err(|error| FederationError::Admission(error.to_string()))?,
+            rsa.record.key_uri,
+        )?;
+        if let Some(ed_record) = records
+            .into_iter()
+            .find(|key| key.algorithm == "ed25519" && key.encrypted_private_key.is_some())
+        {
+            let ed = crate::key_store::decrypt_record(&self.keyring, ed_record)
+                .map_err(|error| FederationError::Admission(error.to_string()))?;
+            signer = signer.with_ed25519(
+                ed.record.key_uri,
+                ed.private
+                    .expose_str()
+                    .map_err(|error| FederationError::Admission(error.to_string()))?,
+            );
+        }
+        Ok(signer)
     }
 
     async fn guarded<T>(
@@ -249,7 +324,22 @@ impl HttpFederation {
         target: &str,
         request: impl Future<Output = Result<T, FederationError>>,
     ) -> Result<T, FederationError> {
-        self.guarded_inner(target, request, false).await
+        self.guarded_inner(target, "resource-instance", target, request, false)
+            .await
+    }
+
+    async fn guarded_for_account<T>(
+        &self,
+        target: &str,
+        account_id: i64,
+        request: impl Future<Output = Result<T, FederationError>>,
+    ) -> Result<T, FederationError> {
+        // Authorization failures are actor-relative. Keep their finite retry
+        // budget separate from the instance signer and every other account,
+        // so an earlier 403 cannot suppress an entitled recipient's fetch.
+        let resource_key = format!("{account_id}:{target}");
+        self.guarded_inner(target, "resource-account", &resource_key, request, false)
+            .await
     }
 
     /// [`Self::guarded`] minus the pre-flight budget refusal: admission
@@ -261,12 +351,15 @@ impl HttpFederation {
         target: &str,
         request: impl Future<Output = Result<T, FederationError>>,
     ) -> Result<T, FederationError> {
-        self.guarded_inner(target, request, true).await
+        self.guarded_inner(target, "resource-instance", target, request, true)
+            .await
     }
 
     async fn guarded_inner<T>(
         &self,
         target: &str,
+        authorization_scope: &str,
+        authorization_key: &str,
         request: impl Future<Output = Result<T, FederationError>>,
         ignore_budget: bool,
     ) -> Result<T, FederationError> {
@@ -279,18 +372,23 @@ impl HttpFederation {
             .acquire()
             .await
             .map_err(|error| FederationError::Admission(error.to_string()))?;
-        let resource_key = target;
         let host = Url::parse(target)
             .ok()
             .and_then(|url| url.host_str().map(str::to_lowercase));
         if !ignore_budget {
-            if !plamenu_db::remote_fetch_failure::should_attempt(
-                &self.pool,
-                "resource",
-                resource_key,
-            )
-            .await
-            .map_err(|error| FederationError::Admission(error.to_string()))?
+            // Objective failures (404, malformed content, and so on) stay
+            // globally bounded, while authorization failures are checked for
+            // the signer that received them.
+            if !plamenu_db::remote_fetch_failure::should_attempt(&self.pool, "resource", target)
+                .await
+                .map_err(|error| FederationError::Admission(error.to_string()))?
+                || !plamenu_db::remote_fetch_failure::should_attempt(
+                    &self.pool,
+                    authorization_scope,
+                    authorization_key,
+                )
+                .await
+                .map_err(|error| FederationError::Admission(error.to_string()))?
             {
                 return Err(FederationError::FetchSuppressed(target.to_owned()));
             }
@@ -306,8 +404,13 @@ impl HttpFederation {
         match request.await {
             Ok(value) => {
                 let _ =
-                    plamenu_db::remote_fetch_failure::clear(&self.pool, "resource", resource_key)
-                        .await;
+                    plamenu_db::remote_fetch_failure::clear(&self.pool, "resource", target).await;
+                let _ = plamenu_db::remote_fetch_failure::clear(
+                    &self.pool,
+                    authorization_scope,
+                    authorization_key,
+                )
+                .await;
                 if let Some(host) = &host {
                     let _ = plamenu_db::remote_fetch_failure::clear(&self.pool, "host", host).await;
                     let _ = plamenu_db::reachability::record_success(&self.pool, host).await;
@@ -319,11 +422,7 @@ impl HttpFederation {
                     let seconds = retry_after_secs.unwrap_or(60).clamp(1, 86_400);
                     let message = error.to_string();
                     let _ = plamenu_db::remote_fetch_failure::record_backoff(
-                        &self.pool,
-                        "resource",
-                        resource_key,
-                        seconds,
-                        &message,
+                        &self.pool, "resource", target, seconds, &message,
                     )
                     .await;
                     if let Some(host) = &host {
@@ -335,10 +434,20 @@ impl HttpFederation {
                     return Err(error);
                 }
                 if counts_as_resource_failure(&error) {
+                    // Authorized-fetch servers commonly privacy-mask an
+                    // existing protected object as 404. Like an explicit
+                    // 401/403, that answer is true only for this signer; an
+                    // entitled local actor must still get its own attempt.
+                    let (scope, key) = if matches!(error, FederationError::Status(401 | 403 | 404))
+                    {
+                        (authorization_scope, authorization_key)
+                    } else {
+                        ("resource", target)
+                    };
                     let _ = plamenu_db::remote_fetch_failure::record_failure(
                         &self.pool,
-                        "resource",
-                        resource_key,
+                        scope,
+                        key,
                         &error.to_string(),
                     )
                     .await;
@@ -400,8 +509,40 @@ impl FederationApi for HttpFederation {
         Box::pin(self.guarded(uri, self.client.fetch_actor(uri)))
     }
 
+    fn fetch_actor_for_account<'a>(
+        &'a self,
+        uri: &'a str,
+        account_id: i64,
+    ) -> BoxFuture<'a, Result<RemoteActor, FederationError>> {
+        Box::pin(async move {
+            let signer = self.account_fetch_signer(account_id).await?;
+            self.guarded_for_account(
+                uri,
+                account_id,
+                self.client.fetch_actor_as(uri, Some(&signer)),
+            )
+            .await
+        })
+    }
+
     fn fetch_object<'a>(&'a self, uri: &'a str) -> BoxFuture<'a, Result<Value, FederationError>> {
         Box::pin(self.guarded(uri, self.client.fetch_object(uri)))
+    }
+
+    fn fetch_object_for_account<'a>(
+        &'a self,
+        uri: &'a str,
+        account_id: i64,
+    ) -> BoxFuture<'a, Result<Value, FederationError>> {
+        Box::pin(async move {
+            let signer = self.account_fetch_signer(account_id).await?;
+            self.guarded_for_account(
+                uri,
+                account_id,
+                self.client.fetch_object_as(uri, Some(&signer)),
+            )
+            .await
+        })
     }
 
     fn fetch_activitypub<'a>(
@@ -434,6 +575,22 @@ impl FederationApi for HttpFederation {
         uri: &'a str,
     ) -> BoxFuture<'a, Result<Value, FederationError>> {
         Box::pin(self.guarded(uri, self.client.fetch_object_following(uri)))
+    }
+
+    fn fetch_object_following_for_account<'a>(
+        &'a self,
+        uri: &'a str,
+        account_id: i64,
+    ) -> BoxFuture<'a, Result<Value, FederationError>> {
+        Box::pin(async move {
+            let signer = self.account_fetch_signer(account_id).await?;
+            self.guarded_for_account(
+                uri,
+                account_id,
+                self.client.fetch_object_following_as(uri, Some(&signer)),
+            )
+            .await
+        })
     }
 
     fn fetch_object_following_ignoring_budget<'a>(

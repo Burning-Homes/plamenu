@@ -67,7 +67,7 @@ impl Drop for Guard {
 
 /// Fetches the parents named by `uris` out of band, best-effort and capped.
 /// Returns immediately; the render never waits on any of this.
-pub fn spawn_resolves(state: &AppState, uris: Vec<String>) {
+pub fn spawn_resolves(state: &AppState, uris: Vec<String>, fetch_account_id: Option<i64>) {
     let mut seen = HashSet::new();
     for uri in uris {
         if !seen.insert(uri.clone()) {
@@ -77,20 +77,20 @@ pub fn spawn_resolves(state: &AppState, uris: Vec<String>) {
             break;
         }
         let state = state.clone();
-        tokio::spawn(async move { resolve_one(&state, &uri).await });
+        tokio::spawn(async move { resolve_one(&state, &uri, fetch_account_id).await });
     }
 }
 
-async fn resolve_one(state: &AppState, uri: &str) {
+async fn resolve_one(state: &AppState, uri: &str, fetch_account_id: Option<i64>) {
     let Ok(permit) = Arc::clone(&PERMITS).try_acquire_owned() else {
         return; // the server is already chasing as many parents as it will
     };
     let Some(_guard) = Guard::begin(uri) else {
         return; // another render is already on this one
     };
-    // A URI whose budget is spent (or whose host's is) must not be knocked on
-    // again. `fetch_object` checks this too, but checking here keeps a
-    // black-holed thread from costing a task and a permit per page view.
+    // Avoid spawning work for a spent budget, using the same account-scoped
+    // key as the transport for recipient-signed attempts. An earlier
+    // instance-signed 403 must not suppress an entitled recipient's fetch.
     match plamenu_db::remote_fetch_failure::should_attempt(&state.pool, "resource", uri).await {
         Ok(false) => return,
         Ok(true) => {}
@@ -99,7 +99,19 @@ async fn resolve_one(state: &AppState, uri: &str) {
             return;
         }
     }
-    match crate::ingest::resolve_or_fetch_status(state, uri).await {
+    let account_key = fetch_account_id.map(|account_id| format!("{account_id}:{uri}"));
+    let (scope, key) = account_key
+        .as_deref()
+        .map_or(("resource-instance", uri), |key| ("resource-account", key));
+    match plamenu_db::remote_fetch_failure::should_attempt(&state.pool, scope, key).await {
+        Ok(false) => return,
+        Ok(true) => {}
+        Err(error) => {
+            tracing::debug!(error = %error, uri = %uri, "parent fetch budget check failed");
+            return;
+        }
+    }
+    match crate::ingest::resolve_or_fetch_status_for_account(state, uri, fetch_account_id).await {
         // The ingest adopts the replies that were waiting on it, so the
         // next render of the same feed draws them as a thread.
         Ok(Some(parent)) => {

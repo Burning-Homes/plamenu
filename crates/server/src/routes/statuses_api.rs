@@ -869,8 +869,8 @@ pub async fn context(
     // A signed-in viewer opening a remote thread fills either missing direction:
     // the orphaned parent and replies we never received over federation. Both
     // run in the background; their results land in a later `/context` request.
-    if viewer_id.is_some() {
-        crate::reply_fetch::on_thread_open(&state, &stored).await?;
+    if let Some(viewer_id) = viewer_id {
+        crate::reply_fetch::on_thread_open_for_account(&state, &stored, viewer_id).await?;
     }
     let thread_order = match &viewer {
         Some(current) => user::settings_by_user_id(&state.pool, current.user.id)

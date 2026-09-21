@@ -299,7 +299,7 @@ pub(super) async fn annotate_reply_peeks(
             Some(_) => {}
         }
     }
-    crate::parent_fetch::spawn_resolves(state, unfetched);
+    crate::parent_fetch::spawn_resolves(state, unfetched, Some(viewer_id));
     if wanted.is_empty() {
         return Ok(());
     }

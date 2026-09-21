@@ -479,23 +479,33 @@ impl FederationClient {
         Ok(url)
     }
 
-    /// Performs an `ActivityPub` GET of `url`, signed when a fetch signer is
-    /// configured, and decodes the JSON body. Like Mastodon's
+    /// Performs an `ActivityPub` GET of `url`, signed with the request-scoped
+    /// signer when supplied and otherwise with the configured fetch signer,
+    /// and decodes the JSON body. Like Mastodon's
     /// `valid_activitypub_content_type?`, the response must declare an
     /// `ActivityPub` content type (`activity+json`, or `ld+json` carrying the
     /// `ActivityStreams` profile) — anything a server happens to serve as
     /// plain JSON (user uploads, unrelated API endpoints) must not be
-    /// dereferenceable as an `ActivityPub` object.
-    async fn ap_get(&self, url: Url) -> Result<Value, FederationError> {
+    /// dereferenceable as an `ActivityPub` object. A request-scoped signer is
+    /// used when visibility is tied to one local recipient (followers-only
+    /// and direct posts).
+    async fn ap_get_as(
+        &self,
+        url: Url,
+        signer: Option<&RequestSigner>,
+    ) -> Result<Value, FederationError> {
         let accept = format!("{ACTIVITY_JSON}, {LD_JSON_AS}");
-        match self.ap_get_with_accept(url.clone(), &accept).await {
+        match self
+            .ap_get_with_accept_as(url.clone(), &accept, signer)
+            .await
+        {
             Ok(object) => Ok(object),
             // Funkwhale's actor endpoint has the same renderer negotiation
             // bug as its Audio endpoint. Retry only a structurally invalid AP
             // response; status, transport, SSRF and rate-limit failures keep
             // their original meaning and are never double-hit.
             Err(FederationError::InvalidActor(_)) => {
-                self.ap_get_with_accept(url, ACTIVITY_JSON).await
+                self.ap_get_with_accept_as(url, ACTIVITY_JSON, signer).await
             }
             Err(error) => Err(error),
         }
@@ -505,10 +515,15 @@ impl FederationClient {
     /// Resource discovery normally advertises every usable representation,
     /// but a few real servers (notably Funkwhale 2.0) mis-negotiate that list
     /// while answering a single `application/activity+json` offer correctly.
-    async fn ap_get_with_accept(&self, url: Url, accept: &str) -> Result<Value, FederationError> {
+    async fn ap_get_with_accept_as(
+        &self,
+        url: Url,
+        accept: &str,
+        signer: Option<&RequestSigner>,
+    ) -> Result<Value, FederationError> {
         let mut current = url;
         for _ in 0..=PAGE_MAX_REDIRECTS {
-            let response = self.send_signed_get(&current, accept).await?;
+            let response = self.send_signed_get_as(&current, accept, signer).await?;
             if response.status().is_redirection() {
                 current = self.redirect_target(&current, &response)?;
                 continue;
@@ -556,16 +571,17 @@ impl FederationClient {
         &self,
         url: &Url,
         accept: &str,
+        signer: Option<&RequestSigner>,
     ) -> Result<reqwest::RequestBuilder, FederationError> {
         let mut request = self.http_for(url).get(url.clone()).header(ACCEPT, accept);
-        if let Some(signer) = &self.fetch_signer {
+        if let Some(signer) = signer.or(self.fetch_signer.as_ref()) {
             let host =
                 host_header(url).ok_or_else(|| FederationError::InvalidUrl(url.to_string()))?;
             let path_and_query = path_and_query(url);
-            let signed = signer.sign_get(&host, &path_and_query, accept, SystemTime::now());
+            let headers = signer.sign_get(&host, &path_and_query, accept, SystemTime::now());
             request = request
-                .header("Date", signed.date)
-                .header("Signature", signed.signature);
+                .header("Date", headers.date)
+                .header("Signature", headers.signature);
         }
         Ok(request)
     }
@@ -581,12 +597,14 @@ impl FederationClient {
     /// hold for us. We publish the RSA key as a Multikey too so the first
     /// knock normally lands; this covers the peers that already cached the
     /// stripped actor, and any future peer that keeps FEP-521a keys alone.
-    async fn send_signed_get(
+    async fn send_signed_get_as(
         &self,
         url: &Url,
         accept: &str,
+        signer: Option<&RequestSigner>,
     ) -> Result<reqwest::Response, FederationError> {
-        self.send_signed_get_conditional(url, accept, None).await
+        self.send_signed_get_conditional(url, accept, None, signer)
+            .await
     }
 
     async fn send_signed_get_conditional(
@@ -594,8 +612,10 @@ impl FederationClient {
         url: &Url,
         accept: &str,
         etag: Option<&str>,
+        signer: Option<&RequestSigner>,
     ) -> Result<reqwest::Response, FederationError> {
-        let mut request = self.signed_get(url, accept)?;
+        let signer = signer.or(self.fetch_signer.as_ref());
+        let mut request = self.signed_get(url, accept, signer)?;
         if let Some(etag) = etag {
             request = request.header(IF_NONE_MATCH, etag);
         }
@@ -603,9 +623,7 @@ impl FederationClient {
         if !matches!(response.status().as_u16(), 400 | 401) {
             return Ok(response);
         }
-        let Some(signed) = self
-            .fetch_signer
-            .as_ref()
+        let Some(headers) = signer
             .and_then(|signer| signer.sign_get_rfc9421_ed25519(url.as_str(), SystemTime::now()))
         else {
             return Ok(response);
@@ -619,9 +637,9 @@ impl FederationClient {
             .http_for(url)
             .get(url.clone())
             .header(ACCEPT, accept)
-            .header("Date", signed.date)
-            .header("Signature-Input", signed.signature_input)
-            .header("Signature", signed.signature);
+            .header("Date", headers.date)
+            .header("Signature-Input", headers.signature_input)
+            .header("Signature", headers.signature);
         if let Some(etag) = etag {
             retry = retry.header(IF_NONE_MATCH, etag);
         }
@@ -700,11 +718,14 @@ impl FederationClient {
         &self,
         uri: &str,
         terminal: bool,
+        signer: Option<&RequestSigner>,
     ) -> Result<ResourceHop, FederationError> {
         let mut url = self.checked(uri)?;
         let mut final_response = None;
         for _ in 0..=PAGE_MAX_REDIRECTS {
-            let response = self.send_signed_get(&url, RESOURCE_ACCEPT).await?;
+            let response = self
+                .send_signed_get_as(&url, RESOURCE_ACCEPT, signer)
+                .await?;
             if !response.status().is_redirection() {
                 final_response = Some(response);
                 break;
@@ -753,7 +774,7 @@ impl FederationClient {
         // retry without ever relaxing response content-type validation.
         if !terminal
             && let Ok(object) = self
-                .ap_get_with_accept(self.checked(uri)?, ACTIVITY_JSON)
+                .ap_get_with_accept_as(self.checked(uri)?, ACTIVITY_JSON, signer)
                 .await
         {
             return Ok(ResourceHop::Object(object));
@@ -768,8 +789,17 @@ impl FederationClient {
     /// match the requested URI — a server must not be able to impersonate an
     /// actor hosted elsewhere.
     pub async fn fetch_actor(&self, uri: &str) -> Result<RemoteActor, FederationError> {
+        self.fetch_actor_as(uri, None).await
+    }
+
+    /// Dereferences an actor with a request-scoped local signer.
+    pub async fn fetch_actor_as(
+        &self,
+        uri: &str,
+        signer: Option<&RequestSigner>,
+    ) -> Result<RemoteActor, FederationError> {
         let url = self.checked(uri)?;
-        let document = self.ap_get(url).await?;
+        let document = self.ap_get_as(url, signer).await?;
         let actor: RemoteActor = serde_json::from_value(document)
             .map_err(|e| FederationError::InvalidActor(e.to_string()))?;
         if actor.id != uri {
@@ -789,8 +819,17 @@ impl FederationClient {
     /// Fetches an arbitrary `ActivityPub` object (e.g. a `QuoteAuthorization`
     /// stamp). The returned object's `id` must match the requested URI.
     pub async fn fetch_object(&self, uri: &str) -> Result<Value, FederationError> {
+        self.fetch_object_as(uri, None).await
+    }
+
+    /// Fetches an object with a request-scoped local signer.
+    pub async fn fetch_object_as(
+        &self,
+        uri: &str,
+        signer: Option<&RequestSigner>,
+    ) -> Result<Value, FederationError> {
         let url = self.checked(uri)?;
-        let object = self.ap_get(url).await?;
+        let object = self.ap_get_as(url, signer).await?;
         if object.get("id").and_then(Value::as_str) != Some(uri) {
             return Err(FederationError::InvalidActor(format!(
                 "object id does not match fetched uri {uri}"
@@ -832,7 +871,7 @@ impl FederationClient {
         let mut current = requested.clone();
         for _ in 0..=PAGE_MAX_REDIRECTS {
             let response = self
-                .send_signed_get_conditional(&current, &accept, etag)
+                .send_signed_get_conditional(&current, &accept, etag, None)
                 .await?;
             if response.status().is_redirection() {
                 let next = self.redirect_target(&current, &response)?;
@@ -907,10 +946,20 @@ impl FederationClient {
     /// canonical `id` is re-dereferenced once and id-validated. The returned
     /// object's `id` is the canonical one.
     pub async fn fetch_object_following(&self, uri: &str) -> Result<Value, FederationError> {
+        self.fetch_object_following_as(uri, None).await
+    }
+
+    /// Resolves a permalink/canonical object pair with one local actor's
+    /// signer on every hop.
+    pub async fn fetch_object_following_as(
+        &self,
+        uri: &str,
+        signer: Option<&RequestSigner>,
+    ) -> Result<Value, FederationError> {
         let mut current = uri.to_owned();
         let mut terminal = false;
         loop {
-            match self.fetch_resource_hop(&current, terminal).await? {
+            match self.fetch_resource_hop(&current, terminal, signer).await? {
                 ResourceHop::Alternate(alternate) => {
                     if terminal {
                         return Err(FederationError::InvalidActor(format!(
@@ -2245,6 +2294,47 @@ mod tests {
         )
         .unwrap();
         prepared.verify_pem(&pair.public_pem).unwrap();
+    }
+
+    #[test]
+    fn request_scoped_fetch_signer_overrides_instance_actor() {
+        let instance_pair = generate_keypair().unwrap();
+        let instance = RequestSigner::from_pkcs8_pem(
+            &instance_pair.private_pem,
+            "https://plamenu.test/ap/instance#main-key".into(),
+        )
+        .unwrap();
+        let recipient_pair = generate_keypair().unwrap();
+        let recipient_key = "https://plamenu.test/users/alice#main-key";
+        let recipient =
+            RequestSigner::from_pkcs8_pem(&recipient_pair.private_pem, recipient_key.to_owned())
+                .unwrap();
+        let client = FederationClient::new("plamenu-test", true)
+            .unwrap()
+            .with_fetch_signer(instance);
+        let url: Url = "https://remote.example/users/bob/statuses/1"
+            .parse()
+            .unwrap();
+
+        let request = client
+            .signed_get(&url, ACTIVITY_JSON, Some(&recipient))
+            .unwrap()
+            .build()
+            .unwrap();
+        let signature = request.headers()["signature"].to_str().unwrap();
+        assert!(signature.contains(&format!("keyId=\"{recipient_key}\"")));
+        assert!(!signature.contains("/ap/instance#main-key"));
+
+        let mut headers = request.headers().clone();
+        headers.insert("host", HeaderValue::from_static("remote.example"));
+        let prepared = PreparedVerification::from_get_request(
+            "/users/bob/statuses/1",
+            &headers,
+            SystemTime::now(),
+        )
+        .unwrap();
+        prepared.verify_pem(&recipient_pair.public_pem).unwrap();
+        assert!(prepared.verify_pem(&instance_pair.public_pem).is_err());
     }
 
     #[test]

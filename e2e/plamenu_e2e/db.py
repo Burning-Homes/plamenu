@@ -91,6 +91,15 @@ class Db:
             f"%{host}%",
         )
 
+    def remote_fetch_failures_for_uri(self, uri: str) -> list[tuple[str, str, str]]:
+        """Fetch-budget rows for one URI, including actor-qualified keys."""
+        return self.conn.execute(
+            "SELECT scope, failure_key, last_error FROM remote_fetch_failures"
+            " WHERE failure_key = %s OR right(failure_key, length(%s)) = %s"
+            " ORDER BY scope, failure_key",
+            (uri, uri, uri),
+        ).fetchall()
+
     def outbound_follow_pending(self, username: str) -> bool | None:
         """`pending` of the local user's outbound follow (None if no row)."""
         return self._value(
@@ -177,6 +186,14 @@ class Db:
     def status_id_containing(self, marker: str) -> int | None:
         return self._value(
             "SELECT id FROM statuses WHERE content LIKE '%%' || %s || '%%'", marker
+        )
+
+    def forget_remote_status(self, uri: str) -> None:
+        """Remove one delivered remote status to force a fresh dereference."""
+        self.conn.execute(
+            "DELETE FROM statuses s USING accounts a"
+            " WHERE s.account_id = a.id AND s.uri = %s AND a.domain IS NOT NULL",
+            (uri,),
         )
 
     def status_parent_id(self, status_id: int) -> int | None:

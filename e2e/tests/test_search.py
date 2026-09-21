@@ -2,7 +2,8 @@
 ingestion, and local full-text + hashtag search."""
 
 import pytest
-from plamenu_e2e import config, mastodon, unique
+
+from plamenu_e2e import config, mastodon, plamenu, unique
 from plamenu_e2e.steps import log, step, wait_for
 
 
@@ -61,6 +62,82 @@ def test_search_by_url_ingests_remote_status(plamenu_api, alice, marker):
         assert hits[0]["account"]["acct"] == config.ALICE, (
             f"text search after ingestion returned {hits[0]['account']['acct']}"
         )
+
+
+@pytest.mark.federation(
+    direction="inbound",
+    one_way_reason=(
+        "recipient-authorized fetch: a local follower dereferences a protected "
+        "remote object with their own actor key; this is a receive-side operation"
+    ),
+)
+def test_recipient_signed_fetch_resolves_uncached_private_status(
+    plamenu_user, plamenu_api, cli, db, marker
+):
+    """An entitled local follower can fetch an uncached followers-only Note.
+
+    A different local actor is denied first, pinning both the signer boundary
+    and the requirement that one principal's authorization failure must not
+    suppress a later fetch by another principal.
+    """
+    with step("a fresh Mastodon author posts privately before having followers"):
+        username = unique("authfetch")
+        acct = f"{username}@{config.MASTODON_DOMAIN}"
+        mastodon.create_account(username)
+        author = mastodon.api_as(f"{username}@mastodon.local")
+        remote = author.post_status(
+            f"recipient fetch secret {marker}", visibility="private"
+        )
+        status_uri = remote["uri"]
+        assert db.status_id_containing(marker) is None, (
+            "the protected status must be uncached before either resolve"
+        )
+
+    with step("an unrelated local actor cannot resolve the protected object"):
+        stranger = plamenu.User()
+        cli.account_add(stranger)
+        stranger_api = plamenu.login(stranger)
+        denied = stranger_api.search(status_uri, resolve=True, type="statuses")[
+            "statuses"
+        ]
+        assert denied == [], f"a non-follower resolved a private status: {denied!r}"
+        failures = db.remote_fetch_failures_for_uri(status_uri)
+        assert any(scope == "resource-account" for scope, _, _ in failures), (
+            "the denial was not recorded against the requesting actor: "
+            f"{failures!r}"
+        )
+        assert not any(scope == "resource" for scope, _, _ in failures), (
+            "an authorization-shaped denial must not poison the global resource "
+            f"budget: {failures!r}"
+        )
+
+    with step(f"@{plamenu_user.username} follows @{acct}"):
+        account = plamenu_api.resolve_account(acct)
+        assert account, "Plamenu could not resolve the fresh Mastodon author"
+        plamenu_api.follow(account["id"])
+        wait_for(
+            lambda: db.outbound_follow_pending(plamenu_user.username) is False,
+            desc="Mastodon to accept the Plamenu user's follow",
+        )
+
+    with step("the entitled follower resolves the same still-uncached object"):
+        assert db.status_id_containing(marker) is None, (
+            "a pre-follow private post must not have arrived by fan-out"
+        )
+        statuses = plamenu_api.search(status_uri, resolve=True, type="statuses")[
+            "statuses"
+        ]
+        assert statuses and marker in statuses[0]["content"], (
+            "the follower's recipient-signed fetch did not return the private status "
+            f"(got {statuses!r})"
+        )
+        assert statuses[0]["visibility"] == "private", statuses[0]
+
+    with step("ingestion does not make the protected object visible to the stranger"):
+        status_id = db.status_id_containing(marker)
+        assert status_id is not None
+        assert db.status_visibility(status_id) == "private"
+        assert stranger_api.get_status_or_none(str(status_id)) is None
 
 
 @pytest.mark.federation(

@@ -135,21 +135,33 @@ pub async fn resolve_or_fetch_status(
     state: &AppState,
     uri: &str,
 ) -> Result<Option<status::Status>, ApiError> {
+    resolve_or_fetch_status_for_account(state, uri, None).await
+}
+
+/// [`resolve_or_fetch_status`] with the local actor whose signature should be
+/// used for a protected object and its ancestor chain.
+pub async fn resolve_or_fetch_status_for_account(
+    state: &AppState,
+    uri: &str,
+    fetch_account_id: Option<i64>,
+) -> Result<Option<status::Status>, ApiError> {
     if let Some(found) = resolve_status_ref(state, uri).await? {
         return Ok(Some(found));
     }
     if uri.starts_with(&format!("https://{}/", state.config.domain)) {
         return Ok(None);
     }
-    let Some((object, author)) = fetch_remote_status_object(state, uri).await? else {
+    let Some((object, author)) = fetch_remote_status_object(state, uri, fetch_account_id).await?
+    else {
         return Ok(None);
     };
     Ok(Some(
-        ingest_remote_note_in_context(
+        ingest_remote_note_in_context_for_account(
             state,
             &author,
             &object,
             RemoteIngestContext::ExplicitResolution,
+            fetch_account_id,
         )
         .await?,
     ))
@@ -164,7 +176,7 @@ pub async fn refresh_remote_status(
     existing: &status::Status,
     uri: &str,
 ) -> Result<Option<status::Status>, ApiError> {
-    let Some((object, author)) = fetch_remote_status_object(state, uri).await? else {
+    let Some((object, author)) = fetch_remote_status_object(state, uri, None).await? else {
         return Ok(None);
     };
     if author.id != existing.account_id {
@@ -188,6 +200,7 @@ async fn resolve_thread_parent(
     parent_uri: &str,
     quote_depth: usize,
     context: RemoteIngestContext,
+    fetch_account_id: Option<i64>,
 ) -> Result<Option<status::Status>, ApiError> {
     let local_prefix = format!("https://{}/", state.config.domain);
     // Leaf-first: chain[i] is a reply to chain[i + 1].
@@ -210,7 +223,9 @@ async fn resolve_thread_parent(
         {
             break;
         }
-        let Some((object, author)) = fetch_remote_status_object(state, &uri).await? else {
+        let Some((object, author)) =
+            fetch_remote_status_object(state, &uri, fetch_account_id).await?
+        else {
             break;
         };
         cursor = object.get("inReplyTo").and_then(id_of).map(str::to_owned);
@@ -252,6 +267,7 @@ async fn resolve_thread_parent(
 async fn fetch_remote_status_object(
     state: &AppState,
     uri: &str,
+    fetch_account_id: Option<i64>,
 ) -> Result<Option<(Value, Account)>, ApiError> {
     if !crate::instance_policy::can_federate_url(&state.pool, &state.config.domain, uri).await? {
         // A best-effort fetch that fails is silently dropped, but the reason
@@ -266,7 +282,16 @@ async fn fetch_remote_status_object(
     // the concrete reason — an HTTP 403, a `text/html` content type (Lemmy and
     // others serve their web page to AP requests), a signature rejection, a
     // timeout, an SSRF-policy denial — so surface it rather than discard it.
-    let object = match state.federation.fetch_object(uri).await {
+    let fetched = match fetch_account_id {
+        Some(account_id) => {
+            state
+                .federation
+                .fetch_object_for_account(uri, account_id)
+                .await
+        }
+        None => state.federation.fetch_object(uri).await,
+    };
+    let object = match fetched {
         Ok(object) => object,
         Err(err) => {
             tracing::info!(uri, category = "fetch", error = %err, "remote status fetch failed");
@@ -317,7 +342,16 @@ async fn fetch_remote_status_object(
         {
             return Ok(None);
         }
-        let author = match state.federation.fetch_actor(attributed_to).await {
+        let fetched = match fetch_account_id {
+            Some(account_id) => {
+                state
+                    .federation
+                    .fetch_actor_for_account(attributed_to, account_id)
+                    .await
+            }
+            None => state.federation.fetch_actor(attributed_to).await,
+        };
+        let author = match fetched {
             Ok(actor) => actor,
             Err(err) => {
                 tracing::info!(
@@ -1385,8 +1419,51 @@ pub(crate) async fn ingest_remote_note_delivery_deferred(
     author: &Account,
     object: &Value,
 ) -> Result<RemoteIngestResult, ApiError> {
-    ingest_remote_note_with_quote_depth(state, author, object, 0, RemoteIngestContext::Delivery)
-        .await
+    let fetch_account_id = if object.get("inReplyTo").and_then(id_of).is_some() {
+        signed_fetch_recipient(state, author, object).await?
+    } else {
+        None
+    };
+    ingest_remote_note_with_quote_depth(
+        state,
+        author,
+        object,
+        0,
+        RemoteIngestContext::Delivery,
+        fetch_account_id,
+    )
+    .await
+}
+
+/// Selects the local actor entitled to dereference protected objects reached
+/// from an inbound delivery. Prefer an explicitly addressed local recipient;
+/// otherwise use the first accepted local follower of the remote author,
+/// matching Mastodon's signed-fetch selection.
+async fn signed_fetch_recipient(
+    state: &AppState,
+    author: &Account,
+    object: &Value,
+) -> Result<Option<i64>, ApiError> {
+    let audience = audience_recipients(object, &state.config.domain);
+    let audience_refs: Vec<&str> = audience.iter().map(|(uri, _)| uri.as_str()).collect();
+    let local = if audience_refs.is_empty() {
+        HashMap::new()
+    } else {
+        crate::local_identity::find_actors(&state.pool, &state.config.domain, &audience_refs)
+            .await?
+            .into_iter()
+            .map(|(uri, account)| (uri, account.id))
+            .collect::<HashMap<_, _>>()
+    };
+    if let Some(account_id) = audience.iter().find_map(|(uri, _)| local.get(uri).copied()) {
+        return Ok(Some(account_id));
+    }
+    Ok(
+        plamenu_db::follow::local_follower_ids(&state.pool, author.id)
+            .await?
+            .into_iter()
+            .next(),
+    )
 }
 
 async fn create_deferred_post_notifications(
@@ -1423,7 +1500,23 @@ pub async fn ingest_remote_note_in_context(
     context: RemoteIngestContext,
 ) -> Result<status::Status, ApiError> {
     Ok(
-        ingest_remote_note_with_quote_depth(state, author, object, 0, context)
+        ingest_remote_note_with_quote_depth(state, author, object, 0, context, None)
+            .await?
+            .status,
+    )
+}
+
+/// Ingests an explicitly resolved object while preserving the local account
+/// whose signature authorized the object and any missing ancestors.
+pub async fn ingest_remote_note_in_context_for_account(
+    state: &AppState,
+    author: &Account,
+    object: &Value,
+    context: RemoteIngestContext,
+    fetch_account_id: Option<i64>,
+) -> Result<status::Status, ApiError> {
+    Ok(
+        ingest_remote_note_with_quote_depth(state, author, object, 0, context, fetch_account_id)
             .await?
             .status,
     )
@@ -1435,14 +1528,17 @@ async fn ingest_remote_note_with_quote_depth(
     object: &Value,
     quote_depth: usize,
     context: RemoteIngestContext,
+    fetch_account_id: Option<i64>,
 ) -> Result<RemoteIngestResult, ApiError> {
     let in_reply_to_id = match object.get("inReplyTo").and_then(id_of) {
         Some(parent_uri) if context.is_history() => resolve_status_ref(state, parent_uri)
             .await?
             .map(|parent| parent.id),
-        Some(parent_uri) => resolve_thread_parent(state, parent_uri, quote_depth, context)
-            .await?
-            .map(|parent| parent.id),
+        Some(parent_uri) => {
+            resolve_thread_parent(state, parent_uri, quote_depth, context, fetch_account_id)
+                .await?
+                .map(|parent| parent.id)
+        }
         None => None,
     };
     Box::pin(store_remote_note(
@@ -2296,7 +2392,7 @@ async fn resolve_or_fetch_quote_target(
         return Ok(None);
     }
 
-    let Some((object, author)) = fetch_remote_status_object(state, quoted_uri).await? else {
+    let Some((object, author)) = fetch_remote_status_object(state, quoted_uri, None).await? else {
         return Ok(None);
     };
     if id_of(&object) != Some(quoted_uri) {
@@ -2313,6 +2409,7 @@ async fn resolve_or_fetch_quote_target(
         &object,
         quote_depth + 1,
         RemoteIngestContext::ExplicitResolution,
+        None,
     ))
     .await
     .map(|result| Some(result.status))

@@ -500,6 +500,38 @@ pub enum KnownUrl {
     Unknown,
 }
 
+async fn fetch_object_for_viewer(
+    state: &AppState,
+    uri: &str,
+    viewer: Option<i64>,
+) -> Result<Value, plamenu_federation::FederationError> {
+    match viewer {
+        Some(account_id) => {
+            state
+                .federation
+                .fetch_object_following_for_account(uri, account_id)
+                .await
+        }
+        None => state.federation.fetch_object_following(uri).await,
+    }
+}
+
+async fn fetch_actor_for_viewer(
+    state: &AppState,
+    uri: &str,
+    viewer: Option<i64>,
+) -> Result<RemoteActor, plamenu_federation::FederationError> {
+    match viewer {
+        Some(account_id) => {
+            state
+                .federation
+                .fetch_actor_for_account(uri, account_id)
+                .await
+        }
+        None => state.federation.fetch_actor(uri).await,
+    }
+}
+
 /// The storage-only half of [`resolve_url`]: our own URLs and already-known
 /// remote URIs. This is all an anonymous `/web/go` click gets —
 /// resolution fetches are reserved for signed-in viewers.
@@ -744,7 +776,7 @@ pub async fn resolve_url(
     // and validate that id. A Discourse JSON object id is authoritative for
     // that same-origin page; all other URLs use ordinary AP discovery.
     let fetch_url = discovered_topic.as_deref().unwrap_or(url);
-    let Ok(object) = state.federation.fetch_object_following(fetch_url).await else {
+    let Ok(object) = fetch_object_for_viewer(state, fetch_url, viewer).await else {
         return Ok(None);
     };
     // Storage keys on the canonical id, so a permalink fetch can land on an
@@ -796,16 +828,17 @@ pub async fn resolve_url(
                 {
                     return Ok(None);
                 }
-                let Ok(actor) = state.federation.fetch_actor(attributed_to).await else {
+                let Ok(actor) = fetch_actor_for_viewer(state, attributed_to, viewer).await else {
                     return Ok(None);
                 };
                 refresh_remote_actor(state, &actor).await?
             };
-            let stored = crate::ingest::ingest_remote_note_in_context(
+            let stored = crate::ingest::ingest_remote_note_in_context_for_account(
                 state,
                 &author,
                 &object,
                 crate::ingest::RemoteIngestContext::ExplicitResolution,
+                viewer,
             )
             .await?;
             let viewable = can_view(&state.pool, &stored, viewer).await?;

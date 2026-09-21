@@ -61,6 +61,24 @@ fn is_crawlable(status: &Status) -> bool {
 /// and its per-status cooldown. Both operations are best-effort and return
 /// before federation completes.
 pub async fn on_thread_open(state: &AppState, status: &Status) -> Result<(), ApiError> {
+    on_thread_open_as(state, status, None).await
+}
+
+/// Starts thread completion using the authenticated viewer for any protected
+/// parent dereference.
+pub async fn on_thread_open_for_account(
+    state: &AppState,
+    status: &Status,
+    account_id: i64,
+) -> Result<(), ApiError> {
+    on_thread_open_as(state, status, Some(account_id)).await
+}
+
+async fn on_thread_open_as(
+    state: &AppState,
+    status: &Status,
+    fetch_account_id: Option<i64>,
+) -> Result<(), ApiError> {
     if !is_crawlable(status) {
         return Ok(());
     }
@@ -69,7 +87,7 @@ pub async fn on_thread_open(state: &AppState, status: &Status) -> Result<(), Api
         .into_iter()
         .next()
     {
-        crate::parent_fetch::spawn_resolves(state, vec![parent_uri]);
+        crate::parent_fetch::spawn_resolves(state, vec![parent_uri], fetch_account_id);
     }
     if reply_fetch::is_due(&state.pool, status.id, COOLDOWN).await? {
         reply_fetch::enqueue(&state.pool, status.id).await?;

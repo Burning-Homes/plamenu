@@ -181,4 +181,38 @@ mod tests {
         .unwrap();
         assert!(!allowed);
     }
+
+    #[sqlx::test(migrations = "./migrations")]
+    async fn authorization_failures_are_isolated_per_fetch_actor(pool: PgPool) {
+        let uri = "https://remote.example/users/bob/statuses/private";
+        for _ in 0..MAX_ATTEMPTS {
+            record_failure(&pool, "resource-instance", uri, "remote answered 404")
+                .await
+                .unwrap();
+        }
+        assert!(should_attempt(&pool, "resource", uri).await.unwrap());
+        assert!(
+            !should_attempt(&pool, "resource-instance", uri)
+                .await
+                .unwrap()
+        );
+
+        let alice_key = format!("1:{uri}");
+        let carol_key = format!("2:{uri}");
+        assert!(
+            should_attempt(&pool, "resource-account", &alice_key)
+                .await
+                .unwrap(),
+            "an instance-signed, privacy-masked 404 must not suppress a recipient-signed retry"
+        );
+        record_failure(&pool, "resource-account", &alice_key, "remote answered 403")
+            .await
+            .unwrap();
+        assert!(
+            should_attempt(&pool, "resource-account", &carol_key)
+                .await
+                .unwrap(),
+            "one local actor's denial must not suppress another actor"
+        );
+    }
 }

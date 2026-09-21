@@ -16,7 +16,7 @@ use common::{
     test_app_with, test_state_with,
 };
 use plamenu::build_router;
-use plamenu::delivery;
+use plamenu::{delivery, remote};
 use plamenu_ap::actor::RemotePublicKeys;
 use plamenu_db::account::{self, RemoteAccountData};
 use plamenu_db::{PgPool, featured_tag, follow, job, status, user};
@@ -1522,9 +1522,13 @@ async fn stored_status(pool: &PgPool, uri: &str) -> Option<status::Status> {
 
 #[sqlx::test(migrations = "../db/migrations")]
 async fn reply_to_unknown_status_backfills_ancestor_chain(pool: PgPool) {
-    create_local_account(&pool, "alice", "Alice").await;
+    let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let stored_bob = remote::store_remote_actor(&pool, &bob.actor).await.unwrap();
+    follow::create(&pool, alice.id, stored_bob.id, None)
+        .await
+        .unwrap();
 
     let root = note_object(&bob, "root", None);
     let mid = note_object(&bob, "mid", Some(&uri_of(&root)));
@@ -1558,6 +1562,11 @@ async fn reply_to_unknown_status_backfills_ancestor_chain(pool: PgPool) {
         .filter(|uri| uri.contains("/statuses/"))
         .collect();
     assert_eq!(object_fetches, [uri_of(&mid), uri_of(&root)]);
+    assert_eq!(
+        stub.account_fetches(),
+        [(uri_of(&mid), alice.id), (uri_of(&root), alice.id),],
+        "ancestor backfill must use the local follower's signing identity"
+    );
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

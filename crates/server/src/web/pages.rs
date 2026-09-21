@@ -3842,8 +3842,8 @@ pub(crate) async fn thread_view(
     // A signed-in viewer opening a remote thread fills either missing direction:
     // the orphaned parent and replies we never received over federation. Both
     // run in the background and show up on a later view.
-    if viewer_id.is_some() {
-        crate::reply_fetch::on_thread_open(state, &focus).await?;
+    if let Some(viewer_id) = viewer_id {
+        crate::reply_fetch::on_thread_open_for_account(state, &focus, viewer_id).await?;
     }
 
     // Opening a live broadcast's page is someone asking to watch it, so this

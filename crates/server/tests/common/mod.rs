@@ -61,6 +61,8 @@ pub struct StubFederation {
     /// remote-interaction tests.
     pub subscribe_templates: Mutex<HashMap<String, String>>,
     pub fetches: Mutex<Vec<String>>,
+    /// Recipient-aware AP fetches as `(url, local account id)`.
+    pub account_fetches: Mutex<Vec<(String, i64)>>,
     pub deliveries: Mutex<Vec<Delivery>>,
     pub fail_deliveries: Mutex<bool>,
     pub pushes: Mutex<Vec<WebPush>>,
@@ -150,6 +152,10 @@ impl StubFederation {
 
     pub fn fetches(&self) -> Vec<String> {
         self.fetches.lock().unwrap().clone()
+    }
+
+    pub fn account_fetches(&self) -> Vec<(String, i64)> {
+        self.account_fetches.lock().unwrap().clone()
     }
 
     pub fn serve_activitypub_etag(&self, uri: &str, etag: &str) {
@@ -285,6 +291,18 @@ impl FederationApi for StubFederation {
         Box::pin(async move { result })
     }
 
+    fn fetch_actor_for_account<'a>(
+        &'a self,
+        uri: &'a str,
+        account_id: i64,
+    ) -> BoxFuture<'a, Result<RemoteActor, FederationError>> {
+        self.account_fetches
+            .lock()
+            .unwrap()
+            .push((uri.to_owned(), account_id));
+        self.fetch_actor(uri)
+    }
+
     fn fetch_object<'a>(
         &'a self,
         uri: &'a str,
@@ -306,6 +324,18 @@ impl FederationApi for StubFederation {
             }
             result
         })
+    }
+
+    fn fetch_object_for_account<'a>(
+        &'a self,
+        uri: &'a str,
+        account_id: i64,
+    ) -> BoxFuture<'a, Result<serde_json::Value, FederationError>> {
+        self.account_fetches
+            .lock()
+            .unwrap()
+            .push((uri.to_owned(), account_id));
+        self.fetch_object(uri)
     }
 
     fn fetch_activitypub<'a>(
@@ -351,6 +381,18 @@ impl FederationApi for StubFederation {
             self.follow_object(uri)
         };
         Box::pin(async move { result })
+    }
+
+    fn fetch_object_following_for_account<'a>(
+        &'a self,
+        uri: &'a str,
+        account_id: i64,
+    ) -> BoxFuture<'a, Result<serde_json::Value, FederationError>> {
+        self.account_fetches
+            .lock()
+            .unwrap()
+            .push((uri.to_owned(), account_id));
+        self.fetch_object_following(uri)
     }
 
     fn fetch_object_following_ignoring_budget<'a>(

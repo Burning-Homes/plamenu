@@ -448,7 +448,7 @@ async fn initialize_state(config: Config) -> Result<AppState, AnyError> {
             "encrypted and verified legacy federation signing keys"
         );
     }
-    let federation_keyring = plamenu::crypto::FederationKeyring::from_config(&config)?;
+    let federation_keyring = Arc::new(plamenu::crypto::FederationKeyring::from_config(&config)?);
     plamenu::key_store::ensure_instance(&pool, &federation_keyring, &config.domain).await?;
     // Lead with the Mastodon-compat token (Googlebot-style `compatible;`
     // form, still truthfully self-identifying as plamenu). Some instances
@@ -506,6 +506,7 @@ async fn initialize_state(config: Config) -> Result<AppState, AnyError> {
             .with_page_user_agent(page_user_agent),
         pool.clone(),
         config.domain.clone(),
+        Arc::clone(&federation_keyring),
     ));
     let media = Arc::new(plamenu::storage::LocalDiskStore::new(
         config.media_dir.clone(),

@@ -1,7 +1,8 @@
 """Direct messages federate in both directions and land in conversations."""
 
 import pytest
-from plamenu_e2e import config
+
+from plamenu_e2e import config, mastodon, plamenu, unique
 from plamenu_e2e.steps import step, wait_for
 
 
@@ -74,6 +75,60 @@ def test_direct_messages_federate_both_ways(
             and marker in ((n.get("status") or {}).get("content") or "")
             for n in notifications
         ), "alice should have a mention notification for the DM"
+
+
+@pytest.mark.federation(
+    direction="inbound",
+    one_way_reason=(
+        "recipient-authorized fetch: a direct remote object can only be "
+        "dereferenced by its addressed local recipient"
+    ),
+)
+def test_recipient_signed_fetch_resolves_uncached_direct_status(
+    plamenu_user, plamenu_api, cli, db, marker
+):
+    """An addressed local user, but not another user, can refetch a DM."""
+    with step("a fresh Mastodon author sends the local user a direct status"):
+        username = unique("authdirect")
+        mastodon.create_account(username)
+        author = mastodon.api_as(f"{username}@mastodon.local")
+        target = author.resolve_account(plamenu_user.acct)
+        assert target, "Mastodon could not resolve the direct-message recipient"
+        remote = author.post_status(
+            f"@{plamenu_user.acct} recipient-only {marker}", visibility="direct"
+        )
+        status_id = wait_for(
+            lambda: db.status_id_containing(marker),
+            desc="the direct status to arrive at Plamenu",
+        )
+        assert db.status_visibility(status_id) == "direct"
+
+    with step("remove the delivered copy so URL resolution must dereference it"):
+        status_uri = remote["uri"]
+        db.forget_remote_status(status_uri)
+        assert db.status_id_containing(marker) is None
+
+    with step("an unrelated local actor cannot fetch the direct object"):
+        stranger = plamenu.User()
+        cli.account_add(stranger)
+        stranger_api = plamenu.login(stranger)
+        denied = stranger_api.search(status_uri, resolve=True, type="statuses")[
+            "statuses"
+        ]
+        assert denied == [], f"a non-recipient resolved a direct status: {denied!r}"
+
+    with step("the addressed recipient refetches the same direct object"):
+        statuses = plamenu_api.search(status_uri, resolve=True, type="statuses")[
+            "statuses"
+        ]
+        assert statuses and marker in statuses[0]["content"], (
+            "the recipient's signed fetch did not return the direct status "
+            f"(got {statuses!r})"
+        )
+        assert statuses[0]["visibility"] == "direct", statuses[0]
+        stored_id = db.status_id_containing(marker)
+        assert stored_id is not None
+        assert stranger_api.get_status_or_none(str(stored_id)) is None
 
 
 @pytest.mark.federation(

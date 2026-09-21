@@ -1,6 +1,6 @@
 """Thread backfill: a reply to an unseen thread pulls in its ancestors."""
 
-from plamenu_e2e import mastodon, unique
+from plamenu_e2e import config, mastodon, unique
 from plamenu_e2e.steps import step, wait_for
 
 
@@ -49,3 +49,44 @@ def test_reply_backfills_unseen_thread(plamenu_user, plamenu_api, db, marker):
         assert len(ancestors) == 2, f"expected both ancestors, got {ancestors}"
         assert f"{marker}root" in ancestors[0]
         assert f"{marker}mid" in ancestors[1]
+
+
+def test_private_parent_backfill_uses_recipient_signer(
+    plamenu_user, plamenu_api, db, marker
+):
+    """A delivered mention backfills its protected parent as the recipient."""
+    with step("a fresh Mastodon author posts a private root before the follow"):
+        username = unique("authparent")
+        acct = f"{username}@{config.MASTODON_DOMAIN}"
+        mastodon.create_account(username)
+        author = mastodon.api_as(f"{username}@mastodon.local")
+        root = author.post_status(
+            f"protected parent {marker}root", visibility="private"
+        )
+        assert db.status_id_containing(f"{marker}root") is None
+
+    with step(f"@{plamenu_user.username} follows @{acct}"):
+        account = plamenu_api.resolve_account(acct)
+        assert account, "Plamenu could not resolve the fresh Mastodon author"
+        plamenu_api.follow(account["id"])
+        wait_for(
+            lambda: db.outbound_follow_pending(plamenu_user.username) is False,
+            desc="Mastodon to accept the Plamenu user's follow",
+        )
+
+    with step("the author sends a direct reply whose parent is still uncached"):
+        author.post_status(
+            f"@{plamenu_user.acct} fetch my parent {marker}leaf",
+            visibility="direct",
+            in_reply_to_id=root["id"],
+        )
+        leaf_id = wait_for(
+            lambda: db.status_id_containing(f"{marker}leaf"),
+            desc="the direct reply to arrive at Plamenu",
+        )
+
+    with step("recipient-signed backfill retrieves and threads the private parent"):
+        root_id = db.status_id_containing(f"{marker}root")
+        assert root_id is not None, "the protected parent was not backfilled"
+        assert db.status_visibility(root_id) == "private"
+        assert db.status_parent_id(leaf_id) == root_id
