@@ -9,6 +9,7 @@ use plamenu_ap::nodeinfo::{NodeInfo, NodeInfoIndex, NodeInfoStats};
 use plamenu_ap::webfinger::{HostMeta, Jrd};
 use plamenu_db::account;
 use serde::Deserialize;
+use url::Url;
 
 use crate::error::ApiError;
 use crate::{AppState, VERSION};
@@ -59,18 +60,33 @@ pub async fn webfinger(
             )),
         ));
     }
-    let acct: Acct = query
-        .resource
-        .parse()
-        .map_err(|e: plamenu_ap::acct::AcctError| ApiError::BadRequest(e.to_string()))?;
-    if !state.config.is_local_domain(acct.domain()) {
-        return Err(ApiError::NotFound);
-    }
-    let Some(account) =
+    let account = if Url::parse(&query.resource)
+        .is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
+    {
+        // URL resources are resolved entirely against our published local URL
+        // shapes. Never dereference an arbitrary WebFinger resource: foreign,
+        // unknown and actor sub-resource URLs are local misses.
+        if crate::local_identity::has_local_actor_shape(&state.config.domain, &query.resource) {
+            crate::local_identity::find_actor(&state.pool, &state.config.domain, &query.resource)
+                .await?
+        } else if let Some(username) =
+            plamenu_ap::urls::parse_local_profile_url(&state.config.domain, &query.resource)
+        {
+            account::find_public_local_account_by_username(&state.pool, username).await?
+        } else {
+            None
+        }
+    } else {
+        let acct: Acct = query
+            .resource
+            .parse()
+            .map_err(|e: plamenu_ap::acct::AcctError| ApiError::BadRequest(e.to_string()))?;
+        if !state.config.is_local_domain(acct.domain()) {
+            return Err(ApiError::NotFound);
+        }
         account::find_public_local_account_by_username(&state.pool, acct.username()).await?
-    else {
-        return Err(ApiError::NotFound);
-    };
+    }
+    .ok_or(ApiError::NotFound)?;
     // A deleted account's JRD is gone; a reversibly suspended one still
     // answers (Mastodon 410s only `permanently_unavailable?` here).
     if crate::moderation::permanently_unavailable(&state.pool, &account).await? {

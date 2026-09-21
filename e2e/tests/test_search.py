@@ -2,6 +2,7 @@
 ingestion, and local full-text + hashtag search."""
 
 import pytest
+import requests
 
 from plamenu_e2e import config, mastodon, plamenu, unique
 from plamenu_e2e.steps import log, step, wait_for
@@ -103,8 +104,7 @@ def test_recipient_signed_fetch_resolves_uncached_private_status(
         assert denied == [], f"a non-follower resolved a private status: {denied!r}"
         failures = db.remote_fetch_failures_for_uri(status_uri)
         assert any(scope == "resource-account" for scope, _, _ in failures), (
-            "the denial was not recorded against the requesting actor: "
-            f"{failures!r}"
+            f"the denial was not recorded against the requesting actor: {failures!r}"
         )
         assert not any(scope == "resource" for scope, _, _ in failures), (
             "an authorization-shaped denial must not poison the global resource "
@@ -199,3 +199,54 @@ def test_mastodon_resolves_plamenu_account(alice, plamenu_user):
         assert account and account["acct"] == plamenu_user.acct, (
             f"mastodon could not resolve our user (got {account!r})"
         )
+
+
+@pytest.mark.federation(
+    direction="outbound",
+    one_way_reason=(
+        "same-direction refinement of test_mastodon_resolves_plamenu_account: "
+        "the live WebFinger endpoint accepts the actor and human profile URLs "
+        "that it publishes, in addition to the ordinary acct resource."
+    ),
+)
+def test_webfinger_resolves_published_account_urls(plamenu_user):
+    """Every published identity for a local account returns the same JRD."""
+
+    def webfinger(resource: str):
+        return requests.get(
+            f"{config.PLAMENU_URL}/.well-known/webfinger",
+            params={"resource": resource},
+            timeout=30,
+            verify=False,
+        )
+
+    with step("resolve the fresh account by its acct resource"):
+        response = webfinger(f"acct:{plamenu_user.acct}")
+        response.raise_for_status()
+        expected = response.json()
+        actor_url = next(
+            link["href"]
+            for link in expected["links"]
+            if link["rel"] == "self" and link["type"] == "application/activity+json"
+        )
+        profile_url = expected["aliases"][0]
+
+    with step("the canonical actor and human profile URLs return the same JRD"):
+        for resource in (actor_url, profile_url):
+            response = webfinger(resource)
+            assert response.status_code == 200, (
+                f"WebFinger rejected published resource {resource}: "
+                f"{response.status_code} {response.text[:500]}"
+            )
+            assert response.json() == expected
+
+    with step("unknown and foreign account URLs stay local 404s"):
+        for resource in (
+            f"{config.PLAMENU_URL}/@missing-{plamenu_user.username}",
+            f"https://elsewhere.invalid/@{plamenu_user.username}",
+        ):
+            response = webfinger(resource)
+            assert response.status_code == 404, (
+                f"unexpected WebFinger result for {resource}: "
+                f"{response.status_code} {response.text[:500]}"
+            )

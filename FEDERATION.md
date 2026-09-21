@@ -45,10 +45,11 @@ the instance actor uses `Application`. Webxdc sessions use both `Group` and `Web
 Actors advertise their inboxes and collections; the shared inbox is `/inbox`.
 
 WebFinger accepts `acct:user@domain`, `user@domain`, and `@user@domain` for
-accounts. It does not accept account actor URLs as the resource. The instance
-actor has separate discovery through the bare domain, `domain@domain`, or its
-`/actor` URL. An optional `account_domain` changes handles while actor IDs stay
-on `domain`.
+accounts, along with the exact canonical actor URL and human profile URL that
+the account publishes. URL resources are matched locally and are never
+dereferenced. The instance actor has separate discovery through the bare
+domain, `domain@domain`, or its `/actor` URL. An optional `account_domain`
+changes handles while actor IDs and profile URLs stay on `domain`.
 
 ### Activities and content
 

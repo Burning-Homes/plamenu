@@ -6,7 +6,10 @@ mod common;
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
-use common::{TEST_DOMAIN, create_local_account, test_app, test_app_split_domain};
+use common::{
+    TEST_DOMAIN, create_immutable_local_account, create_local_account, test_app,
+    test_app_split_domain,
+};
 use http_body_util::BodyExt;
 use plamenu_db::PgPool;
 use serde_json::Value;
@@ -137,6 +140,32 @@ async fn webfinger_is_case_insensitive_and_canonicalizes(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn webfinger_actor_and_profile_urls_resolve_to_the_same_jrd(pool: PgPool) {
+    let alice = create_immutable_local_account(&pool, "alice", "Alice").await;
+    let actor_url = alice.uri.as_deref().expect("immutable actor URI");
+    let app = || test_app(pool.clone());
+
+    let (status, _, acct_jrd) = get(
+        app(),
+        "/.well-known/webfinger?resource=acct:alice%40plamenu.test",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    for resource in [actor_url, "https://plamenu.test/@alice"] {
+        let (status, _, url_jrd) = get(
+            app(),
+            &format!("/.well-known/webfinger?resource={resource}"),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "resource={resource}");
+        assert_eq!(url_jrd, acct_jrd, "resource={resource}");
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn split_domain_webfinger_maps_short_handles_to_the_host_domain(pool: PgPool) {
     create_alice(&pool).await;
     let app = || test_app_split_domain(pool.clone(), "social.example.test", "example.test");
@@ -169,6 +198,20 @@ async fn split_domain_webfinger_maps_short_handles_to_the_host_domain(pool: PgPo
         body["links"][2]["template"],
         "https://social.example.test/interact?uri={uri}"
     );
+
+    for resource in [
+        "https://social.example.test/users/alice",
+        "https://social.example.test/@alice",
+    ] {
+        let (status, _, url_jrd) = get(
+            app(),
+            &format!("/.well-known/webfinger?resource={resource}"),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "resource={resource}");
+        assert_eq!(url_jrd, body, "resource={resource}");
+    }
 
     // Peers that discover the actor URL first commonly try its host as the
     // acct domain. Mastodon and GoToSocial accept that alias and still return
@@ -283,6 +326,30 @@ async fn webfinger_foreign_domain_is_404(pool: PgPool) {
     let uri = "/.well-known/webfinger?resource=acct:alice@elsewhere.example";
     let (status, _, _) = get(test_app(pool), uri, None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn webfinger_url_resources_reject_unknown_foreign_and_non_account_urls(pool: PgPool) {
+    create_alice(&pool).await;
+    let app = || test_app(pool.clone());
+
+    for resource in [
+        "https://plamenu.test/users/ghost",
+        "https://plamenu.test/@ghost",
+        "https://elsewhere.example/users/alice",
+        "https://elsewhere.example/@alice",
+        "https://plamenu.test/users/alice/inbox",
+        "https://plamenu.test/@alice/123",
+        "https://plamenu.test.evil.example/@alice",
+    ] {
+        let (status, _, _) = get(
+            app(),
+            &format!("/.well-known/webfinger?resource={resource}"),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "resource={resource}");
+    }
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

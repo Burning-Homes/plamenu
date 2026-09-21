@@ -322,6 +322,16 @@ pub fn parse_local_user_url<'a>(domain: &str, url: &'a str) -> Option<&'a str> {
     (!username.is_empty() && !username.contains(['/', '?', '#'])).then_some(username)
 }
 
+/// Reverse of [`LocalUserUrls::from_actor_id`]'s `web_url`: extracts the
+/// username when `url` is exactly this instance's human profile URL
+/// (`https://{domain}/@{name}`).
+#[must_use]
+pub fn parse_local_profile_url<'a>(domain: &str, url: &'a str) -> Option<&'a str> {
+    let path = url.strip_prefix("https://")?.strip_prefix(domain)?;
+    let username = path.strip_prefix("/@")?;
+    (!username.is_empty() && !username.contains(['/', '?', '#'])).then_some(username)
+}
+
 /// Extracts the immutable account id from this instance's numeric local actor
 /// URL (`https://{domain}/ap/accounts/{id}`). Sub-resources and lookalike hosts
 /// are rejected.
@@ -386,7 +396,7 @@ mod tests {
         parse_local_context_url, parse_local_feature_authorization_url,
         parse_local_numeric_actor_url, parse_local_numeric_collection_url,
         parse_local_numeric_feature_authorization_url, parse_local_numeric_status_url,
-        parse_local_status_url, parse_local_user_url, replies_page_url,
+        parse_local_profile_url, parse_local_status_url, parse_local_user_url, replies_page_url,
     };
 
     #[test]
@@ -604,6 +614,29 @@ mod tests {
             "https://plamenu.local/@alice",
         ] {
             assert_eq!(parse_local_user_url(domain, bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn parse_local_profile_url_roundtrips_and_rejects_lookalikes() {
+        let domain = "plamenu.local";
+        let urls = LocalUserUrls::new(domain, "alice");
+        assert_eq!(
+            parse_local_profile_url(domain, &urls.web_url),
+            Some("alice")
+        );
+
+        for bad in [
+            "https://plamenu.local/@",
+            "https://plamenu.local/@alice/123",
+            "https://plamenu.local/@alice?view=full",
+            "https://plamenu.local/@alice#profile",
+            "https://other.example/@alice",
+            "https://plamenu.local.evil.example/@alice",
+            "http://plamenu.local/@alice",
+            "https://plamenu.local/users/alice",
+        ] {
+            assert_eq!(parse_local_profile_url(domain, bad), None, "{bad}");
         }
     }
 
