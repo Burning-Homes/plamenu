@@ -13,7 +13,6 @@ behavior. Optional: skips when plup isn't running.
 """
 
 import pytest
-
 from plamenu_e2e import config, plup, unique
 from plamenu_e2e.steps import step, wait_for
 

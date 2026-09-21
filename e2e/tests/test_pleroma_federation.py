@@ -11,7 +11,6 @@ optional and skips when the instance is down.
 """
 
 import pytest
-
 from plamenu_e2e import config, pleroma, unique
 from plamenu_e2e.media import cached_attachment, make_png, tiny_png
 from plamenu_e2e.steps import step, wait_for

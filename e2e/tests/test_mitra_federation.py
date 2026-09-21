@@ -8,7 +8,6 @@ actors, groups and conversation containers have their own future milestones.
 import uuid
 
 import pytest
-
 from plamenu_e2e import config, mitra, unique
 from plamenu_e2e.api import Api
 from plamenu_e2e.media import cached_attachment, make_png
