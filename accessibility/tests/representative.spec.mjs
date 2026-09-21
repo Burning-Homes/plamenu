@@ -149,6 +149,44 @@ test('keyboard bypass and 320 CSS-pixel reflow contracts hold', async ({ page },
     }));
     expect(widths.scroll, 'page-level horizontal overflow at 320 CSS pixels')
       .toBeLessThanOrEqual(widths.client);
+
+    await signIn(page);
+    await page.goto('/compose');
+
+    const selectors = page.locator('[data-compose-menu], [data-compose-combo]');
+    for (const wrapper of await selectors.all()) {
+      const trigger = wrapper.locator('[data-menu-trigger], [data-combo-trigger]');
+      const popup = wrapper.locator('.compose__menu-pop, .compose__combo-pop');
+      await trigger.click();
+      const box = await popup.boundingBox();
+      expect(box, 'open composer selector has a box').not.toBeNull();
+      expect(box.x, 'composer selector crosses the viewport start edge')
+        .toBeGreaterThanOrEqual(7.9);
+      expect(box.x + box.width, 'composer selector crosses the viewport end edge')
+        .toBeLessThanOrEqual(widths.client - 7.9);
+      await page.keyboard.press('Escape');
+    }
+
+    const picker = page.locator(
+      '.compose__media-body > input[type="file"].visually-hidden',
+    );
+    await picker.setInputFiles({
+      name: 'sample.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    });
+    const card = page.locator('.compose__attachment');
+    await expect(card).toBeVisible();
+    expect(await card.locator('.compose__alt').getAttribute('placeholder')).toBeNull();
+    const [cardBox, bodyBox, altBox, decorativeBox] = await Promise.all([
+      card.boundingBox(),
+      card.locator('.compose__attachment-body').boundingBox(),
+      card.locator('.compose__alt').boundingBox(),
+      card.locator('.compose__inline.compose__media-extra').boundingBox(),
+    ]);
+    expect(bodyBox.width).toBeGreaterThan(cardBox.width - 20);
+    expect(altBox.width).toBeGreaterThan(cardBox.width - 20);
+    expect(decorativeBox.width).toBeGreaterThan(cardBox.width - 20);
   }
 });
 

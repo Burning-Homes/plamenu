@@ -953,8 +953,10 @@
   // should flip upward rather than tuck its final row underneath the bar.
   function placePopup(trigger, pop) {
     pop.classList.remove("is-above", "is-below", "is-end");
+    pop.style.removeProperty("--popup-translate-x");
     const rect = trigger.getBoundingClientRect();
     const height = pop.offsetHeight;
+    const viewportWidth = document.documentElement.clientWidth;
     const tabbar = document.querySelector(".tabbar");
     const usableBottom =
       tabbar && getComputedStyle(tabbar).display !== "none"
@@ -964,8 +966,19 @@
     const spaceAbove = rect.top;
     const below = spaceBelow >= height + 8 || spaceBelow >= spaceAbove;
     pop.classList.add(below ? "is-below" : "is-above");
-    if (rect.left + pop.offsetWidth > window.innerWidth - 8) {
+    if (rect.left + pop.offsetWidth > viewportWidth - 8) {
       pop.classList.add("is-end");
+    }
+    // End alignment fixes a right spill, but can push a wide popup past the
+    // left edge. Clamp the final physical box in either direction.
+    const popRect = pop.getBoundingClientRect();
+    let translateX = 0;
+    if (popRect.left < 8) translateX = 8 - popRect.left;
+    if (popRect.right + translateX > viewportWidth - 8) {
+      translateX += viewportWidth - 8 - (popRect.right + translateX);
+    }
+    if (translateX) {
+      pop.style.setProperty("--popup-translate-x", `${translateX}px`);
     }
   }
 
@@ -983,6 +996,7 @@
         combobox.removeAttribute("aria-activedescendant");
       }
       pop.classList.remove("is-above", "is-below", "is-end");
+      pop.style.removeProperty("--popup-translate-x");
       document.removeEventListener("click", onDocClick, true);
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onReflow);
@@ -1713,6 +1727,8 @@
     if (button && section) setSectionOpen(button, section, true);
   }
 
+  let composeMediaFieldSequence = 0;
+
   function bindComposeMedia(form) {
     const section = form.querySelector('[data-compose-section="media"]');
     if (!section) return;
@@ -1793,26 +1809,20 @@
         );
       }
 
-      const altLabel = document.createElement("label");
-      altLabel.className = "compose__field";
-      const altName = document.createElement("span");
+      const altName = document.createElement("label");
+      altName.className = "compose__attachment-label";
       altName.textContent = form.dataset.i18nAltDescription || "Describe this attachment";
       const alt = document.createElement("textarea");
+      alt.id = `compose-media-alt-${++composeMediaFieldSequence}`;
+      altName.htmlFor = alt.id;
       alt.name = "media_alt[]";
       alt.rows = 2;
       alt.maxLength = 1500;
       alt.className = "compose__alt";
-      alt.placeholder =
-        form.dataset.i18nAltDescription ||
-        "Describe for people who are blind or have low vision";
-      alt.setAttribute(
-        "aria-label",
-        (form.dataset.i18nAltNamed || "Alt text for __name__").replace(
-          "__name__",
-          file.name
-        )
-      );
-      altLabel.append(altName, alt);
+      const altFileName = document.createElement("span");
+      altFileName.className = "visually-hidden";
+      altFileName.textContent = ` — ${file.name}`;
+      altName.append(altFileName);
 
       const decorativeLabel = document.createElement("label");
       decorativeLabel.className = "compose__inline compose__media-extra";
@@ -1921,7 +1931,7 @@
       const bodyEl = document.createElement("div");
       bodyEl.className = "compose__attachment-body";
       bodyEl.append(
-        altLabel,
+        alt,
         decorativeLabel,
         transcriptLabel,
         captionsLabel,
@@ -1929,7 +1939,7 @@
         fileInput
       );
 
-      li.append(preview, bodyEl, remove);
+      li.append(preview, altName, remove, bodyEl);
 
       const item = { file, li, url };
       remove.addEventListener("click", () => removeItem(item));

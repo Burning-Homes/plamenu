@@ -1314,6 +1314,9 @@ img.emoji {
   position: absolute;
   inset-inline-start: 0;
   inset-block-start: calc(100% + var(--space-1));
+  /* JS applies a small physical correction after logical start/end alignment
+     so a wide popup never crosses either viewport edge. */
+  translate: var(--popup-translate-x, 0) 0;
   z-index: 20;
   min-inline-size: 15rem;
   max-inline-size: min(21rem, 92vw);
@@ -1798,9 +1801,16 @@ a.edit-media__thumb--file {
 }
 
 .compose__attachment-body {
+  grid-column: 1 / -1;
   min-inline-size: 0;
   display: grid;
   gap: var(--space-2);
+}
+
+.compose__attachment-label {
+  align-self: center;
+  min-inline-size: 0;
+  font-weight: 600;
 }
 
 .compose__alt {
@@ -1813,6 +1823,10 @@ a.edit-media__thumb--file {
 
 .compose__media-extra textarea,
 .compose__media-extra input[type="file"] {
+  inline-size: 100%;
+}
+
+.compose__attachment-body > .compose__media-extra {
   inline-size: 100%;
 }
 
