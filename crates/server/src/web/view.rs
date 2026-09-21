@@ -5201,12 +5201,16 @@ fn notification_label(kind: &str) -> &'static str {
         "live" => "is live now",
         "poll" => "ran a poll that ended",
         "update" => "edited a post",
+        "quoted_update" => "edited a post you quoted",
         "quote" => "quoted your post",
         "pleroma:emoji_reaction" => "reacted to your post",
         "admin.sign_up" => "signed up",
         "admin.report" => "filed a report",
         "severed_relationships" => "relationships were severed",
         "moderation_warning" => "received a moderation warning",
+        "added_to_collection" => "added you to a collection",
+        "collection_update" => "edited a collection you're in",
+        "annual_report" => "made your annual report available",
         // Event participation (E-track). Without these the row reads "sent you a
         // notification", which tells the reader nothing about what to do next.
         "event.participation" => "responded to your event",
@@ -5215,6 +5219,191 @@ fn notification_label(kind: &str) -> &'static str {
         "event.changed" => "changed an event you're attending",
         "event.invite" => "invited you to an event",
         _ => "sent you a notification",
+    }
+}
+
+/// A collection notification carries the collection itself, not a status. Give
+/// that object the same useful treatment as a status notification: name,
+/// description, size, a direct link, and the membership-revocation action.
+fn collection_notification(note: &Value, actor: &Account, ctx: &Ctx, kind: &str) -> Markup {
+    let collection = note.get("collection").filter(|value| value.is_object());
+    let name = collection
+        .and_then(|value| value.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or("Unavailable collection");
+    let description = collection
+        .and_then(|value| value.get("description"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let url = collection
+        .and_then(|value| value.get("url"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty());
+    let item_count = collection
+        .and_then(|value| value.get("item_count"))
+        .and_then(Value::as_u64)
+        .unwrap_or_default();
+    let collection_id = collection
+        .and_then(|value| value.get("id"))
+        .and_then(Value::as_str);
+    let is_member = collection
+        .and_then(|value| value.get("items"))
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items.iter().any(|item| {
+                item.get("account_id").and_then(Value::as_str) == ctx.viewer_id
+                    && item
+                        .get("state")
+                        .and_then(Value::as_str)
+                        .is_some_and(|state| matches!(state, "pending" | "accepted"))
+            })
+        });
+    let leave_action = collection_id.map(|id| format!("/web/collections/{id}/leave"));
+    let leave_message = format!("Remove yourself from {name}?");
+    html! {
+        article.notification data-kind=(kind) {
+            p.notification__label {
+                span.notification__icon { (icon(notification_icon(kind))) }
+                span.notification__label-body {
+                    a.notification__actor href=(actor.profile_path()) { (actor.name_markup()) }
+                    span.notification__label-detail { (notification_label(kind)) }
+                }
+            }
+            section.notification__object.notification__collection {
+                h2.notification__object-title {
+                    @if let Some(url) = url {
+                        a href=(url) { (name) }
+                    } @else {
+                        (name)
+                    }
+                }
+                @if !description.is_empty() {
+                    div.notification__object-description { (PreEscaped(description)) }
+                }
+                p.notification__object-meta {
+                    (item_count) " " (if item_count == 1 { "member" } else { "members" })
+                }
+                nav.notification__actions aria-label="Collection actions" {
+                    @if let Some(url) = url {
+                        a.notification__action href=(url) { "Open collection" }
+                    }
+                    @if is_member
+                        && let (Some(csrf), Some(action)) = (ctx.csrf, leave_action.as_deref()) {
+                        form method="post" action=(CONFIRM_PATH)
+                            data-confirm=(&leave_message) data-confirm-action=(action) {
+                            input type="hidden" name="csrf" value=(csrf);
+                            input type="hidden" name="return_to" value=(ctx.return_to);
+                            (confirmation_fields(action, Some(&leave_message)))
+                            button.notification__action.notification__action--danger type="submit" {
+                                "Remove me"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn report_category(category: &str) -> &'static str {
+    match category {
+        "spam" => "spam",
+        "legal" => "illegal content",
+        "violation" => "a rule violation",
+        _ => "another concern",
+    }
+}
+
+/// Staff report notifications embed the report. Render its target, category,
+/// cited-post count, comment and moderation destination instead of repeating
+/// the reporter's ordinary profile card.
+fn admin_report_notification(note: &Value, actor: &Account, ctx: &Ctx) -> Markup {
+    let report = note.get("report").filter(|value| value.is_object());
+    let target_value = report.and_then(|value| value.pointer("/target_account/account"));
+    let target = target_value.map(Account);
+    let report_id = report
+        .and_then(|value| value.get("id"))
+        .and_then(Value::as_str);
+    let category = report
+        .and_then(|value| value.get("category"))
+        .and_then(Value::as_str)
+        .unwrap_or("other");
+    let comment = report
+        .and_then(|value| value.get("comment"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let cited = report
+        .and_then(|value| value.get("statuses"))
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    html! {
+        article.notification data-kind="admin.report" {
+            p.notification__label {
+                span.notification__icon { (icon(notification_icon("admin.report"))) }
+                span.notification__label-body {
+                    a.notification__actor href=(actor.profile_path()) { (actor.name_markup()) }
+                    span.notification__label-detail {
+                        "reported "
+                        @if let Some(target) = &target {
+                            a.notification__target href=(target.profile_path()) { (target.name_markup()) }
+                        } @else {
+                            "an account"
+                        }
+                        " for " (report_category(category))
+                    }
+                }
+            }
+            p.notification__object-meta {
+                @if cited == 0 { "No posts were attached." }
+                @else { (cited) " " (if cited == 1 { "post was" } else { "posts were" }) " attached." }
+            }
+            @if !comment.is_empty() {
+                blockquote.notification__report-comment { (comment) }
+            }
+            @if ctx.admin.manage_reports && let Some(id) = report_id {
+                nav.notification__actions aria-label="Report actions" {
+                    a.notification__action href=(format!("/admin/reports/{id}")) { "Review report" }
+                }
+            }
+        }
+    }
+}
+
+fn moderation_warning_label(action: &str) -> &'static str {
+    match action {
+        "disable" => "Your account has been disabled",
+        "mark_statuses_as_sensitive" => "Some of your posts were marked as sensitive",
+        "delete_statuses" => "Some of your posts were removed",
+        "sensitive" => "Your posts will now be marked as sensitive",
+        "silence" => "Your account has been limited",
+        "suspend" => "Your account has been suspended",
+        _ => "Your account has received a moderation warning",
+    }
+}
+
+/// Compatibility system events carry a placeholder account in the wire
+/// envelope, but that account did not perform the event. Keep it out of the
+/// sentence and present the actual consequence instead.
+fn system_notification(kind: &str) -> Markup {
+    let (label, detail) = if kind == "severed_relationships" {
+        (
+            "Some follow relationships were severed",
+            "A server-level moderation or availability event removed one or more follows.",
+        )
+    } else {
+        (
+            "Your annual report is ready",
+            "A summary of your activity for the year is available.",
+        )
+    };
+    html! {
+        article.notification data-kind=(kind) {
+            p.notification__label {
+                span.notification__icon { (icon(notification_icon(kind))) }
+                span.notification__label-body { (label) }
+            }
+            p.notification__system-detail { (detail) }
+        }
     }
 }
 
@@ -5236,6 +5425,10 @@ pub fn notification_item(note: &Value, ctx: &Ctx) -> Markup {
     // recipient themselves; the moderator stays hidden): render the strike
     // text and the path to the strikes page instead of an actor line.
     if kind == "moderation_warning" {
+        let action = note
+            .pointer("/moderation_warning/action")
+            .and_then(Value::as_str)
+            .unwrap_or("none");
         let text = note
             .pointer("/moderation_warning/text")
             .and_then(Value::as_str)
@@ -5244,7 +5437,7 @@ pub fn notification_item(note: &Value, ctx: &Ctx) -> Markup {
             article.notification data-kind=(kind) {
                 p.notification__label {
                     span.notification__icon { (icon(notification_icon(kind))) }
-                    "Your account has received a moderation warning"
+                    span.notification__label-body { (moderation_warning_label(action)) }
                 }
                 @if !text.is_empty() {
                     p.notification__warning-text { (text) }
@@ -5254,6 +5447,17 @@ pub fn notification_item(note: &Value, ctx: &Ctx) -> Markup {
                 }
             }
         };
+    }
+    if matches!(kind, "added_to_collection" | "collection_update") {
+        return collection_notification(note, &actor, ctx, kind);
+    }
+    if kind == "admin.report" {
+        return admin_report_notification(note, &actor, ctx);
+    }
+    // These are system events, not actions performed by the account carried in
+    // Mastodon's compatibility envelope. Never imply that account caused them.
+    if matches!(kind, "severed_relationships" | "annual_report") {
+        return system_notification(kind);
     }
     // Pleroma emoji reactions carry the reacted emoji; show it inline rather
     // than collapsing to the generic phrase. A custom emoji brings its image
@@ -5270,12 +5474,16 @@ pub fn notification_item(note: &Value, ctx: &Ctx) -> Markup {
         article.notification data-kind=(kind) {
             p.notification__label {
                 span.notification__icon { (icon(notification_icon(kind))) }
-                a.notification__actor href=(actor.profile_path()) { (actor.name_markup()) }
-                " " (notification_label(kind))
-                @if kind == "pleroma:emoji_reaction" && !emoji.is_empty() {
-                    " " span.notification__emoji {
-                        @if emoji_url.is_empty() { (emoji) }
-                        @else { (PreEscaped(emoji_img(emoji.trim_matches(':'), emoji_url))) }
+                span.notification__label-body {
+                    a.notification__actor href=(actor.profile_path()) { (actor.name_markup()) }
+                    span.notification__label-detail {
+                        (notification_label(kind))
+                        @if kind == "pleroma:emoji_reaction" && !emoji.is_empty() {
+                            " " span.notification__emoji {
+                                @if emoji_url.is_empty() { (emoji) }
+                                @else { (PreEscaped(emoji_img(emoji.trim_matches(':'), emoji_url))) }
+                            }
+                        }
                     }
                 }
             }
@@ -5290,6 +5498,20 @@ pub fn notification_item(note: &Value, ctx: &Ctx) -> Markup {
                         a href="/settings/relationships?rel=requests" {
                             "Review follow requests"
                         }
+                    }
+                }
+                @if kind == "admin.sign_up" && ctx.admin.manage_users {
+                    p.notification__warning-link {
+                        a href=(format!("/admin/accounts/{}", actor.id())) {
+                            "Review account"
+                        }
+                    }
+                }
+            }
+            @if kind == "event.participation" && let Some(status) = status {
+                nav.notification__actions aria-label="Event actions" {
+                    a.notification__action href=(Status(status).permalink()) {
+                        "Open event and manage attendees"
                     }
                 }
             }
@@ -5390,10 +5612,14 @@ fn notification_icon(kind: &str) -> &'static str {
     match kind {
         "favourite" | "pleroma:emoji_reaction" => "favourite",
         "reblog" => "boost",
-        "quote" => "quote",
+        "quote" | "quoted_update" => "quote",
         "follow" | "follow_request" | "admin.sign_up" => "profile",
         "admin.report" | "moderation_warning" | "severed_relationships" => "shield",
-        "event.participation"
+        "added_to_collection" | "collection_update" => "collection",
+        "poll" => "poll",
+        "update" => "compose",
+        "annual_report"
+        | "event.participation"
         | "event.accepted"
         | "event.rejected"
         | "event.changed"
@@ -5840,6 +6066,127 @@ mod tests {
             clock: ViewerClock::utc(Locale::default()),
             admin: AdminCapabilities::default(),
         }
+    }
+
+    fn notification_account(id: &str, username: &str, name: &str) -> Value {
+        json!({
+            "id": id,
+            "acct": username,
+            "username": username,
+            "display_name": name,
+            "avatar": "/avatar.png",
+            "url": format!("https://plamenu.test/@{username}"),
+            "emojis": [],
+        })
+    }
+
+    #[test]
+    fn every_supported_notification_type_has_an_informative_label() {
+        for kind in crate::routes::notifications::TYPES {
+            assert_ne!(
+                notification_label(kind),
+                "sent you a notification",
+                "notification kind {kind} fell through to the generic label"
+            );
+        }
+    }
+
+    #[test]
+    fn collection_notification_renders_object_link_and_remove_action() {
+        let note = json!({
+            "type": "added_to_collection",
+            "account": notification_account("2", "carol", "Carol"),
+            "collection": {
+                "id": "44",
+                "url": "/@carol/collections/44",
+                "name": "Carol's picks",
+                "description": "<p>People worth following</p>",
+                "item_count": 3,
+                "items": [{ "account_id": "1", "state": "accepted" }],
+            },
+        });
+        let ctx = Ctx {
+            csrf: Some("token"),
+            viewer_id: Some("1"),
+            return_to: "/notifications",
+            ..view_ctx(Some(FilterContext::Notifications), Some("1"))
+        };
+        let card = notification_item(&note, &ctx).into_string();
+
+        for expected in [
+            ">Carol</a>",
+            "added you to a collection",
+            "Carol's picks",
+            "People worth following",
+            "3 members",
+            r#"href="/@carol/collections/44""#,
+            "Open collection",
+            "Remove me",
+            r#"data-confirm-action="/web/collections/44/leave""#,
+        ] {
+            assert!(card.contains(expected), "missing {expected:?}: {card}");
+        }
+        assert!(!card.contains("account-card"), "{card}");
+    }
+
+    #[test]
+    fn admin_report_notification_surfaces_target_evidence_and_review_link() {
+        let note = json!({
+            "type": "admin.report",
+            "account": notification_account("2", "reporter", "Reporter"),
+            "report": {
+                "id": "77",
+                "category": "spam",
+                "comment": "Repeated unsolicited links",
+                "target_account": {
+                    "account": notification_account("3", "target", "Target")
+                },
+                "statuses": [{"id": "8"}, {"id": "9"}],
+            },
+        });
+        let ctx = Ctx {
+            admin: AdminCapabilities {
+                manage_reports: true,
+                ..AdminCapabilities::default()
+            },
+            ..view_ctx(Some(FilterContext::Notifications), Some("1"))
+        };
+        let card = notification_item(&note, &ctx).into_string();
+
+        for expected in [
+            "Reporter",
+            "reported",
+            "Target",
+            "for spam",
+            "2 posts were attached",
+            "Repeated unsolicited links",
+            r#"href="/admin/reports/77""#,
+            "Review report",
+        ] {
+            assert!(card.contains(expected), "missing {expected:?}: {card}");
+        }
+        assert!(!card.contains("account-card"), "{card}");
+    }
+
+    #[test]
+    fn moderation_warning_uses_the_specific_enforcement_action() {
+        let note = json!({
+            "type": "moderation_warning",
+            "account": notification_account("1", "alice", "Alice"),
+            "moderation_warning": {
+                "id": "9",
+                "action": "delete_statuses",
+                "text": "This post broke rule 2",
+            },
+        });
+        let card = notification_item(
+            &note,
+            &view_ctx(Some(FilterContext::Notifications), Some("1")),
+        )
+        .into_string();
+        assert!(card.contains("Some of your posts were removed"), "{card}");
+        assert!(card.contains("This post broke rule 2"), "{card}");
+        assert!(card.contains(r#"href="/settings/strikes""#), "{card}");
     }
 
     #[test]

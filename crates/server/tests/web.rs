@@ -2012,6 +2012,117 @@ async fn reaction_notification_links_once_to_actor_and_shows_reacted_post(pool: 
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn notifications_page_renders_every_nonstandard_payload_and_action(pool: PgPool) {
+    let alice = seed_alice(&pool).await;
+    make_staff(&pool, alice.id).await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let carol = create_local_account(&pool, "carol", "Carol").await;
+
+    let collection_id = feature_in_collection(&pool, &carol, alice.id, "Carol's picks").await;
+    notification::create_for_collection(
+        &pool,
+        alice.id,
+        carol.id,
+        "added_to_collection",
+        collection_id,
+    )
+    .await
+    .unwrap();
+    notification::create_for_collection(
+        &pool,
+        alice.id,
+        carol.id,
+        "collection_update",
+        collection_id,
+    )
+    .await
+    .unwrap();
+
+    let report_id = seed_report(&pool, bob.id, carol.id, "Repeated unsolicited links").await;
+    notification::create_admin_report(&pool, alice.id, bob.id, report_id)
+        .await
+        .unwrap();
+    notification::create(&pool, alice.id, bob.id, "admin.sign_up", None)
+        .await
+        .unwrap();
+
+    let warning = account_warning::create(
+        &pool,
+        account_warning::NewAccountWarning {
+            account_id: Some(carol.id),
+            target_account_id: alice.id,
+            action: "delete_statuses",
+            text: "This post broke rule 2",
+            report_id: None,
+            status_ids: &[],
+        },
+    )
+    .await
+    .unwrap();
+    notification::create_moderation_warning(&pool, alice.id, warning.id)
+        .await
+        .unwrap();
+
+    let edited_quote = status::create_local(
+        &pool,
+        status::NewLocalStatus::new(bob.id, "<p>The quoted post</p>", "public", None),
+    )
+    .await
+    .unwrap();
+    notification::create(
+        &pool,
+        alice.id,
+        bob.id,
+        "quoted_update",
+        Some(edited_quote.id),
+    )
+    .await
+    .unwrap();
+
+    // Compatibility-only system kinds are still deliberately renderable if a
+    // migrated database or future producer contains them.
+    notification::create(&pool, alice.id, bob.id, "severed_relationships", None)
+        .await
+        .unwrap();
+    notification::create(&pool, alice.id, bob.id, "annual_report", None)
+        .await
+        .unwrap();
+
+    let app = common::test_app(pool);
+    let cookie = login(&app).await;
+    let page = get(&app, "/notifications", Some(&cookie)).await;
+    assert_eq!(page.status, StatusCode::OK);
+
+    for expected in [
+        ">Carol</a>",
+        "added you to a collection",
+        "edited a collection you're in",
+        "Carol's picks",
+        "Open collection",
+        "Remove me",
+        "reported",
+        "for spam",
+        "Repeated unsolicited links",
+        "Review report",
+        "Review account",
+        "Some of your posts were removed",
+        "This post broke rule 2",
+        "edited a post you quoted",
+        "The quoted post",
+        "Some follow relationships were severed",
+        "Your annual report is ready",
+    ] {
+        assert!(page.body.contains(expected), "missing {expected:?}");
+    }
+    assert!(
+        page.body
+            .contains(&format!("/web/collections/{collection_id}/leave"))
+    );
+    assert!(page.body.contains(&format!("/admin/reports/{report_id}")));
+    assert!(page.body.contains("/settings/strikes"));
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn unread_dot_lights_the_bell_until_the_page_is_opened(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;

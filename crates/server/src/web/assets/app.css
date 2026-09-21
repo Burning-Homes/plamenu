@@ -4203,14 +4203,27 @@ img.reaction__emoji {
     color: var(--accent);
   }
 
-  /* Long actor names ellipsize instead of overflowing the label row. */
+  .notification__label-body {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35em;
+    min-width: 0;
+  }
+
+  /* Long actor names ellipsize instead of overflowing the desktop label row. */
   .notification__actor {
+    display: block;
     color: var(--text);
     font-weight: 700;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .notification__target {
+    color: var(--text);
+    font-weight: 700;
   }
 }
 
@@ -4231,6 +4244,117 @@ img.reaction__emoji {
 .notification__warning-link {
   margin: 0;
   font-size: 0.9em;
+}
+
+.notification__object {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.notification__object-title,
+.notification__object-meta,
+.notification__system-detail {
+  margin: 0;
+}
+
+.notification__object-title {
+  font-size: 1rem;
+}
+
+.notification__object-description {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+
+  & > :first-child { margin-block-start: 0; }
+  & > :last-child { margin-block-end: 0; }
+}
+
+.notification__object-meta,
+.notification__system-detail {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.notification__report-comment {
+  margin: 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--border);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.notification__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.notification__actions form {
+  margin: 0;
+}
+
+.notification__action {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notification__action:hover {
+  text-decoration: underline;
+}
+
+.notification__action--danger {
+  color: var(--danger);
+}
+
+/* On a phone the actor, event description and any second actor need their own
+   intentional lines. Trying to keep the desktop sentence intact makes names
+   ellipsize before the useful part of the notification and leaves short words
+   stranded across several lines. Actions likewise read more clearly as a
+   small vertical menu than as a squeezed toolbar. */
+@media (max-width: 34rem) {
+  .notification {
+    padding-inline: var(--space-3);
+  }
+
+  .notification__label {
+    align-items: flex-start;
+  }
+
+  .notification__label .notification__icon {
+    margin-block-start: 0.15em;
+  }
+
+  .notification__label .notification__label-body {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .notification__label .notification__actor {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .notification__label .notification__label-detail {
+    display: block;
+  }
+
+  .notification__actions {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-2);
+  }
 }
 
 /* ---- Private mentions (conversations) --------------------------------- */

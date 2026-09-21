@@ -397,6 +397,7 @@ impl WebUser {
         use plamenu_db::role::permission;
         AdminCapabilities {
             manage_users: self.can(permission::MANAGE_USERS),
+            manage_reports: self.can(permission::MANAGE_REPORTS),
             manage_federation: self.can(permission::MANAGE_FEDERATION),
             manage_groups: self.can(permission::MANAGE_GROUPS),
             manage_custom_emojis: self.can(permission::MANAGE_CUSTOM_EMOJIS),
@@ -514,6 +515,7 @@ async fn resolve(parts: &mut Parts, state: &AppState) -> Option<WebUser> {
 )]
 pub struct AdminCapabilities {
     pub manage_users: bool,
+    pub manage_reports: bool,
     pub manage_federation: bool,
     pub manage_groups: bool,
     pub manage_custom_emojis: bool,
