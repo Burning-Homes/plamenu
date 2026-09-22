@@ -1786,6 +1786,10 @@
       if (idx === -1) return;
       items.splice(idx, 1);
       if (item.url) URL.revokeObjectURL(item.url);
+      if (item.inlineMarker) {
+        const field = form.querySelector("textarea[name=status]");
+        if (field) field.value = field.value.split(item.inlineMarker).join("");
+      }
       item.li.remove();
       refreshAddState();
     }
@@ -1813,7 +1817,8 @@
       altName.className = "compose__attachment-label";
       altName.textContent = form.dataset.i18nAltDescription || "Describe this attachment";
       const alt = document.createElement("textarea");
-      alt.id = `compose-media-alt-${++composeMediaFieldSequence}`;
+      const fieldSequence = ++composeMediaFieldSequence;
+      alt.id = `compose-media-alt-${fieldSequence}`;
       altName.htmlFor = alt.id;
       alt.name = "media_alt[]";
       alt.rows = 2;
@@ -1916,6 +1921,47 @@
       dt.items.add(file);
       fileInput.files = dt.files;
 
+      let inlineControl = null;
+      let inlineMarker = null;
+      if (file.type.startsWith("image/")) {
+        const token = `upload-${fieldSequence}`;
+        inlineMarker = `[[upload:${token}]]`;
+        inlineControl = document.createElement("fieldset");
+        inlineControl.className = "compose__inline-placement";
+        inlineControl.dataset.composeArticleOnly = "";
+        const tokenInput = document.createElement("input");
+        tokenInput.type = "hidden";
+        tokenInput.name = "media_inline_token[]";
+        tokenInput.value = token;
+        const insert = document.createElement("button");
+        insert.type = "button";
+        insert.className = "compose__inline-insert";
+        insert.textContent = form.dataset.i18nInsertInline || "Insert in article";
+        insert.addEventListener("click", () => {
+          const field = form.querySelector("textarea[name=status]");
+          if (!field) return;
+          if (!field.value.includes(inlineMarker)) {
+            const start = field.selectionStart ?? field.value.length;
+            const end = field.selectionEnd ?? start;
+            field.value =
+              field.value.slice(0, start) + inlineMarker + field.value.slice(end);
+            const caret = start + inlineMarker.length;
+            field.setSelectionRange(caret, caret);
+            field.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+          insert.textContent = form.dataset.i18nInlineInserted || "Inserted in article";
+          field.focus();
+        });
+        inlineControl.append(tokenInput, insert);
+        const syncInline = () => {
+          const article = form.querySelector("[data-compose-kind]")?.value === "article";
+          inlineControl.hidden = !article;
+          inlineControl.disabled = !article;
+        };
+        form.querySelector("[data-compose-kind]")?.addEventListener("change", syncInline);
+        syncInline();
+      }
+
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "compose__attachment-remove";
@@ -1936,12 +1982,13 @@
         transcriptLabel,
         captionsLabel,
         visualAudioLabel,
+        ...(inlineControl ? [inlineControl] : []),
         fileInput
       );
 
       li.append(preview, altName, remove, bodyEl);
 
-      const item = { file, li, url };
+      const item = { file, li, url, inlineMarker };
       remove.addEventListener("click", () => removeItem(item));
       return item;
     }
@@ -2352,15 +2399,37 @@
   // The composer's current attachments (JS media manager cards) as lightweight
   // descriptors for the preview: the local object-URL thumbnail and its alt.
   function composerMedia(form) {
+    const source = form.querySelector("textarea[name=status]")?.value || "";
     return [...form.querySelectorAll(".compose__attachment")].map((card) => {
       const img = card.querySelector(".compose__thumb img");
       const icon = card.querySelector(".compose__thumb");
+      const token = card.querySelector('input[name="media_inline_token[]"]')?.value;
+      const marker = token ? `[[upload:${token}]]` : null;
       return {
         src: img ? img.src : null,
         icon: img ? null : icon ? icon.innerHTML : "",
         alt: card.querySelector(".compose__alt")?.value || "",
+        marker,
+        inline: marker ? source.includes(marker) : false,
       };
     });
+  }
+
+  function previewAltBadge(alt) {
+    if (!alt) return null;
+    const control = document.createElement("span");
+    control.className = "media__alt";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "media__badge";
+    button.textContent = "ALT";
+    button.setAttribute("aria-label", `ALT: ${alt}`);
+    const text = document.createElement("span");
+    text.className = "media__alt-text";
+    text.setAttribute("role", "tooltip");
+    text.textContent = alt;
+    control.append(button, text);
+    return control;
   }
 
   // Composites the composer's local thumbnails into the previewed card. Media
@@ -2370,11 +2439,35 @@
   function injectPreviewMedia(pane, media) {
     if (!media.length) return;
     const card = pane.querySelector(".status");
-    if (!card || card.querySelector(".status__media")) return;
+    if (!card) return;
+    const content = card.querySelector(".status__content");
+    for (const item of content ? media.filter((entry) => entry.inline && entry.src) : []) {
+      const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        const offset = node.nodeValue.indexOf(item.marker);
+        if (offset < 0) continue;
+        const image = document.createElement("img");
+        image.className = "status__inline-image";
+        image.src = item.src;
+        image.alt = item.alt;
+        const after = node.splitText(offset);
+        after.nodeValue = after.nodeValue.slice(item.marker.length);
+        const frame = document.createElement("span");
+        frame.className = "status__inline-media";
+        frame.appendChild(image);
+        const alt = previewAltBadge(item.alt);
+        if (alt) frame.appendChild(alt);
+        after.before(frame);
+        break;
+      }
+    }
+    const attachments = media.filter((item) => !item.inline);
+    if (!attachments.length || card.querySelector(".status__media")) return;
     const gallery = document.createElement("div");
     gallery.className = "status__media";
-    gallery.dataset.count = String(Math.min(media.length, 4));
-    for (const item of media) {
+    gallery.dataset.count = String(Math.min(attachments.length, 4));
+    for (const item of attachments) {
       const fig = document.createElement("figure");
       fig.className = "media";
       if (item.src) {
@@ -2386,9 +2479,15 @@
       } else {
         fig.innerHTML = item.icon;
       }
+      const alt = previewAltBadge(item.alt);
+      if (alt) {
+        const badges = document.createElement("div");
+        badges.className = "media__badges";
+        badges.appendChild(alt);
+        fig.appendChild(badges);
+      }
       gallery.appendChild(fig);
     }
-    const content = card.querySelector(".status__content");
     if (content) content.after(gallery);
     else card.appendChild(gallery);
   }
@@ -2460,6 +2559,7 @@
       title.required = value !== "note" || !!link?.value.trim();
       form.querySelectorAll("[data-compose-event-fields]").forEach((el) => show(el, value === "event"));
       form.querySelectorAll("[data-compose-note-only]").forEach((el) => show(el, value === "note"));
+      form.querySelectorAll("[data-compose-article-only]").forEach((el) => show(el, value === "article"));
       form.querySelectorAll("[data-compose-schedulable]").forEach((el) => show(el, value !== "event"));
       form.querySelectorAll("[data-compose-compatibility]").forEach((el) => show(el, el.dataset.composeCompatibility === value));
       body.placeholder = body.dataset[`placeholder${value[0].toUpperCase()}${value.slice(1)}`];

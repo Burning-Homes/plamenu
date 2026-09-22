@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_attachments\n        SET description = $3\n        WHERE status_id = $1 AND remote_url = $2 AND description IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7dda5d6cac481dd323c1c1cb9e3aacc556d913b7004c32c5192e3ff193455dbb"
+}

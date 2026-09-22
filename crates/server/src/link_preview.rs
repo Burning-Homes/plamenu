@@ -64,6 +64,13 @@ struct AnchorTag {
     class: String,
 }
 
+/// An image embedded in authored HTML, before sanitization removes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InlineImage {
+    pub src: String,
+    pub alt: Option<String>,
+}
+
 /// Everything the card extractor reads out of a page (or a status' HTML).
 #[derive(Default)]
 struct PageScan {
@@ -78,7 +85,7 @@ struct PageScan {
     /// `<img src>` values, in document order — used to recover images that
     /// live only inline in a status' body (Lemmy/PieFed markdown posts), which
     /// the HTML sanitizer strips.
-    imgs: Vec<String>,
+    imgs: Vec<InlineImage>,
 }
 
 impl PageScan {
@@ -176,7 +183,10 @@ impl ScanSink {
             }
             "img" => {
                 if let Some(src) = attr(tag, "src") {
-                    scan.imgs.push(src.to_owned());
+                    scan.imgs.push(InlineImage {
+                        src: src.to_owned(),
+                        alt: attr(tag, "alt").map(str::to_owned),
+                    });
                 }
             }
             // Raw-content elements: the tokenizer must not read their bodies
@@ -243,7 +253,7 @@ fn scan_html(html: &str) -> PageScan {
 /// The `src` of every `<img>` in `html`, in document order. Used to recover
 /// images carried only inline in a remote status' body (Lemmy/PieFed markdown
 /// posts declare no `attachment`), which the sanitizer would otherwise drop.
-pub(crate) fn inline_image_srcs(html: &str) -> Vec<String> {
+pub(crate) fn inline_images(html: &str) -> Vec<InlineImage> {
     scan_html(html).imgs
 }
 

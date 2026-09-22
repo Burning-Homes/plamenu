@@ -1,6 +1,8 @@
 //! High-level local-user actions, shared by the CLI and the client API.
 //! Everything here only enqueues — the delivery worker does the sending.
 
+use std::sync::LazyLock;
+
 use plamenu_ap::acct::Acct;
 use plamenu_ap::activity::{self, NoteParams, NotePoll};
 use plamenu_ap::urls::{InstanceActorUrls, LocalUserUrls, report_uri};
@@ -14,6 +16,7 @@ use plamenu_db::{
     notification, pin, poll, quote, reaction, report, role, status, status_edit, statuses_cleanup,
     tag,
 };
+use regex::Regex;
 use serde_json::{Value, json};
 use time::format_description::well_known::Rfc3339;
 
@@ -44,6 +47,57 @@ pub(crate) fn ensure_status_has_content(
         ));
     }
     Ok(())
+}
+
+static INLINE_MEDIA_MARKER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[\[media:([0-9]+)\]\]").expect("inline media marker regex"));
+
+/// Expands first-party Article media markers after attachment ownership has
+/// been validated. The generated URL is the same stable same-origin URL the
+/// client API returns, while the row remains a normal attachment for clients
+/// that cannot render inline images.
+pub(crate) fn expand_inline_media(
+    domain: &str,
+    html: &str,
+    media: &[Media],
+    article: bool,
+) -> Result<String, ApiError> {
+    if !article || !INLINE_MEDIA_MARKER.is_match(html) {
+        return Ok(html.to_owned());
+    }
+    let by_id: std::collections::HashMap<i64, &Media> =
+        media.iter().map(|item| (item.id, item)).collect();
+    let mut invalid = None;
+    let expanded = INLINE_MEDIA_MARKER.replace_all(html, |captures: &regex::Captures<'_>| {
+        let id = captures
+            .get(1)
+            .and_then(|value| value.as_str().parse::<i64>().ok());
+        let Some(item) = id.and_then(|id| by_id.get(&id).copied()) else {
+            invalid = id;
+            return String::new();
+        };
+        if item.kind_or_derived() != "image" {
+            invalid = Some(item.id);
+            return String::new();
+        }
+        let entity = crate::entities::media_json(domain, item, false);
+        let Some(url) = entity.get("url").and_then(Value::as_str) else {
+            invalid = Some(item.id);
+            return String::new();
+        };
+        format!(
+            r#"<img class="status__inline-image" src="{}" alt="{}" data-media-id="{}" loading="lazy">"#,
+            plamenu_ap::text::escape_html(url),
+            plamenu_ap::text::escape_html(item.description.as_deref().unwrap_or("")),
+            item.id,
+        )
+    });
+    if invalid.is_some() {
+        return Err(ApiError::Unprocessable(
+            "Validation failed: Inline media must be an attached image".into(),
+        ));
+    }
+    Ok(expanded.into_owned())
 }
 
 /// The instance character limit, weighed like Mastodon's
@@ -1425,6 +1479,7 @@ async fn post_status_inner(
         limits.max_media_attachments,
     )
     .await?;
+    html = expand_inline_media(&state.config.domain, &html, &resolved_media, long_form)?;
     let validated_poll = params
         .poll
         .as_ref()
@@ -2302,7 +2357,8 @@ pub(crate) async fn prepare_status_edit(
     let media_attributes = changed_media_attributes(&kept_media, &params.media_attributes);
 
     let composed = compose(state, &text, content_type).await?;
-    let mut html = composed.html.clone();
+    let article = stored.object_type.as_deref() == Some("Article");
+    let mut html = expand_inline_media(&state.config.domain, &composed.html, &kept_media, article)?;
     if let Some(row) = &quote_row
         && let Some(quoted_url) = quote_fallback_url(state, row).await?
     {

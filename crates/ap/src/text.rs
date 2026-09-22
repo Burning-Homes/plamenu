@@ -45,6 +45,50 @@ static REMOTE_HTML: LazyLock<Builder<'static>> = LazyLock::new(|| {
     builder
 });
 
+/// The remote-content sanitizer used while resolving inline Article images.
+///
+/// This is deliberately separate from [`REMOTE_HTML`]: callers must replace
+/// every surviving remote `src` with a same-origin media URL before storing
+/// the result. Keeping the ordinary sanitizer image-free prevents an
+/// accidental origin request anywhere that does not perform that rewrite.
+static REMOTE_HTML_WITH_IMAGES: LazyLock<Builder<'static>> = LazyLock::new(|| {
+    let mut builder = Builder::default();
+    builder
+        .tags(HashSet::from([
+            "p",
+            "br",
+            "span",
+            "a",
+            "abbr",
+            "del",
+            "s",
+            "pre",
+            "blockquote",
+            "code",
+            "b",
+            "strong",
+            "u",
+            "i",
+            "em",
+            "ul",
+            "ol",
+            "li",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "img",
+        ]))
+        .add_tag_attributes("a", ["class"])
+        .add_tag_attributes("span", ["class"])
+        .add_tag_attributes("ol", ["start"])
+        .add_tag_attributes("img", ["src", "alt"])
+        .url_schemes(HashSet::from(["http", "https"]))
+        .link_rel(Some("nofollow noopener noreferrer"));
+    builder
+});
+
 /// Sanitizer for preview-card embed HTML, mirroring Mastodon's
 /// `MASTODON_OEMBED` config: only the media-embedding elements survive, and
 /// every iframe is forced into a sandbox.
@@ -99,6 +143,15 @@ static REMOTE_TEXT: LazyLock<Builder<'static>> = LazyLock::new(|| {
 #[must_use]
 pub fn sanitize_remote_html(html: &str) -> String {
     REMOTE_HTML.clean(html).to_string()
+}
+
+/// Sanitizes remote HTML while temporarily retaining image sources and alt
+/// text. The result is safe markup except for privacy: its image URLs still
+/// name the remote origin. A caller must rewrite or remove every `<img>` before
+/// storing or serving it.
+#[must_use]
+pub fn sanitize_remote_html_with_images(html: &str) -> String {
+    REMOTE_HTML_WITH_IMAGES.clean(html).to_string()
 }
 
 /// Reduces remote rich text to safe inline text (for display names).
@@ -486,6 +539,18 @@ mod tests {
         assert!(cleaned.contains(r#"class="u-url mention""#), "{cleaned}");
         assert!(cleaned.contains(r#"rel="nofollow noopener noreferrer""#));
         assert!(cleaned.contains("hello"));
+    }
+
+    #[test]
+    fn image_aware_remote_sanitizer_keeps_only_safe_image_fields() {
+        use super::sanitize_remote_html_with_images;
+        let cleaned = sanitize_remote_html_with_images(
+            r#"<p><img src="https://media.example/a.png" alt="A &amp; B" onload="evil()"><img src="javascript:evil()" alt="bad"></p>"#,
+        );
+        assert!(cleaned.contains(r#"src="https://media.example/a.png""#));
+        assert!(cleaned.contains(r#"alt="A &amp; B""#));
+        assert!(!cleaned.contains("onload"));
+        assert!(!cleaned.contains("javascript:"));
     }
 
     #[test]

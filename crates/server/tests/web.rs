@@ -14220,6 +14220,121 @@ async fn composer_publishes_a_long_form_post(pool: PgPool) {
     assert_eq!(article.title.as_deref(), Some("On long-form"));
 }
 
+/// AP11 authoring: the plain multipart form can place a newly-uploaded image
+/// in an Article while retaining another ordinary attachment. Both remain in
+/// the Mastodon API array; the built-in client renders one inline and one in
+/// the gallery without duplicating the inline image.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn composer_posts_article_with_inline_and_regular_media(pool: PgPool) {
+    let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let alice = seed_alice(&state.pool).await;
+    let regular = media::create_local(
+        &pool,
+        media::NewLocalMedia {
+            description: Some("A downloadable appendix"),
+            width: Some(10),
+            height: Some(10),
+            ..media::NewLocalMedia::new(alice.id, id::next(), "article-appendix.jpg", "image/jpeg")
+        },
+    )
+    .await
+    .unwrap();
+    let app = build_router(state);
+    let cookie = login(&app).await;
+
+    let page = get(&app, "/compose", Some(&cookie)).await;
+    assert!(page.body.contains("data-compose-article-only"));
+    assert!(page.body.contains("Place this image in the article body"));
+    assert!(page.body.contains("data-i18n-insert-inline"));
+    let csrf = csrf_of(&page.body);
+    let png = sample_png_bytes();
+    let posted = post_multipart_file(
+        &app,
+        "/web/compose",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("status", "Before the diagram. After the diagram."),
+            ("visibility", "public"),
+            ("post_kind", "article"),
+            ("title", "An illustrated article"),
+            ("media_keep[]", &regular.id.to_string()),
+            ("media_alt[]", "A labelled flow diagram"),
+            ("media_inline[]", "true"),
+        ],
+        ("media[]", "diagram.png", "image/png", &png),
+    )
+    .await;
+    assert_eq!(posted.status, StatusCode::SEE_OTHER, "{}", posted.body);
+    let permalink = posted.location.unwrap();
+    let status_id = permalink
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .parse::<i64>()
+        .unwrap();
+    let article = status::find_by_id(&pool, status_id).await.unwrap().unwrap();
+    assert_eq!(article.object_type.as_deref(), Some("Article"));
+    let attached = media::for_statuses(&pool, &[status_id])
+        .await
+        .unwrap()
+        .remove(&status_id)
+        .unwrap();
+    assert_eq!(attached.len(), 2);
+    let inline = attached
+        .iter()
+        .find(|item| item.description.as_deref() == Some("A labelled flow diagram"))
+        .unwrap();
+    assert!(
+        article
+            .content
+            .contains(&format!(r#"data-media-id="{}""#, inline.id))
+    );
+    assert!(article.content.contains(r#"alt="A labelled flow diagram""#));
+
+    let api = get(
+        &app,
+        &format!("/api/v1/statuses/{status_id}"),
+        Some(&cookie),
+    )
+    .await;
+    let entity: serde_json::Value = serde_json::from_str(&api.body).unwrap();
+    assert_eq!(entity["media_attachments"].as_array().unwrap().len(), 2);
+
+    let thread = get(&app, &permalink, Some(&cookie)).await;
+    assert!(thread.body.contains(r#"alt="A labelled flow diagram""#));
+    assert!(
+        thread
+            .body
+            .contains(r#"aria-label="ALT: A labelled flow diagram""#),
+        "inline image alt text needs a visible, focusable disclosure: {}",
+        thread.body
+    );
+    assert!(
+        thread.body.contains(
+            r#"<span class="media__alt-text" role="tooltip">A labelled flow diagram</span>"#
+        ),
+        "inline image alt text needs a no-JS disclosure: {}",
+        thread.body
+    );
+    assert!(
+        thread
+            .body
+            .contains(r#"aria-label="ALT: A downloadable appendix""#),
+        "ordinary attachments use the same accessible disclosure: {}",
+        thread.body
+    );
+    assert!(thread.body.contains("article-appendix.jpg"));
+    assert_eq!(
+        thread
+            .body
+            .matches(&format!("/media/{}", inline.file_name.as_deref().unwrap()))
+            .count(),
+        1,
+        "the inline image is omitted from the first-party gallery"
+    );
+}
+
 /// A malformed request with conflicting post types is refused.
 #[sqlx::test(migrations = "../db/migrations")]
 async fn composer_refuses_two_post_kinds_at_once(pool: PgPool) {

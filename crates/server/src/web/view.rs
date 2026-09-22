@@ -93,7 +93,11 @@ fn rewrite_content_links(
     tags: &[Value],
     wrap_external: bool,
 ) -> String {
-    if !html.contains("<a ") && !html.contains("<pre") && !html.contains("<table") {
+    if !html.contains("<a ")
+        && !html.contains("<pre")
+        && !html.contains("<table")
+        && !html.contains("status__inline-image")
+    {
         return html.to_owned();
     }
     let mut out = String::with_capacity(html.len() + 64);
@@ -105,6 +109,18 @@ fn rewrite_content_links(
         let tag = &tag_onward[..tag_end];
         if tag.starts_with("<a ") && tag.ends_with('>') {
             out.push_str(&rewrite_anchor(tag, mentions, tags, wrap_external));
+        } else if tag.starts_with("<img ")
+            && tag.ends_with('>')
+            && parse_attrs(&tag[5..tag.len() - 1])
+                .iter()
+                .any(|(name, value)| {
+                    *name == "class"
+                        && value
+                            .split_ascii_whitespace()
+                            .any(|class| class == "status__inline-image")
+                })
+        {
+            out.push_str(&inline_image_with_alt_control(tag));
         } else if (tag == "<pre>"
             || tag.starts_with("<pre ")
             || tag == "<table>"
@@ -121,6 +137,24 @@ fn rewrite_content_links(
     }
     out.push_str(rest);
     out
+}
+
+/// Adds the same visible, focusable ALT affordance used by attachment tiles to
+/// an Article image embedded in sanitised content. This is a render-time web
+/// enhancement: the stored/API HTML remains the interoperable plain `<img>`.
+fn inline_image_with_alt_control(tag: &str) -> String {
+    let attrs = parse_attrs(&tag[5..tag.len() - 1]);
+    let Some(alt) = attrs
+        .iter()
+        .find(|(name, _)| *name == "alt")
+        .map(|(_, value)| *value)
+        .filter(|value| !value.is_empty())
+    else {
+        return tag.to_owned();
+    };
+    format!(
+        r#"<span class="status__inline-media">{tag}<span class="media__alt"><button class="media__badge" type="button" aria-label="ALT: {alt}">ALT</button><span class="media__alt-text" role="tooltip">{alt}</span></span></span>"#
+    )
 }
 
 /// The in-app resolver path for an external link: `/web/go?url=…`. Only
@@ -2632,7 +2666,7 @@ fn preview_dimensions(item: &Value) -> (Option<i64>, Option<i64>) {
 /// flag) calls for it. Used only where there is no content warning — a CW
 /// already covers the media itself.
 fn media_section(status: &Status, ctx: &Ctx, blur: &[String]) -> Markup {
-    if status.media().is_empty() {
+    if gallery_media(status).is_empty() {
         return html! {};
     }
     if !blur.is_empty() {
@@ -2660,7 +2694,7 @@ fn media_section(status: &Status, ctx: &Ctx, blur: &[String]) -> Markup {
 /// no-JS equivalent of Mastodon blurring only the media. Falls through to the
 /// bare gallery when no blur filter matched.
 fn blur_gated_gallery(status: &Status, ctx: &Ctx, blur: &[String]) -> Markup {
-    if status.media().is_empty() {
+    if gallery_media(status).is_empty() {
         return html! {};
     }
     if blur.is_empty() {
@@ -2677,7 +2711,25 @@ fn blur_gated_gallery(status: &Status, ctx: &Ctx, blur: &[String]) -> Markup {
 }
 
 fn media_gallery(status: &Status, ctx: &Ctx) -> Markup {
-    media_markup(status.media(), ctx, status.rendered_language())
+    media_markup(&gallery_media(status), ctx, status.rendered_language())
+}
+
+/// Media placed in the Article body remains in the API attachment array for
+/// compatibility, but the first-party renderer must not show a second copy in
+/// its gallery. Other attachments stay in their ordinary gallery position.
+fn gallery_media(status: &Status) -> Vec<Value> {
+    let content = status.content_html();
+    status
+        .media()
+        .iter()
+        .filter(|item| {
+            let Some(id) = item.get("id").and_then(Value::as_str) else {
+                return true;
+            };
+            !content.contains(&format!(r#"data-media-id="{id}""#))
+        })
+        .cloned()
+        .collect()
 }
 
 /// A media gallery that is not owned by a status card. `Owncast` uses this for
@@ -2833,7 +2885,7 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                     div.media__badges {
                                         span.media__badge.media__badge--live { (ctx.locale.text("status-live-badge")) }
                                         @if !alt.is_empty() {
-                                            span.media__badge title=(alt) { "ALT" }
+                                            (alt_badge(alt))
                                         }
                                         @if caption_url.is_some() {
                                             span.media__badge title=(ctx.locale.text("status-captions")) { "CC" }
@@ -2863,6 +2915,7 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                         audio src=(url) controls preload="none"
                             lang=[language]
                             title=[Some(alt).filter(|a| !a.is_empty())] {}
+                        (media_badges(alt, &[], ctx.locale))
                         (media_transcript(item, language, ctx.locale))
                     },
                     _ => figure.media {
@@ -2960,7 +3013,7 @@ fn media_badges(alt: &str, badges: &[Option<MediaBadge>], locale: Locale) -> Mar
     html! {
         div.media__badges {
             @if !alt.is_empty() {
-                span.media__badge title=(alt) { "ALT" }
+                (alt_badge(alt))
             }
             @for badge in badges.iter().flatten() {
                 @match badge {
@@ -2975,6 +3028,17 @@ fn media_badges(alt: &str, badges: &[Option<MediaBadge>], locale: Locale) -> Mar
                     },
                 }
             }
+        }
+    }
+}
+
+/// A mouse-, touch-, and keyboard-discoverable attachment description. The
+/// tooltip is CSS-only so it remains usable when JavaScript is unavailable.
+fn alt_badge(alt: &str) -> Markup {
+    html! {
+        span.media__alt {
+            button.media__badge type="button" aria-label=(format!("ALT: {alt}")) { "ALT" }
+            span.media__alt-text role="tooltip" { (alt) }
         }
     }
 }
@@ -4088,7 +4152,21 @@ fn compose_toggle(section: &str, glyph: &str, label: &str) -> Markup {
 /// Keep drops it on the next submit. Shared by the edit composer and the
 /// new-post composer's preview, so an attachment survives a no-JS preview
 /// as an id and can still be removed afterward.
-fn attachment_keep_row(item: &Value, locale: Locale) -> Markup {
+fn inline_placement_control(name: &str, article: bool, locale: Locale) -> Markup {
+    html! {
+        fieldset.compose__inline-placement data-compose-article-only
+            hidden[!article] disabled[!article] {
+            label.compose__inline {
+                input type="hidden" name=(name) value="false";
+                input type="checkbox" name=(name) value="true";
+                span { (locale.text("compose-inline-image")) }
+            }
+            small { (locale.text("compose-inline-image-help")) }
+        }
+    }
+}
+
+fn attachment_keep_row(item: &Value, locale: Locale, article: bool) -> Markup {
     let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
     let url = item.get("url").and_then(Value::as_str).unwrap_or_default();
     let preview = item
@@ -4152,6 +4230,7 @@ fn attachment_keep_row(item: &Value, locale: Locale) -> Markup {
                     @if alt.is_empty() && !decorative {
                         p.compose__media-note { (locale.text("compose-description-missing")) }
                     }
+                    (inline_placement_control(&format!("media_inline_{id}"), article, locale))
                 }
                 @if matches!(kind, "audio" | "video") {
                     label.compose__field {
@@ -4369,6 +4448,8 @@ pub fn full_compose_form(
             data-i18n-audio-described=(locale.text("compose-audio-described"))
             data-i18n-visuals-in-audio=(locale.text("compose-visuals-in-audio"))
             data-i18n-remove-named=(locale.text("compose-remove-named-template"))
+            data-i18n-insert-inline=(locale.text("compose-insert-inline"))
+            data-i18n-inline-inserted=(locale.text("compose-inline-inserted"))
             data-i18n-add-option=(locale.text("compose-add-option"))
             data-i18n-remove-option=(locale.text("compose-remove-option"))
             data-i18n-poll-choice=(locale.text("compose-poll-choice-template"))
@@ -4520,7 +4601,7 @@ pub fn full_compose_form(
                     div.compose__edit-media {
                         span.compose__legend { (locale.text("compose-attachments")) }
                         @for item in prefill.media {
-                            (attachment_keep_row(item, locale))
+                            (attachment_keep_row(item, locale, kind == "article"))
                         }
                     }
                 }
@@ -4576,6 +4657,7 @@ pub fn full_compose_form(
                                                 }
                                             }
                                         }
+                                        (inline_placement_control("media_inline[]", kind == "article", locale))
                                         label.compose__field {
                                             span.visually-hidden {
                                                 (numbered("compose-file", index + 1))
@@ -4806,7 +4888,11 @@ pub fn edit_compose_form(
                 div.compose__edit-media {
                     span.compose__legend { (locale.text("compose-attachments")) }
                     @for item in prefill.media {
-                        (attachment_keep_row(item, locale))
+                        (attachment_keep_row(
+                            item,
+                            locale,
+                            status.object_type() == Some("Article"),
+                        ))
                     }
                     label.compose__inline {
                         input type="hidden" name="sensitive" value="false";
@@ -5149,15 +5235,17 @@ fn media_wall_tile(item: &Value, permalink: &str, gated: bool) -> Markup {
     let (width, height) = preview_dimensions(item);
     let in_lightbox = matches!(kind, "image" | "gifv") && !url.is_empty();
     html! {
-        a.media-wall__tile.is-sensitive[gated] href=(permalink)
-            data-media-url=[in_lightbox.then_some(url)]
-            data-gifv[kind == "gifv"] {
-            @match preview {
-                Some(preview) => {
-                    img src=(preview) alt=(alt) loading="lazy" width=[width] height=[height]
-                        data-blurhash=[blurhash];
+        figure.media-wall__item {
+            a.media-wall__tile.is-sensitive[gated] href=(permalink)
+                data-media-url=[in_lightbox.then_some(url)]
+                data-gifv[kind == "gifv"] {
+                @match preview {
+                    Some(preview) => {
+                        img src=(preview) alt=(alt) loading="lazy" width=[width] height=[height]
+                            data-blurhash=[blurhash];
+                    }
+                    None => span.media-wall__placeholder { (icon("upload")) }
                 }
-                None => span.media-wall__placeholder { (icon("upload")) }
             }
             @if gated || kind != "image" || !alt.is_empty() {
                 div.media__badges {
@@ -5168,7 +5256,7 @@ fn media_wall_tile(item: &Value, permalink: &str, gated: bool) -> Markup {
                         "audio" => { span.media__badge { "Audio" } }
                         _ => {}
                     }
-                    @if !alt.is_empty() { span.media__badge title=(alt) { "ALT" } }
+                    @if !alt.is_empty() { (alt_badge(alt)) }
                 }
             }
         }
@@ -5715,6 +5803,56 @@ mod tests {
     }
 
     #[test]
+    fn inline_article_images_expose_alt_text_to_sighted_keyboard_users() {
+        let content = r#"<p>Before<img class="status__inline-image" src="/media/7.png" alt="A blue &amp; gold bird" data-media-id="7" loading="lazy">After</p>"#;
+        let rendered = rewrite_content_links(content, &[], &[], false);
+
+        assert!(
+            rendered.contains(r#"<span class="status__inline-media"><img"#),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains(
+                r#"<button class="media__badge" type="button" aria-label="ALT: A blue &amp; gold bird">ALT</button>"#
+            ),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains(
+                r#"<span class="media__alt-text" role="tooltip">A blue &amp; gold bird</span>"#
+            ),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("<strong>ALT</strong>"), "{rendered}");
+    }
+
+    #[test]
+    fn attachment_alt_badge_is_focusable_and_reveals_its_description() {
+        let value = json!({
+            "media_attachments": [{
+                "type": "image",
+                "url": "/media/full.png",
+                "preview_url": "/media/preview.png",
+                "description": "A lighthouse at dusk",
+            }],
+        });
+        let rendered = media_gallery(&Status(&value), &view_ctx(None, None)).into_string();
+
+        assert!(
+            rendered.contains(
+                r#"<button class="media__badge" type="button" aria-label="ALT: A lighthouse at dusk">ALT</button>"#
+            ),
+            "{rendered}"
+        );
+        assert!(
+            rendered.contains(
+                r#"<span class="media__alt-text" role="tooltip">A lighthouse at dusk</span>"#
+            ),
+            "{rendered}"
+        );
+    }
+
+    #[test]
     fn hls_video_keeps_a_script_blocker_safe_progressive_source() {
         let value = json!({
             "media_attachments": [{
@@ -5763,7 +5901,30 @@ mod tests {
         );
         assert!(rendered.contains(">CC</span>"), "{rendered}");
         assert!(rendered.contains(">AD</span>"), "{rendered}");
+        assert!(
+            rendered.contains(r#"aria-label="ALT: Une démonstration""#),
+            "video descriptions need the same touch/keyboard disclosure: {rendered}"
+        );
         assert!(!rendered.contains("A/V"), "{rendered}");
+    }
+
+    #[test]
+    fn profile_media_tiles_keep_alt_disclosures_outside_the_post_link() {
+        let item = json!({
+            "type": "video",
+            "url": "/media/video.mp4",
+            "preview_url": "/media/poster.jpg",
+            "description": "A person signing hello",
+        });
+        let rendered = media_wall_tile(&item, "/@alice/1#post-1", false).into_string();
+
+        assert!(rendered.contains(r#"<figure class="media-wall__item">"#));
+        assert!(
+            rendered.contains(
+                r#"</a><div class="media__badges"><span class="media__badge">Video</span><span class="media__alt"><button class="media__badge" type="button" aria-label="ALT: A person signing hello">ALT</button>"#
+            ),
+            "the ALT button must be a sibling, not invalidly nested in the post link: {rendered}"
+        );
     }
 
     #[test]

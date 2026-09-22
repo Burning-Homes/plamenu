@@ -3,12 +3,14 @@
 //! stored identically no matter how it reached us.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 use plamenu_ap::activity::{id_of, one_or_many, visibility_from_addressing};
 use plamenu_ap::urls;
 use plamenu_db::account::{self, Account};
 use plamenu_db::status::NewRemoteStatus;
 use plamenu_db::{media, mention, notification, status, status_edit, tag};
+use regex::Regex;
 use serde_json::Value;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -625,6 +627,71 @@ fn remote_status_content(object: &Value, local_domain: &str) -> String {
     // to the quoted post in those cases. Rendering removes it only when an
     // accepted quote card is actually embedded in the response.
     plamenu_ap::text::sanitize_remote_html(&raw)
+}
+
+/// The same canonical body as [`remote_status_content`], retaining only safe
+/// `<img src alt>` elements long enough for [`rewrite_remote_inline_images`]
+/// to replace their origin URLs with same-origin media URLs. Markdown keeps
+/// its existing renderer: its image syntax is recovered as attachments, but
+/// its sanitizer intentionally does not emit remote image loads.
+fn remote_status_content_with_images(object: &Value, local_domain: &str) -> String {
+    if object.get("mediaType").and_then(Value::as_str) == Some("text/markdown") {
+        return remote_status_content(object, local_domain);
+    }
+    let body = strip_duplicate_title_heading(
+        object_content(object).unwrap_or(""),
+        hoisted_title(object).as_deref(),
+    );
+    plamenu_ap::text::sanitize_remote_html_with_images(body)
+}
+
+static INLINE_IMG_TAG: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)<img\b[^>]*>").expect("inline image tag regex"));
+static INLINE_IMG_SRC: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?i)\bsrc\s*=\s*\"([^\"]*)\""#).expect("inline image src regex")
+});
+
+/// Rewrites every retained inline image to the media row representing the
+/// same remote URL. Unknown, unsafe, or over-cap images are removed. This is
+/// the privacy boundary that makes the image-aware sanitizer safe to store.
+async fn rewrite_remote_inline_images(
+    state: &AppState,
+    status_id: i64,
+    html: &str,
+) -> Result<String, ApiError> {
+    let rows = media::for_statuses(&state.pool, &[status_id])
+        .await?
+        .remove(&status_id)
+        .unwrap_or_default();
+    let by_remote: HashMap<String, &media::Media> = rows
+        .iter()
+        .filter_map(|item| item.remote_url.as_ref().map(|url| (url.clone(), item)))
+        .collect();
+    Ok(INLINE_IMG_TAG
+        .replace_all(html, |captures: &regex::Captures<'_>| {
+            let tag = captures.get(0).map_or("", |m| m.as_str());
+            let Some(src) = INLINE_IMG_SRC
+                .captures(tag)
+                .and_then(|found| found.get(1))
+                .map(|value| plamenu_ap::text::decode_entities(value.as_str()))
+            else {
+                return String::new();
+            };
+            let Some(item) = by_remote.get(&src) else {
+                return String::new();
+            };
+            let entity = crate::entities::media_json(&state.config.domain, item, false);
+            let Some(url) = entity.get("url").and_then(Value::as_str) else {
+                return String::new();
+            };
+            format!(
+                r#"<img class="status__inline-image" src="{}" alt="{}" data-media-id="{}" loading="lazy">"#,
+                plamenu_ap::text::escape_html(url),
+                plamenu_ap::text::escape_html(item.description.as_deref().unwrap_or("")),
+                item.id,
+            )
+        })
+        .into_owned())
 }
 
 /// The content warning, sensitive flag and language of a remote note. On
@@ -1649,6 +1716,7 @@ async fn store_remote_note(
     // and sanitizing would strip its marker `class` and leave a stray `RE:`
     // paragraph alongside the quote card.
     let content = remote_status_content(object, &state.config.domain);
+    let content_with_images = remote_status_content_with_images(object, &state.config.domain);
     let published = object
         .get("published")
         .and_then(Value::as_str)
@@ -1714,7 +1782,8 @@ async fn store_remote_note(
             &collection_urls.following_url,
         ),
     };
-    let (stored, delivery_effects, promote_media) = if context == RemoteIngestContext::Delivery {
+    let (mut stored, delivery_effects, promote_media) = if context == RemoteIngestContext::Delivery
+    {
         if let Some(stored) =
             status::insert_remote_delivery_claimed(&state.pool, new_status).await?
         {
@@ -1743,6 +1812,10 @@ async fn store_remote_note(
         )
     };
     store_remote_attachments(state, &stored, object, context.is_history()).await?;
+    let rewritten = rewrite_remote_inline_images(state, stored.id, &content_with_images).await?;
+    if rewritten != stored.content {
+        stored = status::replace_content(&state.pool, stored.id, &rewritten).await?;
+    }
     if let Some(invitation) = crate::webxdc::remote_invitation(object) {
         plamenu_db::webxdc::set_remote_invitation(&state.pool, stored.id, Some(invitation)).await?;
     }
@@ -1873,18 +1946,25 @@ fn attachment_pairs(object: &Value, caps: MediaCaps) -> Vec<(String, Option<Stri
             federation_url(url).then(|| (url.to_owned(), attachment_description(entry)))
         })
         .collect();
-    if let Some(primary) = object_primary_media(object, caps) {
+    if pairs.len() < MAX_REMOTE_ATTACHMENTS
+        && let Some(primary) = object_primary_media(object, caps)
+    {
         pairs.push((primary.url.to_owned(), None));
     }
-    // No structured attachment and no native media, but images inline in the
-    // body (Lemmy/PieFed markdown posts): recover them so they aren't lost to
-    // the sanitizer. Gated on emptiness so a normal post with both attached and
-    // text-inline images is untouched. Must mirror [`store_remote_attachments`].
-    if pairs.is_empty() {
-        pairs.extend(inline_image_urls(object).into_iter().map(|url| (url, None)));
+    // Inline and structured images are independent channels. Merge both, using
+    // inline alt text to fill a structured attachment whose description is
+    // absent, and cap the combined set rather than either input independently.
+    for (url, alt) in inline_image_pairs(object) {
+        if let Some((_, description)) = pairs.iter_mut().find(|(stored, _)| stored == &url) {
+            if description.is_none() {
+                *description = alt;
+            }
+        } else if pairs.len() < MAX_REMOTE_ATTACHMENTS {
+            pairs.push((url, alt));
+        }
     }
-    pairs.sort();
-    pairs.dedup();
+    pairs.sort_by(|left, right| left.0.cmp(&right.0));
+    pairs.dedup_by(|left, right| left.0 == right.0);
     pairs
 }
 
@@ -1893,16 +1973,23 @@ fn attachment_pairs(object: &Value, caps: MediaCaps) -> Vec<(String, Option<Stri
 /// declare no `attachment` and no native media object — Lemmy/PieFed render
 /// their images inline, and the HTML sanitizer strips `<img>`, so without
 /// this they vanish.
-fn inline_image_urls(object: &Value) -> Vec<String> {
+fn inline_image_pairs(object: &Value) -> Vec<(String, Option<String>)> {
     let Some(content) = object_content(object) else {
         return Vec::new();
     };
     let mut seen = std::collections::HashSet::new();
-    crate::link_preview::inline_image_srcs(content)
+    crate::link_preview::inline_images(content)
         .into_iter()
-        .filter(|src| federation_url(src))
-        .filter(|src| seen.insert(src.clone()))
+        .filter(|image| federation_url(&image.src))
+        .filter(|image| seen.insert(image.src.clone()))
         .take(MAX_REMOTE_ATTACHMENTS)
+        .map(|image| {
+            let alt = image
+                .alt
+                .map(|alt| plamenu_ap::text::sanitize_remote_plain(&alt))
+                .filter(|alt| !alt.trim().is_empty());
+            (image.src, alt)
+        })
         .collect()
 }
 
@@ -2035,7 +2122,8 @@ pub async fn update_remote_note_in_context(
     object: &Value,
     context: RemoteIngestContext,
 ) -> Result<status::Status, ApiError> {
-    let content = remote_status_content(object, &state.config.domain);
+    let content_with_images = remote_status_content_with_images(object, &state.config.domain);
+    let content = rewrite_remote_inline_images(state, existing.id, &content_with_images).await?;
     let external_url = attachment_link_target(object);
     let title = hoisted_title(object);
     let edited_at = object
@@ -2154,7 +2242,7 @@ pub async fn update_remote_note_in_context(
         .await?;
     }
 
-    let updated = status::apply_edit(
+    let mut updated = status::apply_edit(
         &state.pool,
         existing.id,
         status::StatusEdit {
@@ -2177,6 +2265,10 @@ pub async fn update_remote_note_in_context(
 
     plamenu_db::media::delete_remote_for_status(&state.pool, existing.id).await?;
     store_remote_attachments(state, &updated, object, context.is_history()).await?;
+    let rewritten = rewrite_remote_inline_images(state, updated.id, &content_with_images).await?;
+    if rewritten != updated.content {
+        updated = status::replace_content(&state.pool, updated.id, &rewritten).await?;
+    }
     if promote_media {
         media::promote_for_status(&state.pool, updated.id).await?;
     }
@@ -2190,7 +2282,7 @@ pub async fn update_remote_note_in_context(
             status_edit::NewStatusEdit {
                 status_id: updated.id,
                 account_id: author.id,
-                content: &content,
+                content: &updated.content,
                 text: "",
                 spoiler_text: &spoiler_text,
                 sensitive,
@@ -3124,9 +3216,6 @@ async fn store_remote_attachments(
     if crate::owncast::maybe_store_live_note(state, stored, object).await? {
         return Ok(());
     }
-    // Counts every media row created so the inline-image fallback below runs
-    // only when the object declared no structured or native media.
-    let mut created = 0usize;
     for entry in one_or_many(object.get("attachment"))
         .iter()
         .filter(|entry| !is_link_attachment(entry))
@@ -3187,7 +3276,6 @@ async fn store_remote_attachments(
             },
         )
         .await?;
-        created += 1;
     }
     // A native-media object (`Video`/`Audio`/`Image`) carries its file in the
     // `url` Link tree, not in `attachment` — store the best candidate as this
@@ -3225,31 +3313,44 @@ async fn store_remote_attachments(
             },
         )
         .await?;
-        created += 1;
     }
-    // Fallback: the object declared no attachment and no native media, but its
-    // body carries images inline (Lemmy/PieFed markdown posts). Recover them —
-    // the sanitizer will otherwise drop the `<img>` and the post arrives with
-    // no image at all.
-    if created == 0 {
-        store_inline_image_attachments(state, stored, object, force_on_demand).await?;
-    }
+    // Inline images are an additional media channel, not a fallback. Articles
+    // commonly carry a hero as `attachment` and diagrams inside `content`.
+    // `create_remote` deduplicates the same file across both channels.
+    store_inline_image_attachments(state, stored, object, force_on_demand).await?;
     Ok(())
 }
 
 /// Recovers images carried only inline in the body's `<img>` tags as remote
-/// media (Lemmy/PieFed markdown posts declare no `attachment` and no native
-/// media object; the sanitizer strips the `<img>`). Called only when
-/// [`store_remote_attachments`] created nothing else. `create_remote` is
-/// idempotent per (status, url); the content type is a hint the media job
-/// re-probes on download. Mirrors the fallback in [`attachment_pairs`].
+/// media. `create_remote` is idempotent per (status, url), so a file present in
+/// both `attachment` and `content` stores and downloads once. Inline alt text
+/// fills an otherwise-undescribed structured attachment. Mirrors
+/// [`attachment_pairs`].
 async fn store_inline_image_attachments(
     state: &AppState,
     stored: &status::Status,
     object: &Value,
     force_on_demand: bool,
 ) -> Result<(), ApiError> {
-    for url in inline_image_urls(object) {
+    let existing = media::for_statuses(&state.pool, &[stored.id])
+        .await?
+        .remove(&stored.id)
+        .unwrap_or_default();
+    let mut urls: HashSet<String> = existing
+        .iter()
+        .filter_map(|item| item.remote_url.clone())
+        .collect();
+    let mut total = existing.len();
+    for (url, description) in inline_image_pairs(object) {
+        if urls.contains(&url) {
+            if let Some(description) = description.as_deref() {
+                media::fill_remote_description(&state.pool, stored.id, &url, description).await?;
+            }
+            continue;
+        }
+        if total >= MAX_REMOTE_ATTACHMENTS {
+            break;
+        }
         let content_type = content_type_from_url(&url).unwrap_or("image/jpeg");
         media::create_remote(
             &state.pool,
@@ -3258,7 +3359,7 @@ async fn store_inline_image_attachments(
                 status_id: stored.id,
                 remote_url: &url,
                 content_type,
-                description: None,
+                description: description.as_deref(),
                 blurhash: None,
                 focus: None,
                 thumbnail_remote_url: None,
@@ -3272,6 +3373,8 @@ async fn store_inline_image_attachments(
             },
         )
         .await?;
+        urls.insert(url);
+        total += 1;
     }
     Ok(())
 }
@@ -3293,7 +3396,7 @@ mod tests {
     }
 
     #[test]
-    fn inline_image_urls_extracts_safe_images_deduped() {
+    fn inline_image_pairs_extract_safe_images_with_alt_deduped() {
         // A Lemmy/PieFed post: the image lives only in an inline `<img>`
         // (empty `attachment`), which the sanitizer would drop.
         let object = serde_json::json!({
@@ -3303,18 +3406,21 @@ mod tests {
                 <img src=\"https://h.example/pictrs/a.avif\"></p>",
         });
         assert_eq!(
-            inline_image_urls(&object),
-            ["https://h.example/pictrs/a.avif"],
+            inline_image_pairs(&object),
+            [(
+                "https://h.example/pictrs/a.avif".to_owned(),
+                Some("x".to_owned())
+            )],
             "https only, first-seen order, deduped"
         );
     }
 
     #[test]
-    fn inline_image_urls_empty_without_images() {
+    fn inline_image_pairs_empty_without_images() {
         let object = serde_json::json!({ "content": "<p>just text, no pictures</p>" });
-        assert!(inline_image_urls(&object).is_empty());
+        assert!(inline_image_pairs(&object).is_empty());
         let no_content = serde_json::json!({ "type": "Note" });
-        assert!(inline_image_urls(&no_content).is_empty());
+        assert!(inline_image_pairs(&no_content).is_empty());
     }
 
     #[test]

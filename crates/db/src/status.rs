@@ -810,6 +810,31 @@ pub async fn apply_edit(
     Ok(status)
 }
 
+/// Replaces only a status' already-sanitized rendered body. Inbound Article
+/// ingest uses this after its media rows exist, when remote inline image URLs
+/// can finally be rewritten to stable same-origin attachment URLs.
+pub async fn replace_content(
+    pool: &PgPool,
+    status_id: i64,
+    content: &str,
+) -> Result<Status, DbError> {
+    let status = sqlx::query_as!(
+        Status,
+        r#"
+        UPDATE statuses SET content = $2, updated_at = now()
+        WHERE id = $1
+        RETURNING id, uri, account_id, content, created_at, updated_at, visibility,
+                  in_reply_to_id, reblog_of_id, edited_at, spoiler_text, sensitive,
+                  language, url, quote_approval_policy, application_id, title, object_type, external_url
+        "#,
+        status_id,
+        content,
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(status)
+}
+
 /// The editable fields of a locally-authored status.
 #[derive(Debug)]
 pub struct LocalStatusEdit<'a> {

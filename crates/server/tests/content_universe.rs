@@ -378,6 +378,145 @@ async fn wordpress_article_keeps_full_body_and_media(pool: PgPool) {
     assert_eq!(attached.len(), 4, "all four images stored");
 }
 
+/// AP11: `attachment` and inline `<img>` are independent media channels. A
+/// shared URL stores/downloads once, an inline-only image is still exposed to
+/// Mastodon API clients, alt text survives, and the built-in client renders
+/// inline placements without duplicating them in its attachment gallery.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn article_merges_inline_images_and_attachments_without_duplicates(pool: PgPool) {
+    create_local_account(&pool, "alice", "Alice").await;
+    let bob = sender();
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let activity = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": "https://remote.example/activities/ap11",
+        "type": "Create",
+        "actor": bob.actor.id,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "object": {
+            "id": "https://remote.example/articles/ap11",
+            "type": "Article",
+            "attributedTo": bob.actor.id,
+            "name": "Mixed media",
+            "content": "<p>Hero <img src=\"https://media.example/hero.jpg\" alt=\"Inline hero\"></p><p>Flow <img src=\"https://media.example/diagram.png\" alt=\"Flow from A to B\"></p>",
+            "published": "2026-09-22T08:00:00Z",
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "attachment": [
+                {"type": "Image", "mediaType": "image/jpeg", "url": "https://media.example/hero.jpg", "name": "Hero description"},
+                {"type": "Image", "mediaType": "image/jpeg", "url": "https://media.example/appendix.jpg", "name": "Appendix"}
+            ]
+        }
+    });
+    let app = test_app_with(pool.clone(), stub);
+    assert_eq!(
+        post_signed(app.clone(), &activity, &bob).await,
+        StatusCode::ACCEPTED
+    );
+
+    let stored = stored_object(&pool, &activity).await;
+    let attached = stored_media(&pool, stored.id).await;
+    assert_eq!(attached.len(), 3, "two structured plus one inline-only");
+    let hero = attached
+        .iter()
+        .find(|item| item.remote_url.as_deref() == Some("https://media.example/hero.jpg"))
+        .unwrap();
+    let diagram = attached
+        .iter()
+        .find(|item| item.remote_url.as_deref() == Some("https://media.example/diagram.png"))
+        .unwrap();
+    let appendix = attached
+        .iter()
+        .find(|item| item.remote_url.as_deref() == Some("https://media.example/appendix.jpg"))
+        .unwrap();
+    assert_eq!(hero.description.as_deref(), Some("Hero description"));
+    assert_eq!(diagram.description.as_deref(), Some("Flow from A to B"));
+    assert!(!stored.content.contains("https://media.example/"));
+    assert!(
+        stored
+            .content
+            .contains(&format!(r#"data-media-id="{}""#, hero.id))
+    );
+    assert!(
+        stored
+            .content
+            .contains(&format!(r#"data-media-id="{}""#, diagram.id))
+    );
+    let jobs: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM media_processing_jobs j JOIN media_attachments m ON m.id=j.media_id WHERE m.status_id=$1",
+    )
+    .bind(stored.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(jobs, 3, "the shared inline/attachment URL queues once");
+
+    let mut unchanged = activity.clone();
+    unchanged["id"] = json!("https://remote.example/activities/ap11-update");
+    unchanged["type"] = json!("Update");
+    unchanged["object"]["updated"] = json!("2026-09-22T09:00:00Z");
+    assert_eq!(
+        post_signed(app.clone(), &unchanged, &bob).await,
+        StatusCode::ACCEPTED
+    );
+    let unchanged_stored = stored_object(&pool, &activity).await;
+    assert_eq!(
+        unchanged_stored.edited_at, None,
+        "an identical Update is a no-op"
+    );
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/statuses/{}", stored.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let entity: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(entity["media_attachments"].as_array().unwrap().len(), 3);
+    assert_eq!(
+        entity["media_attachments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| {
+                item["id"].as_str().and_then(|id| id.parse::<i64>().ok()) == Some(diagram.id)
+            })
+            .unwrap()["description"],
+        "Flow from A to B"
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/@bob@remote.example/{}", stored.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = String::from_utf8(
+        axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(body.contains(&format!(r#"data-media-id="{}""#, diagram.id)));
+    assert!(body.contains(&format!("/media/proxy/attachment/{}", appendix.id)));
+    assert_eq!(
+        body.matches(&format!("/media/proxy/attachment/{}", diagram.id))
+            .count(),
+        1,
+        "inline media is not repeated in the built-in gallery"
+    );
+}
+
 /// `WordPress` swaps the excerpt for the CW text and flags `sensitive: true`
 /// when a post carries a content warning — then (and only then) `summary`
 /// is a CW on a converted type.

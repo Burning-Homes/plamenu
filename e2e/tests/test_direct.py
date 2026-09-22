@@ -1,7 +1,6 @@
 """Direct messages federate in both directions and land in conversations."""
 
 import pytest
-
 from plamenu_e2e import config, mastodon, plamenu, unique
 from plamenu_e2e.steps import step, wait_for
 

@@ -298,6 +298,28 @@ struct UploadPart {
     decorative: bool,
     audio_described: bool,
     visuals_conveyed_in_audio: bool,
+    inline: InlineRequest,
+}
+
+struct InlineRequest {
+    /// Plain-form placement request; appended to the Article body after the
+    /// upload receives its durable media id.
+    append: bool,
+    /// JS cursor insertion token, replaced with the durable media marker on
+    /// the real submit. Preview keeps the temporary token client-side.
+    token: Option<String>,
+}
+
+struct StoredUpload {
+    id: i64,
+    inline: bool,
+    inline_token: Option<String>,
+}
+
+struct ReconciledMedia {
+    ids: Vec<i64>,
+    inline_ids: Vec<i64>,
+    upload_tokens: Vec<(String, i64)>,
 }
 
 /// Reads the compose multipart body into ordinary `(name, value)` text pairs
@@ -314,6 +336,8 @@ async fn read_compose(
     let mut pending_caption_vtt: Option<String> = None;
     let mut pending_decorative = false;
     let mut pending_visual_audio = String::new();
+    let mut pending_inline = false;
+    let mut pending_inline_token: Option<String> = None;
     while let Some(field) = multipart
         .next_field()
         .await
@@ -334,6 +358,8 @@ async fn read_compose(
                     pending_caption_vtt = None;
                     pending_decorative = false;
                     pending_visual_audio.clear();
+                    pending_inline = false;
+                    pending_inline_token = None;
                 } else {
                     let (audio_described, visuals_conveyed_in_audio) =
                         visual_audio_state(Some(&pending_visual_audio));
@@ -345,6 +371,10 @@ async fn read_compose(
                         decorative: std::mem::take(&mut pending_decorative),
                         audio_described,
                         visuals_conveyed_in_audio,
+                        inline: InlineRequest {
+                            append: std::mem::take(&mut pending_inline),
+                            token: pending_inline_token.take(),
+                        },
                     });
                     pending_visual_audio.clear();
                 }
@@ -370,6 +400,12 @@ async fn read_compose(
             "media_visual_audio[]" | "media_visual_audio" => {
                 pending_visual_audio = field.text().await.unwrap_or_default();
             }
+            "media_inline[]" | "media_inline" => {
+                pending_inline = truthy(&field.text().await.unwrap_or_default());
+            }
+            "media_inline_token[]" | "media_inline_token" => {
+                pending_inline_token = Some(field.text().await.unwrap_or_default());
+            }
             // Accept forms opened before this upgrade as genuine audio
             // description instead of silently discarding their checked value.
             "media_audio_described[]" | "media_audio_described" => {
@@ -394,7 +430,7 @@ async fn store_compose_media(
     state: &AppState,
     account_id: i64,
     files: Vec<UploadPart>,
-) -> Result<Vec<i64>, ApiError> {
+) -> Result<Vec<StoredUpload>, ApiError> {
     let limits = state.settings_cache.get(&state.pool).await?;
     actions::ensure_media_count(files.len(), limits.max_media_attachments)?;
     let mut media_ids = Vec::with_capacity(files.len());
@@ -430,7 +466,11 @@ async fn store_compose_media(
                 },
             )
             .await?;
-            media_ids.push(id);
+            media_ids.push(StoredUpload {
+                id,
+                inline: part.inline.append,
+                inline_token: part.inline.token,
+            });
         }
     }
     Ok(media_ids)
@@ -520,13 +560,32 @@ pub async fn compose(State(state): State<AppState>, user: WebUser, request: Requ
     let Ok(media_keep) = parse_media_keep(&pairs) else {
         return (StatusCode::BAD_REQUEST, "invalid attachment").into_response();
     };
-    let media_ids =
+    let reconciled =
         match reconcile_compose_media(&state, user.current.account.id, &pairs, &media_keep, files)
             .await
         {
             Ok(ids) => ids,
             Err(err) => return err.into_response(),
         };
+    let media_ids = reconciled.ids;
+    if fields.post_kind.trim() == "article" {
+        for (token, id) in reconciled.upload_tokens {
+            if !token.is_empty() {
+                fields.status = fields
+                    .status
+                    .replace(&format!("[[upload:{token}]]"), &format!("[[media:{id}]]"));
+            }
+        }
+        for id in reconciled.inline_ids {
+            let marker = format!("[[media:{id}]]");
+            if !fields.status.contains(&marker) {
+                if !fields.status.trim().is_empty() {
+                    fields.status.push_str("\n\n");
+                }
+                fields.status.push_str(&marker);
+            }
+        }
+    }
 
     if fields.in_reply_to_id.is_some() && !matches!(fields.post_kind.trim(), "" | "note") {
         return render_composer_response(
@@ -758,7 +817,7 @@ async fn reconcile_compose_media(
     pairs: &[(String, String)],
     media_keep: &[i64],
     files: Vec<UploadPart>,
-) -> Result<Vec<i64>, ApiError> {
+) -> Result<ReconciledMedia, ApiError> {
     let limits = state.settings_cache.get(&state.pool).await?;
     actions::ensure_media_count(media_keep.len() + files.len(), limits.max_media_attachments)?;
     // One statement for the whole kept set. `update_attributes_many` only
@@ -808,10 +867,29 @@ async fn reconcile_compose_media(
         )
         .await?;
     }
-    let new_ids = store_compose_media(state, account_id, files).await?;
+    let new_uploads = store_compose_media(state, account_id, files).await?;
     let mut media_ids = media_keep.to_vec();
-    media_ids.extend(new_ids);
-    Ok(media_ids)
+    media_ids.extend(new_uploads.iter().map(|upload| upload.id));
+    let mut inline_ids: Vec<i64> = media_keep
+        .iter()
+        .copied()
+        .filter(|id| field_last(pairs, &format!("media_inline_{id}")).is_some_and(truthy))
+        .collect();
+    inline_ids.extend(
+        new_uploads
+            .iter()
+            .filter(|upload| upload.inline)
+            .map(|upload| upload.id),
+    );
+    let upload_tokens = new_uploads
+        .into_iter()
+        .filter_map(|upload| upload.inline_token.map(|token| (token, upload.id)))
+        .collect();
+    Ok(ReconciledMedia {
+        ids: media_ids,
+        inline_ids,
+        upload_tokens,
+    })
 }
 
 /// The user-facing message of a validation error, for the composer's banner;
@@ -889,7 +967,13 @@ async fn build_compose_preview_card(
         },
     )?;
     let content_type = crate::compose::PostFormat::from_media_type(&fields.content_type);
-    let composed = crate::compose::compose_preview(state, text, content_type).await?;
+    let mut composed = crate::compose::compose_preview(state, text, content_type).await?;
+    if kind == plamenu_ap::activity::PostKind::Article && !media_ids.is_empty() {
+        let resolved =
+            media::find_owned_many(&state.pool, media_ids, user.current.account.id).await?;
+        composed.html =
+            actions::expand_inline_media(&state.config.domain, &composed.html, &resolved, true)?;
+    }
     // A JS preview carries its media client-side (not uploaded), so `media_ids`
     // is empty even when there are attachments — trust its flag for the blank
     // check. The real post still validates media for real on `op=post`.

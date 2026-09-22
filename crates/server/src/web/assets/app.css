@@ -1653,6 +1653,33 @@ img.emoji {
   border-radius: var(--radius);
 }
 
+.compose__inline-placement {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  margin: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+
+  small {
+    color: var(--text-muted);
+  }
+}
+
+.compose__inline-insert {
+  justify-self: start;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+
+  &:hover,
+  &:focus-visible {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+}
+
 /* ---- Edit mode ------------------------------------------------------- */
 
 /* The locked visibility chip on the edit composer's toolbar: same footprint
@@ -2703,6 +2730,32 @@ span.history__thumb--file {
 
   a {
     overflow-wrap: anywhere;
+  }
+
+  .status__inline-image {
+    display: block;
+    max-inline-size: 100%;
+    block-size: auto;
+    margin-block: var(--space-3);
+    border-radius: var(--radius-lg);
+  }
+
+  .status__inline-media {
+    position: relative;
+    display: block;
+    inline-size: fit-content;
+    max-inline-size: 100%;
+    margin-block: var(--space-3);
+
+    .status__inline-image {
+      margin-block: 0;
+    }
+
+    > .media__alt {
+      position: absolute;
+      inset-block-start: var(--space-2);
+      inset-inline-start: var(--space-2);
+    }
   }
 
   /* A code block keeps its formatting (`white-space: pre` never wraps), so it
@@ -5497,10 +5550,15 @@ a.settings-button--plain {
   gap: var(--space-1);
 }
 
-.media-wall__tile {
+.media-wall__item {
   position: relative;
-  display: block;
+  margin: 0;
   aspect-ratio: 1;
+}
+
+.media-wall__tile {
+  display: block;
+  block-size: 100%;
   overflow: hidden;
   border-radius: var(--radius);
   background: var(--surface-2);
@@ -7563,7 +7621,10 @@ a.settings-button--plain {
 }
 
 .media__badge {
+  appearance: none;
+  border: 0;
   font-size: 0.6875rem;
+  font-family: inherit;
   font-weight: 700;
   letter-spacing: 0.04em;
   padding: 0.1rem 0.4rem;
@@ -7572,6 +7633,52 @@ a.settings-button--plain {
   color: #fff;
   pointer-events: auto;
   cursor: default;
+}
+
+.media__alt {
+  position: relative;
+  display: inline-flex;
+  pointer-events: auto;
+
+  .media__badge {
+    cursor: help;
+  }
+
+  &:hover .media__alt-text,
+  &:focus-within .media__alt-text {
+    display: grid;
+  }
+}
+
+.media__alt-text {
+  position: absolute;
+  z-index: 8;
+  inset-block-start: calc(100% + var(--space-1));
+  inset-inline-start: 0;
+  display: none;
+  gap: var(--space-1);
+  inline-size: max-content;
+  max-inline-size: min(20rem, calc(100vw - 4rem));
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+  white-space: normal;
+
+}
+
+.media--audio .media__badges {
+  position: static;
+  order: -1;
+  margin-block-end: var(--space-1);
 }
 
 /* A broadcast that is on air right now. Red rather than the neutral chip so

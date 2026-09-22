@@ -106,6 +106,62 @@ def test_image_attachments_round_trip(
         assert cached["description"] == f"a square {marker}", cached
 
 
+def test_article_inline_images_remain_compatibility_attachments(
+    plamenu2, plamenu2_api, marker
+):
+    """AP11 on a freshly-built live Plamenu: inline Article media renders
+    in-place while every image remains a normal client-API and ActivityPub
+    attachment. A second image stays in the first-party attachment gallery."""
+
+    with step("the author publishes an Article with inline and attached images"):
+        diagram = plamenu2_api.upload_media(
+            media.make_png(80, 50, (20, 130, 220)),
+            filename="diagram.png",
+            mime="image/png",
+            description=f"flow diagram {marker}",
+        )
+        appendix = plamenu2_api.upload_media(
+            media.make_png(40, 60, (220, 100, 20)),
+            filename="appendix.png",
+            mime="image/png",
+            description=f"appendix {marker}",
+        )
+        posted = plamenu2_api.post_status(
+            f"Before [[media:{diagram['id']}]] after {marker}",
+            post_kind="article",
+            title=f"Illustrated {marker}",
+            **{"media_ids[]": [diagram["id"], appendix["id"]]},
+        )
+        assert len(posted["media_attachments"]) == 2, posted
+        assert "status__inline-image" in posted["content"], posted["content"]
+        assert f'data-media-id="{diagram["id"]}"' in posted["content"]
+
+        activity = plamenu2_api.ap_get(posted["uri"].removeprefix(plamenu2.url))
+        assert activity["type"] == "Article", activity
+        assert len(activity["attachment"]) == 2, activity
+        assert "status__inline-image" in activity["content"], activity["content"]
+
+    with step("the built-in client places only the selected image inline"):
+        page = requests.get(posted["url"], verify=False, timeout=30)
+        assert page.ok, page.status_code
+        assert page.text.count(f'data-media-id="{diagram["id"]}"') == 1, page.text
+        assert f'aria-label="ALT: flow diagram {marker}"' in page.text, page.text
+        assert f'aria-label="ALT: appendix {marker}"' in page.text, page.text
+        assert page.text.count('class="media__alt-text" role="tooltip"') == 2, page.text
+        appendix_url = next(
+            item["url"]
+            for item in posted["media_attachments"]
+            if item["id"] == appendix["id"]
+        )
+        assert appendix_url in page.text, page.text
+
+    with step("the client API keeps both compatibility attachments"):
+        received = plamenu2_api.get(f"/api/v1/statuses/{posted['id']}")
+        assert len(received["media_attachments"]) == 2, received
+        descriptions = {item["description"] for item in received["media_attachments"]}
+        assert descriptions == {f"flow diagram {marker}", f"appendix {marker}"}
+
+
 @pytest.mark.federation(direction="both")
 def test_profile_edits_reach_followers(
     plamenu2, plamenu_user, plamenu_api, plamenu2_user, plamenu2_api, marker

@@ -988,6 +988,30 @@ pub async fn create_remote(pool: &PgPool, new: NewRemoteMedia<'_>) -> Result<(),
     Ok(())
 }
 
+/// Supplies inline HTML alt text when a structured attachment with the same
+/// URL was inserted first but did not carry a description. Never overwrites a
+/// description explicitly supplied by the attachment object.
+pub async fn fill_remote_description(
+    pool: &PgPool,
+    status_id: i64,
+    remote_url: &str,
+    description: &str,
+) -> Result<(), DbError> {
+    sqlx::query!(
+        r#"
+        UPDATE media_attachments
+        SET description = $3
+        WHERE status_id = $1 AND remote_url = $2 AND description IS NULL
+        "#,
+        status_id,
+        remote_url,
+        description,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// A cold-history attachment starts as metadata-only. Once its status arrives
 /// through the live delivery path, promote attachments deferred solely by
 /// hydration and enqueue the normal processing job exactly once. Intrinsically

@@ -3,7 +3,6 @@ ingestion, and local full-text + hashtag search."""
 
 import pytest
 import requests
-
 from plamenu_e2e import config, mastodon, plamenu, unique
 from plamenu_e2e.steps import log, step, wait_for
 
