@@ -267,6 +267,21 @@ test('media lightbox controls keep their icons centred in accessible targets', a
     expect(geometry.paddingInlineStart).toBe('0px');
     expect(geometry.paddingInlineEnd).toBe('0px');
   }
+
+  // The drag's synthetic click must not dismiss the viewer, but a distinct
+  // tap immediately afterwards must. This guards against a timed post-swipe
+  // dead zone that made mobile users tap twice to close the backdrop.
+  const stage = dialog.locator('.lightbox__stage');
+  const stageBox = await stage.boundingBox();
+  expect(stageBox).not.toBeNull();
+  const y = stageBox.y + stageBox.height / 2;
+  await page.mouse.move(stageBox.x + stageBox.width * 0.7, y);
+  await page.mouse.down();
+  await page.mouse.move(stageBox.x + stageBox.width * 0.3, y, { steps: 5 });
+  await page.mouse.up();
+  await expect(dialog).toBeVisible();
+  await page.mouse.click(stageBox.x + stageBox.width / 2, y);
+  await expect(dialog).toBeHidden();
 });
 
 test('@no-js public pages retain their core document and form contracts', async ({ page }) => {

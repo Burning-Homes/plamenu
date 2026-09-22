@@ -3304,9 +3304,9 @@
       dragX: 0,
       animating: false,
       animationId: 0,
-      // When a drag/swipe/pinch last ended, so the click the browser may
-      // synthesize right after it doesn't count as a closing tap.
-      gestureAt: 0,
+      // A completed drag/swipe/pinch may synthesize one click. Suppress that
+      // click only; a fresh pointer sequence must remain an immediate close.
+      suppressGestureClick: false,
       // Opening the viewer adds one same-page history entry. This lets the
       // browser Back gesture close the viewer before leaving the page.
       historyActive: false,
@@ -3333,7 +3333,10 @@
     // when the browser synthesizes the click, so a tap can't fall through to
     // whatever the page has underneath. The nav/meta areas opt out above.
     el.addEventListener("click", (event) => {
-      if (Date.now() - box.gestureAt < 400) return;
+      if (box.suppressGestureClick) {
+        box.suppressGestureClick = false;
+        return;
+      }
       if (event.target.closest(".lightbox__meta")) return;
       closeLightbox();
     });
@@ -3667,8 +3670,11 @@
     const pointers = new Map();
     let moved = false;
     box.stage.addEventListener("pointerdown", (event) => {
+      // Any new pointer sequence is intentional, even if it starts while the
+      // previous slide is settling. Do not let stale gesture suppression turn
+      // that tap into a dead first attempt.
+      box.suppressGestureClick = false;
       if (box.animating) {
-        event.preventDefault();
         return;
       }
       pointers.set(event.pointerId, {
@@ -3709,7 +3715,6 @@
         if (!p.axis) p.axis = Math.abs(totalX) > Math.abs(totalY) ? "x" : "y";
       }
       if (pointers.size === 2) {
-        box.gestureAt = Date.now();
         pointers.forEach((pointer) => {
           pointer.pinched = true;
         });
@@ -3739,14 +3744,13 @@
         const atEnd = totalX < 0 && box.index === box.items.length - 1;
         box.dragX = atStart || atEnd ? totalX * 0.22 : totalX;
         box.track.style.transform = `translate3d(calc(-100% + ${box.dragX}px), 0, 0)`;
-        box.gestureAt = Date.now();
       }
     });
     const release = (event) => {
       const p = pointers.get(event.pointerId);
       pointers.delete(event.pointerId);
       if (!p) return;
-      if (moved) box.gestureAt = Date.now();
+      if (moved || p.pinched) box.suppressGestureClick = true;
       if (pointers.size > 0) return;
       const swipe = event.clientX - p.startX;
       const elapsed = Math.max(1, Date.now() - p.startedAt);
