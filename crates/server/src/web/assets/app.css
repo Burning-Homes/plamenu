@@ -7894,6 +7894,10 @@ a.settings-button--plain {
   block-size: 2.75rem;
   display: grid;
   place-items: center;
+  /* Replace the text-button padding from the base `button` rule: this fixed
+     square is the complete pointer target, and its SVG belongs at its exact
+     centre. */
+  padding: 0;
   border: none;
   border-radius: 50%;
   background: transparent;

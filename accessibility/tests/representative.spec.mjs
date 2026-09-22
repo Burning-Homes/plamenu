@@ -208,6 +208,67 @@ test('keyboard bypass and 320 CSS-pixel reflow contracts hold', async ({ page },
   }
 });
 
+test('media lightbox controls keep their icons centred in accessible targets', async ({ page }, testInfo) => {
+  await signIn(page);
+  await page.goto('/compose');
+  await page.locator('textarea[name="status"]').fill(
+    `Lightbox control fixture for ${testInfo.project.name}`,
+  );
+
+  // A complete 1×1 PNG keeps this browser-level regression independent of
+  // repository fixtures while still exercising the real upload and lightbox.
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  );
+  const picker = page.locator(
+    '.compose__media-body > input[type="file"].visually-hidden',
+  );
+  await picker.setInputFiles([
+    { name: 'lightbox-first.png', mimeType: 'image/png', buffer: png },
+    { name: 'lightbox-middle.png', mimeType: 'image/png', buffer: png },
+    { name: 'lightbox-last.png', mimeType: 'image/png', buffer: png },
+  ]);
+  const cards = page.locator('.compose__attachment');
+  await expect(cards).toHaveCount(3);
+  for (const [index, card] of (await cards.all()).entries()) {
+    await card.locator('.compose__alt').fill(`Lightbox test image ${index + 1}`);
+  }
+  await Promise.all([
+    page.waitForURL((url) => url.pathname.startsWith('/@developer/')),
+    page.locator('button[name="op"][value="post"]').click(),
+  ]);
+
+  await page.locator('.status__media a.media__link').nth(1).click();
+  const dialog = page.getByRole('dialog', { name: 'Media viewer' });
+  await expect(dialog).toBeVisible();
+
+  for (const name of ['Close', 'Previous', 'Next']) {
+    const button = dialog.getByRole('button', { name, exact: true });
+    await expect(button).toBeVisible();
+    const geometry = await button.evaluate((control) => {
+      const icon = control.querySelector('svg');
+      const target = control.getBoundingClientRect();
+      const graphic = icon.getBoundingClientRect();
+      const style = getComputedStyle(control);
+      return {
+        targetWidth: target.width,
+        targetHeight: target.height,
+        offsetX: (graphic.left + graphic.width / 2) - (target.left + target.width / 2),
+        offsetY: (graphic.top + graphic.height / 2) - (target.top + target.height / 2),
+        paddingInlineStart: style.paddingInlineStart,
+        paddingInlineEnd: style.paddingInlineEnd,
+      };
+    });
+    expect(geometry.targetWidth).toBeGreaterThanOrEqual(44);
+    expect(geometry.targetHeight).toBeGreaterThanOrEqual(44);
+    expect(Math.abs(geometry.offsetX)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(geometry.offsetY)).toBeLessThanOrEqual(0.5);
+    expect(geometry.paddingInlineStart).toBe('0px');
+    expect(geometry.paddingInlineEnd).toBe('0px');
+  }
+});
+
 test('@no-js public pages retain their core document and form contracts', async ({ page }) => {
   for (const [label, url] of noJavaScriptPages) {
     const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
