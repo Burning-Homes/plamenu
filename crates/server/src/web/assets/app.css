@@ -3290,11 +3290,31 @@ span.history__thumb--file {
   color: var(--accent);
 }
 
-/* Active actions already expose `aria-pressed`; the inset ring and tint make
-   the same state visible without relying on colour perception alone. */
+/* Active actions already expose `aria-pressed`; a compact underline makes the
+   same state visible without relying on colour perception alone. It lives
+   inside the full pointer target instead of visually claiming the whole target
+   or crowding an adjacent count. */
 .action.is-active {
-  background: color-mix(in srgb, currentColor 10%, transparent);
-  box-shadow: inset 0 0 0 2px currentColor;
+  position: relative;
+  background: transparent;
+  box-shadow: none;
+}
+
+.action.is-active::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-end: 0.2rem;
+  inline-size: 1rem;
+  block-size: 2px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.action.is-active:hover {
+  background: var(--surface-2);
 }
 
 .action.is-disabled {

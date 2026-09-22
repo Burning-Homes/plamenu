@@ -459,7 +459,10 @@ mod tests {
     #[test]
     fn accessibility_state_rules_are_bundled() {
         assert!(APP_CSS.contains(".action.is-active {"));
-        assert!(APP_CSS.contains("box-shadow: inset 0 0 0 2px currentColor;"));
+        assert!(APP_CSS.contains(".action.is-active::after {"));
+        assert!(APP_CSS.contains("block-size: 2px;"));
+        assert!(APP_CSS.contains("background: currentColor;"));
+        assert!(!APP_CSS.contains("box-shadow: inset 0 0 0 2px currentColor;"));
         assert!(APP_CSS.contains(
             ".webxdc-app-choice:has(input:focus-visible) { outline: 2px solid var(--accent);"
         ));

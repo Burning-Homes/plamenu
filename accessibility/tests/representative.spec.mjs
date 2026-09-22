@@ -90,6 +90,24 @@ async function publishFixturePost(page, projectName) {
     page.waitForURL((url) => url.pathname.startsWith('/@developer/')),
     page.locator('button[name="op"][value="post"]').click(),
   ]);
+
+  const favourite = page.locator('form[data-action="favourite"] button').first();
+  await favourite.click();
+  await expect(favourite).toHaveClass(/\bis-active\b/);
+  const activeStyle = await favourite.evaluate((button) => {
+    const control = getComputedStyle(button);
+    const marker = getComputedStyle(button, '::after');
+    return {
+      boxShadow: control.boxShadow,
+      markerContent: marker.content,
+      markerWidth: Number.parseFloat(marker.width),
+      markerHeight: Number.parseFloat(marker.height),
+    };
+  });
+  expect(activeStyle.boxShadow).toBe('none');
+  expect(activeStyle.markerContent).not.toBe('none');
+  expect(activeStyle.markerWidth).toBeLessThanOrEqual(16);
+  expect(activeStyle.markerHeight).toBe(2);
 }
 
 test('representative signed-out pages pass WCAG A/AA automated rules', async ({ page }) => {
