@@ -1,0 +1,340 @@
+import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { signIn } from '../session.mjs';
+
+let fixtureDirectory;
+let fixture;
+let audioFixture;
+let posterFixture;
+test.beforeAll(() => {
+  fixtureDirectory = mkdtempSync(join(tmpdir(), 'plamenu-native-video-'));
+  if (process.env.A11Y_VIDEO_FIXTURE) {
+    fixture = process.env.A11Y_VIDEO_FIXTURE;
+  } else {
+    fixture = join(fixtureDirectory, 'sample.mp4');
+    execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=640x480:rate=10',
+      '-f', 'lavfi', '-i', 'sine=frequency=440', '-t', '3', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-movflags', '+faststart', fixture]);
+  }
+  if (process.env.A11Y_AUDIO_FIXTURE) {
+    audioFixture = process.env.A11Y_AUDIO_FIXTURE;
+  } else {
+    audioFixture = join(fixtureDirectory, 'tone.m4a');
+    execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=9',
+      '-c:a', 'aac', audioFixture]);
+  }
+  if (process.env.A11Y_POSTER_FIXTURE) {
+    posterFixture = process.env.A11Y_POSTER_FIXTURE;
+  } else {
+    posterFixture = join(fixtureDirectory, 'poster.png');
+    execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:size=96x96',
+      '-frames:v', '1', posterFixture]);
+  }
+});
+test.afterAll(() => {
+  if (fixtureDirectory) rmSync(fixtureDirectory, { recursive: true });
+});
+
+async function publish(page, projectName, noScript) {
+  await signIn(page);
+  await page.goto('/videos');
+  await expect(page.getByRole('heading', { name: 'Videos', exact: true })).toBeVisible();
+  const name = `film_${Date.now().toString(36)}_${projectName.slice(0, 3)}`;
+  const channelForm = page.locator('form[action="/web/video-channels"]');
+  if (!await channelForm.isVisible()) await page.locator('summary').filter({ hasText: 'Create a video channel' }).click();
+  await channelForm.getByLabel('Channel address').fill(name);
+  await channelForm.getByLabel('Channel name').fill(`Films ${name}`);
+  await channelForm.getByRole('button', { name: 'Create a video channel' }).click();
+  await page.waitForURL(url => url.pathname === '/videos');
+  const form = page.locator('form[action="/web/videos"]');
+  await form.getByRole('combobox', { name: 'Channel', exact: true }).selectOption({ label: `Films ${name}` });
+  await form.getByLabel('Video title').fill(`Browser video ${name}`);
+  await form.getByLabel('Description', { exact: true }).fill('Native video from an ordinary HTML form.');
+  await form.getByLabel('Language code').fill('en');
+  await form.getByLabel('Video or audio file', { exact: true }).setInputFiles(fixture);
+  const posterTime = form.getByLabel('Poster frame time (seconds)');
+  if (noScript) {
+    await posterTime.fill('1.5');
+  } else {
+    const picker = form.locator('[data-poster-picker]');
+    await expect(picker).toBeVisible();
+    const source = picker.locator('video');
+    await expect.poll(() => source.evaluate(video => video.duration)).toBeGreaterThan(2);
+    await source.evaluate(video => { video.pause(); video.currentTime = 1.5; });
+    await expect.poll(() => source.evaluate(video => video.currentTime)).toBeGreaterThan(1.3);
+    await picker.getByRole('button', { name: 'Use this frame' }).click();
+    await expect(posterTime).toHaveValue('1.5');
+  }
+  await form.getByLabel('Visual description').fill('A moving colour test pattern.');
+  await form.getByLabel('Transcript', { exact: true }).fill('A steady test tone plays throughout.');
+  await form.getByLabel('Captions (WebVTT)').setInputFiles({ name: 'captions.vtt', mimeType: 'text/vtt',
+    buffer: Buffer.from('WEBVTT\n\n00:00:00.000 --> 00:00:03.000\n[Steady test tone]\n') });
+  if (!noScript) {
+    await page.route('**/web/videos/resumable', async route => {
+      await new Promise(resolve => setTimeout(resolve, 700));
+      await route.continue();
+    });
+  }
+  await form.getByRole('button', { name: 'Upload video' }).click();
+  if (!noScript) {
+    await expect(form.locator('[data-video-upload-progress]')).toBeVisible();
+    await expect(form.locator('[data-video-upload-label]')).toContainText(/Uploading|Upload received/);
+    const duringUpload = await page.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth }));
+    expect(duringUpload.content).toBeLessThanOrEqual(duringUpload.width);
+  }
+  await page.waitForURL(url => /\/videos\/drafts\/\d+$/.test(url.pathname));
+  if (!noScript) await page.unroute('**/web/videos/resumable');
+  const draftId = new URL(page.url()).pathname.split('/').pop();
+  expect((await page.request.get(`/media/${draftId}.orig`)).status()).toBe(404);
+  await expect(page.getByText('Only you can access this draft. It has not been published.')).toBeVisible();
+  if (noScript) {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      if (await page.getByRole('link', { name: 'Review your video', exact: true }).isVisible()) break;
+      await page.getByRole('link', { name: 'Refresh status', exact: true }).click();
+      await page.waitForTimeout(500);
+    }
+  } else {
+    await expect(page.getByRole('link', { name: 'Review your video', exact: true }))
+      .toBeVisible({ timeout: 45_000 });
+  }
+  await page.getByRole('link', { name: 'Review your video', exact: true }).click();
+  const review = page.locator('form[action="/web/videos"]');
+  await expect(page.getByRole('heading', { name: 'Review your video' })).toBeVisible();
+  await expect(page.locator('video source')).toHaveAttribute('src', /\/videos\/drafts\/\d+\/preview\/video$/);
+  await expect(page.getByRole('img', { name: 'Selected poster frame' })).toBeVisible();
+  await expect(page.locator('.video-publish__poster')).toContainText('1.5 s');
+  const replacement = page.locator('form[data-video-poster-replace]');
+  await expect(replacement).toBeVisible();
+  await replacement.getByLabel('Describe the poster image, including any text shown in it')
+    .fill('A solid blue square.');
+  await replacement.getByLabel('Still image for the poster').setInputFiles(posterFixture);
+  if (!noScript) await expect(replacement.getByRole('img', { name: 'Preview of the new poster image' })).toBeVisible();
+  await replacement.getByRole('button', { name: 'Save custom poster' }).click();
+  await expect(page.getByRole('img', { name: 'A solid blue square.' })).toBeVisible();
+  await expect(page.locator('.video-publish__poster')).toContainText('Custom poster');
+  expect((await page.request.get(`/media/${draftId}.orig`)).status()).toBe(404);
+  await expect(page.locator('video track')).toHaveAttribute('kind', 'captions');
+  await expect(review.getByLabel('Video title')).toHaveValue(`Browser video ${name}`);
+  const reflow = await page.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth }));
+  expect(reflow.content).toBeLessThanOrEqual(reflow.width);
+  if (!noScript) {
+    const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+    expect(result.violations.map(v => ({ id: v.id, targets: v.nodes.map(n => n.target) }))).toEqual([]);
+  }
+  await review.getByRole('button', { name: 'Publish video', exact: true }).click();
+  await page.waitForURL(url => /\/@[^/]+\/\d+/.test(url.pathname));
+  expect((await page.request.get(`/media/${draftId}.orig`)).status()).toBe(404);
+  await expect(page.getByText(`Browser video ${name}`, { exact: true })).toBeVisible();
+  await expect(page.locator('video').first()).toBeVisible();
+  await page.getByText('Poster image description', { exact: true }).click();
+  await expect(page.getByText('A solid blue square.', { exact: true })).toBeVisible();
+  await expect(page.locator('video track[kind="captions"]').first()).toBeAttached();
+  const alt = page.getByRole('button', { name: 'ALT: A moving colour test pattern.', exact: true });
+  const altBox = await alt.boundingBox();
+  expect(altBox.width).toBeGreaterThanOrEqual(44);
+  expect(altBox.height).toBeGreaterThanOrEqual(44);
+  await alt.press('Enter');
+  await expect(page.locator('.media__alt-text').filter({ hasText: 'A moving colour test pattern.' })).toBeVisible();
+  const player = page.locator('video').first();
+  const masterUrl = await player.getAttribute('data-hls');
+  expect(masterUrl).toMatch(/\/media\/hls\/\d+\/master\.m3u8$/);
+  const master = await page.request.get(masterUrl);
+  expect(master.ok()).toBeTruthy();
+  const masterBody = await master.text();
+  expect(masterBody).toContain('RESOLUTION=640x480');
+  expect(masterBody).toContain('RESOLUTION=480x360');
+  const lowPlaylistPath = masterBody.split('\n').find(line => line.includes('/native/360/index.m3u8'));
+  const lowPlaylist = await page.request.get(lowPlaylistPath);
+  expect(lowPlaylist.ok()).toBeTruthy();
+  expect(await lowPlaylist.text()).toContain('#EXT-X-BYTERANGE:');
+  // Exercise the browser's real decoder and WebVTT engine, also with page
+  // scripts disabled. This is not a claim about native-control keyboard UX.
+  await player.evaluate(video => {
+    video.muted = true; // Decoder check, independent of autoplay permission.
+    video.textTracks[0].mode = 'showing';
+    // The enhanced player intentionally cancels this first progressive play
+    // while attaching HLS; the observable contract is decoded playback.
+    video.play().catch(() => {});
+  });
+  await expect.poll(() => player.evaluate(video => video.currentTime)).toBeGreaterThan(0.1);
+  await expect.poll(() => player.evaluate(video => video.textTracks[0].activeCues?.[0]?.text))
+    .toBe('[Steady test tone]');
+  if (!noScript && projectName.startsWith('chromium')) {
+    const quality = page.getByRole('combobox', { name: 'Video quality' });
+    await expect(quality).toBeVisible();
+    await expect(quality.locator('option')).toHaveText(['Auto', '360p', '480p']);
+  }
+  expect(await player.evaluate(video => video.error)).toBeNull();
+  await player.evaluate(video => video.pause());
+  const permalink = page.url();
+  const statusId = new URL(permalink).pathname.split('/').pop();
+  await page.locator(`#post-${statusId}`).getByTitle('More options', { exact: true }).click();
+  await expect(page.locator(`form[action="/web/statuses/${statusId}/redraft"]`)).toHaveCount(0);
+  await page.getByRole('link', { name: 'Edit', exact: true }).click();
+  const edit = page.locator('form.compose--edit');
+  await expect(edit.getByLabel('Video title')).toHaveValue(`Browser video ${name}`);
+  await expect(edit.locator('input[type="checkbox"][name="media_keep[]"]')).toHaveCount(0);
+  await expect(edit.locator('input[type="hidden"][name="media_keep[]"]')).toHaveCount(1);
+  const editedTitle = `Edited video ${name}`;
+  const description = 'A detailed description with literal *asterisks*. '.repeat(20).trimEnd();
+  await edit.getByLabel('Video title').fill(editedTitle);
+  await edit.getByRole('textbox', { name: 'Post text', exact: true }).fill(description);
+  await edit.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(page.locator('[data-compose-preview]')).toContainText(editedTitle);
+  await expect(edit.getByLabel('Video title')).toHaveValue(editedTitle);
+  await expect(edit.getByRole('textbox', { name: 'Post text', exact: true })).toHaveValue(description);
+  const editReflow = await page.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth }));
+  expect(editReflow.content).toBeLessThanOrEqual(editReflow.width);
+  if (!noScript) {
+    const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+    expect(result.violations.map(v => ({ id: v.id, targets: v.nodes.map(n => n.target) }))).toEqual([]);
+  }
+  await edit.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await page.waitForURL(url => url.pathname === new URL(permalink).pathname);
+  await expect(page.getByText(editedTitle, { exact: true })).toBeVisible();
+  await expect(page.locator('video track[kind="captions"]').first()).toBeAttached();
+  await page.goto(`/web/statuses/${statusId}/edit`);
+  await expect(edit.getByLabel('Video title')).toHaveValue(editedTitle);
+  await expect(edit.getByRole('textbox', { name: 'Post text', exact: true })).toHaveValue(description);
+  await page.goto('/videos');
+  await page.getByRole('navigation', { name: 'Your video channels', exact: true })
+    .getByRole('link', { name: `Films ${name}`, exact: true }).click();
+  await expect(page.getByText(editedTitle, { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Hot', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Video channel', { exact: true })).toBeVisible();
+  await expect(page.locator('.profile__badge').filter({ hasText: /^Group$/ })).toHaveCount(0);
+  await expect(page.locator('.status__boost')).toContainText('published on');
+}
+
+test('native video upload, review and publication', async ({ page }, info) => {
+  await publish(page, info.project.name, false);
+});
+test('native video upload, captions and publication @no-js', async ({ page }, info) => {
+  await publish(page, info.project.name, true);
+});
+
+async function publishAudioOnly(page, projectName, noScript) {
+  test.setTimeout(90_000);
+  await signIn(page);
+  await page.goto('/videos');
+  const name = `audio_${Date.now().toString(36)}_${projectName.slice(0, 3)}`;
+  const channelForm = page.locator('form[action="/web/video-channels"]');
+  if (!await channelForm.isVisible()) {
+    await page.locator('summary').filter({ hasText: 'Create a video channel' }).click();
+  }
+  await channelForm.getByLabel('Channel address').fill(name);
+  await channelForm.getByLabel('Channel name').fill(`Films ${name}`);
+  await channelForm.getByRole('button', { name: 'Create a video channel' }).click();
+  await page.waitForURL(url => url.pathname === '/videos');
+  const form = page.locator('form[action="/web/videos"]');
+  await form.getByRole('combobox', { name: 'Channel', exact: true })
+    .selectOption({ label: `Films ${name}` });
+  await form.getByLabel('Video title').fill(`Waveform ${name}`);
+  await form.getByLabel('Video or audio file', { exact: true }).setInputFiles(audioFixture);
+  await form.getByLabel('Poster frame time (seconds)').fill('1.5');
+  await form.getByLabel('Visual description').fill('A blue waveform on a dark background.');
+  await form.getByLabel('Transcript', { exact: true }).fill('A steady test tone plays.');
+  await form.getByRole('button', { name: 'Upload video' }).click();
+  await page.waitForURL(url => /\/videos\/drafts\/\d+$/.test(url.pathname));
+  const reviewLink = page.getByRole('link', { name: 'Review your video', exact: true });
+  if (noScript) {
+    for (let attempt = 0; attempt < 60 && !await reviewLink.isVisible(); attempt++) {
+      await page.getByRole('link', { name: 'Refresh status', exact: true }).click();
+      await page.waitForTimeout(500);
+    }
+  }
+  await expect(reviewLink).toBeVisible({ timeout: 45_000 });
+  await reviewLink.click();
+  const review = page.locator('form[action="/web/videos"]');
+  await expect(page.getByRole('heading', { name: 'Review your video' })).toBeVisible();
+  await expect(page.locator('video source')).toHaveAttribute('src', /\/preview\/video$/);
+  await expect(page.getByRole('img', { name: 'Selected poster frame' })).toBeVisible();
+  await page.locator('details').filter({ has: page.locator('summary', { hasText: 'Transcript' }) })
+    .locator('summary').click();
+  await expect(page.getByText('A steady test tone plays.', { exact: true })).toBeVisible();
+  if (!noScript) {
+    const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+    expect(axe.violations.map(v => ({ id: v.id, targets: v.nodes.map(n => n.target) }))).toEqual([]);
+  }
+  await review.getByRole('button', { name: 'Publish video', exact: true }).click();
+  await page.waitForURL(url => /\/@[^/]+\/\d+/.test(url.pathname));
+  const player = page.locator('video').first();
+  await expect(player).toBeVisible();
+  await page.locator('details.media__transcript summary').click();
+  await expect(page.getByText('A steady test tone plays.', { exact: true })).toBeVisible();
+  const alt = page.getByRole('button', { name: 'ALT: A blue waveform on a dark background.', exact: true });
+  await alt.press('Enter');
+  await expect(page.locator('.media__alt-text').filter({ hasText: 'A blue waveform on a dark background.' }))
+    .toBeVisible();
+  const master = await page.request.get(await player.getAttribute('data-hls'));
+  expect(master.ok()).toBeTruthy();
+  expect(await master.text()).toContain('RESOLUTION=640x360');
+  await player.evaluate(video => { video.muted = true; video.play().catch(() => {}); });
+  await expect.poll(() => player.evaluate(video => video.videoWidth)).toBe(640);
+  await expect.poll(() => player.evaluate(video => video.currentTime)).toBeGreaterThan(0.1);
+  expect(await player.evaluate(video => video.error)).toBeNull();
+  await player.evaluate(video => video.pause());
+  const reflow = await page.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth }));
+  expect(reflow.content).toBeLessThanOrEqual(reflow.width);
+}
+
+test('audio-only Video source publishes as a waveform Video', async ({ page }, info) => {
+  await publishAudioOnly(page, info.project.name, false);
+});
+test('audio-only Video source is authorable and playable @no-js', async ({ page }, info) => {
+  await publishAudioOnly(page, info.project.name, true);
+});
+
+test('interrupted video upload resumes from its committed offset', async ({ page }, info) => {
+  test.setTimeout(90_000);
+  await signIn(page);
+  await page.goto('/videos');
+  const name = `resume_${Date.now().toString(36)}_${info.project.name.slice(0, 3)}`;
+  const channelForm = page.locator('form[action="/web/video-channels"]');
+  if (!await channelForm.isVisible()) await page.locator('summary').filter({ hasText: 'Create a video channel' }).click();
+  await channelForm.getByLabel('Channel address').fill(name);
+  await channelForm.getByLabel('Channel name').fill(`Films ${name}`);
+  await channelForm.getByRole('button', { name: 'Create a video channel' }).click();
+  await page.waitForURL(url => url.pathname === '/videos');
+  const form = page.locator('form[action="/web/videos"]');
+  await form.getByRole('combobox', { name: 'Channel', exact: true }).selectOption({ label: `Films ${name}` });
+  await form.getByLabel('Video title').fill(`Resume ${name}`);
+  const source = { name: 'resumable.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(8 * 1024 * 1024 + 4096, 7) };
+  await form.getByLabel('Video or audio file', { exact: true }).setInputFiles(source);
+  let chunks = 0;
+  await page.route('**/web/videos/drafts/*/source', route => {
+    if (route.request().method() !== 'PATCH' || ++chunks === 1) return route.continue();
+    return route.abort('failed');
+  });
+  await form.getByRole('button', { name: 'Upload video' }).click();
+  const link = form.getByRole('link', { name: 'Open your private draft to resume.' });
+  await expect(link).toBeVisible();
+  const draftUrl = new URL(await link.getAttribute('href'), page.url());
+  const id = draftUrl.pathname.split('/').pop();
+  const before = await (await page.request.get(`/web/videos/drafts/${id}/source`)).json();
+  expect(before.offset).toBe(8 * 1024 * 1024);
+  expect(before.total).toBe(source.buffer.length);
+  await page.unroute('**/web/videos/drafts/*/source');
+  await link.click();
+  await expect(page.getByRole('heading', { name: 'Video draft' })).toBeVisible();
+  const resume = page.locator('form[data-video-resume]');
+  await expect(resume).toBeVisible();
+  await resume.getByLabel('Select the same video or audio file').setInputFiles({ name: 'other.mp4', mimeType: 'video/mp4', buffer: Buffer.from('wrong') });
+  await resume.getByRole('button', { name: 'Resume upload' }).click();
+  await expect(resume.getByRole('alert')).toContainText('This is not the same file');
+  await resume.getByLabel('Select the same video or audio file').setInputFiles(source);
+  await resume.getByRole('button', { name: 'Resume upload' }).click();
+  await page.waitForURL(url => url.pathname === draftUrl.pathname);
+  await expect(resume).toHaveCount(0);
+  const phase = await (await page.request.get(`/videos/drafts/${id}/status`)).json();
+  expect(phase.phase).not.toBe('receiving');
+  expect((await page.request.get(`/media/${id}.orig`)).status()).toBe(404);
+  const reflow = await page.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth }));
+  expect(reflow.content).toBeLessThanOrEqual(reflow.width);
+  const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+  expect(result.violations.map(v => ({ id: v.id, targets: v.nodes.map(n => n.target) }))).toEqual([]);
+});

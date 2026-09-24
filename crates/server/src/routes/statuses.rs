@@ -104,7 +104,9 @@ pub async fn get_status(
         return Ok(gone_tombstone(&id));
     }
     let mut note = note_for_status(&state, &stored, &account).await?;
-    note["@context"] = quote_context();
+    if note.get("@context").is_none() {
+        note["@context"] = quote_context();
+    }
     Ok((
         [(header::CONTENT_TYPE, plamenu_ap::ACTIVITY_JSON_UTF8)],
         Json(note),

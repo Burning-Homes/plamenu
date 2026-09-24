@@ -373,6 +373,8 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub federation: Arc<dyn FederationApi>,
     pub media: Arc<dyn MediaStore>,
+    /// Native Video jobs share these slots and conservative scratch limits.
+    pub video_resources: crate::video_resources::ProcessingPool,
     /// Application-only keyring for normalized federation signing keys. `None`
     /// is tolerated only by test/maintenance states with no encrypted key
     /// rows; production startup preflight fails before workers begin.
@@ -449,6 +451,11 @@ impl AppState {
         federation: Arc<dyn FederationApi>,
         media: Arc<dyn MediaStore>,
     ) -> Result<Self, String> {
+        let video = config.native_video;
+        let video_resources = crate::video_resources::ProcessingPool::new(
+            video.jobs,
+            video.processing_budget() * u64::try_from(video.jobs).unwrap_or(0),
+        );
         let webauthn = Arc::new(
             try_build_webauthn(&config.domain)
                 .map_err(|reason| format!("domain {:?}: {reason}", config.domain))?,
@@ -467,6 +474,7 @@ impl AppState {
             config: Arc::new(config),
             federation,
             media,
+            video_resources,
             federation_keyring,
             streaming: Arc::new(Hub::default()),
             webxdc_realtime: Arc::new(crate::webxdc_realtime::Hub::default()),

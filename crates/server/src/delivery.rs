@@ -1161,6 +1161,7 @@ mod tests {
             media_dir: std::env::temp_dir(),
             ffmpeg_path: "ffmpeg".to_owned(),
             ffprobe_path: "ffprobe".to_owned(),
+            native_video: crate::config::NativeVideoConfig::default(),
             smtp: None,
             trusted_proxies: vec!["127.0.0.0/8".to_owned(), "::1/128".to_owned()],
             encryption_secret: Some("delivery-test-encryption-secret-at-least-32-bytes".into()),

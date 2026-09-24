@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO video_draft_outputs\n            (file_name, media_id, generation, cleanup_job_id) VALUES ($1, $2, $3, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "26aaba0082f8b7c0dbd02ac215a43371e0380415d42244061495da9e25fe2e92"
+}

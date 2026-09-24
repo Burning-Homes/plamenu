@@ -206,8 +206,7 @@ impl AccountRenderCtx<'_> {
         }
     }
 
-    /// The local-account overlay (noindex + highlighted role) for `account_id`,
-    /// or `None` for an account with no `users` row.
+    /// The local-account overlay (noindex, highlighted role, channel identity).
     async fn overlay(
         &self,
         pool: &PgPool,
@@ -859,17 +858,44 @@ pub(crate) async fn preview_media_json(
             .unwrap_or(usize::MAX)
     });
     let ladders = plamenu_db::media::renditions_for(pool, media_ids).await?;
+    let poster_ids: Vec<i64> = media
+        .iter()
+        .filter(|item| item.kind_or_derived() == "video")
+        .map(|item| item.id)
+        .collect();
+    let poster_alts = video_poster_alts(pool, &poster_ids).await?;
     Ok(media
         .iter()
         .map(|item| {
-            media_json_hls(
+            let mut value = media_json_hls(
                 domain,
                 item,
                 allow_direct,
                 ladders.get(&item.id).map(Vec::as_slice),
-            )
+            );
+            if let Some(alt) = poster_alts.get(&item.id) {
+                value["poster_description"] = json!(alt);
+            }
+            value
         })
         .collect())
+}
+
+async fn video_poster_alts(pool: &PgPool, ids: &[i64]) -> Result<HashMap<i64, String>, ApiError> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    Ok(sqlx::query!(
+        "SELECT media_id, poster_alt AS \"poster_alt!\" FROM video_drafts
+         WHERE media_id = ANY($1) AND poster_alt IS NOT NULL",
+        ids,
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(plamenu_db::DbError::from)?
+    .into_iter()
+    .map(|row| (row.media_id, row.poster_alt))
+    .collect())
 }
 
 /// The non-text draft attributes a status [preview](preview_status_json)
@@ -1559,6 +1585,7 @@ async fn account_json_with_counts(
         "hide_collections": account.hide_collections,
         "feature_approval": feature_approval_json(follow_src, account, viewer).await?,
         "group": account.is_group(),
+        "video_channel": false,
         "created_at": rfc3339(account.created_at)?,
         "note": if unavailable { "" } else { &account.note },
         "url": url,
@@ -1596,6 +1623,8 @@ async fn account_json_with_counts(
     // `roles` empty, like Mastodon's nil-tolerant delegates.
     if account.is_local() {
         let overlay = follow_src.overlay(pool, account.id).await?;
+        entity["video_channel"] =
+            (account.is_group() && overlay.as_ref().is_some_and(|o| o.video_channel)).into();
         entity["noindex"] = overlay.as_ref().map_or(Value::Null, |o| o.noindex.into());
         entity["roles"] = if unavailable {
             json!([])
@@ -3236,6 +3265,13 @@ async fn media_maps(
     // The HLS rendition ladders for every attachment in the batch (empty for
     // non-HLS media) — one query, then attached per attachment below.
     let media_ids: Vec<i64> = per_status.values().flatten().map(|f| f.id).collect();
+    let poster_ids: Vec<i64> = per_status
+        .values()
+        .flatten()
+        .filter(|item| item.kind_or_derived() == "video")
+        .map(|item| item.id)
+        .collect();
+    let poster_alts = video_poster_alts(pool, &poster_ids).await?;
     // Skip the round-trip entirely on the common attachment-less batch.
     let ladders = if media_ids.is_empty() {
         HashMap::new()
@@ -3255,12 +3291,16 @@ async fn media_maps(
             files
                 .iter()
                 .map(|file| {
-                    media_json_hls(
+                    let mut value = media_json_hls(
                         domain,
                         file,
                         allow_direct,
                         ladders.get(&file.id).map(Vec::as_slice),
-                    )
+                    );
+                    if let Some(alt) = poster_alts.get(&file.id) {
+                        value["poster_description"] = json!(alt);
+                    }
+                    value
                 })
                 .collect(),
         );

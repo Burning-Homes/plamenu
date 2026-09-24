@@ -25,6 +25,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Internal per-encoder resource boundary; never starts application services.
+    #[command(name = "__media-exec", hide = true)]
+    MediaExec {
+        #[arg(long)]
+        ffmpeg: std::path::PathBuf,
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+        max_file_bytes: u64,
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        parent_pid: u32,
+        #[arg(last = true, required = true)]
+        args: Vec<std::ffi::OsString>,
+    },
     /// Create Plamenu configuration.
     #[command(subcommand)]
     Config(ConfigCommand),
@@ -376,20 +388,34 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 type AnyError = Box<dyn std::error::Error + Send + Sync>;
 
-#[tokio::main]
-async fn main() {
-    if let Err(error) = run().await {
+fn main() {
+    let cli = Cli::parse();
+    if let Command::MediaExec {
+        ffmpeg,
+        max_file_bytes,
+        parent_pid,
+        args,
+    } = &cli.command
+    {
+        let error = plamenu::media_limits::exec(ffmpeg, args, *max_file_bytes, *parent_pid);
+        eprintln!("encoder launch failed: {error}");
+        std::process::exit(1);
+    }
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("could not start the application runtime");
+    if let Err(error) = runtime.block_on(run(cli)) {
         eprintln!("error: {error}");
         std::process::exit(1);
     }
 }
 
-async fn run() -> Result<(), AnyError> {
+async fn run(cli: Cli) -> Result<(), AnyError> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    let cli = Cli::parse();
     if let Command::Config(ConfigCommand::Generate { force }) = &cli.command {
         Config::generate(&cli.config, *force)?;
         println!("generated {}", cli.config.display());
@@ -519,6 +545,7 @@ async fn initialize_state(config: Config) -> Result<AppState, AnyError> {
 async fn dispatch(command: Command, state: AppState) -> Result<(), AnyError> {
     match command {
         Command::Config(_) => unreachable!("config generation is handled before app startup"),
+        Command::MediaExec { .. } => unreachable!("encoder exec is handled before runtime startup"),
         Command::Serve => serve(state).await,
         Command::Account(AccountCommand::Add {
             username,
@@ -726,6 +753,13 @@ async fn self_destruct(state: &AppState) -> Result<(), AnyError> {
 )]
 async fn serve(state: AppState) -> Result<(), AnyError> {
     let bind = state.config.bind;
+    match plamenu::video_worker::scavenge_crash_scratch(&state.config.media_dir).await {
+        Ok(removed) if removed > 0 => {
+            tracing::info!(removed, "removed abandoned A/V scratch at startup");
+        }
+        Ok(_) => {}
+        Err(error) => tracing::warn!(%error, "could not clear abandoned A/V scratch"),
+    }
     // Loud warning when an off-host bind trusts a broad private range as a
     // proxy — that combination lets any host on the range forge client IPs.
     if let Some(warning) = state.config.insecure_proxy_trust_warning() {
@@ -800,6 +834,13 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
             plamenu::self_destruct::spawn,
         ),
     ]);
+    for _ in 0..state.config.native_video.jobs {
+        supervisors.push(supervise(
+            "native video",
+            state.clone(),
+            plamenu::video_worker::spawn,
+        ));
+    }
     // No SMTP relay configured → no worker; the mail-needing flows refuse
     // upfront (`mailer::enabled`), so the queue stays empty.
     if let Some(smtp_config) = &state.config.smtp {

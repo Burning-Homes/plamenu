@@ -72,6 +72,9 @@ webauthn-rs = { workspace = true }
 zip = { workspace = true }
 zeroize = { workspace = true }
 
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true }
+
 [dev-dependencies]
 criterion = { workspace = true }
 ml-dsa = { workspace = true }

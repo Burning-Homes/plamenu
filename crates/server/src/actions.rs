@@ -117,6 +117,17 @@ pub(crate) fn ensure_within_character_limit(
     Ok(())
 }
 
+fn character_limit_for(
+    kind: Option<&str>,
+    limits: &plamenu_db::instance_settings::InstanceSettings,
+) -> i32 {
+    match kind {
+        Some("Article") => limits.max_characters_long_form,
+        Some("Video") => crate::video::MAX_DESCRIPTION_CHARACTERS,
+        _ => limits.max_characters,
+    }
+}
+
 /// How a delivery is enqueued — most activities go out as-is, but
 /// retractable interactions and their retractions get the cancel-in-queue
 /// treatment so a boost chased by an instant unboost never turns into two
@@ -366,10 +377,11 @@ fn stored_kind(
     has_poll: bool,
     has_title: bool,
 ) -> activity::PostKind {
-    use activity::PostKind::{Article, Event, Note, Page, Question};
+    use activity::PostKind::{Article, Event, Note, Page, Question, Video};
     match authored {
         Article => Article,
         Event => Event,
+        Video => Video,
         // A `Question` and a group `Page` are implied, never chosen: a poll or a
         // group submission is what makes them.
         _ if has_poll => Question,
@@ -1138,7 +1150,11 @@ async fn attach_status_media(
         return Ok(Vec::new());
     }
     let media_ids: Vec<i64> = media.iter().map(|m| m.id).collect();
-    media::attach(&mut *conn, &media_ids, stored.id, author.id).await?;
+    if media::attach(&mut *conn, &media_ids, stored.id, author.id).await? != media_ids.len() {
+        return Err(ApiError::Unprocessable(
+            "One or more attachments are no longer available for this post".into(),
+        ));
+    }
     Ok(crate::entities::ap_attachments(&state.config.domain, media))
 }
 
@@ -1194,7 +1210,36 @@ pub async fn post_status(
     state: &AppState,
     params: PostParams<'_>,
 ) -> Result<(Status, usize), ApiError> {
-    post_status_inner(state, params, None, None, None).await
+    post_status_inner(state, params, None, None, None, None).await
+}
+
+/// Publish in an owned video channel. Ownership, attachment and delivery are
+/// committed together; generic post endpoints cannot create an orphan Video.
+pub async fn post_video(
+    state: &AppState,
+    mut params: PostParams<'_>,
+    channel_id: i64,
+) -> Result<(Status, usize), ApiError> {
+    params.kind = activity::PostKind::Video;
+    post_status_inner(state, params, None, None, None, Some(channel_id)).await
+}
+
+pub async fn post_video_for_application(
+    state: &AppState,
+    mut params: PostParams<'_>,
+    channel_id: i64,
+    application_id: i64,
+) -> Result<(Status, usize), ApiError> {
+    params.kind = activity::PostKind::Video;
+    post_status_inner(
+        state,
+        params,
+        Some(application_id),
+        None,
+        None,
+        Some(channel_id),
+    )
+    .await
 }
 
 pub async fn post_webxdc_invitation(
@@ -1202,7 +1247,7 @@ pub async fn post_webxdc_invitation(
     params: PostParams<'_>,
     invitation: WebxdcInvitation<'_>,
 ) -> Result<(Status, usize), ApiError> {
-    post_status_inner(state, params, None, Some(invitation), None).await
+    post_status_inner(state, params, None, Some(invitation), None, None).await
 }
 
 /// Creates a local status through an OAuth application. The app attribution is
@@ -1212,7 +1257,7 @@ pub async fn post_status_for_application(
     params: PostParams<'_>,
     application_id: i64,
 ) -> Result<(Status, usize), ApiError> {
-    post_status_inner(state, params, Some(application_id), None, None).await
+    post_status_inner(state, params, Some(application_id), None, None, None).await
 }
 
 /// Publishes a claimed scheduled entry. Its deletion, post, attachments, and
@@ -1228,6 +1273,7 @@ pub(crate) async fn post_scheduled_status(
         scheduled.application_id,
         None,
         Some((scheduled.id, scheduled.publish_generation)),
+        None,
     )
     .await
 }
@@ -1403,8 +1449,14 @@ async fn post_status_inner(
     application_id: Option<i64>,
     webxdc_invitation: Option<WebxdcInvitation<'_>>,
     scheduled_claim: Option<(i64, i64)>,
+    video_channel_id: Option<i64>,
 ) -> Result<(Status, usize), ApiError> {
     validate_visibility(params.visibility)?;
+    if params.kind == activity::PostKind::Video && video_channel_id.is_none() {
+        return Err(ApiError::Unprocessable(
+            "Publish videos through a video channel".into(),
+        ));
+    }
     let author = account::find_local_by_username(&state.pool, params.username)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -1414,7 +1466,7 @@ async fn post_status_inner(
     // shape every caller has passed since E4, and the composer gates them on an
     // explicit choice of their own); `kind` is what selects long-form.
     let kind = match (params.kind, params.event.is_some()) {
-        (activity::PostKind::Article, true) => {
+        (activity::PostKind::Article | activity::PostKind::Video, true) => {
             return Err(ApiError::Unprocessable(
                 "Validation failed: A post is either long-form or an event, not both".into(),
             ));
@@ -1440,11 +1492,7 @@ async fn post_status_inner(
     ensure_within_character_limit(
         text,
         spoiler_text,
-        if long_form {
-            limits.max_characters_long_form
-        } else {
-            limits.max_characters
-        },
+        character_limit_for(Some(kind.as_str()), &limits),
     )?;
     // A session URL is the invitation's source of truth, including scheduled
     // posts and redrafts. Only recognize cached apps; never fetch on posting.
@@ -1479,6 +1527,10 @@ async fn post_status_inner(
         limits.max_media_attachments,
     )
     .await?;
+    if video_channel_id.is_some() {
+        crate::video::validate_publication(&params, &resolved_media)?;
+        crate::video::ensure_compatible_poster(state, &resolved_media[0]).await?;
+    }
     html = expand_inline_media(&state.config.domain, &html, &resolved_media, long_form)?;
     let validated_poll = params
         .poll
@@ -1614,6 +1666,26 @@ async fn post_status_inner(
         .await
         .map_err(plamenu_db::DbError::from)?;
     let conn = &mut *tx;
+    if let Some(channel_id) = video_channel_id
+        && !plamenu_db::video::lock_owned_channel(conn, channel_id, author.id).await?
+    {
+        return Err(ApiError::Forbidden(
+            "You cannot publish in this video channel".into(),
+        ));
+    }
+    if let Some(channel_id) = video_channel_id
+        && !plamenu_db::video::lock_publishable_media(
+            conn,
+            resolved_media[0].id,
+            author.id,
+            channel_id,
+        )
+        .await?
+    {
+        return Err(ApiError::Unprocessable(
+            "This video is not ready for publication in this channel".into(),
+        ));
+    }
     if let Some((id, generation)) = scheduled_claim
         && !plamenu_db::scheduled_status::consume_claim(conn, id, author.id, generation).await?
     {
@@ -1674,6 +1746,9 @@ async fn post_status_inner(
             .await?;
     }
     let attachments = attach_status_media(state, conn, &author, &stored, &resolved_media).await?;
+    if let Some(channel_id) = video_channel_id {
+        plamenu_db::video::publish(conn, stored.id, channel_id, resolved_media[0].id).await?;
+    }
 
     // Conversation first, so a reply into a muted thread won't notify. A local
     // status carries no remote context IRIs — a fresh root becomes locally
@@ -1801,6 +1876,28 @@ async fn post_status_inner(
             .as_ref()
             .map(crate::note::PreparedEvent::as_note_event),
     });
+    let mut publication_streams = Vec::new();
+    if video_channel_id.is_some() {
+        let publication = plamenu_db::video::publications(&mut *conn, &[stored.id])
+            .await?
+            .pop()
+            .ok_or(ApiError::NotFound)?;
+        let native_hls =
+            plamenu_db::native_video_hls::tags_for_media(&mut *conn, &[publication.media_id])
+                .await?;
+        crate::video::enrich_object(
+            &state.config.domain,
+            &mut create["object"],
+            &publication,
+            &resolved_media[0],
+            native_hls
+                .get(&publication.media_id)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+        )?;
+        publication_streams
+            .push(crate::video::announce(conn, &publication, &create["object"]).await?);
+    }
     if let Some(invitation) = webxdc_invitation {
         crate::webxdc::enhance_invitation(
             &mut create,
@@ -1840,7 +1937,6 @@ async fn post_status_inner(
         plamenu_db::preview_card::enqueue_crawl(&mut *conn, stored.id).await?;
     }
 
-    let mut group_streams = Vec::new();
     if stored.visibility == "public" {
         for group_account in &group_targets {
             if group_account.is_local()
@@ -1853,7 +1949,7 @@ async fn post_status_inner(
                 )
                 .await?
             {
-                group_streams.push(boost_id);
+                publication_streams.push(boost_id);
             }
         }
     }
@@ -1896,7 +1992,7 @@ async fn post_status_inner(
     {
         tracing::warn!(error = %err, status_id = stored.id, "post-commit post notifications failed");
     }
-    for boost_id in group_streams {
+    for boost_id in publication_streams {
         crate::streaming::status_created(state, boost_id).await;
     }
     crate::streaming::status_created(state, stored.id).await;
@@ -2319,11 +2415,7 @@ pub(crate) async fn prepare_status_edit(
     ensure_within_character_limit(
         &text,
         &spoiler_text,
-        if stored.object_type.as_deref() == Some("Article") {
-            limits.max_characters_long_form
-        } else {
-            limits.max_characters
-        },
+        character_limit_for(stored.object_type.as_deref(), &limits),
     )?;
 
     // A headline is editable on a post that has one; a typo in a title is as
@@ -2355,6 +2447,7 @@ pub(crate) async fn prepare_status_edit(
     .await?;
     let media_ids: Vec<i64> = kept_media.iter().map(|m| m.id).collect();
     let media_attributes = changed_media_attributes(&kept_media, &params.media_attributes);
+    crate::video::validate_edit(state, &stored, &media_ids, effective_title.as_deref()).await?;
 
     let composed = compose(state, &text, content_type).await?;
     let article = stored.object_type.as_deref() == Some("Article");
@@ -2711,6 +2804,9 @@ pub(crate) async fn federate_note_update_conn(
 ) -> Result<(), ApiError> {
     if updated.visibility == "local" {
         return Ok(());
+    }
+    if updated.object_type.as_deref() == Some("Video") {
+        mention_inboxes.extend(crate::video::follower_inboxes(conn, updated.id).await?);
     }
     let batch = crate::note::NoteBatch::load_conn(state, conn, &[updated]).await?;
     let note = crate::note::note_in_batch(state, updated, actor, &batch)?;
@@ -4060,6 +4156,9 @@ pub async fn delete_status(
         .begin()
         .await
         .map_err(plamenu_db::DbError::from)?;
+    if existing.object_type.as_deref() == Some("Video") {
+        original_extras.extend(crate::video::follower_inboxes(&mut tx, existing.id).await?);
+    }
     let deleted = match mode {
         DeleteMode::Stub => status::stub_local_conn(&mut tx, status_id, actor.id).await?,
         DeleteMode::Wipe => status::delete_local_conn(&mut tx, status_id, actor.id).await?,

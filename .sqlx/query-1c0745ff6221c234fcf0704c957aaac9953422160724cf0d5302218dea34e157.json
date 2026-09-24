@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH film AS (\n             UPDATE media_attachments SET kind = 'video'\n             WHERE id = $3 AND status_id = $1 RETURNING id\n         )\n         INSERT INTO video_publications (status_id, channel_id, media_id)\n         SELECT $1, $2, id FROM film",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c0745ff6221c234fcf0704c957aaac9953422160724cf0d5302218dea34e157"
+}

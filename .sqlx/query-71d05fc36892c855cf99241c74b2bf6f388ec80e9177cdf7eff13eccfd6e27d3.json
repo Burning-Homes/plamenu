@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.id\n        FROM accounts a\n        WHERE a.actor_type = 'Group'\n          AND NOT EXISTS (SELECT 1 FROM video_channels vc WHERE vc.account_id = a.id)\n          AND NOT a.is_internal\n          AND a.suspended_at IS NULL\n          AND a.deleted_at IS NULL\n          AND (a.portable OR instance_domain_allowed(a.domain))\n          AND ((a.domain IS NOT NULL AND NOT a.portable)\n               OR a.discoverable IS NOT FALSE)\n        ORDER BY a.created_at DESC, a.id DESC\n        LIMIT $1 OFFSET $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "71d05fc36892c855cf99241c74b2bf6f388ec80e9177cdf7eff13eccfd6e27d3"
+}

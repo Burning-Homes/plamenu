@@ -176,6 +176,7 @@ pub fn content_type_for(file_name: &str) -> &'static str {
         Some("webp") => "image/webp",
         Some("gif") => "image/gif",
         Some("mp4") => "video/mp4",
+        Some("m4s") => "video/iso.segment",
         Some("mp3") => "audio/mpeg",
         Some("m3u8") => "application/vnd.apple.mpegurl",
         Some("md") => "text/markdown",
@@ -798,12 +799,12 @@ fn decode_ffmpeg_image(
         // FFmpeg 6.1's AVIF demuxer exposes only the primary item. Feed the
         // parsed AV1 OBUs directly so its dav1d decoder also sees alpha.
         let color = dir.path().join("color.obu");
-        std::fs::write(&color, &avif.data.primary_item)
+        write_av1_item(&color, &avif.data.primary_item)
             .map_err(|e| ApiError::Internal(Box::new(e)))?;
         args.extend(["-f".into(), "obu".into(), "-i".into(), color.into()]);
         if let Some(alpha) = avif.data.alpha_item.as_deref() {
             let alpha_path = dir.path().join("alpha.obu");
-            std::fs::write(&alpha_path, alpha).map_err(|e| ApiError::Internal(Box::new(e)))?;
+            write_av1_item(&alpha_path, alpha).map_err(|e| ApiError::Internal(Box::new(e)))?;
             args.extend(["-f".into(), "obu".into(), "-i".into(), alpha_path.into()]);
         }
     } else {
@@ -836,6 +837,18 @@ fn decode_ffmpeg_image(
     ]);
     run_image_ffmpeg(ffmpeg_path, &args)?;
     read_pam(&output)
+}
+
+/// AVIF items need not contain a temporal delimiter, but `FFmpeg`'s raw OBU
+/// demuxer requires one. Its AVIF muxer removes the delimiter, unlike our
+/// image serializer. Restore only the framing, without changing coded pixels.
+fn write_av1_item(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mut file = std::fs::File::create(path)?;
+    if bytes.first().is_none_or(|header| (header >> 3) & 0x0f != 2) {
+        file.write_all(&[0x12, 0x00])?;
+    }
+    file.write_all(bytes)
 }
 
 /// Encodes an already-resized rendition as JPEG XL by shelling out to ffmpeg
@@ -1029,16 +1042,27 @@ fn strip_webp_metadata(input: &[u8]) -> Option<Vec<u8>> {
 /// only strips metadata; the others downscale to `max_edge` and re-encode) plus
 /// — when `preview` is set — a downscaled `small` style and blurhash.
 /// CPU-bound — call through the `*_blocking` wrappers from async contexts.
-#[allow(
-    clippy::too_many_lines,
-    reason = "one linear decode → full → preview flow"
-)]
 fn process_image(
     input: &[u8],
     max_edge: u32,
     preview: Option<PreviewMedia>,
     full: FullMedia,
     params: &EncodeParams,
+) -> Result<ProcessedImage, ApiError> {
+    process_image_with_canvas(input, max_edge, preview, full, params, None)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "one linear decode → full → preview flow"
+)]
+fn process_image_with_canvas(
+    input: &[u8],
+    max_edge: u32,
+    preview: Option<PreviewMedia>,
+    full: FullMedia,
+    params: &EncodeParams,
+    canvas: Option<(u32, u32)>,
 ) -> Result<ProcessedImage, ApiError> {
     if input.len() > MAX_UPLOAD_BYTES.min(params.max_image_bytes) {
         return Err(unsupported("File size exceeds the limit"));
@@ -1087,6 +1111,27 @@ fn process_image(
     if u64::from(width) * u64::from(height) > MAX_PIXELS {
         return Err(unsupported("Image dimensions exceed the limit"));
     }
+
+    // Federation poster only: contain the full frame on an opaque canvas.
+    // Do this before encoding, avoiding a lossy encode/decode/encode cycle.
+    let decoded = if let Some((canvas_width, canvas_height)) = canvas {
+        let fitted = decoded.resize(
+            canvas_width,
+            canvas_height,
+            image::imageops::FilterType::Lanczos3,
+        );
+        let mut background = image::RgbImage::new(canvas_width, canvas_height);
+        image::imageops::overlay(
+            &mut background,
+            &fitted.to_rgb8(),
+            i64::from((canvas_width - fitted.width()) / 2),
+            i64::from((canvas_height - fitted.height()) / 2),
+        );
+        DynamicImage::ImageRgb8(background)
+    } else {
+        decoded
+    };
+    let (width, height) = decoded.dimensions();
 
     // Full rendition.
     let photo = Encode::Photo {
@@ -1213,6 +1258,40 @@ pub async fn process_image_blocking(
     let _permit = crate::media_gate::acquire().await;
     tokio::task::spawn_blocking(move || {
         process_image(&input, max_edge, None, FullMedia::Jpeg, &params)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(Box::new(e)))?
+}
+
+/// The first-party Video poster stays compact and preserves its natural
+/// aspect ratio. Its separate compatibility JPEG is padded only for peers
+/// that insist on a 16:9 thumbnail.
+pub async fn process_native_video_poster_blocking(
+    input: Vec<u8>,
+    params: EncodeParams,
+) -> Result<ProcessedImage, ApiError> {
+    let _permit = crate::media_gate::acquire().await;
+    tokio::task::spawn_blocking(move || process_image(&input, 640, None, FullMedia::Avif, &params))
+        .await
+        .map_err(|e| ApiError::Internal(Box::new(e)))?
+}
+
+/// `PeerTube`'s player and cards currently select 16:9 thumbnails exclusively.
+/// Keep the native poster intact; emit a separately cached, padded JPEG.
+pub async fn process_video_poster_blocking(
+    input: Vec<u8>,
+    params: EncodeParams,
+) -> Result<ProcessedImage, ApiError> {
+    let _permit = crate::media_gate::acquire().await;
+    tokio::task::spawn_blocking(move || {
+        process_image_with_canvas(
+            &input,
+            640,
+            None,
+            FullMedia::Jpeg,
+            &params,
+            Some((640, 360)),
+        )
     })
     .await
     .map_err(|e| ApiError::Internal(Box::new(e)))?
@@ -1460,6 +1539,28 @@ mod tests {
         img.write_to(&mut std::io::Cursor::new(&mut bytes), ImageFormat::Png)
             .unwrap();
         bytes
+    }
+
+    #[test]
+    fn compatibility_poster_contains_portrait_square_and_landscape_frames() {
+        for (width, height) in [(90, 160), (160, 160), (160, 90), (240, 100)] {
+            let input = sample_png(width, height, false);
+            let output = process_image_with_canvas(
+                &input,
+                640,
+                None,
+                FullMedia::Jpeg,
+                &EncodeParams::default(),
+                Some((640, 360)),
+            )
+            .unwrap();
+            assert_eq!((output.width, output.height), (640, 360));
+            let pixels = image::load_from_memory(&output.bytes).unwrap().to_rgb8();
+            assert!(pixels.get_pixel(320, 180).0[2] > 20);
+            if width * 9 != height * 16 {
+                assert!(pixels.get_pixel(0, 0).0.iter().all(|&c| c < 5));
+            }
+        }
     }
 
     #[test]

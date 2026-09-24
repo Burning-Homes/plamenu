@@ -393,6 +393,7 @@ fn primary_nav(user: &WebUser) -> Markup {
         (nav_link("/favourites", "favourite", &locale.text("nav-favourites")))
         (nav_link("/lists", "list", &locale.text("nav-lists")))
         (nav_link("/groups", "group", &locale.text("nav-groups")))
+        (nav_link("/videos", "video", &locale.text("videos-title")))
         (nav_link("/webxdc", "apps", &locale.text("nav-webxdc")))
         (nav_link("/people", "profile", &locale.text("nav-people")))
         (nav_link("/explore", "explore", &locale.text("nav-trending")))

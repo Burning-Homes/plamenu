@@ -89,10 +89,16 @@ LOCAL_EXCEPTIONS = {
     "test_post_formats_advertised",
     # the /aliases settings page is a local web view.
     "test_web_aliases_page",
+    # AP11 exercises publishing/rendering on one freshly built instance; it
+    # inspects that instance's AP document but never exchanges it with a peer.
+    "test_article_inline_images_remain_compatibility_attachments",
     # refusing a move to an un-aliased target is local validation.
     "test_migration_to_unaliased_refused",
     # a list timeline including a followed member is a local timeline concern.
     "test_list_timeline_carries_mastodon_member",
+    # disposable plamenu2 is only the process being killed/restarted; the
+    # transfer does not exchange ActivityPub data with a peer.
+    "test_resumable_video_survives_process_crash",
 }
 
 

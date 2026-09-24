@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_attachments SET description = $3, transcript = $4,\n            caption_vtt = $5 WHERE id = $1 AND account_id = $2 AND status_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f25ca2b3721cfcd7f57f00911ea7afda1a5c1d7922247efe36b19128ed055951"
+}

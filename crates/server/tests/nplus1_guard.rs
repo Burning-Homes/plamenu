@@ -102,6 +102,54 @@ async fn render_accounts_query_count_is_flat(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn native_channel_account_rendering_is_batched(pool: PgPool) {
+    let counter = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(QueryCounter(counter.clone())),
+    );
+    let owner = create_local_account(&pool, "owner", "Owner").await;
+    let mut channels = Vec::new();
+    for index in 0..12 {
+        let mut channel = create_local_account(&pool, &format!("films{index}"), "Films").await;
+        let mut transaction = pool.begin().await.unwrap();
+        plamenu_db::video::create_channel(&mut transaction, channel.id, owner.id)
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+        channel.actor_type = Some("Group".into());
+        channels.push(channel);
+    }
+    counter.store(0, Ordering::Relaxed);
+    let small = entities::render_accounts(&pool, "plamenu.test", &channels[..3], None)
+        .await
+        .unwrap();
+    let small_queries = counter.swap(0, Ordering::Relaxed);
+    let big = entities::render_accounts(&pool, "plamenu.test", &channels, None)
+        .await
+        .unwrap();
+    let big_queries = counter.load(Ordering::Relaxed);
+    assert!(
+        small
+            .iter()
+            .chain(big.iter())
+            .all(|a| a["video_channel"] == true && a["group"] == true)
+    );
+    assert_eq!(
+        big_queries, small_queries,
+        "channel identity must not add per-account queries"
+    );
+    counter.store(0, Ordering::Relaxed);
+    entities::render_accounts(&pool, "plamenu.test", &[owner], None)
+        .await
+        .unwrap();
+    assert_eq!(
+        big_queries,
+        counter.load(Ordering::Relaxed),
+        "channel identity belongs in the existing account overlay, not another query"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn render_relationships_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(

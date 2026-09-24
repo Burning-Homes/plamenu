@@ -19,6 +19,29 @@ Test authentication, timelines, posting, uploads, and notifications against the
 exact Plamenu version you intend to support. Plamenu-specific APIs may change
 incompatibly during the experimental release series.
 
+## Native video (experimental)
+
+These are Plamenu APIs, not a PeerTube REST API implementation. ActivityPub
+video interoperability is tracked separately in the [AP09 inventory](../AP09-FEATURE-INVENTORY.md).
+
+- `GET /api/v1/video_channels` (`read:accounts`): list your owned channels.
+- `POST /api/v1/video_channels` (`write:accounts`): create a channel with
+  `username` and `display_name`. Responses include string `id`, `username`,
+  `display_name`, actor `uri`, and `owner_id`.
+- Upload video through the shared media endpoint, then
+  `POST /api/v1/videos` (`write:statuses`) with `channel_id`, `media_id`, `title`,
+  optional `description`, `language`, and `visibility` (`public` or `unlisted`).
+  The channel and unattached, processed video must belong to the authenticated
+  creator. Publication returns the ordinary Status entity with a playable
+  video attachment. Titles have 3–120 characters; descriptions have a separate
+  10,000-character budget, also bounded after HTML serialization.
+
+Account entities include the Plamenu extension `video_channel`: true for
+native video channels and false otherwise. A channel still has `group: true`
+and federates as an ActivityPub `Group`; it is not a community submission
+target. Remote channel classification is not yet represented by this extension.
+Clients must not infer channel ownership or authorization from this flag.
+
 ## Identity statements
 
 FEP-c390 uses signed statements to link an actor to a user-owned key. These

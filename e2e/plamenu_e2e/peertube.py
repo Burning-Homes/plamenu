@@ -302,7 +302,7 @@ def root() -> PeertubeApi:
     return PeertubeApi(config.PEERTUBE_URL, token=token)
 
 
-def make_sample_mp4(path, seconds: int = 5) -> Path:
+def make_sample_mp4(path, seconds: int = 5, size: str = "320x240") -> Path:
     """Generate a tiny H.264/AAC test clip with the host ffmpeg."""
     path = Path(path)
     subprocess.run(
@@ -314,7 +314,7 @@ def make_sample_mp4(path, seconds: int = 5) -> Path:
             "-f",
             "lavfi",
             "-i",
-            f"testsrc=duration={seconds}:size=320x240:rate=30",
+            f"testsrc=duration={seconds}:size={size}:rate=30",
             "-f",
             "lavfi",
             "-i",
@@ -328,6 +328,76 @@ def make_sample_mp4(path, seconds: int = 5) -> Path:
             "-shortest",
             "-y",
             str(path),
+        ],
+        check=True,
+    )
+    return path
+
+
+def make_sample_audio(path, seconds: int = 9) -> Path:
+    """Generate a sound-only AAC source for native Video waveform publication."""
+    path = Path(path)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency=440:duration={seconds}",
+            "-c:a",
+            "aac",
+            "-y",
+            str(path),
+        ],
+        check=True,
+    )
+    return path
+
+
+def make_two_colour_video(path) -> Path:
+    """Red opening followed by blue: selected-poster tests can detect time."""
+    path = Path(path)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:size=640x480:rate=10:duration=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:size=640x480:rate=10:duration=3",
+            "-filter_complex",
+            "[0:v][1:v]concat=n=2:v=1:a=0[v]",
+            "-map",
+            "[v]",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-y",
+            str(path),
+        ],
+        check=True,
+    )
+    return path
+
+
+def make_solid_poster(path, colour: str = "blue") -> Path:
+    """A deterministic custom poster distinct from a video's first frame."""
+    path = Path(path)
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+            "-i", f"color=c={colour}:size=96x96", "-frames:v", "1",
+            "-y", str(path),
         ],
         check=True,
     )

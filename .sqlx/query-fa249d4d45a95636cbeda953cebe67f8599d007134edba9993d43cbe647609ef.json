@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_attachments SET status_id = $1\n        WHERE id = ANY($2) AND account_id = $3 AND status_id IS NULL\n          AND (NOT EXISTS (SELECT 1 FROM video_drafts d WHERE d.media_id = media_attachments.id)\n               OR EXISTS (SELECT 1 FROM statuses s WHERE s.id = $1 AND s.object_type = 'Video'))\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fa249d4d45a95636cbeda953cebe67f8599d007134edba9993d43cbe647609ef"
+}

@@ -860,29 +860,43 @@ impl FederationClient {
         &self,
         uri: &str,
         etag: Option<&str>,
-        mut allow_redirect: F,
+        allow_redirect: F,
     ) -> Result<FetchedActivityPub, FederationError>
     where
         F: FnMut(&str) -> Fut,
         Fut: std::future::Future<Output = Result<bool, FederationError>>,
     {
         let accept = format!("{ACTIVITY_JSON}, {LD_JSON_AS}");
+        self.fetch_activitypub_with(uri, allow_redirect, |url| {
+            let accept = &accept;
+            async move {
+                self.send_signed_get_conditional(&url, accept, etag, None)
+                    .await
+            }
+        })
+        .await
+    }
+
+    /// The shared response/redirect walk also accepts a deterministic transport
+    /// in tests. Production always supplies the signed, guarded HTTP sender.
+    async fn fetch_activitypub_with<F, Fut, S, Sent>(
+        &self,
+        uri: &str,
+        mut allow_redirect: F,
+        mut send: S,
+    ) -> Result<FetchedActivityPub, FederationError>
+    where
+        F: FnMut(&str) -> Fut,
+        Fut: Future<Output = Result<bool, FederationError>>,
+        S: FnMut(Url) -> Sent,
+        Sent: Future<Output = Result<reqwest::Response, FederationError>>,
+    {
         let requested = self.checked(uri)?;
         let mut current = requested.clone();
         for _ in 0..=PAGE_MAX_REDIRECTS {
-            let response = self
-                .send_signed_get_conditional(&current, &accept, etag, None)
-                .await?;
-            if response.status().is_redirection() {
-                let next = self.redirect_target(&current, &response)?;
-                if !allow_redirect(next.as_str()).await? {
-                    return Err(FederationError::InvalidUrl(format!(
-                        "redirect to {next} is blocked by instance policy"
-                    )));
-                }
-                current = next;
-                continue;
-            }
+            let response = send(current.clone()).await?;
+            // reqwest classifies every 3xx as redirection, including 304.
+            // A cache validation has neither Location nor a document body.
             if response.status() == reqwest::StatusCode::NOT_MODIFIED {
                 return Ok(FetchedActivityPub {
                     document: None,
@@ -894,6 +908,16 @@ impl FederationClient {
                     final_url: current.to_string(),
                     body_bytes: 0,
                 });
+            }
+            if response.status().is_redirection() {
+                let next = self.redirect_target(&current, &response)?;
+                if !allow_redirect(next.as_str()).await? {
+                    return Err(FederationError::InvalidUrl(format!(
+                        "redirect to {next} is blocked by instance policy"
+                    )));
+                }
+                current = next;
+                continue;
             }
             if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 return Err(FederationError::RateLimited {
@@ -2048,6 +2072,71 @@ mod tests {
 
     use super::*;
     use crate::signature::{PreparedVerification, SignatureError};
+
+    #[tokio::test]
+    async fn activitypub_not_modified_is_not_a_redirect() {
+        let client = FederationClient::new("plamenu-test", false).unwrap();
+        for redirect_first in [false, true] {
+            let mut fetched = Vec::new();
+            let result = client
+                .fetch_activitypub_with(
+                    "https://peer.example/outbox",
+                    |_| async { Ok(true) },
+                    |url| {
+                        fetched.push(url.to_string());
+                        let response = if redirect_first && fetched.len() == 1 {
+                            http::Response::builder()
+                                .status(302)
+                                .header("location", "/history")
+                        } else {
+                            // No Location or Content-Type: both are unnecessary
+                            // for the unchanged representation's empty response.
+                            http::Response::builder()
+                                .status(304)
+                                .header("etag", "\"v1\"")
+                        }
+                        .body(Vec::<u8>::new())
+                        .unwrap();
+                        std::future::ready(Ok(response.into()))
+                    },
+                )
+                .await
+                .unwrap();
+            assert!(result.document.is_none());
+            assert_eq!(result.body_bytes, 0);
+            assert_eq!(result.etag.as_deref(), Some("\"v1\""));
+            assert_eq!(result.final_url, *fetched.last().unwrap());
+            assert_eq!(fetched.len(), if redirect_first { 2 } else { 1 });
+        }
+    }
+
+    #[tokio::test]
+    async fn activitypub_conditional_redirects_keep_policy_and_ssrf_guards() {
+        let client = FederationClient::new("plamenu-test", false).unwrap();
+        for destination in [
+            "https://127.0.0.1/history",
+            "https://blocked.example/history",
+        ] {
+            let mut attempts = 0;
+            let result = client
+                .fetch_activitypub_with(
+                    "https://peer.example/outbox",
+                    |_| async { Ok(false) },
+                    |_| {
+                        attempts += 1;
+                        let response = http::Response::builder()
+                            .status(302)
+                            .header("location", destination)
+                            .body(Vec::<u8>::new())
+                            .unwrap();
+                        std::future::ready(Ok(response.into()))
+                    },
+                )
+                .await;
+            assert!(result.is_err());
+            assert_eq!(attempts, 1);
+        }
+    }
 
     /// The exact strings on the wire are an interop contract: strict peers
     /// (Mitra among them) reject fetches whose Accept lacks the profiled

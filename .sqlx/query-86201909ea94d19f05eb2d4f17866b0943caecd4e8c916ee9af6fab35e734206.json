@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.account_id FROM video_channels c JOIN accounts a ON a.id = c.account_id JOIN accounts o ON o.id = c.owner_account_id WHERE c.account_id = $1 AND c.owner_account_id = $2 AND a.suspended_at IS NULL AND o.suspended_at IS NULL FOR SHARE OF c, a, o",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_channels",
+            "name": "account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "86201909ea94d19f05eb2d4f17866b0943caecd4e8c916ee9af6fab35e734206"
+}

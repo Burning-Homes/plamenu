@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE video_drafts d SET lease_until = clock_timestamp() + make_interval(secs => $3)\n         WHERE media_id = $1 AND generation = $2 AND state = 'processing'\n           AND lease_until > clock_timestamp() AND expires_at > clock_timestamp()\n           AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.id IN (d.account_id, d.channel_id) AND a.suspended_at IS NOT NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e3aeeff00eb0960b1cbd022de909efc12e193fab13ac3883dab6315a8032c7e8"
+}

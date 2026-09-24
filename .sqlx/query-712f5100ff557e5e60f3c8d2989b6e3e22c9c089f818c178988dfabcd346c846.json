@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE video_drafts d SET state = 'ready', lease_until = NULL\n         WHERE media_id = $1 AND generation = $2 AND state = 'processing'\n           AND lease_until > clock_timestamp() AND expires_at > clock_timestamp()\n           AND EXISTS (SELECT 1 FROM media_attachments m WHERE m.id = d.media_id\n                       AND m.status_id IS NULL AND m.processing = 'complete'\n                       AND m.file_name <> d.source_file AND m.small_file_name IS NOT NULL\n                       AND EXISTS (SELECT 1 FROM video_draft_outputs o WHERE o.media_id = d.media_id\n                           AND o.generation = d.generation AND NOT o.retired AND o.file_name = m.file_name)\n                       AND EXISTS (SELECT 1 FROM video_draft_outputs o WHERE o.media_id = d.media_id\n                           AND o.generation = d.generation AND NOT o.retired AND o.file_name = m.small_file_name))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "712f5100ff557e5e60f3c8d2989b6e3e22c9c089f818c178988dfabcd346c846"
+}

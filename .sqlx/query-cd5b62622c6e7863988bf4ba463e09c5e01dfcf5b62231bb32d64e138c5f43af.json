@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.height, r.width, r.bandwidth\n         FROM native_video_hls_renditions r\n         JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'\n         JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'\n         JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id\n         JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL\n         JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL\n         WHERE r.media_id = $1\n         ORDER BY r.height DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_video_hls_renditions",
+            "name": "height"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_video_hls_renditions",
+            "name": "width"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "bandwidth",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_video_hls_renditions",
+            "name": "bandwidth"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "cd5b62622c6e7863988bf4ba463e09c5e01dfcf5b62231bb32d64e138c5f43af"
+}

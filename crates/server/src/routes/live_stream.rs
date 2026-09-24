@@ -102,7 +102,7 @@ pub async fn stream(
     State(state): State<AppState>,
     Path(media_id): Path<i64>,
 ) -> Result<Response, ApiError> {
-    if plamenu_db::media::owner_suspended(&state.pool, media_id).await? {
+    if plamenu_db::media::public_access_blocked(&state.pool, media_id).await? {
         return Err(ApiError::NotFound);
     }
     // Asking for the stream is asking to watch, so this is the moment to be

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM native_video_hls_renditions WHERE media_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "81b6d01cb17a0d591aa9297a4e4a6fa7e7a70b73c84fe7ce71a3f11f6c36ca9c"
+}

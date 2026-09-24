@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n        COALESCE(sum(reserved_bytes), 0)::bigint AS \"total!\",\n        COALESCE(sum(reserved_bytes) FILTER (WHERE account_id = $1), 0)::bigint AS \"owned!\",\n        count(*) FILTER (WHERE reserved_bytes IS NULL) AS \"unknown!\"\n        FROM video_storage_reservations",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "owned!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "unknown!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "a71646b2605c2e1a627a1eb44ae2e08d90ed132995c2327b8d762b7e88469e52"
+}

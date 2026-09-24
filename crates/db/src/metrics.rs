@@ -1171,6 +1171,8 @@ pub async fn media_storage_bytes(pool: &PgPool) -> Result<i64, DbError> {
         r#"
         SELECT (
             (SELECT COALESCE(SUM(COALESCE(file_size, 0) + COALESCE(thumbnail_file_size, 0)), 0)::bigint FROM media_attachments)
+          + (SELECT COALESCE(SUM(file_size), 0)::bigint FROM video_compatibility_posters)
+          + (SELECT COALESCE(SUM(source_bytes), 0)::bigint FROM video_drafts)
           + (SELECT COALESCE(SUM(COALESCE(avatar_file_size, 0) + COALESCE(header_file_size, 0)), 0)::bigint FROM accounts)
           + (SELECT COALESCE(SUM(COALESCE(image_file_size, 0)), 0)::bigint FROM custom_emojis)
           + (SELECT COALESCE(SUM(COALESCE(image_file_size, 0)), 0)::bigint FROM preview_cards)

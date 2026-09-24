@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_attachments SET small_file_name = $3, small_width = $4,\n               small_height = $5, thumbnail_file_size = $6, blurhash = NULL\n             WHERE id = $1 AND account_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a49f7c227cb1bfbcf091ab24ae1de1ed8a1d4935d67e530313a636acc3210479"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO video_storage_reservations (file_name, account_id, media_id, reserved_bytes)\n        SELECT input.file_name, $2, $3, input.bytes FROM unnest($1::text[], $4::bigint[]) AS input(file_name, bytes)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Int8",
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4d9a215c9f1d25d228014ba2b47cd366efbd1f0d43bfe7852444b4c9ce23368f"
+}

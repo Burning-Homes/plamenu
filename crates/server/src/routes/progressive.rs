@@ -158,7 +158,7 @@ struct FragmentHeader {
 }
 
 async fn source(state: &AppState, media_id: i64) -> Result<Source, ApiError> {
-    if media::owner_suspended(&state.pool, media_id).await? {
+    if media::public_access_blocked(&state.pool, media_id).await? {
         return Err(ApiError::NotFound);
     }
     // The route is deliberately limited to HLS-native rows. Plain remote
@@ -251,7 +251,7 @@ async fn audio_source(
     media_id: i64,
     allow_direct: bool,
 ) -> Result<AudioSource, ApiError> {
-    if media::owner_suspended(&state.pool, media_id).await? {
+    if media::public_access_blocked(&state.pool, media_id).await? {
         return Err(ApiError::NotFound);
     }
     let item = media::find_by_ids(&state.pool, &[media_id])

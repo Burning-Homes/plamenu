@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE video_drafts SET source_bytes = $4\n         WHERE media_id = $1 AND account_id = $2 AND state = 'receiving'\n           AND source_fingerprint IS NOT NULL AND expires_at > clock_timestamp()\n           AND source_bytes = $3 AND $4 > $3 AND $4 <= reserved_bytes",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fdcf19adea4f8aefe64e8619386e73c24063bd2553b80007012f100058eea7b5"
+}

@@ -419,6 +419,50 @@ async fn image_upload_carries_blurhash_small_style_and_focus(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn local_disk_queued_video_processes_from_its_borrowed_path(pool: PgPool) {
+    let token = user_with_token(&pool, "alice").await;
+    let root = tempfile::tempdir().unwrap();
+    let mut state = test_state_with(pool.clone(), Arc::default());
+    let mut config = common::test_config();
+    config.media_dir = root.path().to_path_buf();
+    state.config = Arc::new(config);
+    state.media =
+        Arc::new(plamenu::storage::LocalDiskStore::new(root.path().to_path_buf()).unwrap());
+    assert!(state.media.local_path("../outside").is_none());
+    assert!(state.media.local_path("/outside").is_none());
+    let (code, queued) = upload(&state, &token, "/api/v2/media", &soundless_mp4(), &[]).await;
+    assert_eq!(code, StatusCode::ACCEPTED);
+    let id: i64 = queued["id"].as_str().unwrap().parse().unwrap();
+    let original: String =
+        sqlx::query_scalar("SELECT file_name FROM media_attachments WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let path = state.media.local_path(&original).unwrap();
+    assert!(path.exists());
+    assert_eq!(
+        fetch_media_file(&state, &format!("/media/{original}")).await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(media_worker::run_due(&state).await, 1);
+    assert!(!path.exists(), "successful processing retires the original");
+    let processed = plamenu_db::media::find_by_ids(&pool, &[id])
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(processed.processing, "complete");
+    assert!(
+        state
+            .media
+            .local_path(processed.file_name.as_deref().unwrap())
+            .unwrap()
+            .exists()
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn v2_video_upload_processes_in_background_and_federates_metadata(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let state = test_state_with(pool.clone(), Arc::default());

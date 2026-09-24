@@ -60,6 +60,34 @@ def make_mp4() -> bytes:
         return out.read_bytes()
 
 
+def make_m4a() -> bytes:
+    """A short audio-only file for the ordinary attachment worker."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "tone.m4a"
+        subprocess.run(
+            [
+                "ffmpeg", "-nostdin", "-loglevel", "error", "-f", "lavfi", "-i",
+                "sine=frequency=440:duration=2", "-c:a", "aac", "-y", str(out),
+            ],
+            check=True,
+        )
+        return out.read_bytes()
+
+
+def test_ordinary_audio_attachment_stays_audio(plamenu_api):
+    """The Video composer waveform mode must not alter ordinary post media."""
+    with step("upload audio through the ordinary asynchronous attachment API"):
+        queued = plamenu_api.upload_media(
+            make_m4a(), filename="tone.m4a", mime="audio/mp4", v2=True
+        )
+        done = wait_for(
+            lambda: (m := plamenu_api.get_media(queued["id"])).get("url") and m,
+            desc="the ordinary audio attachment to finish processing",
+        )
+        assert done["type"] == "audio", done
+        assert done["url"].endswith(".mp3"), done
+
+
 def follow_from_mastodon(alice, plamenu_user):
     account = alice.resolve_account(plamenu_user.acct)
     assert account, "Mastodon could not resolve the account"

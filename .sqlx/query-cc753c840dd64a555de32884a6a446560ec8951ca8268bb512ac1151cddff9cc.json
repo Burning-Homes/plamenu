@@ -1,0 +1,57 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id, d.account_id, d.generation,\n            replace(o.file_name, '.draft.mp4', '.draft.poster.jpg') AS \"key!\"\n        FROM media_attachments m\n        JOIN video_drafts d ON d.media_id = m.id\n        JOIN video_draft_outputs o ON o.media_id = m.id AND o.file_name = m.file_name\n            AND o.generation = d.generation AND NOT o.retired\n        WHERE d.state = 'ready' AND m.processing = 'complete'\n            AND o.file_name LIKE '%.draft.mp4'\n            AND NOT EXISTS (SELECT 1 FROM video_compatibility_posters p WHERE p.media_id = m.id)\n            AND NOT EXISTS (SELECT 1 FROM video_draft_outputs p\n                WHERE p.file_name = replace(o.file_name, '.draft.mp4', '.draft.poster.jpg'))\n        ORDER BY m.id LIMIT 32 FOR UPDATE OF m",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "generation",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "generation"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "cc753c840dd64a555de32884a6a446560ec8951ca8268bb512ac1151cddff9cc"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE video_drafts SET state = 'failed', lease_until = NULL WHERE media_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8718002ae1296ddc6521b1f6dda4d551e2f4fdaa740b7fb8d783a57b441332a0"
+}

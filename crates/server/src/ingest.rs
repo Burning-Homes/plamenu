@@ -659,7 +659,7 @@ async fn rewrite_remote_inline_images(
     status_id: i64,
     html: &str,
 ) -> Result<String, ApiError> {
-    let rows = media::for_statuses(&state.pool, &[status_id])
+    let rows = media::for_statuses_read_only(&state.pool, &[status_id])
         .await?
         .remove(&status_id)
         .unwrap_or_default();
@@ -2013,7 +2013,7 @@ async fn refresh_live_state(
     let Some(live) = live_info(object) else {
         return Ok(false);
     };
-    let stored = media::for_statuses(&state.pool, &[existing.id])
+    let stored = media::for_statuses_read_only(&state.pool, &[existing.id])
         .await?
         .remove(&existing.id)
         .unwrap_or_default();
@@ -3332,7 +3332,7 @@ async fn store_inline_image_attachments(
     object: &Value,
     force_on_demand: bool,
 ) -> Result<(), ApiError> {
-    let existing = media::for_statuses(&state.pool, &[stored.id])
+    let existing = media::for_statuses_read_only(&state.pool, &[stored.id])
         .await?
         .remove(&stored.id)
         .unwrap_or_default();

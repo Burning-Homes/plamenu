@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { signIn } from '../session.mjs';
 
 const publicPages = [
   ['landing', '/'],
@@ -64,21 +65,6 @@ async function visit(page, label, url) {
   const response = await page.goto(url, { waitUntil: 'networkidle' });
   expect(response?.status(), `${label} response`).toBeLessThan(400);
   await scan(page, label);
-}
-
-async function signIn(page) {
-  await page.goto('/login');
-  await page.locator('input[name="identifier"]').fill(
-    process.env.A11Y_USERNAME || 'developer',
-  );
-  await page.locator('input[name="password"]').fill(
-    process.env.A11Y_PASSWORD || 'plamenu-development-only',
-  );
-  await Promise.all([
-    page.waitForURL((url) => url.pathname === '/'),
-    page.locator('button[type="submit"]').click(),
-  ]);
-  await expect(page.locator('a.compose-btn[href="/compose"]').first()).toBeAttached();
 }
 
 async function publishFixturePost(page, projectName) {
@@ -239,6 +225,11 @@ test('media lightbox controls keep their icons centred in accessible targets', a
     page.locator('button[name="op"][value="post"]').click(),
   ]);
 
+  for (const alt of await page.locator('.status__media .media__alt > button').all()) {
+    const box = await alt.boundingBox();
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+  }
   await page.locator('.status__media a.media__link').nth(1).click();
   const dialog = page.getByRole('dialog', { name: 'Media viewer' });
   await expect(dialog).toBeVisible();
@@ -278,9 +269,16 @@ test('media lightbox controls keep their icons centred in accessible targets', a
   await page.mouse.move(stageBox.x + stageBox.width * 0.7, y);
   await page.mouse.down();
   await page.mouse.move(stageBox.x + stageBox.width * 0.3, y, { steps: 5 });
+  // Assert the real pointer stream actually moved the track; a visible dialog
+  // alone could pass even if this input never reached the gesture handler.
+  await expect(dialog.locator('.lightbox__track')).toHaveAttribute('style', /translate3d/);
   await page.mouse.up();
   await expect(dialog).toBeVisible();
-  await page.mouse.click(stageBox.x + stageBox.width / 2, y);
+  if (testInfo.project.use.hasTouch) {
+    await page.touchscreen.tap(stageBox.x + stageBox.width / 2, y);
+  } else {
+    await page.mouse.click(stageBox.x + stageBox.width / 2, y);
+  }
   await expect(dialog).toBeHidden();
 });
 

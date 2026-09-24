@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT input.id AS \"account_id!\",\n               u.noindex AS \"noindex?\",\n               r.id AS \"role_id?\", r.name AS \"role_name?\", r.color AS \"role_color?\",\n               (c.account_id IS NOT NULL) AS \"video_channel!\"\n        FROM unnest($1::bigint[]) AS input(id)\n        LEFT JOIN users u ON u.account_id = input.id\n        LEFT JOIN video_channels c ON c.account_id = input.id\n        LEFT JOIN user_roles r ON r.id = u.role_id AND r.highlighted\n        WHERE u.account_id IS NOT NULL OR c.account_id IS NOT NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "noindex?",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "noindex"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "role_id?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "role_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "role_color?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_roles",
+            "name": "color"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "video_channel!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "fea91be7f6c4c9db49f637b9968b27e53ddb78ab300402318ffefa9305ea7b20"
+}

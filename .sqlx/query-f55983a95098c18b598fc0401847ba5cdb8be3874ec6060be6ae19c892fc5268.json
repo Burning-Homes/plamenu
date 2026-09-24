@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE video_drafts SET state = 'queued', generation = generation + 1\n         WHERE media_id = $1 AND account_id = $2 AND state = 'failed' AND expires_at > clock_timestamp()\n           AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = video_drafts.account_id AND a.suspended_at IS NULL)\n           AND EXISTS (SELECT 1 FROM accounts c WHERE c.id = video_drafts.channel_id AND c.suspended_at IS NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f55983a95098c18b598fc0401847ba5cdb8be3874ec6060be6ae19c892fc5268"
+}

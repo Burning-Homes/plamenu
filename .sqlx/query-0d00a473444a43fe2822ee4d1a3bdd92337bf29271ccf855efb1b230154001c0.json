@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE video_storage_reservations r SET reserved_bytes = $2\n            FROM video_drafts d WHERE d.media_id = $1 AND r.file_name = d.source_file\n            AND r.reserved_bytes >= $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0d00a473444a43fe2822ee4d1a3bdd92337bf29271ccf855efb1b230154001c0"
+}

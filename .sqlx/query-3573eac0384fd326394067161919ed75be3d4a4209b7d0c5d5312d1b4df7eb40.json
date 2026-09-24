@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT d.source_bytes FROM video_drafts d\n        JOIN media_attachments m ON m.id = d.media_id\n        JOIN accounts a ON a.id = d.account_id JOIN accounts c ON c.id = d.channel_id\n        WHERE (d.state = 'queued' OR (d.state = 'processing' AND d.lease_until <= clock_timestamp()))\n          AND d.expires_at > clock_timestamp() AND m.status_id IS NULL\n          AND a.suspended_at IS NULL AND c.suspended_at IS NULL\n        ORDER BY d.media_id LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "source_bytes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3573eac0384fd326394067161919ed75be3d4a4209b7d0c5d5312d1b4df7eb40"
+}

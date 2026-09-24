@@ -733,6 +733,21 @@ pub async fn self_delete_account_conn(
     target: &Account,
 ) -> Result<(), ApiError> {
     require_local(target)?;
+    // Channels have independent subscribers and signing identities. Deleting
+    // only their owner would leave apparently active orphan actors at peers.
+    for channel in plamenu_db::video::owned_channels(&mut *conn, target.id).await? {
+        if let Some(account) = account::find_by_id(&mut *conn, channel.account_id).await? {
+            self_delete_one_account_conn(state, conn, &account).await?;
+        }
+    }
+    self_delete_one_account_conn(state, conn, target).await
+}
+
+async fn self_delete_one_account_conn(
+    state: &AppState,
+    conn: &mut plamenu_db::PgConnection,
+    target: &Account,
+) -> Result<(), ApiError> {
     account::suspend_conn(&mut *conn, target.id, "local").await?;
     // Fan out before the purge: the delivery audience is the followers list.
     federate_delete_conn(state, conn, target).await?;

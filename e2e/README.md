@@ -41,6 +41,20 @@ managed fleet can be selected with `PLAMENU_PEER_ROOT` and
 `PLAMENU_PEER_DEV`; individual `*_FIXTURE_DIR` paths and peer URLs can also be
 overridden in the ignored root `.env`.
 
+When verifying an already-built candidate, set `PLAMENU_BINARY` to its absolute
+executable path and `PLAMENU_CONFIG` to the standing test instance's config.
+CLI fixtures then use that artifact instead of rebuilding via `cargo run`.
+`DATABASE_URL` must point to that same instance for database assertions. This
+does not start or replace the server; run the same candidate there first.
+
+The outbound native-video/PeerTube test also drives PeerTube's actual watch UI
+before deleting its temporary video. Install the pinned browser test dependencies
+in `accessibility/` (`npm ci` and Playwright Chromium/Firefox browser binaries)
+to run it. The check signs into the disposable PeerTube root test account,
+plays both advertised HLS qualities, seeks, and confirms decoded frames on
+desktop and 320px layouts. It writes a video-frame screenshot under
+`target/e2e/`. HTTP/API import alone is not a substitute for this browser gate.
+
 ## The Plamenu peers
 
 Two of the peers are this server, started and stopped by the test session

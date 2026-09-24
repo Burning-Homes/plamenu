@@ -24,6 +24,578 @@ use tower::ServiceExt;
 const EMAIL: &str = "alice@example.com";
 const PASSWORD: &str = "correct horse battery";
 
+/// Storage bytes are deliberately tiny placeholders: these tests exercise
+/// authorization/ranges, not decoding (covered by the real browser suite).
+async fn ready_native_draft(state: &plamenu::AppState, owner: &account::Account) -> (i64, i64) {
+    use plamenu_db::video_draft as drafts;
+    let channel = plamenu::video::create_channel(state, owner, "draftfilms", "Draft films")
+        .await
+        .unwrap();
+    let media_id = id::next();
+    assert_eq!(
+        drafts::reserve(
+            &state.pool,
+            &drafts::NewDraft {
+                media_id,
+                account_id: owner.id,
+                channel_id: channel.id,
+                title: "Private film",
+                description: "Private description",
+                language: Some("en"),
+                visibility: "unlisted",
+                source_file: "private.orig",
+                source_fingerprint: None,
+                poster_time_seconds: 0.0,
+                media_description: None,
+                media_transcript: None,
+                caption_vtt: None,
+                reserved_bytes: 10,
+            },
+            &drafts::AdmissionLimits {
+                unfinished_per_account: 2,
+                retained_source_bytes_per_account: 100,
+                pending_source_bytes_global: 100,
+                storage: plamenu_db::video_storage::Limits {
+                    per_account: 100_000_000,
+                    global: 100_000_000
+                },
+                disk_available_bytes: u64::MAX,
+                min_free_bytes: 0,
+                processing_reserved_bytes: 0,
+            }
+        )
+        .await
+        .unwrap(),
+        drafts::Admission::Accepted
+    );
+    let mut tx = state.pool.begin().await.unwrap();
+    assert!(
+        drafts::lock_receiving(&mut tx, media_id, owner.id)
+            .await
+            .unwrap()
+    );
+    state
+        .media
+        .put("private.orig", b"original".to_vec())
+        .await
+        .unwrap();
+    assert!(
+        drafts::finish_receiving(&mut tx, media_id, owner.id, 8)
+            .await
+            .unwrap()
+    );
+    tx.commit().await.unwrap();
+    let claim = drafts::claim(&state.pool).await.unwrap().unwrap();
+    assert!(
+        drafts::reserve_outputs(
+            &state.pool,
+            &claim,
+            "private.draft.mp4",
+            "private.draft.small.avif",
+            [10, 10],
+            &plamenu_db::video_storage::Limits {
+                per_account: 100_000_000,
+                global: 100_000_000
+            },
+        )
+        .await
+        .unwrap()
+    );
+    let mut tx = state.pool.begin().await.unwrap();
+    assert!(drafts::lock_claim(&mut tx, &claim).await.unwrap());
+    state
+        .media
+        .put("private.draft.mp4", b"0123456789".to_vec())
+        .await
+        .unwrap();
+    state
+        .media
+        .put("private.draft.small.avif", b"poster".to_vec())
+        .await
+        .unwrap();
+    state
+        .media
+        .put("private.draft.poster.jpg", b"jpeg".to_vec())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE media_attachments SET processing = 'complete', file_name = 'private.draft.mp4', small_file_name = 'private.draft.small.avif', duration = 3, caption_vtt = 'WEBVTT\n\n00:00.000 --> 00:03.000\nPrivate captions\n' WHERE id = $1")
+        .bind(media_id).execute(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO video_compatibility_posters (media_id, file_name, width, height, file_size, cleanup_job_id) VALUES ($1, 'private.draft.poster.jpg', 640, 360, 4, $2)")
+        .bind(media_id).bind(id::next()).execute(&mut *tx).await.unwrap();
+    assert!(drafts::mark_ready(&mut tx, &claim).await.unwrap());
+    tx.commit().await.unwrap();
+    (media_id, channel.id)
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn native_draft_html_review_and_cancel_are_private_and_require_confirmation(pool: PgPool) {
+    let alice = seed_alice(&pool).await;
+    seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
+    let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let (id, _) = ready_native_draft(&state, &alice).await;
+    sqlx::query("UPDATE media_attachments SET description = 'Visual alternative', transcript = 'Spoken alternative' WHERE id = $1")
+        .bind(id).execute(&pool).await.unwrap();
+    let app = build_router(state);
+    let owner = login(&app).await;
+    let stranger = login_as(&app, "bob@example.com", PASSWORD).await;
+    let uri = format!("/videos/drafts/{id}");
+    let action = format!("/web/videos/drafts/{id}");
+    let page = get(&app, &uri, Some(&owner)).await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(page.cache_control, "private, no-store");
+    assert!(page.body.contains("Ready to review"));
+    assert!(page.body.contains("Refresh status"));
+    assert!(page.body.contains("type=\"checkbox\" name=\"confirm\""));
+    assert!(get(&app, "/videos", Some(&owner)).await.body.contains(&uri));
+    assert!(
+        !get(&app, "/videos", Some(&stranger))
+            .await
+            .body
+            .contains(&uri)
+    );
+    for route in [&uri, &format!("{uri}/review")] {
+        let denied = get(&app, route, Some(&stranger)).await;
+        assert_eq!(denied.status, StatusCode::NOT_FOUND);
+        assert_eq!(denied.cache_control, "private, no-store");
+    }
+    let review = get(&app, &format!("{uri}/review"), Some(&owner)).await;
+    assert_eq!(review.status, StatusCode::OK);
+    assert_eq!(review.cache_control, "private, no-store");
+    assert!(review.body.contains(&format!("{uri}/preview/video")));
+    assert!(review.body.contains(&format!("{uri}/preview/captions.vtt")));
+    assert!(!review.body.contains("/media/private.draft"));
+    assert!(review.body.contains("Visual alternative"));
+    assert!(review.body.contains("Spoken alternative"));
+    let csrf = csrf_of(&page.body);
+    assert_eq!(
+        post_form(
+            &app,
+            &action,
+            &owner,
+            &[("csrf", "wrong"), ("op", "cancel"), ("confirm", "yes")]
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        post_form(&app, &action, &owner, &[("csrf", &csrf), ("op", "cancel")])
+            .await
+            .status,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(get(&app, &uri, Some(&owner)).await.status, StatusCode::OK);
+    let cancelled = post_form(
+        &app,
+        &action,
+        &owner,
+        &[("csrf", &csrf), ("op", "cancel"), ("confirm", "yes")],
+    )
+    .await;
+    assert_eq!(cancelled.status, StatusCode::SEE_OTHER);
+    assert_eq!(cancelled.location.as_deref(), Some("/videos"));
+    assert_eq!(
+        get(&app, &uri, Some(&owner)).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert!(
+        !plamenu_db::video_storage::keys(&pool)
+            .await
+            .unwrap()
+            .is_empty(),
+        "cancellation waits for file cleanup before refunding storage"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn native_draft_html_refresh_never_retries_and_expiry_disables_review(pool: PgPool) {
+    let alice = seed_alice(&pool).await;
+    let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let (id, channel) = ready_native_draft(&state, &alice).await;
+    let app = build_router(state);
+    let cookie = login(&app).await;
+    let uri = format!("/videos/drafts/{id}");
+    let action = format!("/web/videos/drafts/{id}");
+    sqlx::query("UPDATE video_drafts SET state = 'failed' WHERE media_id = $1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let failed = get(&app, &uri, Some(&cookie)).await;
+    assert!(failed.body.contains("Retry processing"));
+    assert!(failed.body.contains(&format!("href=\"{uri}/review\"")));
+    assert!(
+        failed
+            .body
+            .split("data-video-review")
+            .nth(1)
+            .unwrap()
+            .split('>')
+            .next()
+            .unwrap()
+            .contains("hidden")
+    );
+    let csrf = csrf_of(&failed.body);
+    assert_eq!(
+        get(&app, &format!("{uri}/review"), Some(&cookie))
+            .await
+            .status,
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        plamenu_db::video_draft::find_owned(&pool, id, alice.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        "failed"
+    );
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(channel)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        post_form(&app, &action, &cookie, &[("csrf", &csrf), ("op", "retry")])
+            .await
+            .status,
+        StatusCode::CONFLICT
+    );
+    sqlx::query("UPDATE accounts SET suspended_at = NULL WHERE id = $1")
+        .bind(channel)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        post_form(&app, &action, &cookie, &[("csrf", &csrf), ("op", "retry")])
+            .await
+            .status,
+        StatusCode::SEE_OTHER
+    );
+    assert!(
+        get(&app, &uri, Some(&cookie))
+            .await
+            .body
+            .contains("Waiting for processing")
+    );
+    assert_eq!(
+        plamenu_db::video_draft::find_owned(&pool, id, alice.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        "queued"
+    );
+    sqlx::query("UPDATE video_drafts SET state = 'ready', expires_at = now() - interval '1 second' WHERE media_id = $1").bind(id).execute(&pool).await.unwrap();
+    let expired = get(&app, &uri, Some(&cookie)).await;
+    assert!(expired.body.contains("This draft has expired"));
+    assert!(
+        expired
+            .body
+            .split("data-video-review")
+            .nth(1)
+            .unwrap()
+            .split('>')
+            .next()
+            .unwrap()
+            .contains("hidden")
+    );
+    assert_eq!(
+        get(&app, &format!("{uri}/review"), Some(&cookie))
+            .await
+            .status,
+        StatusCode::SEE_OTHER
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn native_draft_previews_are_owner_only_and_support_private_ranges(pool: PgPool) {
+    let alice = seed_alice(&pool).await;
+    seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
+    let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let (media_id, _) = ready_native_draft(&state, &alice).await;
+    let app = build_router(state);
+    let owner = login(&app).await;
+    let stranger = login_as(&app, "bob@example.com", PASSWORD).await;
+    let status_uri = format!("/videos/drafts/{media_id}/status");
+    for cookie in [None, Some(stranger.as_str())] {
+        let denied = get(&app, &status_uri, cookie).await;
+        assert_eq!(denied.status, StatusCode::NOT_FOUND);
+        assert_eq!(denied.cache_control, "private, no-store");
+    }
+    let own_status = get(&app, &status_uri, Some(&owner)).await;
+    assert_eq!(own_status.status, StatusCode::OK);
+    assert_eq!(own_status.cache_control, "private, no-store");
+    assert!(own_status.body.contains(r#""phase":"ready""#));
+    for kind in ["video", "poster", "captions.vtt"] {
+        let uri = format!("/videos/drafts/{media_id}/preview/{kind}");
+        for cookie in [None, Some(stranger.as_str())] {
+            let denied = get(&app, &uri, cookie).await;
+            assert_eq!(denied.status, StatusCode::NOT_FOUND, "{kind}");
+            assert_eq!(denied.cache_control, "private, no-store");
+        }
+        let allowed = get(&app, &uri, Some(&owner)).await;
+        assert_eq!(allowed.status, StatusCode::OK, "{kind}");
+        assert_eq!(allowed.cache_control, "private, no-store");
+        if kind == "captions.vtt" {
+            assert!(allowed.body.contains("Private captions"));
+        }
+    }
+    for path in [
+        "/media/private.orig".to_owned(),
+        "/media/private.draft.mp4".to_owned(),
+        "/media/private.draft.small.avif".to_owned(),
+        "/media/private.draft.poster.jpg".to_owned(),
+        format!("/media/{media_id}/captions.vtt"),
+        format!("/media/proxy/attachment/{media_id}"),
+        format!("/media/proxy/attachment/{media_id}/small"),
+        format!("/media/play/{media_id}/video.mp4"),
+        format!("/media/play/{media_id}/audio?d=1"),
+        format!("/media/live/{media_id}/stream.mp4"),
+        format!("/media/hls/{media_id}/master.m3u8"),
+    ] {
+        for cookie in [None, Some(owner.as_str())] {
+            assert_eq!(
+                get(&app, &path, cookie).await.status,
+                StatusCode::NOT_FOUND,
+                "{path}"
+            );
+        }
+    }
+    let uri = format!("/videos/drafts/{media_id}/preview/video");
+    for (range, status, content_range, body) in [
+        (
+            "bytes=2-5",
+            StatusCode::PARTIAL_CONTENT,
+            "bytes 2-5/10",
+            "2345",
+        ),
+        (
+            "bytes=99-",
+            StatusCode::RANGE_NOT_SATISFIABLE,
+            "bytes */10",
+            "",
+        ),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(&uri)
+                    .header(header::COOKIE, &owner)
+                    .header(header::RANGE, range)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "private, no-store"
+        );
+        assert_eq!(response.headers()[header::CONTENT_RANGE], content_range);
+        assert_eq!(response.headers()[header::VARY], "Cookie");
+        assert_eq!(
+            response.into_body().collect().await.unwrap().to_bytes(),
+            body
+        );
+    }
+    assert_eq!(
+        get(
+            &app,
+            &format!("/videos/drafts/{media_id}/preview/original"),
+            Some(&owner)
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn native_draft_publication_opens_only_committed_outputs_and_suspension_closes_them(
+    pool: PgPool,
+) {
+    let alice = seed_alice(&pool).await;
+    let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let (media_id, channel_id) = ready_native_draft(&state, &alice).await;
+    let app = build_router(state.clone());
+    let owner = login(&app).await;
+    let ordinary = plamenu::actions::post_status(
+        &state,
+        plamenu::actions::PostParams {
+            username: "alice",
+            text: "Not a video publication",
+            media_ids: &[media_id],
+            visibility: "public",
+            ..Default::default()
+        },
+    )
+    .await;
+    assert!(matches!(
+        ordinary,
+        Err(plamenu::error::ApiError::Unprocessable(_))
+    ));
+    assert!(
+        media::find_by_ids(&pool, &[media_id]).await.unwrap()[0]
+            .status_id
+            .is_none()
+    );
+    let (published, _) = plamenu::actions::post_video(
+        &state,
+        plamenu::actions::PostParams {
+            username: "alice",
+            title: Some("Published film"),
+            text: "Published description",
+            media_ids: &[media_id],
+            visibility: "unlisted",
+            ..Default::default()
+        },
+        channel_id,
+    )
+    .await
+    .unwrap();
+    assert!(
+        !plamenu_db::video_draft::cancel(&pool, media_id, alice.id)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        get(
+            &app,
+            &format!("/videos/drafts/{media_id}/preview/video"),
+            Some(&owner)
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    let paths = [
+        "/media/private.draft.mp4".to_owned(),
+        "/media/private.draft.small.avif".to_owned(),
+        "/media/private.draft.poster.jpg".to_owned(),
+        format!("/media/{media_id}/captions.vtt"),
+    ];
+    for path in &paths {
+        assert_eq!(get(&app, path, None).await.status, StatusCode::OK, "{path}");
+    }
+    assert_eq!(
+        get(&app, "/media/private.orig", None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    for suspended in [channel_id, alice.id] {
+        sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+            .bind(suspended)
+            .execute(&pool)
+            .await
+            .unwrap();
+        for path in &paths {
+            assert_eq!(
+                get(&app, path, None).await.status,
+                StatusCode::NOT_FOUND,
+                "{path}"
+            );
+        }
+        sqlx::query("UPDATE accounts SET suspended_at = NULL WHERE id = $1")
+            .bind(suspended)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    // Deletion closes origin access before the asynchronous byte cleanup runs.
+    plamenu::actions::delete_status(
+        &state,
+        &alice,
+        published.id,
+        plamenu::actions::DeleteMode::Wipe,
+    )
+    .await
+    .unwrap();
+    assert!(state.media.get("private.draft.mp4").await.is_ok());
+    for path in &paths {
+        assert_eq!(
+            get(&app, path, None).await.status,
+            StatusCode::NOT_FOUND,
+            "{path}"
+        );
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn native_draft_expiry_and_cancellation_never_expose_leftover_bytes(pool: PgPool) {
+    let alice = seed_alice(&pool).await;
+    let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let (media_id, channel_id) = ready_native_draft(&state, &alice).await;
+    let app = build_router(state.clone());
+    let owner = login(&app).await;
+    let uri = format!("/videos/drafts/{media_id}/preview/video");
+    sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+        .bind(channel_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        get(&app, &uri, Some(&owner)).await.status,
+        StatusCode::NOT_FOUND
+    );
+    sqlx::query("UPDATE accounts SET suspended_at = NULL WHERE id = $1")
+        .bind(channel_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE video_drafts SET expires_at = now() - interval '1 second'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        plamenu::actions::post_video(
+            &state,
+            plamenu::actions::PostParams {
+                username: "alice",
+                title: Some("Expired film"),
+                text: "Cannot publish",
+                media_ids: &[media_id],
+                visibility: "public",
+                ..Default::default()
+            },
+            channel_id
+        )
+        .await,
+        Err(plamenu::error::ApiError::Unprocessable(_))
+    ));
+    assert_eq!(
+        get(&app, &uri, Some(&owner)).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert!(
+        plamenu_db::video_draft::cancel(&pool, media_id, alice.id)
+            .await
+            .unwrap()
+    );
+    // Even a completed/exhausted cleanup record cannot make orphan keys public.
+    sqlx::query("DELETE FROM media_cleanup_jobs")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(state.media.get("private.draft.mp4").await.is_ok());
+    assert_eq!(
+        get(&app, &uri, Some(&owner)).await.status,
+        StatusCode::NOT_FOUND
+    );
+    for file in [
+        "private.orig",
+        "private.draft.mp4",
+        "private.draft.small.avif",
+        "private.draft.poster.jpg",
+    ] {
+        assert_eq!(
+            get(&app, &format!("/media/{file}"), None).await.status,
+            StatusCode::NOT_FOUND
+        );
+    }
+}
+
 /// Creates a local account with login credentials; returns the account.
 async fn seed_user(
     pool: &PgPool,
@@ -4721,6 +5293,493 @@ async fn post_multipart_file(
     send(app, request).await
 }
 
+#[sqlx::test(migrations = "../db/migrations")]
+async fn native_video_spool_is_bounded_csrf_gated_and_cleaned(pool: PgPool) {
+    let alice = seed_alice(&pool).await;
+    let root = tempfile::tempdir().unwrap();
+    let mut state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let mut config = common::test_config();
+    config.media_dir = root.path().join("media");
+    config.native_video.max_upload_mib = 1;
+    std::fs::create_dir_all(&config.media_dir).unwrap();
+    state.config = std::sync::Arc::new(config);
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let app = build_router(state.clone());
+    let cookie = login(&app).await;
+    let csrf = csrf_of(&get(&app, "/videos", Some(&cookie)).await.body);
+    let scratch = root.path().join("media/tmp");
+    let invalid = post_multipart_file(
+        &app,
+        "/web/videos",
+        &cookie,
+        &[("csrf", "wrong")],
+        ("file", "video.mp4", "video/mp4", b"invalid"),
+    )
+    .await;
+    assert_eq!(invalid.status, StatusCode::FORBIDDEN);
+    assert!(!scratch.exists(), "CSRF is verified before disk allocation");
+
+    let oversized = vec![0u8; 1024 * 1024 + 1];
+    let refused = post_multipart_file(
+        &app,
+        "/web/videos",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("channel", &channel.id.to_string()),
+            ("title", "Oversized film"),
+            ("visibility", "public"),
+        ],
+        ("file", "video.mp4", "video/mp4", &oversized),
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(std::fs::read_dir(&scratch).unwrap().count(), 0);
+
+    let huge_caption = "x".repeat(256 * 1024 + 1);
+    let refused = post_multipart(
+        &app,
+        "/web/videos",
+        &cookie,
+        &[("csrf", &csrf), ("captions", &huge_caption)],
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+
+    let refused = post_multipart_file(
+        &app,
+        "/web/videos",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("channel", &channel.id.to_string()),
+            ("title", "Invalid film"),
+            ("visibility", "public"),
+        ],
+        ("file", "video.mp4", "video/mp4", b"not a video"),
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::SEE_OTHER);
+    let bad_id: i64 = refused
+        .location
+        .as_deref()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        plamenu_db::video_draft::find_owned(&pool, bad_id, alice.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        "queued",
+        "file-format validation belongs to the background worker"
+    );
+    assert!(
+        plamenu_db::video_draft::cancel(&pool, bad_id, alice.id)
+            .await
+            .unwrap()
+    );
+    assert_eq!(std::fs::read_dir(&scratch).unwrap().count(), 0);
+
+    let source = root.path().join("silent.mp4");
+    assert!(
+        std::process::Command::new("ffmpeg")
+            .args([
+                "-nostdin",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue:size=160x120:rate=10",
+                "-t",
+                "1",
+                "-c:v",
+                "libx264"
+            ])
+            .arg(&source)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let fields = [
+        ("csrf", csrf.as_str()),
+        ("channel", &channel.id.to_string()),
+        ("title", "Silent film"),
+        ("visibility", "public"),
+        ("op", "review"),
+    ];
+    let review = post_multipart_file(
+        &app,
+        "/web/videos",
+        &cookie,
+        &fields,
+        (
+            "file",
+            "silent.mp4",
+            "video/mp4",
+            &std::fs::read(source).unwrap(),
+        ),
+    )
+    .await;
+    assert_eq!(review.status, StatusCode::SEE_OTHER, "{}", review.body);
+    let draft_uri = review.location.as_deref().unwrap();
+    assert!(draft_uri.starts_with("/videos/drafts/"));
+    assert!(
+        get(&app, draft_uri, Some(&cookie))
+            .await
+            .body
+            .contains("Waiting for processing")
+    );
+    let reservation = state
+        .video_resources
+        .try_reserve(
+            plamenu::media_limits::FileSizeLimit {
+                launcher: env!("CARGO_BIN_EXE_plamenu").into(),
+                bytes: 1024 * 1024,
+            },
+            1024 * 1024,
+        )
+        .unwrap();
+    assert!(
+        plamenu::video_worker::run_one(
+            &state,
+            reservation,
+            &state.config.native_video.storage_limits()
+        )
+        .await
+        .unwrap()
+    );
+    let ready = get(&app, &format!("{draft_uri}/review"), Some(&cookie)).await;
+    assert_eq!(ready.status, StatusCode::OK);
+    assert!(ready.body.contains("Review your video"));
+    assert_eq!(std::fs::read_dir(&scratch).unwrap().count(), 0);
+    let (media_id, kind): (i64, String) =
+        sqlx::query_as("SELECT id, kind FROM media_attachments WHERE account_id = $1")
+            .bind(alice.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(kind, "video", "silent films must not loop as gifv");
+    let failed = post_multipart(
+        &app,
+        "/web/videos",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("channel", &channel.id.to_string()),
+            ("media_id", &media_id.to_string()),
+            ("title", ""),
+            ("visibility", "public"),
+            ("op", "publish"),
+        ],
+    )
+    .await;
+    assert_eq!(failed.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        failed
+            .body
+            .contains(&format!("name=\"media_id\" value=\"{media_id}\""))
+    );
+    let published = post_multipart(
+        &app,
+        "/web/videos",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("channel", &channel.id.to_string()),
+            ("media_id", &media_id.to_string()),
+            ("title", "Silent film"),
+            ("visibility", "public"),
+            ("op", "publish"),
+        ],
+    )
+    .await;
+    assert_eq!(
+        published.status,
+        StatusCode::SEE_OTHER,
+        "{}",
+        published.body
+    );
+    let status_id: i64 = published
+        .location
+        .as_deref()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let edit_uri = format!("/web/statuses/{status_id}/edit");
+    let edit = get(&app, &edit_uri, Some(&cookie)).await;
+    assert!(edit.body.contains(r#"name="title" value="Silent film""#));
+    assert!(edit.body.contains(r#"data-max-chars="10000""#));
+    assert!(edit.body.contains(r#"type="hidden" name="media_keep[]""#));
+    assert!(!edit.body.contains(r#"type="checkbox" name="media_keep[]""#));
+    let csrf = csrf_of(&edit.body);
+    let text = "A detailed film description. ".repeat(50);
+    let fields = [
+        ("csrf", csrf.as_str()),
+        ("op", "preview"),
+        ("title", "Renamed film"),
+        ("status", text.as_str()),
+        ("media_keep[]", &media_id.to_string()),
+    ];
+    let preview = post_form(&app, &edit_uri, &cookie, &fields).await;
+    assert_eq!(preview.status, StatusCode::OK, "{}", preview.body);
+    assert!(
+        preview
+            .body
+            .contains(r#"name="title" value="Renamed film""#)
+    );
+    assert!(preview.body.contains("compose__preview-heading"));
+    let stored = status::find_by_id(&pool, status_id).await.unwrap().unwrap();
+    assert_eq!(stored.title.as_deref(), Some("Silent film"));
+    assert!(stored.edited_at.is_none());
+    let invalid = post_form(
+        &app,
+        &edit_uri,
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("op", "preview"),
+            ("title", ""),
+            ("status", &text),
+            ("media_keep[]", &media_id.to_string()),
+        ],
+    )
+    .await;
+    assert!(invalid.body.contains(r#"name="title" value="""#));
+    assert!(invalid.body.contains("The title can"));
+    assert!(invalid.body.contains("be blank"));
+    let refused = post_form(
+        &app,
+        &format!("/web/statuses/{status_id}/redraft"),
+        &cookie,
+        &[("csrf", &csrf)],
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let preserved = status::find_local(&pool, alice.id, status_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(preserved.title.as_deref(), Some("Silent film"));
+    let page = get(&app, &format!("/@alice/{status_id}"), Some(&cookie)).await;
+    assert!(page.body.contains(&edit_uri));
+    assert!(
+        !page
+            .body
+            .contains(&format!("/web/statuses/{status_id}/redraft"))
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn resumable_video_offsets_survive_retry_and_never_expose_original(pool: PgPool) {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+    let alice = seed_alice(&pool).await;
+    seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
+    let store_root = tempfile::tempdir().unwrap();
+    let state = common::test_state_with_store(
+        pool.clone(),
+        StubFederation::with_actors([]),
+        std::sync::Arc::new(
+            plamenu::storage::LocalDiskStore::new(store_root.path().to_path_buf()).unwrap(),
+        ),
+    );
+    let channel = plamenu::video::create_channel(&state, &alice, "resume", "Resume")
+        .await
+        .unwrap();
+    let app = build_router(state.clone());
+    let owner = login(&app).await;
+    let stranger = login_as(&app, "bob@example.com", PASSWORD).await;
+    let csrf = csrf_of(&get(&app, "/videos", Some(&owner)).await.body);
+    let source = b"abcdefghij";
+    let probe = [source.as_slice(), source.as_slice()].concat();
+    let mut fingerprint = String::with_capacity(64);
+    for byte in Sha256::digest(probe) {
+        write!(&mut fingerprint, "{byte:02x}").unwrap();
+    }
+    let fields = [
+        ("csrf", csrf.as_str()),
+        ("channel", &channel.id.to_string()),
+        ("title", "Resumable film"),
+        ("visibility", "unlisted"),
+        ("source_size", "10"),
+        ("source_fingerprint", fingerprint.as_str()),
+    ];
+    let created = post_multipart(&app, "/web/videos/resumable", &owner, &fields).await;
+    assert_eq!(created.status, StatusCode::OK, "{}", created.body);
+    assert_eq!(created.cache_control, "private, no-store");
+    let id = serde_json::from_str::<serde_json::Value>(&created.body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .parse::<i64>()
+        .unwrap();
+    let uri = format!("/web/videos/drafts/{id}/source");
+    assert_eq!(
+        get(&app, &uri, Some(&stranger)).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let stranger_csrf = csrf_of(&get(&app, "/videos", Some(&stranger)).await.body);
+    let stranger_patch = Request::builder()
+        .method("PATCH")
+        .uri(&uri)
+        .header(header::COOKIE, &stranger)
+        .header("x-csrf-token", stranger_csrf)
+        .header("x-upload-offset", "0")
+        .body(Body::from("abcde"))
+        .unwrap();
+    assert_eq!(
+        send(&app, stranger_patch).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let page = get(&app, &format!("/videos/drafts/{id}"), Some(&owner)).await;
+    assert!(page.body.contains("data-video-resume"));
+    assert!(page.body.contains("Select the same video file"));
+    let patch = |offset: i64, csrf: &str, bytes: &'static [u8]| {
+        Request::builder()
+            .method("PATCH")
+            .uri(&uri)
+            .header(header::COOKIE, &owner)
+            .header("x-csrf-token", csrf)
+            .header("x-upload-offset", offset.to_string())
+            .body(Body::from(bytes))
+            .unwrap()
+    };
+    assert_eq!(
+        send(&app, patch(0, "wrong", b"abcde")).await.status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        send(&app, patch(1, &csrf, b"abcde")).await.status,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        send(&app, patch(0, &csrf, b"abcde")).await.status,
+        StatusCode::OK
+    );
+    let early_finish = Request::builder()
+        .method("POST")
+        .uri(format!("{uri}/finish"))
+        .header(header::COOKIE, &owner)
+        .header("x-csrf-token", &csrf)
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(send(&app, early_finish).await.status, StatusCode::CONFLICT);
+    // Recreate the router and disk store as after a server restart. The
+    // committed offset and the private source both survive this boundary.
+    let app = build_router(common::test_state_with_store(
+        pool.clone(),
+        StubFederation::with_actors([]),
+        std::sync::Arc::new(
+            plamenu::storage::LocalDiskStore::new(store_root.path().to_path_buf()).unwrap(),
+        ),
+    ));
+    let progress = get(&app, &uri, Some(&owner)).await;
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&progress.body).unwrap()["offset"],
+        5
+    );
+    assert_eq!(
+        send(&app, patch(0, &csrf, b"abcde")).await.status,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        send(&app, patch(5, &csrf, b"fghijk")).await.status,
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+    // Model a crash after fsync but before the offset transaction commits.
+    state
+        .media
+        .append_synced(&format!("{id}.orig"), 5, b"stale".to_vec())
+        .await
+        .unwrap();
+    assert_eq!(
+        send(&app, patch(5, &csrf, b"fghij")).await.status,
+        StatusCode::OK
+    );
+    assert_eq!(
+        state.media.get(&format!("{id}.orig")).await.unwrap(),
+        source
+    );
+    assert_eq!(
+        get(&app, &format!("/media/{id}.orig"), Some(&owner))
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    let finish = Request::builder()
+        .method("POST")
+        .uri(format!("{uri}/finish"))
+        .header(header::COOKIE, &owner)
+        .header("x-csrf-token", &csrf)
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(send(&app, finish).await.status, StatusCode::OK);
+    assert_eq!(
+        plamenu_db::video_draft::find_owned(&pool, id, alice.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        "queued"
+    );
+    assert_eq!(
+        get(&app, &format!("/media/{id}.orig"), None).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let wrong_fingerprint = "0".repeat(64);
+    let mismatched_fields = [
+        ("csrf", csrf.as_str()),
+        ("channel", &channel.id.to_string()),
+        ("title", "Wrong fingerprint"),
+        ("visibility", "unlisted"),
+        ("source_size", "10"),
+        ("source_fingerprint", wrong_fingerprint.as_str()),
+    ];
+    let second = post_multipart(&app, "/web/videos/resumable", &owner, &mismatched_fields).await;
+    assert_eq!(second.status, StatusCode::OK);
+    let second_id = serde_json::from_str::<serde_json::Value>(&second.body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .parse::<i64>()
+        .unwrap();
+    let second_uri = format!("/web/videos/drafts/{second_id}/source");
+    let full = Request::builder()
+        .method("PATCH")
+        .uri(&second_uri)
+        .header(header::COOKIE, &owner)
+        .header("x-csrf-token", &csrf)
+        .header("x-upload-offset", "0")
+        .body(Body::from(source.to_vec()))
+        .unwrap();
+    assert_eq!(send(&app, full).await.status, StatusCode::OK);
+    let reject = Request::builder()
+        .method("POST")
+        .uri(format!("{second_uri}/finish"))
+        .header(header::COOKIE, &owner)
+        .header("x-csrf-token", &csrf)
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(send(&app, reject).await.status, StatusCode::CONFLICT);
+    assert_eq!(
+        plamenu_db::video_draft::find_owned(&pool, second_id, alice.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        "receiving"
+    );
+}
+
 fn sample_png_bytes() -> Vec<u8> {
     let mut bytes = Vec::new();
     image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
@@ -9272,7 +10331,7 @@ async fn member_borrow_uses_federated_source_and_renders_failures_in_context(poo
     assert!(
         error_page
             .body
-            .contains(r#"class="settings__error" role="alert""#)
+            .contains(r#"class="settings__error" id="form-error" role="alert""#)
     );
     assert!(error_page.body.contains(
         "The borrowed emoji image was rejected: Validation failed: the file is not a supported PNG, GIF, or WebP image"

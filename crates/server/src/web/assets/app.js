@@ -4088,6 +4088,18 @@
     const progressive =
       video.getAttribute("src") || video.getAttribute("data-src");
     const native = video.canPlayType("application/vnd.apple.mpegurl");
+    // Calling video.load() to cancel the progressive request also cancels an
+    // already-loading external WebVTT track in Chromium. Replacing only our
+    // ordinary <track src> nodes after HLS attaches starts their fetch again;
+    // preserve the viewer's selected mode rather than forcing captions on.
+    const reloadExternalTracks = () => {
+      video.querySelectorAll("track[src]").forEach((track) => {
+        const mode = track.track.mode;
+        const fresh = track.cloneNode(true);
+        track.replaceWith(fresh);
+        fresh.track.mode = mode;
+      });
+    };
     video.addEventListener(
       "play",
       function onPlay() {
@@ -4104,6 +4116,7 @@
         // HLS, no MSE) play directly, skipping the hls.js download.
         if (!window.MediaSource && native) {
           video.src = hlsUrl;
+          reloadExternalTracks();
           video.play().catch(() => {});
           return;
         }
@@ -4131,6 +4144,7 @@
             hls.attachMedia(video);
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
               buildQualityMenu(video, hls, Hls);
+              reloadExternalTracks();
               video.play().catch(() => {});
             });
             if (live) {
@@ -4158,9 +4172,11 @@
             });
           } else if (native) {
             video.src = hlsUrl; // native HLS (Safari/iOS)
+            reloadExternalTracks();
             video.play().catch(() => {});
           } else if (progressive) {
             video.src = progressive; // last-resort progressive playback
+            reloadExternalTracks();
             video.play().catch(() => {});
           }
         });
@@ -4801,8 +4817,303 @@
     });
   }
 
+  // ---- Native-video upload and private draft progress --------------------
+  // Only the first and last 64 KiB are hashed in JS; the File stays in the
+  // browser's Blob store. Chunks are bounded at 8 MiB and server-acknowledged
+  // offsets survive reloads. The unchanged multipart form is the no-JS path.
+  async function videoFingerprint(file) {
+    const size = Math.min(65536, file.size);
+    const first = new Uint8Array(await file.slice(0, size).arrayBuffer());
+    const last = new Uint8Array(await file.slice(file.size - size).arrayBuffer());
+    const probe = new Uint8Array(first.length + last.length);
+    probe.set(first);
+    probe.set(last, first.length);
+    const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", probe));
+    return Array.from(hash, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function videoJson(url, options) {
+    const response = await fetch(url, { credentials: "same-origin", cache: "no-store", ...options });
+    const value = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(value.error || `Upload request failed (${response.status})`);
+    return value;
+  }
+
+  async function sendVideoChunks(id, file, fingerprint, csrf, panel, label, meter, mismatch) {
+    const source = `/web/videos/drafts/${id}/source`;
+    const status = await videoJson(source);
+    if (status.total !== file.size || status.fingerprint !== fingerprint) {
+      throw new Error(mismatch);
+    }
+    let offset = status.offset;
+    let announced = -1;
+    const progress = () => {
+      const percent = Math.floor(100 * offset / file.size);
+      meter.value = percent;
+      const milestone = Math.floor(percent / 10) * 10;
+      if (milestone > announced) {
+        announced = milestone;
+        label.textContent = `${panel.dataset.uploading} ${milestone}%`;
+      }
+    };
+    progress();
+    let failures = 0;
+    while (offset < file.size) {
+      const end = Math.min(file.size, offset + 8 * 1024 * 1024);
+      try {
+        const result = await videoJson(source, {
+          method: "PATCH",
+          headers: { "x-csrf-token": csrf, "x-upload-offset": String(offset) },
+          body: file.slice(offset, end),
+        });
+        if (result.offset !== end) throw new Error("Upload offset was not acknowledged");
+        offset = end;
+        failures = 0;
+        progress();
+      } catch (error) {
+        // A lost response may follow a committed chunk. Read the durable
+        // offset before retrying; never blindly send an overlapping chunk.
+        if (++failures > 3) throw error;
+        const current = await videoJson(source);
+        if (current.total !== file.size || current.fingerprint !== fingerprint) throw new Error(mismatch);
+        if (current.offset < offset || current.offset > end) throw error;
+        offset = current.offset;
+        progress();
+      }
+    }
+    label.textContent = panel.dataset.saving;
+    await videoJson(`${source}/finish`, { method: "POST", headers: { "x-csrf-token": csrf } });
+    location.assign(`/videos/drafts/${id}`);
+  }
+
+  function bindVideoPosterPicker(root) {
+    root.querySelectorAll("form[data-video-upload]").forEach((form) => {
+      const picker = form.querySelector("[data-poster-picker]");
+      const fileInput = form.querySelector('input[name="file"]');
+      const timeInput = form.querySelector("[data-poster-time]");
+      const preview = picker?.querySelector("[data-poster-source]");
+      const choose = picker?.querySelector("[data-poster-use-current]");
+      const status = picker?.querySelector("[data-poster-picker-status]");
+      if (!picker || !fileInput || !timeInput || !preview || !choose || !status
+        || picker.dataset.posterPickerBound) return;
+      picker.dataset.posterPickerBound = "1";
+      let objectUrl;
+      const release = () => {
+        preview.pause();
+        preview.removeAttribute("src");
+        preview.load();
+        timeInput.max = "86400";
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        objectUrl = undefined;
+      };
+      fileInput.addEventListener("change", () => {
+        release();
+        picker.hidden = true;
+        const file = fileInput.files?.[0];
+        if (!file || !file.type.startsWith("video/")) return;
+        objectUrl = URL.createObjectURL(file);
+        preview.src = objectUrl;
+        picker.hidden = false;
+      });
+      preview.addEventListener("loadedmetadata", () => {
+        if (!Number.isFinite(preview.duration) || preview.duration <= 0) return;
+        timeInput.max = String(Math.min(86400, Math.max(0, preview.duration - 1)));
+        preview.currentTime = Math.min(Number(timeInput.value) || 0, Number(timeInput.max));
+      });
+      timeInput.addEventListener("change", () => {
+        if (!picker.hidden && Number.isFinite(preview.duration) && timeInput.validity.valid) {
+          preview.currentTime = Math.min(Number(timeInput.value) || 0, Number(timeInput.max));
+        }
+      });
+      choose.addEventListener("click", () => {
+        if (!Number.isFinite(preview.currentTime)) return;
+        preview.pause();
+        const selected = Math.min(preview.currentTime, Number(timeInput.max));
+        preview.currentTime = selected;
+        timeInput.value = (Math.floor(selected * 10) / 10).toFixed(1);
+        status.textContent = `${picker.dataset.posterStatusPrefix} ${timeInput.value} s`;
+      });
+      window.addEventListener("pagehide", release, { once: true });
+    });
+  }
+
+  function bindVideoPosterReplacement(root) {
+    root.querySelectorAll("form[data-video-poster-replace]").forEach((form) => {
+      const fileInput = form.querySelector('input[name="poster_file"]');
+      const preview = form.querySelector("[data-poster-replace-preview]");
+      if (!fileInput || !preview || form.dataset.posterReplaceBound) return;
+      form.dataset.posterReplaceBound = "1";
+      let objectUrl;
+      const release = () => {
+        preview.hidden = true;
+        preview.removeAttribute("src");
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        objectUrl = undefined;
+      };
+      fileInput.addEventListener("change", () => {
+        release();
+        const file = fileInput.files?.[0];
+        if (!file || !file.type.startsWith("image/")) return;
+        objectUrl = URL.createObjectURL(file);
+        preview.src = objectUrl;
+        preview.hidden = false;
+      });
+      preview.addEventListener("error", release);
+      window.addEventListener("pagehide", release, { once: true });
+    });
+  }
+
+  function bindVideoUpload(root) {
+    root.querySelectorAll("form[data-video-upload]").forEach((form) => {
+      if (form.dataset.videoUploadBound) return;
+      form.dataset.videoUploadBound = "1";
+      const panel = form.querySelector("[data-video-upload-progress]");
+      const label = form.querySelector("[data-video-upload-label]");
+      const meter = form.querySelector("[data-video-upload-meter]");
+      const error = form.querySelector("[data-video-upload-error]");
+      const submit = form.querySelector('button[type="submit"]');
+      if (!panel || !label || !meter || !error || !submit || !globalThis.crypto?.subtle) return;
+      form.addEventListener("submit", async (event) => {
+        if (form.dataset.videoUploadPending) { event.preventDefault(); return; }
+        const file = form.querySelector('input[name="file"]')?.files?.[0];
+        if (!file) return;
+        event.preventDefault();
+        form.dataset.videoUploadPending = "1";
+        submit.disabled = true;
+        panel.hidden = false;
+        error.hidden = true;
+        meter.value = 0;
+        label.textContent = `${panel.dataset.uploading} 0%`;
+        let id;
+        try {
+          const fingerprint = await videoFingerprint(file);
+          const metadata = new FormData(form);
+          metadata.delete("file");
+          metadata.set("source_size", String(file.size));
+          metadata.set("source_fingerprint", fingerprint);
+          const created = await videoJson("/web/videos/resumable", { method: "POST", body: metadata });
+          id = created.id;
+          await sendVideoChunks(id, file, fingerprint, metadata.get("csrf"), panel, label, meter, panel.dataset.mismatch);
+        } catch (reason) {
+          panel.hidden = true;
+          error.textContent = reason?.message || panel.dataset.failed;
+          if (id) {
+            const link = document.createElement("a");
+            link.href = `/videos/drafts/${id}`;
+            link.textContent = panel.dataset.resumeLink;
+            error.append(" ", link);
+          } else {
+            form.dataset.videoUploadPending = "";
+            submit.disabled = false;
+          }
+          error.hidden = false;
+          error.focus();
+        }
+      });
+    });
+  }
+
+  function bindVideoResume(root) {
+    root.querySelectorAll("form[data-video-resume]").forEach((form) => {
+      if (form.dataset.videoResumeBound || !globalThis.crypto?.subtle) return;
+      form.dataset.videoResumeBound = "1";
+      form.hidden = false;
+      const draft = form.closest("[data-video-draft]");
+      const panel = form.querySelector("[data-video-upload-progress]");
+      const label = form.querySelector("[data-video-upload-label]");
+      const meter = form.querySelector("[data-video-upload-meter]");
+      const error = form.querySelector("[data-video-upload-error]");
+      const submit = form.querySelector('button[type="submit"]');
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const file = form.querySelector('input[name="file"]')?.files?.[0];
+        if (!file || submit.disabled) return;
+        submit.disabled = true;
+        panel.hidden = false;
+        error.hidden = true;
+        try {
+          const fingerprint = await videoFingerprint(file);
+          await sendVideoChunks(draft.dataset.videoDraft, file, fingerprint,
+            form.querySelector('input[name="csrf"]').value,
+            panel, label, meter, form.dataset.mismatch);
+        } catch (reason) {
+          panel.hidden = true;
+          submit.disabled = false;
+          error.textContent = reason?.message || form.dataset.failed;
+          error.hidden = false;
+          error.focus();
+        }
+      });
+    });
+  }
+
+  // The document's Refresh link remains the entire no-JS experience. Poll
+  // only while this page is visible, never mutate the draft via GET, and
+  // announce a phase once rather than repeating every response to screen
+  // readers. The server supplies locale-specific phase text in HTML.
+  function bindVideoDraft(root) {
+    root.querySelectorAll("[data-video-draft]").forEach((draft) => {
+      if (draft.dataset.videoDraftBound) return;
+      draft.dataset.videoDraftBound = "1";
+      const labels = {
+        receiving: draft.dataset.phaseReceiving,
+        queued: draft.dataset.phaseQueued,
+        processing: draft.dataset.phaseProcessing,
+        ready: draft.dataset.phaseReady,
+        failed: draft.dataset.phaseFailed,
+        expired: draft.dataset.phaseExpired,
+        unavailable: draft.dataset.phaseUnavailable,
+      };
+      const terminal = new Set(["ready", "failed", "expired", "unavailable"]);
+      if (terminal.has(draft.dataset.phase)) return;
+      const id = draft.dataset.videoDraft;
+      const controller = new AbortController();
+      let timer;
+      let interval = 2000;
+      const stop = () => {
+        controller.abort();
+        clearTimeout(timer);
+      };
+      const poll = async () => {
+        if (controller.signal.aborted || !draft.isConnected) return;
+        if (document.hidden) {
+          timer = setTimeout(poll, 2000);
+          return;
+        }
+        try {
+          const response = await fetch(`/videos/drafts/${id}/status`, {
+            credentials: "same-origin",
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          if (response.status === 404 || response.status === 401) { stop(); return; }
+          if (!response.ok) throw new Error("Draft status unavailable");
+          const { phase } = await response.json();
+          if (labels[phase] && phase !== draft.dataset.phase) {
+            draft.dataset.phase = phase;
+            draft.querySelector('[role="status"]').textContent = labels[phase];
+            draft.querySelector("[data-video-review]").hidden = phase !== "ready";
+            draft.querySelector("[data-video-retry]").hidden = phase !== "failed";
+          }
+          if (terminal.has(phase)) { stop(); return; }
+        } catch (_error) {
+          if (controller.signal.aborted) return;
+        }
+        interval = Math.min(15000, Math.round(interval * 1.25));
+        timer = setTimeout(poll, interval);
+      };
+      window.addEventListener("pagehide", stop, { once: true });
+      timer = setTimeout(poll, interval);
+    });
+  }
+
   // ---- Wiring -----------------------------------------------------------
   function enhance(root) {
+    bindVideoPosterPicker(root);
+    bindVideoPosterReplacement(root);
+    bindVideoUpload(root);
+    bindVideoResume(root);
+    bindVideoDraft(root);
     bindFileLimits(root);
     bindLibraryFilters(root);
     bindWebxdcCreate(root);

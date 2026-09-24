@@ -1,0 +1,106 @@
+# AP09 acceptance inventory
+
+Reference: PeerTube 8.3.0; see [progress and evidence](AP09-VIDEO-PROGRESS.md).
+This is the acceptance backlog, not a completion claim. Each row needs concrete
+positive, failure, authorization and browser evidence where applicable. Existing
+capability does not mean its expanded video use case is verified. Do not compute
+a parity percentage from the number of rows: some represent much larger work.
+
+## Identity and publication
+
+| ID | Required capability | State |
+| --- | --- | --- |
+| ID01 | Stable channels owned by Persons; discovery, signatures, Follow/Accept | In progress |
+| ID02 | Channel listing, profiles, editing, deletion and owner deletion | In progress |
+| ID03 | Channel collaborators, roles, revocation and ownership transfer | Pending |
+| ID04 | Channel outbox/history and local subscription timelines | Partial: signed path-paginated history imports in PeerTube; local public/unlisted feeds and block/delete gates pass Rust regressions; channel navigation passes seven browser configurations |
+| PUB01 | Native Video Create, dereference, Update, Delete accepted by PeerTube | In progress |
+| PUB02 | Public/unlisted/private/internal audience rules across all assets | Pending (public/unlisted publication started) |
+| PUB03 | Drafts, scheduled publishing and publication-state recovery | Partial: first-party upload, durable owner review/retry/cancel and publication tested; scheduled publication pending |
+| PUB04 | Titles, descriptions, tags, language, category, licence and warnings | Pending (title/description/language started) |
+| PUB05 | Comments/replies, reactions, shares, counters and comment permissions | Pending (reuse social machinery where compatible) |
+| PUB06 | Canonical client API entities with independently playable attachments | In progress |
+| PUB07 | Explicit Audio/Image/Document authoring from the original AP09 finding | Pending |
+
+## Video processing and delivery
+
+| ID | Required capability | State |
+| --- | --- | --- |
+| VOD01 | Bounded-memory long-form multipart upload without JavaScript | Partial: default 2 GiB source cap, private disk spool, durable worker handoff and no-JS browser journey verified; larger-file stress evidence pending |
+| VOD02 | Resumable uploads, progress, cancellation and interrupted-upload recovery | Partial: offset-checked chunks and same-file resume pass six JS browser configurations; no-JS multipart and PeerTube import pass; a 64 MiB upload survives a disposable process kill/restart; maximum-size and concurrent-load evidence pending |
+| VOD03 | Durable processing jobs, retry/leases, cancellation and atomic publication | Partial: upload-to-worker production wiring, persistence/journal/private preview, real-encoder retry/cancellation, storage ledger/recovery and HTML draft controls pass regressions; further long-form and fairness evidence pending |
+| VOD04 | Format/codec validation; remux/copy when compatible; safe transcoding | Partial: shared pipeline preserved; actual 36,120-frame re-encode proves removal of silent truncation; ladder and resource cases pending |
+| VOD05 | Adaptive quality ladder and progressive/native-player fallback | Partial: local copy-only top and bounded 360p single-file fMP4 HLS (when source exceeds 360p), peak segment bandwidth, same-origin range delivery and MP4 fallback pass worker/HTTP/browser regressions; PeerTube 8.3 imports both advertised qualities and its actual Chromium/Firefox watch UI decodes, switches quality and seeks at desktop/320px sizes; broader ladder, WebKit and sustained-load/seek benchmarks remain |
+| VOD06 | Thumbnails, replacement posters, seek previews/storyboards | Partial: creators can choose a frame during native Video upload, with a visual JS picker or numeric no-JS input. Ready unpublished drafts can replace the generated poster with an uploaded still image and required description in the no-JS HTML client; JS adds an immediate preview. Immutable, quota-accounted AVIF/JPEG revisions preserve the previous poster on failure and PeerTube imports the replacement. Published-video poster editing and seek previews/storyboards remain pending. |
+| VOD07 | Audio-only, silent, portrait and unusual aspect-ratio inputs | Partial: audio-only native Video becomes a 2 fps waveform with AAC and a poster, accepted and played by PeerTube; silent portrait and ultrawide inputs pass real-encoder/HLS jobs; further codec/container/error and long-duration cases pending |
+| VOD08 | Replace/reprocess/trim workflows with stable social identity | Pending; current publication refuses media replacement |
+| VOD09 | Quotas, resource budgets, admission control and fair processing | Partial: per-file durable reservations, configurable account/global/pending/draft limits, free-space admission, acknowledged-cleanup refunds and processing budgets tested; sustained load/fairness evidence pending |
+| VOD10 | Import by URL and scheduled remote-source synchronization | Pending; all fetches need SSRF and size protections |
+| VOD11 | Downloads, embeds, range/seek, CORS and cache behaviour | Pending (existing media endpoints are reused) |
+
+## Accessibility and viewer experience
+
+| ID | Required capability | State |
+| --- | --- | --- |
+| A11Y01 | Upload/edit/remove multiple caption languages, native WebVTT tracks | In progress (single uploaded track first) |
+| A11Y02 | Transcripts, visual descriptions, audio-description intent and alternatives | In progress (reuse existing attachment alternatives) |
+| A11Y03 | Chapters, keyboard-accessible seeking and no-JS chapter links | Pending |
+| A11Y04 | Remote `subtitleLanguage` and `hasParts`, including updates and hostile data | Pending |
+| UX01 | Discoverable publishing, review, validation and recovery without JS | Partial: upload-to-worker, private review/retry/confirmed cancellation and enhanced phase updates pass seven browser configurations including no-JS; resumable enhancement under verification |
+| UX02 | Responsive video space, channel library, search and subscriptions | Pending |
+| UX03 | Enhanced player quality, resume/history, captions and keyboard controls | Pending |
+| UX04 | Reduced motion, forced colours, zoom/reflow and assistive-technology checks | Pending |
+| UX05 | Chromium/Firefox/WebKit desktop/mobile and scripts-disabled evidence | Partial: upload/review/publication/edit/preview, decoded playback, active WebVTT cues and channel navigation pass six desktop/mobile configurations plus Chromium no-JS in pinned container; native-control keyboard/AT checks remain |
+
+## Playlists
+
+| ID | Required capability | State |
+| --- | --- | --- |
+| LIST01 | Create/edit/delete and public/private/unlisted visibility | Pending |
+| LIST02 | Add/remove/reorder, duplicate handling and missing/deleted entries | Pending |
+| LIST03 | Per-entry clip start/end boundaries and playback navigation | Pending |
+| LIST04 | PeerTube Playlist federation, ownership, import and update semantics | Pending |
+| LIST05 | Keyboard and no-JS library management | Pending |
+
+## Live broadcasting
+
+| ID | Required capability | State |
+| --- | --- | --- |
+| LIVE01 | Native authenticated encoder ingest, rotating/revocable credentials | Pending |
+| LIVE02 | Browser camera/microphone broadcasting and device selection | Pending; explicitly included this round |
+| LIVE03 | Browser screen sharing, source switching and permission/error recovery | Pending; explicitly included this round |
+| LIVE04 | Waiting/on-air/interrupted/ended/replay lifecycle and remote updates | Pending (inbound PeerTube baseline passes) |
+| LIVE05 | One-shot/recurring/scheduled broadcasts with stable session identity | Pending |
+| LIVE06 | DVR, latency modes, concurrency and replay capture/processing | Pending |
+| LIVE07 | No-JS creation/settings/credentials/replay workflows; encoder fallback | Pending |
+| LIVE08 | Plamenu-to-PeerTube and PeerTube-to-Plamenu live playback | Pending (inbound baseline exists) |
+| LIVE09 | Explicit future-chat identities, permissions and replay relationships | Architecture requirement; no chat implementation this round |
+
+## Operations, ecosystem and scale
+
+| ID | Required capability | State |
+| --- | --- | --- |
+| OPS01 | Native installation and maintenance with no required companion service | Required invariant; no new runtime dependency introduced so far |
+| OPS02 | Optional storage/offload/worker scaling without changing basic installation | Pending |
+| OPS03 | Storage lifecycle, garbage collection, backups and restore evidence | Pending |
+| OPS04 | Redundancy/mirroring with ownership, retention and bandwidth controls | Pending |
+| OPS05 | Creator analytics, server observability and privacy/retention controls | Pending |
+| OPS06 | Moderation/reporting, abuse controls and takedown propagation | Pending |
+| P2P01 | Actual PeerTube tracker/segment interoperability | Pending; protocol tests required |
+| P2P02 | P2P on by default, disclosed network-address sharing and accessible opt-out | Pending; owner decision recorded |
+| P2P03 | Opt-out before tracker/swarm contact; embeds and persisted preferences | Pending |
+| P2P04 | Server-only fallback without JS, on failure and on unsupported devices | Pending |
+| API01 | Document Plamenu APIs and explicitly supported PeerTube REST/embed contracts | Pending; do not claim full PeerTube REST compatibility |
+| PERF01 | Startup/seek/rebuffer/live-latency and CPU/RAM/storage/origin-byte budgets | Pending |
+| PERF02 | Concurrency benchmarks; no per-viewer encoder or eager remote download | Pending (preserve existing regression protections) |
+| SEC01 | Upload/parser/fetch/permission/credential and out-of-order delivery tests | Pending |
+
+## Explicit exclusions, not hidden omissions
+
+- PeerTube plugin ABI/codebase compatibility: excluded from round one.
+- Live chat, including federated live chat: later; preserve an extensible session
+  model and permissions now.
+- Automatic caption generation: later; uploaded captions remain required now.
+
+Any further omission or material narrowing requires an explicit decision. A
+working short-video publisher does not close the long-form or live milestones.

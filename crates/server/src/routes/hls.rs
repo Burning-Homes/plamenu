@@ -34,7 +34,7 @@ use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
-use plamenu_db::{media, media_fetch_failure};
+use plamenu_db::{media, media_fetch_failure, native_video_hls};
 use serde::Deserialize;
 
 use super::hls_live;
@@ -133,6 +133,33 @@ pub async fn master(
     State(state): State<AppState>,
     Path(media_id): Path<i64>,
 ) -> Result<Response, ApiError> {
+    let native = native_video_hls::public_ladder(&state.pool, media_id).await?;
+    if !native.is_empty() {
+        let mut body = String::from("#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n");
+        for rendition in native {
+            use std::fmt::Write as _;
+            writeln!(
+                body,
+                "#EXT-X-STREAM-INF:BANDWIDTH={},RESOLUTION={}x{}",
+                rendition.bandwidth, rendition.width, rendition.height
+            )
+            .expect("writing to a String cannot fail");
+            writeln!(
+                body,
+                "/media/hls/{media_id}/native/{}/index.m3u8",
+                rendition.height
+            )
+            .expect("writing to a String cannot fail");
+        }
+        return Ok((
+            [
+                (header::CONTENT_TYPE, M3U8),
+                (header::CACHE_CONTROL, "no-store"),
+            ],
+            body,
+        )
+            .into_response());
+    }
     // Reaching for the master is someone pressing play. For a broadcast that
     // is the moment to be exact about whether it is running: a stream that
     // started since this page was rendered must play, and one that ended must
@@ -165,6 +192,25 @@ pub async fn master(
             Err(err)
         }
     }
+}
+
+/// A generation-fenced local rendition playlist. The contained single-file
+/// fMP4 URL is checked again by the public file route before any bytes leave.
+pub async fn native_playlist(
+    State(state): State<AppState>,
+    Path((media_id, height)): Path<(i64, i32)>,
+) -> Result<Response, ApiError> {
+    let playlist = native_video_hls::public_playlist(&state.pool, media_id, height)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, M3U8),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        playlist,
+    )
+        .into_response())
 }
 
 /// `GET /media/hls/{media_id}/pl?u=…` — a nested media playlist (a rendition,
@@ -715,7 +761,7 @@ struct Lane {
 }
 
 async fn lane(state: &AppState, media_id: i64) -> Result<Lane, ApiError> {
-    if media::owner_suspended(&state.pool, media_id).await? {
+    if media::public_access_blocked(&state.pool, media_id).await? {
         return Err(ApiError::NotFound);
     }
     let item = media::find_by_ids(&state.pool, &[media_id])

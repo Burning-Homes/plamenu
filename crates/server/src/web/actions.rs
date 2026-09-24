@@ -235,12 +235,12 @@ fn parse_id(raw: Option<&str>) -> Result<Option<i64>, ()> {
 }
 
 const MAX_TRANSCRIPT_CHARS: usize = 50_000;
-const MAX_CAPTION_BYTES: usize = 256 * 1024;
+pub(super) const MAX_CAPTION_BYTES: usize = 256 * 1024;
 
 /// A validated `WebVTT` sidecar. Full cue parsing remains the browser's job, but
 /// rejecting non-VTT text and files without any timed cue prevents an author
 /// from accidentally publishing a transcript as if it were captions.
-fn parse_caption_vtt(bytes: &[u8]) -> Result<Option<String>, ApiError> {
+pub(super) fn parse_caption_vtt(bytes: &[u8]) -> Result<Option<String>, ApiError> {
     if bytes.is_empty() {
         return Ok(None);
     }
@@ -1884,6 +1884,7 @@ async fn render_edit_preview_page(
         user,
         stored,
         pages::EditComposerEcho {
+            title: field(page.pairs, "title"),
             text,
             spoiler_text,
             sensitive: page.sensitive,
@@ -2028,7 +2029,7 @@ pub async fn edit(
     let params = actions::EditParams {
         // The edit form carries the headline of a titled post (long-form or a
         // group thread); an untitled post submits no such field.
-        title: field(&pairs, "title").filter(|t| !t.trim().is_empty()),
+        title: field(&pairs, "title"),
         text: Some(field(&pairs, "status").unwrap_or_default().trim()),
         content_type: field(&pairs, "content_type")
             .filter(|value| !value.trim().is_empty())
@@ -2284,6 +2285,11 @@ pub async fn redraft(
         Ok(_) => return ApiError::NotFound.into_response(),
         Err(err) => return ApiError::from(err).into_response(),
     };
+    if stored.object_type.as_deref() == Some("Video") {
+        return ApiError::Unprocessable(
+            "Use Edit to update this video. Delete-and-redraft cannot preserve its channel and media yet.".into(),
+        ).into_response();
+    }
     // The source must be read before the delete cascades it away.
     let source = match status::source_of(&state.pool, stored.id).await {
         Ok(source) => source.unwrap_or_default(),

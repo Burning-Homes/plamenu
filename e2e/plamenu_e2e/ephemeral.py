@@ -100,8 +100,11 @@ class Instance:
             )
             + f'media_dir = "{Path(self._dir.name) / "media"}"\n'
         )
+        self._launch(timeout, append_log=False)
+
+    def _launch(self, timeout: float, *, append_log: bool) -> None:
         log_path = Path(self._dir.name) / "server.log"
-        self._log = open(log_path, "w")  # noqa: SIM115 — lives as long as the process
+        self._log = open(log_path, "a" if append_log else "w")  # noqa: SIM115 — process lifetime
         self._proc = subprocess.Popen(
             [str(BINARY), "--config", str(self._config_path), "serve"],
             cwd=self._dir.name,
@@ -128,6 +131,20 @@ class Instance:
                     f"{self.domain} did not come up; log tail:\n{self.log_tail()}"
                 )
             time.sleep(0.5)
+
+    def restart_process_after_crash(self, timeout: float = 120.0) -> None:
+        """Kill only the server process and relaunch against the same DB/media.
+
+        Unlike ``start()``, this does not recreate the database or source
+        directory. It is for explicit crash-recovery E2E checks on disposable
+        instances, never the standing development server.
+        """
+        if self._proc is None or self._dir is None:
+            raise RuntimeError("cannot restart an instance that was not started")
+        self._proc.kill()
+        self._proc.wait(timeout=15)
+        self._log.close()
+        self._launch(timeout, append_log=True)
 
     def cli(self, *args: str, input_text: str | None = None) -> str:
         """Run the plamenu CLI against this instance's database."""

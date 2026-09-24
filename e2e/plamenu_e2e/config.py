@@ -53,6 +53,9 @@ PLAMENU_DIR = E2E_DIR.parent
 # the CLI helper points every `plamenu` invocation at it (there is no default
 # `plamenu.toml` in the dev tree). Override with $PLAMENU_CONFIG if needed.
 PLAMENU_CONFIG = os.environ.get("PLAMENU_CONFIG", str(PLAMENU_DIR / "plamenu.dev.toml"))
+# Optional already-built candidate, so CLI fixtures exercise the same artifact
+# as the standing server instead of rebuilding it during an E2E run.
+PLAMENU_BINARY = os.environ.get("PLAMENU_BINARY")
 PEER_ROOT = Path(os.environ.get("PLAMENU_PEER_ROOT", PLAMENU_DIR / "e2e" / "peers"))
 MASTO_DIR = Path(os.environ.get("MASTODON_FIXTURE_DIR", PEER_ROOT / "mastodon-test"))
 PLEROMA_DIR = Path(os.environ.get("PLEROMA_FIXTURE_DIR", PEER_ROOT / "pleroma-test"))

@@ -381,7 +381,7 @@ pub struct NoteParams<'a> {
 /// title-plus-link stub, so which type we pick decides how much of the post the
 /// Mastodon family can read. That is an authoring decision, never a side effect.
 ///
-/// Only three of these are *author-selectable* (`Note`, `Article`, `Event`).
+/// `Note`, `Article` and `Event` are composer choices; `Video` requires a channel.
 /// `Question` and `Page` are implied by attaching a poll or submitting to a
 /// group, and resolved in one place server-side.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -398,6 +398,8 @@ pub enum PostKind {
     Article,
     /// A calendar event with a start time and participation rules.
     Event,
+    /// A native video published by an account in a video channel.
+    Video,
 }
 
 impl PostKind {
@@ -409,6 +411,7 @@ impl PostKind {
             Self::Page => "Page",
             Self::Article => "Article",
             Self::Event => "Event",
+            Self::Video => "Video",
         }
     }
 
@@ -422,6 +425,7 @@ impl PostKind {
         match object_type {
             Some("Article") => Self::Article,
             Some("Event") => Self::Event,
+            Some("Video") => Self::Video,
             Some("Page") => Self::Page,
             _ if has_poll => Self::Question,
             _ if has_title => Self::Page,
@@ -983,10 +987,8 @@ pub fn create_with_note(domain: &str, username: &str, note: Value) -> Value {
     // Create claim a different actor from its Note/Page after the immutable-ID
     // migration. Besides violating ActivityPub identity binding, Lemmy rejects
     // that shape with `verify_urls_match(actor, object.attributedTo)`.
-    let actor = note
-        .get("attributedTo")
-        .and_then(Value::as_str)
-        .map_or_else(|| LocalUserUrls::new(domain, username).id, str::to_owned);
+    let actor =
+        object_author(&note).map_or_else(|| LocalUserUrls::new(domain, username).id, str::to_owned);
     let mut create = json!({
         "id": format!("{}/activity", note["id"].as_str().expect("note has an id")),
         "type": "Create",
@@ -1002,6 +1004,20 @@ pub fn create_with_note(domain: &str, username: &str, note: Value) -> Value {
     }
     create["object"] = note;
     create
+}
+
+/// Local Video attribution identifies both a Person and their channel Group.
+/// The Person remains the Create/Update actor, including immutable actor IDs.
+fn object_author(note: &Value) -> Option<&str> {
+    let attribution = note.get("attributedTo")?;
+    attribution.as_str().or_else(|| {
+        attribution
+            .as_array()?
+            .iter()
+            .find(|entry| entry["type"] == "Person")?
+            .get("id")?
+            .as_str()
+    })
 }
 
 /// An outgoing `Like` of a status.
@@ -1827,10 +1843,8 @@ pub fn update_note(domain: &str, username: &str, note: Value, updated: &str) -> 
     // As with `Create`, the persisted Note identity wins over the mutable
     // handle. This matters when the Update is embedded verbatim in a group's
     // Announce: only the outer group activity is rebased at delivery time.
-    let actor = note
-        .get("attributedTo")
-        .and_then(Value::as_str)
-        .map_or_else(|| LocalUserUrls::new(domain, username).id, str::to_owned);
+    let actor =
+        object_author(&note).map_or_else(|| LocalUserUrls::new(domain, username).id, str::to_owned);
     let note_id = note["id"].as_str().unwrap_or_default();
     let mut activity = json!({
         "@context": quote_context(),

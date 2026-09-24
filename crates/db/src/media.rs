@@ -126,24 +126,54 @@ impl Media {
 /// Whether an immutable storage key may be served publicly. Suspension makes
 /// profile images, attachment originals/previews and cached HLS segments
 /// private immediately, without deleting bytes; unsuspension therefore
-/// republishes them automatically.
+/// republishes them automatically. Native attempt keys additionally require a
+/// committed publication: failed/cancelled outputs stay private even after
+/// their journal and cleanup queue entries disappear.
 pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool, DbError> {
+    // The HTTP file route already denies spooled originals. Keep the shared
+    // database gate fail-closed too, so future file-serving callers cannot
+    // expose an untranscoded, unpublished source by its internal key.
+    if file_name
+        .rsplit_once('.')
+        .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("orig"))
+    {
+        return Ok(false);
+    }
     let allowed = sqlx::query_scalar!(
         r#"
-        SELECT NOT EXISTS (
+        WITH candidates AS (
+            SELECT id, account_id, status_id FROM media_attachments
+            WHERE file_name = $1 OR small_file_name = $1
+            UNION
+            SELECT m.id, m.account_id, m.status_id FROM media_attachments m
+            JOIN video_compatibility_posters p ON p.media_id = m.id WHERE p.file_name = $1
+            UNION
+            SELECT m.id, m.account_id, m.status_id FROM media_attachments m
+            JOIN video_drafts d ON d.media_id = m.id AND d.state = 'ready'
+            JOIN native_video_hls_renditions r ON r.media_id = m.id AND r.generation = d.generation
+            WHERE r.file_name = $1
+            UNION
+            SELECT m.id, m.account_id, m.status_id FROM media_attachments m
+            JOIN media_hls_segments seg ON seg.media_id = m.id WHERE seg.cache_file = $1
+        )
+        SELECT ($1 NOT LIKE '%.draft.%' OR EXISTS (
+            SELECT 1 FROM candidates m
+            JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
+            JOIN accounts a ON a.id = m.account_id
+            JOIN accounts c ON c.id = v.channel_id
+            WHERE a.suspended_at IS NULL AND c.suspended_at IS NULL
+        )) AND NOT EXISTS (
             SELECT 1 FROM accounts a
             WHERE a.suspended_at IS NOT NULL
               AND (a.avatar_file_name = $1 OR a.header_file_name = $1)
             UNION ALL
-            SELECT 1 FROM media_attachments m
+            SELECT 1 FROM candidates m
             JOIN accounts a ON a.id = m.account_id
-            WHERE a.suspended_at IS NOT NULL
-              AND (m.file_name = $1 OR m.small_file_name = $1)
-            UNION ALL
-            SELECT 1 FROM media_hls_segments seg
-            JOIN media_attachments m ON m.id = seg.media_id
-            JOIN accounts a ON a.id = m.account_id
-            WHERE a.suspended_at IS NOT NULL AND seg.cache_file = $1
+            LEFT JOIN video_drafts d ON d.media_id = m.id
+            LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
+            LEFT JOIN accounts c ON c.id = COALESCE(v.channel_id, d.channel_id)
+            WHERE a.suspended_at IS NOT NULL OR c.suspended_at IS NOT NULL
+              OR (d.media_id IS NOT NULL AND v.media_id IS NULL)
         ) AS "allowed!"
         "#,
         file_name,
@@ -153,21 +183,28 @@ pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool,
     Ok(allowed)
 }
 
-/// Fast ownership gate for media-id routes (proxy, HLS, progressive/live).
-pub async fn owner_suspended(pool: &PgPool, media_id: i64) -> Result<bool, DbError> {
-    let suspended = sqlx::query_scalar!(
+/// Shared public gate for every media-id playback route, including aliases.
+/// Ordinary attachment visibility is unchanged; native drafts are private
+/// until their canonical video publication commits.
+pub async fn public_access_blocked(pool: &PgPool, media_id: i64) -> Result<bool, DbError> {
+    let blocked = sqlx::query_scalar!(
         r#"
         SELECT EXISTS (
             SELECT 1 FROM media_attachments m
             JOIN accounts a ON a.id = m.account_id
-            WHERE m.id = $1 AND a.suspended_at IS NOT NULL
-        ) AS "suspended!"
+            LEFT JOIN video_drafts d ON d.media_id = m.id
+            LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
+            LEFT JOIN accounts c ON c.id = COALESCE(v.channel_id, d.channel_id)
+            WHERE m.id = $1 AND (a.suspended_at IS NOT NULL
+                OR c.suspended_at IS NOT NULL
+                OR (d.media_id IS NOT NULL AND v.media_id IS NULL))
+        ) AS "blocked!"
         "#,
         media_id,
     )
     .fetch_one(pool)
     .await?;
-    Ok(suspended)
+    Ok(blocked)
 }
 
 /// The downscaled preview style of a processed upload.
@@ -485,8 +522,8 @@ pub struct ProcessedMedia<'a> {
 }
 
 /// Marks a queued attachment complete with its transcoded output.
-pub async fn complete_processing(
-    pool: &PgPool,
+pub async fn complete_processing<'e, E: PgExecutor<'e>>(
+    executor: E,
     done: ProcessedMedia<'_>,
 ) -> Result<Option<Media>, DbError> {
     let media = sqlx::query_as!(
@@ -523,7 +560,7 @@ pub async fn complete_processing(
         done.frame_rate,
         done.bitrate,
     )
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?;
     Ok(media)
 }
@@ -531,8 +568,8 @@ pub async fn complete_processing(
 /// Records the stored byte sizes of an attachment's main file and thumbnail,
 /// for the admin storage metrics (`instance_media_attachments` + `space_usage`).
 /// Best-effort: callers invoke it after a successful store and ignore failures.
-pub async fn set_file_sizes(
-    pool: &PgPool,
+pub async fn set_file_sizes<'e, E: PgExecutor<'e>>(
+    executor: E,
     media_id: i64,
     file_size: i64,
     thumbnail_file_size: Option<i64>,
@@ -543,7 +580,7 @@ pub async fn set_file_sizes(
         file_size,
         thumbnail_file_size,
     )
-    .execute(pool)
+    .execute(executor)
     .await?;
     Ok(())
 }
@@ -779,6 +816,7 @@ pub async fn vacuum_orphans(
             SELECT id, file_name, small_file_name
             FROM media_attachments
             WHERE status_id IS NULL AND scheduled_status_id IS NULL AND remote_url IS NULL
+              AND NOT EXISTS (SELECT 1 FROM video_drafts d WHERE d.media_id = media_attachments.id)
               AND created_at < now() - ($1 * interval '1 second')
             ORDER BY created_at
             LIMIT $2
@@ -1132,11 +1170,16 @@ pub async fn renditions_for(
     let rows = sqlx::query_as!(
         MediaRendition,
         r#"
-        SELECT media_id, height, width, frame_rate, size_bytes, origin_url,
-               is_audio
+        SELECT media_id AS "media_id!", height AS "height!", width, frame_rate,
+               size_bytes, origin_url AS "origin_url!", is_audio AS "is_audio!"
         FROM media_renditions
         WHERE media_id = ANY($1)
-        ORDER BY is_audio ASC, height DESC, width DESC
+        UNION ALL
+        SELECT media_id, height, width, NULL::integer AS frame_rate,
+               size_bytes, file_name AS origin_url, false AS is_audio
+        FROM native_video_hls_renditions
+        WHERE media_id = ANY($1)
+        ORDER BY 7 ASC, 2 DESC, 3 DESC
         "#,
         media_ids,
     )
@@ -1545,6 +1588,8 @@ pub async fn attach<'e, E: PgExecutor<'e>>(
         r#"
         UPDATE media_attachments SET status_id = $1
         WHERE id = ANY($2) AND account_id = $3 AND status_id IS NULL
+          AND (NOT EXISTS (SELECT 1 FROM video_drafts d WHERE d.media_id = media_attachments.id)
+               OR EXISTS (SELECT 1 FROM statuses s WHERE s.id = $1 AND s.object_type = 'Video'))
         "#,
         status_id,
         media_ids,
@@ -1825,7 +1870,11 @@ pub async fn public_caption_vtt(pool: &PgPool, media_id: i64) -> Result<Option<S
         SELECT m.caption_vtt
         FROM media_attachments m
         JOIN accounts a ON a.id = m.account_id
+        LEFT JOIN video_drafts d ON d.media_id = m.id
+        LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
+        LEFT JOIN accounts c ON c.id = COALESCE(v.channel_id, d.channel_id)
         WHERE m.id = $1 AND a.suspended_at IS NULL
+          AND c.suspended_at IS NULL AND (d.media_id IS NULL OR v.media_id IS NOT NULL)
         "#,
         media_id,
     )
@@ -2017,6 +2066,38 @@ pub async fn for_statuses_conn(
     conn: &mut sqlx::PgConnection,
     status_ids: &[i64],
 ) -> Result<HashMap<i64, Vec<Media>>, DbError> {
+    let map = for_statuses_read_only_conn(conn, status_ids).await?;
+    // Only a viewer-facing render may warm retention-evicted image media.
+    // Ingest/inline rewriting uses the read-only path below.
+    let evicted: Vec<i64> = map
+        .values()
+        .flatten()
+        .filter(|r| {
+            r.remote_url.is_some()
+                && r.file_name.is_none()
+                && r.processing == "complete"
+                && !r.download_on_demand
+        })
+        .map(|r| r.id)
+        .collect();
+    enqueue_redownload(conn, &evicted).await?;
+    Ok(map)
+}
+
+/// Metadata lookup for ingest. Unlike a viewer render, reading these rows
+/// must not turn cold history into eager background downloads.
+pub async fn for_statuses_read_only(
+    pool: &PgPool,
+    status_ids: &[i64],
+) -> Result<HashMap<i64, Vec<Media>>, DbError> {
+    let mut conn = pool.acquire().await?;
+    for_statuses_read_only_conn(&mut conn, status_ids).await
+}
+
+async fn for_statuses_read_only_conn(
+    conn: &mut sqlx::PgConnection,
+    status_ids: &[i64],
+) -> Result<HashMap<i64, Vec<Media>>, DbError> {
     let rows = sqlx::query_as!(
         Media,
         r#"
@@ -2035,23 +2116,6 @@ pub async fn for_statuses_conn(
     )
     .fetch_all(&mut *conn)
     .await?;
-    // Retention-evicted remote attachments (file gone, row still complete) are
-    // re-queued for download on demand — here, as a status that uses them is
-    // rendered, one statement for the whole page. Rare, and self-limiting: the
-    // flip to `queued` stops re-firing.
-    let evicted: Vec<i64> = rows
-        .iter()
-        // On-demand A/V never re-downloads from a render — a timeline scroll
-        // must not re-pull a gigabyte video; its first play does that.
-        .filter(|r| {
-            r.remote_url.is_some()
-                && r.file_name.is_none()
-                && r.processing == "complete"
-                && !r.download_on_demand
-        })
-        .map(|r| r.id)
-        .collect();
-    enqueue_redownload(&mut *conn, &evicted).await?;
     let mut map: HashMap<i64, Vec<Media>> = HashMap::new();
     for row in rows {
         if let Some(status_id) = row.status_id {
@@ -3065,6 +3129,7 @@ mod tests {
         .await
         .unwrap();
         assert!(public_file_allowed(&pool, "avatar.png").await.unwrap());
+        assert!(!public_file_allowed(&pool, "video.orig").await.unwrap());
 
         crate::account::suspend(&pool, account_id, "local")
             .await

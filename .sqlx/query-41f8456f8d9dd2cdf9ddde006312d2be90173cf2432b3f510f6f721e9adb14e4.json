@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT d.media_id, d.title FROM video_drafts d\n         JOIN media_attachments m ON m.id = d.media_id\n         WHERE d.account_id = $1 AND m.account_id = $1 AND m.status_id IS NULL\n         ORDER BY d.media_id DESC LIMIT 100",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "41f8456f8d9dd2cdf9ddde006312d2be90173cf2432b3f510f6f721e9adb14e4"
+}

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run the browser accessibility matrix against an isolated Plamenu fixture."""
 
+import ipaddress
 import os
 import secrets
 import shutil
@@ -26,10 +27,27 @@ def run(*args, **kwargs):
     return subprocess.run(args, cwd=ROOT, check=True, **kwargs)
 
 
-def free_port():
+def free_port(address="127.0.0.1"):
     with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
+        listener.bind((address, 0))
         return listener.getsockname()[1]
+
+
+def seed_native_draft_pages(container, fixture, video):
+    """Known persisted states for browser recovery UI; not a worker E2E."""
+    media = fixture / "media"
+    media.mkdir(exist_ok=True)
+    poster = fixture / "draft-poster.avif"
+    run("ffmpeg", "-nostdin", "-v", "error", "-i", video, "-frames:v", "1",
+        "-c:v", "libaom-av1", "-still-picture", "1", "-cpu-used", "8", poster)
+    run("docker", "exec", "-i", container, "psql", "-U", "postgres", "-d", "plamenu_a11y",
+        "-v", f"source_bytes={video.stat().st_size}", "-v", f"poster_bytes={poster.stat().st_size}",
+        input=(ROOT / "accessibility/fixtures/native-drafts.sql").read_text(), text=True,
+        stdout=subprocess.DEVNULL)
+    for media_id in range(9001, 9015):
+        shutil.copyfile(video, media / f"{media_id}.orig")
+        shutil.copyfile(video, media / f"{media_id}.draft.mp4")
+        shutil.copyfile(poster, media / f"{media_id}.draft.small.avif")
 
 
 def wait_for_database(name):
@@ -49,7 +67,7 @@ def wait_for_database(name):
 def wait_for_server(server, url, log):
     for _ in range(180):
         healthy = subprocess.run(
-            ["curl", "-fsS", "--max-time", "2", url + "/health"],
+            ["curl", "--noproxy", "*", "-fsS", "--max-time", "2", url + "/health"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
@@ -65,7 +83,7 @@ def wait_for_server(server, url, log):
 def wait_for_https(name, url):
     for _ in range(60):
         healthy = subprocess.run(
-            ["curl", "-kfsS", "--max-time", "2", url + "/health"],
+            ["curl", "--noproxy", "*", "-kfsS", "--max-time", "2", url + "/health"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
@@ -91,7 +109,7 @@ def wait_for_https(name, url):
 
 
 def main():
-    for tool in ("cargo", "curl", "docker", "npm"):
+    for tool in ("cargo", "curl", "docker", "npm", "ffmpeg"):
         if not shutil.which(tool):
             print(f"Accessibility fixture requires {tool}", file=sys.stderr)
             return 1
@@ -100,9 +118,47 @@ def main():
     password = secrets.token_hex(24)
     server = None
     log_handle = None
+    local_browsers = os.environ.get("A11Y_LOCAL_BROWSERS") == "1"
     with tempfile.TemporaryDirectory(prefix="plamenu-a11y-") as temporary:
         fixture = Path(temporary)
         try:
+            video_fixture = fixture / "native-video.mp4"
+            run(
+                "ffmpeg",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=640x480:rate=10",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440",
+                "-t",
+                "3",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-movflags",
+                "+faststart",
+                str(video_fixture),
+            )
+            audio_fixture = fixture / "native-audio.m4a"
+            run(
+                "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+                "sine=frequency=440:duration=9", "-c:a", "aac",
+                str(audio_fixture),
+            )
+            poster_fixture = fixture / "native-poster.png"
+            run(
+                "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+                "color=c=blue:size=96x96", "-frames:v", "1",
+                str(poster_fixture),
+            )
             run(
                 "docker",
                 "run",
@@ -129,7 +185,28 @@ def main():
                 ["docker", "port", name, "5432/tcp"], text=True
             ).strip()
             database_port = int(mapping.splitlines()[0].rsplit(":", 1)[1])
-            app_port = free_port()
+            # Share the TLS container's network namespace with the browsers.
+            # Canonical absolute media URLs must work unchanged on port 443;
+            # routing requests to a random port changes origin/cookie semantics.
+            # Only the Docker bridge can reach the host-side app listener.
+            app_address = "127.0.0.1"
+            if not local_browsers:
+                app_address = str(
+                    ipaddress.IPv4Address(
+                        subprocess.check_output(
+                            [
+                                "docker",
+                                "network",
+                                "inspect",
+                                "bridge",
+                                "--format",
+                                "{{(index .IPAM.Config 0).Gateway}}",
+                            ],
+                            text=True,
+                        ).strip()
+                    )
+                )
+            app_port = free_port(app_address)
             database_url = (
                 f"postgres://postgres:{password}@127.0.0.1:{database_port}/plamenu_a11y"
             )
@@ -137,7 +214,7 @@ def main():
             config.write_text(
                 'domain = "localhost"\n'
                 f'database_url = "{database_url}"\n'
-                f'bind = "127.0.0.1:{app_port}"\n'
+                f'bind = "{app_address}:{app_port}"\n'
                 f'media_dir = "{fixture / "media"}"\n'
                 'encryption_secret = "plamenu-accessibility-fixture-only"\n'
                 "encryption_secret_version = 1\n"
@@ -174,6 +251,7 @@ def main():
                 "--password",
                 "plamenu-development-only",
             )
+            seed_native_draft_pages(name, fixture, video_fixture)
             log = ROOT / "target/accessibility/server.log"
             log.parent.mkdir(parents=True, exist_ok=True)
             log_handle = log.open("wb")
@@ -193,15 +271,15 @@ def main():
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
-            base_url = f"http://localhost:{app_port}"
+            base_url = f"http://{app_address}:{app_port}"
             wait_for_server(server, base_url, log)
-            tls_port = free_port()
+            tls_port = free_port() if local_browsers else 443
             caddyfile = fixture / "Caddyfile"
             caddyfile.write_text(
                 "{\n  admin off\n  auto_https disable_redirects\n}\n"
                 f"https://localhost:{tls_port} {{\n"
                 "  tls internal\n"
-                f"  reverse_proxy http://127.0.0.1:{app_port}\n"
+                f"  reverse_proxy http://{app_address}:{app_port}\n"
                 "}\n"
             )
             run(
@@ -210,15 +288,27 @@ def main():
                 "--detach",
                 "--name",
                 proxy_name,
-                "--network",
-                "host",
+                *(
+                    ["--network", "host"]
+                    if local_browsers
+                    else ["--network", "bridge", "--publish", "127.0.0.1::443"]
+                ),
                 "--volume",
                 f"{caddyfile}:/etc/caddy/Caddyfile:ro",
                 CADDY_IMAGE,
                 stdout=subprocess.DEVNULL,
             )
-            base_url = f"https://localhost:{tls_port}"
-            wait_for_https(proxy_name, base_url)
+            if local_browsers:
+                base_url = f"https://localhost:{tls_port}"
+                readiness_url = base_url
+            else:
+                mapping = subprocess.check_output(
+                    ["docker", "port", proxy_name, "443/tcp"], text=True
+                ).strip()
+                published_port = int(mapping.splitlines()[0].rsplit(":", 1)[1])
+                readiness_url = f"https://localhost:{published_port}"
+                base_url = "https://localhost"
+            wait_for_https(proxy_name, readiness_url)
             environment = os.environ | {
                 "A11Y_BASE_URL": base_url,
                 "A11Y_USERNAME": "developer",
@@ -228,7 +318,10 @@ def main():
                     "A11Y_REPORT_PATH", "target/accessibility/automated.json"
                 ),
             }
-            if os.environ.get("A11Y_LOCAL_BROWSERS") == "1":
+            if local_browsers:
+                environment["A11Y_VIDEO_FIXTURE"] = str(video_fixture)
+                environment["A11Y_AUDIO_FIXTURE"] = str(audio_fixture)
+                environment["A11Y_POSTER_FIXTURE"] = str(poster_fixture)
                 command = [
                     "npm",
                     "--prefix",
@@ -238,18 +331,54 @@ def main():
                     *sys.argv[1:],
                 ]
             else:
+                # A linked worktree's .git file points outside the checkout.
+                # Preserve its absolute path and expose only the shared Git
+                # metadata read-only so the evidence reporter records revision
+                # and dirty state without mounting the other working tree.
+                git_common = Path(
+                    subprocess.check_output(
+                        [
+                            "git",
+                            "rev-parse",
+                            "--path-format=absolute",
+                            "--git-common-dir",
+                        ],
+                        cwd=ROOT,
+                        text=True,
+                    ).strip()
+                )
+                git_mount = (
+                    []
+                    if git_common.is_relative_to(ROOT)
+                    else [
+                        "--volume",
+                        f"{git_common}:{git_common}:ro",
+                    ]
+                )
                 command = [
                     "docker",
                     "run",
                     "--rm",
                     "--network",
-                    "host",
+                    f"container:{proxy_name}",
                     "--ipc",
                     "host",
                     "--user",
                     f"{os.getuid()}:{os.getgid()}",
                     "--env",
                     "HOME=/tmp",
+                    "--env",
+                    "A11Y_VIDEO_FIXTURE=/tmp/native-video.mp4",
+                    "--env",
+                    "A11Y_AUDIO_FIXTURE=/tmp/native-audio.m4a",
+                    "--env",
+                    "A11Y_POSTER_FIXTURE=/tmp/native-poster.png",
+                    "--volume",
+                    f"{video_fixture}:/tmp/native-video.mp4:ro",
+                    "--volume",
+                    f"{audio_fixture}:/tmp/native-audio.m4a:ro",
+                    "--volume",
+                    f"{poster_fixture}:/tmp/native-poster.png:ro",
                     *(
                         item
                         for name in (
@@ -262,9 +391,10 @@ def main():
                         for item in ("--env", f"{name}={environment[name]}")
                     ),
                     "--volume",
-                    f"{ROOT}:/work",
+                    f"{ROOT}:{ROOT}",
+                    *git_mount,
                     "--workdir",
-                    "/work",
+                    str(ROOT),
                     BROWSER_IMAGE,
                     "npm",
                     "--prefix",

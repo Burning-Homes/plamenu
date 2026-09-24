@@ -48,6 +48,7 @@ pub(crate) mod suggestions;
 pub(crate) mod tags;
 mod timelines;
 mod trends;
+mod video;
 mod virtual_mp4;
 mod web_api;
 mod webxdc;
@@ -915,6 +916,7 @@ fn api_routes(state: AppState) -> Router<AppState> {
         .merge(timeline_routes())
         .merge(list_routes())
         .merge(collection_routes())
+        .merge(video::router())
         .merge(filter_routes())
         .merge(admin_routes())
         .merge(email_routes())
@@ -1145,6 +1147,22 @@ pub fn router(state: AppState) -> Router {
     let federation_object_routes = Router::new()
         .route("/users/{username}/outbox", get(actors::get_outbox))
         .route("/ap/accounts/{username}/outbox", get(actors::get_outbox))
+        .route(
+            "/ap/accounts/{username}/outbox/page",
+            get(actors::get_channel_outbox_page),
+        )
+        .route(
+            "/ap/accounts/{username}/outbox/page/{before}",
+            get(actors::get_channel_outbox_page),
+        )
+        .route(
+            "/users/{username}/outbox/page",
+            get(actors::get_channel_outbox_page),
+        )
+        .route(
+            "/users/{username}/outbox/page/{before}",
+            get(actors::get_channel_outbox_page),
+        )
         .route("/users/{username}/followers", get(actors::get_followers))
         .route(
             "/ap/accounts/{username}/followers",
@@ -1279,6 +1297,10 @@ pub fn router(state: AppState) -> Router {
         // entry playlist, nested media playlists, and per-range segments — all
         // same-origin so nothing leaks the origin URL to the client.
         .route("/media/hls/{media_id}/master.m3u8", get(hls::master))
+        .route(
+            "/media/hls/{media_id}/native/{height}/index.m3u8",
+            get(hls::native_playlist),
+        )
         .route("/media/hls/{media_id}/pl", get(hls::playlist))
         .route("/media/hls/{media_id}/seg", get(hls::segment))
         // Live children keep the origin's extension on the path, so players

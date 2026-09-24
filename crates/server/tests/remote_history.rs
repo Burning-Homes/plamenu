@@ -707,6 +707,35 @@ async fn iri_first_items_wrappers_updates_announces_and_one_older_page_interoper
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn empty_creator_outbox_is_complete_and_keeps_its_validator(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = remote_account(&pool, "bob").await;
+    let outbox = format!("{}/outbox", bob.uri.as_deref().unwrap());
+    let stub = Arc::new(StubFederation::default());
+    stub.objects.lock().unwrap().insert(
+        outbox.clone(),
+        json!({
+            "id": outbox, "type": "OrderedCollection", "totalItems": 0,
+        }),
+    );
+    stub.serve_activitypub_etag(&outbox, "\"empty-v1\"");
+    let state = test_state_with(pool.clone(), stub);
+    history_db::save_settings(&pool, true, 90, false)
+        .await
+        .unwrap();
+    remote_history::request(&state, &bob, JobKind::Initial, Some(alice.id))
+        .await
+        .unwrap();
+    assert_eq!(remote_history::run_due(&state).await, 1);
+    let snapshot = history_db::snapshot(&pool, bob.id).await.unwrap().unwrap();
+    assert_eq!(snapshot.state, "complete");
+    assert_eq!(snapshot.reported_total_items, Some(0));
+    assert_eq!(snapshot.outbox_etag.as_deref(), Some("\"empty-v1\""));
+    assert!(snapshot.last_success_at.is_some());
+    assert!(snapshot.last_error_class.is_none());
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn stale_refresh_sends_etag_and_handles_not_modified_without_reingest(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = remote_account(&pool, "bob").await;

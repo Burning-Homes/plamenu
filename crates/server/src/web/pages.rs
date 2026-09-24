@@ -924,8 +924,10 @@ async fn profile_tab_view_sorted(
         _ => {}
     }
 
-    // Ranked sorts only mean something on a group's Activity feed.
-    let sort = if account.is_group() && matches!(tab, ProfileTab::Activity { .. }) {
+    let video_channel = account_entity.video_channel();
+    // Ranked community sorts do not apply to a creator's video channel.
+    let sort = if account.is_group() && !video_channel && matches!(tab, ProfileTab::Activity { .. })
+    {
         sort
     } else {
         GroupSort::New
@@ -1087,9 +1089,9 @@ async fn profile_tab_view_sorted(
                 @if let ProfileTab::Activity { replies, boosts } = &tab {
                     // Groups sort by votes instead of filtering by kind —
                     // their Activity feed is all boosts by construction.
-                    @if account.is_group() {
+                    @if account.is_group() && !video_channel {
                         (group_sort_selector(&path, sort, locale))
-                    } @else {
+                    } @else if !account.is_group() {
                         (activity_filter(&path, *replies, *boosts, locale))
                     }
                 }
@@ -2133,7 +2135,11 @@ fn moderation_badges(
 /// 3rd-party clients render, coloured by each role's configured colour.
 fn identity_badges(account: &view::Account, locale: Locale) -> Markup {
     html! {
-        @if account.group() {
+        @if account.video_channel() {
+            span.profile__badge title=(locale.text("profile-video-channel")) {
+                (locale.text("profile-video-channel"))
+            }
+        } @else if account.group() {
             span.profile__badge.profile__badge--bot title=(locale.text("profile-group")) {
                 (locale.text("profile-group"))
             }
@@ -3185,6 +3191,7 @@ async fn history_page(
 /// Submitted edit-composer state echoed across a no-JS preview or validation
 /// error. `media: None` uses the status' current attachments (the GET path).
 pub(crate) struct EditComposerEcho<'a> {
+    pub title: Option<&'a str>,
     pub text: &'a str,
     pub spoiler_text: &'a str,
     pub sensitive: bool,
@@ -3211,7 +3218,7 @@ pub(crate) async fn render_edit_composer(
         Some(user.current.account.id),
     )
     .await?;
-    let compose = ComposeCtx::load(state, user).await?;
+    let mut compose = ComposeCtx::load(state, user).await?;
     let status = view::Status(&entity);
     let language = echo
         .language
@@ -3223,6 +3230,7 @@ pub(crate) async fn render_edit_composer(
         .unwrap_or("nobody");
     let media = echo.media.unwrap_or_else(|| status.media());
     let prefill = view::EditComposePrefill {
+        title: echo.title.or(stored.title.as_deref()),
         text: echo.text,
         spoiler_text: echo.spoiler_text,
         sensitive: echo.sensitive,
@@ -3233,6 +3241,9 @@ pub(crate) async fn render_edit_composer(
         preview: echo.preview,
         error: echo.error,
     };
+    if stored.object_type.as_deref() == Some("Video") {
+        compose.limits.max_characters = crate::video::MAX_DESCRIPTION_CHARACTERS;
+    }
     let body = html! {
         section.column {
             h1 { (user.locale.text("compose-edit")) }
@@ -3270,6 +3281,7 @@ pub async fn edit_page(
         &user,
         &stored,
         EditComposerEcho {
+            title: None,
             text: &source.text,
             spoiler_text: &stored.spoiler_text,
             sensitive: stored.sensitive,

@@ -37,6 +37,7 @@ pub async fn run_due(state: &AppState) -> u64 {
     // Successes complete in one statement after the batch; only failures stay
     // leased (and cost no statement at all).
     let mut done: Vec<i64> = Vec::with_capacity(jobs.len());
+    let mut exhausted = Vec::new();
     for job in jobs {
         // A job reclaimed past the cap can never be removed (a permanently
         // unreadable path); drop it after logging rather than loop forever.
@@ -46,7 +47,7 @@ pub async fn run_due(state: &AppState) -> u64 {
                 attempts = job.attempts,
                 "dropping media cleanup after too many failed attempts"
             );
-            done.push(job.id);
+            exhausted.push(job.id);
             continue;
         }
         // The claim leased the job; delete the file, then complete it. A missing
@@ -63,8 +64,11 @@ pub async fn run_due(state: &AppState) -> u64 {
             }
         }
     }
-    if let Err(error) = media_cleanup::complete_many(&state.pool, &done).await {
+    if let Err(error) = plamenu_db::video_storage::complete_deleted(&state.pool, &done).await {
         tracing::error!(%error, "failed to complete media cleanup jobs");
+    }
+    if let Err(error) = media_cleanup::complete_many(&state.pool, &exhausted).await {
+        tracing::error!(%error, "failed to discard exhausted cleanup jobs; storage charges retained");
     }
     claimed
 }
@@ -76,7 +80,7 @@ pub struct ReconcileReport {
     pub scanned: usize,
     /// Distinct keys still referenced by some database row.
     pub referenced: usize,
-    /// Stored files no database row references — orphans.
+    /// Unreferenced stored or charged keys (a charge may outlive its file).
     pub orphans: usize,
     /// Orphans enqueued for deletion (0 in dry-run mode).
     pub enqueued: usize,
@@ -102,14 +106,18 @@ pub async fn reconcile(
         .list()
         .await
         .map_err(|error| crate::error::ApiError::Internal(Box::new(error)))?;
+    // Read candidates BEFORE references. A new reservation commits together
+    // with its source/output journal: reading charges after references could
+    // mistake a newly admitted, still-unwritten file for an orphan.
+    let charged = plamenu_db::video_storage::keys(&state.pool).await?;
     let referenced: HashSet<String> = media_cleanup::referenced_keys(&state.pool)
         .await?
         .into_iter()
         .collect();
-    let orphans: Vec<String> = stored
-        .iter()
-        .filter(|key| !referenced.contains(*key))
-        .cloned()
+    let candidates: HashSet<String> = stored.iter().chain(&charged).cloned().collect();
+    let orphans: Vec<String> = candidates
+        .into_iter()
+        .filter(|key| !referenced.contains(key))
         .collect();
     let enqueued = if apply && !orphans.is_empty() {
         media_cleanup::enqueue_many(&state.pool, &orphans).await?;

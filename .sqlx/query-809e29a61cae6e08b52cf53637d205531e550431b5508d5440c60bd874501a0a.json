@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE video_drafts SET poster_time_seconds = $3\n         WHERE media_id = $1 AND generation = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "809e29a61cae6e08b52cf53637d205531e550431b5508d5440c60bd874501a0a"
+}

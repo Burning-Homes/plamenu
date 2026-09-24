@@ -1,0 +1,103 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT v.status_id, v.uuid, s.uri AS status_uri, a.uri AS author_uri,\n                  a.username, s.created_at, s.visibility\n           FROM video_publications v JOIN statuses s ON s.id = v.status_id\n           JOIN accounts a ON a.id = s.account_id\n           WHERE v.channel_id = $1 AND s.visibility IN ('public', 'unlisted')\n             AND s.deleted_at IS NULL -- STUBFILTER\n             AND NOT account_hidden($2, s.account_id) AND NOT account_hidden($2, v.channel_id)\n             AND ($3::bigint IS NULL OR s.id < $3)\n           ORDER BY s.id DESC LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_publications",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "uuid",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_publications",
+            "name": "uuid"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "author_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "visibility"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1670f59606b3c9b8b65d1fdb53dcf50de5cc60ed98ae8e19ea5245fbe299a599"
+}

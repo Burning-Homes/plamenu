@@ -19,10 +19,21 @@ full matrix against an isolated disposable Plamenu and PostgreSQL fixture:
 
 The default runner uses the digest-pinned official Playwright image so all
 three engines have the same reviewed runtime on different developer hosts.
+The browsers share a disposable TLS proxy's network namespace: canonical
+`https://localhost` URLs, including absolute media and caption URLs, resolve
+to that fixture without request rewriting. The native server binds only to
+Docker's bridge gateway, and host readiness ports bind only to loopback.
 Set `A11Y_LOCAL_BROWSERS=1` only for diagnostics after installing Playwright's
-local engines and host libraries; a release report still requires every
+local engines and host libraries. That mode uses a random loopback TLS port
+and cannot verify canonical absolute media URLs; use the container mode for
+video playback. A release report still requires every
 project. The suite exercises representative signed-out and signed-in pages at desktop
-and 320 CSS-pixel mobile viewports. It runs axe rules tagged for WCAG 2.0,
+and 320 CSS-pixel mobile viewports. Firefox uses a narrow desktop viewport
+with touch enabled, not Android emulation: [Playwright documents `isMobile`
+as unsupported in Firefox](https://playwright.dev/docs/api/class-testoptions#test-options-is-mobile).
+The lightbox regression uses real mouse pointers
+to drag and real touch taps to dismiss in touch-enabled projects; this is not
+physical-device swipe/pinch coverage. It runs axe rules tagged for WCAG 2.0,
 2.1, and 2.2 Level A/AA, plus document structure, duplicate-ID, skip-link,
 keyboard-focus, reflow, Russian, dark-theme, reduced-motion, forced-colours,
 and no-JavaScript contracts. The result is

@@ -8,6 +8,7 @@ attachment URL starts and seeks through a bounded Range gateway without ever
 queuing a detached whole-video download. See PEERTUBE_HLS_DESIGN.md.
 """
 
+import secrets
 import struct
 import subprocess
 import tempfile
@@ -17,7 +18,7 @@ from pathlib import Path
 import pytest
 import requests
 import urllib3
-from plamenu_e2e import peertube
+from plamenu_e2e import peertube, unique
 from plamenu_e2e.api import Api
 from plamenu_e2e.db import Db
 from plamenu_e2e.steps import log, step, wait_for
@@ -71,7 +72,83 @@ def _top_level_box(body: bytes, wanted: bytes) -> tuple[int, bytes] | None:
 @pytest.mark.federation(
     direction="inbound",
     peer="peertube",
-    one_way_reason="Plamenu has no PeerTube-compatible publishing model — its Note builder emits only Note/Question/Page (crates/ap/src/activity.rs:399-404) and never originates a Video/HLS object; PeerTube long-form video is ingest-only, so there is no outbound counterpart to pair.",
+    one_way_reason="Conditional PeerTube outbox HTTP revalidation; outbound channel history is covered by the native-video exchange test",
+)
+def test_peertube_history_revalidation_preserves_the_cached_collection(
+    plamenu_api: Api, db: Db
+):
+    pt = peertube.root()
+    username = unique("history")[:30]
+    created = pt.post(
+        "/api/v1/users",
+        username=username,
+        email=f"{username}@example.test",
+        password=secrets.token_urlsafe(24),
+        role=2,
+        videoQuota=0,
+        videoQuotaDaily=0,
+    )["user"]
+    previous = db.conn.execute(
+        "SELECT enabled FROM remote_history_settings"
+    ).fetchone()[0]
+    try:
+        db.conn.execute("UPDATE remote_history_settings SET enabled = true")
+        account = wait_for(
+            lambda: plamenu_api.resolve_account(f"{username}@peertube.local"),
+            desc="fresh PeerTube creator resolves",
+        )
+        path = f"/api/v1/accounts/{account['id']}/remote_history"
+
+        def snapshot():
+            return db.conn.execute(
+                "SELECT state, last_success_at, pages_fetched, bytes_fetched, outbox_etag, last_error_class "
+                "FROM remote_history_states WHERE account_id = %s",
+                (int(account["id"]),),
+            ).fetchone()
+
+        with step("initial PeerTube creator outbox is cached with its validator"):
+            plamenu_api._request("POST", path + "/fetch", json={"mode": "initial"})
+
+            def initial():
+                row = snapshot()
+                assert row is None or row[0] not in ("backoff", "unsupported"), row
+                return row if row and row[1] else None
+
+            before = wait_for(initial, desc="initial outbox hydration succeeds")
+            assert before[4], "PeerTube supplies an ETag"
+
+        with step("a stale refresh accepts HTTP 304 without a redirect or re-ingest"):
+            db.conn.execute(
+                "UPDATE remote_history_states SET last_success_at = now() - interval '2 hours' WHERE account_id = %s",
+                (int(account["id"]),),
+            )
+            plamenu_api._request("POST", path + "/fetch", json={"mode": "refresh"})
+
+            def refreshed():
+                row = snapshot()
+                assert row[0] not in ("backoff", "unsupported"), row
+                return row if row[1] and row[1] > before[1] else None
+
+            after = wait_for(refreshed, desc="conditional refresh succeeds")
+            assert after[2:4] == before[2:4], (
+                "304 transfers no document and performs no page ingest"
+            )
+            assert after[5] is None
+            assert (
+                db.remote_fetch_failures_for_uri(
+                    f"https://peertube.local/accounts/{username}/outbox"
+                )
+                == []
+            )
+    finally:
+        db.conn.execute("UPDATE remote_history_settings SET enabled = %s", (previous,))
+        pt.delete(f"/api/v1/users/{created['id']}")
+
+
+@pytest.mark.federation(
+    direction="inbound",
+    peer="peertube",
+    reverse_of="test_native_video_channel_publication_update_and_delete",
 )
 def test_peertube_video_federates_and_plays_through_the_hls_proxy(
     plamenu_api: Api, db: Db
@@ -286,7 +363,7 @@ def test_peertube_video_federates_and_plays_through_the_hls_proxy(
 @pytest.mark.federation(
     direction="inbound",
     peer="peertube",
-    one_way_reason="Plamenu has no PeerTube-compatible publishing model — its Note builder emits only Note/Question/Page (crates/ap/src/activity.rs:399-404) and never originates a Video/HLS object; a live broadcast is ingest-only, so there is no outbound counterpart to pair.",
+    one_way_reason="Native Video publication exists, but native live ingest and broadcast lifecycle are still in progress under AP09; there is not yet an outbound live counterpart.",
 )
 def test_peertube_live_federates_and_plays_in_every_client(
     plamenu_api: Api, db: Db, request

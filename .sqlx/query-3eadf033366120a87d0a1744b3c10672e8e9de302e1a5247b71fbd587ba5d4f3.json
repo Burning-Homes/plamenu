@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE video_draft_outputs SET retired = true\n             WHERE media_id = $1 AND file_name = ANY($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3eadf033366120a87d0a1744b3c10672e8e9de302e1a5247b71fbd587ba5d4f3"
+}

@@ -211,6 +211,8 @@ pub struct NoteBatch {
     quotes: HashMap<i64, ResolvedQuote>,
     polls: HashMap<i64, PreparedPoll>,
     events: HashMap<i64, PreparedEvent>,
+    videos: HashMap<i64, plamenu_db::video::Publication>,
+    native_hls: HashMap<i64, Vec<plamenu_db::native_video_hls::FileTag>>,
     engagement: HashMap<i64, plamenu_db::status::Engagement>,
     self_reply_ids: HashMap<i64, Vec<i64>>,
     sources: HashMap<i64, plamenu_db::status::StatusSource>,
@@ -278,6 +280,21 @@ impl NoteBatch {
         }
 
         batch.media = media::for_statuses_conn(&mut *conn, &ids).await?;
+        let video_ids: Vec<i64> = items
+            .iter()
+            .filter(|item| item.object_type.as_deref() == Some("Video"))
+            .map(|item| item.id)
+            .collect();
+        if !video_ids.is_empty() {
+            batch.videos = plamenu_db::video::publications(&mut *conn, &video_ids)
+                .await?
+                .into_iter()
+                .map(|v| (v.status_id, v))
+                .collect();
+            let media_ids: Vec<i64> = batch.videos.values().map(|v| v.media_id).collect();
+            batch.native_hls =
+                plamenu_db::native_video_hls::tags_for_media(&mut *conn, &media_ids).await?;
+        }
         batch.tag_names = tag::names_for_statuses(&mut *conn, &ids).await?;
         batch.deleted = plamenu_db::status::deleted_ids(&mut *conn, &ids).await?;
 
@@ -688,6 +705,24 @@ pub fn note_in_batch(
         context_history: context_history.as_deref(),
         event: prepared_event.map(PreparedEvent::as_note_event),
     });
+    if let Some(publication) = batch.videos.get(&item.id) {
+        let media = batch
+            .media
+            .get(&item.id)
+            .and_then(|items| items.iter().find(|m| m.id == publication.media_id))
+            .ok_or(ApiError::NotFound)?;
+        crate::video::enrich_object(
+            domain,
+            &mut note,
+            publication,
+            media,
+            batch
+                .native_hls
+                .get(&media.id)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+        )?;
+    }
     if let Some((_, session_uri, session_name)) = batch.webxdc_invitations.get(&item.id) {
         crate::webxdc::enhance_invitation(&mut note, session_uri, session_name);
     }

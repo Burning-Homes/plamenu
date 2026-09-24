@@ -49,6 +49,9 @@ mod strikes;
 mod thread;
 pub(crate) mod two_factor;
 mod user_agent;
+mod video_drafts;
+mod video_upload;
+mod videos;
 mod view;
 pub(crate) mod webauthn;
 pub(crate) mod webxdc;
@@ -390,6 +393,38 @@ pub fn router() -> Router<AppState> {
         .route("/web/lists", post(lists::create_action))
         .route("/groups", get(groups::index))
         .route("/groups/new", get(groups::new_page))
+        .route("/videos", get(videos::index))
+        .route("/videos/drafts/{id}", get(video_drafts::show))
+        .route("/videos/drafts/{id}/status", get(video_drafts::status))
+        .route("/videos/drafts/{id}/review", get(video_drafts::review))
+        .route("/web/videos/drafts/{id}", post(video_drafts::action))
+        .route(
+            "/web/videos/drafts/{id}/poster",
+            post(video_drafts::replace_poster)
+                .layer(axum::extract::DefaultBodyLimit::max(9 * 1024 * 1024)),
+        )
+        .route(
+            "/web/videos/resumable",
+            post(video_upload::initiate).layer(axum::extract::DefaultBodyLimit::max(512 * 1024)),
+        )
+        .route(
+            "/web/videos/drafts/{id}/source",
+            get(video_upload::status)
+                .patch(video_upload::chunk)
+                .layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
+        .route(
+            "/web/videos/drafts/{id}/source/finish",
+            post(video_upload::finish),
+        )
+        .route("/videos/drafts/{id}/preview/{kind}", get(videos::preview))
+        .route("/web/video-channels", post(videos::create_channel))
+        .route(
+            "/web/videos",
+            post(videos::submit).layer(axum::extract::DefaultBodyLimit::max(
+                8192 * 1024 * 1024_usize + 1024 * 1024,
+            )),
+        )
         .route("/web/groups", post(groups::create_action))
         .route("/groups/{id}/manage", get(groups::manage))
         .route("/groups/{id}/members", get(groups::members_page))

@@ -369,6 +369,7 @@ pub async fn group_attributions_of<'e, E: sqlx::PgExecutor<'e>>(
         FROM statuses b -- STUBKEEP: a boost wrapper never stubs (nothing replies to it)
         JOIN accounts a ON a.id = b.account_id
         WHERE b.reblog_of_id = ANY($1) AND a.actor_type = 'Group'
+          AND NOT EXISTS (SELECT 1 FROM video_channels vc WHERE vc.account_id = a.id)
         ORDER BY 1, 2
         ",
     )
@@ -409,6 +410,7 @@ pub async fn community_attributions_of<'e, E: sqlx::PgExecutor<'e>>(
             FROM statuses b -- STUBKEEP: a boost wrapper never stubs (nothing replies to it)
             JOIN accounts a ON a.id = b.account_id
             WHERE b.reblog_of_id = ANY($1) AND a.actor_type = 'Group'
+              AND NOT EXISTS (SELECT 1 FROM video_channels vc WHERE vc.account_id = a.id)
         ) attributions
         ORDER BY status_id, mentioned DESC, account_id
         "#,
@@ -458,6 +460,7 @@ pub async fn boosting_group_ids<'e, E: sqlx::PgExecutor<'e>>(
         FROM statuses b -- STUBKEEP: a boost wrapper never stubs (nothing replies to it)
         JOIN accounts a ON a.id = b.account_id
         WHERE b.reblog_of_id = $1 AND a.actor_type = 'Group'
+          AND NOT EXISTS (SELECT 1 FROM video_channels vc WHERE vc.account_id = a.id)
         "#,
         status_id,
     )
@@ -1001,6 +1004,7 @@ pub async fn public_group_ids(pool: &PgPool, limit: i64, offset: i64) -> Result<
         SELECT a.id
         FROM accounts a
         WHERE a.actor_type = 'Group'
+          AND NOT EXISTS (SELECT 1 FROM video_channels vc WHERE vc.account_id = a.id)
           AND NOT a.is_internal
           AND a.suspended_at IS NULL
           AND a.deleted_at IS NULL
@@ -1088,6 +1092,7 @@ pub async fn joined_group_ids(pool: &PgPool, account_id: i64) -> Result<Vec<i64>
         JOIN accounts a ON a.id = f.target_account_id
         WHERE f.account_id = $1 AND NOT f.pending
           AND a.actor_type = 'Group' AND a.suspended_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM video_channels vc WHERE vc.account_id = a.id)
         ORDER BY f.id DESC
         "#,
         account_id,

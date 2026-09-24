@@ -5,6 +5,22 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+/// Unallocated bytes available to this process on the media filesystem. A
+/// failed measurement closes native upload admission rather than guessing.
+#[cfg(unix)]
+pub fn available_bytes(path: &std::path::Path) -> std::io::Result<u64> {
+    let stat = rustix::fs::statvfs(path)?;
+    Ok(stat.f_bavail.saturating_mul(stat.f_frsize))
+}
+
+#[cfg(not(unix))]
+pub fn available_bytes(_path: &std::path::Path) -> std::io::Result<u64> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "native video requires filesystem free-space measurement",
+    ))
+}
+
 use crate::federation::BoxFuture;
 use crate::sync::RecoverableMutex as _;
 
@@ -29,9 +45,25 @@ pub trait MediaStore: Send + Sync {
         file_name: &str,
         src: &std::path::Path,
     ) -> BoxFuture<'_, std::io::Result<()>>;
+    /// Appends one bounded, already authenticated upload chunk. The caller
+    /// serializes the draft row and commits its offset only after this returns.
+    /// A tail left by a crash before that commit is truncated on retry.
+    fn append_synced(
+        &self,
+        _file_name: &str,
+        _offset: u64,
+        _bytes: Vec<u8>,
+    ) -> BoxFuture<'_, std::io::Result<()>> {
+        Box::pin(async { Err(std::io::Error::from(std::io::ErrorKind::Unsupported)) })
+    }
     fn get(&self, file_name: &str) -> BoxFuture<'_, std::io::Result<Vec<u8>>>;
     /// Opens a stored file for streaming reads (see [`MediaRead`]).
     fn open(&self, file_name: &str) -> BoxFuture<'_, std::io::Result<MediaRead>>;
+    /// Optional borrowed, immutable file path for native processing. Callers
+    /// must not move or remove it; other backends use a bounded streaming copy.
+    fn local_path(&self, _file_name: &str) -> Option<PathBuf> {
+        None
+    }
     /// Removes a stored file; missing files are not an error.
     fn delete(&self, file_name: &str) -> BoxFuture<'_, std::io::Result<()>>;
     /// Every stored key (flat, non-recursive) — the reconciliation sweep
@@ -55,6 +87,56 @@ impl LocalDiskStore {
 }
 
 impl MediaStore for LocalDiskStore {
+    fn append_synced(
+        &self,
+        file_name: &str,
+        offset: u64,
+        bytes: Vec<u8>,
+    ) -> BoxFuture<'_, std::io::Result<()>> {
+        use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+        let path = self.root.join(file_name);
+        Box::pin(async move {
+            let existed = tokio::fs::try_exists(&path).await?;
+            if !existed && offset != 0 {
+                return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
+            }
+            let mut file = tokio::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(&path)
+                .await?;
+            if file.metadata().await?.len() < offset {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "stored video is shorter than committed upload offset",
+                ));
+            }
+            file.set_len(offset).await?;
+            file.seek(std::io::SeekFrom::Start(offset)).await?;
+            file.write_all(&bytes).await?;
+            file.sync_all().await?;
+            if !existed {
+                let parent = path.parent().expect("flat media key").to_path_buf();
+                tokio::task::spawn_blocking(move || std::fs::File::open(parent)?.sync_all())
+                    .await
+                    .map_err(std::io::Error::other)??;
+            }
+            Ok(())
+        })
+    }
+
+    fn local_path(&self, file_name: &str) -> Option<PathBuf> {
+        let mut components = std::path::Path::new(file_name).components();
+        if !matches!(components.next(), Some(std::path::Component::Normal(_)))
+            || components.next().is_some()
+        {
+            return None;
+        }
+        Some(self.root.join(file_name))
+    }
+
     fn put(&self, file_name: &str, bytes: Vec<u8>) -> BoxFuture<'_, std::io::Result<()>> {
         let path = self.root.join(file_name);
         Box::pin(async move { tokio::fs::write(path, bytes).await })
@@ -132,6 +214,25 @@ pub struct MemoryStore {
 }
 
 impl MediaStore for MemoryStore {
+    fn append_synced(
+        &self,
+        file_name: &str,
+        offset: u64,
+        bytes: Vec<u8>,
+    ) -> BoxFuture<'_, std::io::Result<()>> {
+        let mut files = self.files.lock_or_recover();
+        let stored = files.entry(file_name.to_owned()).or_default();
+        let Ok(offset) = usize::try_from(offset) else {
+            return Box::pin(async { Err(std::io::Error::from(std::io::ErrorKind::InvalidInput)) });
+        };
+        if stored.len() < offset {
+            return Box::pin(async { Err(std::io::Error::from(std::io::ErrorKind::InvalidData)) });
+        }
+        stored.truncate(offset);
+        stored.extend_from_slice(&bytes);
+        Box::pin(async { Ok(()) })
+    }
+
     fn put(&self, file_name: &str, bytes: Vec<u8>) -> BoxFuture<'_, std::io::Result<()>> {
         self.files
             .lock()
@@ -182,5 +283,35 @@ impl MediaStore for MemoryStore {
     fn list(&self) -> BoxFuture<'_, std::io::Result<Vec<String>>> {
         let names = self.files.lock_or_recover().keys().cloned().collect();
         Box::pin(async move { Ok(names) })
+    }
+}
+
+#[cfg(test)]
+mod resumable_tests {
+    use super::{LocalDiskStore, MediaStore};
+
+    #[tokio::test]
+    async fn local_append_replaces_only_uncommitted_tail() {
+        let root = tempfile::tempdir().unwrap();
+        let store = LocalDiskStore::new(root.path().to_path_buf()).unwrap();
+        store
+            .append_synced("123.orig", 0, b"abc".to_vec())
+            .await
+            .unwrap();
+        store
+            .append_synced("123.orig", 3, b"lost".to_vec())
+            .await
+            .unwrap();
+        store
+            .append_synced("123.orig", 3, b"def".to_vec())
+            .await
+            .unwrap();
+        assert_eq!(store.get("123.orig").await.unwrap(), b"abcdef");
+        assert!(
+            store
+                .append_synced("456.orig", 3, b"def".to_vec())
+                .await
+                .is_err()
+        );
     }
 }

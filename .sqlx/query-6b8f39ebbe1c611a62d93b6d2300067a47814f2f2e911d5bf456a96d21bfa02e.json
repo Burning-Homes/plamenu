@@ -1,0 +1,221 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT media_id, account_id, channel_id, title, description, language, visibility,\n         source_file, source_fingerprint, poster_time_seconds, poster_alt, source_bytes, reserved_bytes, state, generation, lease_until, expires_at\n         FROM video_drafts WHERE media_id = $1 AND account_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "source_file",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "source_file"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "source_fingerprint",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "source_fingerprint"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "poster_time_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "poster_time_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "poster_alt",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "poster_alt"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "source_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "source_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "reserved_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "reserved_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "generation",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "generation"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "lease_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "lease_until"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "6b8f39ebbe1c611a62d93b6d2300067a47814f2f2e911d5bf456a96d21bfa02e"
+}

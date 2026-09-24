@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO video_compatibility_posters\n               (media_id, file_name, width, height, file_size, cleanup_job_id)\n             VALUES ($1, $2, $3, $4, $5, $6)\n             ON CONFLICT (media_id) DO UPDATE SET file_name = EXCLUDED.file_name,\n               width = EXCLUDED.width, height = EXCLUDED.height,\n               file_size = EXCLUDED.file_size, cleanup_job_id = EXCLUDED.cleanup_job_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bd41dfe5666cd741ba95a4945186ffa892633de12715cb7ac18004e47fbb7882"
+}

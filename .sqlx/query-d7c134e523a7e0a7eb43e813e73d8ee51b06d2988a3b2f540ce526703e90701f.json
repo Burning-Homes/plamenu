@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO video_draft_outputs (file_name, media_id, generation, cleanup_job_id)\n         SELECT entry.file_name, $2, $3, entry.cleanup_job_id\n         FROM unnest($1::text[], $4::bigint[]) AS entry(file_name, cleanup_job_id)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Int8",
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d7c134e523a7e0a7eb43e813e73d8ee51b06d2988a3b2f540ce526703e90701f"
+}

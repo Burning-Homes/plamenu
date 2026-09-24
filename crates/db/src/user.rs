@@ -1093,11 +1093,13 @@ pub async fn settings_by_account_id(
 /// The Account-entity attributes only a local account carries (Mastodon's
 /// `if: :local?` serializer branch): the owner's `noindex` preference and
 /// their role when it is publicly highlighted (`roles` shows highlighted
-/// roles only). `None` when no `users` row backs the account.
+/// roles only), plus native video-channel identity. A channel need not have a
+/// login, so its `noindex` remains `None` rather than inventing a preference.
 #[derive(Debug, Clone)]
 pub struct AccountEntityOverlay {
-    pub noindex: bool,
+    pub noindex: Option<bool>,
     pub highlighted_role: Option<HighlightedRole>,
+    pub video_channel: bool,
 }
 
 /// The subset of a role the public Account entity's `roles` carries.
@@ -1118,20 +1120,23 @@ pub async fn account_entity_overlay(
 }
 
 /// [`account_entity_overlay`] for a batch of local accounts in one query — ids
-/// with no `users` row (remote accounts) are simply absent from the map, so a
-/// page of accounts costs a single round trip instead of one per local row.
+/// with neither a login nor a native channel are absent. Resolve channel
+/// identity in this existing read, not another round trip for community pages.
 pub async fn account_entity_overlay_batch(
     pool: &PgPool,
     account_ids: &[i64],
 ) -> Result<HashMap<i64, AccountEntityOverlay>, DbError> {
     let rows = sqlx::query!(
         r#"
-        SELECT u.account_id AS "account_id!",
-               u.noindex AS "noindex!",
-               r.id AS "role_id?", r.name AS "role_name?", r.color AS "role_color?"
-        FROM users u
+        SELECT input.id AS "account_id!",
+               u.noindex AS "noindex?",
+               r.id AS "role_id?", r.name AS "role_name?", r.color AS "role_color?",
+               (c.account_id IS NOT NULL) AS "video_channel!"
+        FROM unnest($1::bigint[]) AS input(id)
+        LEFT JOIN users u ON u.account_id = input.id
+        LEFT JOIN video_channels c ON c.account_id = input.id
         LEFT JOIN user_roles r ON r.id = u.role_id AND r.highlighted
-        WHERE u.account_id = ANY($1)
+        WHERE u.account_id IS NOT NULL OR c.account_id IS NOT NULL
         "#,
         account_ids,
     )
@@ -1144,6 +1149,7 @@ pub async fn account_entity_overlay_batch(
                 row.account_id,
                 AccountEntityOverlay {
                     noindex: row.noindex,
+                    video_channel: row.video_channel,
                     highlighted_role: match (row.role_id, row.role_name, row.role_color) {
                         (Some(id), Some(name), Some(color)) => {
                             Some(HighlightedRole { id, name, color })

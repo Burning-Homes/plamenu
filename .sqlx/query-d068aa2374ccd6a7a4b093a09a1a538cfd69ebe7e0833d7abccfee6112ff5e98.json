@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1 FROM media_attachments m\n            JOIN accounts a ON a.id = m.account_id\n            LEFT JOIN video_drafts d ON d.media_id = m.id\n            LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id\n            LEFT JOIN accounts c ON c.id = COALESCE(v.channel_id, d.channel_id)\n            WHERE m.id = $1 AND (a.suspended_at IS NOT NULL\n                OR c.suspended_at IS NOT NULL\n                OR (d.media_id IS NOT NULL AND v.media_id IS NULL))\n        ) AS \"blocked!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blocked!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d068aa2374ccd6a7a4b093a09a1a538cfd69ebe7e0833d7abccfee6112ff5e98"
+}

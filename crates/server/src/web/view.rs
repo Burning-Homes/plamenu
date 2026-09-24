@@ -415,6 +415,14 @@ impl Account<'_> {
             .unwrap_or(false)
     }
 
+    /// A native video channel is a Group in `ActivityPub`, not a community.
+    pub fn video_channel(&self) -> bool {
+        self.0
+            .get("video_channel")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
     /// The account's publicly visible roles as `(name, color)` pairs — the
     /// API's `roles` array (local accounts, highlighted roles only), the same
     /// data 3rd-party clients render as profile badges.
@@ -439,7 +447,11 @@ impl Account<'_> {
     /// group (the Lemmy/Mbin community convention, e.g. `!memes@lemmy.world`),
     /// `@` for everyone else.
     pub fn handle_prefix(&self) -> &'static str {
-        if self.group() { "!" } else { "@" }
+        if self.group() && !self.video_channel() {
+            "!"
+        } else {
+            "@"
+        }
     }
 
     /// The profile metadata rows as ready-to-embed markup (escaped `name`,
@@ -1303,7 +1315,7 @@ struct AdminTargetLinks {
 impl AdminTargetLinks {
     fn for_account(account: &Account, admin: AdminCapabilities, locale: Locale) -> Self {
         let handle = format!("{}{}", account.handle_prefix(), account.acct());
-        let target = if account.group() && !account.is_remote() {
+        let target = if account.group() && !account.video_channel() && !account.is_remote() {
             admin.manage_groups.then(|| {
                 (
                     format!("/admin/groups/{}", account.id()),
@@ -1390,6 +1402,7 @@ pub fn account_privileged_menu(
 #[allow(clippy::too_many_lines)]
 pub fn icon(name: &str) -> Markup {
     let path = match name {
+        "video" => r#"<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/>"#,
         "reply" => r#"<path d="M9 17l-5-5 5-5"/><path d="M4 12h11a5 5 0 0 1 5 5v1"/>"#,
         "boost" => {
             r#"<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>"#
@@ -1627,7 +1640,13 @@ fn status_article(status: &Status, ctx: &Ctx, detail: bool, interactions: bool) 
                 }] {
                 // A Group's announce isn't a boost to the reader — it's the
                 // post reaching the community's followers.
-                @if status.account().group() {
+                @if status.account().video_channel() {
+                    p.status__boost {
+                        (icon("video"))
+                        (ctx.locale.text("status-published-on")) " "
+                        a href=(status.account().profile_path()) { (status.account().name_markup()) }
+                    }
+                } @else if status.account().group() {
                     p.status__boost {
                         (icon("group"))
                         (ctx.locale.text("status-posted-in")) " "
@@ -1820,7 +1839,9 @@ fn status_main(
                 a.status__name href=(account.profile_path()) { (account.name_markup()) }
                 span.status__handle {
                     a.status__acct href=(account.profile_path()) { (account.handle_prefix()) (account.acct()) }
-                    @if account.group() {
+                    @if account.video_channel() {
+                        span.status__flag title=(ctx.locale.text("profile-video-channel")) { (icon("video")) }
+                    } @else if account.group() {
                         span.status__flag title=(ctx.locale.text("status-account-group")) { (icon("group")) }
                     }
                     @if account.bot() {
@@ -2903,6 +2924,12 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                 } @else {
                                     (media_badges(alt, &video_badges, ctx.locale))
                                 }
+                                @if let Some(poster_alt) = item.get("poster_description").and_then(Value::as_str).filter(|text| !text.is_empty()) {
+                                    details.media__transcript {
+                                        summary { (ctx.locale.text("status-poster-description")) }
+                                        p lang=[language] { (poster_alt) }
+                                    }
+                                }
                                 (media_transcript(item, language, ctx.locale))
                             },
                         }
@@ -3330,10 +3357,12 @@ fn overflow_menu(status: &Status, ctx: &Ctx) -> Markup {
                             href=(format!("/web/statuses/{}/edit", status.id())) {
                             (ctx.locale.text("status-edit"))
                         }
-                        (menu_form(&format!("/web/statuses/{}/redraft", status.id()),
-                            &ctx.locale.text("status-delete-redraft"), true,
-                            Some(&ctx.locale.text("status-redraft-confirm")),
-                            csrf, ctx.return_to))
+                        @if status.object_type() != Some("Video") {
+                            (menu_form(&format!("/web/statuses/{}/redraft", status.id()),
+                                &ctx.locale.text("status-delete-redraft"), true,
+                                Some(&ctx.locale.text("status-redraft-confirm")),
+                                csrf, ctx.return_to))
+                        }
                         (menu_form(&format!("/web/statuses/{}/delete", status.id()),
                             &ctx.locale.text("status-delete"), true,
                             Some(&ctx.locale.text("status-delete-confirm")), csrf, ctx.return_to))
@@ -4166,7 +4195,21 @@ fn inline_placement_control(name: &str, article: bool, locale: Locale) -> Markup
     }
 }
 
-fn attachment_keep_row(item: &Value, locale: Locale, article: bool) -> Markup {
+fn attachment_keep_control(id: &str, fixed: bool, locale: Locale) -> Markup {
+    html! {
+        @if fixed {
+            input type="hidden" name="media_keep[]" value=(id);
+            p.compose__media-note { (locale.text("videos-file-locked")) }
+        } @else {
+            label.compose__inline {
+                input type="checkbox" name="media_keep[]" value=(id) checked;
+                span { (locale.text("compose-keep")) }
+            }
+        }
+    }
+}
+
+fn attachment_keep_row(item: &Value, locale: Locale, article: bool, fixed: bool) -> Markup {
     let id = item.get("id").and_then(Value::as_str).unwrap_or_default();
     let url = item.get("url").and_then(Value::as_str).unwrap_or_default();
     let preview = item
@@ -4210,10 +4253,7 @@ fn attachment_keep_row(item: &Value, locale: Locale, article: bool) -> Markup {
                 }
             }
             div.edit-media__fields {
-                label.compose__inline {
-                    input type="checkbox" name="media_keep[]" value=(id) checked;
-                    span { (locale.text("compose-keep")) }
-                }
+                (attachment_keep_control(id, fixed, locale))
                 label.compose__field {
                     span.visually-hidden { (locale.text("compose-alt-text")) }
                     input type="text" name=(format!("media_alt_{id}"))
@@ -4601,7 +4641,7 @@ pub fn full_compose_form(
                     div.compose__edit-media {
                         span.compose__legend { (locale.text("compose-attachments")) }
                         @for item in prefill.media {
-                            (attachment_keep_row(item, locale, kind == "article"))
+                            (attachment_keep_row(item, locale, kind == "article", false))
                         }
                     }
                 }
@@ -4818,6 +4858,7 @@ pub fn full_compose_form(
 /// new media or polls can be added — attachments are kept/removed via
 /// checkboxes, each with an editable alt text.
 pub struct EditComposePrefill<'a> {
+    pub title: Option<&'a str>,
     pub text: &'a str,
     pub spoiler_text: &'a str,
     pub sensitive: bool,
@@ -4827,6 +4868,19 @@ pub struct EditComposePrefill<'a> {
     pub media: &'a [Value],
     pub preview: Option<Markup>,
     pub error: Option<&'a str>,
+}
+
+fn edit_title_field(title: &str, video: bool, locale: Locale) -> Markup {
+    html! {
+        label.compose__field {
+            span.compose__legend { (locale.text(if video { "videos-name" } else { "compose-title" })) }
+            @if video {
+                input type="text" name="title" value=(title) minlength="3" maxlength="120" required;
+            } @else {
+                input type="text" name="title" value=(title) required;
+            }
+        }
+    }
 }
 
 #[allow(
@@ -4865,6 +4919,10 @@ pub fn edit_compose_form(
                 p.compose__error role="alert" { (error) }
             }
 
+            @if let Some(title) = prefill.title {
+                (edit_title_field(title, status.object_type() == Some("Video"), locale))
+            }
+
             div.compose__section data-compose-section="cw" {
                 label.compose__field {
                     span.compose__legend { (locale.text("compose-content-warning")) }
@@ -4892,6 +4950,7 @@ pub fn edit_compose_form(
                             item,
                             locale,
                             status.object_type() == Some("Article"),
+                            status.object_type() == Some("Video"),
                         ))
                     }
                     label.compose__inline {

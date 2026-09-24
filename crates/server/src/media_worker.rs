@@ -1236,15 +1236,9 @@ pub async fn ensure_card_cached(
 /// — its row.
 async fn transcode_local(state: &AppState, media_id: i64, orig_name: &str) -> Result<(), ApiError> {
     let result: Result<(), ApiError> = async {
-        let original = state
-            .media
-            .get(orig_name)
-            .await
-            .map_err(|e| ApiError::Internal(Box::new(e)))?;
         let settings = state.settings_cache.get(&state.pool).await?;
         let params = crate::media_transcode::TranscodeParams::from_settings(&settings);
-        let processed =
-            crate::media_transcode::process_av(&state.config, &original, &params).await?;
+        let processed = process_stored_av(state, orig_name, &params).await?;
         let stored = store_av_output(state, media_id, &processed).await?;
         media::complete_processing(
             &state.pool,
@@ -1290,6 +1284,73 @@ async fn transcode_local(state: &AppState, media_id: i64, orig_name: &str) -> Re
     // The spooled original is no longer needed.
     let _ = state.media.delete(orig_name).await;
     Ok(())
+}
+
+/// Native storage is processed in place. A future non-local backend streams
+/// to bounded scratch space; neither path buffers a whole original in RAM.
+pub(crate) async fn process_stored_av(
+    state: &AppState,
+    source: &str,
+    params: &crate::media_transcode::TranscodeParams,
+) -> Result<ProcessedAv, ApiError> {
+    process_stored_av_mode(state, source, params, None).await
+}
+
+pub(crate) async fn process_stored_native_video(
+    state: &AppState,
+    source: &str,
+    params: &crate::media_transcode::TranscodeParams,
+    poster_time_seconds: f64,
+) -> Result<ProcessedAv, ApiError> {
+    process_stored_av_mode(state, source, params, Some(poster_time_seconds)).await
+}
+
+async fn process_stored_av_mode(
+    state: &AppState,
+    source: &str,
+    params: &crate::media_transcode::TranscodeParams,
+    native_poster_time: Option<f64>,
+) -> Result<ProcessedAv, ApiError> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    if let Some(path) = state.media.local_path(source) {
+        return if let Some(time) = native_poster_time {
+            crate::media_transcode::process_native_video_file(&state.config, &path, params, time)
+                .await
+        } else {
+            crate::media_transcode::process_av_file(&state.config, &path, params).await
+        };
+    }
+    let original = state
+        .media
+        .open(source)
+        .await
+        .map_err(|e| ApiError::Internal(Box::new(e)))?;
+    let limit = u64::try_from(params.max_av_bytes).unwrap_or(u64::MAX);
+    if original.len > limit {
+        return Err(ApiError::PayloadTooLarge);
+    }
+    let scratch = crate::media_transcode::scratch_dir(&state.config).await?;
+    let path = scratch.path().join("source.bin");
+    let mut file = tokio::fs::File::create(&path)
+        .await
+        .map_err(|e| ApiError::Internal(Box::new(e)))?;
+    let copied = tokio::io::copy(
+        &mut original.reader.take(limit.saturating_add(1)),
+        &mut file,
+    )
+    .await
+    .map_err(|e| ApiError::Internal(Box::new(e)))?;
+    if copied > limit || copied != original.len {
+        return Err(ApiError::PayloadTooLarge);
+    }
+    file.flush()
+        .await
+        .map_err(|e| ApiError::Internal(Box::new(e)))?;
+    if let Some(time) = native_poster_time {
+        crate::media_transcode::process_native_video_file(&state.config, &path, params, time).await
+    } else {
+        crate::media_transcode::process_av_file(&state.config, &path, params).await
+    }
 }
 
 /// Processes one claimed job: a remote attachment is downloaded + cached (with

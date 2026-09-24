@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE video_drafts SET state = 'processing', generation = generation + 1,\n         lease_until = clock_timestamp() + make_interval(secs => $1)\n         WHERE media_id = (\n             SELECT d.media_id FROM video_drafts d\n             JOIN media_attachments m ON m.id = d.media_id\n             JOIN accounts a ON a.id = d.account_id\n             JOIN accounts c ON c.id = d.channel_id\n             WHERE (d.state = 'queued' OR (d.state = 'processing' AND d.lease_until <= clock_timestamp()))\n               AND d.expires_at > clock_timestamp() AND m.status_id IS NULL\n               AND a.suspended_at IS NULL AND c.suspended_at IS NULL\n             ORDER BY d.media_id LIMIT 1 FOR UPDATE OF d SKIP LOCKED\n         ) RETURNING media_id, generation, source_file, source_bytes, poster_time_seconds",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "generation",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "generation"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source_file",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "source_file"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "source_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "source_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "poster_time_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "poster_time_seconds"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "5bffa27e624418d441952d83101bb778ee353d33cc2a1b971eb4a74eecaaa407"
+}

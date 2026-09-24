@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT account_id, owner_account_id FROM video_channels WHERE owner_account_id = $1 ORDER BY account_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_channels",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "owner_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_channels",
+            "name": "owner_account_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "7106a901e9c000ceb29dc6b07e8f192b9f6cc4fec6cc3f0568b183827071f7a3"
+}

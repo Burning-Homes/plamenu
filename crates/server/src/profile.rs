@@ -133,6 +133,10 @@ pub async fn local_actor(state: &AppState, account: &Account) -> Result<Actor, A
 }
 
 /// Connection-scoped delivery for an enclosing mutation transaction.
+#[allow(
+    clippy::too_many_lines,
+    reason = "actor identity, keys and typed extensions are assembled together"
+)]
 pub async fn local_actor_conn(
     state: &AppState,
     conn: &mut plamenu_db::PgConnection,
@@ -245,6 +249,7 @@ pub async fn local_actor_conn(
         }),
         keys,
     );
+    crate::video::channel_actor(state, conn, account, &mut actor).await?;
     let proofs = crate::identity::list_conn(conn, account, &actor.id).await?;
     actor.attachment.extend(proofs);
     Ok(actor)

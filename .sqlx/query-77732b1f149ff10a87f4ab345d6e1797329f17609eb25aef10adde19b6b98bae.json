@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE video_drafts SET state = 'queued', lease_until = NULL\n        WHERE media_id = $1 AND generation = $2 AND state = 'processing'\n          AND lease_until > clock_timestamp()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "77732b1f149ff10a87f4ab345d6e1797329f17609eb25aef10adde19b6b98bae"
+}

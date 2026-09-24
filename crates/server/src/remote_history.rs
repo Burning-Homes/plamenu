@@ -843,7 +843,9 @@ async fn run_job(state: &AppState, job: &ClaimedJob) -> Result<Success, JobError
                 };
                 (document, fetched_page.final_url, origin)
             }
-            None if !collection_items(&envelope).is_empty() => {
+            None if !collection_items(&envelope).is_empty() || total == Some(0) => {
+                // A new creator's valid empty outbox needs no first page.
+                // Cache its validator so future refreshes can be conditional.
                 first_page_uri = Some(fetched.final_url.clone());
                 (envelope, fetched.final_url, origin)
             }

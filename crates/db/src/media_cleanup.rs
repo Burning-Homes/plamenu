@@ -264,6 +264,9 @@ pub async fn referenced_keys(pool: &PgPool) -> Result<Vec<String>, DbError> {
             SELECT file_name AS key FROM media_attachments WHERE file_name IS NOT NULL
             UNION SELECT small_file_name FROM media_attachments WHERE small_file_name IS NOT NULL
             UNION SELECT cache_file FROM media_hls_segments
+            UNION SELECT file_name FROM video_compatibility_posters
+            UNION SELECT source_file FROM video_drafts
+            UNION SELECT file_name FROM video_draft_outputs WHERE NOT retired
             UNION SELECT avatar_file_name FROM accounts WHERE avatar_file_name IS NOT NULL
             UNION SELECT header_file_name FROM accounts WHERE header_file_name IS NOT NULL
             UNION SELECT image_file_name FROM custom_emojis WHERE image_file_name IS NOT NULL

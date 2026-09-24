@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE video_drafts SET source_bytes = $3::bigint, reserved_bytes = $3::bigint, state = 'queued'\n         WHERE media_id = $1 AND account_id = $2 AND state = 'receiving'\n           AND expires_at > clock_timestamp() AND $3::bigint > 0 AND $3::bigint <= reserved_bytes",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "968e7500fe91c6c025aa0efd3107fdf0990ee3bdb8dfeec0b8323e84150a7399"
+}

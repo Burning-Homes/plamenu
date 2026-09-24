@@ -158,6 +158,15 @@ async fn create_av_sync(
     params: &crate::media_transcode::TranscodeParams,
 ) -> Result<Value, ApiError> {
     let processed = crate::media_transcode::process_av(&state.config, file, params).await?;
+    store_processed_av(state, account_id, processed, form).await
+}
+
+async fn store_processed_av(
+    state: &AppState,
+    account_id: i64,
+    processed: crate::media_transcode::ProcessedAv,
+    form: &UploadForm,
+) -> Result<Value, ApiError> {
     let media_id = id::next();
     let out = store_av_output(state, media_id, &processed).await?;
     let stored = media::create_local(
@@ -719,7 +728,7 @@ async fn proxy_inner(
     let domain = &state.config.domain;
     match kind {
         "attachment" => {
-            if media::owner_suspended(&state.pool, id).await? {
+            if media::public_access_blocked(&state.pool, id).await? {
                 return Err(ApiError::NotFound);
             }
             // Compatibility URLs emitted before the progressive gateway may

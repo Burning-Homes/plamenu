@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT source_file, source_bytes, reserved_bytes, source_fingerprint\n         FROM video_drafts WHERE media_id = $1 AND account_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source_file",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "source_file"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "source_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "source_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "reserved_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "reserved_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "source_fingerprint",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_drafts",
+            "name": "source_fingerprint"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "2321ea8fe9983ad5d00ca578677013d6b2f8888f0e5b199ca16a46f4a1c4376f"
+}

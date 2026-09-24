@@ -14,7 +14,7 @@ use plamenu_ap::urls::{LocalUserUrls, outbox_page_url};
 use plamenu_db::account::{self, Account};
 use plamenu_db::{follow, status};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use time::format_description::well_known::Rfc3339;
 
 use super::params::truthy;
@@ -297,6 +297,24 @@ pub async fn get_outbox(
     require_ap_accept(&headers)?;
     let account = super::local_actor_account(&state, &username, &uri).await?;
     ensure_available(&state, &account).await?;
+    if account.is_group()
+        && plamenu_db::video::channel(&state.pool, account.id)
+            .await?
+            .is_some()
+    {
+        return channel_outbox_response(
+            &state,
+            &account,
+            &uri,
+            &headers,
+            if truthy(query.page.as_deref()) {
+                ChannelOutboxView::Page(query.max_id.as_deref().and_then(|s| s.parse().ok()))
+            } else {
+                ChannelOutboxView::Envelope
+            },
+        )
+        .await;
+    }
     let urls = LocalUserUrls::for_account(
         &state.config.domain,
         &account.username,
@@ -374,6 +392,122 @@ pub async fn get_outbox(
     let document = serde_json::to_value(page).map_err(|e| ApiError::Internal(Box::new(e)))?;
     Ok((
         // Page content depends on who signed the request.
+        [
+            (header::CONTENT_TYPE, plamenu_ap::ACTIVITY_JSON_UTF8),
+            (header::VARY, "Signature"),
+        ],
+        Json(document),
+    )
+        .into_response())
+}
+
+/// Channel pages use a signed path cursor, not a query that some peers omit
+/// from their signature. Authentication remains the normal route middleware.
+pub async fn get_channel_outbox_page(
+    State(state): State<AppState>,
+    Path(params): Path<std::collections::HashMap<String, String>>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    require_ap_accept(&headers)?;
+    let username = params.get("username").ok_or(ApiError::NotFound)?;
+    let account = super::local_actor_account(&state, username, &uri).await?;
+    ensure_available(&state, &account).await?;
+    if plamenu_db::video::channel(&state.pool, account.id)
+        .await?
+        .is_none()
+    {
+        return Err(ApiError::NotFound);
+    }
+    let before = params
+        .get("before")
+        .map(|s| s.parse::<i64>().map_err(|_| ApiError::NotFound))
+        .transpose()?;
+    channel_outbox_response(
+        &state,
+        &account,
+        &uri,
+        &headers,
+        ChannelOutboxView::Page(before),
+    )
+    .await
+}
+
+enum ChannelOutboxView {
+    Envelope,
+    Page(Option<i64>),
+}
+
+async fn channel_outbox_response(
+    state: &AppState,
+    account: &Account,
+    uri: &Uri,
+    headers: &HeaderMap,
+    page: ChannelOutboxView,
+) -> Result<Response, ApiError> {
+    let viewer = signed_page_requester(state, uri, headers).await;
+    let viewer_id = viewer.as_ref().map(|a| a.id);
+    let actor = actor_uri(&state.config.domain, account);
+    let outbox = format!("{actor}/outbox");
+    let document = if let ChannelOutboxView::Page(before) = page {
+        let mut entries = plamenu_db::video::outbox_page(
+            &state.pool,
+            account.id,
+            viewer_id,
+            before,
+            OUTBOX_PER_PAGE + 1,
+        )
+        .await?;
+        let more = entries.len() > usize::try_from(OUTBOX_PER_PAGE).unwrap_or(20);
+        entries.truncate(usize::try_from(OUTBOX_PER_PAGE).unwrap_or(20));
+        let next = more.then(|| format!("{outbox}/page/{}", entries.last().unwrap().status_id));
+        let mut items = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let author = entry.author_uri.unwrap_or_else(|| {
+                format!("https://{}/users/{}", state.config.domain, entry.username)
+            });
+            let object = entry
+                .status_uri
+                .unwrap_or_else(|| format!("{author}/statuses/{}", entry.status_id));
+            let published = entry
+                .created_at
+                .format(&time::format_description::well_known::Rfc3339)
+                .map_err(|e| ApiError::Internal(Box::new(e)))?;
+            let followers = format!("{author}/followers");
+            let channel_followers = format!("{actor}/followers");
+            let (to, cc) = if entry.visibility == "public" {
+                (
+                    json!([activity::PUBLIC]),
+                    json!([followers, channel_followers]),
+                )
+            } else {
+                (
+                    json!([followers]),
+                    json!([activity::PUBLIC, channel_followers]),
+                )
+            };
+            items.push(json!({"id":format!("{actor}/videos/{}/announce", entry.uuid),
+                "type":"Announce", "actor":actor, "object":object, "published":published, "to":to, "cc":cc}));
+        }
+        let id = before.map_or_else(
+            || format!("{outbox}/page"),
+            |id| format!("{outbox}/page/{id}"),
+        );
+        serde_json::to_value(OutboxPage::new(
+            activity::quote_context(),
+            id,
+            &outbox,
+            next,
+            None,
+            items,
+        ))
+        .map_err(|e| ApiError::Internal(Box::new(e)))?
+    } else {
+        let total = plamenu_db::video::outbox_count(&state.pool, account.id, viewer_id).await?;
+        json!({"@context":plamenu_ap::AS_CONTEXT, "id":outbox, "type":"OrderedCollection",
+               "totalItems":total, "first":format!("{outbox}/page")})
+    };
+    Ok((
         [
             (header::CONTENT_TYPE, plamenu_ap::ACTIVITY_JSON_UTF8),
             (header::VARY, "Signature"),

@@ -271,7 +271,9 @@ pub async fn resolve_compose_targets(
         // group; an ordinary Note still may not.
         let titled_kind = matches!(
             submission.kind,
-            plamenu_ap::activity::PostKind::Event | plamenu_ap::activity::PostKind::Article
+            plamenu_ap::activity::PostKind::Event
+                | plamenu_ap::activity::PostKind::Article
+                | plamenu_ap::activity::PostKind::Video
         );
         if submission.group_id.is_none() && !titled_kind {
             return Err(invalid("Titles are only supported on group posts"));

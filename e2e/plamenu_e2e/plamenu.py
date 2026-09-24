@@ -41,8 +41,13 @@ class Cli:
     def _run(self, *args: str) -> str:
         if self._runner is not None:
             return self._runner(*args)
+        command = (
+            [config.PLAMENU_BINARY]
+            if config.PLAMENU_BINARY
+            else ["cargo", "run", "-q", "--"]
+        )
         return shell.run(
-            ["cargo", "run", "-q", "--", "--config", config.PLAMENU_CONFIG, *args],
+            [*command, "--config", config.PLAMENU_CONFIG, *args],
             cwd=config.PLAMENU_DIR,
         )
 

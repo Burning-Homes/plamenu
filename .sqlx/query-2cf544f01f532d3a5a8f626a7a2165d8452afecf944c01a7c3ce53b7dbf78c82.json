@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n           (SELECT count(*) FROM video_drafts d JOIN media_attachments m ON m.id = d.media_id\n            WHERE d.account_id = $1 AND m.status_id IS NULL) AS \"unfinished!\",\n           (SELECT COALESCE(sum(reserved_bytes), 0)::bigint FROM video_drafts\n            WHERE account_id = $1) AS \"owned!\",\n           (SELECT COALESCE(sum(d.reserved_bytes), 0)::bigint FROM media_attachments m\n            JOIN video_drafts d ON d.media_id = m.id WHERE m.status_id IS NULL) AS \"pending!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "unfinished!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "owned!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "pending!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2cf544f01f532d3a5a8f626a7a2165d8452afecf944c01a7c3ce53b7dbf78c82"
+}

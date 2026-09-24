@@ -40,7 +40,9 @@ export default defineConfig({
     { name: 'chromium-desktop', grepInvert: /@no-js/, use: { ...devices['Desktop Chrome'], ...desktop } },
     { name: 'chromium-mobile', grepInvert: /@no-js/, use: { ...devices['Desktop Chrome'], ...mobile } },
     { name: 'firefox-desktop', grepInvert: /@no-js/, use: { ...devices['Desktop Firefox'], ...desktop } },
-    { name: 'firefox-mobile', grepInvert: /@no-js/, use: { ...devices['Desktop Firefox'], ...mobile } },
+    // Firefox supports a narrow viewport and touch input, but Playwright's
+    // isMobile emulation is unsupported there and suppresses mouse pointers.
+    { name: 'firefox-mobile', grepInvert: /@no-js/, use: { ...devices['Desktop Firefox'], ...mobile, isMobile: false } },
     { name: 'webkit-desktop', grepInvert: /@no-js/, use: { ...devices['Desktop Safari'], ...desktop } },
     { name: 'webkit-mobile', grepInvert: /@no-js/, use: { ...devices['Desktop Safari'], ...mobile } },
     {

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"count!\" FROM video_publications v JOIN statuses s ON s.id = v.status_id\n           WHERE v.channel_id = $1 AND s.visibility IN ('public', 'unlisted')\n             AND s.deleted_at IS NULL -- STUBFILTER\n             AND NOT account_hidden($2, s.account_id) AND NOT account_hidden($2, v.channel_id)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a0839da45fe9befce77e84af69672a534580d820f1829a7fa2964bc35ff8ae96"
+}

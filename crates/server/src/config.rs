@@ -118,6 +118,18 @@ database_url = ""
 # ffmpeg_path = "ffmpeg"
 # ffprobe_path = "ffprobe"
 
+# Native Video uploads use the built-in background worker and local media store.
+# These limits need no companion service. The ordinary attachment uploader has
+# its own limits. A larger source limit increases the processing scratch budget.
+# [native_video]
+# max_upload_mib = 2048
+# per_account_gib = 50
+# global_gib = 1024
+# pending_gib = 8
+# unfinished_drafts = 32
+# jobs = 2
+# min_free_gib = 1
+
 # Reverse proxies whose X-Forwarded-For values are trusted. Bare IP addresses
 # are accepted and converted to host routes. Defaults to loopback only; behind
 # a proxy on another address, list that proxy's exact address or subnet — do NOT
@@ -255,6 +267,7 @@ pub struct Config {
     pub media_dir: PathBuf,
     pub ffmpeg_path: String,
     pub ffprobe_path: String,
+    pub native_video: NativeVideoConfig,
     pub smtp: Option<SmtpConfig>,
     pub trusted_proxies: Vec<String>,
     pub encryption_secret: Option<SecretString>,
@@ -278,6 +291,86 @@ pub struct AltchaConfig {
     pub min_counter: u32,
     pub max_counter: u32,
     pub expires_seconds: u64,
+}
+
+/// Native Video admission and worker budgets, independent of ordinary media.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativeVideoConfig {
+    pub max_upload_mib: u64,
+    pub per_account_gib: u64,
+    pub global_gib: u64,
+    pub pending_gib: u64,
+    pub unfinished_drafts: u32,
+    pub jobs: usize,
+    pub min_free_gib: u64,
+}
+
+impl Default for NativeVideoConfig {
+    fn default() -> Self {
+        Self {
+            max_upload_mib: 2048,
+            per_account_gib: 50,
+            global_gib: 1024,
+            pending_gib: 8,
+            unfinished_drafts: 32,
+            jobs: 2,
+            min_free_gib: 1,
+        }
+    }
+}
+
+impl NativeVideoConfig {
+    pub const MIB: u64 = 1024 * 1024;
+    pub const GIB: u64 = 1024 * Self::MIB;
+
+    #[must_use]
+    pub fn max_upload_bytes(self) -> u64 {
+        self.max_upload_mib * Self::MIB
+    }
+
+    /// A small source still gets enough room for a high-quality re-encode;
+    /// large sources cannot make an output exceed the upload ceiling.
+    #[must_use]
+    pub fn output_limit(self, source_bytes: u64) -> u64 {
+        self.max_upload_bytes()
+            .min(source_bytes.saturating_mul(4).max(256 * Self::MIB))
+    }
+
+    #[must_use]
+    pub fn processing_budget(self) -> u64 {
+        let file = self.max_upload_bytes();
+        // Compatibility MP4 plus at most two single-file HLS renditions;
+        // count each scratch output and a possible cross-filesystem copy.
+        file + 6 * file + 3 * crate::media_transcode::POSTER_FILE_LIMIT_BYTES
+    }
+
+    #[must_use]
+    pub fn storage_limits(self) -> plamenu_db::video_storage::Limits {
+        plamenu_db::video_storage::Limits {
+            per_account: i64::try_from(self.per_account_gib * Self::GIB).unwrap_or(i64::MAX),
+            global: i64::try_from(self.global_gib * Self::GIB).unwrap_or(i64::MAX),
+        }
+    }
+
+    fn validate(self) -> Result<Self, ConfigError> {
+        if !(1..=8192).contains(&self.max_upload_mib)
+            || !(1..=65_536).contains(&self.per_account_gib)
+            || !(1..=65_536).contains(&self.global_gib)
+            || self.per_account_gib > self.global_gib
+            || !(1..=1024).contains(&self.pending_gib)
+            || self.pending_gib > self.global_gib
+            || !(1..=128).contains(&self.unfinished_drafts)
+            || !(1..=4).contains(&self.jobs)
+            || !(1..=64).contains(&self.min_free_gib)
+        {
+            return Err(ConfigError::Invalid(
+                "native_video",
+                "limits must be positive, within documented bounds, and fit the global budget"
+                    .to_owned(),
+            ));
+        }
+        Ok(self)
+    }
 }
 
 impl Default for AltchaConfig {
@@ -369,6 +462,7 @@ impl std::fmt::Debug for Config {
                 &self.authorized_fetch_unsigned_profile,
             )
             .field("media_dir", &self.media_dir)
+            .field("native_video", &self.native_video)
             .field("ffmpeg_path", &self.ffmpeg_path)
             .field("ffprobe_path", &self.ffprobe_path)
             .field("smtp", &self.smtp)
@@ -480,6 +574,7 @@ struct FileConfig {
     media_dir: Option<PathBuf>,
     ffmpeg_path: Option<String>,
     ffprobe_path: Option<String>,
+    native_video: Option<FileNativeVideoConfig>,
     trusted_proxies: Option<Vec<String>>,
     encryption_secret: Option<String>,
     encryption_secret_version: Option<i32>,
@@ -500,6 +595,34 @@ struct FileAltchaConfig {
     min_counter: Option<u32>,
     max_counter: Option<u32>,
     expires_seconds: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct FileNativeVideoConfig {
+    max_upload_mib: Option<u64>,
+    per_account_gib: Option<u64>,
+    global_gib: Option<u64>,
+    pending_gib: Option<u64>,
+    unfinished_drafts: Option<u32>,
+    jobs: Option<usize>,
+    min_free_gib: Option<u64>,
+}
+
+impl FileNativeVideoConfig {
+    fn build(self) -> Result<NativeVideoConfig, ConfigError> {
+        let defaults = NativeVideoConfig::default();
+        NativeVideoConfig {
+            max_upload_mib: self.max_upload_mib.unwrap_or(defaults.max_upload_mib),
+            per_account_gib: self.per_account_gib.unwrap_or(defaults.per_account_gib),
+            global_gib: self.global_gib.unwrap_or(defaults.global_gib),
+            pending_gib: self.pending_gib.unwrap_or(defaults.pending_gib),
+            unfinished_drafts: self.unfinished_drafts.unwrap_or(defaults.unfinished_drafts),
+            jobs: self.jobs.unwrap_or(defaults.jobs),
+            min_free_gib: self.min_free_gib.unwrap_or(defaults.min_free_gib),
+        }
+        .validate()
+    }
 }
 
 impl FileAltchaConfig {
@@ -740,6 +863,7 @@ impl Config {
             })
     }
 
+    #[allow(clippy::too_many_lines)] // keeps related config validation in one place
     fn from_parsed(file: FileConfig) -> Result<Self, ConfigError> {
         let domain = validate_domain(&required(file.domain, "domain")?)?;
         let account_domain = account_domain_or_host(file.account_domain, &domain)?;
@@ -756,6 +880,7 @@ impl Config {
             .map(FileTranslationConfig::build)
             .transpose()?;
         let altcha = build_altcha_config(file.altcha)?;
+        let native_video = file.native_video.unwrap_or_default().build()?;
 
         let encryption_secret_value = required(file.encryption_secret, "encryption_secret")?;
         if encryption_secret_value.len() < 32 {
@@ -830,6 +955,7 @@ impl Config {
             media_dir: file.media_dir.unwrap_or_else(|| DEFAULT_MEDIA_DIR.into()),
             ffmpeg_path: file.ffmpeg_path.unwrap_or_else(|| "ffmpeg".to_owned()),
             ffprobe_path: file.ffprobe_path.unwrap_or_else(|| "ffprobe".to_owned()),
+            native_video,
             smtp,
             trusted_proxies,
             encryption_secret,
@@ -1200,6 +1326,7 @@ mod tests {
         assert!(config.smtp.is_none());
         assert!(config.translation.is_none());
         assert_eq!(config.db_pool_size, DEFAULT_DB_POOL_SIZE);
+        assert_eq!(config.native_video, NativeVideoConfig::default());
         assert_eq!(config.account_domain, "example.com");
         assert!(config.is_local_domain("EXAMPLE.COM"));
         assert!(config.federation.proxy_url.is_none());
@@ -1214,6 +1341,34 @@ mod tests {
         let toml = format!("{}csp_reporting = true\n", valid_minimal());
         let file: FileConfig = toml::from_str(&toml).unwrap();
         assert!(Config::from_parsed(file).unwrap().csp_reporting);
+    }
+
+    #[test]
+    fn native_video_limits_are_adjustable_and_reject_invalid_budgets() {
+        let input = format!(
+            "{}[native_video]\nmax_upload_mib = 4096\nper_account_gib = 200\nglobal_gib = 500\npending_gib = 12\nunfinished_drafts = 24\njobs = 3\nmin_free_gib = 2\n",
+            valid_minimal()
+        );
+        let file: FileConfig = toml::from_str(&input).unwrap();
+        let video = Config::from_parsed(file).unwrap().native_video;
+        assert_eq!(video.max_upload_bytes(), 4 * 1024 * NativeVideoConfig::MIB);
+        assert_eq!(video.jobs, 3);
+        assert_eq!(video.unfinished_drafts, 24);
+        assert_eq!(video.output_limit(1), 256 * NativeVideoConfig::MIB);
+        for value in [
+            "max_upload_mib = 0",
+            "jobs = 0",
+            "unfinished_drafts = 129",
+            "global_gib = 0",
+            "per_account_gib = 70000",
+        ] {
+            let file: FileConfig =
+                toml::from_str(&format!("{}[native_video]\n{value}\n", valid_minimal())).unwrap();
+            assert!(matches!(
+                Config::from_parsed(file),
+                Err(ConfigError::Invalid("native_video", _))
+            ));
+        }
     }
 
     #[test]

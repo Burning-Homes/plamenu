@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id FROM media_attachments m LEFT JOIN video_drafts d ON d.media_id = m.id\n         WHERE m.id = $1 AND m.account_id = $2 AND m.status_id IS NULL AND m.processing = 'complete'\n           AND (d.media_id IS NULL OR (d.account_id = $2 AND d.channel_id = $3\n                AND d.state = 'ready' AND d.expires_at > clock_timestamp()))\n         FOR UPDATE OF m",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6651921ab11e4fb5c49866a92f6b18a688d3726fa0106f50cf6b16d29f2f6890"
+}

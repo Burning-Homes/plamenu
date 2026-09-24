@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT media_id AS \"media_id!\", height AS \"height!\", width, frame_rate,\n               size_bytes, origin_url AS \"origin_url!\", is_audio AS \"is_audio!\"\n        FROM media_renditions\n        WHERE media_id = ANY($1)\n        UNION ALL\n        SELECT media_id, height, width, NULL::integer AS frame_rate,\n               size_bytes, file_name AS origin_url, false AS is_audio\n        FROM native_video_hls_renditions\n        WHERE media_id = ANY($1)\n        ORDER BY 7 ASC, 2 DESC, 3 DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "height!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "width",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "frame_rate",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "size_bytes",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "origin_url!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_audio!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "596d1baaf8cece030ec36b0f18e6eca567a0bdc20e76374d56c75732fb920f1e"
+}
