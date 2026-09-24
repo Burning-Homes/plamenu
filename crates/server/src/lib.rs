@@ -247,11 +247,14 @@ fn content_security_policy(
         || "'self'".to_owned(),
         |callback| format!("'self' {callback}"),
     );
+    // Federated P2P HLS needs to signal to the publisher's signed WSS tracker.
+    // Hash manifests and all media HTTP still use our same-origin proxy; do
+    // not broaden connect-src to cross-origin HTTPS.
     axum::http::HeaderValue::from_str(&format!(
         "default-src 'none'; script-src 'self' blob: 'sha256-{hash}'; \
              style-src 'self' 'sha256-ZgqGuQlekW98cv0XQjYUGCLTvc3q5MkU+2SkqlFGoTM='; \
              style-src-attr 'unsafe-inline'; \
-             img-src {media_sources}; media-src {media_sources}; connect-src 'self'; \
+             img-src {media_sources}; media-src {media_sources}; connect-src 'self' wss:; \
              worker-src 'self' blob:; frame-src https://*.{webxdc_domain}; \
              manifest-src 'self'; form-action {form_action}; \
              base-uri 'none'; frame-ancestors 'none'; object-src 'none'{reporting}"

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM remote_hls_peers WHERE media_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "15592982ad8a2eaf37fdc9ba23ad21790bee107fbb6f1e0fccb454531721e2a0"
+}

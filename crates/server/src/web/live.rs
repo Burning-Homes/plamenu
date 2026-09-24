@@ -434,7 +434,8 @@ async fn manage_inner(state: &AppState, user: &WebUser, id: i64) -> Result<Respo
             }
             form.settings-form method="post" action=(format!("/web/videos/live/{id}/rotate-key")) {
                 input type="hidden" name="csrf" value=(user.csrf);
-                button type="submit" { (locale.text("videos-live-rotate")) }
+                p.settings-field__hint id="live-rotate-warning" { (locale.text("videos-live-rotate-warning")) }
+                button type="submit" aria-describedby="live-rotate-warning" { (locale.text("videos-live-rotate")) }
             }
             @if broadcast.state != "ended" {
                 section.live-browser-publisher hidden data-live-browser

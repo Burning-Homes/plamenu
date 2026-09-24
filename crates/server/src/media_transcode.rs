@@ -743,6 +743,7 @@ pub struct PackagedHls {
     pub height: i32,
     pub bandwidth: i64,
     pub playlist: String,
+    pub segment_sha256: serde_json::Value,
 }
 
 /// Package a copy-only top quality and, when useful, a bounded 360p encode.
@@ -894,6 +895,15 @@ async fn package_one_hls(
     let file_name = format!("{stem}.draft.hls{height}.m4s");
     let bandwidth = hls_peak_bandwidth(&playlist)
         .ok_or_else(|| transcode_failed("HLS playlist has no valid segments".into()))?;
+    let hash_path = file_path.clone();
+    let hash_playlist = playlist.clone();
+    let hash_file_name = file_name.clone();
+    let segment_sha256 = tokio::task::spawn_blocking(move || {
+        native_segment_hashes(&hash_path, &hash_playlist, &hash_file_name, file_size)
+    })
+    .await
+    .map_err(|e| transcode_failed(format!("HLS hash task failed: {e}")))?
+    .map_err(transcode_failed)?;
     let playlist = playlist.replace(&local_name, &format!("/media/{file_name}"));
     Ok(PackagedHls {
         file_path,
@@ -903,7 +913,91 @@ async fn package_one_hls(
         height,
         bandwidth,
         playlist,
+        segment_sha256,
     })
+}
+
+/// Hash exactly the initialization and media byte ranges written by ffmpeg.
+/// Streaming each range in a small buffer prevents a long, high-bitrate video
+/// from growing the worker's memory footprint with its segments.
+fn native_segment_hashes(
+    path: &Path,
+    playlist: &str,
+    file_name: &str,
+    file_size: i64,
+) -> Result<serde_json::Value, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut hashes = serde_json::Map::new();
+    let mut next_offset = 0_u64;
+    let total = u64::try_from(file_size).map_err(|e| e.to_string())?;
+    let mut chunk = vec![0_u8; 64 * 1024];
+    for line in playlist.lines() {
+        let raw = if let Some(attributes) = line.strip_prefix("#EXT-X-MAP:") {
+            let marker = "BYTERANGE=\"";
+            attributes
+                .split(marker)
+                .nth(1)
+                .and_then(|tail| tail.split('"').next())
+        } else {
+            line.strip_prefix("#EXT-X-BYTERANGE:")
+        };
+        let Some(raw) = raw else { continue };
+        let (length, start) = if let Some((length, start)) = raw.split_once('@') {
+            (
+                length.parse::<u64>().map_err(|e| e.to_string())?,
+                start.parse::<u64>().map_err(|e| e.to_string())?,
+            )
+        } else {
+            (raw.parse::<u64>().map_err(|e| e.to_string())?, next_offset)
+        };
+        if length == 0 || start.checked_add(length).is_none_or(|end| end > total) {
+            return Err("HLS byte range exceeds the rendition".into());
+        }
+        if length > 64 * 1024 * 1024 {
+            // Sharing is optional. Very large segments remain ordinary HLS;
+            // they must not cause an otherwise valid video to fail processing.
+            return Ok(serde_json::json!({}));
+        }
+        next_offset = start + length;
+        file.seek(SeekFrom::Start(start))
+            .map_err(|e| e.to_string())?;
+        let mut remaining = length;
+        let mut digest = Sha256::new();
+        while remaining > 0 {
+            let amount = usize::try_from(remaining.min(chunk.len() as u64)).unwrap_or(chunk.len());
+            file.read_exact(&mut chunk[..amount])
+                .map_err(|e| e.to_string())?;
+            digest.update(&chunk[..amount]);
+            remaining -= amount as u64;
+        }
+        let mut hex = String::with_capacity(64);
+        for byte in digest.finalize() {
+            use std::fmt::Write as _;
+            write!(&mut hex, "{byte:02x}").expect("writing to a String cannot fail");
+        }
+        hashes.insert(
+            format!("{start}-{}", next_offset - 1),
+            serde_json::json!(hex),
+        );
+        if hashes.len() > 10_000 {
+            return Ok(serde_json::json!({}));
+        }
+    }
+    if hashes.len() < 2 {
+        return Ok(serde_json::json!({}));
+    }
+    let mut document = serde_json::Map::new();
+    document.insert(file_name.to_owned(), serde_json::Value::Object(hashes));
+    let document = serde_json::Value::Object(document);
+    // There are at most two native renditions. Keep their combined document
+    // comfortably below the client's 2 MiB fetch ceiling.
+    if document.to_string().len() > 900_000 {
+        return Ok(serde_json::json!({}));
+    }
+    Ok(document)
 }
 
 /// HLS BANDWIDTH describes peak segment rate, not whole-file average.
@@ -1337,6 +1431,29 @@ async fn checked_output_size(path: &Path, params: &TranscodeParams) -> Result<i6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_hls_hashes_exact_init_and_media_byte_ranges() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stream.m4s");
+        std::fs::write(&path, b"abcdefgh").unwrap();
+        let playlist = "#EXTM3U\n#EXT-X-MAP:URI=\"stream.m4s\",BYTERANGE=\"4@0\"\n#EXTINF:4,\n#EXT-X-BYTERANGE:4@4\nstream.m4s\n#EXT-X-ENDLIST\n";
+        let hashes = native_segment_hashes(&path, playlist, "published.m4s", 8).unwrap();
+        assert_eq!(
+            hashes["published.m4s"]["0-3"],
+            "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589"
+        );
+        assert_eq!(
+            hashes["published.m4s"]["4-7"],
+            "e5e088a0b66163a0a26a5e053d2a4496dc16ab6e0e3dd1adf2d16aa84a078c9d"
+        );
+        assert!(native_segment_hashes(&path, playlist, "published.m4s", 7).is_err());
+        let oversized = "#EXTM3U\n#EXT-X-MAP:URI=\"stream.m4s\",BYTERANGE=\"4@0\"\n#EXTINF:4,\n#EXT-X-BYTERANGE:67108865@4\nstream.m4s\n#EXT-X-ENDLIST\n";
+        assert_eq!(
+            native_segment_hashes(&path, oversized, "published.m4s", 67_108_869).unwrap(),
+            serde_json::json!({})
+        );
+    }
 
     #[test]
     fn hls_bandwidth_uses_peak_segment_not_file_average() {

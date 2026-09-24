@@ -57,6 +57,9 @@ pub struct ActiveSession {
     pub session_id: String,
     pub permanent: bool,
     pub playback: PlaybackOptions,
+    /// Set only for RTMP/HTTPS-FLV sessions authenticated by a stream key.
+    /// Cookie-authenticated browser capture is independent of key rotation.
+    pub ingest_key_generation: Option<i64>,
 }
 
 /// An unpublished recording whose worker may need recovery after a restart.
@@ -99,6 +102,7 @@ pub async fn recoverable_replays(pool: &PgPool) -> Result<Vec<ReplayRecovery>, D
                     dvr_window_seconds: row.dvr_window_seconds,
                     latency_mode: row.latency_mode,
                 },
+                ingest_key_generation: None,
             },
             reconnect_deadline: row.reconnect_deadline,
         })
@@ -138,6 +142,59 @@ pub async fn public_session(pool: &PgPool, media_id: i64) -> Result<Option<Strin
     )
     .fetch_optional(pool)
     .await?)
+}
+
+#[derive(Debug, Clone)]
+pub struct PublicPeerSession {
+    pub media_id: i64,
+    pub video_uuid: String,
+}
+
+/// A small batched sidecar for first-party live viewers. Peer sharing is
+/// deliberately disabled for the one-second low-latency mode, matching
+/// `PeerTube`'s own efficiency guard.
+pub async fn public_peer_sessions(
+    pool: &PgPool,
+    media_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, PublicPeerSession>, DbError> {
+    if media_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let rows = sqlx::query_as!(
+        PublicPeerSession,
+        "SELECT ls.media_id, v.uuid AS video_uuid
+         FROM native_live_sessions ls
+         JOIN native_live_broadcasts b ON b.media_id = ls.media_id
+         JOIN video_publications v ON v.media_id = b.media_id AND v.status_id = b.status_id
+         JOIN statuses s ON s.id = b.status_id
+         JOIN media_attachments m ON m.id = b.media_id AND m.live_state = 'live'
+         JOIN accounts a ON a.id = b.owner_account_id AND a.suspended_at IS NULL
+         JOIN accounts c ON c.id = b.channel_id AND c.suspended_at IS NULL
+         WHERE ls.media_id = ANY($1) AND ls.ended_at IS NULL AND b.state = 'live'
+           AND b.latency_mode <> 3 AND s.visibility IN ('public', 'unlisted')
+           AND ls.p2p_infohash IS NOT NULL",
+        media_ids,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|row| (row.media_id, row)).collect())
+}
+
+pub async fn public_infohash_exists(pool: &PgPool, infohash: &str) -> Result<bool, DbError> {
+    Ok(sqlx::query_scalar!(
+        "SELECT EXISTS (SELECT 1 FROM native_live_sessions ls
+         JOIN native_live_broadcasts b ON b.media_id = ls.media_id
+         JOIN statuses s ON s.id = b.status_id
+         JOIN media_attachments m ON m.id = b.media_id AND m.live_state = 'live'
+         JOIN accounts a ON a.id = b.owner_account_id AND a.suspended_at IS NULL
+         JOIN accounts c ON c.id = b.channel_id AND c.suspended_at IS NULL
+         WHERE ls.p2p_infohash = $1 AND ls.ended_at IS NULL AND b.state = 'live'
+           AND b.latency_mode <> 3 AND s.visibility IN ('public', 'unlisted'))",
+        infohash,
+    )
+    .fetch_one(pool)
+    .await?
+    .unwrap_or(false))
 }
 
 pub async fn exists(pool: &PgPool, media_id: i64) -> Result<bool, DbError> {
@@ -265,7 +322,7 @@ pub async fn claim(pool: &PgPool, key_hash: &[u8; 32]) -> Result<Option<ActiveSe
     let mut tx = pool.begin().await?;
     let row = sqlx::query!(
         "SELECT media_id, status_id, owner_account_id, permanent,
-                dvr_window_seconds, latency_mode FROM native_live_broadcasts
+                dvr_window_seconds, latency_mode, key_generation FROM native_live_broadcasts
          WHERE ingest_key_hash = $1 AND status_id IS NOT NULL AND state <> 'ended'
          FOR UPDATE",
         key_hash.as_slice(),
@@ -286,6 +343,7 @@ pub async fn claim(pool: &PgPool, key_hash: &[u8; 32]) -> Result<Option<ActiveSe
             dvr_window_seconds: row.dvr_window_seconds,
             latency_mode: row.latency_mode,
         },
+        Some(row.key_generation),
     )
     .await?;
     tx.commit().await?;
@@ -325,6 +383,7 @@ pub async fn claim_owned(
             dvr_window_seconds: row.dvr_window_seconds,
             latency_mode: row.latency_mode,
         },
+        None,
     )
     .await?;
     tx.commit().await?;
@@ -338,6 +397,7 @@ async fn activate(
     owner_account_id: i64,
     permanent: bool,
     playback: PlaybackOptions,
+    ingest_key_generation: Option<i64>,
 ) -> Result<Option<ActiveSession>, DbError> {
     let generation = sqlx::query_scalar!(
         "SELECT COALESCE(max(generation), 0) + 1 FROM native_live_sessions WHERE media_id = $1",
@@ -346,11 +406,22 @@ async fn activate(
     .fetch_one(&mut **tx)
     .await?
     .unwrap_or(1);
+    let publication_uuid = sqlx::query_scalar!(
+        "SELECT uuid FROM video_publications WHERE media_id = $1 AND status_id = $2",
+        media_id,
+        status_id,
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+    let p2p_infohash = publication_uuid
+        .as_deref()
+        .map(|uuid| crate::native_video_hls::p2p_infohash(uuid, 0));
     let session_id = sqlx::query_scalar!(
-        "INSERT INTO native_live_sessions (media_id, generation)
-         VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING session_id",
+        "INSERT INTO native_live_sessions (media_id, generation, p2p_infohash)
+         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING session_id",
         media_id,
         generation,
+        p2p_infohash,
     )
     .fetch_optional(&mut **tx)
     .await?;
@@ -384,7 +455,29 @@ async fn activate(
         session_id,
         permanent,
         playback,
+        ingest_key_generation,
     }))
+}
+
+/// A rotated key revokes an already connected key-authenticated publisher.
+/// The session fence also rejects a delayed poll from an older generation.
+pub async fn ingest_key_current(pool: &PgPool, session: &ActiveSession) -> Result<bool, DbError> {
+    let Some(generation) = session.ingest_key_generation else {
+        return Ok(true);
+    };
+    Ok(sqlx::query_scalar!(
+        "SELECT EXISTS (SELECT 1 FROM native_live_broadcasts b
+         JOIN native_live_sessions ls ON ls.media_id = b.media_id
+         WHERE b.media_id = $1 AND b.status_id = $2 AND b.state = 'live'
+           AND b.key_generation = $3 AND ls.session_id = $4 AND ls.ended_at IS NULL)",
+        session.media_id,
+        session.status_id,
+        generation,
+        session.session_id,
+    )
+    .fetch_one(pool)
+    .await?
+    .unwrap_or(false))
 }
 
 /// The generation fence prevents a delayed disconnect from stopping a newer
@@ -945,6 +1038,7 @@ pub async fn recover_orphaned(pool: &PgPool) -> Result<Vec<ActiveSession>, DbErr
                 dvr_window_seconds: row.dvr_window_seconds,
                 latency_mode: row.latency_mode,
             },
+            ingest_key_generation: None,
         })
         .collect();
     for row in &sessions {

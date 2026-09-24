@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO remote_hls_peers (media_id, video_uuid, trackers, sha256_url)\n             VALUES ($1, $2, $3, $4)\n             ON CONFLICT (media_id) DO UPDATE SET\n                 video_uuid = EXCLUDED.video_uuid,\n                 trackers = EXCLUDED.trackers,\n                 sha256_url = EXCLUDED.sha256_url",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fce52fe7e1e39a35d15a3199ab8e59f8b1f5d01b3fd2f07560ee8f07ad7fc216"
+}

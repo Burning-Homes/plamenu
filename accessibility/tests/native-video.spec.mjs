@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -150,7 +151,27 @@ async function publish(page, projectName, noScript) {
   const lowPlaylistPath = masterBody.split('\n').find(line => line.includes('/native/360/index.m3u8'));
   const lowPlaylist = await page.request.get(lowPlaylistPath);
   expect(lowPlaylist.ok()).toBeTruthy();
-  expect(await lowPlaylist.text()).toContain('#EXT-X-BYTERANGE:');
+  const lowBody = await lowPlaylist.text();
+  expect(lowBody).toContain('#EXT-X-BYTERANGE:');
+  const manifestUrl = masterUrl.replace('/master.m3u8', '/sha256.json');
+  const manifestResponse = await page.request.get(manifestUrl);
+  expect(manifestResponse.ok()).toBeTruthy();
+  const manifest = await manifestResponse.json();
+  const [range, relativeFile] = [lowBody.match(/#EXT-X-BYTERANGE:(\d+)@(\d+)/),
+    lowBody.split('\n').find(line => line.startsWith('/media/') && line.endsWith('.m4s'))];
+  expect(range).toBeTruthy();
+  expect(relativeFile).toBeTruthy();
+  const start = Number(range[2]);
+  const end = start + Number(range[1]) - 1;
+  const bytes = await page.request.get(relativeFile, { headers: { Range: `bytes=${start}-${end}` } });
+  expect(bytes.status()).toBe(206);
+  const expectedHash = manifest[relativeFile.split('/').pop()]?.[`${start}-${end}`];
+  expect(expectedHash).toBe(createHash('sha256').update(await bytes.body()).digest('hex'));
+  if (!noScript) {
+    expect(await player.getAttribute('data-p2p-uuid')).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await player.getAttribute('data-p2p-trackers')).toContain('/tracker/socket');
+    await expect(page.locator('.media__p2p-toggle')).toBeVisible();
+  }
   // Exercise the browser's real decoder and WebVTT engine, also with page
   // scripts disabled. This is not a claim about native-control keyboard UX.
   await player.evaluate(video => {

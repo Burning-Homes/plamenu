@@ -698,6 +698,10 @@ pub fn router() -> Router<AppState> {
         .route(assets::EMOJI_CATALOG_PATH, get(assets::emoji_catalog))
         .route("/assets/webxdc-host.js", get(assets::webxdc_host_js))
         .route("/assets/hls.min.js", get(assets::hls_js))
+        .route(
+            "/assets/p2p-media-loader-hlsjs.min.js",
+            get(assets::p2p_hls_js),
+        )
         .route("/assets/live-broadcast.js", get(assets::live_broadcast_js))
         .route("/manifest.webmanifest", get(assets::manifest))
         .route("/sw.js", get(assets::sw_js))

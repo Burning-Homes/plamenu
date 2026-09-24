@@ -75,6 +75,9 @@ pub async fn publish(
             Ok(Some(Ok(bytes))) => {
                 for chunk in bytes.chunks(CHUNK_BYTES) {
                     if sender.sender.send(chunk.to_vec()).await.is_err() {
+                        if sender.is_revoked() {
+                            return Err(ApiError::Unauthorized("Stream key revoked".into()));
+                        }
                         return Err(ApiError::BadRequest("Unsupported FLV stream".into()));
                     }
                 }

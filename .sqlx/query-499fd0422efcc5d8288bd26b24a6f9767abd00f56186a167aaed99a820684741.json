@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM native_live_sessions ls\n         JOIN native_live_broadcasts b ON b.media_id = ls.media_id\n         JOIN statuses s ON s.id = b.status_id\n         JOIN media_attachments m ON m.id = b.media_id AND m.live_state = 'live'\n         JOIN accounts a ON a.id = b.owner_account_id AND a.suspended_at IS NULL\n         JOIN accounts c ON c.id = b.channel_id AND c.suspended_at IS NULL\n         WHERE ls.p2p_infohash = $1 AND ls.ended_at IS NULL AND b.state = 'live'\n           AND b.latency_mode <> 3 AND s.visibility IN ('public', 'unlisted'))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "499fd0422efcc5d8288bd26b24a6f9767abd00f56186a167aaed99a820684741"
+}

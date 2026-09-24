@@ -2865,6 +2865,7 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                             .and_then(|h| h.get("master"))
                             .and_then(Value::as_str)
                             .filter(|s| !s.is_empty());
+                        @let p2p = item.get("hls").and_then(|h| h.get("p2p"));
                         // A live broadcast is playable only while it is on air.
                         // Off air there is no `url` and no playlist, so the tile
                         // shows the poster and says which of the two it is —
@@ -2876,10 +2877,14 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                         @match live_state {
                             Some("waiting" | "interrupted" | "ended") => (offline_live(
                                 item, preview, alt, width, height, language, ctx)),
-                            _ => figure.media.media--video {
+                            _ => figure.media.media--video data-p2p=[p2p.map(|_| "true")] {
                                 @if let Some(master) = hls_master {
                                     video src=(url) poster=(preview) controls playsinline preload="none"
                                         data-hls=(master) data-src=(url)
+                                        data-p2p-uuid=[p2p.and_then(|p| p.get("video_uuid")).and_then(Value::as_str)]
+                                        data-p2p-trackers=[p2p.and_then(|p| p.get("trackers")).map(Value::to_string)]
+                                        data-p2p-sha256=[p2p.and_then(|p| p.get("sha256_url")).and_then(Value::as_str)]
+                                        data-p2p-swarm=[p2p.and_then(|p| p.get("swarm_id")).and_then(Value::as_str)]
                                         data-live=[live_state]
                                         data-live-dvr=[item.get("live").and_then(|l| l.get("dvr_window_seconds")).and_then(Value::as_i64)]
                                         width=[width] height=[height]
@@ -2901,6 +2906,15 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                                 srclang=(language.unwrap_or("und"))
                                                 label=(ctx.locale.text("status-captions")) default;
                                         }
+                                    }
+                                }
+                                @if p2p.is_some() {
+                                    div.media__p2p hidden {
+                                        label {
+                                            input type="checkbox" class="media__p2p-toggle" checked;
+                                            (ctx.locale.text("status-p2p-enabled"))
+                                        }
+                                        small { (ctx.locale.text("status-p2p-explanation")) }
                                     }
                                 }
                                 @if live_state == Some("live") {

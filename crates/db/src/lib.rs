@@ -83,6 +83,7 @@ pub mod relay;
 pub mod remote_fetch_failure;
 pub mod remote_group;
 pub mod remote_history;
+pub mod remote_hls_peers;
 pub mod remote_live_schedules;
 pub mod remote_stream_source;
 pub mod reply_fetch;

@@ -3985,6 +3985,171 @@
   // progressive `src` we replace on first play. hls.js is a ~400 KB asset, so
   // it is loaded lazily on the first play, never on a timeline scroll.
   let hlsLoading = null;
+  let p2pLoading = null;
+  const P2P_PREF = "plamenu:p2p-enabled";
+  let p2pChoice = null;
+
+  function peerSharingEnabled() {
+    if (p2pChoice !== null) return p2pChoice;
+    try { return localStorage.getItem(P2P_PREF) !== "false"; }
+    catch (_err) { return true; }
+  }
+
+  function loadP2P(cb) {
+    const engine = window.p2pml?.hlsjs?.HlsJsP2PEngine;
+    if (engine) return cb(engine);
+    if (p2pLoading) return p2pLoading.push(cb);
+    p2pLoading = [cb];
+    const script = document.createElement("script");
+    script.src = "/assets/p2p-media-loader-hlsjs.min.js?v=4.0.0";
+    const flush = (value) => {
+      const queue = p2pLoading || [];
+      p2pLoading = null;
+      queue.forEach((fn) => fn(value));
+    };
+    script.onload = () => flush(window.p2pml?.hlsjs?.HlsJsP2PEngine || null);
+    script.onerror = () => flush(null);
+    document.head.appendChild(script);
+  }
+
+  // A published Video supplies its checksum manifest. Read
+  // that *before* constructing a peer engine (which could contact a tracker).
+  // Without a bounded, usable manifest, regular HTTP HLS remains available.
+  async function peerHashes(url, live = false) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
+    try {
+      const response = await fetch(url, { signal: controller.signal, mode: "cors",
+        cache: live ? "no-store" : "default" });
+      if (!response.ok || !response.body ||
+          Number(response.headers.get("content-length") || 0) > 2 * 1024 * 1024) return null;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let content = "";
+      let size = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > 2 * 1024 * 1024) {
+          await reader.cancel();
+          return null;
+        }
+        content += decoder.decode(value, { stream: true });
+      }
+      content += decoder.decode();
+      const hashes = JSON.parse(content);
+      return hashes && typeof hashes === "object" && !Array.isArray(hashes) ? hashes : null;
+    } catch (_err) {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  function peerSegmentValidator(hashes, checksumUrl, live) {
+    let currentHashes = hashes;
+    let refreshPending = null;
+    return async (url, byteRange, data) => {
+      try {
+        const proxied = new URL(url, location.href);
+        let encodedOrigin = proxied.searchParams.get("u");
+        if (!encodedOrigin) {
+          const livePath = proxied.pathname.match(/^\/media\/hls\/\d+\/live\/([A-Za-z0-9_-]+)\.[A-Za-z0-9]+$/);
+          encodedOrigin = livePath?.[1];
+        }
+        const padded = encodedOrigin?.replace(/-/g, "+").replace(/_/g, "/");
+        const origin = padded
+          ? new TextDecoder().decode(Uint8Array.from(atob(padded), (character) => character.charCodeAt(0)))
+          : url;
+        const filename = new URL(origin, location.href)
+          .pathname.split("/").pop();
+        const expectedHash = () => {
+          const entry = Object.hasOwn(currentHashes, filename) ? currentHashes[filename] : null;
+          if (!entry || typeof entry !== "object") return entry;
+          const start = byteRange?.start ?? Number(proxied.searchParams.get("s"));
+          const length = Number(proxied.searchParams.get("l"));
+          const end = byteRange?.end ?? (start + length - 1);
+          const key = `${start}-${end}`;
+          return Object.hasOwn(entry, key) ? entry[key] : null;
+        };
+        let expected = expectedHash();
+        for (let attempt = 0; live && typeof expected !== "string" && attempt < 6; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          if (!refreshPending) {
+            refreshPending = peerHashes(checksumUrl, true).finally(() => { refreshPending = null; });
+          }
+          const updated = await refreshPending;
+          if (updated) currentHashes = updated;
+          expected = expectedHash();
+        }
+        if (typeof expected !== "string" || !/^[a-f0-9]{64}$/.test(expected)) return false;
+        const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+        const actual = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+        return actual === expected;
+      } catch (_err) {
+        return false;
+      }
+    };
+  }
+
+  async function peerOptions(video, live) {
+    if (!peerSharingEnabled() || !window.RTCPeerConnection || !window.crypto?.subtle) return null;
+    const uuid = video.dataset.p2pUuid;
+    const swarmId = video.dataset.p2pSwarm;
+    const checksumUrl = video.dataset.p2pSha256;
+    let trackers;
+    try { trackers = JSON.parse(video.dataset.p2pTrackers || "[]"); }
+    catch (_err) { return null; }
+    if (!uuid || !swarmId || !checksumUrl || !Array.isArray(trackers) || !trackers.length) return null;
+    const hashes = await peerHashes(checksumUrl, live);
+    if (!hashes) return null;
+    return {
+      core: {
+        announceTrackers: trackers,
+        swarmId,
+        streamSwarmIdBuilder: ({ peerProtocolVersion, streamType, properties }) => {
+          const height = properties.height || Infinity;
+          const width = properties.width || Infinity;
+          const resolution = Math.min(height, width);
+          return `pt-${peerProtocolVersion}-${uuid}-${streamType}-default-${Number.isFinite(resolution) ? resolution : "default"}`;
+        },
+        validateP2PSegment: peerSegmentValidator(hashes, checksumUrl, live),
+        isP2PUploadDisabled: navigator.connection?.type === "cellular" || !!navigator.connection?.saveData,
+        highDemandTimeWindow: live ? 4 : 15,
+        ...(live ? {} : { segmentMemoryStorageLimit: 1024 }),
+      },
+      onHlsJsCreated: (hls) => {
+        video.dataset.p2pActive = "true";
+        hls.p2pEngine.addEventListener("onStreamAdded", ({ stream }) => {
+          if (stream.type === "main") video.dataset.p2pInfohash = stream.infoHash;
+        });
+        hls.p2pEngine.addEventListener("onPeerConnect", () => {
+          video.dataset.p2pPeers = String(Number(video.dataset.p2pPeers || 0) + 1);
+        });
+        hls.p2pEngine.addEventListener("onChunkDownloaded", (bytes, source) => {
+          if (source === "p2p") {
+            video.dataset.p2pDownloaded = String(Number(video.dataset.p2pDownloaded || 0) + bytes);
+          }
+        });
+        hls.p2pEngine.addEventListener("onSegmentLoaded", ({ downloadSource, bytesLength }) => {
+          if (downloadSource === "p2p") {
+            // This event fires only after the checksum validator accepted the
+            // complete segment; chunk events alone are not proof of integrity.
+            video.dataset.p2pValidated = String(Number(video.dataset.p2pValidated || 0) + bytesLength);
+          }
+        });
+        hls.p2pEngine.addEventListener("onSegmentError", ({ error }) => {
+          if (error?.type === "p2p-segment-validation-failed") {
+            video.dataset.p2pValidationErrors = String(Number(video.dataset.p2pValidationErrors || 0) + 1);
+          }
+        });
+        hls.p2pEngine.addEventListener("onChunkUploaded", (bytes) => {
+          video.dataset.p2pUploaded = String(Number(video.dataset.p2pUploaded || 0) + bytes);
+        });
+      },
+    };
+  }
   function loadHls(cb) {
     if (window.Hls) return cb(window.Hls);
     if (hlsLoading) return hlsLoading.push(cb);
@@ -4082,6 +4247,24 @@
     if (!hlsUrl) return;
     const goLive = video.closest("figure")?.querySelector(".media__go-live");
     let hlsPlayer = null;
+    const choice = video.closest("figure")?.querySelector(".media__p2p-toggle");
+    if (choice && window.RTCPeerConnection && window.crypto?.subtle) {
+      choice.checked = peerSharingEnabled();
+      choice.closest(".media__p2p").hidden = false;
+      choice.addEventListener("change", () => {
+        p2pChoice = choice.checked;
+        try { localStorage.setItem(P2P_PREF, choice.checked ? "true" : "false"); }
+        catch (_err) { /* The choice still applies to this playback. */ }
+        document.querySelectorAll(".media__p2p-toggle").forEach((other) => {
+          other.checked = choice.checked;
+        });
+        if (hlsPlayer?.p2pEngine) {
+          hlsPlayer.p2pEngine.applyDynamicConfig({
+            core: { isP2PDisabled: !choice.checked, isP2PUploadDisabled: !choice.checked },
+          });
+        }
+      });
+    }
     if (goLive) {
       const liveEdge = () => {
         if (!video.seekable.length) return null;
@@ -4150,19 +4333,28 @@
             // edge and is told to chase it back after a buffer hole rather
             // than sitting where it fell behind.
             const live = video.dataset.live === "live";
-            const hls = new Hls(
-              live
-                ? {
-                    capLevelToPlayerSize: true,
-                    lowLatencyMode: true,
-                    liveSyncDurationCount: 3,
-                    // The origin deletes segments as the window slides; a
-                    // player that keeps retrying a gone segment never
-                    // recovers, so let it jump the gap instead.
-                    maxBufferHole: 1,
-                  }
-                : { capLevelToPlayerSize: true },
-            );
+            const hlsConfig = live
+              ? {
+                  capLevelToPlayerSize: true,
+                  lowLatencyMode: true,
+                  liveSyncDurationCount: 3,
+                  // The origin deletes segments as the window slides; a
+                  // player that keeps retrying a gone segment never
+                  // recovers, so let it jump the gap instead.
+                  maxBufferHole: 1,
+                }
+              : { capLevelToPlayerSize: true };
+            // The peer module is lazy, and its constructor is reached only
+            // after the viewer had a chance to opt out and checksums loaded.
+            // A failed peer setup must not block ordinary HLS playback.
+            const startHls = (options, Engine) => {
+              let hls;
+              try {
+                const Player = options && Engine ? Engine.injectMixin(Hls) : Hls;
+                hls = new Player(options ? { ...hlsConfig, p2p: options } : hlsConfig);
+              } catch (_err) {
+                hls = new Hls(hlsConfig);
+              }
             hlsPlayer = hls;
             hls.loadSource(hlsUrl);
             hls.attachMedia(video);
@@ -4194,6 +4386,11 @@
             hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
               buildQualityMenu(video, hls, Hls);
             });
+            };
+            peerOptions(video, live).then((options) => {
+              if (!options || !peerSharingEnabled()) return startHls(null, null);
+              loadP2P((Engine) => startHls(Engine && peerSharingEnabled() ? options : null, Engine));
+            }).catch(() => startHls(null, null));
           } else if (native) {
             video.src = hlsUrl; // native HLS (Safari/iOS)
             reloadExternalTracks();

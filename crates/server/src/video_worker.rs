@@ -402,8 +402,17 @@ async fn store(
     {
         return Err(lost_claim());
     }
-    let hls_rows: Vec<_> = hls
-        .iter()
+    let hls_rows = hls_rows(claim, hls);
+    native_video_hls::replace(&mut tx, claim.media_id, claim.generation, &hls_rows).await?;
+    if !video_draft::mark_ready(&mut tx, claim).await? {
+        return Err(lost_claim());
+    }
+    tx.commit().await.map_err(plamenu_db::DbError::from)?;
+    Ok(())
+}
+
+fn hls_rows(claim: &video_draft::Claim, hls: &[PackagedHls]) -> Vec<native_video_hls::Rendition> {
+    hls.iter()
         .map(|item| native_video_hls::Rendition {
             media_id: claim.media_id,
             generation: claim.generation,
@@ -413,14 +422,13 @@ async fn store(
             size_bytes: item.file_size,
             file_name: item.file_name.clone(),
             playlist: item.playlist.clone(),
+            segment_sha256: item
+                .segment_sha256
+                .get(&item.file_name)
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({})),
         })
-        .collect();
-    native_video_hls::replace(&mut tx, claim.media_id, claim.generation, &hls_rows).await?;
-    if !video_draft::mark_ready(&mut tx, claim).await? {
-        return Err(lost_claim());
-    }
-    tx.commit().await.map_err(plamenu_db::DbError::from)?;
-    Ok(())
+        .collect()
 }
 
 #[cfg(test)]

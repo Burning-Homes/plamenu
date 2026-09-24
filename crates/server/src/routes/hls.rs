@@ -26,7 +26,7 @@
 //! permanent on-disk ledger.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::extract::{Path, Query, State};
@@ -34,7 +34,7 @@ use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
-use plamenu_db::{media, media_fetch_failure, native_video_hls};
+use plamenu_db::{media, media_fetch_failure, native_video_hls, remote_hls_peers};
 use serde::Deserialize;
 
 use super::hls_live;
@@ -58,6 +58,78 @@ const M3U8: &str = "application/vnd.apple.mpegurl";
 /// advertises a giant `#EXT-X-BYTERANGE` from making us fetch + store a huge
 /// "segment" (disk/bandwidth `DoS`).
 const MAX_SEGMENT_BYTES: u64 = 64 * 1024 * 1024;
+/// Many viewers request the same checksums. Keep at most 64 documents (512 KiB
+/// each): one minute for immutable VOD and one second for rolling live hashes.
+/// A larger document still works but never fills the in-process cache.
+type ChecksumCache = Mutex<HashMap<String, (Instant, Vec<u8>, bool)>>;
+static SHA_CACHE: LazyLock<ChecksumCache> = LazyLock::new(|| Mutex::new(HashMap::new()));
+type ChecksumFlights = Mutex<HashMap<String, (Instant, Arc<tokio::sync::Mutex<()>>)>>;
+static SHA_FLIGHTS: LazyLock<ChecksumFlights> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// One origin checksum fetch per URL at a time. A burst of live viewers sees
+/// the same short-lived manifest instead of stampeding `PeerTube` every second.
+fn checksum_flight(url: &str) -> Arc<tokio::sync::Mutex<()>> {
+    let mut flights = SHA_FLIGHTS.lock_or_recover();
+    flights.retain(|_, (at, lock)| {
+        at.elapsed() < Duration::from_secs(60) || Arc::strong_count(lock) > 1
+    });
+    if let Some((at, lock)) = flights.get_mut(url) {
+        *at = Instant::now();
+        return Arc::clone(lock);
+    }
+    if flights.len() >= 64
+        && let Some(oldest) = flights
+            .iter()
+            .filter(|(_, (_, lock))| Arc::strong_count(lock) == 1)
+            .min_by_key(|(_, (at, _))| at)
+            .map(|(key, _)| key.clone())
+    {
+        flights.remove(&oldest);
+    }
+    let lock = Arc::new(tokio::sync::Mutex::new(()));
+    if flights.len() < 64 {
+        flights.insert(url.to_owned(), (Instant::now(), Arc::clone(&lock)));
+    }
+    lock
+}
+
+fn checksum_cache_get(url: &str, live: bool) -> Option<Vec<u8>> {
+    let ttl = if live {
+        Duration::from_secs(1)
+    } else {
+        Duration::from_secs(60)
+    };
+    SHA_CACHE
+        .lock_or_recover()
+        .get(url)
+        .and_then(|(at, bytes, cached_live)| {
+            (*cached_live == live && at.elapsed() < ttl).then(|| bytes.clone())
+        })
+}
+
+fn checksum_cache_put(url: &str, bytes: &[u8], live: bool) {
+    if bytes.len() > 512 * 1024 {
+        return;
+    }
+    let mut cache = SHA_CACHE.lock_or_recover();
+    cache.retain(|_, (at, _, cached_live)| {
+        at.elapsed()
+            < if *cached_live {
+                Duration::from_secs(1)
+            } else {
+                Duration::from_secs(60)
+            }
+    });
+    if cache.len() >= 64
+        && let Some(oldest) = cache
+            .iter()
+            .min_by_key(|(_, (at, _, _))| at)
+            .map(|(key, _)| key.clone())
+    {
+        cache.remove(&oldest);
+    }
+    cache.insert(url.to_owned(), (Instant::now(), bytes.to_vec(), live));
+}
 
 // ---------------------------------------------------------------------------
 // Single-flight: concurrent first-plays of the SAME segment coalesce to one
@@ -195,6 +267,78 @@ pub async fn master(
             Err(err)
         }
     }
+}
+
+/// Small same-origin checksum document for a signed remote HLS Video. This
+/// keeps the normal page CSP's HTTP `connect-src` same-origin; only explicit
+/// peer-tracker `WebSockets` are allowed cross-origin. A missing/unsafe origin
+/// document simply disables P2P in the browser, never ordinary HLS playback.
+pub async fn sha256_manifest(
+    State(state): State<AppState>,
+    Path(media_id): Path<i64>,
+) -> Result<Response, ApiError> {
+    if let Some(response) = super::native_live_hls::sha256_manifest(&state, media_id).await? {
+        return Ok(response);
+    }
+    if let Some(manifest) = native_video_hls::public_sha256(&state.pool, media_id).await? {
+        return Ok((
+            [
+                (header::CONTENT_TYPE, "application/json"),
+                (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            ],
+            serde_json::to_vec(&manifest).map_err(|e| ApiError::Internal(Box::new(e)))?,
+        )
+            .into_response());
+    }
+    let lane = lane(&state, media_id).await?;
+    let lane = if lane.live {
+        crate::live_refresh::refresh_for_media(&state, media_id).await;
+        lane_reload(&state, media_id).await?
+    } else {
+        lane
+    };
+    if lane.live && !lane.on_air {
+        return Err(ApiError::NotFound);
+    }
+    let peers = remote_hls_peers::for_media(&state.pool, &[media_id])
+        .await?
+        .remove(&media_id)
+        .ok_or(ApiError::NotFound)?;
+    let origin = url::Url::parse(&peers.sha256_url).map_err(|_| ApiError::NotFound)?;
+    let master = url::Url::parse(&lane.master_url).map_err(|_| ApiError::NotFound)?;
+    if origin.host_str() != master.host_str()
+        || origin.port_or_known_default() != master.port_or_known_default()
+    {
+        return Err(ApiError::NotFound);
+    }
+    let flight = checksum_flight(&peers.sha256_url);
+    let _guard = flight.lock().await;
+    let bytes = if let Some(cached) = checksum_cache_get(&peers.sha256_url, lane.live) {
+        cached
+    } else {
+        let fetched = state
+            .federation
+            .fetch_media_limited(&peers.sha256_url, 2 * 1024 * 1024)
+            .await
+            .map_err(|_| ApiError::NotFound)?;
+        checksum_cache_put(&peers.sha256_url, &fetched.bytes, lane.live);
+        fetched.bytes
+    };
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/json"),
+            (
+                header::CACHE_CONTROL,
+                if lane.live {
+                    "no-store"
+                } else {
+                    "public, max-age=60"
+                },
+            ),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 /// A generation-fenced local rendition playlist. The contained single-file

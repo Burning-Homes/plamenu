@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO native_live_sessions (media_id, generation)\n         VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING session_id",
+  "query": "INSERT INTO native_live_sessions (media_id, generation, p2p_infohash)\n         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING session_id",
   "describe": {
     "columns": [
       {
@@ -18,12 +18,13 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Int8"
+        "Int8",
+        "Text"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "aef0b22b4d1efaec2abd5cd99fb80eaa5b95e5c554f995087e0a3bb46c67af14"
+  "hash": "3d31eec86849aec3e9eca7277632d2975dc9b79ec3215677be989f36abc4b1d3"
 }

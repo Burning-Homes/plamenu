@@ -1,6 +1,10 @@
 """Native RTMP/HTTPS-FLV -> local HLS/MP4 -> PeerTube lifecycle."""
 
 import re
+import hashlib
+import asyncio
+import json
+import ssl
 import subprocess
 import os
 import tempfile
@@ -9,6 +13,7 @@ from pathlib import Path
 
 import pytest
 import requests
+import websockets
 from plamenu_e2e import config, peertube, unique
 from plamenu_e2e.api import Api
 from plamenu_e2e.db import Db
@@ -187,6 +192,7 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
 
             live = wait_for(local_live, desc=f"{transport} publisher switches native live on air")
             assert "scheduled_at" not in live["live"], "the announcement is consumed at start"
+            assert "p2p" not in live.get("hls", {}), "low-latency playback stays server-only"
             assert live["url"].endswith("/stream.mp4"), live
             assert live["hls"]["master"].endswith("/master.m3u8"), live
             master = wait_for(
@@ -213,6 +219,13 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
             data = requests.get(config.PLAMENU_URL + segment, verify=False, timeout=20)
             data.raise_for_status()
             assert data.content[0] == 0x47, "MPEG-TS sync byte"
+            hashes = requests.get(
+                f"{config.PLAMENU_URL}/media/hls/{media_id}/sha256.json",
+                verify=False, timeout=20,
+            )
+            hashes.raise_for_status()
+            assert hashes.headers["Cache-Control"] == "no-store"
+            assert hashes.json()[segment.rsplit("/", 1)[1]] == hashlib.sha256(data.content).hexdigest()
             with requests.get(live["url"], verify=False, timeout=(5, 30), stream=True) as mp4:
                 mp4.raise_for_status()
                 prefix = next(mp4.iter_content(chunk_size=4096))
@@ -221,6 +234,11 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
             assert "data-hls=" in page.text and "<video" in page.text
             assert "/stream.mp4" in page.text, "no-JS video source"
             assert "Go live" in page.text and 'data-live-dvr="300"' in page.text
+            low_latency_ap = plamenu_api.ap_get(
+                waiting_status["uri"].removeprefix(config.PLAMENU_URL)
+            )
+            assert not any(link.get("name") == "tracker-websocket"
+                           for link in low_latency_ap["url"])
 
         with step("PeerTube receives the on-air Update"):
             remote = wait_for(
@@ -271,6 +289,10 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
                 f"{config.PLAMENU_URL}/media/hls/{media_id}/master.m3u8",
                 verify=False,
                 timeout=20,
+            ).status_code == 404
+            assert requests.get(
+                f"{config.PLAMENU_URL}/media/hls/{media_id}/sha256.json",
+                verify=False, timeout=20,
             ).status_code == 404
             remote_observation = {}
             def remote_replay_check():
@@ -339,6 +361,321 @@ def _remote_live_schedule(pt, uuid: str, planned: str):
     except peertube.PeertubeError:
         return None
     return live if live.get("schedules") and live["schedules"][0]["startAt"].startswith(planned) else None
+
+
+@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.federation(direction="outbound", peer="peertube")
+def test_native_live_peer_delivery_in_both_first_party_players(
+    plamenu_api: Api, plamenu_user, db: Db,
+):
+    """An actual RTMP broadcast exchanges SHA-checked segments with PeerTube."""
+    pt = peertube.root()
+    browser = requests.Session()
+    browser.verify = False
+    name = unique("livepeers")[:30]
+    title = f"Live peers {name}"
+    channel = plamenu_api.post(
+        "/api/v1/video_channels", username=name, display_name="Live peer tests"
+    )
+    status_id = None
+    publisher = None
+    media_id = None
+    try:
+        pt.post("/api/v1/users/me/subscriptions", uri=f"{name}@{config.PLAMENU_DOMAIN}")
+        login = browser.post(
+            f"{config.PLAMENU_URL}/login",
+            data={"email": plamenu_user.email, "password": plamenu_user.password},
+            allow_redirects=False, timeout=30,
+        )
+        assert login.status_code == 303
+        form = browser.get(f"{config.PLAMENU_URL}/videos/live/new", timeout=30)
+        form.raise_for_status()
+        csrf = re.search(r'name="csrf" value="([^"]+)"', form.text).group(1)
+        created = browser.post(
+            f"{config.PLAMENU_URL}/web/videos/live",
+            data={"csrf": csrf, "channel": channel["id"], "title": title,
+                  "description": "Peer-assisted live test pattern with audible tone.",
+                  "language": "en", "visibility": "public", "dvr_minutes": "5",
+                  "latency": "balanced"},
+            timeout=30,
+        )
+        assert created.status_code == 200, created.text[:700]
+        status_id = re.search(r'/videos/live/(\d+)', created.text).group(1)
+        inputs = re.findall(r'<input type="text" readonly value="([^"]+)"', created.text)
+        assert len(inputs) in (3, 4), created.text[:1000]
+        server = inputs[0]
+        key = inputs[2] if len(inputs) == 4 else inputs[1]
+        waiting_status = plamenu_api.get(f"/api/v1/statuses/{status_id}")
+        media_id = waiting_status["media_attachments"][0]["id"]
+        uuid = db.conn.execute(
+            "SELECT uuid FROM video_publications WHERE status_id = %s", (int(status_id),)
+        ).fetchone()[0]
+        assert "p2p" not in waiting_status["media_attachments"][0].get("hls", {})
+
+        publisher = subprocess.Popen(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re",
+             "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30",
+             "-f", "lavfi", "-i", "sine=frequency=440",
+             "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+             "-g", "60", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
+             "-f", "flv", f"{server}/{key}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, stdin=subprocess.PIPE,
+        )
+
+        def live_item():
+            item = plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]
+            return item if item.get("live", {}).get("state") == "live" and item.get("hls", {}).get("p2p") else None
+
+        live = wait_for(live_item, desc="on-air broadcast exposes a peer swarm", timeout=60)
+        swarm = live["hls"]["p2p"]
+        assert swarm["trackers"] == [f"wss://{config.PLAMENU_DOMAIN}/tracker/socket"]
+        assert swarm["sha256_url"].endswith(f"/media/hls/{media_id}/sha256.json")
+        assert swarm["video_uuid"] == uuid
+        assert swarm["swarm_id"] == live["hls"]["master"]
+        infohash = db.conn.execute(
+            "SELECT p2p_infohash FROM native_live_sessions WHERE media_id = %s AND ended_at IS NULL",
+            (int(media_id),),
+        ).fetchone()[0]
+        assert len(infohash) == 20
+        ap = plamenu_api.ap_get(waiting_status["uri"].removeprefix(config.PLAMENU_URL))
+        links = ap["url"]
+        assert any(link.get("name") == "tracker-websocket" for link in links)
+        hls_link = next(link for link in links if link.get("mediaType") == "application/x-mpegURL")
+        assert any(tag.get("name") == infohash for tag in hls_link["tag"])
+        assert any(tag.get("name") == "sha256" for tag in hls_link["tag"])
+
+        remote = wait_for(
+            lambda: (item if (item := _remote_video_state(pt, uuid, 1))
+                     and item["streamingPlaylists"]
+                     and f"wss://{config.PLAMENU_DOMAIN}/tracker/socket" in item["trackerUrls"]
+                     else None),
+            desc="PeerTube imports the peer-enabled live Video", timeout=90,
+        )
+        assert remote["streamingPlaylists"]
+        assert f"wss://{config.PLAMENU_DOMAIN}/tracker/socket" in remote["trackerUrls"]
+        assert remote["streamingPlaylists"][0]["segmentsSha256Url"] == swarm["sha256_url"]
+        wait_for(
+            lambda: bool((manifest := requests.get(swarm["sha256_url"], verify=False, timeout=20).json())),
+            desc="the rolling integrity manifest has a committed segment", timeout=30,
+        )
+        with step("Plamenu and PeerTube first-party browsers exchange live segments"):
+            subprocess.run(
+                ["node", "verify-native-live-p2p.mjs",
+                 f"{config.PLAMENU_URL}/web/statuses/{status_id}",
+                 f"{config.PEERTUBE_URL}/w/{uuid}"],
+                cwd=config.PLAMENU_DIR / "accessibility", check=True, timeout=180,
+                env={**os.environ, "PEERTUBE_E2E_USER": peertube.ROOT_USER,
+                     "PEERTUBE_E2E_PASSWORD": peertube.ROOT_PASS},
+            )
+
+        _, encoder_error = publisher.communicate(input=b"q\n", timeout=20)
+        assert publisher.returncode == 0, encoder_error.decode(errors="replace")[-700:]
+        publisher = None
+        wait_for(
+            lambda: "live" not in plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0],
+            desc="the completed live is a replay", timeout=180,
+        )
+        assert requests.get(swarm["sha256_url"], verify=False, timeout=20).status_code == 404
+        assert db.conn.execute(
+            "SELECT count(*) FROM native_live_sessions WHERE p2p_infohash = %s AND ended_at IS NULL",
+            (infohash,),
+        ).fetchone()[0] == 0
+        assert asyncio.run(_tracker_announce(infohash))["failure reason"] == "unknown info_hash"
+    finally:
+        if publisher is not None:
+            publisher.terminate()
+            try:
+                publisher.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                publisher.kill()
+                publisher.communicate(timeout=10)
+        if status_id is not None:
+            try:
+                plamenu_api.delete(f"/api/v1/statuses/{status_id}")
+            except Exception:
+                pass
+        try:
+            pt.delete(f"/api/v1/users/me/subscriptions/{name}@{config.PLAMENU_DOMAIN}")
+        except Exception:
+            pass
+
+
+async def _tracker_announce(infohash: str):
+    async with websockets.connect(
+        f"wss://{config.PLAMENU_DOMAIN}/tracker/socket",
+        ssl=ssl._create_unverified_context(),
+    ) as socket:
+        await socket.send(json.dumps({
+            "action": "announce", "info_hash": infohash,
+            "peer_id": "-PM0001-012345678901", "event": "started", "left": 1,
+        }))
+        return json.loads(await asyncio.wait_for(socket.recv(), timeout=10))
+
+
+@pytest.mark.parametrize("transport", [
+    "rtmp", "https", pytest.param("rtmps", marks=pytest.mark.skipif(
+        os.environ.get("PLAMENU_RTMPS") != "1", reason="native RTMPS is not configured"
+    )),
+])
+def test_rotating_stream_key_revokes_active_encoder(
+    plamenu_api: Api, plamenu_user, db: Db, transport: str,
+):
+    """A connected key publisher stops; a recurring Video restarts with its new key."""
+    browser = requests.Session()
+    browser.verify = False
+    name = unique("revokelive")[:30]
+    channel = plamenu_api.post(
+        "/api/v1/video_channels", username=name, display_name="Revocation tests"
+    )
+    status_id = None
+    publishers = []
+    try:
+        login = browser.post(
+            f"{config.PLAMENU_URL}/login",
+            data={"email": plamenu_user.email, "password": plamenu_user.password},
+            allow_redirects=False, timeout=30,
+        )
+        assert login.status_code == 303
+        form = browser.get(f"{config.PLAMENU_URL}/videos/live/new", timeout=30)
+        form.raise_for_status()
+        csrf = re.search(r'name="csrf" value="([^"]+)"', form.text).group(1)
+        created = browser.post(
+            f"{config.PLAMENU_URL}/web/videos/live",
+            data={"csrf": csrf, "channel": channel["id"],
+                  "title": f"Revocable {name}", "description": "Rotating a live stream key",
+                  "language": "en", "visibility": "public", "permanent": "yes",
+                  "dvr_minutes": "5", "latency": "balanced"},
+            timeout=30,
+        )
+        assert created.status_code == 200, created.text[:700]
+        status_id = re.search(r'/videos/live/(\d+)', created.text).group(1)
+        inputs = re.findall(r'<input type="text" readonly value="([^"]+)"', created.text)
+        assert len(inputs) in (3, 4)
+        server = inputs[0]
+        secure_server = inputs[1] if len(inputs) == 4 else None
+        old_key = inputs[2] if len(inputs) == 4 else inputs[1]
+        https_ingest = inputs[-1]
+        media_id = plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]["id"]
+        manage_url = f"{config.PLAMENU_URL}/videos/live/{status_id}"
+        manage = browser.get(manage_url, timeout=30)
+        assert manage.status_code == 200
+        assert 'aria-describedby="live-rotate-warning"' in manage.text
+
+        def output_args(key: str):
+            if transport == "rtmp":
+                return ["-f", "flv", f"{server}/{key}"]
+            if transport == "rtmps":
+                return ["-f", "flv", *rtmps_tls_args(), f"{secure_server}/{key}"]
+            return ["-f", "flv", "-method", "POST", "-headers",
+                    f"Authorization: Bearer {key}\r\n", "-tls_verify", "0", https_ingest]
+
+        def start(key: str):
+            process = subprocess.Popen(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re",
+                 "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=15",
+                 "-f", "lavfi", "-i", "sine=frequency=440",
+                 "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+                 "-g", "30", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k",
+                 *output_args(key)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, stdin=subprocess.PIPE,
+            )
+            publishers.append(process)
+            return process
+
+        def state(expected: str):
+            item = plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]
+            return item if item.get("live", {}).get("state") == expected else None
+
+        first = start(old_key)
+        wait_for(lambda: state("live"), desc=f"{transport} first session is live", timeout=40)
+        def committed_segment():
+            response = requests.get(
+                f"{config.PLAMENU_URL}/media/hls/{media_id}/sha256.json",
+                verify=False, timeout=20,
+            )
+            return response.status_code == 200 and any(
+                name.endswith(".ts") for name in response.json()
+            )
+        wait_for(
+            committed_segment,
+            desc="the first live session commits media", timeout=30,
+        )
+        rotated = browser.post(
+            f"{config.PLAMENU_URL}/web/videos/live/{status_id}/rotate-key",
+            data={"csrf": csrf}, timeout=30,
+        )
+        assert rotated.status_code == 200, rotated.text[:700]
+        new_inputs = re.findall(r'<input type="text" readonly value="([^"]+)"', rotated.text)
+        new_key = new_inputs[2] if len(new_inputs) == 4 else new_inputs[1]
+        assert len(new_key) == 43 and new_key != old_key
+        wait_for(lambda: state("waiting"), desc="rotation stops active publisher", timeout=20)
+        wait_for(lambda: first.poll() is not None,
+                 desc="revoked encoder connection closes", timeout=20)
+        assert db.conn.execute(
+            "SELECT count(*) FROM native_live_sessions WHERE media_id = %s AND ended_at IS NULL",
+            (int(media_id),),
+        ).fetchone()[0] == 0
+        assert requests.get(
+            f"{config.PLAMENU_URL}/media/hls/{media_id}/master.m3u8",
+            verify=False, timeout=20,
+        ).status_code == 404
+
+        if transport == "https":
+            rejected = requests.post(
+                https_ingest, headers={"Authorization": f"Bearer {old_key}"},
+                data=b"FLV", verify=False, timeout=20,
+            )
+            assert rejected.status_code == 401, rejected.text[:500]
+        else:
+            rejected = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                 "-i", "testsrc2=size=160x90:rate=5", "-t", "1", "-c:v", "libx264",
+                 *output_args(old_key)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=20, check=False,
+            )
+            assert rejected.returncode != 0, "old key must not claim a new session"
+        second = start(new_key)
+        wait_for(lambda: state("live"), desc="new key starts a recurring session", timeout=40)
+        wait_for(committed_segment, desc="the restarted session commits media", timeout=30)
+        assert db.conn.execute(
+            "SELECT max(generation) FROM native_live_sessions WHERE media_id = %s",
+            (int(media_id),),
+        ).fetchone()[0] == 2
+        if transport == "https":
+            # FFmpeg may tear down a streaming HTTP POST without a final body
+            # frame even on `q`; explicit revocation is a clean owner stop.
+            stopped = browser.post(
+                f"{config.PLAMENU_URL}/web/videos/live/{status_id}/rotate-key",
+                data={"csrf": csrf}, timeout=30,
+            )
+            assert stopped.status_code == 200
+            wait_for(lambda: second.poll() is not None,
+                     desc="second HTTPS publisher is revoked", timeout=20)
+        else:
+            _, encoder_error = second.communicate(input=b"q\n", timeout=20)
+            assert second.returncode == 0, encoder_error.decode(errors="replace")[-700:]
+        wait_for(lambda: state("waiting"), desc="new session stops", timeout=30)
+        wait_for(
+            lambda: db.conn.execute(
+                "SELECT count(*) FROM native_live_sessions WHERE media_id = %s AND replay_media_id IS NOT NULL",
+                (int(media_id),),
+            ).fetchone()[0] == 2,
+            desc="both independent session replays are saved", timeout=180,
+        )
+    finally:
+        for publisher in publishers:
+            if publisher.poll() is None:
+                publisher.terminate()
+                try:
+                    publisher.communicate(timeout=15)
+                except subprocess.TimeoutExpired:
+                    publisher.kill()
+                    publisher.communicate(timeout=10)
+        if status_id is not None:
+            try:
+                plamenu_api.delete(f"/api/v1/statuses/{status_id}")
+            except Exception:
+                pass
 
 
 @pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")

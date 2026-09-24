@@ -118,6 +118,9 @@ const PWA_IMAGES: &[(&str, &[u8])] = &[
 /// The full build (not `light`) is required: `PeerTube`'s separated audio is an
 /// `EXT-X-MEDIA:TYPE=AUDIO` alternate track, which the light build omits.
 const HLS_JS: &[u8] = include_bytes!("assets/hls.min.js");
+/// Apache-2.0 P2P Media Loader v4.0.0; see `third_party/p2p-media-loader`.
+/// Same-origin, lazy and optional. No tracker is contacted by loading this file.
+const P2P_HLS_JS: &[u8] = include_bytes!("assets/p2p-media-loader-hlsjs.min.js");
 const LIVE_BROADCAST_JS: &str = include_str!("assets/live-broadcast.js");
 /// The default avatar/header placeholder, served at `/static/missing.png` —
 /// the URL `entities.rs` hands out for accounts with no image.
@@ -320,6 +323,16 @@ pub async fn hls_js() -> impl IntoResponse {
             (header::CACHE_CONTROL, CACHE),
         ],
         HLS_JS,
+    )
+}
+
+pub async fn p2p_hls_js() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, CACHE),
+        ],
+        P2P_HLS_JS,
     )
 }
 

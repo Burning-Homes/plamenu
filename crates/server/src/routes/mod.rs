@@ -34,6 +34,7 @@ mod native_live_ingest;
 mod notification_filtering;
 pub(crate) mod notifications;
 pub(crate) mod oauth;
+mod p2p_tracker;
 pub(crate) mod params;
 mod pleroma_reactions;
 mod polls_api;
@@ -1308,6 +1309,10 @@ pub fn router(state: AppState) -> Router {
         // same-origin so nothing leaks the origin URL to the client.
         .route("/media/hls/{media_id}/master.m3u8", get(hls::master))
         .route(
+            "/media/hls/{media_id}/sha256.json",
+            get(hls::sha256_manifest),
+        )
+        .route(
             "/media/hls/{media_id}/local/{session}/{name}",
             get(native_live_hls::child),
         )
@@ -1348,6 +1353,7 @@ pub fn router(state: AppState) -> Router {
         .merge(oauth_token_routes)
         .merge(crate::web::router())
         .merge(media_routes)
+        .route("/tracker/socket", get(p2p_tracker::socket))
         .route("/live/ingest", post(native_live_ingest::publish))
         // FEP-ae97 portable actors are deliberately outside the authorized-
         // fetch gate: their client owns inbox polling authorization, while

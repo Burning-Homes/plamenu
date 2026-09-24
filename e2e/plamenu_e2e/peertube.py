@@ -170,7 +170,7 @@ class PeertubeApi:
     ) -> dict:
         """Create a live video; returns `{id, uuid, shortUUID}`.
 
-        `latency_mode` 1 = default, 2 = small latency, 3 = high latency.
+        `latency_mode` 1 = default, 2 = high latency, 3 = small latency.
         """
         if channel_id is None:
             channel_id = self.default_channel_id()

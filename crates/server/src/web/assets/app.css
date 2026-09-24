@@ -7919,6 +7919,44 @@ a.settings-button--plain {
   position: relative;
 }
 
+/* The peer choice is deliberately outside the video controls so a viewer can
+   opt out before pressing Play, including with keyboard or magnification. */
+.status__media .media--video[data-p2p] {
+  aspect-ratio: auto;
+  max-block-size: none;
+
+  video {
+    block-size: auto;
+    max-block-size: 32rem;
+    object-fit: contain;
+  }
+}
+
+.media__p2p {
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  color: var(--text);
+  line-height: 1.35;
+
+  &[hidden] { display: none; }
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  input { inline-size: 1.1rem; block-size: 1.1rem; }
+
+  small {
+    display: block;
+    margin-block-start: var(--space-1);
+    color: var(--text-muted);
+  }
+}
+
 .media__go-live {
   position: absolute;
   inset-inline-end: var(--space-2);

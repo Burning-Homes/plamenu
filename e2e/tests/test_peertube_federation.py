@@ -8,6 +8,7 @@ attachment URL starts and seeks through a bounded Range gateway without ever
 queuing a detached whole-video download. See PEERTUBE_HLS_DESIGN.md.
 """
 
+import json
 import secrets
 import struct
 import subprocess
@@ -68,6 +69,76 @@ def _top_level_box(body: bytes, wanted: bytes) -> tuple[int, bytes] | None:
             return cursor, body[cursor : cursor + size]
         cursor += size
     return None
+
+
+@pytest.mark.federation(
+    direction="inbound",
+    peer="peertube",
+    one_way_reason="P2P segment delivery is a viewer/browser contract; outbound Plamenu swarm announcements are a separate AP09 slice",
+)
+def test_peertube_p2p_swarm_and_preplay_optout(plamenu_api: Api):
+    pt = peertube.root()
+    created = None
+    try:
+        with step("PeerTube publishes a fresh checksum-backed HLS video"):
+            with tempfile.TemporaryDirectory() as directory:
+                sample = peertube.make_sample_mp4(Path(directory) / "p2p.mp4", seconds=20)
+                created = pt.upload_video(sample, unique("peer-swarm"))
+            pt.wait_for_hls(created["uuid"])
+            # PeerTube announces the first HLS rendition before finishing the
+            # second; the master URL can be replaced mid-transcode. Wait for
+            # the local 144p/240p ladder before importing its final AP object.
+            video = wait_for(
+                lambda: (detail if len(detail["streamingPlaylists"][0]["files"]) >= 2 else None)
+                if (detail := pt.video(created["uuid"])).get("streamingPlaylists") else None,
+                desc="PeerTube's two HLS renditions finish",
+            )
+            ap = pt.fetch_ap(video["uuid"])
+            playlist = next(
+                link for link in ap["url"] if link.get("mediaType") == "application/x-mpegURL"
+            )
+            infohashes = [
+                tag["name"] for tag in playlist["tag"] if tag.get("type") == "Infohash"
+            ]
+            assert infohashes, "PeerTube announces HLS stream infohashes"
+
+        with step("Plamenu retains signed tracker and checksum hints with the Video"):
+            status = wait_for(
+                lambda: plamenu_api.resolve_status(pt.ap_id(video["uuid"])),
+                desc="fresh PeerTube swarm video ingests",
+            )
+            attachment = status["media_attachments"][0]
+            peers = attachment.get("hls", {}).get("p2p")
+            assert peers and peers["video_uuid"] == video["uuid"], attachment
+            assert peers["sha256_url"].startswith("https://plamenu.local/media/hls/"), peers
+            checksums = _get(peers["sha256_url"])
+            assert checksums.status_code == 200 and checksums.json(), checksums.status_code
+            assert peers["trackers"] and all(
+                tracker.startswith("wss://peertube.local") for tracker in peers["trackers"]
+            ), peers
+
+        with step("two browser viewers join the PeerTube swarm; opt-out avoids it"):
+            screenshot = config.PLAMENU_DIR / "target/e2e/peertube-p2p-optout-320.png"
+            screenshot.parent.mkdir(parents=True, exist_ok=True)
+            browser = subprocess.run(
+                [
+                    "node",
+                    str(config.PLAMENU_DIR / "accessibility/verify-peertube-p2p.mjs"),
+                    f"https://plamenu.local/web/statuses/{status['id']}",
+                    json.dumps(infohashes),
+                    str(screenshot),
+                    f"https://peertube.local/w/{video['uuid']}",
+                ],
+                cwd=config.PLAMENU_DIR,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            assert browser.returncode == 0, browser.stdout + browser.stderr
+            log(browser.stdout.strip())
+    finally:
+        if created is not None:
+            pt.delete_video(created["uuid"])
 
 
 @pytest.mark.federation(

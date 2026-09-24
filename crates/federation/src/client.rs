@@ -1082,6 +1082,18 @@ impl FederationClient {
     /// body is capped at [`MEDIA_BODY_LIMIT`] and returned as raw bytes (no
     /// UTF-8 decode). Returns the final URL of the redirect chain.
     pub async fn fetch_media(&self, raw_url: &str) -> Result<FetchedMedia, FederationError> {
+        self.fetch_media_limited(raw_url, MEDIA_BODY_LIMIT).await
+    }
+
+    /// The same guarded fetch with a smaller caller-supplied body ceiling.
+    /// Useful for tiny media metadata such as an HLS checksum document: a
+    /// hostile remote response cannot consume a whole attachment's budget.
+    pub async fn fetch_media_limited(
+        &self,
+        raw_url: &str,
+        max_bytes: usize,
+    ) -> Result<FetchedMedia, FederationError> {
+        let max_bytes = max_bytes.min(MEDIA_BODY_LIMIT);
         let mut url = self.checked(raw_url)?;
         for _ in 0..=PAGE_MAX_REDIRECTS {
             let response = self.send_media_get(&url, None, None).await?;
@@ -1103,7 +1115,7 @@ impl FederationClient {
             // Reject up front when the advertised length already exceeds the cap.
             if response
                 .content_length()
-                .is_some_and(|len| len > MEDIA_BODY_LIMIT as u64)
+                .is_some_and(|len| len > max_bytes as u64)
             {
                 return Err(FederationError::TooLarge(url.to_string()));
             }
@@ -1116,7 +1128,7 @@ impl FederationClient {
             let mut bytes = Vec::new();
             let mut response = response;
             while let Some(chunk) = response.chunk().await? {
-                if bytes.len() + chunk.len() > MEDIA_BODY_LIMIT {
+                if bytes.len() + chunk.len() > max_bytes {
                     return Err(FederationError::TooLarge(url.to_string()));
                 }
                 bytes.extend_from_slice(&chunk);

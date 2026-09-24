@@ -6,6 +6,22 @@ use std::collections::HashMap;
 
 use crate::DbError;
 
+/// `PeerTube` 8.3 / P2P Media Loader v4's twenty-byte ASCII `WebTorrent`
+/// infohash. Resolution zero denotes a stream without advertised dimensions.
+#[must_use]
+pub fn p2p_infohash(uuid: &str, resolution: i32) -> String {
+    use base64::Engine as _;
+    use sha1::Digest as _;
+    let resolution = if resolution > 0 {
+        resolution.to_string()
+    } else {
+        "default".into()
+    };
+    let swarm = format!("pt-v2-{uuid}-main-default-{resolution}");
+    let digest = sha1::Sha1::digest(swarm.as_bytes());
+    base64::engine::general_purpose::STANDARD.encode(&digest[..15])
+}
+
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct Rendition {
     pub media_id: i64,
@@ -16,6 +32,7 @@ pub struct Rendition {
     pub size_bytes: i64,
     pub file_name: String,
     pub playlist: String,
+    pub segment_sha256: serde_json::Value,
 }
 
 #[derive(Clone, Debug, sqlx::FromRow)]
@@ -34,6 +51,7 @@ pub struct FileTag {
     pub width: i32,
     pub size_bytes: i64,
     pub file_name: String,
+    pub has_segment_sha256: bool,
 }
 
 pub async fn tags_for_media(
@@ -45,7 +63,8 @@ pub async fn tags_for_media(
     }
     let rows = sqlx::query_as!(
         FileTag,
-        "SELECT r.media_id, r.height, r.width, r.size_bytes, r.file_name
+        "SELECT r.media_id, r.height, r.width, r.size_bytes, r.file_name,
+                (r.segment_sha256 <> '{}'::jsonb) AS \"has_segment_sha256!\"
          FROM native_video_hls_renditions r
          JOIN video_drafts d ON d.media_id = r.media_id AND d.generation = r.generation AND d.state = 'ready'
          WHERE r.media_id = ANY($1)
@@ -76,8 +95,8 @@ pub async fn replace(
     for rendition in renditions {
         sqlx::query!(
             "INSERT INTO native_video_hls_renditions
-             (media_id, generation, height, width, bandwidth, size_bytes, file_name, playlist)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+             (media_id, generation, height, width, bandwidth, size_bytes, file_name, playlist, segment_sha256)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
             media_id,
             generation,
             rendition.height,
@@ -86,6 +105,7 @@ pub async fn replace(
             rendition.size_bytes,
             rendition.file_name,
             rendition.playlist,
+            rendition.segment_sha256,
         )
         .execute(&mut *conn)
         .await?;
@@ -131,4 +151,99 @@ pub async fn public_playlist(
     )
     .fetch_optional(pool)
     .await?)
+}
+
+/// Integrity metadata is gated by the same committed-publication predicate as
+/// the playlists. Old renditions without hashes simply have no P2P lane.
+pub async fn public_sha256(
+    pool: &PgPool,
+    media_id: i64,
+) -> Result<Option<serde_json::Value>, DbError> {
+    let rows = sqlx::query!(
+        "SELECT r.file_name, r.segment_sha256 FROM native_video_hls_renditions r
+         JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'
+         JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'
+         JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
+         JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
+         JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
+         WHERE r.media_id = $1",
+        media_id,
+    )
+    .fetch_all(pool)
+    .await?;
+    if rows.is_empty()
+        || rows.iter().any(|r| {
+            r.segment_sha256
+                .as_object()
+                .is_none_or(serde_json::Map::is_empty)
+        })
+    {
+        return Ok(None);
+    }
+    let mut manifest = serde_json::Map::new();
+    for row in rows {
+        manifest.insert(row.file_name, row.segment_sha256);
+    }
+    Ok(Some(serde_json::Value::Object(manifest)))
+}
+
+/// Local video UUIDs with complete integrity metadata, batched for API pages.
+pub async fn public_peer_uuids(
+    pool: &PgPool,
+    media_ids: &[i64],
+) -> Result<HashMap<i64, String>, DbError> {
+    if media_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = sqlx::query!(
+        "SELECT r.media_id, v.uuid FROM native_video_hls_renditions r
+         JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'
+         JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'
+         JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
+         JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
+         JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
+         WHERE r.media_id = ANY($1)
+         GROUP BY r.media_id, v.uuid
+         HAVING bool_and(r.segment_sha256 <> '{}'::jsonb AND r.p2p_infohash IS NOT NULL)",
+        media_ids,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.media_id, r.uuid)).collect())
+}
+
+pub async fn assign_infohash(
+    conn: &mut PgConnection,
+    media_id: i64,
+    height: i32,
+    infohash: &str,
+) -> Result<(), DbError> {
+    sqlx::query!(
+        "UPDATE native_video_hls_renditions SET p2p_infohash = $3
+         WHERE media_id = $1 AND height = $2 AND segment_sha256 <> '{}'::jsonb",
+        media_id,
+        height,
+        infohash,
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// The tracker only accepts active, public native videos in its indexed
+/// allowlist. No arbitrary swarm may consume memory or relay signaling here.
+pub async fn public_infohash_exists(pool: &PgPool, infohash: &str) -> Result<bool, DbError> {
+    Ok(sqlx::query_scalar!(
+        "SELECT EXISTS (SELECT 1 FROM native_video_hls_renditions r
+         JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'
+         JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'
+         JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
+         JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
+         JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
+         WHERE r.p2p_infohash = $1)",
+        infohash,
+    )
+    .fetch_one(pool)
+    .await?
+    .unwrap_or(false))
 }

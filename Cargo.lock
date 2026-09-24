@@ -3364,8 +3364,10 @@ dependencies = [
 name = "plamenu-db"
 version = "0.6.0"
 dependencies = [
+ "base64 0.23.0",
  "serde",
  "serde_json",
+ "sha1 0.11.0",
  "sqlx",
  "thiserror 2.0.18",
  "time",

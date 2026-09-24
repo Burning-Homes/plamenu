@@ -3256,6 +3256,59 @@ async fn application_maps(
     Ok((applications, show_application))
 }
 
+fn attach_remote_peer_hints(
+    value: &mut Value,
+    file: &media::Media,
+    peers: &HashMap<i64, plamenu_db::remote_hls_peers::RemoteHlsPeers>,
+    domain: &str,
+) {
+    if file.live_state.is_some() && file.live_state.as_deref() != Some("live") {
+        return; // Never offer a swarm for an offline broadcast.
+    }
+    if let Some(peers) = peers.get(&file.id) {
+        value["hls"]["p2p"] = json!({
+            "video_uuid": peers.video_uuid,
+            "trackers": peers.trackers,
+            "sha256_url": format!("https://{domain}/media/hls/{}/sha256.json", file.id),
+            "swarm_id": file.hls_master_url,
+        });
+    }
+}
+
+fn attach_native_peer_hints(value: &mut Value, file: &media::Media, uuid: &str, domain: &str) {
+    value["hls"]["p2p"] = json!({
+        "video_uuid": uuid,
+        "trackers": [format!("wss://{domain}/tracker/socket")],
+        "sha256_url": format!("https://{domain}/media/hls/{}/sha256.json", file.id),
+        "swarm_id": format!("https://{domain}/media/hls/{}/master.m3u8", file.id),
+    });
+}
+
+fn attach_native_live_peer_hints(
+    value: &mut Value,
+    session: &plamenu_db::native_live::PublicPeerSession,
+    domain: &str,
+) {
+    value["hls"]["p2p"] = json!({
+        "video_uuid": session.video_uuid,
+        "trackers": [format!("wss://{domain}/tracker/socket")],
+        "sha256_url": format!("https://{domain}/media/hls/{}/sha256.json", session.media_id),
+        "swarm_id": format!("https://{domain}/media/hls/{}/master.m3u8", session.media_id),
+    });
+}
+
+fn attach_native_live_details(value: &mut Value, details: &plamenu_db::native_live::PublicDetails) {
+    value["live"]["dvr_window_seconds"] = json!(details.playback.dvr_window_seconds);
+    value["live"]["latency_mode"] = json!(details.playback.latency_mode);
+    if let Some(at) = details.scheduled_at {
+        let iso = at
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_default();
+        value["live"]["scheduled_at"] = json!(iso.clone());
+        value["live"]["schedules"] = json!([iso]);
+    }
+}
+
 async fn media_maps(
     pool: &PgPool,
     domain: &str,
@@ -3282,6 +3335,8 @@ async fn media_maps(
         .map(|item| item.id)
         .collect();
     let live_details = plamenu_db::native_live::details_for_media(pool, &local_live_ids).await?;
+    let native_live_peers =
+        plamenu_db::native_live::public_peer_sessions(pool, &local_live_ids).await?;
     let remote_live_ids: Vec<i64> = per_status
         .values()
         .flatten()
@@ -3290,6 +3345,8 @@ async fn media_maps(
         .collect();
     let remote_schedules =
         plamenu_db::remote_live_schedules::for_media(pool, &remote_live_ids).await?;
+    let remote_peers = plamenu_db::remote_hls_peers::for_media(pool, &media_ids).await?;
+    let native_peers = plamenu_db::native_video_hls::public_peer_uuids(pool, &media_ids).await?;
     let now = time::OffsetDateTime::now_utc();
     // Skip the round-trip entirely on the common attachment-less batch.
     let ladders = if media_ids.is_empty() {
@@ -3319,17 +3376,15 @@ async fn media_maps(
                     if let Some(alt) = poster_alts.get(&file.id) {
                         value["poster_description"] = json!(alt);
                     }
+                    attach_remote_peer_hints(&mut value, file, &remote_peers, domain);
+                    if let Some(uuid) = native_peers.get(&file.id) {
+                        attach_native_peer_hints(&mut value, file, uuid, domain);
+                    }
+                    if let Some(session) = native_live_peers.get(&file.id) {
+                        attach_native_live_peer_hints(&mut value, session, domain);
+                    }
                     if let Some(details) = live_details.get(&file.id) {
-                        value["live"]["dvr_window_seconds"] =
-                            json!(details.playback.dvr_window_seconds);
-                        value["live"]["latency_mode"] = json!(details.playback.latency_mode);
-                        if let Some(at) = details.scheduled_at {
-                            let iso = at
-                                .format(&time::format_description::well_known::Rfc3339)
-                                .unwrap_or_default();
-                            value["live"]["scheduled_at"] = json!(iso.clone());
-                            value["live"]["schedules"] = json!([iso]);
-                        }
+                        attach_native_live_details(&mut value, details);
                     }
                     if let Some(dates) = remote_schedules.get(&file.id) {
                         let iso_dates: Vec<_> = dates

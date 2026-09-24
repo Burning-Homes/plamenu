@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.file_name, r.segment_sha256 FROM native_video_hls_renditions r\n         JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'\n         JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'\n         JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id\n         JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL\n         JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL\n         WHERE r.media_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "native_video_hls_renditions",
+            "name": "file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "segment_sha256",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "native_video_hls_renditions",
+            "name": "segment_sha256"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "a1cc8e0fc6ce3a5e57cd4dd9abb65f4a0ae359368c944d1fec936a7d3ffd18d6"
+}

@@ -8,6 +8,7 @@ use std::sync::LazyLock;
 use plamenu_ap::activity::{id_of, one_or_many, visibility_from_addressing};
 use plamenu_ap::urls;
 use plamenu_db::account::{self, Account};
+use plamenu_db::remote_hls_peers::RemoteHlsPeers;
 use plamenu_db::status::NewRemoteStatus;
 use plamenu_db::{media, mention, notification, status, status_edit, tag};
 use regex::Regex;
@@ -1023,6 +1024,83 @@ fn hls_master_url(object: &Value) -> Option<&str> {
             .or_else(|| map.get("url"))
             .and_then(Value::as_str)?;
         federation_url(url).then_some(url)
+    })
+}
+
+/// Only PeerTube-compatible, integrity-checkable HLS is eligible for sharing.
+/// Restrict discovery and checksum metadata to the publishing host: a signed
+/// object must not make viewers connect to an unrelated tracker or hash host.
+fn remote_hls_peers(object: &Value) -> Option<RemoteHlsPeers> {
+    if object.get("isLiveBroadcast").and_then(Value::as_bool) == Some(true)
+        && object.get("latencyMode").and_then(Value::as_i64) == Some(3)
+    {
+        return None; // Mirror PeerTube's low-latency P2P efficiency guard.
+    }
+    let master = url::Url::parse(hls_master_url(object)?).ok()?;
+    let uuid = object.get("uuid")?.as_str()?;
+    if uuid.len() != 36
+        || !uuid.bytes().enumerate().all(|(i, b)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                b == b'-'
+            } else {
+                b.is_ascii_hexdigit()
+            }
+        })
+    {
+        return None;
+    }
+    let same_host = |url: &url::Url| {
+        url.host_str() == master.host_str()
+            && url.port_or_known_default() == master.port_or_known_default()
+    };
+    let mut trackers: Vec<String> = one_or_many(object.get("url"))
+        .iter()
+        .filter(|entry| {
+            one_or_many(entry.get("rel"))
+                .iter()
+                .any(|rel| rel.as_str() == Some("tracker"))
+        })
+        .filter_map(|entry| entry.get("href")?.as_str())
+        .filter(|href| href.len() <= 2048)
+        .filter_map(|href| url::Url::parse(href).ok())
+        .filter(|url| {
+            url.scheme() == "wss"
+                && url.username().is_empty()
+                && url.password().is_none()
+                && same_host(url)
+        })
+        .take(8)
+        .map(|url| url.to_string())
+        .collect();
+    trackers.sort_unstable();
+    trackers.dedup();
+    if trackers.is_empty() {
+        return None;
+    }
+    let checksum = one_or_many(object.get("url"))
+        .iter()
+        .find(|entry| {
+            entry.get("mediaType").and_then(Value::as_str) == Some("application/x-mpegURL")
+        })
+        .and_then(|entry| {
+            one_or_many(entry.get("tag")).iter().find_map(|tag| {
+                (tag.get("name").and_then(Value::as_str) == Some("sha256")
+                    && tag.get("mediaType").and_then(Value::as_str) == Some("application/json"))
+                .then(|| tag.get("href")?.as_str())
+                .flatten()
+            })
+        })?;
+    if checksum.len() > 2048 {
+        return None;
+    }
+    let checksum_url = url::Url::parse(checksum).ok()?;
+    if checksum_url.scheme() != "https" || !same_host(&checksum_url) {
+        return None;
+    }
+    Some(RemoteHlsPeers {
+        video_uuid: uuid.to_ascii_lowercase(),
+        trackers,
+        sha256_url: checksum_url.into(),
     })
 }
 
@@ -2213,6 +2291,11 @@ pub async fn update_remote_note_in_context(
     if !context.is_history() {
         refresh_live_state(state, existing, object).await?;
     }
+    // Peer discovery and checksum URLs can change after a transcode even when
+    // the post text and selected progressive file do not. Refresh on every
+    // Update before the no-edit fast path; a changed attachment is re-ingested
+    // below and gets the same metadata on its new media row.
+    store_remote_hls_peers(state, existing.id, object).await?;
 
     // Link-only invitation updates must also refresh when the post text is unchanged.
     plamenu_db::webxdc::set_remote_invitation(
@@ -3301,6 +3384,7 @@ async fn store_remote_attachments(
     // once. Must stay in step with [`attachment_pairs`] or edit-diffing breaks.
     if let Some(primary) = object_primary_media(object, MediaCaps::load(state).await?) {
         let is_live = primary.live.is_some();
+        let is_hls = primary.hls_master_url.is_some();
         media::create_remote(
             &state.pool,
             media::NewRemoteMedia {
@@ -3331,14 +3415,47 @@ async fn store_remote_attachments(
             },
         )
         .await?;
-        if is_live {
-            store_remote_live_schedules(state, stored.id, object).await?;
-        }
+        store_remote_media_sidecars(state, stored.id, object, is_live, is_hls).await?;
     }
     // Inline images are an additional media channel, not a fallback. Articles
     // commonly carry a hero as `attachment` and diagrams inside `content`.
     // `create_remote` deduplicates the same file across both channels.
     store_inline_image_attachments(state, stored, object, force_on_demand).await?;
+    Ok(())
+}
+
+async fn store_remote_media_sidecars(
+    state: &AppState,
+    status_id: i64,
+    object: &Value,
+    is_live: bool,
+    is_hls: bool,
+) -> Result<(), ApiError> {
+    if is_live {
+        store_remote_live_schedules(state, status_id, object).await?;
+    }
+    if is_hls {
+        store_remote_hls_peers(state, status_id, object).await?;
+    }
+    Ok(())
+}
+
+async fn store_remote_hls_peers(
+    state: &AppState,
+    status_id: i64,
+    object: &Value,
+) -> Result<(), ApiError> {
+    let stored = media::for_statuses_read_only(&state.pool, &[status_id])
+        .await?
+        .remove(&status_id)
+        .unwrap_or_default();
+    let hints = remote_hls_peers(object);
+    for item in stored
+        .iter()
+        .filter(|item| item.remote_url.is_some() && item.hls_master_url.is_some())
+    {
+        plamenu_db::remote_hls_peers::replace(&state.pool, item.id, hints.as_ref()).await?;
+    }
     Ok(())
 }
 
@@ -3650,6 +3767,36 @@ mod tests {
         assert_eq!(dates.len(), 2);
         assert!(dates[0] < dates[1]);
         assert!(live_schedules(&serde_json::json!({})).is_empty());
+    }
+
+    #[test]
+    fn peer_hints_require_the_publishers_tracker_and_segment_checksums() {
+        let mut object = serde_json::json!({
+            "type": "Video",
+            "uuid": "102acbbd-4716-4c37-b0ad-592f2ecf2957",
+            "url": [
+                {"type": "Link", "mediaType": "application/x-mpegURL",
+                 "href": "https://peer.example/hls/master.m3u8",
+                 "tag": [{"type": "Link", "name": "sha256", "mediaType": "application/json",
+                          "href": "https://peer.example/hls/segments-sha256.json"}]},
+                {"type": "Link", "rel": ["tracker", "websocket"],
+                 "href": "wss://peer.example/tracker/socket"}
+            ]
+        });
+        let hints = remote_hls_peers(&object).expect("eligible PeerTube-style HLS");
+        assert_eq!(hints.trackers, ["wss://peer.example/tracker/socket"]);
+        assert_eq!(hints.video_uuid, object["uuid"].as_str().unwrap());
+        object["isLiveBroadcast"] = serde_json::json!(true);
+        object["latencyMode"] = serde_json::json!(3);
+        assert!(remote_hls_peers(&object).is_none());
+        object["latencyMode"] = serde_json::json!(2);
+        assert!(remote_hls_peers(&object).is_some());
+        object["url"][1]["href"] = serde_json::json!("wss://unrelated.example/socket");
+        assert!(remote_hls_peers(&object).is_none());
+        object["url"][1]["href"] = serde_json::json!("wss://peer.example/tracker/socket");
+        object["url"][0]["tag"][0]["href"] =
+            serde_json::json!("https://unrelated.example/hash.json");
+        assert!(remote_hls_peers(&object).is_none());
     }
 
     #[test]

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT uuid FROM video_publications WHERE media_id = $1 AND status_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uuid",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_publications",
+            "name": "uuid"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "75c7ded7603b45b5655ff279fd4da87252a3f7caf7d072f11124d477995e4c6c"
+}

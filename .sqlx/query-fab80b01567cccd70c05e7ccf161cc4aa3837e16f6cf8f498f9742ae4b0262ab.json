@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT media_id, video_uuid, trackers, sha256_url\n         FROM remote_hls_peers WHERE media_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "remote_hls_peers",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "video_uuid",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_hls_peers",
+            "name": "video_uuid"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "trackers",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "remote_hls_peers",
+            "name": "trackers"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "sha256_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_hls_peers",
+            "name": "sha256_url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fab80b01567cccd70c05e7ccf161cc4aa3837e16f6cf8f498f9742ae4b0262ab"
+}

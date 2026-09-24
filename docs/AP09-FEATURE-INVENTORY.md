@@ -66,13 +66,13 @@ a parity percentage from the number of rows: some represent much larger work.
 
 | ID | Required capability | State |
 | --- | --- | --- |
-| LIVE01 | Native authenticated encoder ingest, rotating/revocable credentials | Partial: RTMP, native RTMPS and HTTPS-FLV ingest, key rotation and new-connection revocation verified; active-session revocation remains |
+| LIVE01 | Native authenticated encoder ingest, rotating/revocable credentials | Verified for RTMP, native RTMPS and HTTPS-FLV: key rotation rejects new use of the old key and closes an active key-authenticated publisher within the bounded poll; recurring streams restart with the new key and keep both session replays |
 | LIVE02 | Browser camera/microphone broadcasting and device selection | Partial: Chromium desktop/mobile capture pipeline verified; device selection and other browsers remain |
 | LIVE03 | Browser screen sharing, source switching and permission/error recovery | Partial: Chromium desktop/mobile screen pipeline verified; source switching and recovery remain |
 | LIVE04 | Waiting/on-air/interrupted/ended/replay lifecycle and remote updates | Partial: one-shot conversion and separate recurring session Video publication, reconnect, crash recovery and PeerTube import verified; full delayed/out-of-order matrix remains |
 | LIVE05 | One-shot/recurring/scheduled broadcasts with stable session identity | Partial: one-shot/recurring identities, generation-fenced reconnect, independent replay identities, owner-authored planned starts and multiple inbound PeerTube dates with reschedule/clear verified; local multi-date authoring remains |
-| LIVE06 | DVR, latency modes, concurrency and replay capture/processing | Partial: bounded sliding DVR and three latency choices verified with real ingest, PeerTube import, desktop/mobile rewind and return-to-live; sustained-window eviction, concurrency/load, empty/partial-fragment failure UX and multi-node storage remain |
-| LIVE07 | No-JS creation/settings/credentials/replay workflows; encoder fallback | Partial: creation, idle playback and schedule settings, keys, management, RTMP/RTMPS/HTTPS-FLV fallback and one-shot/recurring replay navigation and playback verified; generic no-JS DVR seeking and broader creator recovery UX remain |
+| LIVE06 | DVR, latency modes, concurrency and replay capture/processing | Partial: bounded sliding DVR and three latency choices verified with real ingest, PeerTube import, desktop/mobile rewind and return-to-live; accelerated 5/30-minute window eviction, rolling hashes, 16 concurrent HTTP viewers, one remux and long replay saves verified; empty/partial-fragment failure UX and multi-node storage remain |
+| LIVE07 | No-JS creation/settings/credentials/replay workflows; encoder fallback | Partial: creation, idle playback and schedule settings, key rotation with active-stop warning, RTMP/RTMPS/HTTPS-FLV fallback and one-shot/recurring replay navigation and playback verified; generic no-JS DVR seeking and broader creator recovery UX remain |
 | LIVE08 | Plamenu-to-PeerTube and PeerTube-to-Plamenu live playback | Partial: actual outbound and inbound playback E2E pass; PeerTube DVR/latency and bidirectional schedule import/update verified, broader matrix remains |
 | LIVE09 | Explicit future-chat identities, permissions and replay relationships | Architecture requirement; no chat implementation this round |
 
@@ -86,13 +86,14 @@ a parity percentage from the number of rows: some represent much larger work.
 | OPS04 | Redundancy/mirroring with ownership, retention and bandwidth controls | Pending |
 | OPS05 | Creator analytics, server observability and privacy/retention controls | Pending |
 | OPS06 | Moderation/reporting, abuse controls and takedown propagation | Pending |
-| P2P01 | Actual PeerTube tracker/segment interoperability | Pending; protocol tests required |
-| P2P02 | P2P on by default, disclosed network-address sharing and accessible opt-out | Pending; owner decision recorded |
-| P2P03 | Opt-out before tracker/swarm contact; embeds and persisted preferences | Pending |
-| P2P04 | Server-only fallback without JS, on failure and on unsupported devices | Pending |
+| P2P01 | Actual PeerTube tracker/segment interoperability | Verified for both origin directions in VOD and live: current PeerTube 8.3 first-party player and Plamenu exchange real segments in both directions over the publishing host's tracker; Plamenu-side SHA-256-validated playback checked in browsers |
+| P2P02 | P2P on by default, disclosed network-address sharing and accessible opt-out | Partial: eligible remote and local native VOD/live HLS default on with a visible accessible choice before play; PeerTube-origin live opt-out verified; wider device matrix pending |
+| P2P03 | Opt-out before tracker/swarm contact; embeds and persisted preferences | Partial: pre-play opt-out verified in both origin directions for VOD and live, and per-browser localStorage persistence on remote VOD; embed contract pending |
+| P2P04 | Server-only fallback without JS, on failure and on unsupported devices | Partial: opt-out HTTP HLS and scripts-disabled progressive MP4 preserved; unsupported-device and fault-injection matrix pending |
+| P2P05 | Plamenu-origin compatible swarm announcements, native tracker and integrity-checked uploads | Verified for native VOD and live against PeerTube 8.3: indexed published/on-air swarm allowlist, bounded in-process WebSocket tracker, immutable VOD range hashes and rolling live segment SHA-256, and bidirectional first-party segment exchange; scale/abuse matrix remains |
 | API01 | Document Plamenu APIs and explicitly supported PeerTube REST/embed contracts | Pending; do not claim full PeerTube REST compatibility |
 | PERF01 | Startup/seek/rebuffer/live-latency and CPU/RAM/storage/origin-byte budgets | Pending |
-| PERF02 | Concurrency benchmarks; no per-viewer encoder or eager remote download | Pending (preserve existing regression protections) |
+| PERF02 | Concurrency benchmarks; no per-viewer encoder or eager remote download | Partial: 16 local HTTP live viewers, 192 requests including rolling SHA manifests, one unchanged ~52 MiB remux RSS and bounded five-/thirty-minute HLS storage measured on the dev host; production-scale, browser/P2P concurrency and remote-download benchmarks remain |
 | SEC01 | Upload/parser/fetch/permission/credential and out-of-order delivery tests | Pending |
 
 ## Explicit exclusions, not hidden omissions

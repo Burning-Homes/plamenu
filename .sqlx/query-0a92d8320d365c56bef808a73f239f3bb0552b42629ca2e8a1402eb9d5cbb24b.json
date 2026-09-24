@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT media_id, status_id, owner_account_id, permanent,\n                dvr_window_seconds, latency_mode FROM native_live_broadcasts\n         WHERE ingest_key_hash = $1 AND status_id IS NOT NULL AND state <> 'ended'\n         FOR UPDATE",
+  "query": "SELECT media_id, status_id, owner_account_id, permanent,\n                dvr_window_seconds, latency_mode, key_generation FROM native_live_broadcasts\n         WHERE ingest_key_hash = $1 AND status_id IS NOT NULL AND state <> 'ended'\n         FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -68,6 +68,17 @@
             "name": "latency_mode"
           }
         }
+      },
+      {
+        "ordinal": 6,
+        "name": "key_generation",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "key_generation"
+          }
+        }
       }
     ],
     "parameters": {
@@ -81,8 +92,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "513e7840f61a81528b3e16ed3d1de70f5f56603a3bc5c95f2f3830b936867fe5"
+  "hash": "0a92d8320d365c56bef808a73f239f3bb0552b42629ca2e8a1402eb9d5cbb24b"
 }

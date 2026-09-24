@@ -1783,6 +1783,31 @@ async fn post_status_inner(
     let attachments = attach_status_media(state, conn, &author, &stored, &resolved_media).await?;
     if let Some(channel_id) = video_channel_id {
         plamenu_db::video::publish(conn, stored.id, channel_id, resolved_media[0].id).await?;
+        // The UUID is born at publication. Bind every prehashed native HLS
+        // rendition to its PeerTube-compatible swarm in this same transaction.
+        if let Some(publication) = plamenu_db::video::publications(&mut *conn, &[stored.id])
+            .await?
+            .pop()
+        {
+            let tags =
+                plamenu_db::native_video_hls::tags_for_media(&mut *conn, &[publication.media_id])
+                    .await?;
+            for rendition in tags.get(&publication.media_id).into_iter().flatten() {
+                if rendition.has_segment_sha256 {
+                    let hash = plamenu_db::native_video_hls::p2p_infohash(
+                        &publication.uuid,
+                        rendition.height,
+                    );
+                    plamenu_db::native_video_hls::assign_infohash(
+                        conn,
+                        publication.media_id,
+                        rendition.height,
+                        &hash,
+                    )
+                    .await?;
+                }
+            }
+        }
         if let Some(session_id) = replay_session_id
             && !plamenu_db::native_live::bind_recurring_replay(
                 conn,

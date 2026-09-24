@@ -4,19 +4,21 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr};
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use plamenu_db::native_live::FinishReason;
 use rtmp_rs::media::flv::{FlvTag, FlvTagType};
 use rtmp_rs::protocol::message::{ConnectParams, PlayParams, PublishParams};
+use rtmp_rs::registry::StreamRegistry;
+use rtmp_rs::server::connection::Connection;
 use rtmp_rs::server::handler::MediaDeliveryMode;
 use rtmp_rs::session::{SessionContext, StreamContext};
-use rtmp_rs::{AuthResult, RtmpHandler, RtmpServer, ServerConfig};
+use rtmp_rs::{AuthResult, RtmpHandler, ServerConfig};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
@@ -35,12 +37,24 @@ const BROWSER_QUEUE_CHUNKS: usize = 8;
 pub struct PublisherInput {
     pub sender: mpsc::Sender<Vec<u8>>,
     stopped: Arc<AtomicBool>,
+    revoked: Arc<AtomicBool>,
 }
 
 impl PublisherInput {
     pub fn mark_stopped(&self) {
         self.stopped.store(true, Ordering::Release);
     }
+
+    #[must_use]
+    pub fn is_revoked(&self) -> bool {
+        self.revoked.load(Ordering::Acquire)
+    }
+}
+
+struct PumpControl {
+    stopped: Arc<AtomicBool>,
+    revoked: Arc<AtomicBool>,
+    disconnect: Option<Arc<std::net::TcpStream>>,
 }
 
 #[derive(Clone, Copy)]
@@ -68,6 +82,7 @@ pub(crate) fn key_digest(key: &str) -> Option<[u8; 32]> {
 struct IngestHandler {
     state: AppState,
     publishers: Arc<Mutex<HashMap<u64, PublisherInput>>>,
+    disconnects: Arc<Mutex<HashMap<u64, Arc<std::net::TcpStream>>>>,
 }
 
 impl IngestHandler {
@@ -122,17 +137,32 @@ impl RtmpHandler for IngestHandler {
         }
         let (tx, rx) = mpsc::channel(QUEUE_TAGS);
         let stopped = Arc::new(AtomicBool::new(false));
+        let revoked = Arc::new(AtomicBool::new(false));
         self.publishers.lock().await.insert(
             ctx.session_id,
             PublisherInput {
                 sender: tx,
                 stopped: stopped.clone(),
+                revoked: revoked.clone(),
             },
         );
         let state = self.state.clone();
         let live_session = session.clone();
+        let disconnect = self.disconnects.lock().await.get(&ctx.session_id).cloned();
         tokio::spawn(async move {
-            pump(state, live_session, output, rx, InputFormat::Flv, stopped).await;
+            pump(
+                state,
+                live_session,
+                output,
+                rx,
+                InputFormat::Flv,
+                PumpControl {
+                    stopped,
+                    revoked,
+                    disconnect,
+                },
+            )
+            .await;
         });
         if let Err(error) = crate::native_live::federate_state(&self.state, session.status_id).await
         {
@@ -162,6 +192,9 @@ impl RtmpHandler for IngestHandler {
         else {
             return false;
         };
+        if sender.is_revoked() {
+            return false;
+        }
         let Some(bytes) = serialize_tag(tag) else {
             return false;
         };
@@ -238,15 +271,24 @@ pub async fn start_piped(
     tokio::fs::create_dir_all(&output).await?;
     let (sender, receiver) = mpsc::channel(BROWSER_QUEUE_CHUNKS);
     let stopped = Arc::new(AtomicBool::new(false));
+    let revoked = Arc::new(AtomicBool::new(false));
     tokio::spawn(pump(
         state.clone(),
         session,
         output,
         receiver,
         format,
-        stopped.clone(),
+        PumpControl {
+            stopped: stopped.clone(),
+            revoked: revoked.clone(),
+            disconnect: None,
+        },
     ));
-    Ok(PublisherInput { sender, stopped })
+    Ok(PublisherInput {
+        sender,
+        stopped,
+        revoked,
+    })
 }
 
 /// Startup follows database session recovery and precedes the listener. Keep
@@ -304,7 +346,7 @@ async fn pump(
     output: PathBuf,
     mut rx: mpsc::Receiver<Vec<u8>>,
     format: InputFormat,
-    stopped: Arc<AtomicBool>,
+    control: PumpControl,
 ) {
     let replay = output.join("replay.mp4");
     // PeerTube-compatible latency modes. The list is a bounded sliding DVR
@@ -368,7 +410,32 @@ async fn pump(
             };
             if stdin.write_all(header).await.is_ok() {
                 let mut last_size_check = tokio::time::Instant::now();
-                while let Some(tag) = rx.recv().await {
+                let mut credential_check = tokio::time::interval(std::time::Duration::from_secs(2));
+                credential_check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    let next = tokio::select! {
+                        tag = rx.recv() => tag,
+                        _ = credential_check.tick(), if session.ingest_key_generation.is_some() => {
+                            match plamenu_db::native_live::ingest_key_current(&state.pool, &session).await {
+                                Ok(true) => continue,
+                                Ok(false) => {
+                                    control.revoked.store(true, Ordering::Release);
+                                    control.stopped.store(true, Ordering::Release);
+                                    if let Some(socket) = &control.disconnect {
+                                        let _ = socket.shutdown(Shutdown::Both);
+                                    }
+                                    tracing::info!(media = session.media_id, "revoked live stream key stopped publisher");
+                                    break;
+                                }
+                                Err(error) => {
+                                    remux_failed = true;
+                                    tracing::warn!(%error, media = session.media_id, "cannot verify live stream key");
+                                    break;
+                                }
+                            }
+                        }
+                    };
+                    let Some(tag) = next else { break };
                     if stdin.write_all(&tag).await.is_err() {
                         remux_failed = true;
                         break;
@@ -381,7 +448,7 @@ async fn pump(
                         if !matches!(crate::storage::available_bytes(&output), Ok(free) if free >= disk_floor)
                         {
                             disk_floor_reached = true;
-                            stopped.store(true, Ordering::Release);
+                            control.stopped.store(true, Ordering::Release);
                             break;
                         }
                         let cap = state.config.native_video.max_upload_bytes();
@@ -391,7 +458,7 @@ async fn pump(
                             .is_ok_and(|meta| meta.len() >= cap.saturating_sub(margin))
                         {
                             recording_limit_reached = true;
-                            stopped.store(true, Ordering::Release);
+                            control.stopped.store(true, Ordering::Release);
                             break;
                         }
                     }
@@ -416,7 +483,7 @@ async fn pump(
         tracing::error!(%error, media = session.media_id, "cannot start native live remux");
     }
     let reason = finish_reason(
-        stopped.load(Ordering::Acquire),
+        control.stopped.load(Ordering::Acquire),
         remux_failed,
         session.media_id,
     );
@@ -666,19 +733,88 @@ fn finish_reason(deliberate_stop: bool, remux_failed: bool, media_id: i64) -> Fi
 #[must_use]
 pub fn spawn(state: AppState) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let mut config = ServerConfig::default();
-        config.bind_addr = state.config.live_ingest_bind;
-        config.max_connections = 32;
-        config.gop_buffer_enabled = false;
-        let handler = IngestHandler {
-            state: state.clone(),
-            publishers: Arc::default(),
-        };
-        let server = RtmpServer::new(config, handler);
-        if let Err(error) = server.run_until(state.shutdown.cancelled()).await {
+        if let Err(error) = run_rtmp(state).await {
             tracing::error!(%error, "native RTMP ingest stopped");
         }
     })
+}
+
+/// Keep a duplicate socket handle so key revocation can close a publisher's
+/// transport. The upstream RTMP listener does not expose per-session close;
+/// owning the accept loop lets its `Connection` observe EOF and perform its
+/// normal registry/handler cleanup without a second port or process.
+fn clonable_socket(socket: TcpStream) -> io::Result<(TcpStream, Arc<std::net::TcpStream>)> {
+    let standard = socket.into_std()?;
+    let disconnect = Arc::new(standard.try_clone()?);
+    Ok((TcpStream::from_std(standard)?, disconnect))
+}
+
+async fn run_rtmp(state: AppState) -> io::Result<()> {
+    let mut config = ServerConfig::default();
+    config.bind_addr = state.config.live_ingest_bind;
+    config.max_connections = 32;
+    config.gop_buffer_enabled = false;
+    let listener = TcpListener::bind(config.bind_addr).await?;
+    tracing::info!(addr = %config.bind_addr, "native RTMP ingest listening");
+    let registry = Arc::new(StreamRegistry::new());
+    let cleanup = registry.spawn_cleanup_task();
+    let handler = Arc::new(IngestHandler {
+        state: state.clone(),
+        publishers: Arc::default(),
+        disconnects: Arc::default(),
+    });
+    let slots = Arc::new(Semaphore::new(config.max_connections));
+    let next_session = AtomicU64::new(1);
+    loop {
+        tokio::select! {
+            () = state.shutdown.cancelled() => break,
+            accepted = listener.accept() => {
+                let (socket, peer) = match accepted {
+                    Ok(pair) => pair,
+                    Err(error) => {
+                        tracing::warn!(%error, "RTMP accept failed");
+                        continue;
+                    }
+                };
+                let Ok(slot) = slots.clone().try_acquire_owned() else {
+                    tracing::warn!(%peer, "RTMP connection limit reached");
+                    continue;
+                };
+                if config.tcp_nodelay && let Err(error) = socket.set_nodelay(true) {
+                    tracing::warn!(%error, %peer, "RTMP socket setup failed");
+                    continue;
+                }
+                let (socket, disconnect) = match clonable_socket(socket) {
+                    Ok(pair) => pair,
+                    Err(error) => {
+                        tracing::warn!(%error, %peer, "RTMP socket duplication failed");
+                        continue;
+                    }
+                };
+                let id = next_session.fetch_add(1, Ordering::Relaxed);
+                handler.disconnects.lock().await.insert(id, disconnect);
+                let handler = Arc::clone(&handler);
+                let registry = Arc::clone(&registry);
+                let config = config.clone();
+                let shutdown = state.shutdown.clone();
+                tokio::spawn(async move {
+                    let _slot = slot;
+                    let mut connection = Connection::new(id, socket, peer, config, Arc::clone(&handler), registry);
+                    let result = tokio::select! {
+                        result = connection.run() => Some(result),
+                        () = shutdown.cancelled() => None,
+                    };
+                    if let Some(Err(error)) = result {
+                        tracing::debug!(%error, %peer, "RTMP publisher disconnected");
+                    }
+                    handler.disconnects.lock().await.remove(&id);
+                    handler.close(id, false).await;
+                });
+            }
+        }
+    }
+    cleanup.abort();
+    Ok(())
 }
 
 fn rtmps_acceptor(config: &LiveRtmpsConfig) -> io::Result<TlsAcceptor> {

@@ -236,7 +236,9 @@ def test_first_party_draft_upload_reaches_peertube(
                 else:
                     visual_description = "Moving colour test pattern"
                     sample = peertube.make_sample_mp4(
-                        Path(temp) / "draft.mp4", seconds=5, size="640x480"
+                        Path(temp) / "draft.mp4",
+                        seconds=12 if upload_mode == "multipart" else 5,
+                        size="640x480",
                     )
                 contents = sample.read_bytes()
                 fields = [
@@ -406,6 +408,10 @@ def test_first_party_draft_upload_reaches_peertube(
             status = plamenu_api.get(f"/api/v1/statuses/{published_id}")
             assert status["object_type"] == "Video", status
             assert status["media_attachments"][0]["type"] == "video", status
+            if upload_mode == "multipart":
+                peer = status["media_attachments"][0]["hls"]["p2p"]
+                assert peer["trackers"] == [f"wss://{config.PLAMENU_DOMAIN}/tracker/socket"]
+                assert peer["sha256_url"].endswith(f"/media/hls/{media_id}/sha256.json")
             if upload_mode == "custom-poster":
                 assert status["media_attachments"][0]["poster_description"] == "A solid blue square."
             assert (
@@ -465,6 +471,28 @@ def test_first_party_draft_upload_reaches_peertube(
             assert detail["files"], detail
             assert detail["streamingPlaylists"], detail
             hls = detail["streamingPlaylists"][0]
+            if upload_mode == "multipart":
+                assert f"wss://{config.PLAMENU_DOMAIN}/tracker/socket" in detail["trackerUrls"], detail
+                checksum = requests.get(hls["segmentsSha256Url"], verify=False, timeout=30)
+                checksum.raise_for_status()
+                assert checksum.json(), "PeerTube received an empty integrity manifest"
+                with step("the two first-party players exchange verified local-origin segments"):
+                    subprocess.run(
+                        [
+                            "node",
+                            "verify-native-p2p.mjs",
+                            urljoin(config.PLAMENU_URL, published.headers["Location"]),
+                            f"{config.PEERTUBE_URL}/w/{remote['uuid']}",
+                        ],
+                        check=True,
+                        cwd=config.PLAMENU_DIR / "accessibility",
+                        timeout=150,
+                        env={
+                            **os.environ,
+                            "PEERTUBE_E2E_USER": peertube.ROOT_USER,
+                            "PEERTUBE_E2E_PASSWORD": peertube.ROOT_PASS,
+                        },
+                    )
             expected_heights = [360] if audio_only else [360, 480]
             assert len(hls["files"]) == len(expected_heights), hls
             assert sorted(f["height"] for f in hls["files"]) == expected_heights, hls

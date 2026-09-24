@@ -372,7 +372,7 @@ pub fn enrich_object(
         ));
     }
     if !hls.is_empty() {
-        let files: Vec<Value> = hls
+        let mut files: Vec<Value> = hls
             .iter()
             .map(|rendition| {
                 json!({
@@ -383,16 +383,49 @@ pub fn enrich_object(
                 })
             })
             .collect();
+        if hls.iter().all(|rendition| rendition.has_segment_sha256) {
+            for rendition in hls {
+                files.push(json!({
+                    "type": "Infohash",
+                    "name": plamenu_db::native_video_hls::p2p_infohash(&publication.uuid, rendition.height),
+                }));
+            }
+            files.push(json!({
+                "type": "Link", "name": "sha256", "mediaType": "application/json",
+                "href": format!("https://{domain}/media/hls/{}/sha256.json", media.id),
+            }));
+            urls.push(json!({
+                "type": "Link", "name": "tracker-websocket",
+                "rel": ["tracker", "websocket"],
+                "href": format!("wss://{domain}/tracker/socket"),
+            }));
+        }
         urls.push(json!({
             "type": "Link", "mediaType": "application/x-mpegURL",
             "href": format!("https://{domain}/media/hls/{}/master.m3u8", media.id),
             "tag": files,
         }));
     } else if live && media.live_state.as_deref() == Some("live") {
+        let mut tags = Vec::new();
+        if publication.live_latency_mode != Some(3) {
+            tags.push(json!({
+                "type": "Infohash",
+                "name": plamenu_db::native_video_hls::p2p_infohash(&publication.uuid, 0),
+            }));
+            tags.push(json!({
+                "type": "Link", "name": "sha256", "mediaType": "application/json",
+                "href": format!("https://{domain}/media/hls/{}/sha256.json", media.id),
+            }));
+            urls.push(json!({
+                "type": "Link", "name": "tracker-websocket",
+                "rel": ["tracker", "websocket"],
+                "href": format!("wss://{domain}/tracker/socket"),
+            }));
+        }
         urls.push(json!({
             "type": "Link", "mediaType": "application/x-mpegURL",
             "href": format!("https://{domain}/media/hls/{}/master.m3u8", media.id),
-            "tag": [],
+            "tag": tags,
         }));
     }
     note["url"] = json!(urls);

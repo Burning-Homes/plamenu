@@ -135,9 +135,9 @@ before becoming `verified`. Keep partial results and failures visible.
 | M2 | Long-form VOD pipeline | Large/resumable and no-JS uploads; durable processing; quality ladder; poster/storyboard; audio-only/silent inputs; failures/restart/quota evidence | in progress |
 | M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | pending |
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | pending |
-| M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | partial: no-JS authoring, RTMP/RTMPS/HTTPS-FLV and browser ingest, bounded HLS/MP4, generation-fenced interruption/reconnect, process-crash recovery including a recoverable one-shot replay, and PeerTube state/VOD updates verified; scheduling, recurring replay, DVR, active-session key revocation and P2P remain |
+| M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | partial: no-JS authoring, RTMP/RTMPS/HTTPS-FLV and browser ingest, bounded HLS/MP4, crash-recoverable one-shot and recurring replays, schedule announcements, DVR/latency controls, PeerTube updates, local/live P2P, active-session key revocation and 5/30-minute window plus 16-viewer load verified; no-JS DVR seeking, partial-fragment recovery UX and multi-node storage remain |
 | M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | pending |
-| M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | pending |
+| M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress: remote and local-origin VOD/live PeerTube P2P exchange and pre-play opt-out verified; embeds, operations and scale evidence remain |
 | M8 | Ecosystem and beyond parity | Defined REST/embed/runner compatibility scope; chosen extensions; end-to-end tests per supported contract; no PeerTube plugin ABI in round one | pending |
 | M9 | Completion gate | All accepted inventory entries verified; current and prior PeerTube matrices; browser/a11y/performance gates; operator and user documentation | pending |
 
@@ -223,10 +223,10 @@ unwatched remote videos do not trigger whole-file downloads.
 
 ## Next work
 
-The current priority is M5's remaining substantive live gaps: a separate
-published Video for each recurring replay, scheduling, latency/DVR and
-default-on compatible P2P
-with opt-out. One-shot replay does not close M5. M2 still owes difficult-input,
+The current priority is M5's no-JS DVR/recovery UX and wider live/browser
+fault-injection coverage, then larger multi-node and P2P pressure. Verified
+live P2P, active-session key revocation and long-window load do not close M5
+or M7. M2 still owes difficult-input,
 maximum-size and concurrent-upload stress; M1 channel lifecycle/collaboration
 and several federation paths remain open. Do not treat the current publication
 slices as a milestone sign-off.
@@ -1656,3 +1656,232 @@ record above predates migrations 0087–0088 and is not evidence for their write
   broadcast, and this is calendar metadata rather than reminders,
   subscriptions or automatic ingest start. Migration 0099 adds no companion
   process or installation step.
+
+### 2026-09-24 — PeerTube-compatible remote HLS peer delivery
+
+- A signed PeerTube Video now supplies bounded WSS tracker, video UUID and
+  segment-checksum hints, retained alongside its remote HLS attachment.
+  Discovery and checksums must refer to the publisher's host; malformed or
+  unrelated hints leave ordinary HTTP playback untouched. The checksum JSON
+  is served by Plamenu's same-origin, public-access-checked proxy with a
+  2-MiB fetch ceiling and bounded one-minute cache, so the browser never
+  fetches it from the remote origin. The standard page CSP
+  permits cross-origin WSS signaling but not cross-origin HTTP `connect-src`.
+- The 110-KiB Apache-2.0 P2P module is vendored inside the binary, lazy-loaded
+  only on playback. No CDN, Node process, tracker service or install step is
+  introduced. A visible checkbox beside eligible videos explains network
+  address sharing and defaults on; a persisted per-browser opt-out acts before
+  any tracker connection. Scripts-disabled playback remains the progressive
+  MP4, and opt-out playback remains ordinary HLS.
+- The real PeerTube 8.3.0 browser E2E passed **1/1 in 51.59 s**: a fresh
+  two-rendition PT Video was imported; the peer swarm infohash matched PT's
+  ActivityPub `Infohash`; two independent Chromium contexts connected to
+  PeerTube's WSS tracker; a delayed HTTP fallback forced a checksum-validated
+  274,144-byte segment transfer from one Plamenu viewer to the other; the
+  receiver's completed-segment event confirmed the checksum-validated bytes,
+  not merely received chunks. A 320px
+  pre-play opt-out connected to no tracker, played via HTTP, persisted after
+  reload, showed no overflow, and passed the WCAG A/AA scan. Toggling off
+  during an active peer session closed its tracker socket. A scripts-disabled
+  browser played the progressive MP4 with no inoperable peer control.
+  The prior PeerTube HLS and live federation regressions passed **2/2 in
+  81.55 s**. Screenshot:
+  `target/e2e/peertube-p2p-optout-320.png`. The parser unit test passed.
+  Pre-migration database archive:
+  `ap09-runtime-trt7qd/plamenu-before-remote-hls-peers.dump` (listing verified).
+- At this point P2P01–P2P04 remained **partial**: direct PeerTube first-party player ⇄ Plamenu
+  peer exchange, Plamenu-origin tracker/swarm announcements, live segment
+  throughput, embeds, unsupported devices and sustained-load/failure drills
+  still need tests. This is not a full P2P or M7 sign-off.
+
+### 2026-09-24 — first-party PeerTube ⇄ Plamenu segment interoperability
+
+- The same fresh-video browser matrix now brings up PeerTube's own first-party
+  VideoJS/P2P player on its real WSS tracker. With the first Plamenu peer as
+  the only other viewer, PeerTube requested a segment and Plamenu uploaded
+  274,144 bytes to it. After that Plamenu seed closed, a fresh Plamenu browser
+  received 274,144 checksum-validated bytes from PeerTube's player; both
+  advanced beyond the first segment while playing. The full case passed
+  **1/1 in 110.11 s**. This exercises both client directions, not merely two
+  Plamenu tabs agreeing with each other. The test uses a short disposable
+  PeerTube video and deletes it afterward.
+- P2P01 is **verified for remote VOD against current PeerTube**. P2P05 records
+  the distinct remaining Plamenu-origin tracker, swarm and integrity contract;
+  live swarms, embeds, more browsers/devices and load/abuse tests remain open.
+
+### 2026-09-24 — Plamenu-origin native VOD swarms
+
+- Migration 0101 stores immutable per-byte-range SHA-256 digests with each
+  generation-fenced local HLS rendition. The worker hashes init and media
+  ranges in 64 KiB chunks before publication, bounded to 64 MiB per segment,
+  10,000 ranges per rendition and a sub-2 MiB combined manifest. A valid
+  video beyond a sharing limit remains playable over HLS/MP4 with P2P disabled;
+  the optional peer lane never rejects publication. Publishing assigns PeerTube v2 swarm
+  infohashes in the same transaction as the Video UUID. The ActivityPub Video
+  advertises the rendition infohashes, checksum Link and WSS tracker; the
+  client API supplies the same hints. Existing MP4 attachments and no-JS
+  playback stay independent of P2P.
+- The tracker is included in the Rust server, with no companion process. It
+  accepts only indexed, currently published local infohashes; sockets, swarms,
+  peers, offers, signaling frames, outbound queues and announce rates have
+  explicit ceilings. An arbitrary-swarm Chromium probe got `unknown info_hash`
+  and the socket closed. The standalone checksum unit test and three native
+  upload browser cases passed: Chromium desktop, Chromium at 320px and
+  Chromium without JavaScript. The browser checks include a real 206 segment
+  digest, visible local P2P choice, decoded video and caption cues.
+- The real PeerTube 8.3.0 outbound multipart-draft E2E passed **1/1 in
+  103.96 s** on the final binary: PeerTube imported a fresh 12-second Plamenu Video with both HLS
+  renditions, checksum URL and Plamenu tracker. PeerTube's own VideoJS/P2P
+  player received **185,852 bytes** from a Plamenu viewer; after that seed
+  closed, a fresh Plamenu viewer received **185,852 checksum-validated bytes**
+  from PeerTube with zero validation errors. The existing PeerTube watch matrix
+  played, sought and switched quality on Chromium and Firefox desktop/320px.
+  A separate pre-play opt-out ran before the two peers: it played over HTTP
+  without a tracker socket or peer engine. Private report:
+  `ap09-runtime-trt7qd/native-p2p-verified.xml`. The local DB
+  was backed up and its archive listing verified before migration 0101 at
+  `ap09-runtime-trt7qd/plamenu-before-native-p2p.dump`. Disk remains about
+  190 GiB free with non-incremental builds; the tracker research temp was
+  removed.
+- P2P01 now covers VOD in both origin directions, and P2P05 covers native VOD.
+  This does **not** sign off live P2P, embeds, multi-node tracker fanout,
+  sustained concurrency/abuse pressure or all browser/device combinations.
+
+### 2026-09-24 — rolling live-segment integrity prerequisite
+
+- The live session's same-origin `sha256.json` now contains SHA-256 digests for
+  only the committed MPEG-TS segments named by its current atomic HLS playlist.
+  A session-fenced, bounded in-process cache hashes each immutable segment
+  once and prunes entries as the DVR window moves. Public-access, on-air,
+  filename, segment-size, playlist-size, manifest-size and cache ceilings all
+  apply. The manifest is `no-store`, returns an empty object before the first
+  segment, and returns 404 after the session ends. It is not yet advertised
+  as a live peer source; ordinary HLS/MP4 playback is unchanged.
+- The focused hash/prune unit test and strict offline all-target Clippy passed.
+  Real outbound live federation E2E passed on each of the three native
+  ingest paths: RTMP **1/1 in 28.24 s**, HTTPS-FLV and RTMPS **2/2 in
+  114.50 s**. Each compared a served MPEG-TS segment with its manifest hash
+  and checked teardown, while retaining the existing PeerTube on-air/replay
+  assertions. Reports: `ap09-runtime-trt7qd/live-sha256-rtmp.xml` and
+  `ap09-runtime-trt7qd/live-sha256-all-ingest.xml`.
+
+### 2026-09-24 — Plamenu-origin live swarms
+
+- Migration 0102 records the PeerTube-compatible default-stream infohash
+  atomically with each on-air session. Plamenu's bounded in-process tracker
+  admits that infohash only while its public/unlisted broadcast is live and
+  its owner/channel are not suspended; one-second low-latency mode does not
+  enter a swarm. The on-air ActivityPub Video advertises the infohash, rolling
+  checksum manifest and tracker, and the client API supplies the same hints.
+  No installation step or companion process was added. The first-party
+  browser refreshes the rolling manifest for new live segments, checks their
+  SHA-256 before accepting peer bytes, and keeps the existing HTTP HLS/MP4
+  paths when peers or scripts are unavailable.
+- A real RTMP broadcast imported into PeerTube 8.3 passed the dedicated
+  outbound browser E2E on the final binary **1/1 in 45.20 s**. PeerTube's unmodified player got
+  **368,480 bytes** from Plamenu; after the Plamenu seed closed, a new
+  Plamenu viewer accepted **748,428 checksum-validated bytes** from
+  PeerTube with zero validation errors. The test also verified default-on
+  disclosure with pre-play opt-out (no tracker contact), a scripts-disabled
+  MP4 source, federation/API hints, and checksum/tracker rejection after the
+  broadcast ends. The previous two failed runs exposed errors in the new
+  *test harness*: an incorrect HTML selector and a 4-second HTTP delay that
+  starved the live player's startup buffer; neither was counted as passing.
+  Report: `ap09-runtime-trt7qd/live-p2p-verified.xml`. Strict offline
+  all-target Clippy passed, and the existing low-latency RTMP/PeerTube
+  lifecycle regression passed **1/1 in 28.67 s** with assertions that this
+  one-second mode exposes no peer hints.
+- P2P01 and P2P05 now include live first-party interoperability. This does
+  not close M5/M7: embeds, wider browser/device coverage, and sustained
+  concurrency/resource evidence remain.
+
+### 2026-09-24 — active stream-key revocation across native transports
+
+- Stream-key claims now retain their credential generation in the active
+  session. A bounded two-second server-side check, independent of incoming
+  media cadence, stops a publisher if the owner rotates its key. The RTMP
+  accept loop remains in the same Plamenu process and same port; it retains
+  a duplicate socket handle so revocation can actually disconnect RTMP and
+  RTMPS encoders. Merely dropping tags in the upstream callback had left
+  them connected, as the first E2E run exposed. Cookie-authenticated browser
+  camera/screen capture does not depend on the stream key and is unaffected.
+  Database verification errors fail closed as an interrupted stream rather
+  than silently continuing with uncertain credentials. The no-JS management
+  form now warns about active-stop/replay consequences, with English and
+  Russian strings; the one-time key page no longer says an active encoder
+  must be stopped separately.
+- Real RTMP, HTTPS-FLV and RTMPS rotation E2E passed **3/3 in 55.49 s**.
+  Each path started an on-air recurring Video with committed media, rotated
+  its key, observed publisher disconnection and a closed HLS session, rejected
+  the old key, restarted a second generation with the new key, and retained
+  two independent replays. HTTPS-FLV's FFmpeg `q` does not reliably send a
+  clean final POST body frame, so the test uses the explicit owner rotation
+  to stop its second generation; unexpected disconnects retain the existing
+  reconnect grace period. Report:
+  `ap09-runtime-trt7qd/live-key-revocation.xml`. The existing outbound
+  RTMP/HTTPS-FLV/RTMPS HLS, PeerTube-import and replay regression passed
+  **3/3 in 134.25 s** on the same binary; report:
+  `ap09-runtime-trt7qd/live-key-compat-regression.xml`. Strict offline
+  all-target Clippy passed. The Plamenu-origin live P2P first-party browser
+  exchange also passed again **1/1 in 44.28 s** after the RTMP listener change;
+  report: `ap09-runtime-trt7qd/live-p2p-after-revocation.xml`.
+- LIVE01 is verified for these encoder transports. At this point M5 still
+  required sustained DVR/window, concurrency and wider recovery evidence.
+
+### 2026-09-25 — bounded long-window DVR and concurrent viewers
+
+- A new real-RTMP, no-JS-created recurring-broadcast E2E drives media
+  timestamps at 20× using FFmpeg's built-in audio/video pacing filters.
+  The five-minute DVR held exactly **150 playlist segments** and at most
+  **151 MPEG-TS files**; the thirty-minute DVR held **900** and **901**.
+  Both advanced the media sequence past the first ten segments, returned
+  404 for the evicted first segment, removed it from the rolling SHA-256
+  manifest, verified a retained segment against its served checksum, and
+  finalized a separate long replay. No additional software or install step
+  was introduced.
+- On an 8-core/16-thread i7-11700F dev host with 31 GiB RAM, 16 parallel
+  HTTP viewers each fetched three master/child/checksum/segment cycles while
+  the encoder remained on air. For the five-minute window, **192 requests**
+  returned **4,329,472 bytes**, median **50 ms**, p95 **72 ms**, max **80 ms**.
+  For the thirty-minute window, **192 requests** returned **11,213,268
+  bytes**, median **56 ms**, p95 **86 ms**, max **98 ms**. The same single
+  FFmpeg remux process served all viewers; its observed RSS stayed at
+  **51,736 KiB** and **52,064 KiB**, respectively, before and after each
+  burst. These are local debug-build fixture measurements, not production
+  capacity or browser/P2P-scale claims. Both tests passed **2/2 in 130.26 s**;
+  report: `ap09-runtime-trt7qd/live-dvr-pressure.xml`.
+- The initial five-minute run also passed but took 174.50 s because input
+  `-readrate` did not pace the synthetic source at the requested factor;
+  the fixture was corrected to FFmpeg's built-in realtime filters before
+  the final two-window run. Disk remained about **188 GiB free** with
+  incremental build artifacts at zero; completed live scratch is subject
+  to the existing timed app cleanup, not manually deleted mid-finalization.
+- LIVE06 and PERF02 gain bounded-window and 16-viewer evidence, but remain
+  partial pending failure UX, broader load and multi-node tests. M5 remains
+  open.
+
+### 2026-09-25 — PeerTube-origin live swarm interoperability
+
+- Imported on-air PeerTube Videos now expose their signed, same-origin HLS
+  swarm hints in the client API and first-party player. PeerTube's small-
+  latency mode deliberately suppresses P2P, consistent with its player. The
+  rolling SHA-256 proxy refreshes remote live state before serving, uses a
+  one-second in-process cache with per-URL single-flight origin fetches, and
+  returns `no-store`; the ended broadcast removes hints and returns 404 even
+  if a former checksum document was cached. The player decodes the proxied
+  origin URL before matching each live segment to PeerTube's SHA document;
+  this also correctly handles URL-safe Base64 in the VOD proxy.
+- A real PeerTube 8.3 RTMP broadcast, on-air ActivityPub Video, both unmodified
+  first-party browser players, and PeerTube's tracker verified bidirectional
+  delivery: Plamenu accepted **711,204 SHA-256-validated bytes** from a
+  PeerTube viewer and then uploaded **711,204 bytes** to a fresh PeerTube
+  viewer, with **zero validation errors**. The same E2E checked a visible
+  default-on choice, opt-out before tracker contact, scripts-disabled MP4
+  fallback, rolling checksum changes and post-end revocation; **1/1 in
+  63.57 s**. The existing remote VOD P2P browser regression also passed
+  **1/1 in 112.35 s**, validating **274,144 bytes** in both exchange
+  directions after the URL-decoding change. These are live local-instance
+  tests, not broad device or Internet-scale evidence.
+- P2P01 now has VOD and live first-party exchange in both origin directions.
+  M5/M7 remain open for the wider browser/device, embed, resource and
+  multi-node evidence called out above.
