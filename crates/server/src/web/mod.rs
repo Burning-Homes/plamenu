@@ -7,11 +7,12 @@
 //! `entities` layer the JSON API renders from, so the UI cannot drift from the
 //! API.
 
-mod actions;
+pub(crate) mod actions;
 mod admin;
 mod announcements;
 mod applications;
 mod assets;
+mod caption_transcripts;
 mod cleanup;
 pub(crate) mod clock;
 mod collapse;
@@ -50,6 +51,8 @@ mod strikes;
 mod thread;
 pub(crate) mod two_factor;
 mod user_agent;
+mod video_captions;
+mod video_chapters;
 mod video_drafts;
 mod video_upload;
 mod videos;
@@ -96,6 +99,10 @@ pub(crate) fn badge_color(color: &str) -> Option<&str> {
 #[allow(clippy::too_many_lines)]
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route(
+            "/videos/{media_id}/transcript/{language}",
+            get(caption_transcripts::show),
+        )
         .route("/", get(pages::home))
         .route("/public", get(pages::public))
         .route("/explore", get(explore::posts))
@@ -395,6 +402,20 @@ pub fn router() -> Router<AppState> {
         .route("/groups", get(groups::index))
         .route("/groups/new", get(groups::new_page))
         .route("/videos", get(videos::index))
+        .route("/videos/{id}/captions", get(video_captions::manage))
+        .route("/videos/{id}/chapters", get(video_chapters::manage))
+        .route(
+            "/web/videos/{id}/chapters",
+            post(video_chapters::published_update),
+        )
+        .route(
+            "/web/videos/{id}/captions",
+            post(video_captions::add).layer(axum::extract::DefaultBodyLimit::max(512 * 1024)),
+        )
+        .route(
+            "/web/videos/{id}/captions/{language}/remove",
+            post(video_captions::remove),
+        )
         .route("/videos/live/new", get(live::new_page))
         .route("/web/videos/live", post(live::create))
         .route("/videos/live/{id}", get(live::manage))
@@ -411,7 +432,19 @@ pub fn router() -> Router<AppState> {
         .route("/videos/drafts/{id}", get(video_drafts::show))
         .route("/videos/drafts/{id}/status", get(video_drafts::status))
         .route("/videos/drafts/{id}/review", get(video_drafts::review))
+        .route(
+            "/web/videos/drafts/{id}/chapters",
+            post(video_chapters::draft_update),
+        )
         .route("/web/videos/drafts/{id}", post(video_drafts::action))
+        .route(
+            "/web/videos/drafts/{id}/captions",
+            post(video_drafts::add_caption).layer(axum::extract::DefaultBodyLimit::max(512 * 1024)),
+        )
+        .route(
+            "/web/videos/drafts/{id}/captions/{language}/remove",
+            post(video_drafts::remove_caption),
+        )
         .route(
             "/web/videos/drafts/{id}/poster",
             post(video_drafts::replace_poster)
@@ -432,6 +465,10 @@ pub fn router() -> Router<AppState> {
             post(video_upload::finish),
         )
         .route("/videos/drafts/{id}/preview/{kind}", get(videos::preview))
+        .route(
+            "/videos/drafts/{id}/captions/{name}",
+            get(videos::draft_caption),
+        )
         .route("/web/video-channels", post(videos::create_channel))
         .route(
             "/web/videos",

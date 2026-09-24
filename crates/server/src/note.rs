@@ -213,6 +213,8 @@ pub struct NoteBatch {
     events: HashMap<i64, PreparedEvent>,
     videos: HashMap<i64, plamenu_db::video::Publication>,
     native_hls: HashMap<i64, Vec<plamenu_db::native_video_hls::FileTag>>,
+    video_captions: HashMap<i64, Vec<plamenu_db::video_captions::Caption>>,
+    video_chapters: HashMap<i64, Vec<plamenu_db::video_chapters::Chapter>>,
     engagement: HashMap<i64, plamenu_db::status::Engagement>,
     self_reply_ids: HashMap<i64, Vec<i64>>,
     sources: HashMap<i64, plamenu_db::status::StatusSource>,
@@ -294,6 +296,10 @@ impl NoteBatch {
             let media_ids: Vec<i64> = batch.videos.values().map(|v| v.media_id).collect();
             batch.native_hls =
                 plamenu_db::native_video_hls::tags_for_media(&mut *conn, &media_ids).await?;
+            batch.video_captions =
+                plamenu_db::video_captions::for_media(&mut *conn, &media_ids).await?;
+            batch.video_chapters =
+                plamenu_db::video_chapters::for_media(&mut *conn, &media_ids).await?;
         }
         batch.tag_names = tag::names_for_statuses(&mut *conn, &ids).await?;
         batch.deleted = plamenu_db::status::deleted_ids(&mut *conn, &ids).await?;
@@ -718,6 +724,16 @@ pub fn note_in_batch(
             media,
             batch
                 .native_hls
+                .get(&media.id)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+            batch
+                .video_captions
+                .get(&media.id)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+            batch
+                .video_chapters
                 .get(&media.id)
                 .map(Vec::as_slice)
                 .unwrap_or_default(),

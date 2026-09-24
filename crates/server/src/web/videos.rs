@@ -133,6 +133,12 @@ pub(super) async fn page(
     } else {
         Vec::new()
     };
+    let recent_published = if preview.is_none() {
+        plamenu_db::video_captions::recent_owned_publications(&state.pool, user.current.account.id)
+            .await?
+    } else {
+        Vec::new()
+    };
     let live_broadcasts =
         plamenu_db::native_live::recent_owned(&state.pool, user.current.account.id).await?;
     // Derive privacy from stored ownership, never a client-submitted flag.
@@ -142,6 +148,22 @@ pub(super) async fn page(
             .is_some()
     } else {
         false
+    };
+    let caption_tracks = if let Some(media) = &preview {
+        plamenu_db::video_captions::for_media(&state.pool, &[media.id])
+            .await?
+            .remove(&media.id)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let chapter_tracks = if let Some(media) = &preview {
+        plamenu_db::video_chapters::for_media(&state.pool, &[media.id])
+            .await?
+            .remove(&media.id)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
     };
     let body = html! {
         section.column {
@@ -154,6 +176,24 @@ pub(super) async fn page(
                     ul {
                         @for pending in &recent {
                             li { a href=(format!("/videos/drafts/{}", pending.media_id)) { (pending.title) } }
+                        }
+                    }
+                }
+            }
+            @if !recent_published.is_empty() {
+                nav aria-label=(locale.text("videos-your-published")) {
+                    h2 { (locale.text("videos-your-published")) }
+                    ul {
+                        @for published in &recent_published {
+                            li {
+                                a href=(format!("/videos/{}/captions", published.media_id)) {
+                                    (published.title) " — " (locale.text("videos-caption-published-title"))
+                                }
+                                " · "
+                                a href=(format!("/videos/{}/chapters", published.media_id)) {
+                                    (locale.text("videos-chapters-title"))
+                                }
+                            }
                         }
                     }
                 }
@@ -202,8 +242,14 @@ pub(super) async fn page(
                         @if let Some(file) = &media.file_name {
                             video.video-publish__preview controls preload="metadata" aria-label=(locale.text("videos-preview")) {
                                 source src=(if native { format!("/videos/drafts/{}/preview/video", media.id) } else { format!("/media/{file}") }) type=(media.content_type);
-                                @if media.caption_vtt.is_some() {
-                                    track kind="captions" src=(if native { format!("/videos/drafts/{}/preview/captions.vtt", media.id) } else { format!("/media/{}/captions.vtt", media.id) }) srclang=(if draft.language.is_empty() { "und" } else { &draft.language }) label=(locale.text("videos-captions"));
+                                @for (index, track) in caption_tracks.iter().enumerate() {
+                                    @let src = if track.legacy {
+                                        format!("/videos/drafts/{}/preview/captions.vtt", media.id)
+                                    } else {
+                                        format!("/videos/drafts/{}/captions/{}.vtt", media.id, track.language)
+                                    };
+                                    track kind="captions" src=(src) srclang=(track.language)
+                                        label=(track.language) default[index == 0];
                                 }
                             }
                         }
@@ -294,6 +340,49 @@ pub(super) async fn page(
                 }
                 @if native {
                     @if let Some(media) = &preview {
+                        section.video-captions id="caption-languages" {
+                            h2 { (locale.text("videos-caption-manage")) }
+                            p.settings-field__hint { (locale.text("videos-caption-manage-hint")) }
+                            @if !caption_tracks.is_empty() {
+                                ul {
+                                    @for track in &caption_tracks {
+                                        li {
+                                            (track.language) " — "
+                                            a href=(if track.legacy {
+                                                format!("/videos/drafts/{}/preview/captions.vtt", media.id)
+                                            } else {
+                                                format!("/videos/drafts/{}/captions/{}.vtt", media.id, track.language)
+                                            }) { (locale.text("videos-caption-open")) }
+                                            form method="post" action=(format!("/web/videos/drafts/{}/captions/{}/remove", media.id, track.language)) {
+                                                input type="hidden" name="csrf" value=(user.csrf);
+                                                button.video-captions__remove type="submit"
+                                                    aria-label=(format!("{} {}", locale.text("videos-caption-remove"), track.language)) {
+                                                    (locale.text("videos-caption-remove"))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            form.settings-form data-caption-upload
+                                data-caption-ready=(locale.text("videos-caption-ready"))
+                                data-caption-invalid=(locale.text("videos-caption-invalid"))
+                                data-caption-too-large=(locale.text("videos-caption-too-large"))
+                                method="post" action=(format!("/web/videos/drafts/{}/captions", media.id)) enctype="multipart/form-data" {
+                                input type="hidden" name="csrf" value=(user.csrf);
+                                label.settings-field {
+                                    span.settings-field__label { (locale.text("videos-caption-language")) }
+                                    input name="language" required maxlength="35" pattern="[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*" placeholder="en";
+                                }
+                                label.settings-field {
+                                    span.settings-field__label { (locale.text("videos-captions")) }
+                                    input type="file" name="caption" accept=".vtt,text/vtt" required;
+                                }
+                                p role="status" aria-live="polite" data-caption-status hidden {}
+                                button type="submit" { (locale.text("videos-caption-save")) }
+                            }
+                        }
+                        (super::video_chapters::editor(media.id, &chapter_tracks, &user.csrf, false, locale))
                         (replace_poster_form(media.id, &user.csrf, locale))
                     }
                 }
@@ -341,13 +430,36 @@ pub async fn preview(
     response
 }
 
+pub async fn draft_caption(
+    State(state): State<AppState>,
+    Path((id, name)): Path<(i64, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let kind = format!("captions/{name}");
+    let mut response = match preview_inner(&state, id, &kind, &headers).await {
+        Ok(response) => response,
+        Err(error) => error.into_response(),
+    };
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    response
+        .headers_mut()
+        .insert(header::VARY, HeaderValue::from_static("Cookie"));
+    response
+}
+
 async fn preview_inner(
     state: &AppState,
     id: i64,
     kind: &str,
     headers: &HeaderMap,
 ) -> Result<Response, ApiError> {
-    if !matches!(kind, "video" | "poster" | "captions.vtt") {
+    let caption_language = kind
+        .strip_prefix("captions/")
+        .and_then(|name| name.strip_suffix(".vtt"));
+    if !matches!(kind, "video" | "poster" | "captions.vtt") && caption_language.is_none() {
         return Err(ApiError::NotFound);
     }
     let token = super::session::raw_session_token(headers).ok_or(ApiError::NotFound)?;
@@ -363,6 +475,13 @@ async fn preview_inner(
             preview.caption_vtt.ok_or(ApiError::NotFound)?,
         )
             .into_response());
+    }
+    if let Some(language) = caption_language {
+        let body =
+            plamenu_db::video_captions::draft_body(&state.pool, id, language, user.account.id)
+                .await?
+                .ok_or(ApiError::NotFound)?;
+        return Ok(([(header::CONTENT_TYPE, "text/vtt; charset=utf-8")], body).into_response());
     }
     let file = if kind == "video" {
         &preview.file_name

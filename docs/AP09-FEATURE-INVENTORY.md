@@ -42,10 +42,10 @@ a parity percentage from the number of rows: some represent much larger work.
 
 | ID | Required capability | State |
 | --- | --- | --- |
-| A11Y01 | Upload/edit/remove multiple caption languages, native WebVTT tracks | In progress (single uploaded track first) |
-| A11Y02 | Transcripts, visual descriptions, audio-description intent and alternatives | In progress (reuse existing attachment alternatives) |
-| A11Y03 | Chapters, keyboard-accessible seeking and no-JS chapter links | Pending |
-| A11Y04 | Remote `subtitleLanguage` and `hasParts`, including updates and hostile data | Pending |
+| A11Y01 | Upload/edit/remove multiple caption languages, native WebVTT tracks | Partial: local draft and published add/replace/remove, PeerTube-origin import, bidirectional Update delivery, no-JS and JS playback verified; wider browser/assistive-technology matrix remains |
+| A11Y02 | Transcripts, visual descriptions, audio-description intent and alternatives | Partial: author-written transcript/visual description and audio-description intent remain distinct; language-specific caption-derived transcript is now an on-demand, same-origin, no-JS readable/seekable page for local and PeerTube tracks, browser/E2E verified; broader AT and description matrix remains |
+| A11Y03 | Chapters, keyboard-accessible seeking and no-JS chapter links | Complete for VOD: local draft/published authoring, PeerTube import/export/update, API metadata, no-JS media-fragment links and JS keyboard seeking E2E verified |
+| A11Y04 | Remote `subtitleLanguage` and `hasParts`, including updates and hostile data | Partial: bounded same-origin PeerTube captions and chapter collections import/update/remove, local chapter outbound and signed Update verified; single-primary deferred remote VOD now retains attachment identity and caption/chapters URLs across Video edits; broader redirect/hostile-network and mixed-media matrix pending |
 | UX01 | Discoverable publishing, review, validation and recovery without JS | Partial: upload-to-worker, private review/retry/confirmed cancellation and enhanced phase updates pass seven browser configurations including no-JS; resumable enhancement under verification |
 | UX02 | Responsive video space, channel library, search and subscriptions | Pending |
 | UX03 | Enhanced player quality, resume/history, captions and keyboard controls | Pending |

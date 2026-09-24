@@ -5149,6 +5149,57 @@ img.reaction__emoji {
   display: none;
 }
 
+.video-captions {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  margin-block: var(--space-3);
+}
+
+.video-captions li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block: var(--space-2);
+}
+
+.video-captions li form {
+  display: inline;
+}
+
+.video-captions__remove {
+  min-block-size: 44px;
+  padding-inline: var(--space-2);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+  color: light-dark(#9d231c, #ffa89f);
+}
+
+.video-captions [data-caption-status][hidden] {
+  display: none;
+}
+
+.video-chapters {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  margin-block: var(--space-3);
+}
+
+.video-chapters [data-chapter-preview] {
+  max-block-size: 14rem;
+  overflow-y: auto;
+  padding-inline-start: var(--space-4);
+  color: var(--text-muted);
+}
+
+.video-chapters [data-chapter-status][hidden],
+.video-chapters [data-chapter-preview][hidden],
+.video-chapters [data-chapter-current][hidden] {
+  display: none;
+}
+
 .video-upload__progress {
   display: grid;
   gap: var(--space-2);
@@ -7852,6 +7903,82 @@ a.settings-button--plain {
   }
 }
 
+.media__caption-transcripts ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin-block: var(--space-2) 0;
+  padding-inline-start: var(--space-5);
+}
+
+.caption-transcript {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.caption-transcript video {
+  display: block;
+  inline-size: 100%;
+  max-block-size: 70vh;
+  background: #000;
+}
+
+.caption-transcript__cues {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+}
+
+.caption-transcript__cues li {
+  padding: var(--space-2);
+  border-block-end: 1px solid var(--border);
+}
+
+.caption-transcript__cues li:target {
+  background: var(--surface);
+}
+
+.caption-transcript__cues a {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.caption-transcript__cues p {
+  margin: var(--space-1) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.media__chapters {
+  inline-size: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-block-start: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.875rem;
+
+  summary { cursor: pointer; font-weight: 600; }
+
+  ol {
+    display: grid;
+    gap: var(--space-1);
+    max-block-size: 16rem;
+    overflow-y: auto;
+    margin: var(--space-2) 0 0;
+    padding-inline-start: var(--space-4);
+  }
+
+  a {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    min-block-size: 2.75rem;
+    align-items: center;
+    overflow-wrap: anywhere;
+  }
+
+  time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+}
+
 /* A live that is not on air: the poster, dimmed, with the reason over it.
    No player element at all — there is nothing it could play. */
 .media--live-offline img {
@@ -7921,7 +8048,7 @@ a.settings-button--plain {
 
 /* The peer choice is deliberately outside the video controls so a viewer can
    opt out before pressing Play, including with keyboard or magnification. */
-.status__media .media--video[data-p2p] {
+.status__media .media--video:is([data-p2p], [data-chapters]) {
   aspect-ratio: auto;
   max-block-size: none;
 

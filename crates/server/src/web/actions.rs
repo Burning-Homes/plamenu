@@ -235,12 +235,12 @@ fn parse_id(raw: Option<&str>) -> Result<Option<i64>, ()> {
 }
 
 const MAX_TRANSCRIPT_CHARS: usize = 50_000;
-pub(super) const MAX_CAPTION_BYTES: usize = 256 * 1024;
+pub(crate) const MAX_CAPTION_BYTES: usize = 256 * 1024;
 
 /// A validated `WebVTT` sidecar. Full cue parsing remains the browser's job, but
 /// rejecting non-VTT text and files without any timed cue prevents an author
 /// from accidentally publishing a transcript as if it were captions.
-pub(super) fn parse_caption_vtt(bytes: &[u8]) -> Result<Option<String>, ApiError> {
+pub(crate) fn parse_caption_vtt(bytes: &[u8]) -> Result<Option<String>, ApiError> {
     if bytes.is_empty() {
         return Ok(None);
     }

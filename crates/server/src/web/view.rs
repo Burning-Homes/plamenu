@@ -2794,6 +2794,8 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                     .get("caption_url")
                     .and_then(Value::as_str)
                     .filter(|url| !url.is_empty());
+                @let caption_tracks = item.get("captions").and_then(Value::as_array);
+                @let has_chapters = item.get("chapters").and_then(Value::as_array).is_some_and(|parts| !parts.is_empty());
                 @let audio_described = item
                     .get("audio_described")
                     .and_then(Value::as_bool)
@@ -2877,7 +2879,8 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                         @match live_state {
                             Some("waiting" | "interrupted" | "ended") => (offline_live(
                                 item, preview, alt, width, height, language, ctx)),
-                            _ => figure.media.media--video data-p2p=[p2p.map(|_| "true")] {
+                            _ => figure.media.media--video data-p2p=[p2p.map(|_| "true")]
+                                data-chapters=[has_chapters.then_some("true")] {
                                 @if let Some(master) = hls_master {
                                     video src=(url) poster=(preview) controls playsinline preload="none"
                                         data-hls=(master) data-src=(url)
@@ -2890,7 +2893,14 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                         width=[width] height=[height]
                                         lang=[language]
                                         title=[Some(alt).filter(|a| !a.is_empty())] {
-                                        @if let Some(captions) = caption_url {
+                                        @if let Some(tracks) = caption_tracks {
+                                            @for (index, track) in tracks.iter().enumerate() {
+                                                @if let (Some(url), Some(lang)) = (track.get("url").and_then(Value::as_str), track.get("language").and_then(Value::as_str)) {
+                                                    track kind="captions" src=(url) srclang=(lang)
+                                                        label=(lang) default[index == 0];
+                                                }
+                                            }
+                                        } @else if let Some(captions) = caption_url {
                                             track kind="captions" src=(captions)
                                                 srclang=(language.unwrap_or("und"))
                                                 label=(ctx.locale.text("status-captions")) default;
@@ -2901,7 +2911,14 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                         width=[width] height=[height]
                                         lang=[language]
                                         title=[Some(alt).filter(|a| !a.is_empty())] {
-                                        @if let Some(captions) = caption_url {
+                                        @if let Some(tracks) = caption_tracks {
+                                            @for (index, track) in tracks.iter().enumerate() {
+                                                @if let (Some(url), Some(lang)) = (track.get("url").and_then(Value::as_str), track.get("language").and_then(Value::as_str)) {
+                                                    track kind="captions" src=(url) srclang=(lang)
+                                                        label=(lang) default[index == 0];
+                                                }
+                                            }
+                                        } @else if let Some(captions) = caption_url {
                                             track kind="captions" src=(captions)
                                                 srclang=(language.unwrap_or("und"))
                                                 label=(ctx.locale.text("status-captions")) default;
@@ -2917,6 +2934,7 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                         small { (ctx.locale.text("status-p2p-explanation")) }
                                     }
                                 }
+                                (media_chapters(item, url, ctx.locale))
                                 @if live_state == Some("live") {
                                     button.media__go-live type="button" hidden
                                         aria-label=(ctx.locale.text("status-go-live")) {
@@ -2957,6 +2975,7 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                     }
                                 }
                                 (media_transcript(item, language, ctx.locale))
+                                (media_caption_transcripts(item, ctx.locale))
                             },
                         }
                     },
@@ -3144,6 +3163,81 @@ fn media_transcript(item: &Value, language: Option<&str>, locale: Locale) -> Mar
             summary { (locale.text("status-transcript")) }
             p lang=[language] { (transcript) }
         }
+    }
+}
+
+/// Caption-derived text is useful for reading or searching dialogue, but is
+/// deliberately labeled separately from the author's visual description.
+fn media_caption_transcripts(item: &Value, locale: Locale) -> Markup {
+    let Some(tracks) = item
+        .get("captions")
+        .and_then(Value::as_array)
+        .filter(|tracks| !tracks.is_empty())
+    else {
+        return html! {};
+    };
+    html! {
+        details.media__transcript.media__caption-transcripts {
+            summary { (locale.text("caption-transcript-read")) }
+            ul {
+                @for track in tracks {
+                    @if let (Some(url), Some(language)) = (
+                        track.get("transcript_url").and_then(Value::as_str),
+                        track.get("language").and_then(Value::as_str),
+                    ) {
+                        li {
+                            a href=(url) lang=(language) { (language) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Chapter links remain useful without scripts: the media-fragment fallback
+/// opens the same playable MP4 at the requested time. JS upgrades them to
+/// seek the embedded player in place, without replacing the native controls.
+fn media_chapters(item: &Value, media_url: &str, locale: Locale) -> Markup {
+    let Some(chapters) = item
+        .get("chapters")
+        .and_then(Value::as_array)
+        .filter(|chapters| !chapters.is_empty() && !media_url.is_empty())
+    else {
+        return html! {};
+    };
+    html! {
+        details.media__chapters {
+            summary { (locale.text("status-chapters")) }
+            nav aria-label=(locale.text("status-chapters")) {
+                ol {
+                    @for chapter in chapters {
+                        @if let (Some(start), Some(title)) = (
+                            chapter.get("start_seconds").and_then(Value::as_i64),
+                            chapter.get("title").and_then(Value::as_str),
+                        ) {
+                            li {
+                                a href=(format!("{media_url}#t={start}")) data-chapter-seek=(start) {
+                                    time { (chapter_time(start)) }
+                                    span { (title) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn chapter_time(seconds: i64) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds / 60) % 60;
+    let seconds = seconds % 60;
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
     }
 }
 

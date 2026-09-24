@@ -1104,6 +1104,68 @@ fn remote_hls_peers(object: &Value) -> Option<RemoteHlsPeers> {
     })
 }
 
+/// Captions are untrusted remote links, even inside a signed Video. Accept a
+/// small, language-keyed set on the publishing origin only; bytes are fetched
+/// through our bounded media client when a viewer actually selects a track.
+fn remote_caption_tracks(object: &Value) -> Vec<plamenu_db::video_captions::Caption> {
+    let Some(origin) = object
+        .get("id")
+        .and_then(Value::as_str)
+        .and_then(|id| url::Url::parse(id).ok())
+    else {
+        return Vec::new();
+    };
+    let mut tracks = Vec::new();
+    for entry in one_or_many(object.get("subtitleLanguage")).iter().take(16) {
+        let Some(language) = entry.get("identifier").and_then(Value::as_str) else {
+            continue;
+        };
+        if !plamenu_db::video_captions::valid_language(language) {
+            continue;
+        }
+        let caption_url = entry.get("url").and_then(|value| {
+            value.as_str().or_else(|| {
+                one_or_many(Some(value)).iter().find_map(|link| {
+                    (link.get("mediaType").and_then(Value::as_str) == Some("text/vtt"))
+                        .then(|| link.get("href")?.as_str())
+                        .flatten()
+                })
+            })
+        });
+        let Some(href) = caption_url.filter(|href| href.len() <= 2048 && federation_url(href))
+        else {
+            continue;
+        };
+        let Ok(url) = url::Url::parse(href) else {
+            continue;
+        };
+        if url.host_str() != origin.host_str()
+            || url.port_or_known_default() != origin.port_or_known_default()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || tracks
+                .iter()
+                .any(|track: &plamenu_db::video_captions::Caption| {
+                    track.language.eq_ignore_ascii_case(language)
+                })
+        {
+            continue;
+        }
+        tracks.push(plamenu_db::video_captions::Caption {
+            media_id: 0,
+            language: language.to_owned(),
+            vtt_body: None,
+            remote_url: Some(url.to_string()),
+            automatically_generated: entry
+                .get("automaticallyGenerated")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            legacy: false,
+        });
+    }
+    tracks
+}
+
 /// The eager in-memory download cap ([`plamenu_federation`]'s
 /// `MEDIA_BODY_LIMIT`, Mastodon's `VIDEO_LIMIT`): A/V whose declared size
 /// exceeds it can only be cached by the streaming on-demand lane.
@@ -2296,6 +2358,8 @@ pub async fn update_remote_note_in_context(
     // Update before the no-edit fast path; a changed attachment is re-ingested
     // below and gets the same metadata on its new media row.
     store_remote_hls_peers(state, existing.id, object).await?;
+    store_remote_captions(state, existing.id, object).await?;
+    store_remote_chapters(state, existing.id, object).await?;
 
     // Link-only invitation updates must also refresh when the post text is unchanged.
     plamenu_db::webxdc::set_remote_invitation(
@@ -2363,8 +2427,54 @@ pub async fn update_remote_note_in_context(
     )
     .await?;
 
-    plamenu_db::media::delete_remote_for_status(&state.pool, existing.id).await?;
-    store_remote_attachments(state, &updated, object, context.is_history()).await?;
+    // PeerTube may change its chosen progressive rendition while a Video's
+    // HLS ladder settles. Rebuilding the sole media row on that Update makes
+    // every already-rendered same-origin playback/caption/chapters URL stale.
+    // Reconcile that narrow, deferred VOD case in place; mixed-media posts and
+    // live broadcasts retain the existing full-rebuild path.
+    let stable_video = if stored_object_type(object) == Some("Video")
+        && current_attachments.len() == 1
+        && attachment_pairs(object, MediaCaps::load(state).await?).len() == 1
+    {
+        if let Some(primary) = object_primary_media(object, MediaCaps::load(state).await?) {
+            let is_hls = primary.hls_master_url.is_some();
+            let preserved = media::update_remote_video_primary(
+                &state.pool,
+                media::NewRemoteMedia {
+                    account_id: updated.account_id,
+                    status_id: updated.id,
+                    remote_url: primary.url,
+                    content_type: primary.media_type,
+                    thumbnail_remote_url: primary.poster,
+                    width: primary.width,
+                    height: primary.height,
+                    remote_audio_url: primary.audio_url,
+                    duration: object
+                        .get("duration")
+                        .and_then(Value::as_str)
+                        .and_then(parse_iso8601_seconds),
+                    download_on_demand: primary.defer_download,
+                    history_deferred: context.is_history() && !primary.defer_download,
+                    hls_master_url: primary.hls_master_url,
+                    renditions: primary.renditions,
+                    ..Default::default()
+                },
+            )
+            .await?;
+            if preserved {
+                store_remote_media_sidecars(state, updated.id, object, false, is_hls).await?;
+            }
+            preserved
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    if !stable_video {
+        plamenu_db::media::delete_remote_for_status(&state.pool, existing.id).await?;
+        store_remote_attachments(state, &updated, object, context.is_history()).await?;
+    }
     let rewritten = rewrite_remote_inline_images(state, updated.id, &content_with_images).await?;
     if rewritten != updated.content {
         updated = status::replace_content(&state.pool, updated.id, &rewritten).await?;
@@ -3431,11 +3541,137 @@ async fn store_remote_media_sidecars(
     is_live: bool,
     is_hls: bool,
 ) -> Result<(), ApiError> {
+    store_remote_captions(state, status_id, object).await?;
+    store_remote_chapters(state, status_id, object).await?;
     if is_live {
         store_remote_live_schedules(state, status_id, object).await?;
     }
     if is_hls {
         store_remote_hls_peers(state, status_id, object).await?;
+    }
+    Ok(())
+}
+
+async fn store_remote_captions(
+    state: &AppState,
+    status_id: i64,
+    object: &Value,
+) -> Result<(), ApiError> {
+    let stored = media::for_statuses_read_only(&state.pool, &[status_id])
+        .await?
+        .remove(&status_id)
+        .unwrap_or_default();
+    let tracks = remote_caption_tracks(object);
+    let primary_url = object_primary_media(object, MediaCaps::load(state).await?).map(|m| m.url);
+    for item in stored
+        .iter()
+        .filter(|item| primary_url.is_some() && item.remote_url.as_deref() == primary_url)
+    {
+        plamenu_db::video_captions::replace_remote(&state.pool, item.id, &tracks).await?;
+    }
+    Ok(())
+}
+
+/// A remote Video may embed `hasParts` or point to a separately signed AP
+/// collection (`PeerTube`'s normal representation). Never accept a cross-origin
+/// collection or a partially malformed timeline: both can mislead playback.
+async fn remote_chapters(
+    state: &AppState,
+    object: &Value,
+) -> Option<Vec<plamenu_db::video_chapters::Chapter>> {
+    let parts = object.get("hasParts")?;
+    let parts = if let Some(uri) = parts.as_str() {
+        let origin = url::Url::parse(object.get("id")?.as_str()?).ok()?;
+        let target = url::Url::parse(uri).ok()?;
+        if !federation_url(uri)
+            || target.scheme() != origin.scheme()
+            || target.host_str() != origin.host_str()
+            || target.port_or_known_default() != origin.port_or_known_default()
+            || !target.username().is_empty()
+            || target.password().is_some()
+        {
+            return None;
+        }
+        if !crate::instance_policy::can_federate_url(&state.pool, &state.config.domain, uri)
+            .await
+            .ok()?
+        {
+            return None;
+        }
+        let fetched = state
+            .federation
+            .fetch_activitypub_same_origin(uri)
+            .await
+            .ok()?;
+        let collection = fetched.document?;
+        if collection.get("id").and_then(Value::as_str) != Some(uri) {
+            return None;
+        }
+        collection.get("hasPart")?.clone()
+    } else {
+        parts.clone()
+    };
+    parse_chapter_parts(&parts)
+}
+
+fn parse_chapter_parts(parts: &Value) -> Option<Vec<plamenu_db::video_chapters::Chapter>> {
+    let parts = parts.as_array()?;
+    if parts.len() > plamenu_db::video_chapters::MAX_CHAPTERS {
+        return None;
+    }
+    let mut chapters = Vec::with_capacity(parts.len());
+    for part in parts {
+        let title = part.get("name")?.as_str()?.trim();
+        let start = i32::try_from(part.get("startOffset")?.as_i64()?).ok()?;
+        if !plamenu_db::video_chapters::valid_chapter(start, title) {
+            return None;
+        }
+        if let Some(end) = part.get("endOffset") {
+            let end = end.as_i64()?;
+            if end <= i64::from(start)
+                || end > i64::from(plamenu_db::video_chapters::MAX_START_SECONDS)
+            {
+                return None;
+            }
+        }
+        chapters.push(plamenu_db::video_chapters::Chapter {
+            media_id: 0,
+            start_seconds: start,
+            title: title.to_owned(),
+        });
+    }
+    chapters.sort_unstable_by_key(|chapter| chapter.start_seconds);
+    if chapters
+        .windows(2)
+        .any(|pair| pair[0].start_seconds == pair[1].start_seconds)
+    {
+        return None;
+    }
+    Some(chapters)
+}
+
+async fn store_remote_chapters(
+    state: &AppState,
+    status_id: i64,
+    object: &Value,
+) -> Result<(), ApiError> {
+    if object.get("hasParts").is_none() {
+        return Ok(());
+    }
+    let Some(chapters) = remote_chapters(state, object).await else {
+        tracing::debug!(status_id, "invalid or unavailable remote video chapters");
+        return Ok(());
+    };
+    let stored = media::for_statuses_read_only(&state.pool, &[status_id])
+        .await?
+        .remove(&status_id)
+        .unwrap_or_default();
+    let primary_url = object_primary_media(object, MediaCaps::load(state).await?).map(|m| m.url);
+    for item in stored
+        .iter()
+        .filter(|item| primary_url.is_some() && item.remote_url.as_deref() == primary_url)
+    {
+        plamenu_db::video_chapters::replace_remote(&state.pool, item.id, &chapters).await?;
     }
     Ok(())
 }
@@ -3797,6 +4033,72 @@ mod tests {
         object["url"][0]["tag"][0]["href"] =
             serde_json::json!("https://unrelated.example/hash.json");
         assert!(remote_hls_peers(&object).is_none());
+    }
+
+    #[test]
+    fn remote_captions_keep_languages_and_reject_cross_origin_or_unsafe_links() {
+        let object = serde_json::json!({
+            "id": "https://peer.example/videos/watch/abc",
+            "subtitleLanguage": [
+                {"identifier": "en", "automaticallyGenerated": false,
+                 "url": [{"type": "Link", "mediaType": "text/vtt",
+                          "href": "https://peer.example/static/captions/en.vtt"}]},
+                {"identifier": "fr-CA", "url": "https://peer.example/static/captions/fr.vtt"},
+                {"identifier": "../private", "url": "https://peer.example/private.vtt"},
+                {"identifier": "es", "url": "https://elsewhere.example/es.vtt"},
+                {"identifier": "EN", "url": "https://peer.example/duplicate.vtt"},
+                {"identifier": "de", "url": "https://user@peer.example/de.vtt"}
+            ]
+        });
+        let tracks = remote_caption_tracks(&object);
+        assert_eq!(tracks.len(), 2);
+        assert_eq!(tracks[0].language, "en");
+        assert_eq!(tracks[1].language, "fr-CA");
+        assert_eq!(
+            tracks[0].remote_url.as_deref(),
+            Some("https://peer.example/static/captions/en.vtt")
+        );
+    }
+
+    #[test]
+    fn remote_chapters_reject_partial_or_hostile_timelines() {
+        let valid = serde_json::json!([
+            {"name":"Ending", "startOffset":12, "endOffset":20},
+            {"name":"Opening", "startOffset":0, "endOffset":12}
+        ]);
+        let chapters = parse_chapter_parts(&valid).expect("valid chapters");
+        assert_eq!(
+            chapters
+                .iter()
+                .map(|chapter| chapter.start_seconds)
+                .collect::<Vec<_>>(),
+            [0, 12]
+        );
+        assert_eq!(chapters[0].title, "Opening");
+        assert!(
+            parse_chapter_parts(&serde_json::json!([]))
+                .unwrap()
+                .is_empty()
+        );
+        for invalid in [
+            serde_json::json!([{"name":"", "startOffset":0}]),
+            serde_json::json!([{"name":"Negative", "startOffset":-1}]),
+            serde_json::json!([{"name":"Fraction", "startOffset":1.5}]),
+            serde_json::json!([{"name":"Too late", "startOffset":604_801}]),
+            serde_json::json!([{"name":"Bad end", "startOffset":5, "endOffset":5}]),
+            serde_json::json!([{"name":"First", "startOffset":0}, {"name":"Duplicate", "startOffset":0}]),
+            serde_json::json!([{"name":"Valid", "startOffset":0}, {"name":"Missing time"}]),
+            serde_json::json!([{"name":"x".repeat(201), "startOffset":0}]),
+            serde_json::json!(vec![
+                serde_json::json!({"name":"Many", "startOffset":0});
+                101
+            ]),
+        ] {
+            assert!(
+                parse_chapter_parts(&invalid).is_none(),
+                "accepted: {invalid}"
+            );
+        }
     }
 
     #[test]

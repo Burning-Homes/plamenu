@@ -133,7 +133,7 @@ before becoming `verified`. Keep partial results and failures visible.
 | M0 | Baseline and finite parity inventory | Current-version feature inventory; local peer/version records; baseline E2E; browser gap observations; product decisions | verified 2026-09-23 |
 | M1 | Channels and native publication | Channel/account lifecycle; authorized collaboration; real Plamenu Video accepted, playable and attributed correctly in PeerTube; edit/delete/follow exchange | in progress |
 | M2 | Long-form VOD pipeline | Large/resumable and no-JS uploads; durable processing; quality ladder; poster/storyboard; audio-only/silent inputs; failures/restart/quota evidence | in progress |
-| M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | pending |
+| M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | in progress: captions and VOD chapters in both directions, no-JS/JS authoring and seeking; on-demand readable caption transcripts verified; wider browser/AT and description matrix pending |
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | pending |
 | M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | partial: no-JS authoring, RTMP/RTMPS/HTTPS-FLV and browser ingest, bounded HLS/MP4, crash-recoverable one-shot and recurring replays, schedule announcements, DVR/latency controls, PeerTube updates, local/live P2P, active-session key revocation and 5/30-minute window plus 16-viewer load verified; no-JS DVR seeking, partial-fragment recovery UX and multi-node storage remain |
 | M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | pending |
@@ -1885,3 +1885,188 @@ record above predates migrations 0087–0088 and is not evidence for their write
 - P2P01 now has VOD and live first-party exchange in both origin directions.
   M5/M7 remain open for the wider browser/device, embed, resource and
   multi-node evidence called out above.
+
+### 2026-09-25 — inbound multi-language captions
+
+- Added a language-keyed caption sidecar without breaking the legacy local
+  `caption_vtt` column or its API `caption_url`. A signed PeerTube Video's
+  `subtitleLanguage` links are bounded to 16 tracks and the publishing
+  origin; unsafe languages, credentials, duplicates and cross-origin URLs are
+  ignored. Caption bytes are fetched only when selected, through the guarded
+  federation client under a 256 KiB limit. Redirects cannot escape the
+  publishing origin; only valid timed UTF-8 WebVTT is served. Client API and
+  no-JS HTML expose same-origin track URLs, never PeerTube's raw link.
+  Inbound Updates replace the track list even when the Video text and media
+  did not change; removed tracks stop serving.
+- A real PeerTube 8.3 VOD with English and French captions passed **1/1 in
+  21.13 s**. The Plamenu API listed both languages; both WebVTT proxies
+  returned the correct cues with `no-store`; scripts-disabled Chromium showed
+  both native `<track>` elements; JS-enabled playback activated the French
+  cue with no page errors. Removing French on PeerTube federated an update to
+  Plamenu and made its old URL return 404. This does not yet verify local
+  multi-language authoring or remote chapters.
+
+### 2026-09-25 — local multi-language captions before publication
+
+- The durable draft review now offers no-JS add/replace/remove WebVTT forms
+  keyed by validated language, with owner-only, non-cacheable draft track
+  URLs. The original single-caption upload remains visible in the same track
+  list. Replacing its language clears the stale legacy body; removing it
+  removes the old route. The JS enhancement previews cue count and catches
+  oversized/non-VTT files before submit, while the server remains the
+  authority. English and Russian labels are available. One batched caption
+  query supplies the client API and canonical Video ActivityPub object, which
+  advertises every local track with same-origin WebVTT Links.
+- A real no-JS upload/review, two-language caption add/replace/remove/re-add,
+  publication, PeerTube channel import, and JS/no-JS first-party playback E2E
+  passed **1/1 in 18.84 s** on the final styling build. A forged `../fr`
+  language was rejected by the server; a logged-out French draft URL
+  returned 404; the authenticated request served the cue. JS validation
+  rejected an invalid file, then announced one cue for a valid file with no
+  page errors or serious/critical Axe violations in the caption section.
+  The full-page screenshot was inspected: controls remain clearly labelled,
+  reflow within the review column, and the lighter remove action meets text
+  contrast after the first Axe run found 4.26:1 and prompted a colour fix.
+  PeerTube imported both English and French caption languages;
+  Chromium without scripts saw both native tracks and with scripts activated
+  the French cue. An earlier test run stopped only because its unsigned
+  direct AP GET expected public dereferencing where Plamenu requires a signed
+  fetch; the real PeerTube import passed on the corrected run. The existing
+  inbound two-language PeerTube regression also passed **1/1 in 33.06 s**
+  after unifying legacy and sidecar tracks. Post-publication caption management
+  and update federation were tackled in the following slice.
+
+### 2026-09-25 — published caption edits and federated refresh
+
+- `/videos` now links each owned published film to a no-JS caption manager.
+  The page previews the video with native tracks and offers language-keyed
+  add/replace/remove forms; the same JS cue/size preview enhances them.
+  Mutations lock the owned publication and commit caption rows, the Video's
+  edited timestamp and its signed `Update(Video)` outbox item atomically.
+  Local caption links carry a short content-derived revision, so a replacement
+  changes the ActivityPub URL and remote caches can refresh. The legacy
+  single-track link and additive client API remain usable. The old public
+  caption route now rejects unattached, private, suspended and deleted media;
+  language-specific links apply the same checks.
+- A real local draft -> published Video -> PeerTube import test then added
+  Spanish, replaced the French cue, and removed English after publication.
+  PeerTube imported the added language, cached the **new French cue bytes**
+  from the revisioned link, and removed English on the third signed Update.
+  An unrelated signed-in account received 404 for the manager and its POST;
+  after Video deletion, its remaining caption links immediately returned 404.
+  The first-party player exposed the resulting Spanish/French tracks without
+  scripts and played the new French cue with scripts: **1/1 in 31.21 s**.
+  Desktop, 390px mobile and settled dark-mode Axe scans found **zero
+  serious/critical caption-section violations**; mobile had no horizontal
+  overflow. The initial dark scan sampled an animated intermediate palette
+  during the scheme switch, so the final check waits 600 ms for the theme to
+  settle. Desktop and mobile screenshots were inspected. This remains a local
+  Chromium/PeerTube 8.3 result, not full M3 sign-off.
+
+### 2026-09-25 — PeerTube-origin chapters and accessible seeking
+
+- Added a bounded chapter sidecar for Video media. A signed PeerTube Video's
+  `hasParts` URL is fetched with the existing signed, SSRF-guarded ActivityPub
+  transport, with same-origin redirects only. The collection `id` must match,
+  the set is limited to 100 unique nonnegative timecodes and 200-character
+  titles, and malformed collections do not replace an existing good timeline.
+  Embedded `hasParts` arrays are also supported. Create and Update both store
+  chapter changes even when the post text and media are unchanged; deletion
+  cascades with the media. One batched query adds `chapters` to client API
+  attachments.
+- The first-party player renders chapter names and times in an accessible
+  disclosure. Without scripts, each link opens the local playable MP4 with a
+  temporal media fragment; JS enhances the same keyboard-operable link to
+  seek the inline native player. No chapter URL points to PeerTube's media.
+- A real PeerTube 8.3 video published three chapters, then changed to two
+  different chapters and finally removed all. Plamenu imported each state.
+  A Chromium browser with scripts disabled found all three local fragment
+  links; with scripts enabled, Enter sought the embedded player to six
+  seconds without navigation. The final E2E passed **1/1 in 22.48 s**.
+  Desktop, 390px mobile and settled dark-mode Axe scans found **zero
+  serious/critical chapter-section violations**, with no mobile horizontal
+  overflow; desktop and mobile screenshots were visually inspected. Local
+  chapter authoring and outbound PeerTube import remain for the next slice.
+
+### 2026-09-25 — local chapter authoring and PeerTube export
+
+- Native Video draft review and the owned published-video library now expose
+  a no-JS chapter editor: one time/title per line, sorted and validated under
+  100 chapters, 200 characters per title and the known video duration. Saving
+  an empty list removes all chapters. JS adds immediate error feedback, a
+  sorted preview and an add-current-player-time button. Published changes
+  lock ownership and commit the chapter rows, edit timestamp and signed
+  `Update(Video)` outbox item in one transaction. The chapter collection URL
+  carries a content revision; stale URLs return 404 after replacement.
+- The canonical Video object now advertises a dereferenceable `hasParts` AP
+  collection, with `hasPart` names, start and end offsets. PeerTube fetches
+  this auxiliary collection **unsigned**, unlike its signed Video fetch.
+  Plamenu allows only this collection outside the authorized-fetch gate, and
+  its handler still requires a public/unlisted, existing, non-deleted native
+  Video and the current content revision. Other AP objects keep the gate.
+  The first E2E exposed a missing canonical `/ap/accounts/...` route (404);
+  the second exposed PeerTube's unsigned chapter GET (401). Both were fixed
+  before the passing run.
+- A real no-JS draft upload/review added three chapters, rejected duplicate
+  times, and published them. PeerTube imported all three from the collection;
+  an owned published edit sent a signed Update and PeerTube adopted the new
+  two-chapter timeline; an empty edit removed them. An unrelated signed-in
+  user received 404 for the manager and a forged POST. The final E2E passed
+  **1/1 in 30.02 s**: old revision URLs returned 404, the current empty
+  collection remained readable, and deletion revoked it. Draft and published
+  editors both passed desktop, 390px mobile and settled dark-mode Axe scans
+  with zero serious/critical findings and no mobile overflow. Their screenshots
+  were visually inspected. The focused parser unit test covers valid sorting,
+  duplicates, invalid clocks and out-of-duration starts. This completes the
+  VOD chapter functionality in A11Y03, not all of M3's browser/AT matrix.
+  A final combined inbound/outbound run passed **2/2 in 48.54 s** after the
+  publication route also began rejecting malformed forged input with 404.
+
+### 2026-09-25 — readable on-demand caption transcripts
+
+- Each caption track's client API entry now has a same-origin `transcript_url`.
+  First-party Video cards offer a visible, no-JS language link distinct from
+  the author's transcript/visual description. The page fetches remote VTT only
+  when opened, applies the existing public-track visibility, SSRF, byte and
+  redirect-origin checks, and does not cache personalized HTML. A bounded
+  parser extracts cue timings and safely strips remote cue markup. Speaker
+  labels are retained; empty or malformed cues are skipped.
+- The page keeps a native player and timestamped cue list. Without JavaScript
+  each cue links to the same-origin progressive video with a media fragment;
+  with JavaScript, Enter seeks the inline player and focuses it. The caption
+  language is scoped to the cue list, leaving interface strings in the user's
+  negotiated language. The explanatory text states that caption-derived words
+  do not replace an author's visual description.
+- Parser unit tests and strict Clippy passed. Local and PeerTube 8.3 E2E passed
+  **2/2**, including local caption edits/deletion, inbound caption update and
+  removal, no-JS readable cues, same-origin media-fragment fallback, JS
+  keyboard seeking to 16 seconds, and desktop/mobile/dark Axe scans with no
+  serious/critical findings or mobile overflow. Desktop and 390px screenshots
+  were visually inspected. The inbound test exposed a separate update race:
+  PeerTube may send another Video Update while its HLS ladder settles and our
+  current ingest replaces the attachment row, invalidating an earlier media
+  ID. The test now re-resolves the current attachment while waiting, rather
+  than treating an obsolete URL as the publication's final caption URL. The
+  single-primary VOD identity case is addressed in the next slice; mixed-media
+  and active-processing cases still need separate work. This does not claim complete
+  assistive-technology coverage or M3 closure.
+
+### 2026-09-25 — stable remote VOD attachment identity through edits
+
+- The ingest edit path now reconciles a single deferred remote Video attachment
+  in place instead of deleting and recreating it when PeerTube changes a source
+  rendition, HLS master, poster or title. This keeps its media ID and already
+  emitted same-origin progressive, HLS, caption and transcript URLs stable.
+  Rendition metadata is replaced transactionally. When the source or poster
+  changes, stale cached files and HLS segments are detached and queued for
+  durable cleanup in the same transaction. Live, mixed-media and actively
+  processing posts retain the existing conservative rebuild path.
+- Two database tests passed: URL/master/poster replacement preserved the ID,
+  caption row and new ladder while retiring obsolete cached bytes; mixed-media
+  and active-job rows refused the narrow in-place path. A real PeerTube 8.3
+  Video title Update reached Plamenu while its existing caption and transcript
+  URLs stayed accessible and its media ID did not change. Subsequent caption
+  removal retained the same ID. The inbound chapter edit/removal E2E and the
+  baseline PeerTube HLS/progressive/audio playback E2E passed. Strict Clippy
+  passed for server and database. An actual PeerTube re-transcode that changes
+  rendition URLs is covered by the database test, not yet by a live-peer E2E.

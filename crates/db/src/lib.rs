@@ -116,6 +116,8 @@ pub mod tz;
 pub mod user;
 pub mod username_block;
 pub mod video;
+pub mod video_captions;
+pub mod video_chapters;
 pub mod video_draft;
 pub mod video_storage;
 pub mod warning_preset;

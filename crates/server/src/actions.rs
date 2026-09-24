@@ -1974,12 +1974,24 @@ async fn post_status_inner(
         let native_hls =
             plamenu_db::native_video_hls::tags_for_media(&mut *conn, &[publication.media_id])
                 .await?;
+        let video_captions =
+            plamenu_db::video_captions::for_media(&mut *conn, &[publication.media_id]).await?;
+        let video_chapters =
+            plamenu_db::video_chapters::for_media(&mut *conn, &[publication.media_id]).await?;
         crate::video::enrich_object(
             &state.config.domain,
             &mut create["object"],
             &publication,
             &resolved_media[0],
             native_hls
+                .get(&publication.media_id)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+            video_captions
+                .get(&publication.media_id)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+            video_chapters
                 .get(&publication.media_id)
                 .map(Vec::as_slice)
                 .unwrap_or_default(),

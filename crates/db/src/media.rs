@@ -1030,6 +1030,143 @@ pub async fn create_remote(pool: &PgPool, new: NewRemoteMedia<'_>) -> Result<(),
     Ok(())
 }
 
+/// Reconcile the single deferred primary of an inbound Video in place. Its AP
+/// object identity is stable even when `PeerTube` replaces a rendition URL while
+/// transcoding; keeping this media id keeps already-rendered player, caption,
+/// chapter and transcript links valid. Complex/multi-attachment posts retain
+/// the ordinary rebuild path. A claimed download is never changed underneath
+/// its worker.
+#[allow(
+    clippy::too_many_lines,
+    reason = "the row, rendition ladder and cache retirement are one transaction"
+)]
+pub async fn update_remote_video_primary(
+    pool: &PgPool,
+    new: NewRemoteMedia<'_>,
+) -> Result<bool, DbError> {
+    #[derive(sqlx::FromRow)]
+    struct Current {
+        id: i64,
+        remote_url: String,
+        hls_master_url: Option<String>,
+        thumbnail_remote_url: Option<String>,
+        file_name: Option<String>,
+        small_file_name: Option<String>,
+        content_type: String,
+        download_on_demand: bool,
+        processing: String,
+        live_state: Option<String>,
+        has_job: bool,
+    }
+    if !new.download_on_demand || new.live_state.is_some() {
+        return Ok(false);
+    }
+    let mut tx = pool.begin().await?;
+    let rows = sqlx::query_as::<_, Current>(
+        "SELECT m.id, m.remote_url, m.hls_master_url,
+                m.thumbnail_remote_url, m.file_name, m.small_file_name,
+                m.content_type, m.download_on_demand, m.processing, m.live_state,
+                EXISTS(SELECT 1 FROM media_processing_jobs j WHERE j.media_id = m.id) AS has_job
+         FROM media_attachments m
+         WHERE m.status_id = $1 AND m.account_id = $2
+           AND m.remote_url IS NOT NULL AND m.preview_card_id IS NULL
+         FOR UPDATE OF m",
+    )
+    .bind(new.status_id)
+    .bind(new.account_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let [current] = rows.as_slice() else {
+        return Ok(false);
+    };
+    if !current.content_type.starts_with("video/")
+        || !current.download_on_demand
+        || current.processing != "complete"
+        || current.live_state.is_some()
+        || current.has_job
+    {
+        return Ok(false);
+    }
+    let url_changed = current.remote_url != new.remote_url;
+    let poster_changed = current.thumbnail_remote_url.as_deref() != new.thumbnail_remote_url;
+    let stream_changed = url_changed || current.hls_master_url.as_deref() != new.hls_master_url;
+    let mut obsolete = Vec::new();
+    if url_changed {
+        obsolete.extend(current.file_name.clone());
+    }
+    if poster_changed || url_changed {
+        obsolete.extend(current.small_file_name.clone());
+    }
+    if stream_changed {
+        obsolete.extend(
+            sqlx::query_scalar::<_, String>(
+                "DELETE FROM media_hls_segments WHERE media_id = $1 RETURNING cache_file",
+            )
+            .bind(current.id)
+            .fetch_all(&mut *tx)
+            .await?,
+        );
+    }
+    crate::media_cleanup::enqueue_many(&mut *tx, &obsolete).await?;
+    sqlx::query(
+        "UPDATE media_attachments SET
+            remote_url = $2, content_type = $3, width = $4, height = $5,
+            thumbnail_remote_url = $6, remote_audio_url = $7, duration = $8,
+            download_on_demand = $9, history_deferred = $10,
+            hls_master_url = $11, live_permanent = $12,
+            file_name = CASE WHEN $13 THEN NULL ELSE file_name END,
+            file_size = CASE WHEN $13 THEN NULL ELSE file_size END,
+            frame_rate = CASE WHEN $13 THEN NULL ELSE frame_rate END,
+            bitrate = CASE WHEN $13 THEN NULL ELSE bitrate END,
+            small_file_name = CASE WHEN $14 THEN NULL ELSE small_file_name END,
+            small_width = CASE WHEN $14 THEN NULL ELSE small_width END,
+            small_height = CASE WHEN $14 THEN NULL ELSE small_height END,
+            thumbnail_file_size = CASE WHEN $14 THEN NULL ELSE thumbnail_file_size END,
+            cached_at = CASE WHEN $13 THEN NULL ELSE cached_at END,
+            last_served_at = CASE WHEN $13 THEN NULL ELSE last_served_at END
+         WHERE id = $1",
+    )
+    .bind(current.id)
+    .bind(new.remote_url)
+    .bind(new.content_type)
+    .bind(new.width)
+    .bind(new.height)
+    .bind(new.thumbnail_remote_url)
+    .bind(new.remote_audio_url)
+    .bind(new.duration)
+    .bind(new.download_on_demand)
+    .bind(new.history_deferred)
+    .bind(new.hls_master_url)
+    .bind(new.live_permanent)
+    .bind(url_changed)
+    .bind(poster_changed || url_changed)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM media_renditions WHERE media_id = $1")
+        .bind(current.id)
+        .execute(&mut *tx)
+        .await?;
+    for rendition in new.renditions {
+        sqlx::query(
+            "INSERT INTO media_renditions
+             (id, media_id, height, width, frame_rate, size_bytes, origin_url, is_audio)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        )
+        .bind(id::next())
+        .bind(current.id)
+        .bind(rendition.height)
+        .bind(rendition.width)
+        .bind(rendition.frame_rate)
+        .bind(rendition.size_bytes)
+        .bind(rendition.origin_url)
+        .bind(rendition.is_audio)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(true)
+}
+
 /// Supplies inline HTML alt text when a structured attachment with the same
 /// URL was inserted first but did not carry a description. Never overwrites a
 /// description explicitly supplied by the attachment object.
@@ -1873,12 +2010,13 @@ pub async fn public_caption_vtt(pool: &PgPool, media_id: i64) -> Result<Option<S
         r#"
         SELECT m.caption_vtt
         FROM media_attachments m
+        JOIN statuses s ON s.id = m.status_id
         JOIN accounts a ON a.id = m.account_id
-        LEFT JOIN video_drafts d ON d.media_id = m.id
-        LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
-        LEFT JOIN accounts c ON c.id = COALESCE(v.channel_id, d.channel_id)
+        LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = s.id
+        LEFT JOIN accounts c ON c.id = v.channel_id
         WHERE m.id = $1 AND a.suspended_at IS NULL
-          AND c.suspended_at IS NULL AND (d.media_id IS NULL OR v.media_id IS NOT NULL)
+          AND s.deleted_at IS NULL AND s.visibility IN ('public', 'unlisted')
+          AND (v.media_id IS NULL OR c.suspended_at IS NULL)
         "#,
         media_id,
     )
@@ -2165,6 +2303,170 @@ mod tests {
         }
     }
 
+    #[sqlx::test]
+    async fn remote_video_update_preserves_id_and_retires_old_cache(pool: PgPool) {
+        let (account_id, status_id) = fixture(&pool).await;
+        create_remote(
+            &pool,
+            NewRemoteMedia {
+                account_id,
+                status_id,
+                remote_url: "https://video.example/old.mp4",
+                content_type: "video/mp4",
+                thumbnail_remote_url: Some("https://video.example/old.jpg"),
+                hls_master_url: Some("https://video.example/old.m3u8"),
+                download_on_demand: true,
+                renditions: vec![NewRendition {
+                    height: 240,
+                    width: Some(320),
+                    frame_rate: Some(30),
+                    size_bytes: Some(100),
+                    origin_url: "https://video.example/old.mp4",
+                    is_audio: false,
+                }],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let original = for_statuses(&pool, &[status_id]).await.unwrap()[&status_id][0].id;
+        sqlx::query(
+            "UPDATE media_attachments SET file_name='old.mp4',
+                    small_file_name='old.jpg', file_size=100, thumbnail_file_size=20
+             WHERE id=$1",
+        )
+        .bind(original)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO media_hls_segments
+             (id, media_id, origin_url, range_start, range_len, cache_file, bytes)
+             VALUES ($1, $2, 'https://video.example/old.mp4', 0, 50, 'old-segment.m4s', 50)",
+        )
+        .bind(id::next())
+        .bind(original)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO video_captions (media_id, language, vtt_body)
+             VALUES ($1, 'en', 'WEBVTT\\n\\n00:00.000 --> 00:01.000\\nhello')",
+        )
+        .bind(original)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        assert!(
+            update_remote_video_primary(
+                &pool,
+                NewRemoteMedia {
+                    account_id,
+                    status_id,
+                    remote_url: "https://video.example/new.mp4",
+                    content_type: "video/mp4",
+                    thumbnail_remote_url: Some("https://video.example/new.jpg"),
+                    hls_master_url: Some("https://video.example/new.m3u8"),
+                    download_on_demand: true,
+                    renditions: vec![NewRendition {
+                        height: 360,
+                        width: Some(640),
+                        frame_rate: Some(30),
+                        size_bytes: Some(200),
+                        origin_url: "https://video.example/new.mp4",
+                        is_audio: false,
+                    }],
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+        );
+        let current = for_statuses(&pool, &[status_id]).await.unwrap();
+        assert_eq!(current[&status_id].len(), 1);
+        assert_eq!(current[&status_id][0].id, original);
+        assert_eq!(
+            current[&status_id][0].remote_url.as_deref(),
+            Some("https://video.example/new.mp4")
+        );
+        assert!(current[&status_id][0].file_name.is_none());
+        assert!(current[&status_id][0].small_file_name.is_none());
+        let renditions = renditions_for(&pool, &[original]).await.unwrap();
+        assert_eq!(renditions[&original].len(), 1);
+        assert_eq!(renditions[&original][0].height, 360);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM media_hls_segments WHERE media_id=$1"
+            )
+            .bind(original)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+            0
+        );
+        let cleanup: Vec<String> =
+            sqlx::query_scalar("SELECT file_name FROM media_cleanup_jobs ORDER BY file_name")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(cleanup, ["old-segment.m4s", "old.jpg", "old.mp4"]);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM video_captions WHERE media_id=$1")
+                .bind(original)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+
+    #[sqlx::test]
+    async fn remote_video_update_refuses_mixed_or_active_media(pool: PgPool) {
+        let (account_id, status_id) = fixture(&pool).await;
+        let video = || NewRemoteMedia {
+            account_id,
+            status_id,
+            remote_url: "https://video.example/old.mp4",
+            content_type: "video/mp4",
+            download_on_demand: true,
+            ..Default::default()
+        };
+        create_remote(&pool, video()).await.unwrap();
+        let media_id = for_statuses(&pool, &[status_id]).await.unwrap()[&status_id][0].id;
+        sqlx::query("INSERT INTO media_processing_jobs (id, media_id) VALUES ($1, $2)")
+            .bind(id::next())
+            .bind(media_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(!update_remote_video_primary(&pool, video()).await.unwrap());
+        sqlx::query("DELETE FROM media_processing_jobs WHERE media_id=$1")
+            .bind(media_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        create_remote(
+            &pool,
+            NewRemoteMedia {
+                account_id,
+                status_id,
+                remote_url: "https://video.example/poster.jpg",
+                content_type: "image/jpeg",
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(!update_remote_video_primary(&pool, video()).await.unwrap());
+        assert_eq!(
+            find_by_ids(&pool, &[media_id]).await.unwrap()[0]
+                .remote_url
+                .as_deref(),
+            Some("https://video.example/old.mp4")
+        );
+    }
+
     async fn pending_jobs(pool: &PgPool) -> i64 {
         sqlx::query_scalar!(r#"SELECT count(*) AS "c!" FROM media_processing_jobs"#)
             .fetch_one(pool)
@@ -2314,8 +2616,8 @@ mod tests {
     }
 
     #[sqlx::test]
-    async fn accessibility_alternatives_are_owned_and_public_until_suspension(pool: PgPool) {
-        let (account_id, _status_id) = fixture(&pool).await;
+    async fn accessibility_alternatives_are_private_until_published(pool: PgPool) {
+        let (account_id, status_id) = fixture(&pool).await;
         let media_id = id::next();
         create_local(&pool, upload(account_id, media_id))
             .await
@@ -2354,6 +2656,13 @@ mod tests {
         assert!(stored.decorative);
         assert!(stored.audio_described);
         assert!(!stored.visuals_conveyed_in_audio);
+        assert_eq!(public_caption_vtt(&pool, media_id).await.unwrap(), None);
+        assert_eq!(
+            attach(&pool, &[media_id], status_id, account_id)
+                .await
+                .unwrap(),
+            1
+        );
         assert_eq!(
             public_caption_vtt(&pool, media_id)
                 .await
@@ -2361,6 +2670,18 @@ mod tests {
                 .as_deref(),
             Some(vtt)
         );
+
+        sqlx::query("UPDATE statuses SET deleted_at = now() WHERE id = $1")
+            .bind(status_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(public_caption_vtt(&pool, media_id).await.unwrap(), None);
+        sqlx::query("UPDATE statuses SET deleted_at = NULL WHERE id = $1")
+            .bind(status_id)
+            .execute(&pool)
+            .await
+            .unwrap();
 
         sqlx::query!(
             "UPDATE accounts SET suspended_at = now() WHERE id = $1",

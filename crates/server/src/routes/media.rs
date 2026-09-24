@@ -8,7 +8,7 @@ use axum::body::Bytes;
 use axum::extract::{Multipart, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
-use plamenu_db::{account, account_media, id, media};
+use plamenu_db::{account, account_media, id, media, video_captions};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -584,6 +584,61 @@ pub async fn captions(
         body,
     )
         .into_response())
+}
+
+/// Proxy a remote language-specific `WebVTT` track on demand. Signed AP URLs
+/// are origin-fenced at ingest; the fetcher enforces its own SSRF protections
+/// and byte ceiling. Browsers see only this same-origin, non-cacheable URL.
+pub async fn language_caption(
+    State(state): State<AppState>,
+    Path((media_id, name)): Path<(i64, String)>,
+) -> Result<Response, ApiError> {
+    let language = name.strip_suffix(".vtt").ok_or(ApiError::NotFound)?;
+    let (body, remote) = public_language_caption_text(&state, media_id, language).await?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/vtt; charset=utf-8"),
+            (
+                header::CACHE_CONTROL,
+                if remote { "no-store" } else { "no-cache" },
+            ),
+        ],
+        body,
+    )
+        .into_response())
+}
+
+/// Shared by the raw track and the opt-in, server-rendered text transcript.
+/// The latter must apply precisely the same visibility and origin guards.
+pub(crate) async fn public_language_caption_text(
+    state: &AppState,
+    media_id: i64,
+    language: &str,
+) -> Result<(String, bool), ApiError> {
+    let source = video_captions::public_source(&state.pool, media_id, language)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if let Some(body) = source.vtt_body {
+        return Ok((body, false));
+    }
+    let origin = source.remote_url.ok_or(ApiError::NotFound)?;
+    let fetched = state
+        .federation
+        .fetch_media_limited(&origin, crate::web::actions::MAX_CAPTION_BYTES as u64)
+        .await
+        .map_err(|_| ApiError::NotFound)?;
+    let original = url::Url::parse(&origin).map_err(|_| ApiError::NotFound)?;
+    let final_url = url::Url::parse(&fetched.final_url).map_err(|_| ApiError::NotFound)?;
+    if original.scheme() != final_url.scheme()
+        || original.host_str() != final_url.host_str()
+        || original.port_or_known_default() != final_url.port_or_known_default()
+    {
+        return Err(ApiError::NotFound);
+    }
+    let body = crate::web::actions::parse_caption_vtt(&fetched.bytes)
+        .map_err(|_| ApiError::NotFound)?
+        .ok_or(ApiError::NotFound)?;
+    Ok((body, true))
 }
 
 /// Streams a stored file with single-range `Range` support (206) and constant

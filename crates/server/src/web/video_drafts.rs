@@ -182,7 +182,7 @@ pub async fn review(State(state): State<AppState>, Path(id): Path<i64>, user: We
     private(review_inner(&state, &user, id, None).await)
 }
 
-async fn review_inner(
+pub(super) async fn review_inner(
     state: &AppState,
     user: &WebUser,
     id: i64,
@@ -304,6 +304,126 @@ pub async fn action(
     body: Bytes,
 ) -> Response {
     private(action_inner(&state, &user, id, &body).await)
+}
+
+pub async fn add_caption(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    user: WebUser,
+    multipart: Multipart,
+) -> Response {
+    let result = add_caption_inner(&state, &user, id, multipart).await;
+    let result = match result {
+        Err(ApiError::Unprocessable(message)) => {
+            review_inner(&state, &user, id, Some(&message)).await
+        }
+        Err(ApiError::PayloadTooLarge) => {
+            review_inner(&state, &user, id, Some("Captions must be at most 256 KiB")).await
+        }
+        other => other,
+    };
+    private(result)
+}
+
+async fn add_caption_inner(
+    state: &AppState,
+    user: &WebUser,
+    id: i64,
+    mut multipart: Multipart,
+) -> Result<Response, ApiError> {
+    owned(state, id, user.current.account.id).await?;
+    video_draft::preview(&state.pool, id, user.current.account.id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let mut csrf = String::new();
+    let mut language = String::new();
+    let mut body = None;
+    while let Some(part) = multipart
+        .next_field()
+        .await
+        .map_err(|_| ApiError::PayloadTooLarge)?
+    {
+        match part.name().unwrap_or_default() {
+            "csrf" => csrf = part.text().await.map_err(|_| ApiError::PayloadTooLarge)?,
+            "language" => {
+                language = part
+                    .text()
+                    .await
+                    .map_err(|_| ApiError::PayloadTooLarge)?
+                    .trim()
+                    .to_ascii_lowercase();
+            }
+            "caption" => {
+                if body.is_some() {
+                    return Err(ApiError::Unprocessable("Choose one WebVTT file".into()));
+                }
+                body = Some(videos::bounded_field(part, super::actions::MAX_CAPTION_BYTES).await?);
+            }
+            _ => return Err(ApiError::BadRequest("Unexpected caption field".into())),
+        }
+    }
+    if !user.csrf_ok(&csrf) {
+        return Ok(super::session::csrf_rejection());
+    }
+    if !plamenu_db::video_captions::valid_language(&language) {
+        return Err(ApiError::Unprocessable(
+            "Choose a valid caption language".into(),
+        ));
+    }
+    let body = super::actions::parse_caption_vtt(body.as_deref().unwrap_or_default())?
+        .ok_or_else(|| ApiError::Unprocessable("Choose a WebVTT caption file".into()))?;
+    if !plamenu_db::video_captions::upsert_draft(
+        &state.pool,
+        id,
+        user.current.account.id,
+        &language,
+        &body,
+    )
+    .await?
+    {
+        return Err(ApiError::Unprocessable(
+            "This draft is no longer ready, or its 16 caption languages are full".into(),
+        ));
+    }
+    Ok(redirect_to(&format!(
+        "/videos/drafts/{id}/review#caption-languages"
+    )))
+}
+
+pub async fn remove_caption(
+    State(state): State<AppState>,
+    Path((id, language)): Path<(i64, String)>,
+    user: WebUser,
+    body: Bytes,
+) -> Response {
+    private(remove_caption_inner(&state, &user, id, &language, &body).await)
+}
+
+async fn remove_caption_inner(
+    state: &AppState,
+    user: &WebUser,
+    id: i64,
+    language: &str,
+    body: &Bytes,
+) -> Result<Response, ApiError> {
+    let pairs = form_pairs(body).map_err(ApiError::BadRequest)?;
+    if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
+        return Ok(super::session::csrf_rejection());
+    }
+    if !plamenu_db::video_captions::valid_language(language)
+        || !plamenu_db::video_captions::remove_draft(
+            &state.pool,
+            id,
+            user.current.account.id,
+            language,
+        )
+        .await?
+    {
+        return Err(ApiError::NotFound);
+    }
+    Ok(redirect_to(&format!(
+        "/videos/drafts/{id}/review#caption-languages"
+    )))
 }
 
 async fn action_inner(

@@ -4414,6 +4414,56 @@
     });
   }
 
+  function bindVideoChapters(root) {
+    root.querySelectorAll(".media__chapters a[data-chapter-seek]").forEach((link) => {
+      if (link.dataset.chapterBound) return;
+      link.dataset.chapterBound = "1";
+      link.addEventListener("click", (event) => {
+        const video = link.closest("figure")?.querySelector("video[controls]");
+        const seconds = Number(link.dataset.chapterSeek);
+        if (!video || !Number.isFinite(seconds) || seconds < 0) return;
+        event.preventDefault();
+        const seek = () => {
+          try {
+            video.currentTime = seconds;
+            video.focus();
+          } catch { /* Metadata not ready yet; the load event retries below. */ }
+        };
+        if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+          seek();
+        } else {
+          video.addEventListener("loadedmetadata", seek, { once: true });
+          if (video.dataset.hls) video.play().catch(() => {});
+          else video.load();
+        }
+      });
+    });
+  }
+
+  function bindCaptionTranscript(root) {
+    root.querySelectorAll(".caption-transcript a[data-transcript-seek-ms]").forEach((link) => {
+      if (link.dataset.transcriptBound) return;
+      link.dataset.transcriptBound = "1";
+      link.addEventListener("click", (event) => {
+        const video = link.closest(".caption-transcript")?.querySelector("video[controls]");
+        const milliseconds = Number(link.dataset.transcriptSeekMs);
+        if (!video || !Number.isFinite(milliseconds) || milliseconds < 0) return;
+        event.preventDefault();
+        const seek = () => {
+          try {
+            video.currentTime = milliseconds / 1000;
+            video.focus();
+          } catch { /* Metadata not ready yet; loadedmetadata retries. */ }
+        };
+        if (video.readyState >= HTMLMediaElement.HAVE_METADATA) seek();
+        else {
+          video.addEventListener("loadedmetadata", seek, { once: true });
+          video.load();
+        }
+      });
+    });
+  }
+
   // ---- Web Push settings ------------------------------------------------
   //
   // The /settings/push page renders inert scaffolding — enable button, alert
@@ -5184,6 +5234,105 @@
     });
   }
 
+  function bindCaptionUpload(root) {
+    root.querySelectorAll("form[data-caption-upload]").forEach((form) => {
+      if (form.dataset.captionBound) return;
+      form.dataset.captionBound = "1";
+      const input = form.querySelector('input[name="caption"]');
+      const status = form.querySelector("[data-caption-status]");
+      if (!input || !status) return;
+      input.addEventListener("change", async () => {
+        const file = input.files?.[0];
+        input.setCustomValidity("");
+        status.hidden = !file;
+        if (!file) return;
+        let message;
+        if (file.size > 256 * 1024) {
+          message = form.dataset.captionTooLarge;
+        } else {
+          try {
+            const content = (await file.text()).replace(/^\uFEFF/, "");
+            const lines = content.split(/\r?\n/);
+            const cues = lines.filter((line) => /\d.*-->.*\d/.test(line)).length;
+            message = /^WEBVTT(?:[ \t]|$)/.test(lines[0]) && cues && !content.includes("\0")
+              ? `${form.dataset.captionReady} ${cues}`
+              : form.dataset.captionInvalid;
+          } catch (_error) {
+            message = form.dataset.captionInvalid;
+          }
+        }
+        const valid = message?.startsWith(form.dataset.captionReady);
+        if (!valid) input.setCustomValidity(message || form.dataset.captionInvalid);
+        status.textContent = message;
+      });
+    });
+  }
+
+  function bindChapterEditors(root) {
+    root.querySelectorAll("form[data-chapter-editor]").forEach((form) => {
+      if (form.dataset.chapterBound) return;
+      form.dataset.chapterBound = "1";
+      const textarea = form.querySelector('textarea[name="chapters"]');
+      const status = form.querySelector('[data-chapter-status]');
+      const preview = form.querySelector('[data-chapter-preview]');
+      const current = form.querySelector('[data-chapter-current]');
+      const video = form.closest('section.column')?.querySelector('video.video-publish__preview');
+      if (!textarea || !status || !preview) return;
+      const read = () => {
+        const chapters = [];
+        const seen = new Set();
+        for (const line of textarea.value.split(/\r?\n/)) {
+          if (!line.trim()) continue;
+          const match = line.trim().match(/^(\S+)\s+(.+)$/);
+          if (!match) return null;
+          const pieces = match[1].split(':');
+          if (pieces.length < 2 || pieces.length > 3 || pieces.some(part => !/^\d+$/.test(part))) return null;
+          const nums = pieces.map(Number);
+          const seconds = nums.pop();
+          const minutes = nums.pop();
+          const hours = nums.pop() || 0;
+          const start = hours * 3600 + minutes * 60 + seconds;
+          const title = match[2].trim();
+          if (seconds >= 60 || (pieces.length === 3 && minutes >= 60) ||
+              start > 604800 || !title || [...title].length > 200 || seen.has(start)) return null;
+          seen.add(start);
+          chapters.push({ start, title, stamp: match[1] });
+          if (chapters.length > 100) return null;
+        }
+        return chapters.sort((a, b) => a.start - b.start);
+      };
+      const refresh = () => {
+        const chapters = read();
+        textarea.setCustomValidity(chapters ? '' : form.dataset.chapterInvalid);
+        status.hidden = false;
+        status.textContent = chapters ? `${form.dataset.chapterReady} ${chapters.length}` : form.dataset.chapterInvalid;
+        preview.replaceChildren();
+        preview.hidden = !chapters?.length;
+        chapters?.forEach(({ stamp, title }) => {
+          const item = document.createElement('li');
+          item.textContent = `${stamp} ${title}`;
+          preview.append(item);
+        });
+      };
+      textarea.addEventListener('input', refresh);
+      if (video && current) {
+        current.hidden = false;
+        current.addEventListener('click', () => {
+          const seconds = Math.floor(video.currentTime);
+          if (!Number.isFinite(seconds) || seconds < 0) return;
+          const stamp = seconds >= 3600
+            ? `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+            : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+          textarea.value += `${textarea.value.trim() ? '\n' : ''}${stamp} `;
+          textarea.focus();
+          textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+          refresh();
+        });
+      }
+      refresh();
+    });
+  }
+
   function bindVideoUpload(root) {
     root.querySelectorAll("form[data-video-upload]").forEach((form) => {
       if (form.dataset.videoUploadBound) return;
@@ -5332,6 +5481,8 @@
   function enhance(root) {
     bindVideoPosterPicker(root);
     bindVideoPosterReplacement(root);
+    bindCaptionUpload(root);
+    bindChapterEditors(root);
     bindVideoUpload(root);
     bindVideoResume(root);
     bindVideoDraft(root);
@@ -5358,6 +5509,8 @@
     bindLightboxes(root);
     bindBlurhashes(root);
     bindHlsVideos(root);
+    bindVideoChapters(root);
+    bindCaptionTranscript(root);
     bindMediaWarmup(root);
     bindCompose(root);
     bindComposeCombo(root);

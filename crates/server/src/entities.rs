@@ -864,6 +864,8 @@ pub(crate) async fn preview_media_json(
         .map(|item| item.id)
         .collect();
     let poster_alts = video_poster_alts(pool, &poster_ids).await?;
+    let captions = plamenu_db::video_captions::for_media(pool, media_ids).await?;
+    let chapters = plamenu_db::video_chapters::for_media(pool, media_ids).await?;
     Ok(media
         .iter()
         .map(|item| {
@@ -876,6 +878,8 @@ pub(crate) async fn preview_media_json(
             if let Some(alt) = poster_alts.get(&item.id) {
                 value["poster_description"] = json!(alt);
             }
+            attach_caption_tracks(&mut value, item, &captions, domain);
+            attach_chapters(&mut value, item, &chapters);
             value
         })
         .collect())
@@ -3275,6 +3279,51 @@ fn attach_remote_peer_hints(
     }
 }
 
+fn attach_caption_tracks(
+    value: &mut Value,
+    file: &media::Media,
+    captions: &HashMap<i64, Vec<plamenu_db::video_captions::Caption>>,
+    domain: &str,
+) {
+    let Some(tracks) = captions.get(&file.id) else {
+        return;
+    };
+    let entries: Vec<Value> = tracks
+        .iter()
+        .map(|track| {
+            let url = crate::video::caption_public_url(domain, file.id, track);
+            json!({
+                "language": track.language,
+                "url": url,
+                "transcript_url": format!("https://{domain}/videos/{}/transcript/{}", file.id, track.language),
+                "automatically_generated": track.automatically_generated,
+            })
+        })
+        .collect();
+    if let Some(first) = entries.first() {
+        value["caption_url"] = first["url"].clone();
+    }
+    value["captions"] = json!(entries);
+}
+
+fn attach_chapters(
+    value: &mut Value,
+    file: &media::Media,
+    chapters: &HashMap<i64, Vec<plamenu_db::video_chapters::Chapter>>,
+) {
+    if let Some(entries) = chapters.get(&file.id) {
+        value["chapters"] = json!(
+            entries
+                .iter()
+                .map(|chapter| json!({
+                    "start_seconds": chapter.start_seconds,
+                    "title": chapter.title,
+                }))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
 fn attach_native_peer_hints(value: &mut Value, file: &media::Media, uuid: &str, domain: &str) {
     value["hls"]["p2p"] = json!({
         "video_uuid": uuid,
@@ -3346,6 +3395,8 @@ async fn media_maps(
     let remote_schedules =
         plamenu_db::remote_live_schedules::for_media(pool, &remote_live_ids).await?;
     let remote_peers = plamenu_db::remote_hls_peers::for_media(pool, &media_ids).await?;
+    let captions = plamenu_db::video_captions::for_media(pool, &media_ids).await?;
+    let chapters = plamenu_db::video_chapters::for_media(pool, &media_ids).await?;
     let native_peers = plamenu_db::native_video_hls::public_peer_uuids(pool, &media_ids).await?;
     let now = time::OffsetDateTime::now_utc();
     // Skip the round-trip entirely on the common attachment-less batch.
@@ -3376,6 +3427,8 @@ async fn media_maps(
                     if let Some(alt) = poster_alts.get(&file.id) {
                         value["poster_description"] = json!(alt);
                     }
+                    attach_caption_tracks(&mut value, file, &captions, domain);
+                    attach_chapters(&mut value, file, &chapters);
                     attach_remote_peer_hints(&mut value, file, &remote_peers, domain);
                     if let Some(uuid) = native_peers.get(&file.id) {
                         attach_native_peer_hints(&mut value, file, uuid, domain);

@@ -11,9 +11,10 @@ use plamenu_ap::collection::{CountCollection, RepliesCollection, RepliesPage};
 use plamenu_ap::urls::{LocalStatusUrls, LocalUserUrls, replies_page_url};
 use plamenu_db::account::Account;
 use plamenu_db::status::Status;
-use plamenu_db::{account, quote, status};
+use plamenu_db::{account, media, quote, status, video, video_chapters};
 use serde::Deserialize;
 use serde_json::Value;
+use serde_json::json;
 
 use super::params::truthy;
 use super::{ap_requested, require_ap_accept};
@@ -110,6 +111,77 @@ pub async fn get_status(
     Ok((
         [(header::CONTENT_TYPE, plamenu_ap::ACTIVITY_JSON_UTF8)],
         Json(note),
+    )
+        .into_response())
+}
+
+/// The revisioned PeerTube-compatible `hasParts` collection for a public
+/// native Video. Stale revisions and deleted/private objects are not served.
+pub async fn get_video_chapters(
+    State(state): State<AppState>,
+    Path((username, status_id)): Path<(String, i64)>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    require_ap_accept(&headers)?;
+    let (account, stored) = dereferenceable_status(&state, &username, &uri, status_id).await?;
+    if stored.object_type.as_deref() != Some("Video")
+        || status::is_deleted(&state.pool, stored.id).await?
+    {
+        return Err(ApiError::NotFound);
+    }
+    let publication = video::publications(&state.pool, &[stored.id])
+        .await?
+        .pop()
+        .ok_or(ApiError::NotFound)?;
+    let source = media::find_by_ids(&state.pool, &[publication.media_id])
+        .await?
+        .pop()
+        .ok_or(ApiError::NotFound)?;
+    let chapters = video_chapters::for_media(&state.pool, &[source.id])
+        .await?
+        .remove(&source.id)
+        .unwrap_or_default();
+    let object_id = status_uri_for_account(&state.config.domain, &stored, &account);
+    let collection_id = crate::video::chapter_collection_url(&object_id, &chapters);
+    if format!("https://{}{}", state.config.domain, uri) != collection_id {
+        return Err(ApiError::NotFound);
+    }
+    let duration = source
+        .duration
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .and_then(|value| value.ceil().to_string().parse::<i64>().ok())
+        .unwrap_or_default();
+    let parts: Vec<Value> = chapters
+        .iter()
+        .enumerate()
+        .map(|(index, chapter)| {
+            let next = chapters.get(index + 1).map_or_else(
+                || duration.max(i64::from(chapter.start_seconds) + 1),
+                |next| i64::from(next.start_seconds),
+            );
+            json!({
+                "name": chapter.title,
+                "startOffset": chapter.start_seconds,
+                "endOffset": next,
+            })
+        })
+        .collect();
+    let body = json!({
+        "@context": [
+            "https://www.w3.org/ns/activitystreams",
+            {"sc":"http://schema.org/", "hasPart":"sc:hasPart",
+             "startOffset":"sc:startOffset", "endOffset":"sc:endOffset"}
+        ],
+        "id": collection_id,
+        "hasPart": parts,
+    });
+    Ok((
+        [
+            (header::CONTENT_TYPE, plamenu_ap::ACTIVITY_JSON_UTF8),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        Json(body),
     )
         .into_response())
 }

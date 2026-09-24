@@ -1287,6 +1287,20 @@ pub fn router(state: AppState) -> Router {
         .route("/emojis/{id}", get(emojis::get_emoji))
         .route_layer(signed_fetch_gate);
 
+    // PeerTube dereferences `hasParts` collections without an HTTP signature.
+    // These two GETs are therefore public *only for an already-public Video*;
+    // the handler enforces the same visibility/deletion checks as ordinary
+    // public media. Keep all other AP object routes behind authorized fetch.
+    let public_video_chapters = Router::new()
+        .route(
+            "/users/{username}/statuses/{id}/chapters",
+            get(statuses::get_video_chapters),
+        )
+        .route(
+            "/ap/accounts/{username}/statuses/{id}/chapters",
+            get(statuses::get_video_chapters),
+        );
+
     let oauth_token_routes = Router::new()
         .route("/oauth/token", post(oauth::token))
         .route("/oauth/revoke", post(oauth::revoke))
@@ -1300,6 +1314,10 @@ pub fn router(state: AppState) -> Router {
     let media_routes = Router::new()
         .route("/media/{file_name}", get(media::serve))
         .route("/media/{media_id}/captions.vtt", get(media::captions))
+        .route(
+            "/media/{media_id}/captions/{name}",
+            get(media::language_caption),
+        )
         // Proxy every kind of remote media through the instance (no origin URL
         // ever reaches a client). Public, like `/media/{file}` itself.
         .route("/media/proxy/{kind}/{id}", get(media::proxy))
@@ -1349,6 +1367,7 @@ pub fn router(state: AppState) -> Router {
         .merge(discovery_routes)
         .merge(actor_route)
         .merge(federation_object_routes)
+        .merge(public_video_chapters)
         .merge(api_routes(state.clone()))
         .merge(oauth_token_routes)
         .merge(crate::web::router())

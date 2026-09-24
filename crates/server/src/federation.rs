@@ -134,6 +134,27 @@ pub trait FederationApi: Send + Sync {
             })
         })
     }
+    /// Like the ordinary signed AP fetch, but redirects must stay on the
+    /// requested origin. Video chapters are auxiliary author metadata, never
+    /// a reason to disclose a signed GET to a third-party host.
+    fn fetch_activitypub_same_origin<'a>(
+        &'a self,
+        uri: &'a str,
+    ) -> BoxFuture<'a, Result<FetchedActivityPub, FederationError>> {
+        Box::pin(async move {
+            let fetched = self.fetch_activitypub(uri, None).await?;
+            let origin =
+                Url::parse(uri).map_err(|error| FederationError::InvalidUrl(error.to_string()))?;
+            let final_url = Url::parse(&fetched.final_url)
+                .map_err(|error| FederationError::InvalidUrl(error.to_string()))?;
+            if origin.origin() != final_url.origin() {
+                return Err(FederationError::InvalidUrl(
+                    "cross-origin AP redirect".into(),
+                ));
+            }
+            Ok(fetched)
+        })
+    }
     /// Fetches an AP object by a URL that may be a permalink, following to and
     /// validating the canonical `id` (see `FederationClient::fetch_object_following`).
     fn fetch_object_following<'a>(
@@ -557,6 +578,37 @@ impl FederationApi for HttpFederation {
                     .fetch_activitypub_with_redirect_guard(uri, etag, move |next| {
                         let next = next.to_owned();
                         async move {
+                            crate::instance_policy::can_federate_url(
+                                &self.pool,
+                                &self.local_domain,
+                                &next,
+                            )
+                            .await
+                            .map_err(|error| FederationError::Admission(error.to_string()))
+                        }
+                    }),
+            ),
+        )
+    }
+
+    fn fetch_activitypub_same_origin<'a>(
+        &'a self,
+        uri: &'a str,
+    ) -> BoxFuture<'a, Result<FetchedActivityPub, FederationError>> {
+        Box::pin(
+            self.guarded(
+                uri,
+                self.client
+                    .fetch_activitypub_with_redirect_guard(uri, None, move |next| {
+                        let next = next.to_owned();
+                        async move {
+                            let origin = Url::parse(uri)
+                                .map_err(|error| FederationError::InvalidUrl(error.to_string()))?;
+                            let redirect = Url::parse(&next)
+                                .map_err(|error| FederationError::InvalidUrl(error.to_string()))?;
+                            if origin.origin() != redirect.origin() {
+                                return Ok(false);
+                            }
                             crate::instance_policy::can_federate_url(
                                 &self.pool,
                                 &self.local_domain,

@@ -1,6 +1,7 @@
 //! Native video publication, shared by first-party forms and client APIs.
 //! Channel identity is distinct from both its owning person and communities.
 
+use base64::Engine;
 use plamenu_ap::{activity, actor::Actor};
 use plamenu_db::{
     account::{self, Account, NewLocalAccount},
@@ -8,11 +9,53 @@ use plamenu_db::{
     video,
 };
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::{AppState, error::ApiError};
 
 /// `PeerTube`'s supported description envelope, separate from short social posts.
 pub const MAX_DESCRIPTION_CHARACTERS: i32 = 10_000;
+
+/// A changed local caption body must change its AP Link, or `PeerTube` may keep
+/// the former text when it receives an otherwise identical Video Update.
+pub(crate) fn caption_public_url(
+    domain: &str,
+    media_id: i64,
+    track: &plamenu_db::video_captions::Caption,
+) -> String {
+    let path = if track.legacy {
+        format!("https://{domain}/media/{media_id}/captions.vtt")
+    } else {
+        format!(
+            "https://{domain}/media/{media_id}/captions/{}.vtt",
+            track.language
+        )
+    };
+    if let Some(body) = &track.vtt_body {
+        let digest = Sha256::digest(body.as_bytes());
+        let revision = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&digest[..12]);
+        format!("{path}?v={revision}")
+    } else {
+        path
+    }
+}
+
+/// A content-derived collection URL prevents a remote AP cache from keeping
+/// the prior chapter timeline after `Update(Video)`.
+pub(crate) fn chapter_collection_url(
+    object_id: &str,
+    chapters: &[plamenu_db::video_chapters::Chapter],
+) -> String {
+    let mut digest = Sha256::new();
+    for chapter in chapters {
+        digest.update(chapter.start_seconds.to_be_bytes());
+        digest.update((chapter.title.len() as u64).to_be_bytes());
+        digest.update(chapter.title.as_bytes());
+    }
+    let hash = digest.finalize();
+    let revision = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&hash[..12]);
+    format!("{object_id}/chapters?v={revision}")
+}
 
 fn validate_title(title: Option<&str>) -> Result<(), ApiError> {
     if title.is_none_or(|s| !(3..=120).contains(&s.trim().chars().count())) {
@@ -312,6 +355,8 @@ pub fn enrich_object(
     publication: &video::Publication,
     media: &Media,
     hls: &[plamenu_db::native_video_hls::FileTag],
+    captions: &[plamenu_db::video_captions::Caption],
+    chapters: &[plamenu_db::video_chapters::Chapter],
 ) -> Result<(), ApiError> {
     let live = media.live_state.is_some();
     let file = if live {
@@ -490,13 +535,22 @@ pub fn enrich_object(
         note["language"] = json!({"identifier":lang});
         note["contentMap"][lang] = note["content"].clone();
     }
-    if media.caption_vtt.is_some() {
-        note["subtitleLanguage"] = json!([{"identifier":language.as_deref().unwrap_or("und"),
-            "name":language.as_deref().unwrap_or("Undetermined"),
-            "url":format!("https://{domain}/media/{}/captions.vtt", media.id)}]);
-    } else {
-        note["subtitleLanguage"] = json!([]);
-    }
+    note["subtitleLanguage"] = json!(
+        captions
+            .iter()
+            .take(16)
+            .map(|track| {
+                let href = caption_public_url(domain, media.id, track);
+                json!({
+                    "identifier": track.language,
+                    "name": track.language,
+                    "automaticallyGenerated": track.automatically_generated,
+                    "url": [{"type":"Link", "mediaType":"text/vtt", "href":href}],
+                })
+            })
+            .collect::<Vec<_>>()
+    );
+    note["hasParts"] = json!(chapter_collection_url(&object_id, chapters));
     Ok(())
 }
 
@@ -529,6 +583,7 @@ fn context() -> Value {
         .push(json!({
             "sc":"http://schema.org/", "pt":"https://joinpeertube.org/ns#",
             "subtitleLanguage":"sc:subtitleLanguage", "language":"sc:inLanguage",
+            "hasParts":"sc:hasParts",
             "identifier":"sc:identifier", "isLiveBroadcast":"sc:isLiveBroadcast",
             "uuid":{"@type":"sc:identifier","@id":"pt:uuid"},
             "views":{"@type":"sc:Number","@id":"pt:views"},
@@ -582,4 +637,32 @@ pub async fn announce(
     plamenu_db::job::enqueue_many_tx(&mut *conn, publication.channel_id, &inboxes, &activity)
         .await?;
     Ok(stream_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use plamenu_db::video_chapters::Chapter;
+
+    #[test]
+    fn chapter_collection_revision_changes_with_content() {
+        let base = "https://example.test/ap/accounts/1/statuses/2";
+        let first = Chapter {
+            media_id: 7,
+            start_seconds: 0,
+            title: "Opening".into(),
+        };
+        let initial = chapter_collection_url(base, std::slice::from_ref(&first));
+        assert_eq!(
+            initial,
+            chapter_collection_url(base, std::slice::from_ref(&first))
+        );
+        assert!(initial.starts_with(&format!("{base}/chapters?v=")));
+        let renamed = Chapter {
+            title: "Changed".into(),
+            ..first.clone()
+        };
+        assert_ne!(initial, chapter_collection_url(base, &[renamed]));
+        assert_ne!(initial, chapter_collection_url(base, &[]));
+    }
 }
