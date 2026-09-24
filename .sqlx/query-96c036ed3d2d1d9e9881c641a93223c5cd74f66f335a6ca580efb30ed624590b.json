@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_attachments SET live_state = $2, hls_master_url = NULL WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "96c036ed3d2d1d9e9881c641a93223c5cd74f66f335a6ca580efb30ed624590b"
+}

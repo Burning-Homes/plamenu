@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM native_live_sessions ls\n         JOIN media_attachments m ON m.id = ls.replay_media_id\n         WHERE ls.replay_media_id = ANY($1) AND m.status_id IS NULL) AS \"exists!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8eda4e679ddef825e6c9751fc04b00c1e02dee2d419a6b045099b001b6555433"
+}

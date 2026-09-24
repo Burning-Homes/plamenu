@@ -54,10 +54,12 @@ serde_urlencoded = { workspace = true }
 sqlx = { workspace = true }
 sha1 = { workspace = true }
 sha2 = { workspace = true }
+rtmp-rs = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
+tokio-rustls = { workspace = true }
 tokio-util = { workspace = true }
 http-body-util = { workspace = true }
 tower-http = { workspace = true }

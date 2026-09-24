@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT v.status_id, v.channel_id, v.media_id, v.uuid,\n                  a.uri AS \"channel_uri!\", COALESCE(m.file_size, 0) AS \"file_size!\",\n                  p.file_name AS \"poster_file_name?\", p.width AS \"poster_width?\", p.height AS \"poster_height?\",\n                  d.poster_alt AS \"poster_alt?\"\n           FROM video_publications v JOIN accounts a ON a.id = v.channel_id\n           JOIN media_attachments m ON m.id = v.media_id\n           LEFT JOIN video_compatibility_posters p ON p.media_id = v.media_id\n           LEFT JOIN video_drafts d ON d.media_id = v.media_id\n           WHERE v.status_id = ANY($1)",
+  "query": "SELECT v.status_id, v.channel_id, v.media_id, v.uuid,\n                  a.uri AS \"channel_uri!\", COALESCE(m.file_size, 0) AS \"file_size!\",\n                  p.file_name AS \"poster_file_name?\", p.width AS \"poster_width?\", p.height AS \"poster_height?\",\n                  d.poster_alt AS \"poster_alt?\",\n                  b.dvr_window_seconds AS \"live_dvr_window_seconds?\",\n                  b.latency_mode AS \"live_latency_mode?\",\n                  b.scheduled_at AS \"live_scheduled_at?\"\n           FROM video_publications v JOIN accounts a ON a.id = v.channel_id\n           JOIN media_attachments m ON m.id = v.media_id\n           LEFT JOIN video_compatibility_posters p ON p.media_id = v.media_id\n           LEFT JOIN video_drafts d ON d.media_id = v.media_id\n           LEFT JOIN native_live_broadcasts b ON b.media_id = v.media_id\n           WHERE v.status_id = ANY($1)",
   "describe": {
     "columns": [
       {
@@ -107,6 +107,39 @@
             "name": "poster_alt"
           }
         }
+      },
+      {
+        "ordinal": 10,
+        "name": "live_dvr_window_seconds?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "dvr_window_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "live_latency_mode?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "latency_mode"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "live_scheduled_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "scheduled_at"
+          }
+        }
       }
     ],
     "parameters": {
@@ -124,8 +157,11 @@
       true,
       true,
       true,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "182ce1a9ab65e2b9ec0c03770c2104860f89ef4915da436fa881fd0f708cfcc4"
+  "hash": "450ff83f56bae72d18379436ecc646cc1bb4afcd7871d47c5c3b12343d9d7c21"
 }

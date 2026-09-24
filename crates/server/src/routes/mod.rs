@@ -29,6 +29,8 @@ mod lists;
 mod live_stream;
 mod markers;
 pub(crate) mod media;
+pub(crate) mod native_live_hls;
+mod native_live_ingest;
 mod notification_filtering;
 pub(crate) mod notifications;
 pub(crate) mod oauth;
@@ -1258,6 +1260,14 @@ pub fn router(state: AppState) -> Router {
             get(statuses::get_likes),
         )
         .route(
+            "/users/{username}/statuses/{id}/dislikes",
+            get(statuses::get_dislikes),
+        )
+        .route(
+            "/ap/accounts/{username}/statuses/{id}/dislikes",
+            get(statuses::get_dislikes),
+        )
+        .route(
             "/users/{username}/statuses/{id}/shares",
             get(statuses::get_shares),
         )
@@ -1298,6 +1308,10 @@ pub fn router(state: AppState) -> Router {
         // same-origin so nothing leaks the origin URL to the client.
         .route("/media/hls/{media_id}/master.m3u8", get(hls::master))
         .route(
+            "/media/hls/{media_id}/local/{session}/{name}",
+            get(native_live_hls::child),
+        )
+        .route(
             "/media/hls/{media_id}/native/{height}/index.m3u8",
             get(hls::native_playlist),
         )
@@ -1334,6 +1348,7 @@ pub fn router(state: AppState) -> Router {
         .merge(oauth_token_routes)
         .merge(crate::web::router())
         .merge(media_routes)
+        .route("/live/ingest", post(native_live_ingest::publish))
         // FEP-ae97 portable actors are deliberately outside the authorized-
         // fetch gate: their client owns inbox polling authorization, while
         // public actor/object dereferencing bootstraps remote delivery.

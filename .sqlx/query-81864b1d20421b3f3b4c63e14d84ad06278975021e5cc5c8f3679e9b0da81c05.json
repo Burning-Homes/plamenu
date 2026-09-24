@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE native_live_broadcasts SET status_id = $2\n         WHERE media_id = $1 AND status_id IS NULL\n           AND owner_account_id = $3 AND channel_id = $4 AND state = 'waiting'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "81864b1d20421b3f3b4c63e14d84ad06278975021e5cc5c8f3679e9b0da81c05"
+}

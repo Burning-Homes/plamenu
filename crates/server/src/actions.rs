@@ -1210,7 +1210,7 @@ pub async fn post_status(
     state: &AppState,
     params: PostParams<'_>,
 ) -> Result<(Status, usize), ApiError> {
-    post_status_inner(state, params, None, None, None, None).await
+    post_status_inner(state, params, None, None, None, None, None).await
 }
 
 /// Publish in an owned video channel. Ownership, attachment and delivery are
@@ -1221,7 +1221,28 @@ pub async fn post_video(
     channel_id: i64,
 ) -> Result<(Status, usize), ApiError> {
     params.kind = activity::PostKind::Video;
-    post_status_inner(state, params, None, None, None, Some(channel_id)).await
+    post_status_inner(state, params, None, None, None, Some(channel_id), None).await
+}
+
+/// The replay session is claimed inside the Video/Create/outbox transaction.
+/// A concurrent retry cannot commit a second Video for the same episode.
+pub async fn post_recurring_live_replay(
+    state: &AppState,
+    mut params: PostParams<'_>,
+    channel_id: i64,
+    session_id: &str,
+) -> Result<(Status, usize), ApiError> {
+    params.kind = activity::PostKind::Video;
+    post_status_inner(
+        state,
+        params,
+        None,
+        None,
+        None,
+        Some(channel_id),
+        Some(session_id),
+    )
+    .await
 }
 
 pub async fn post_video_for_application(
@@ -1238,6 +1259,7 @@ pub async fn post_video_for_application(
         None,
         None,
         Some(channel_id),
+        None,
     )
     .await
 }
@@ -1247,7 +1269,7 @@ pub async fn post_webxdc_invitation(
     params: PostParams<'_>,
     invitation: WebxdcInvitation<'_>,
 ) -> Result<(Status, usize), ApiError> {
-    post_status_inner(state, params, None, Some(invitation), None, None).await
+    post_status_inner(state, params, None, Some(invitation), None, None, None).await
 }
 
 /// Creates a local status through an OAuth application. The app attribution is
@@ -1257,7 +1279,7 @@ pub async fn post_status_for_application(
     params: PostParams<'_>,
     application_id: i64,
 ) -> Result<(Status, usize), ApiError> {
-    post_status_inner(state, params, Some(application_id), None, None, None).await
+    post_status_inner(state, params, Some(application_id), None, None, None, None).await
 }
 
 /// Publishes a claimed scheduled entry. Its deletion, post, attachments, and
@@ -1273,6 +1295,7 @@ pub(crate) async fn post_scheduled_status(
         scheduled.application_id,
         None,
         Some((scheduled.id, scheduled.publish_generation)),
+        None,
         None,
     )
     .await
@@ -1450,6 +1473,7 @@ async fn post_status_inner(
     webxdc_invitation: Option<WebxdcInvitation<'_>>,
     scheduled_claim: Option<(i64, i64)>,
     video_channel_id: Option<i64>,
+    replay_session_id: Option<&str>,
 ) -> Result<(Status, usize), ApiError> {
     validate_visibility(params.visibility)?;
     if params.kind == activity::PostKind::Video && video_channel_id.is_none() {
@@ -1527,9 +1551,19 @@ async fn post_status_inner(
         limits.max_media_attachments,
     )
     .await?;
+    if replay_session_id.is_none()
+        && plamenu_db::native_live::contains_unpublished_replay(&state.pool, params.media_ids)
+            .await?
+    {
+        return Err(ApiError::Forbidden(
+            "A live replay is awaiting its session publication".into(),
+        ));
+    }
     if video_channel_id.is_some() {
         crate::video::validate_publication(&params, &resolved_media)?;
-        crate::video::ensure_compatible_poster(state, &resolved_media[0]).await?;
+        if resolved_media[0].live_state.is_none() {
+            crate::video::ensure_compatible_poster(state, &resolved_media[0]).await?;
+        }
     }
     html = expand_inline_media(&state.config.domain, &html, &resolved_media, long_form)?;
     let validated_poll = params
@@ -1679,6 +1713,7 @@ async fn post_status_inner(
             resolved_media[0].id,
             author.id,
             channel_id,
+            replay_session_id,
         )
         .await?
     {
@@ -1748,6 +1783,35 @@ async fn post_status_inner(
     let attachments = attach_status_media(state, conn, &author, &stored, &resolved_media).await?;
     if let Some(channel_id) = video_channel_id {
         plamenu_db::video::publish(conn, stored.id, channel_id, resolved_media[0].id).await?;
+        if let Some(session_id) = replay_session_id
+            && !plamenu_db::native_live::bind_recurring_replay(
+                conn,
+                session_id,
+                resolved_media[0].id,
+                stored.id,
+                author.id,
+                channel_id,
+            )
+            .await?
+        {
+            return Err(ApiError::Conflict(
+                "The replay session was already published".into(),
+            ));
+        }
+        if resolved_media[0].live_state.is_some()
+            && !plamenu_db::native_live::bind_publication(
+                conn,
+                resolved_media[0].id,
+                stored.id,
+                author.id,
+                channel_id,
+            )
+            .await?
+        {
+            return Err(ApiError::Conflict(
+                "The live broadcast allocation changed before publication".into(),
+            ));
+        }
     }
 
     // Conversation first, so a reply into a muted thread won't notify. A local

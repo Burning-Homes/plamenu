@@ -156,15 +156,25 @@ pub fn validate_publication(
         ));
     }
     validate_title(params.title)?;
-    if media.len() != 1
-        || media[0].content_type != "video/mp4"
-        || media[0].processing != "complete"
-        || media[0].file_name.is_none()
-        || media[0].small_file_name.is_none()
-        || media[0].duration.is_none_or(|d| !d.is_finite() || d <= 0.0)
-    {
+    let ready_file = media.first().is_some_and(|item| {
+        item.content_type == "video/mp4"
+            && item.processing == "complete"
+            && item.file_name.is_some()
+            && item.small_file_name.is_some()
+            && item
+                .duration
+                .is_some_and(|duration| duration.is_finite() && duration > 0.0)
+    });
+    let waiting_live = media.first().is_some_and(|item| {
+        item.content_type == "application/x-mpegURL"
+            && item.kind_or_derived() == "video"
+            && item.processing == "complete"
+            && item.live_state.as_deref() == Some("waiting")
+            && item.file_name.is_none()
+    });
+    if media.len() != 1 || !(ready_file || waiting_live) {
         return Err(ApiError::Unprocessable(
-            "Choose one fully processed video with a thumbnail".into(),
+            "Choose one processed video with a thumbnail, or one waiting live broadcast".into(),
         ));
     }
     Ok(())
@@ -292,6 +302,10 @@ async fn compatibility_poster_key(
 
 /// The canonical Video shape is used by Create, Update and dereferencing.
 /// Keep an ordinary Document attachment as well for attachment-only clients.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one canonical Video shape for Create, Update and dereferencing"
+)]
 pub fn enrich_object(
     domain: &str,
     note: &mut Value,
@@ -299,12 +313,19 @@ pub fn enrich_object(
     media: &Media,
     hls: &[plamenu_db::native_video_hls::FileTag],
 ) -> Result<(), ApiError> {
-    let file = media.file_name.as_deref().ok_or(ApiError::NotFound)?;
+    let live = media.live_state.is_some();
+    let file = if live {
+        None
+    } else {
+        Some(media.file_name.as_deref().ok_or(ApiError::NotFound)?)
+    };
     let poster = publication
         .poster_file_name
         .as_deref()
-        .or(media.small_file_name.as_deref())
-        .ok_or(ApiError::NotFound)?;
+        .or(media.small_file_name.as_deref());
+    if !live && poster.is_none() {
+        return Err(ApiError::NotFound);
+    }
     let author = note["attributedTo"].clone();
     let web = note["url"].clone();
     let published = note["published"].clone();
@@ -313,6 +334,15 @@ pub fn enrich_object(
         .and_then(|m| m.keys().next())
         .cloned();
     note["type"] = json!("Video");
+    // PeerTube's Video wire format uses dereferenceable collection URL
+    // strings, whereas an ordinary Note embeds count-only collections.
+    // Supplying the Note object makes its rate-sync request treat that object
+    // as Got options instead of a URL and reject the Update. Both rates must
+    // be present: PeerTube 8.3 passes missing counts to a required SQL bind.
+    let object_id = note["id"].as_str().ok_or(ApiError::NotFound)?.to_owned();
+    note["likes"] = json!(format!("{object_id}/likes"));
+    note["dislikes"] = json!(format!("{object_id}/dislikes"));
+    note["shares"] = json!(format!("{object_id}/shares"));
     // A scoped context survives both standalone dereferencing and nesting in
     // Create/Update without adding video terms to every ordinary Note.
     note["@context"] = context();
@@ -335,10 +365,12 @@ pub fn enrich_object(
     let mut urls = vec![json!({
         "type":"Link", "mediaType":"text/html", "href":web
     })];
-    urls.push(json!(
-        {"type":"Link", "mediaType":"video/mp4", "href":format!("https://{domain}/media/{file}"),
-         "height":media.height.unwrap_or(0), "width":media.width.unwrap_or(0), "size":publication.file_size}
-    ));
+    if let Some(file) = file {
+        urls.push(json!(
+            {"type":"Link", "mediaType":"video/mp4", "href":format!("https://{domain}/media/{file}"),
+             "height":media.height.unwrap_or(0), "width":media.width.unwrap_or(0), "size":publication.file_size}
+        ));
+    }
     if !hls.is_empty() {
         let files: Vec<Value> = hls
             .iter()
@@ -356,26 +388,61 @@ pub fn enrich_object(
             "href": format!("https://{domain}/media/hls/{}/master.m3u8", media.id),
             "tag": files,
         }));
+    } else if live && media.live_state.as_deref() == Some("live") {
+        urls.push(json!({
+            "type": "Link", "mediaType": "application/x-mpegURL",
+            "href": format!("https://{domain}/media/hls/{}/master.m3u8", media.id),
+            "tag": [],
+        }));
     }
     note["url"] = json!(urls);
-    let mut icon = json!({"type":"Image", "mediaType":crate::media_processing::content_type_for(poster),
-        "url":format!("https://{domain}/media/{poster}"),
-        "width":publication.poster_width.or(media.small_width).unwrap_or(0),
-        "height":publication.poster_height.or(media.small_height).unwrap_or(0)});
-    if let Some(alt) = publication.poster_alt.as_deref() {
-        icon["name"] = json!(alt);
+    if let Some(poster) = poster {
+        let mut icon = json!({"type":"Image", "mediaType":crate::media_processing::content_type_for(poster),
+            "url":format!("https://{domain}/media/{poster}"),
+            "width":publication.poster_width.or(media.small_width).unwrap_or(0),
+            "height":publication.poster_height.or(media.small_height).unwrap_or(0)});
+        if let Some(alt) = publication.poster_alt.as_deref() {
+            icon["name"] = json!(alt);
+        }
+        note["icon"] = json!([icon]);
+    } else if live {
+        // PeerTube requires at least one image icon even before a live has
+        // produced a frame. The bundled, always-available brand image keeps
+        // waiting announcements valid without fabricating a video file.
+        note["icon"] = json!([{
+            "type": "Image", "mediaType": "image/png",
+            "url": format!("https://{domain}/pwa/icon-512.png"),
+            "width": 512, "height": 512,
+            "name": "Live broadcast placeholder",
+        }]);
     }
-    note["icon"] = json!([icon]);
     note["updated"] = note
         .get("updated")
         .cloned()
         .filter(|v| !v.is_null())
         .unwrap_or(published);
     note["views"] = json!(0);
-    note["state"] = json!(1);
-    note["isLiveBroadcast"] = json!(false);
+    note["state"] = json!(match media.live_state.as_deref() {
+        Some("waiting" | "interrupted") => 4,
+        Some("ended") => 5,
+        _ => 1,
+    });
+    note["isLiveBroadcast"] = json!(live);
+    if live {
+        note["permanentLive"] = json!(media.live_permanent);
+        if let Some(seconds) = publication.live_dvr_window_seconds {
+            note["dvrWindow"] = json!(format!("PT{seconds}S"));
+        }
+        if let Some(mode) = publication.live_latency_mode {
+            note["latencyMode"] = json!(mode);
+        }
+        note["schedules"] = json!(publication.live_scheduled_at.map_or_else(Vec::new, |at| {
+            vec![json!({"startDate": at.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()})]
+        }));
+        note["attachment"] = json!([]);
+    }
     note["commentsPolicy"] = json!(1);
-    note["downloadEnabled"] = json!(true);
+    note["downloadEnabled"] = json!(!live);
     note["waitTranscoding"] = json!(false);
     // PeerTube accepts text/html and its description renderer sanitizes HTML.
     // Keep the canonical sanitized HTML instead of relabelling unescaped plain
@@ -434,6 +501,9 @@ fn context() -> Value {
             "views":{"@type":"sc:Number","@id":"pt:views"},
             "aspectRatio":{"@type":"sc:Float","@id":"pt:aspectRatio"},
             "state":{"@type":"sc:Number","@id":"pt:state"},
+            "latencyMode":{"@type":"sc:Number","@id":"pt:latencyMode"},
+            "dvrWindow":{"@type":"sc:Duration","@id":"pt:dvrWindow"},
+            "schedules":"sc:eventSchedule", "startDate":"sc:startDate",
             "size":{"@type":"sc:Number","@id":"pt:size"},
             "commentsPolicy":{"@type":"sc:Number","@id":"pt:commentsPolicy"},
             "downloadEnabled":{"@type":"sc:Boolean","@id":"pt:downloadEnabled"},

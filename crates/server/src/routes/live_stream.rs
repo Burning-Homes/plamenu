@@ -107,13 +107,18 @@ pub async fn stream(
     }
     // Asking for the stream is asking to watch, so this is the moment to be
     // sure about whether the broadcast is actually running.
-    crate::live_refresh::refresh_for_media(&state, media_id).await;
+    let local_session = plamenu_db::native_live::public_session(&state.pool, media_id).await?;
+    if local_session.is_none() {
+        crate::live_refresh::refresh_for_media(&state, media_id).await;
+    }
     let item = plamenu_db::media::find_by_ids(&state.pool, &[media_id])
         .await?
         .into_iter()
         .next()
         .ok_or(ApiError::NotFound)?;
-    if item.live_state.as_deref() != Some("live") || item.hls_master_url.is_none() {
+    if item.live_state.as_deref() != Some("live")
+        || (item.hls_master_url.is_none() && local_session.is_none())
+    {
         return Err(ApiError::NotFound);
     }
 
@@ -235,6 +240,10 @@ fn spawn_session(state: &AppState, media_id: i64) -> Result<Arc<Session>, ApiErr
             // else needs to be reachable.
             "-protocol_whitelist",
             "http,tcp",
+            // A DVR playlist starts minutes in the past; progressive clients
+            // have no seek control, so always join three segments from live.
+            "-live_start_index",
+            "-3",
             "-i",
             &input,
             // Remux only. A live broadcast is already H.264/AAC in the shape

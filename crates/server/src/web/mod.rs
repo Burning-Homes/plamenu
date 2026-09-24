@@ -31,6 +31,7 @@ mod invites;
 mod landing;
 pub(crate) mod layout;
 mod lists;
+mod live;
 mod meta;
 mod migration;
 mod notification_requests;
@@ -394,6 +395,19 @@ pub fn router() -> Router<AppState> {
         .route("/groups", get(groups::index))
         .route("/groups/new", get(groups::new_page))
         .route("/videos", get(videos::index))
+        .route("/videos/live/new", get(live::new_page))
+        .route("/web/videos/live", post(live::create))
+        .route("/videos/live/{id}", get(live::manage))
+        .route("/web/videos/live/{id}/rotate-key", post(live::rotate_key))
+        .route(
+            "/web/videos/live/{id}/playback",
+            post(live::update_playback),
+        )
+        .route(
+            "/web/videos/live/{id}/schedule",
+            post(live::update_schedule),
+        )
+        .route("/web/videos/live/{id}/publish", get(live::browser_publish))
         .route("/videos/drafts/{id}", get(video_drafts::show))
         .route("/videos/drafts/{id}/status", get(video_drafts::status))
         .route("/videos/drafts/{id}/review", get(video_drafts::review))
@@ -684,6 +698,7 @@ pub fn router() -> Router<AppState> {
         .route(assets::EMOJI_CATALOG_PATH, get(assets::emoji_catalog))
         .route("/assets/webxdc-host.js", get(assets::webxdc_host_js))
         .route("/assets/hls.min.js", get(assets::hls_js))
+        .route("/assets/live-broadcast.js", get(assets::live_broadcast_js))
         .route("/manifest.webmanifest", get(assets::manifest))
         .route("/sw.js", get(assets::sw_js))
         .route("/offline", get(assets::offline))

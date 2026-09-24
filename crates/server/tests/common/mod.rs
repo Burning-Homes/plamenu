@@ -632,6 +632,8 @@ pub fn test_config() -> Config {
         media_dir: std::env::temp_dir(),
         ffmpeg_path: "ffmpeg".to_owned(),
         ffprobe_path: "ffprobe".to_owned(),
+        live_ingest_bind: "127.0.0.1:0".parse().unwrap(),
+        live_rtmps: None,
         native_video: plamenu::config::NativeVideoConfig::default(),
         smtp: None,
         trusted_proxies: vec!["127.0.0.0/8".to_owned(), "::1/128".to_owned()],

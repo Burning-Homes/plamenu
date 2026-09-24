@@ -987,6 +987,20 @@ fn live_info(object: &Value) -> Option<LiveInfo> {
     })
 }
 
+/// Keep at most sixteen valid dates from a remote live announcement. `PeerTube`
+/// emits `schedules: [{startDate}]`; malformed entries cannot poison ingest.
+fn live_schedules(object: &Value) -> Vec<OffsetDateTime> {
+    let mut dates: Vec<_> = one_or_many(object.get("schedules"))
+        .iter()
+        .filter_map(|schedule| schedule.get("startDate")?.as_str())
+        .filter_map(|date| OffsetDateTime::parse(date, &Rfc3339).ok())
+        .take(16)
+        .collect();
+    dates.sort_unstable();
+    dates.dedup();
+    dates
+}
+
 /// The origin HLS master playlist URL of a `Video` object: the top-level `url`
 /// Link whose `mediaType` is `application/x-mpegURL` (`PeerTube` nests every
 /// rendition + the audio track inside this Link's `tag`). `None` when the
@@ -2028,6 +2042,9 @@ async fn refresh_live_state(
         hls_master_url(object),
     )
     .await?;
+    let schedule_changed =
+        plamenu_db::remote_live_schedules::replace(&state.pool, item.id, &live_schedules(object))
+            .await?;
     // Going on air is the one transition worth telling anyone about, and only
     // the transition: `update_live` moves the row exactly once per go-live
     // (its UPDATE is conditional on the state actually changing), so a second
@@ -2037,7 +2054,7 @@ async fn refresh_live_state(
     if changed && !was_live && live.state == LiveState::Live {
         notify_live_started(state, existing).await?;
     }
-    Ok(changed)
+    Ok(changed || schedule_changed)
 }
 
 /// Tells the people who asked to hear about this account's posts that its
@@ -3283,6 +3300,7 @@ async fn store_remote_attachments(
     // object that (unusually) duplicates the file as an attachment stores it
     // once. Must stay in step with [`attachment_pairs`] or edit-diffing breaks.
     if let Some(primary) = object_primary_media(object, MediaCaps::load(state).await?) {
+        let is_live = primary.live.is_some();
         media::create_remote(
             &state.pool,
             media::NewRemoteMedia {
@@ -3313,11 +3331,32 @@ async fn store_remote_attachments(
             },
         )
         .await?;
+        if is_live {
+            store_remote_live_schedules(state, stored.id, object).await?;
+        }
     }
     // Inline images are an additional media channel, not a fallback. Articles
     // commonly carry a hero as `attachment` and diagrams inside `content`.
     // `create_remote` deduplicates the same file across both channels.
     store_inline_image_attachments(state, stored, object, force_on_demand).await?;
+    Ok(())
+}
+
+async fn store_remote_live_schedules(
+    state: &AppState,
+    status_id: i64,
+    object: &Value,
+) -> Result<(), ApiError> {
+    let stored_live = media::for_statuses_read_only(&state.pool, &[status_id])
+        .await?
+        .remove(&status_id)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|item| item.live_state.is_some());
+    if let Some(item) = stored_live {
+        plamenu_db::remote_live_schedules::replace(&state.pool, item.id, &live_schedules(object))
+            .await?;
+    }
     Ok(())
 }
 
@@ -3595,6 +3634,22 @@ mod tests {
             "url": url,
             "icon": [{"type": "Image", "url": "https://peer.example/thumb.jpg", "width": 280}],
         })
+    }
+
+    #[test]
+    fn inbound_live_dates_are_sorted_deduplicated_and_bounded() {
+        let object = serde_json::json!({
+            "schedules": [
+                {"startDate": "2026-10-01T12:00:00Z"},
+                {"startDate": "not a date"},
+                {"startDate": "2026-09-30T12:00:00Z"},
+                {"startDate": "2026-10-01T12:00:00Z"},
+            ]
+        });
+        let dates = live_schedules(&object);
+        assert_eq!(dates.len(), 2);
+        assert!(dates[0] < dates[1]);
+        assert!(live_schedules(&serde_json::json!({})).is_empty());
     }
 
     #[test]

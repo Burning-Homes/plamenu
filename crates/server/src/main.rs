@@ -412,9 +412,19 @@ fn main() {
 }
 
 async fn run(cli: Cli) -> Result<(), AnyError> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
-        .init();
+    // rtmp-rs logs the publish stream key at INFO (and in DEBUG handler
+    // events). It is a bearer credential here, so even an operator's broad
+    // RUST_LOG=trace must not turn that dependency's events back on.
+    let log_directives = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into());
+    let safe_directives = log_directives
+        .split(',')
+        .filter(|directive| !directive.trim().starts_with("rtmp_rs"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let filter = EnvFilter::try_new(safe_directives)
+        .unwrap_or_else(|_| EnvFilter::new("info"))
+        .add_directive("rtmp_rs=warn".parse().expect("static tracing directive"));
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     if let Command::Config(ConfigCommand::Generate { force }) = &cli.command {
         Config::generate(&cli.config, *force)?;
@@ -752,7 +762,57 @@ async fn self_destruct(state: &AppState) -> Result<(), AnyError> {
     reason = "a flat list of worker supervisor spawns and their matching aborts"
 )]
 async fn serve(state: AppState) -> Result<(), AnyError> {
+    plamenu::live_ingest::validate_rtmps(&state.config)?;
     let bind = state.config.bind;
+    let recovered = plamenu_db::native_live::recover_orphaned(&state.pool).await?;
+    if !recovered.is_empty() {
+        tracing::warn!(
+            recovered = recovered.len(),
+            "closed native live sessions left by an earlier process"
+        );
+        for session in &recovered {
+            if let Err(error) =
+                plamenu::native_live::federate_state(&state, session.status_id).await
+            {
+                tracing::warn!(%error, status_id = session.status_id, "could not announce recovered live interruption");
+            }
+        }
+    }
+    let mut recoverable = Vec::new();
+    for replay in plamenu_db::native_live::recoverable_replays(&state.pool).await? {
+        if plamenu::live_ingest::has_crashed_recording_dir(
+            &state.config.media_dir,
+            replay.session.media_id,
+            &replay.session.session_id,
+        )
+        .await
+        {
+            recoverable.push(replay);
+        }
+    }
+    let retained: std::collections::HashSet<(i64, String)> = recoverable
+        .iter()
+        .map(|row| (row.session.media_id, row.session.session_id.clone()))
+        .collect();
+    match plamenu::live_ingest::scavenge_crash_scratch(&state.config.media_dir, &retained).await {
+        Ok(removed) if removed > 0 => {
+            tracing::info!(removed, "removed abandoned native live scratch sessions");
+        }
+        Ok(_) => {}
+        Err(error) => tracing::warn!(%error, "could not clear native live scratch"),
+    }
+    if !recoverable.is_empty() {
+        tracing::info!(
+            count = recoverable.len(),
+            "recovering unpublished live recordings"
+        );
+    }
+    for replay in recoverable {
+        tokio::spawn(plamenu::live_ingest::recover_crashed_replay(
+            state.clone(),
+            replay,
+        ));
+    }
     match plamenu::video_worker::scavenge_crash_scratch(&state.config.media_dir).await {
         Ok(removed) if removed > 0 => {
             tracing::info!(removed, "removed abandoned A/V scratch at startup");
@@ -782,6 +842,16 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
             plamenu::statuses_cleanup::spawn,
         ),
         supervise("streaming", state.clone(), plamenu::streaming::spawn),
+        supervise(
+            "native RTMP ingest",
+            state.clone(),
+            plamenu::live_ingest::spawn,
+        ),
+        supervise(
+            "native live reconnect expiry",
+            state.clone(),
+            plamenu::live_ingest::spawn_reconnect_expiry,
+        ),
         supervise("web push", state.clone(), plamenu::web_push::spawn),
         supervise("link crawler", state.clone(), plamenu::link_preview::spawn),
         supervise("link verifier", state.clone(), plamenu::link_verify::spawn),
@@ -834,6 +904,13 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
             plamenu::self_destruct::spawn,
         ),
     ]);
+    if state.config.live_rtmps.is_some() {
+        supervisors.push(supervise(
+            "native RTMPS ingest",
+            state.clone(),
+            plamenu::live_ingest::spawn_rtmps,
+        ));
+    }
     for _ in 0..state.config.native_video.jobs {
         supervisors.push(supervise(
             "native video",

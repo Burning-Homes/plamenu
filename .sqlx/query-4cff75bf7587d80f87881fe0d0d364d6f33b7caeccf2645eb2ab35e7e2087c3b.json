@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE native_live_broadcasts SET\n                 state = CASE WHEN $2 THEN 'interrupted' WHEN permanent THEN 'waiting' ELSE 'ended' END,\n                 reconnect_deadline = CASE WHEN $2 THEN now() + interval '60 seconds' ELSE NULL END,\n                 ended_at = CASE WHEN $2 OR permanent THEN NULL ELSE now() END\n             WHERE media_id = $1 AND NOT EXISTS\n                 (SELECT 1 FROM native_live_sessions WHERE media_id = $1 AND ended_at IS NULL)\n             RETURNING state",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "state"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4cff75bf7587d80f87881fe0d0d364d6f33b7caeccf2645eb2ab35e7e2087c3b"
+}

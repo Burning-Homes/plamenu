@@ -2505,6 +2505,8 @@ pub fn media_json_hls(
     };
     let preview_url: Option<String> = if let Some(small) = item.small_file_name.as_deref() {
         Some(local_url(small))
+    } else if item.live_state.is_some() {
+        Some(format!("https://{domain}/pwa/icon-512.png"))
     } else if item.remote_url.is_some() {
         // Remote, no cached preview yet: the proxy regenerates one when it
         // downloads and re-processes the original.
@@ -2616,6 +2618,7 @@ fn iso8601_duration(seconds: f64) -> String {
 pub fn ap_attachments(domain: &str, items: &[Media]) -> Vec<Value> {
     items
         .iter()
+        .filter(|item| item.live_state.is_none())
         .map(|item| {
             let mut document = json!({
                 "type": "Document",
@@ -3272,6 +3275,22 @@ async fn media_maps(
         .map(|item| item.id)
         .collect();
     let poster_alts = video_poster_alts(pool, &poster_ids).await?;
+    let local_live_ids: Vec<i64> = per_status
+        .values()
+        .flatten()
+        .filter(|item| item.live_state.is_some() && item.remote_url.is_none())
+        .map(|item| item.id)
+        .collect();
+    let live_details = plamenu_db::native_live::details_for_media(pool, &local_live_ids).await?;
+    let remote_live_ids: Vec<i64> = per_status
+        .values()
+        .flatten()
+        .filter(|item| item.live_state.is_some() && item.remote_url.is_some())
+        .map(|item| item.id)
+        .collect();
+    let remote_schedules =
+        plamenu_db::remote_live_schedules::for_media(pool, &remote_live_ids).await?;
+    let now = time::OffsetDateTime::now_utc();
     // Skip the round-trip entirely on the common attachment-less batch.
     let ladders = if media_ids.is_empty() {
         HashMap::new()
@@ -3299,6 +3318,36 @@ async fn media_maps(
                     );
                     if let Some(alt) = poster_alts.get(&file.id) {
                         value["poster_description"] = json!(alt);
+                    }
+                    if let Some(details) = live_details.get(&file.id) {
+                        value["live"]["dvr_window_seconds"] =
+                            json!(details.playback.dvr_window_seconds);
+                        value["live"]["latency_mode"] = json!(details.playback.latency_mode);
+                        if let Some(at) = details.scheduled_at {
+                            let iso = at
+                                .format(&time::format_description::well_known::Rfc3339)
+                                .unwrap_or_default();
+                            value["live"]["scheduled_at"] = json!(iso.clone());
+                            value["live"]["schedules"] = json!([iso]);
+                        }
+                    }
+                    if let Some(dates) = remote_schedules.get(&file.id) {
+                        let iso_dates: Vec<_> = dates
+                            .iter()
+                            .filter_map(|at| {
+                                at.format(&time::format_description::well_known::Rfc3339)
+                                    .ok()
+                            })
+                            .collect();
+                        if !iso_dates.is_empty() {
+                            value["live"]["schedules"] = json!(iso_dates);
+                            if let Some(next) = dates.iter().find(|at| **at > now) {
+                                value["live"]["scheduled_at"] = json!(
+                                    next.format(&time::format_description::well_known::Rfc3339)
+                                        .unwrap_or_default()
+                                );
+                            }
+                        }
                     }
                     value
                 })

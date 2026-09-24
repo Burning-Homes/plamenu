@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO remote_live_schedules (media_id, starts_at) VALUES ($1, $2)\n         ON CONFLICT (media_id) DO UPDATE SET starts_at = EXCLUDED.starts_at\n         WHERE remote_live_schedules.starts_at IS DISTINCT FROM EXCLUDED.starts_at\n         RETURNING media_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "remote_live_schedules",
+            "name": "media_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "804c250c0568737ce13c5f583a0932cb7d0029a7cae25905016fb2548efc65a4"
+}

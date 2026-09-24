@@ -4080,6 +4080,29 @@
   function initHlsVideo(video) {
     const hlsUrl = video.getAttribute("data-hls");
     if (!hlsUrl) return;
+    const goLive = video.closest("figure")?.querySelector(".media__go-live");
+    let hlsPlayer = null;
+    if (goLive) {
+      const liveEdge = () => {
+        if (!video.seekable.length) return null;
+        const end = video.seekable.end(video.seekable.length - 1);
+        const sync = hlsPlayer?.liveSyncPosition;
+        return Number.isFinite(sync) ? Math.min(end, sync) : end;
+      };
+      const updateGoLive = () => {
+        const edge = liveEdge();
+        goLive.hidden = edge === null || edge - video.currentTime < 4;
+      };
+      goLive.addEventListener("click", () => {
+        const edge = liveEdge();
+        if (edge !== null) video.currentTime = edge;
+        if (video.paused) video.play().catch(() => {});
+        updateGoLive();
+      });
+      ["timeupdate", "seeking", "seeked", "durationchange", "loadedmetadata"].forEach((event) =>
+        video.addEventListener(event, updateGoLive),
+      );
+    }
     // The progressive proxy is a real `src` in server-rendered HTML so script
     // blockers and CSP failures retain a working player. Once JS is running,
     // preserve it as the fallback. It must remain attached until the viewer
@@ -4140,6 +4163,7 @@
                   }
                 : { capLevelToPlayerSize: true },
             );
+            hlsPlayer = hls;
             hls.loadSource(hlsUrl);
             hls.attachMedia(video);
             hls.on(Hls.Events.MANIFEST_PARSED, () => {

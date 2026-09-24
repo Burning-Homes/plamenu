@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO media_attachments\n         (id, account_id, content_type, kind, processing, live_state, live_permanent)\n         VALUES ($1, $2, 'application/x-mpegURL', 'video', 'complete', 'waiting', $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b75059d3e381a3b44889e0b65ee1b3f630e3462fd6e5845ec108b62327e73b09"
+}

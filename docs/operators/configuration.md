@@ -72,6 +72,29 @@ Configure the relay, restart Plamenu, and test delivery before allowing those
 workflows. Keep relay credentials out of version control and limit the sender's
 permissions at the provider.
 
+## Optional encrypted live encoder ingest
+
+Live broadcasting works without another service: Plamenu accepts local
+plaintext RTMP and HTTPS-FLV through its normal HTTPS origin. For encoders that
+require the RTMPS protocol, opt in to Plamenu's own TLS listener:
+
+```toml
+live_ingest_bind = "127.0.0.1:1935"
+[live_rtmps]
+bind = "0.0.0.0:1936"
+cert = "/etc/letsencrypt/live/social.example.com/fullchain.pem"
+key = "/etc/letsencrypt/live/social.example.com/privkey.pem"
+```
+
+Use a certificate valid for `domain`, grant the Plamenu process read access to
+the certificate and key, and allow the RTMPS port through the host firewall.
+Plamenu checks the certificate/key at startup and reloads them for new
+connections within a minute of renewal. Existing broadcasts keep running.
+The listener forwards decrypted RTMP to the local native pipeline; it does not
+spawn a proxy or a separate transcoder. Keep the plaintext listener on loopback
+unless a trusted local network genuinely requires it. Without `[live_rtmps]`,
+no RTMPS port is opened and installation steps do not change.
+
 ## Federation fetch and proxies
 
 Authorized fetch and remote transport affect interoperability and privacy.

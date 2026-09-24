@@ -75,7 +75,7 @@ fn claim(status_id: i64) -> bool {
 #[must_use]
 pub fn refreshable(live_state: Option<&str>, permanent: bool) -> bool {
     match live_state {
-        Some("waiting" | "live") => true,
+        Some("waiting" | "live" | "interrupted") => true,
         Some("ended") => permanent,
         _ => false,
     }
@@ -164,6 +164,12 @@ pub async fn refresh_for_media(state: &AppState, media_id: i64) -> bool {
     let Some(item) = rows.into_iter().next() else {
         return false;
     };
+    if plamenu_db::native_live::exists(&state.pool, media_id)
+        .await
+        .unwrap_or(false)
+    {
+        return false;
+    }
     if !refreshable(item.live_state.as_deref(), item.live_permanent) {
         return false;
     }
@@ -260,7 +266,8 @@ mod tests {
         let entities = vec![json!({
             "media_attachments": [
                 {"id": "1", "live": {"state": "ended", "permanent": false}},
-                {"id": "2", "live": {"state": "waiting", "permanent": false}}
+                {"id": "2", "live": {"state": "waiting", "permanent": false}},
+                {"id": "6", "live": {"state": "interrupted", "permanent": false}}
             ],
             "reblog": {
                 "media_attachments": [
@@ -279,7 +286,7 @@ mod tests {
             rendered_live_media_ids(&entities)
                 .into_iter()
                 .collect::<Vec<_>>(),
-            vec![2, 3, 5]
+            vec![2, 3, 5, 6]
         );
     }
 }

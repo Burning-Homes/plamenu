@@ -13,12 +13,13 @@ import struct
 import subprocess
 import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 import requests
 import urllib3
-from plamenu_e2e import peertube, unique
+from plamenu_e2e import config, peertube, unique
 from plamenu_e2e.api import Api
 from plamenu_e2e.db import Db
 from plamenu_e2e.steps import log, step, wait_for
@@ -394,12 +395,15 @@ def test_peertube_live_federates_and_plays_in_every_client(
 
     with step("PeerTube announces a live that has not started"):
         live_name = f"Plamenu e2e live {time.time_ns()}"
-        video = pt.create_live(live_name, latency_mode=2)
+        dates = [(datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+                 for hours in (2, 4)]
+        video = pt.create_live(live_name, latency_mode=2, schedules=dates)
         # An announced live counts against the per-user live limit until it is
         # deleted, so a run that failed midway must not poison the next one.
         request.addfinalizer(lambda: pt.delete_video(video["id"]))
         announced = pt.fetch_ap(video["uuid"])
         assert announced["isLiveBroadcast"] is True, announced
+        assert len(announced["schedules"]) == 2, announced
         assert not [
             entry
             for entry in announced["url"]
@@ -422,7 +426,10 @@ def test_peertube_live_federates_and_plays_in_every_client(
         )
         att = status["media_attachments"][0]
         assert att["type"] == "video", att
-        assert att["live"] == {"state": "waiting", "permanent": False}, att
+        assert att["live"]["state"] == "waiting", att
+        assert att["live"]["permanent"] is False, att
+        assert len(att["live"]["schedules"]) == 2, att
+        assert att["live"]["scheduled_at"].startswith(dates[0][:16]), att
         assert att["url"] is None, "nothing is playable before the stream starts"
         assert att.get("hls") is None, att
         assert att["preview_url"], "the poster is available from the start"
@@ -441,6 +448,31 @@ def test_peertube_live_federates_and_plays_in_every_client(
         assert page.status_code == 200
         assert "media--live-offline" in page.text, "offline tile rendered"
         assert "<video" not in page.text, "no player with nothing to play"
+        assert "Upcoming broadcasts" in page.text, "multiple dates are accessible"
+        assert page.text.count("<time") >= 2, "each date is semantic time"
+        screenshot = config.PLAMENU_DIR / "target/e2e/remote-live-schedules-320.png"
+        screenshot.parent.mkdir(parents=True, exist_ok=True)
+        visual = subprocess.run(
+            ["node", str(config.PLAMENU_DIR / "accessibility/verify-live-schedules.mjs"),
+             f"https://plamenu.local/web/statuses/{status['id']}", str(screenshot)],
+            cwd=config.PLAMENU_DIR, capture_output=True, text=True, timeout=90, check=False,
+        )
+        assert visual.returncode == 0, visual.stderr[-1200:]
+
+    with step("PeerTube reschedules and then clears its live announcement"):
+        pt.put(f"/api/v1/videos/live/{video['id']}", schedules=[{"startAt": dates[1]}])
+        def one_schedule():
+            item = plamenu_api.get_status(status["id"])["media_attachments"][0]["live"]
+            return item if len(item.get("schedules", [])) == 1 else None
+
+        changed = wait_for(one_schedule, desc="the changed PeerTube schedule to federate")
+        assert changed["scheduled_at"].startswith(dates[1][:16])
+        assert plamenu_api.get_status(status["id"])["edited_at"] is None
+        pt.put(f"/api/v1/videos/live/{video['id']}", schedules=[])
+        wait_for(
+            lambda: "schedules" not in plamenu_api.get_status(status["id"])["media_attachments"][0]["live"],
+            desc="the cleared PeerTube schedule to federate",
+        )
 
     with peertube.broadcast(pt, video["id"]):
         with step("going on air delivers a live notification and flips state"):

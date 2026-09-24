@@ -3998,6 +3998,11 @@ pub(crate) async fn thread_view(
         Some(user) => event_attendees_for(state, Some(user), &focus, &user.csrf).await?,
         None => None,
     };
+    let live_replays = if focus.uri.is_none() {
+        plamenu_db::native_live::published_replays_by_status(&state.pool, focus.id).await?
+    } else {
+        Vec::new()
+    };
     if let Some(group_id) = mod_group {
         let pinned: std::collections::HashSet<i64> =
             plamenu_db::pin::pinned_statuses(&state.pool, group_id)
@@ -4036,6 +4041,18 @@ pub(crate) async fn thread_view(
                     p.thread__translate-error { (message) }
                 }
                 (view::status_detail(&view::Status(&focus_entity), &ctx))
+            }
+            @if !live_replays.is_empty() {
+                nav aria-label=(locale.text("videos-live-session-replays")) {
+                    h2 { (locale.text("videos-live-session-replays")) }
+                    ol {
+                        @for (generation, replay_status_id) in &live_replays {
+                            li { a href=(format!("/web/statuses/{replay_status_id}")) {
+                                (locale.text("videos-live-watch-replay")) " " (generation)
+                            } }
+                        }
+                    }
+                }
             }
             @if let Some(panel) = &attendees { (panel) }
             @if thread_locked {

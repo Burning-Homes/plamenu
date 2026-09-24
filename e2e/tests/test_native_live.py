@@ -1,0 +1,586 @@
+"""Native RTMP/HTTPS-FLV -> local HLS/MP4 -> PeerTube lifecycle."""
+
+import re
+import subprocess
+import os
+import tempfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+import requests
+from plamenu_e2e import config, peertube, unique
+from plamenu_e2e.api import Api
+from plamenu_e2e.db import Db
+from plamenu_e2e.steps import step, wait_for
+
+
+def rtmps_tls_args():
+    ca = os.environ.get("PLAMENU_RTMPS_CA")
+    return ["-cafile", ca, "-tls_verify", "1"] if ca else ["-tls_verify", "0"]
+
+
+@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.parametrize("transport", [
+    "rtmp", "https", pytest.param("rtmps", marks=pytest.mark.skipif(
+        os.environ.get("PLAMENU_RTMPS") != "1", reason="native RTMPS is not configured"
+    )),
+])
+@pytest.mark.federation(
+    direction="outbound",
+    peer="peertube",
+    reverse_of="test_peertube_live_federates_and_plays_in_every_client",
+)
+def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, transport: str):
+    pt = peertube.root()
+    browser = requests.Session()
+    browser.verify = False
+    name = unique("nativelive")[:30]
+    title = f"Native live {name}"
+    channel = plamenu_api.post(
+        "/api/v1/video_channels", username=name, display_name="Native live tests"
+    )
+    status_id = None
+    publisher = None
+    try:
+        with step("PeerTube follows the Plamenu video channel"):
+            pt.post(
+                "/api/v1/users/me/subscriptions",
+                uri=f"{name}@{config.PLAMENU_DOMAIN}",
+            )
+
+        with step("a no-JS form publishes a waiting Video and shows its ingest key once"):
+            login = browser.post(
+                f"{config.PLAMENU_URL}/login",
+                data={"email": plamenu_user.email, "password": plamenu_user.password},
+                allow_redirects=False,
+                timeout=30,
+            )
+            assert login.status_code == 303, login.text[:500]
+            form = browser.get(f"{config.PLAMENU_URL}/videos/live/new", timeout=30)
+            form.raise_for_status()
+            csrf = re.search(r'name="csrf" value="([^"]+)"', form.text).group(1)
+            planned = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
+            created = browser.post(
+                f"{config.PLAMENU_URL}/web/videos/live",
+                data={
+                    "csrf": csrf,
+                    "channel": channel["id"],
+                    "title": title,
+                    "description": "A live test pattern with an audible 440 Hz tone.",
+                    "language": "en",
+                    "visibility": "public",
+                    "dvr_minutes": "5",
+                    "latency": "low",
+                    "scheduled_at": planned,
+                },
+                timeout=30,
+            )
+            assert created.status_code == 200, created.text[:700]
+            status_id = re.search(r'/videos/live/(\d+)', created.text).group(1)
+            inputs = re.findall(r'<input type="text" readonly value="([^"]+)"', created.text)
+            assert len(inputs) == (4 if os.environ.get("PLAMENU_RTMPS") == "1" else 3), created.text[:1000]
+            if len(inputs) == 4:
+                server, secure_server, key, https_ingest = inputs
+                assert secure_server.startswith("rtmps://")
+            else:
+                server, key, https_ingest = inputs
+                secure_server = None
+            assert server.startswith("rtmp://127.0.0.1:") and server.endswith("/live")
+            assert https_ingest == f"{config.PLAMENU_URL}/live/ingest"
+            assert len(key) == 43
+            assert key not in browser.get(
+                f"{config.PLAMENU_URL}/videos/live/{status_id}", timeout=30
+            ).text
+
+            waiting_status = plamenu_api.get(f"/api/v1/statuses/{status_id}")
+            waiting = waiting_status["media_attachments"][0]
+            media_id = waiting["id"]
+            assert waiting["live"]["state"] == "waiting"
+            assert waiting["live"]["permanent"] is False
+            assert waiting["live"]["dvr_window_seconds"] == 300
+            assert waiting["live"]["latency_mode"] == 3
+            assert waiting["live"]["scheduled_at"].startswith(planned)
+            public_page = browser.get(f"{config.PLAMENU_URL}/web/statuses/{status_id}", timeout=30)
+            assert "Planned start:" in public_page.text and "<time" in public_page.text
+            ap = plamenu_api.ap_get(waiting_status["uri"].removeprefix(config.PLAMENU_URL))
+            assert ap["schedules"][0]["startDate"].startswith(planned)
+            assert waiting["url"] is None
+            assert requests.get(
+                f"{config.PLAMENU_URL}/media/hls/{media_id}/master.m3u8",
+                verify=False,
+                timeout=20,
+            ).status_code == 404
+            if transport == "https":
+                assert requests.post(https_ingest, data=b"", verify=False, timeout=20).status_code == 401
+                assert requests.post(
+                    "http://127.0.0.1:8420/live/ingest",
+                    headers={"Authorization": f"Bearer {key}"},
+                    data=b"",
+                    timeout=20,
+                ).status_code == 403, "direct HTTP ingest without TLS proxy metadata is refused"
+
+        with step("the waiting Video retains a stable PeerTube-compatible identity"):
+            uuid = db.conn.execute(
+                "SELECT uuid FROM video_publications WHERE status_id = %s", (int(status_id),)
+            ).fetchone()[0]
+            assert re.fullmatch(r"[0-9a-f-]{36}", uuid)
+            # The authenticated PeerTube live endpoint may expose the waiting
+            # metadata even though public video listings hide waiting lives.
+            remote_planned = wait_for(
+                lambda: _remote_live_schedule(pt, uuid, planned),
+                desc="PeerTube imports the planned start", timeout=60,
+            )
+            assert remote_planned["schedules"][0]["startAt"].startswith(planned)
+
+        def output_args(publish_key: str):
+            if transport == "rtmp":
+                return ["-f", "flv", f"{server}/{publish_key}"]
+            if transport == "rtmps":
+                return ["-f", "flv", *rtmps_tls_args(), f"{secure_server}/{publish_key}"]
+            return [
+                "-f", "flv", "-method", "POST", "-headers",
+                f"Authorization: Bearer {publish_key}\r\n", "-tls_verify", "0",
+                https_ingest,
+            ]
+
+        with step(f"{transport} camera-like A/V becomes bounded local HLS and no-JS MP4"):
+            if transport in ("rtmp", "rtmps"):
+                rejected = subprocess.run(
+                    [
+                        "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
+                        "-i", "testsrc2=size=160x90:rate=5", "-t", "1", "-c:v",
+                        "libx264", *output_args("x" * 43),
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    timeout=20,
+                    check=False,
+                )
+                assert rejected.returncode != 0, "unknown RTMP key must not publish"
+            else:
+                rejected = requests.post(
+                    https_ingest,
+                    headers={"Authorization": f"Bearer {'x' * 43}"},
+                    data=b"FLV",
+                    verify=False,
+                    timeout=20,
+                )
+                assert rejected.status_code == 401, "unknown HTTPS key must not publish"
+            publisher = subprocess.Popen(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-re",
+                    "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30",
+                    "-f", "lavfi", "-i", "sine=frequency=440",
+                    "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+                    "-g", "30", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
+                    *output_args(key),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE,
+            )
+
+            def local_live():
+                item = plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]
+                return item if item["live"]["state"] == "live" else None
+
+            live = wait_for(local_live, desc=f"{transport} publisher switches native live on air")
+            assert "scheduled_at" not in live["live"], "the announcement is consumed at start"
+            assert live["url"].endswith("/stream.mp4"), live
+            assert live["hls"]["master"].endswith("/master.m3u8"), live
+            master = wait_for(
+                lambda: _ok_text(live["hls"]["master"]),
+                desc="native HLS master becomes available",
+            )
+            child = next(line for line in master.splitlines() if line.startswith("/media/"))
+            playlist = wait_for(
+                lambda: _ok_text(config.PLAMENU_URL + child),
+                desc="native HLS media playlist becomes available",
+            )
+            assert "#EXT-X-MEDIA-SEQUENCE:" in playlist
+            playlist = wait_for(
+                lambda: (text if (text := _ok_text(config.PLAMENU_URL + child))
+                         and len([line for line in text.splitlines() if line.endswith(".ts")]) >= 8
+                         else None),
+                desc="DVR playlist grows past the old six-segment window",
+                timeout=60,
+            )
+            durations = [float(line.removeprefix("#EXTINF:").split(",")[0])
+                         for line in playlist.splitlines() if line.startswith("#EXTINF:")]
+            assert max(durations) <= 2.5, durations
+            segment = next(line for line in playlist.splitlines() if line.endswith(".ts"))
+            data = requests.get(config.PLAMENU_URL + segment, verify=False, timeout=20)
+            data.raise_for_status()
+            assert data.content[0] == 0x47, "MPEG-TS sync byte"
+            with requests.get(live["url"], verify=False, timeout=(5, 30), stream=True) as mp4:
+                mp4.raise_for_status()
+                prefix = next(mp4.iter_content(chunk_size=4096))
+                assert b"ftyp" in prefix[:32], "no-JS MP4 gateway has an init section"
+            page = browser.get(f"{config.PLAMENU_URL}/web/statuses/{status_id}", timeout=30)
+            assert "data-hls=" in page.text and "<video" in page.text
+            assert "/stream.mp4" in page.text, "no-JS video source"
+            assert "Go live" in page.text and 'data-live-dvr="300"' in page.text
+
+        with step("PeerTube receives the on-air Update"):
+            remote = wait_for(
+                lambda: _remote_video_state(pt, uuid, 1),
+                desc="PeerTube sees the live state",
+            )
+            assert remote["name"] == title
+            assert remote["streamingPlaylists"], "PeerTube can expose the stream"
+            remote_live = pt.get(f"/api/v1/videos/live/{uuid}")
+            assert remote_live["dvrWindow"] == 300, remote_live
+            assert remote_live["latencyMode"] == 3, remote_live
+            assert remote_live["schedules"] == [], "start clears the spent announcement"
+            remote_playlist = remote["streamingPlaylists"][0]["playlistUrl"]
+            assert "#EXTM3U" in _ok_text(remote_playlist)
+
+        with step(f"stopping {transport} converts the one-shot live into a replay Video"):
+            # Ask the encoder to close its output cleanly. Killing its process
+            # is an interrupted connection, not an intentional live stop.
+            _, encoder_error = publisher.communicate(input=b"q\n", timeout=15)
+            assert publisher.returncode == 0, encoder_error.decode(errors="replace")[-700:]
+            publisher = None
+
+            def local_replay():
+                item = plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]
+                return item if "live" not in item and item["url"] and item["url"].endswith(".mp4") else None
+
+            replay = wait_for(local_replay, desc="Plamenu finalizes the replay Video", timeout=180)
+            assert replay["type"] == "video"
+            assert replay["preview_url"].endswith(".jpg")
+            assert replay["meta"]["original"]["duration"] > 0
+            recorded = requests.get(replay["url"], verify=False, timeout=60)
+            recorded.raise_for_status()
+            assert b"ftyp" in recorded.content[:32]
+            assert len(recorded.content) > 100_000
+            assert requests.get(replay["url"], headers={"Range": "bytes=0-31"},
+                                verify=False, timeout=20).status_code == 206
+            page = browser.get(f"{config.PLAMENU_URL}/web/statuses/{status_id}", timeout=30)
+            assert "<video" in page.text and replay["url"] in page.text
+            assert db.conn.execute(
+                "SELECT count(*) FROM native_live_sessions WHERE media_id = %s AND ended_at IS NULL",
+                (int(media_id),),
+            ).fetchone()[0] == 0
+            assert db.conn.execute(
+                "SELECT replay_media_id FROM native_live_sessions WHERE media_id = %s ORDER BY generation DESC LIMIT 1",
+                (int(media_id),),
+            ).fetchone()[0] == int(media_id)
+            assert requests.get(
+                f"{config.PLAMENU_URL}/media/hls/{media_id}/master.m3u8",
+                verify=False,
+                timeout=20,
+            ).status_code == 404
+            remote_observation = {}
+            def remote_replay_check():
+                try:
+                    video = pt.video(uuid)
+                except peertube.PeertubeError:
+                    return None
+                remote_observation.update({
+                    "state": video["state"]["id"], "isLive": video["isLive"],
+                    "files": len(video["files"]),
+                    "streamingPlaylists": len(video["streamingPlaylists"]),
+                })
+                return video if video["state"]["id"] == 1 and not video["isLive"] and video["files"] else None
+            try:
+                remote_replay = wait_for(remote_replay_check,
+                    desc="PeerTube imports the replay as ordinary video", timeout=90)
+            except TimeoutError as error:
+                raise AssertionError(f"{error}; last PeerTube video: {remote_observation}") from error
+            assert remote_replay["name"] == title
+            remote_file = remote_replay["files"][0]["fileUrl"]
+            ranged = requests.get(remote_file, headers={"Range": "bytes=0-63"},
+                                  verify=False, timeout=30)
+            assert ranged.status_code == 206 and b"ftyp" in ranged.content[:32]
+            with tempfile.TemporaryDirectory() as temp:
+                received = Path(temp) / "peer-replay.mp4"
+                response = requests.get(remote_file, verify=False, timeout=60)
+                response.raise_for_status()
+                received.write_bytes(response.content)
+                subprocess.run(["ffmpeg", "-v", "error", "-i", str(received),
+                                "-t", "1", "-f", "null", "-"], check=True, timeout=30)
+    finally:
+        if publisher is not None:
+            publisher.terminate()
+            try:
+                publisher.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                publisher.kill()
+                publisher.communicate(timeout=10)
+        if status_id is not None:
+            try:
+                plamenu_api.delete(f"/api/v1/statuses/{status_id}")
+            except Exception:
+                pass
+        try:
+            pt.delete(f"/api/v1/users/me/subscriptions/{name}@{config.PLAMENU_DOMAIN}")
+        except Exception:
+            pass
+
+
+def _ok_text(url: str):
+    response = requests.get(url, verify=False, timeout=20)
+    return response.text if response.status_code == 200 else None
+
+
+def _remote_video_state(pt, uuid: str, state: int):
+    try:
+        video = pt.video(uuid)
+    except peertube.PeertubeError:
+        return None
+    return video if video["state"]["id"] == state else None
+
+
+def _remote_live_schedule(pt, uuid: str, planned: str):
+    try:
+        live = pt.get(f"/api/v1/videos/live/{uuid}")
+    except peertube.PeertubeError:
+        return None
+    return live if live.get("schedules") and live["schedules"][0]["startAt"].startswith(planned) else None
+
+
+@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.parametrize("transport", [
+    "rtmp", "https", pytest.param("rtmps", marks=pytest.mark.skipif(
+        os.environ.get("PLAMENU_RTMPS") != "1", reason="native RTMPS is not configured"
+    )),
+])
+@pytest.mark.parametrize("permanent", [False, True], ids=["one-shot", "recurring"])
+@pytest.mark.federation(direction="outbound", peer="peertube")
+def test_native_live_interruption_and_reconnect(
+    plamenu_api: Api, plamenu_user, db: Db, permanent: bool, transport: str
+):
+    pt = peertube.root()
+    browser = requests.Session()
+    browser.verify = False
+    name = unique("reconnectlive")[:30]
+    channel = plamenu_api.post(
+        "/api/v1/video_channels", username=name, display_name="Reconnect tests"
+    )
+    status_id = None
+    publisher = None
+    replays = []
+    try:
+        with step("publish a stable waiting broadcast followed from PeerTube"):
+            pt.post(
+                "/api/v1/users/me/subscriptions",
+                uri=f"{name}@{config.PLAMENU_DOMAIN}",
+            )
+            login = browser.post(
+                f"{config.PLAMENU_URL}/login",
+                data={"email": plamenu_user.email, "password": plamenu_user.password},
+                allow_redirects=False,
+                timeout=30,
+            )
+            assert login.status_code == 303
+            form = browser.get(f"{config.PLAMENU_URL}/videos/live/new", timeout=30)
+            csrf = re.search(r'name="csrf" value="([^"]+)"', form.text).group(1)
+            created = browser.post(
+                f"{config.PLAMENU_URL}/web/videos/live",
+                data={
+                    "csrf": csrf,
+                    "channel": channel["id"],
+                    "title": f"Reconnect live {name}",
+                    "description": "A reconnecting live test pattern.",
+                    "visibility": "public",
+                    **({"permanent": "yes"} if permanent else {}),
+                },
+                timeout=30,
+            )
+            assert created.status_code == 200, created.text[:700]
+            status_id = re.search(r'/videos/live/(\d+)', created.text).group(1)
+            inputs = re.findall(
+                r'<input type="text" readonly value="([^"]+)"', created.text
+            )
+            if len(inputs) == 4:
+                server, secure_server, key, https_ingest = inputs
+            else:
+                server, key, https_ingest = inputs
+                secure_server = None
+            media_id = int(plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]["id"])
+            uuid = db.conn.execute(
+                "SELECT uuid FROM video_publications WHERE status_id = %s",
+                (int(status_id),),
+            ).fetchone()[0]
+
+        def start_encoder():
+            if transport == "rtmp":
+                output = ["-f", "flv", f"{server}/{key}"]
+            elif transport == "rtmps":
+                output = ["-f", "flv", *rtmps_tls_args(), f"{secure_server}/{key}"]
+            else:
+                output = [
+                    "-f", "flv", "-method", "POST", "-headers",
+                    f"Authorization: Bearer {key}\r\n", "-tls_verify", "0",
+                    https_ingest,
+                ]
+            return subprocess.Popen(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-re",
+                    "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=15",
+                    "-f", "lavfi", "-i", "sine=frequency=440",
+                    "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+                    "-g", "30", "-pix_fmt", "yuv420p", "-c:a", "aac",
+                    *output,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+
+        def media_state(expected):
+            item = plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]
+            return item if item["live"]["state"] == expected else None
+
+        with step("the first session reaches local and PeerTube playback"):
+            publisher = start_encoder()
+            first = wait_for(lambda: media_state("live"), desc="first session on air")
+            first_master = wait_for(
+                lambda: _ok_text(first["hls"]["master"]),
+                desc="first HLS master",
+            )
+            first_child = next(line for line in first_master.splitlines() if line.startswith("/media/"))
+            wait_for(lambda: _ok_text(config.PLAMENU_URL + first_child), desc="first HLS playlist")
+            wait_for(lambda: _remote_video_state(pt, uuid, 1), desc="PeerTube first on-air state")
+
+        with step("an abrupt encoder loss pauses playback and opens a reconnect window"):
+            publisher.kill()
+            publisher.communicate(timeout=15)
+            publisher = None
+            interrupted = wait_for(lambda: media_state("interrupted"), desc="interrupted state")
+            assert interrupted["url"] is None and interrupted.get("hls") is None
+            assert requests.get(
+                f"{config.PLAMENU_URL}/media/hls/{media_id}/master.m3u8",
+                verify=False, timeout=20,
+            ).status_code == 404
+            assert db.conn.execute(
+                "SELECT reconnect_deadline > now() FROM native_live_broadcasts WHERE media_id = %s",
+                (media_id,),
+            ).fetchone()[0]
+            manage = browser.get(f"{config.PLAMENU_URL}/videos/live/{status_id}", timeout=30)
+            assert "Connection interrupted" in manage.text
+            assert "Reconnect your encoder within one minute" in manage.text
+            post = browser.get(f"{config.PLAMENU_URL}/web/statuses/{status_id}", timeout=30)
+            assert "Stream interrupted" in post.text
+            wait_for(lambda: _remote_video_state(pt, uuid, 4), desc="PeerTube off-air update")
+
+        with step("the same key resumes under a new session without a new Video"):
+            publisher = start_encoder()
+            live = wait_for(lambda: media_state("live"), desc="reconnected session on air")
+            second_master = wait_for(
+                lambda: _ok_text(live["hls"]["master"]),
+                desc="reconnected HLS master",
+            )
+            second_child = next(line for line in second_master.splitlines() if line.startswith("/media/"))
+            assert second_child != first_child
+            assert requests.get(config.PLAMENU_URL + first_child, verify=False, timeout=20).status_code == 404
+            wait_for(lambda: _ok_text(config.PLAMENU_URL + second_child), desc="second HLS playlist")
+            sessions = db.conn.execute(
+                "SELECT generation, ended_at IS NOT NULL FROM native_live_sessions "
+                "WHERE media_id = %s ORDER BY generation", (media_id,),
+            ).fetchall()
+            assert sessions == [(1, True), (2, False)]
+            wait_for(lambda: _remote_video_state(pt, uuid, 1), desc="PeerTube reconnected on-air state")
+
+        if permanent:
+            with step("a deliberate stop preserves the live Video and publishes both session replays"):
+                publisher.terminate()
+                publisher.communicate(timeout=15)
+                publisher = None
+                wait_for(lambda: media_state("waiting"), desc="recurring broadcast waiting")
+                def published_sessions():
+                    rows = db.conn.execute(
+                        "SELECT ls.generation, ls.replay_media_id, m.status_id, v.uuid "
+                        "FROM native_live_sessions ls "
+                        "LEFT JOIN media_attachments m ON m.id = ls.replay_media_id "
+                        "LEFT JOIN video_publications v ON v.status_id = m.status_id "
+                        "WHERE ls.media_id = %s ORDER BY ls.generation", (media_id,),
+                    ).fetchall()
+                    return rows if len(rows) == 2 and all(row[2] and row[3] for row in rows) else None
+
+                replays = wait_for(published_sessions,
+                                   desc="two distinct recurring replay Videos", timeout=240)
+                assert [row[0] for row in replays] == [1, 2]
+                assert len({row[1] for row in replays}) == 2
+                assert len({row[2] for row in replays}) == 2
+                assert all(row[1] != media_id for row in replays)
+                for generation, replay_media_id, replay_status_id, replay_uuid in replays:
+                    local = plamenu_api.get(f"/api/v1/statuses/{replay_status_id}")
+                    attachment = local["media_attachments"][0]
+                    assert int(attachment["id"]) == replay_media_id
+                    assert attachment["type"] == "video" and attachment["url"].endswith(".mp4")
+                    assert attachment["meta"]["original"]["duration"] > 0
+                    assert requests.get(attachment["url"], headers={"Range": "bytes=0-31"},
+                                        verify=False, timeout=20).status_code == 206
+                    local_page = browser.get(
+                        f"{config.PLAMENU_URL}/web/statuses/{replay_status_id}", timeout=30)
+                    assert "<video" in local_page.text and attachment["url"] in local_page.text
+
+                    def remote_replay():
+                        try:
+                            video = pt.video(replay_uuid)
+                        except peertube.PeertubeError:
+                            return None
+                        return video if video["state"]["id"] == 1 and not video["isLive"] and video["files"] else None
+
+                    imported = wait_for(remote_replay,
+                                        desc=f"PeerTube imports replay {generation}", timeout=120)
+                    assert f"Replay {generation}" in imported["name"]
+                manage = browser.get(f"{config.PLAMENU_URL}/videos/live/{status_id}", timeout=30)
+                assert "Session replays" in manage.text
+                public_live = requests.get(
+                    f"{config.PLAMENU_URL}/web/statuses/{status_id}", verify=False, timeout=30)
+                public_live.raise_for_status()
+                assert 'aria-label="Session replays"' in public_live.text
+                for _, _, replay_status_id, _ in replays:
+                    assert f"/web/statuses/{replay_status_id}" in manage.text
+                    assert f"/web/statuses/{replay_status_id}" in public_live.text
+                assert plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]["live"] == {
+                    "state": "waiting", "permanent": True,
+                    "dvr_window_seconds": 600, "latency_mode": 1,
+                }
+        else:
+            with step("a second loss expires and preserves a one-shot replay"):
+                publisher.kill()
+                publisher.communicate(timeout=15)
+                publisher = None
+                wait_for(lambda: media_state("interrupted"), desc="second interruption")
+                def local_replay():
+                    item = plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]
+                    return item if "live" not in item and (item.get("url") or "").endswith(".mp4") else None
+
+                replay = wait_for(local_replay, desc="reconnect expiry finalizes replay", timeout=180)
+                assert replay["meta"]["original"]["duration"] > 0
+                assert requests.get(replay["url"], headers={"Range": "bytes=0-31"},
+                                    verify=False, timeout=20).status_code == 206
+                assert requests.get(config.PLAMENU_URL + second_child,
+                                    verify=False, timeout=20).status_code == 404
+                assert db.conn.execute(
+                    "SELECT replay_media_id FROM native_live_sessions "
+                    "WHERE media_id = %s ORDER BY generation DESC LIMIT 1", (media_id,),
+                ).fetchone()[0] == media_id
+                wait_for(
+                    lambda: video if (video := _remote_video_state(pt, uuid, 1))
+                    and not video["isLive"] and video["files"] else None,
+                    desc="PeerTube imports replay after reconnect expiry", timeout=90,
+                )
+    finally:
+        if publisher is not None:
+            if publisher.poll() is None:
+                publisher.kill()
+            publisher.communicate(timeout=15)
+        for _, _, replay_status_id, _ in replays:
+            try:
+                plamenu_api.delete(f"/api/v1/statuses/{replay_status_id}")
+            except Exception:
+                pass
+        if status_id is not None:
+            try:
+                plamenu_api.delete(f"/api/v1/statuses/{status_id}")
+            except Exception:
+                pass
+        try:
+            pt.delete(f"/api/v1/users/me/subscriptions/{name}@{config.PLAMENU_DOMAIN}")
+        except Exception:
+            pass

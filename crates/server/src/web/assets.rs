@@ -118,6 +118,7 @@ const PWA_IMAGES: &[(&str, &[u8])] = &[
 /// The full build (not `light`) is required: `PeerTube`'s separated audio is an
 /// `EXT-X-MEDIA:TYPE=AUDIO` alternate track, which the light build omits.
 const HLS_JS: &[u8] = include_bytes!("assets/hls.min.js");
+const LIVE_BROADCAST_JS: &str = include_str!("assets/live-broadcast.js");
 /// The default avatar/header placeholder, served at `/static/missing.png` —
 /// the URL `entities.rs` hands out for accounts with no image.
 const MISSING_IMAGE: &[u8] = include_bytes!("assets/missing.png");
@@ -319,6 +320,18 @@ pub async fn hls_js() -> impl IntoResponse {
             (header::CACHE_CONTROL, CACHE),
         ],
         HLS_JS,
+    )
+}
+
+/// Browser-only publisher enhancement. No-JS users retain the RTMP encoder
+/// path; this small script is served only on their broadcast-management page.
+pub async fn live_broadcast_js() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        LIVE_BROADCAST_JS,
     )
 }
 

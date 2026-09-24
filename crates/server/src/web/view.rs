@@ -2874,13 +2874,14 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                             .and_then(|l| l.get("state"))
                             .and_then(Value::as_str);
                         @match live_state {
-                            Some("waiting" | "ended") => (offline_live(
+                            Some("waiting" | "interrupted" | "ended") => (offline_live(
                                 item, preview, alt, width, height, language, ctx)),
                             _ => figure.media.media--video {
                                 @if let Some(master) = hls_master {
                                     video src=(url) poster=(preview) controls playsinline preload="none"
                                         data-hls=(master) data-src=(url)
                                         data-live=[live_state]
+                                        data-live-dvr=[item.get("live").and_then(|l| l.get("dvr_window_seconds")).and_then(Value::as_i64)]
                                         width=[width] height=[height]
                                         lang=[language]
                                         title=[Some(alt).filter(|a| !a.is_empty())] {
@@ -2903,6 +2904,17 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                     }
                                 }
                                 @if live_state == Some("live") {
+                                    button.media__go-live type="button" hidden
+                                        aria-label=(ctx.locale.text("status-go-live")) {
+                                        (ctx.locale.text("status-go-live"))
+                                    }
+                                    @if item.get("live").and_then(|l| l.get("dvr_window_seconds")).and_then(Value::as_i64).unwrap_or(0) > 0 {
+                                        @if let Some(master) = hls_master {
+                                            a.media__live-playlist href=(master) {
+                                                (ctx.locale.text("status-live-playlist"))
+                                            }
+                                        }
+                                    }
                                     div.media__badges {
                                         span.media__badge.media__badge--live { (ctx.locale.text("status-live-badge")) }
                                         @if !alt.is_empty() {
@@ -3007,17 +3019,49 @@ fn offline_live(
         .and_then(|l| l.get("permanent"))
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let scheduled_at = live
+        .and_then(|l| l.get("scheduled_at"))
+        .and_then(Value::as_str);
+    let future_dates: Vec<&str> = live
+        .and_then(|l| l.get("schedules"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter(|at| {
+            OffsetDateTime::parse(at, &Rfc3339).is_ok_and(|date| date > OffsetDateTime::now_utc())
+        })
+        .collect();
     let caption = match state {
+        "interrupted" => "status-live-interrupted",
         "ended" if permanent => "status-live-waiting-recurring",
         "ended" => "status-live-ended",
         _ if permanent => "status-live-waiting-recurring",
         _ => "status-live-waiting",
     };
     html! {
-        figure.media.media--video.media--live-offline {
-            img src=(preview) alt=(alt) lang=[language]
-                loading="lazy" width=[width] height=[height];
-            figcaption.media__live-state { (ctx.locale.text(caption)) }
+        figure.media.media--video.media--live-offline data-multiple-schedules=(future_dates.len() > 1) {
+            @if !preview.is_empty() {
+                img src=(preview) alt=(alt) lang=[language]
+                    loading="lazy" width=[width] height=[height];
+            }
+            figcaption.media__live-state {
+                (ctx.locale.text(caption))
+                @if let Some(at) = scheduled_at {
+                    br;
+                    (ctx.locale.text("status-live-planned-start")) " " (ctx.clock.element_absolute_iso(at))
+                }
+            }
+            @if future_dates.len() > 1 {
+                details.media__transcript {
+                    summary { (ctx.locale.text("status-live-future-schedules")) }
+                    ol {
+                        @for date in future_dates {
+                            li { (ctx.clock.element_absolute_iso(date)) }
+                        }
+                    }
+                }
+            }
             (media_badges(alt, &[], ctx.locale))
         }
     }

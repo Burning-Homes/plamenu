@@ -228,7 +228,7 @@ async fn process(
 #[must_use]
 pub fn spawn(state: AppState) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let launcher = match std::env::current_exe() {
+        let launcher = match crate::media_limits::running_executable() {
             Ok(path) => path,
             Err(error) => {
                 tracing::error!(%error, "native video worker cannot locate its executable");

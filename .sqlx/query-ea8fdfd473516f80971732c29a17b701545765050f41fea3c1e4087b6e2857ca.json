@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_attachments SET live_state = 'live',\n         hls_master_url = '/media/hls/' || $1::text || '/master.m3u8' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ea8fdfd473516f80971732c29a17b701545765050f41fea3c1e4087b6e2857ca"
+}

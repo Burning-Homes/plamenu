@@ -207,6 +207,7 @@ def main():
                     )
                 )
             app_port = free_port(app_address)
+            live_port = free_port()
             database_url = (
                 f"postgres://postgres:{password}@127.0.0.1:{database_port}/plamenu_a11y"
             )
@@ -215,6 +216,7 @@ def main():
                 'domain = "localhost"\n'
                 f'database_url = "{database_url}"\n'
                 f'bind = "{app_address}:{app_port}"\n'
+                f'live_ingest_bind = "127.0.0.1:{live_port}"\n'
                 f'media_dir = "{fixture / "media"}"\n'
                 'encryption_secret = "plamenu-accessibility-fixture-only"\n'
                 "encryption_secret_version = 1\n"

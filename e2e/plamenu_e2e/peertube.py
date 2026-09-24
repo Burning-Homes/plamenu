@@ -166,6 +166,7 @@ class PeertubeApi:
         permanent: bool = False,
         save_replay: bool = False,
         latency_mode: int = 1,
+        schedules: list[str] | None = None,
     ) -> dict:
         """Create a live video; returns `{id, uuid, shortUUID}`.
 
@@ -181,6 +182,8 @@ class PeertubeApi:
             "saveReplay": save_replay,
             "latencyMode": latency_mode,
         }
+        if schedules is not None:
+            body["schedules"] = [{"startAt": date} for date in schedules]
         if save_replay:
             body["replaySettings"] = {"privacy": privacy}
         return self._request("POST", "/api/v1/videos/live", json=body)["video"]

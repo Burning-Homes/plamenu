@@ -1,0 +1,110 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ls.media_id, b.status_id AS \"status_id!\", b.owner_account_id,\n                  ls.session_id, b.permanent, b.reconnect_deadline,\n                  b.dvr_window_seconds, b.latency_mode\n           FROM native_live_sessions ls\n           JOIN native_live_broadcasts b ON b.media_id = ls.media_id\n           JOIN media_attachments m ON m.id = ls.media_id\n           LEFT JOIN media_attachments replay ON replay.id = ls.replay_media_id\n           WHERE ls.ended_at IS NOT NULL AND b.status_id IS NOT NULL\n             AND (ls.replay_media_id IS NULL OR replay.status_id IS NULL)\n             AND (b.permanent OR (b.state IN ('interrupted', 'ended')\n                 AND m.file_name IS NULL\n                 AND ls.generation = (SELECT max(newer.generation)\n                                      FROM native_live_sessions newer\n                                      WHERE newer.media_id = ls.media_id)))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_sessions",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "owner_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "session_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "native_live_sessions",
+            "name": "session_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "permanent",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "permanent"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "reconnect_deadline",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "reconnect_deadline"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "dvr_window_seconds",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "dvr_window_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "latency_mode",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "latency_mode"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "26b58fde5610ef38c664d054a71a91490a899cfc067e97a70d6a8ae07394984d"
+}

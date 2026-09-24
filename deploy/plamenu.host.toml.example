@@ -20,6 +20,14 @@ csp_reporting = false
 encryption_secret = "replace-with-output-of-openssl-rand-hex-32"
 encryption_secret_version = 1
 
+# Optional RTMPS for remote OBS/FFmpeg encoders. HTTPS-FLV already works via
+# the ordinary HTTPS origin. Reuse your host certificate; Plamenu reloads it.
+# live_ingest_bind = "127.0.0.1:1935"
+# [live_rtmps]
+# bind = "0.0.0.0:1936"
+# cert = "/etc/letsencrypt/live/social.example.com/fullchain.pem"
+# key = "/etc/letsencrypt/live/social.example.com/privkey.pem"
+
 # Optional ALTCHA sign-up proof-of-work tuning (defaults shown).
 # [altcha]
 # cost = 5000

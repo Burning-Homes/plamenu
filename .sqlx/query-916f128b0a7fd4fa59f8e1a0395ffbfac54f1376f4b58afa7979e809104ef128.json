@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM media_attachments WHERE id = $1 AND account_id = $2 AND status_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "916f128b0a7fd4fa59f8e1a0395ffbfac54f1376f4b58afa7979e809104ef128"
+}

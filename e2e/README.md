@@ -47,6 +47,23 @@ CLI fixtures then use that artifact instead of rebuilding via `cargo run`.
 `DATABASE_URL` must point to that same instance for database assertions. This
 does not start or replace the server; run the same candidate there first.
 
+The native-live matrix includes RTMP and HTTPS-FLV by default. To exercise an
+optional `[live_rtmps]` listener, set `PLAMENU_RTMPS=1` when running
+`tests/test_native_live.py`; the E2E cases then use real FFmpeg RTMPS publishing,
+invalid-key rejection, PeerTube playback and reconnect. Set
+`PLAMENU_RTMPS_CA` to the disposable certificate or local test CA to make
+FFmpeg verify the server certificate; without it, the self-signed local
+fixture uses `-tls_verify 0`. Production encoders must verify the host
+certificate.
+
+`tests/test_native_live_crash_drill.py` is deliberately excluded by default.
+Back up the local database first. Only on an explicitly disposable standing
+instance, set `PLAMENU_CRASH_DRILL=1`, `PLAMENU_SERVER_PID` to its exact PID,
+and the matching absolute `PLAMENU_BINARY` and `PLAMENU_CONFIG`. The test
+validates the process executable, working directory and command line before
+SIGKILL, starts the same candidate after the crash, and leaves the replacement
+serving. Do not run it against production or another user's active instance.
+
 The outbound native-video/PeerTube test also drives PeerTube's actual watch UI
 before deleting its temporary video. Install the pinned browser test dependencies
 in `accessibility/` (`npm ci` and Playwright Chromium/Firefox browser binaries)

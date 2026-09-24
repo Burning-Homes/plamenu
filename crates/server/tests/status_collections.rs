@@ -13,7 +13,7 @@ use common::{TEST_DOMAIN, create_local_account, test_app, test_state_with};
 use http_body_util::BodyExt;
 use plamenu::actions::{self, PostParams};
 use plamenu_db::account::{self, RemoteAccountData};
-use plamenu_db::{PgPool, conversation, favourite, status};
+use plamenu_db::{PgPool, conversation, dislike, favourite, status};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -200,11 +200,14 @@ async fn featured_collection_is_empty_and_dereferenceable(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
-async fn likes_and_shares_collections_carry_counts_only(pool: PgPool) {
+async fn engagement_collections_carry_counts_only(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
     let parent = post(&pool, "alice", "count me", "public", None).await;
     favourite::create(&pool, bob.id, parent.id, None)
+        .await
+        .unwrap();
+    dislike::create(&pool, bob.id, parent.id, None)
         .await
         .unwrap();
     status::create_local_reblog(&pool, bob.id, parent.id)
@@ -241,6 +244,19 @@ async fn likes_and_shares_collections_carry_counts_only(pool: PgPool) {
     assert_eq!(
         shares["id"],
         format!("{}/shares", status_url("alice", parent.id))
+    );
+
+    let (_, _, dislikes) = get_json(
+        test_app(pool.clone()),
+        &format!("{base}/dislikes"),
+        Some(AP_JSON),
+    )
+    .await;
+    assert_eq!(dislikes["type"], "Collection");
+    assert_eq!(dislikes["totalItems"], 1);
+    assert_eq!(
+        dislikes["id"],
+        format!("{}/dislikes", status_url("alice", parent.id))
     );
 
     // The Note advertises the same counts.

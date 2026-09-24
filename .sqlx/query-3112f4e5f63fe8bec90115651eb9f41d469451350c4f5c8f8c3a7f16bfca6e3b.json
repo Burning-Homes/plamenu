@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.media_id, b.status_id, b.owner_account_id, b.permanent,\n                b.dvr_window_seconds, b.latency_mode\n         FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id\n         WHERE b.status_id = $1 AND b.owner_account_id = $2\n           AND s.uri IS NULL AND b.state <> 'ended' FOR UPDATE OF b",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "owner_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "permanent",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "permanent"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "dvr_window_seconds",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "dvr_window_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "latency_mode",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "latency_mode"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3112f4e5f63fe8bec90115651eb9f41d469451350c4f5c8f8c3a7f16bfca6e3b"
+}

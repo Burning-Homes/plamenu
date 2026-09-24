@@ -133,6 +133,9 @@ pub async fn master(
     State(state): State<AppState>,
     Path(media_id): Path<i64>,
 ) -> Result<Response, ApiError> {
+    if let Some(response) = super::native_live_hls::master(&state, media_id).await? {
+        return Ok(response);
+    }
     let native = native_video_hls::public_ladder(&state.pool, media_id).await?;
     if !native.is_empty() {
         let mut body = String::from("#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n");

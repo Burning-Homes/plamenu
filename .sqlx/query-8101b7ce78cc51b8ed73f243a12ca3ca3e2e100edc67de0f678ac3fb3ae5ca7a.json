@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ls.session_id FROM native_live_sessions ls\n         JOIN native_live_broadcasts b ON b.media_id = ls.media_id\n         JOIN statuses s ON s.id = b.status_id\n         WHERE ls.media_id = $1 AND ls.ended_at IS NULL AND b.state = 'live'\n           AND s.visibility IN ('public', 'unlisted')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "native_live_sessions",
+            "name": "session_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8101b7ce78cc51b8ed73f243a12ca3ca3e2e100edc67de0f678ac3fb3ae5ca7a"
+}

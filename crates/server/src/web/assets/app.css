@@ -1037,6 +1037,8 @@ img.emoji {
 
 .compose {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-inline-size: 0;
   gap: var(--space-3);
   padding: var(--space-4);
   background: var(--surface);
@@ -1090,6 +1092,8 @@ img.emoji {
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+  min-inline-size: 0;
+  max-inline-size: 100%;
 }
 
 .compose__actions {
@@ -1220,6 +1224,11 @@ img.emoji {
    option too — cap them so they can't spill their (now capped) wrapper. */
 .compose__menu-native select,
 .compose__combo-native select {
+  max-inline-size: 100%;
+}
+
+.compose__combo-native {
+  min-inline-size: 0;
   max-inline-size: 100%;
 }
 
@@ -1641,12 +1650,16 @@ img.emoji {
 .compose__media-slot input[type="file"] {
   font-size: var(--text-sm);
   color: var(--text-muted);
+  /* Native file pickers have an intrinsic minimum width that otherwise grows
+     the no-JS reply composer past a narrow mobile viewport. */
+  min-inline-size: 0;
 }
 
 /* One attachment slot: a file picker paired with its own alt-text input
    (the no-JS fallback stack). */
 .compose__media-slot {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   padding: var(--space-2);
   border: 1px dashed var(--border);
@@ -1945,6 +1958,7 @@ a.edit-media__thumb--file {
    `.is-open` (see the toolbar rules above). */
 .compose__section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
 }
 
@@ -6121,6 +6135,13 @@ a.settings-button--plain {
   }
 }
 
+/* Author-level display:flex on the scrim can override the browser's
+   closed-<details> rule in scripts-disabled Chromium. Keep the menu out of
+   layout and horizontal scrolling until its summary is opened. */
+.drawer:not([open]) > .drawer__scrim {
+  display: none;
+}
+
 .drawer__scrim {
   position: fixed;
   inset: 0;
@@ -7837,6 +7858,23 @@ a.settings-button--plain {
   filter: brightness(0.55);
 }
 
+/* Multiple dates need readable room below the poster; keeping the ordinary
+   fixed-aspect overlay would cover the disclosure on narrow/no-JS screens. */
+.media--live-offline[data-multiple-schedules="true"] {
+  aspect-ratio: auto;
+
+  img {
+    aspect-ratio: 16 / 10;
+    block-size: auto;
+  }
+
+  .media__live-state {
+    position: static;
+    color: var(--text);
+    background: var(--surface);
+  }
+}
+
 .media__live-state {
   position: absolute;
   inset-inline: 0;
@@ -7879,6 +7917,29 @@ a.settings-button--plain {
    top-right corner once hls.js reports more than one rendition. */
 .media--video {
   position: relative;
+}
+
+.media__go-live {
+  position: absolute;
+  inset-inline-end: var(--space-2);
+  inset-block-end: 3.5rem;
+  z-index: 2;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid currentColor;
+  border-radius: var(--radius);
+  color: #fff;
+  background: rgb(0 0 0 / 0.85);
+  cursor: pointer;
+}
+
+.media__go-live[hidden] {
+  display: none;
+}
+
+.media__live-playlist {
+  display: block;
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.875rem;
 }
 
 /* A transcript extends the figure below the bounded player. Keep the player
@@ -8230,6 +8291,33 @@ a.settings-button--plain {
   .compose__event-address {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.live-browser-publisher {
+  display: grid;
+  gap: var(--space-3);
+  margin-block: var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.live-browser-publisher[hidden],
+.live-browser-publisher [hidden] {
+  display: none !important;
+}
+.live-browser-publisher__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.live-browser-publisher video {
+  width: 100%;
+  max-height: 70vh;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: var(--radius);
+  object-fit: contain;
 }
 
 } /* @layer app */

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) FROM native_live_broadcasts WHERE owner_account_id = $1 AND state <> 'ended'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "643d2bd3b4b96c878ed70770c0d8fa7747cd1b379b9c9886fecc7b6db00f4fc5"
+}

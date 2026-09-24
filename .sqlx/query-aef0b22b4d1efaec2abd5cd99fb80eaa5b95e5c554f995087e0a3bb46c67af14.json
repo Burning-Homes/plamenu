@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO native_live_sessions (media_id, generation)\n         VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING session_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "native_live_sessions",
+            "name": "session_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "aef0b22b4d1efaec2abd5cd99fb80eaa5b95e5c554f995087e0a3bb46c67af14"
+}

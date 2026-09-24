@@ -66,14 +66,14 @@ a parity percentage from the number of rows: some represent much larger work.
 
 | ID | Required capability | State |
 | --- | --- | --- |
-| LIVE01 | Native authenticated encoder ingest, rotating/revocable credentials | Pending |
-| LIVE02 | Browser camera/microphone broadcasting and device selection | Pending; explicitly included this round |
-| LIVE03 | Browser screen sharing, source switching and permission/error recovery | Pending; explicitly included this round |
-| LIVE04 | Waiting/on-air/interrupted/ended/replay lifecycle and remote updates | Pending (inbound PeerTube baseline passes) |
-| LIVE05 | One-shot/recurring/scheduled broadcasts with stable session identity | Pending |
-| LIVE06 | DVR, latency modes, concurrency and replay capture/processing | Pending |
-| LIVE07 | No-JS creation/settings/credentials/replay workflows; encoder fallback | Pending |
-| LIVE08 | Plamenu-to-PeerTube and PeerTube-to-Plamenu live playback | Pending (inbound baseline exists) |
+| LIVE01 | Native authenticated encoder ingest, rotating/revocable credentials | Partial: RTMP, native RTMPS and HTTPS-FLV ingest, key rotation and new-connection revocation verified; active-session revocation remains |
+| LIVE02 | Browser camera/microphone broadcasting and device selection | Partial: Chromium desktop/mobile capture pipeline verified; device selection and other browsers remain |
+| LIVE03 | Browser screen sharing, source switching and permission/error recovery | Partial: Chromium desktop/mobile screen pipeline verified; source switching and recovery remain |
+| LIVE04 | Waiting/on-air/interrupted/ended/replay lifecycle and remote updates | Partial: one-shot conversion and separate recurring session Video publication, reconnect, crash recovery and PeerTube import verified; full delayed/out-of-order matrix remains |
+| LIVE05 | One-shot/recurring/scheduled broadcasts with stable session identity | Partial: one-shot/recurring identities, generation-fenced reconnect, independent replay identities, owner-authored planned starts and multiple inbound PeerTube dates with reschedule/clear verified; local multi-date authoring remains |
+| LIVE06 | DVR, latency modes, concurrency and replay capture/processing | Partial: bounded sliding DVR and three latency choices verified with real ingest, PeerTube import, desktop/mobile rewind and return-to-live; sustained-window eviction, concurrency/load, empty/partial-fragment failure UX and multi-node storage remain |
+| LIVE07 | No-JS creation/settings/credentials/replay workflows; encoder fallback | Partial: creation, idle playback and schedule settings, keys, management, RTMP/RTMPS/HTTPS-FLV fallback and one-shot/recurring replay navigation and playback verified; generic no-JS DVR seeking and broader creator recovery UX remain |
+| LIVE08 | Plamenu-to-PeerTube and PeerTube-to-Plamenu live playback | Partial: actual outbound and inbound playback E2E pass; PeerTube DVR/latency and bidirectional schedule import/update verified, broader matrix remains |
 | LIVE09 | Explicit future-chat identities, permissions and replay relationships | Architecture requirement; no chat implementation this round |
 
 ## Operations, ecosystem and scale

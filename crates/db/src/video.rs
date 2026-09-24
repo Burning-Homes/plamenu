@@ -22,6 +22,9 @@ pub struct Publication {
     pub poster_width: Option<i32>,
     pub poster_height: Option<i32>,
     pub poster_alt: Option<String>,
+    pub live_dvr_window_seconds: Option<i32>,
+    pub live_latency_mode: Option<i32>,
+    pub live_scheduled_at: Option<time::OffsetDateTime>,
 }
 
 pub async fn create_channel(
@@ -113,16 +116,24 @@ pub async fn lock_publishable_media(
     media_id: i64,
     owner: i64,
     channel_id: i64,
+    replay_session_id: Option<&str>,
 ) -> Result<bool, DbError> {
     Ok(sqlx::query_scalar!(
         "SELECT m.id FROM media_attachments m LEFT JOIN video_drafts d ON d.media_id = m.id
          WHERE m.id = $1 AND m.account_id = $2 AND m.status_id IS NULL AND m.processing = 'complete'
            AND (d.media_id IS NULL OR (d.account_id = $2 AND d.channel_id = $3
                 AND d.state = 'ready' AND d.expires_at > clock_timestamp()))
+           AND (NOT EXISTS (SELECT 1 FROM native_live_sessions ls WHERE ls.replay_media_id = m.id)
+                OR EXISTS (SELECT 1 FROM native_live_sessions ls
+                    JOIN native_live_broadcasts b ON b.media_id = ls.media_id
+                    WHERE ls.replay_media_id = m.id AND ls.session_id = $4
+                      AND ls.ended_at IS NOT NULL AND b.permanent
+                      AND b.owner_account_id = $2 AND b.channel_id = $3))
          FOR UPDATE OF m",
         media_id,
         owner,
         channel_id,
+        replay_session_id,
     )
     .fetch_optional(conn)
     .await?
@@ -165,11 +176,15 @@ pub async fn publications<'e, E: PgExecutor<'e>>(
         r#"SELECT v.status_id, v.channel_id, v.media_id, v.uuid,
                   a.uri AS "channel_uri!", COALESCE(m.file_size, 0) AS "file_size!",
                   p.file_name AS "poster_file_name?", p.width AS "poster_width?", p.height AS "poster_height?",
-                  d.poster_alt AS "poster_alt?"
+                  d.poster_alt AS "poster_alt?",
+                  b.dvr_window_seconds AS "live_dvr_window_seconds?",
+                  b.latency_mode AS "live_latency_mode?",
+                  b.scheduled_at AS "live_scheduled_at?"
            FROM video_publications v JOIN accounts a ON a.id = v.channel_id
            JOIN media_attachments m ON m.id = v.media_id
            LEFT JOIN video_compatibility_posters p ON p.media_id = v.media_id
            LEFT JOIN video_drafts d ON d.media_id = v.media_id
+           LEFT JOIN native_live_broadcasts b ON b.media_id = v.media_id
            WHERE v.status_id = ANY($1)"#,
         ids,
     )

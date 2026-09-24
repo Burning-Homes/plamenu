@@ -271,6 +271,7 @@ pub async fn get_replies(
 #[derive(Clone, Copy)]
 enum EngagementCollection {
     Likes,
+    Dislikes,
     Shares,
 }
 
@@ -282,6 +283,17 @@ pub async fn get_likes(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
     engagement_collection(state, path, uri, headers, EngagementCollection::Likes).await
+}
+
+/// `PeerTube` Video objects require a dereferenceable dislike-count URL even
+/// when the video has no downvotes. Keep it count-only like likes/shares.
+pub async fn get_dislikes(
+    state: State<AppState>,
+    path: Path<(String, i64)>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, ApiError> {
+    engagement_collection(state, path, uri, headers, EngagementCollection::Dislikes).await
 }
 
 /// `GET /users/{username}/statuses/{id}/shares`.
@@ -324,6 +336,7 @@ async fn engagement_collection(
         .unwrap_or_default();
     let (collection_url, total) = match which {
         EngagementCollection::Likes => (urls.likes, engagement.favourites),
+        EngagementCollection::Dislikes => (format!("{}/dislikes", urls.id), engagement.dislikes),
         EngagementCollection::Shares => (urls.shares, engagement.reblogs),
     };
     let document = CountCollection::new(&collection_url, u64::try_from(total).unwrap_or(0));

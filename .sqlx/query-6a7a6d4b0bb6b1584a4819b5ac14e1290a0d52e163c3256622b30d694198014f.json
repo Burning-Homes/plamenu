@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.status_id AS \"status_id!\", COALESCE(s.title, '') AS \"title!\",\n                b.state, b.scheduled_at\n         FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id\n         WHERE b.owner_account_id = $1 ORDER BY b.created_at DESC LIMIT 20",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "scheduled_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "scheduled_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      null,
+      false,
+      true
+    ]
+  },
+  "hash": "6a7a6d4b0bb6b1584a4819b5ac14e1290a0d52e163c3256622b30d694198014f"
+}

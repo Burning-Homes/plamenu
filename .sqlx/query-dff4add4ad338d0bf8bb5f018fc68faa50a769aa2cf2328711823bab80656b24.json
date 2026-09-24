@@ -1,0 +1,167 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO native_live_broadcasts\n            (media_id, owner_account_id, channel_id, ingest_key_hash, permanent, scheduled_at,\n             dvr_window_seconds, latency_mode)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n           RETURNING media_id, status_id, owner_account_id, channel_id,\n                     broadcast_uuid, state, permanent, scheduled_at,\n                     reconnect_deadline, key_generation, dvr_window_seconds, latency_mode",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "owner_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "channel_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "broadcast_uuid",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "broadcast_uuid"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "permanent",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "permanent"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "scheduled_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "scheduled_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "reconnect_deadline",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "reconnect_deadline"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "key_generation",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "key_generation"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "dvr_window_seconds",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "dvr_window_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "latency_mode",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "latency_mode"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Bool",
+        "Timestamptz",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dff4add4ad338d0bf8bb5f018fc68faa50a769aa2cf2328711823bab80656b24"
+}

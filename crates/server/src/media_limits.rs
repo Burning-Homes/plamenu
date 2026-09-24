@@ -3,7 +3,24 @@
 //! which sets limits and execs `FFmpeg` in the same process. Cancellation therefore
 //! still kills the actual encoder. No limits are changed in the server process.
 
-use std::{ffi::OsString, io, path::Path};
+use std::{
+    ffi::OsString,
+    io,
+    path::{Path, PathBuf},
+};
+
+/// Re-exec the *running* binary even while a package upgrade atomically
+/// replaces its pathname. Linux keeps the old executable reachable through
+/// procfs until the process exits; `current_exe()` may instead return a path
+/// ending in ` (deleted)`, which cannot launch a bounded media job. This also
+/// lets a long-running worker finish work during an atomic binary upgrade.
+pub(crate) fn running_executable() -> io::Result<PathBuf> {
+    #[cfg(target_os = "linux")]
+    if Path::new("/proc/self/exe").exists() {
+        return Ok(PathBuf::from("/proc/self/exe"));
+    }
+    std::env::current_exe()
+}
 
 /// A per-file hard ceiling, not a total scratch/storage quota. The caller must
 /// reserve for every output/intermediate and bound concurrent workers as well.
@@ -96,5 +113,21 @@ pub(crate) fn command(ffmpeg: &Path, limit: Option<&FileSizeLimit>) -> tokio::pr
         command
     } else {
         tokio::process::Command::new(ffmpeg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn running_binary_can_be_reexecuted() {
+        let launcher = super::running_executable().unwrap();
+        assert!(
+            std::process::Command::new(launcher)
+                .arg("--help")
+                .output()
+                .unwrap()
+                .status
+                .success()
+        );
     }
 }

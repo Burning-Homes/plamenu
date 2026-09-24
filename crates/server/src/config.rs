@@ -116,6 +116,17 @@ database_url = ""
 # retention behavior is configured live in the admin dashboard.
 # media_dir = "./media"
 # ffmpeg_path = "ffmpeg"
+# Native RTMP ingest uses this listener; loopback only by default. To allow
+# an external encoder, bind a reachable address and protect the plaintext
+# RTMP hop (for example with a private network or TLS terminator).
+# live_ingest_bind = "127.0.0.1:1935"
+# Optional native RTMPS for remote encoders. Reuse your existing TLS
+# certificate and private key; Plamenu reloads them after renewal. No proxy
+# or companion media service is needed. Configure all three values together.
+# [live_rtmps]
+# bind = "0.0.0.0:1936"
+# cert = "/etc/letsencrypt/live/social.example.com/fullchain.pem"
+# key = "/etc/letsencrypt/live/social.example.com/privkey.pem"
 # ffprobe_path = "ffprobe"
 
 # Native Video uploads use the built-in background worker and local media store.
@@ -267,6 +278,9 @@ pub struct Config {
     pub media_dir: PathBuf,
     pub ffmpeg_path: String,
     pub ffprobe_path: String,
+    /// RTMP publisher listener (loopback by default because RTMP is plaintext).
+    pub live_ingest_bind: SocketAddr,
+    pub live_rtmps: Option<LiveRtmpsConfig>,
     pub native_video: NativeVideoConfig,
     pub smtp: Option<SmtpConfig>,
     pub trusted_proxies: Vec<String>,
@@ -291,6 +305,13 @@ pub struct AltchaConfig {
     pub min_counter: u32,
     pub max_counter: u32,
     pub expires_seconds: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct LiveRtmpsConfig {
+    pub bind: SocketAddr,
+    pub cert: PathBuf,
+    pub key: PathBuf,
 }
 
 /// Native Video admission and worker budgets, independent of ordinary media.
@@ -465,6 +486,8 @@ impl std::fmt::Debug for Config {
             .field("native_video", &self.native_video)
             .field("ffmpeg_path", &self.ffmpeg_path)
             .field("ffprobe_path", &self.ffprobe_path)
+            .field("live_ingest_bind", &self.live_ingest_bind)
+            .field("live_rtmps", &self.live_rtmps)
             .field("smtp", &self.smtp)
             .field("trusted_proxies", &self.trusted_proxies)
             .field("encryption_secret", &"[REDACTED]")
@@ -574,6 +597,8 @@ struct FileConfig {
     media_dir: Option<PathBuf>,
     ffmpeg_path: Option<String>,
     ffprobe_path: Option<String>,
+    live_ingest_bind: Option<SocketAddr>,
+    live_rtmps: Option<LiveRtmpsConfigFile>,
     native_video: Option<FileNativeVideoConfig>,
     trusted_proxies: Option<Vec<String>>,
     encryption_secret: Option<String>,
@@ -586,6 +611,14 @@ struct FileConfig {
     smtp: Option<FileSmtpConfig>,
     translation: Option<FileTranslationConfig>,
     federation: Option<FileFederationConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LiveRtmpsConfigFile {
+    bind: Option<SocketAddr>,
+    cert: Option<PathBuf>,
+    key: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -881,6 +914,31 @@ impl Config {
             .transpose()?;
         let altcha = build_altcha_config(file.altcha)?;
         let native_video = file.native_video.unwrap_or_default().build()?;
+        let bind = file.bind.unwrap_or_else(|| DEFAULT_BIND.parse().unwrap());
+        let live_ingest_bind = file
+            .live_ingest_bind
+            .unwrap_or_else(|| "127.0.0.1:1935".parse().unwrap());
+        let live_rtmps = file
+            .live_rtmps
+            .map(|rtmps| {
+                Ok::<_, ConfigError>(LiveRtmpsConfig {
+                    bind: rtmps.bind.ok_or(ConfigError::Missing("live_rtmps.bind"))?,
+                    cert: rtmps.cert.ok_or(ConfigError::Missing("live_rtmps.cert"))?,
+                    key: rtmps.key.ok_or(ConfigError::Missing("live_rtmps.key"))?,
+                })
+            })
+            .transpose()?;
+        if live_rtmps.as_ref().is_some_and(|rtmps| {
+            rtmps.bind.port() == 0
+                || rtmps.bind.port() == bind.port()
+                || rtmps.bind.port() == live_ingest_bind.port()
+        }) {
+            return Err(ConfigError::Invalid(
+                "live_rtmps.bind",
+                "must use a nonzero port different from the HTTP and plaintext RTMP listeners"
+                    .to_owned(),
+            ));
+        }
 
         let encryption_secret_value = required(file.encryption_secret, "encryption_secret")?;
         if encryption_secret_value.len() < 32 {
@@ -944,7 +1002,7 @@ impl Config {
             account_domain,
             database_url,
             db_pool_size,
-            bind: file.bind.unwrap_or_else(|| DEFAULT_BIND.parse().unwrap()),
+            bind,
             allow_private_fetch,
             authorized_fetch: file.authorized_fetch.unwrap_or(true),
             authorized_fetch_unsigned_profile: matches!(
@@ -955,6 +1013,8 @@ impl Config {
             media_dir: file.media_dir.unwrap_or_else(|| DEFAULT_MEDIA_DIR.into()),
             ffmpeg_path: file.ffmpeg_path.unwrap_or_else(|| "ffmpeg".to_owned()),
             ffprobe_path: file.ffprobe_path.unwrap_or_else(|| "ffprobe".to_owned()),
+            live_ingest_bind,
+            live_rtmps,
             native_video,
             smtp,
             trusted_proxies,
@@ -1300,6 +1360,36 @@ mod tests {
             "postgres://plamenu@%2Fvar%2Frun%2Fpostgresql/plamenu"
         );
         assert_eq!(config.trusted_proxies, ["127.0.0.1/32", "::1/128"]);
+    }
+
+    #[test]
+    fn native_rtmps_is_optional_but_requires_complete_distinct_listener() {
+        let plain: FileConfig = toml::from_str(valid_minimal()).unwrap();
+        assert!(Config::from_parsed(plain).unwrap().live_rtmps.is_none());
+
+        for fragment in [
+            "[live_rtmps]\nbind = \"127.0.0.1:1936\"\n",
+            "[live_rtmps]\ncert = \"cert.pem\"\nkey = \"key.pem\"\n",
+            "[live_rtmps]\nbind = \"127.0.0.1:1935\"\ncert = \"cert.pem\"\nkey = \"key.pem\"\n",
+        ] {
+            let file: FileConfig =
+                toml::from_str(&format!("{}{fragment}", valid_minimal())).unwrap();
+            assert!(Config::from_parsed(file).is_err());
+        }
+        let file: FileConfig = toml::from_str(&format!(
+            "{}[live_rtmps]\nbind = \"0.0.0.0:1936\"\ncert = \"cert.pem\"\nkey = \"key.pem\"\n",
+            valid_minimal()
+        ))
+        .unwrap();
+        assert_eq!(
+            Config::from_parsed(file)
+                .unwrap()
+                .live_rtmps
+                .unwrap()
+                .bind
+                .port(),
+            1936
+        );
     }
 
     #[test]

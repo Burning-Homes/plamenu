@@ -123,6 +123,7 @@ p256 = { version = "0.14", features = ["ecdh", "pem"] }
 # rsa 0.9 pins rand_core 0.6;
 # we use its re-exported OsRng (`getrandom`) instead of a separate `rand`.
 rsa = { version = "0.9", features = ["sha2", "getrandom"] }
+rtmp-rs = "0.6.0"
 # Keyword-filter matching: union of per-keyword regexes, case-insensitive,
 # optional word boundaries — like Mastodon's `CustomFilterKeyword#to_regex`.
 regex = "1"
@@ -160,6 +161,7 @@ tokio = { version = "1", features = [
     "signal",
     "time",
 ] }
+tokio-rustls = "0.26"
 # ReaderStream for range-serving stored media without buffering whole files.
 tokio-util = { version = "0.7", features = ["io"] }
 tower = { version = "0.5", features = ["util"] }

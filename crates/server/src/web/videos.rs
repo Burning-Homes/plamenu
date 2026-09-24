@@ -133,6 +133,8 @@ pub(super) async fn page(
     } else {
         Vec::new()
     };
+    let live_broadcasts =
+        plamenu_db::native_live::recent_owned(&state.pool, user.current.account.id).await?;
     // Derive privacy from stored ownership, never a client-submitted flag.
     let native = if let Some(media) = &preview {
         plamenu_db::video_draft::find_owned(&state.pool, media.id, user.current.account.id)
@@ -156,7 +158,32 @@ pub(super) async fn page(
                     }
                 }
             }
+            @if !live_broadcasts.is_empty() {
+                nav aria-label=(locale.text("videos-live-your-broadcasts")) {
+                    h2 { (locale.text("videos-live-your-broadcasts")) }
+                    ul {
+                        @for broadcast in &live_broadcasts {
+                            @let state_label = match broadcast.state.as_str() {
+                                "live" => "videos-live-state-live",
+                                "interrupted" => "videos-live-state-interrupted",
+                                "ended" => "videos-live-state-ended",
+                                _ => "videos-live-state-waiting",
+                            };
+                            li {
+                                a href=(format!("/videos/live/{}", broadcast.status_id)) {
+                                    (broadcast.title) " — " (locale.text(state_label))
+                                }
+                                @if let Some(at) = broadcast.scheduled_at {
+                                    " — " (locale.text("status-live-planned-start")) " "
+                                    (user.clock.element_absolute(at))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             @if !channels.is_empty() {
+                p { a href="/videos/live/new" { (locale.text("videos-live-start")) } }
                 @if preview.is_none() {
                 nav aria-label=(locale.text("videos-your-channels")) {
                     h2 { (locale.text("videos-your-channels")) }

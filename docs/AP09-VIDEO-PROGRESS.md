@@ -135,7 +135,7 @@ before becoming `verified`. Keep partial results and failures visible.
 | M2 | Long-form VOD pipeline | Large/resumable and no-JS uploads; durable processing; quality ladder; poster/storyboard; audio-only/silent inputs; failures/restart/quota evidence | in progress |
 | M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | pending |
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | pending |
-| M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | pending |
+| M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | partial: no-JS authoring, RTMP/RTMPS/HTTPS-FLV and browser ingest, bounded HLS/MP4, generation-fenced interruption/reconnect, process-crash recovery including a recoverable one-shot replay, and PeerTube state/VOD updates verified; scheduling, recurring replay, DVR, active-session key revocation and P2P remain |
 | M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | pending |
 | M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | pending |
 | M8 | Ecosystem and beyond parity | Defined REST/embed/runner compatibility scope; chosen extensions; end-to-end tests per supported contract; no PeerTube plugin ABI in round one | pending |
@@ -223,11 +223,13 @@ unwatched remote videos do not trigger whole-file downloads.
 
 ## Next work
 
-The current priority is M2's published-video poster edits/seek previews and the
-remaining difficult-input and long-duration cases, with separate maximum-size
-and concurrent-upload stress still owed for VOD02. M1
-channel lifecycle/collaboration and several federation paths remain open;
-the initial channel/video publication slice below is not an M1 sign-off.
+The current priority is M5's remaining substantive live gaps: a separate
+published Video for each recurring replay, scheduling, latency/DVR and
+default-on compatible P2P
+with opt-out. One-shot replay does not close M5. M2 still owes difficult-input,
+maximum-size and concurrent-upload stress; M1 channel lifecycle/collaboration
+and several federation paths remain open. Do not treat the current publication
+slices as a milestone sign-off.
 
 ### 2026-09-22 — publication slice and browser verification
 
@@ -1234,3 +1236,423 @@ record above predates migrations 0087–0088 and is not evidence for their write
 - The final local v19 build (same schema 94) replaced v18 and answers `/ready`
   with 200. v18 exited after TERM, but its streaming worker reached the drain
   deadline and was aborted; do not treat that shutdown as a clean worker drain.
+
+### 2026-09-24 — native live RTMP/HLS vertical slice
+
+- Migration **95** adds fileless waiting live media, a persistent broadcast
+  identity and hashed one-time ingest key, plus independent session IDs across
+  reconnects. Claiming is single-publisher and generation-fenced; a process
+  restart closes orphaned sessions before accepting new publishers. The
+  private pre-migration backup is
+  `ap09-runtime-trt7qd/plamenu-before-native-live-v20.dump`; its archive
+  listing passed, but a restore drill has **not** been performed.
+- First-party HTML forms create a waiting Video in an owned channel and reveal
+  the RTMP key once; management and key rotation remain available without
+  JavaScript. The default listener is loopback-only and uses the existing
+  FFmpeg binary, so no companion service or install step is added. RTMP is
+  plaintext, and secure remote ingest remains open work.
+- The built-in RTMP publisher accepts H.264/AAC FLV, rejects unknown keys and
+  competing publishers, and remuxes once into a six-segment sliding HLS
+  window. The local HLS route fences each segment to the currently published
+  session; the existing shared MP4 live gateway covers clients and no-JS
+  playback. Bounded scratch is removed after a stream drains, and startup
+  scavenges crash-abandoned session directories. Stopping the encoder ends a
+  one-shot Video, removes playback URLs
+  and federates the change. PeerTube requires an image icon even while
+  waiting and an HLS Link with an array-valued `tag` once on air; both are now
+  emitted, with a bundled local placeholder image before any authored poster.
+- The real PeerTube 8.3 outbound native-live test passes **1/1** in 18.81
+  seconds: no-JS creation, invalid-key rejection, real RTMP A/V, MPEG-TS
+  playback, fMP4 init bytes, PeerTube on-air HLS availability and ended-state
+  revocation. The existing inbound PeerTube live regression passes **1/1** in
+  67.42 seconds. Chrome desktop and 390px mobile visual inspections covered
+  the creation form, key page and management layout; no horizontal overflow
+  was observed. These observations are not a full browser accessibility matrix.
+- The FLV serializer, crash-scratch fence and HLS path traversal tests pass
+  **3/3**. Strict workspace Clippy, formatting and SQLx metadata checks pass.
+  The schema-95 local build answers `/ready` with 200. One disposable waiting
+  broadcast created during browser inspection remains on the local instance
+  for review; it is not part of the E2E fixture.
+- M5 stays **partial**. Browser camera/screen broadcasting, RTMPS or another
+  protected remote ingest path, creator posters, scheduling, interruption and
+  reconnection UX, latency/DVR, replay, P2P default-on/opt-out and wider
+  browser/performance tests are not yet done. The next substantive slice is
+  browser broadcasting over the existing HTTPS origin, reusing these stable
+  broadcast and session identities.
+
+### 2026-09-24 — browser camera/screen native live authoring
+
+- The same persistent broadcast can now be published from the first-party
+  manage page with camera/microphone or screen capture. Capture is a progressive
+  enhancement: HTML-only creators still receive the RTMP key and can manage
+  and rotate it. The owner-authenticated, CSRF-checked, same-origin WebSocket
+  claims a session without exposing the RTMP key to JavaScript. Encoded
+  MediaRecorder chunks feed the same bounded HLS pipeline; WebM VP8/Opus is
+  transcoded once to H.264/AAC for all viewers, while compatible MP4 can be
+  remuxed. The UI exposes an on-page preview, live status and stop control;
+  browser capture is necessarily unavailable when scripts are disabled.
+- Isolated HTTPS Chromium tests pass **3/3** across desktop, 390px mobile and
+  no-JavaScript projects: real browser MediaRecorder and WebSocket streaming
+  of synthetic camera *then screen* on one reusable broadcast, MPEG-TS
+  segment playback for each, axe scans of the controls and no mobile
+  horizontal overflow; the no-JS project verifies creation, management,
+  stream-key handling and RTMP fallback. These tests exercise encoded
+  browser/network/media I/O, but synthetic tracks do not prove physical
+  device permissions or screen-picker UX. Firefox, WebKit, assistive
+  technology and performance/load evidence remain open.
+- The Videos page lists recent owned broadcasts so the management page is
+  reachable after the initial one-time key reveal. No new installed service
+  or operator configuration is needed for browser publishing.
+- M5 remains **partial**: secure off-box ingest, scheduling, interruption and
+  reconnection UX, latency/DVR, replay, P2P, wider browser/device tests and
+  resource measurements are not done. The next high-impact slice should
+  address protected remote ingest and reconnect/interruption behavior, not
+  cosmetic post-publication editing.
+
+### 2026-09-24 — HTTPS-FLV encoder ingest without a companion service
+
+- Remote FFmpeg-compatible encoders can POST FLV to `/live/ingest` over the
+  existing HTTPS origin, sending the one-time stream key only as a Bearer
+  header. The backend accepts an HTTPS assertion only from a configured
+  trusted reverse proxy; it rejects direct HTTP lacking that assertion and
+  untrusted peers spoofing it. The request body streams through a bounded
+  queue into the same single-remux HLS/MP4/session lifecycle as RTMP and
+  browser publishing. No new listener, package, or install step is required;
+  a non-loopback reverse proxy already needs an explicit `trusted_proxies`
+  entry, as elsewhere in Plamenu.
+- The key page now shows both the local RTMP endpoint and HTTPS-FLV endpoint,
+  with transport guidance. Plain RTMP stays local/trusted-network-only by
+  default. HTTPS-FLV is an encrypted off-box option, **not** a claim of
+  native RTMPS protocol compatibility with existing RTMP-only encoders.
+- The real PeerTube 8.3 test passes **2/2** for RTMP and HTTPS-FLV, each
+  covering waiting creation in no-JS HTML, unauthorized-key rejection, actual
+  H.264/AAC ingest, local HLS MPEG-TS, client-compatible MP4, PeerTube on-air
+  HLS and ended-state revocation. Direct HTTP without TLS-proxy metadata is
+  rejected. The isolated browser capture matrix still passes **3/3** after
+  the key-page change. Strict workspace Clippy and the focused proxy-trust
+  Rust test pass; formatting and diff checks pass as final gates.
+- M5 remains **partial**. Native RTMPS/encoder compatibility, abrupt
+  disconnect/reconnect UX, scheduling, DVR/replay, P2P and resource/load
+  evidence still need implementation and verification.
+
+### 2026-09-24 — durable interrupted/reconnect lifecycle
+
+- Migration **96** adds a persisted reconnect deadline and permits
+  `interrupted` on media attachments. An unexpected RTMP, HTTPS-FLV or browser
+  publisher loss withdraws HLS/MP4 URLs immediately, exposes an interrupted
+  state, and permits a new session on the same Video for one minute. Deliberate
+  stop still ends a one-shot stream or returns a recurring one to waiting.
+  A new generation revokes old HLS paths. A five-second worker resolves
+  expired one-shot streams to ended and recurring streams to waiting, including
+  deadlines left across a restart. Startup marks orphaned active sessions
+  interrupted and announces the change; a destructive crash/restart drill has
+  **not** yet been run, so that recovery claim remains implementation-only.
+- The first-party HTML management and status views describe interruption and
+  recovery without JavaScript; the browser broadcaster announces a lost
+  connection and allows retry. The off-air view no longer renders a video
+  element with a missing source. The isolated HTTPS Chromium suite passes
+  **4 applicable tests**, with one intentionally skipped project case:
+  desktop/mobile camera and screen ingest, desktop forced WebSocket loss and
+  same-Video retry, and no-JS authoring.
+- The real PeerTube **8.3** native-live suite passes **6/6** in **332.29 s**:
+  normal RTMP and HTTPS-FLV lifecycles plus one-shot and recurring reconnects
+  for both transports. It kills real FFmpeg publishers, verifies interrupted
+  API/HTML and HLS revocation, PeerTube off-air updates, a new generation and
+  HLS path on reconnection, PeerTube on-air updates, actual one-minute one-shot
+  expiry/ended federation, and deliberate recurring stop. This is functional
+  evidence, not a concurrency/latency benchmark.
+- Before applying migration 96 to the local instance, a custom-format backup
+  was written to `ap09-runtime-trt7qd/plamenu-before-live-reconnect.dump` and
+  its archive listing verified. A restore drill remains open. The migrated
+  local instance answers `/ready` with 200.
+- M5 remains **partial**. Native RTMPS protocol compatibility, a crash/restart
+  recovery drill, scheduling, latency/DVR, replay, P2P and resource/load
+  measurements are still required. The next substantial slice should address
+  RTMPS or replay/recording, not cosmetic management controls.
+
+### 2026-09-24 — process-crash recovery and native RTMPS ingest
+
+- Backed up the local database to
+  `ap09-runtime-trt7qd/plamenu-before-live-crash-drill.dump` and verified its
+  `pg_restore --list` archive. An opt-in destructive E2E test validates the
+  *exact* local process/config/binary before SIGKILL. It restarts the candidate,
+  checks the surviving Video becomes interrupted, the old HLS generation is
+  revoked, and the same key reconnects into generation 2. **1/1 passed** in
+  23.61 seconds. The database restore drill is still open.
+- Optional `[live_rtmps]` serves TLS natively in Plamenu and forwards decrypted
+  RTMP to the existing bounded native listener: no companion service, proxy,
+  storage copy or re-encode. TLS certificate parsing and key matching are checked at server
+  startup; a failed renewal keeps the previous certificate and retries every
+  minute. The local certificate fingerprint changed on the TLS port without a
+  Plamenu restart after replacing both certificate and key. Plain RTMP remains
+  loopback-only by default; HTTPS-FLV still uses the regular HTTPS origin.
+- The no-JS key page exposes a labelled RTMPS Server field alongside RTMP,
+  stream key and HTTPS-FLV. Chrome visual/accessibility inspection confirmed
+  the field is visible and named on a disposable unlisted broadcast. The
+  Chromium JavaScript-disabled authoring test passes **1/1** at a **320px**
+  viewport against the local RTMPS-enabled instance; it checks the server field
+  before the key disappears and rejects horizontal overflow.
+  The server config template and host deployment guide explain opt-in and cert
+  access; installations without RTMPS acquire no new listener or steps.
+- Real FFmpeg→Plamenu→PeerTube **8.3** E2E: RTMPS normal publish, unknown-key
+  rejection, local HLS/no-JS MP4, PeerTube live and ended updates **1/1** in
+  18.69 seconds; RTMPS one-shot and recurring interruption/reconnect **2/2**
+  in 94.10 seconds; plaintext RTMP and HTTPS-FLV normal regression **2/2** in
+  95.12 seconds and their one-shot/recurring reconnect regression **4/4** in
+  248.85 seconds. A further final-build RTMPS run with FFmpeg verifying the
+  rotated local certificate against its CA file passed **1/1** in 18.17
+  seconds, and both certificate-verified reconnect variants passed **2/2** in
+  93.12 seconds. These are protocol/lifecycle tests, not resource or latency
+  benchmarks.
+- The final local process was stopped and replaced with a detached candidate;
+  `/ready` returned 200, the native RTMPS port listened on loopback, and an
+  OpenSSL client verified the rotated certificate with IP SAN against the
+  local certificate file. One shutdown logged an existing `streaming` worker
+  drain timeout and aborted that worker after ten seconds, despite no active
+  native live sessions; investigate its shutdown path separately.
+- Browser regression runs filled the fixture account's 50-channel limit and
+  then its ten non-ended-broadcast slots. The browser test now reuses an
+  existing owned channel, creates one only for a new account, publishes
+  unlisted, and deletes its own test broadcast in teardown. We removed the ten
+  exact disposable test broadcasts left by earlier runs; the remaining
+  non-ended count returned to zero. A second regression exposed optimistic
+  "Broadcast stopped" UI after reconnect while the API entered `interrupted`.
+  The browser now waits for the server stop acknowledgment. That exposed the
+  actual lifecycle edge: FFmpeg can exit nonzero on a deliberately stopped,
+  extremely short browser recording before it produces a segment. The server
+  still logs that failure, but an acknowledged deliberate stop now takes
+  precedence over remux success when choosing waiting/ended versus interrupted.
+  Strict Clippy and the new focused stop-reason unit test pass. The complete
+  local Chromium live-browser matrix passes **4 applicable tests**, with the
+  mobile socket-loss case intentionally skipped: desktop/mobile camera and
+  screen, desktop forced socket loss and reconnect, and 320px no-JS authoring.
+  Teardown left zero non-ended developer test broadcasts. A final
+  certificate-verified FFmpeg→Plamenu→PeerTube RTMPS smoke test passed **1/1**
+  in 18.67 seconds after the stop-state change.
+- M5 remains **partial**. Scheduling, DVR/latency choices, replay capture,
+  active-session revocation, P2P and resource/load measurements remain.
+
+### 2026-09-24 — bounded one-shot replay and PeerTube VOD conversion
+
+- One-shot RTMP, RTMPS, HTTPS-FLV and browser broadcasts now tee the *same*
+  encoded packets to a bounded recording while the six-segment HLS window
+  remains sliding. Compatible encoder input is remuxed rather than encoded
+  again. A clean stop finalizes a progressive MP4 and padded JPEG poster;
+  duration, dimensions and byte counts become an ordinary Video attachment
+  under the original stable status/Video identity. The session records its
+  replay-media relationship. An interrupted final generation can finalize
+  after the reconnect deadline, but an actual reconnect fences off the older
+  partial recording. Recurring broadcasts still return to waiting without a
+  saved replay.
+- The recording checks the configured video byte cap and media free-space
+  floor while ingesting. Processing reserves a bounded worker slot and the
+  exact resulting MP4/poster bytes against video storage quotas. A database
+  cleanup journal covers files written before publication; the replay and
+  session link publish atomically only after both files are stored. A clean
+  stop sends one federated final Video Update, avoiding competing ended/VOD
+  updates. PeerTube 8.3 requires dereferenceable Video `likes` and `dislikes`
+  collection URLs and a JPEG icon for this import, so those contract details
+  are supplied. The RTMP dependency's INFO logs contained stream keys; its
+  log level is now forced to WARN regardless of broader filter directives.
+- An early full-matrix run was interrupted after exposing a deployment race:
+  rebuilding/replacing the running executable made `current_exe()` resolve
+  to a deleted pathname, so its bounded FFmpeg helper could not start. Both
+  replay and VOD workers now re-exec the live executable through Linux
+  `/proc/self/exe` where available, with the former path as a fallback on
+  other hosts. A replacement-while-running drill verified the old process's
+  executable was marked `(deleted)` while it remained ready, and all **9/9**
+  FFmpeg→Plamenu→PeerTube 8.3 cases passed under that condition.
+- The first-party creator page offers a replay link or a processing message;
+  the status page presents native video controls, and the client API exposes
+  the replay MP4 as a normal attachment with HTTP Range support. Scripts-off
+  users can follow the link and play it. The isolated Chromium live suite
+  passes on desktop, mobile and 320px no-JS: **7 passed, 1 intentionally
+  skipped**. This includes actual browser-camera replay, an external FFmpeg
+  publisher and no-JS native playback controls. Browser testing found a real
+  narrow-width reply-composer overflow; fixed grid/file-picker/language-combo
+  sizing and verified no horizontal panning beyond one rounding pixel.
+- Local backup before the candidate switch:
+  `ap09-runtime-trt7qd/plamenu-before-live-replay.dump` (archive listing
+  verified). A restore drill is still open. The local PeerTube 8.3 native-live
+  regression passed **9/9 in 478.43 s**. The three normal-stop transports
+  covered replay MP4/JPEG/duration, byte ranges, client API, HTML video,
+  actual FFmpeg decoding of PeerTube's imported file and HLS revocation.
+  Six one-shot/recurring reconnect variants covered interruption, generation
+  fencing, reconnected playback and either replay after the deadline or the
+  recurring return to waiting. Report: `target/e2e/live-replay-full-matrix.xml`.
+  Strict workspace checks and SQLx metadata verification pass; the focused
+  executable re-entry test passes **1/1**.
+- M5 is still **partial**. The recording lives in process-local scratch and
+  does not survive a Plamenu process crash. It does not merge earlier sessions
+  across a reconnect; a final replay is of the last completed generation.
+  Long-running one-shot streams stop at the configured size/free-space limit,
+  not a full live-DVR design. Recurring replay, scheduling, latency modes,
+  P2P, Firefox/WebKit and resource/load evidence remain open.
+
+### 2026-09-24 — recoverable one-shot recording after hard process loss
+
+- One-shot ingest now writes fragmented MP4: a front-loaded index and
+  keyframe-bounded fragments mean a hard Plamenu process loss can leave a
+  decodable prefix without a second live encode. Startup closes orphaned
+  sessions as before, but retains only latest-generation, unpublished
+  one-shot scratch. A recovery task waits through the real reconnect window,
+  rechecks the generation/ended fence, waits for an orphaned FFmpeg child to
+  finish writing, and passes the recording through the same bounded processor,
+  exact storage quota and atomic Video publication as a clean stop. If a new
+  publisher reconnects, the older recording is discarded, never published.
+  Unexpected files and symlinks remain untouched by scratch scavenging.
+- A hard-crash E2E drill used a real RTMP encoder, waited for committed video
+  fragments, SIGKILLed only the verified local candidate server, restarted
+  that binary, and verified interrupted/HLS-revoked state. After the deadline,
+  the same Video became a ranged MP4 with duration, its session linked to the
+  replay, PeerTube 8.3 imported the VOD, and the scratch was cleaned. The
+  opt-in drill passed **1/1 in 99.35 s**; report:
+  `target/e2e/live-crash-replay-drill.xml`. Normal fragmented-MP4 RTMP replay
+  also passed **1/1** against PeerTube. The complete RTMP/HTTPS-FLV/RTMPS
+  transport and one-shot/recurring reconnect regression passed **9/9 in
+  684.00 s**; report: `target/e2e/live-crash-replay-regression.xml`.
+  The desktop/mobile/320px-no-JS live
+  browser matrix passed **7 applicable tests**, one intentional skip. Strict
+  workspace checks passed, including the 18-case benchmark gate. After the
+  final idempotent-journal change, the exact hard-crash drill passed again
+  **1/1 in 99.33 s** (`target/e2e/live-crash-replay-final.xml`).
+- Before SIGKILL, the local database was backed up to
+  `ap09-runtime-trt7qd/plamenu-before-crash-replay.dump` (402 MiB; archive
+  listing verified); a second verified backup preceded the final drill at
+  `ap09-runtime-trt7qd/plamenu-before-final-crash-replay.dump`. The standalone
+  recovery process was stopped and the
+  managed local service returned to `/ready` 200. No migration or new
+  companion service was required. A database *and media* restore drill remains
+  open; a database dump alone is not a complete replay backup.
+- This recovers a completed fragmented prefix, not an unwritten or corrupt
+  fragment. A recording that cannot pass validation or quota admission is
+  retained for inspection rather than falsely published or silently erased;
+  automated retry/failure presentation and retention policy still need work.
+  An interrupted finalizer's exact MP4/poster reservation and cleanup journal
+  are reused idempotently on restart instead of double-charging the owner.
+  Recurring broadcasts still have no replay: they need an independent,
+  idempotently published Video for each session, preserving the stable live
+  broadcast identity and avoiding a multi-file PeerTube compatibility hack.
+  M5 remains **partial**; scheduling, DVR/latency, default-on compatible P2P,
+  cross-browser and resource/load evidence remain open.
+
+### 2026-09-24 — independently published recurring-session replay Videos
+
+- Every broadcast session now writes one bounded fragmented MP4 alongside the
+  sliding live HLS window after the single encoder/remux stage. A reusable
+  broadcast keeps its original, stable live Video and returns to waiting on a
+  deliberate stop. Each ended session can publish a distinct ordinary Video
+  in the same channel, with its own MP4, JPEG poster, title and link back to
+  the live post. The creator management page and public live permalink expose
+  the published episode links as semantic, no-JavaScript HTML.
+- The session-to-replay media link is durable before publication. Pending MP4
+  and poster keys fail closed at the public file and media-id gates; generic
+  Note/Video attachment paths cannot consume them. The episode claim and
+  cleanup-journal cancellation join the Video/Create/outbox transaction. A
+  reconnect or newer session does not invalidate an older recurring replay;
+  a restart scans and resumes unpublished session recordings. The quota
+  reservation and crash journal continue to account for exact stored bytes,
+  including a retry after only one MP4/poster cleanup job finished.
+- Verified against local PeerTube 8.3.0: the full RTMP/RTMPS/HTTPS-FLV live
+  matrix passed **9/9 in 613.01 s** (`target/e2e/live-recurring-replay-full.xml`).
+  For each recurring transport, PeerTube imported two independent replay
+  Videos while the original live Video remained reusable. Client API
+  attachments, HTTP Range, first-party playback and creator links were
+  asserted. The subsequently added public permalink links passed the focused
+  RTMP/PeerTube rerun (`target/e2e/live-recurring-replay-public-link.xml`).
+  The opt-in recurring SIGKILL/restart drill passed
+  **1/1 in 99.48 s** (`target/e2e/live-recurring-replay-crash.xml`), recovering
+  the crashed first recording alongside the cleanly stopped second session.
+  The desktop/mobile Chromium and scripts-disabled browser live matrix passed
+  **8 applicable tests**, one intentional skip, including browser camera and
+  screen session replays, decoded playback and a 320-pixel no-JS encoder flow.
+  The targeted database regression verifies private-before-publication gates,
+  repeated preparation, older-generation eligibility and published access.
+- The disposable standing database was backed up before migration 0097 at
+  `ap09-runtime-trt7qd/plamenu-before-recurring-replay.dump` and the archive
+  listing was validated. This does not replace a media-directory backup.
+- LIVE04–LIVE07 remain **partial**. This slice does not implement scheduling,
+  live DVR/latency controls, default-on compatible P2P, automatic retries for
+  permanently invalid/over-quota fragments, retention policy, captions or
+  broader cross-browser and sustained-load evidence.
+
+### 2026-09-24 — bounded live DVR and latency choices
+
+- A creator can choose off/5/10/15/30-minute rewind and low/balanced/resilient
+  latency before publishing or while a recurring broadcast is waiting. The
+  settings are validated and stored with the live identity, fenced against
+  edits during an active session, and announced as PeerTube-compatible
+  `dvrWindow` and `latencyMode` on the federated Video. Browser ingest uses
+  matching keyframe targets; external encoders still determine the actual
+  keyframe cadence. One FFmpeg tee produces a bounded sliding HLS window and
+  the same crash-recoverable replay MP4 without a new companion service.
+- The first-party player uses the native seek range with a keyboard-usable
+  return-to-live control on desktop and mobile. With scripts disabled, the
+  progressive live MP4 remains playable, the creator settings remain usable,
+  and the HLS playlist has a direct link for compatible players. Generic
+  non-JS browsers still cannot seek a live fragmented MP4; a native HTML
+  rewind interface is not claimed.
+- Local PeerTube 8.3.0 imported the chosen DVR window and latency mode in
+  the real RTMP, HTTPS-FLV and RTMPS matrix (**3/3 passed**). Each case
+  verified that the HLS playlist grew beyond the former six segments and
+  contained short segments, that segments decoded, and that the no-JS MP4
+  fallback and replay still worked. Chromium desktop/mobile browser tests
+  each passed live seeking, keyboard return-to-live, accessibility scanning
+  and 320px reflow (**2/2**); the no-JS creator settings check passed
+  (**1/1**). The DB regression passed (**1/1**) for owner-only idle edits
+  and active-session rejection. Pre-migration database archive:
+  `ap09-runtime-trt7qd/plamenu-before-live-dvr.dump` (listing verified).
+- LIVE06 remains **partial**. The configured 30-minute maximum and FFmpeg
+  sliding-list bound are in place, but a 30-minute eviction/retention soak,
+  latency measurement under load, no-JS generic-browser rewind, P2P delivery,
+  and multi-node storage are not yet verified or implemented.
+
+### 2026-09-24 — creator-authored live schedule announcements
+
+- A one-shot or recurring live can advertise an optional planned start from
+  the accessible HTML form. Owners can move or clear it while waiting; the
+  operation is CSRF- and ownership-checked, serialized with publisher claims,
+  and produces a federated Video Update. Plamenu resolves `datetime-local`
+  values with the member's saved IANA time zone and rejects dates less than
+  one minute or more than one year away. The date is a public announcement,
+  not an automatic encoder start or a restriction on early ingest. Going on
+  air clears the spent date; a recurring broadcast may set another afterward.
+- The client API includes `live.scheduled_at`, the public waiting tile and
+  creator index render semantic `<time>` elements in the viewer's time zone,
+  and ActivityPub publishes PeerTube's `schedules: [{startDate}]` shape. The
+  RTMP/HTTPS-FLV/RTMPS E2E matrix passed **3/3 in 131.57 s**: a real PeerTube
+  8.3.0 instance imported the waiting planned date, accepted the on-air
+  clearing Update, and continued through HLS/MP4 playback and replay. The
+  full desktop/mobile Chromium and scripts-disabled live browser matrix passed
+  **10 applicable tests**, one intentional project skip. It covered
+  create/change/clear, public time display, invalid-date rejection, 320px
+  layout, camera/screen publishing, DVR, reconnect and replays. The database
+  regression passed owner-only waiting edits and active-session rejection.
+- LIVE05 remains **partial**: one planned date per local broadcast is supported,
+  but multiple future dates, inbound PeerTube schedules, reminders and
+  calendar subscriptions are not implemented. No new companion service or
+  installation step was added.
+
+### 2026-09-24 — inbound PeerTube live schedules and updates
+
+- Remote live Videos now retain up to sixteen valid planned dates in a small
+  attachment sidecar. An inbound schedule-only Update atomically replaces or
+  clears those dates without recreating the media attachment or marking the
+  authored post edited. The client API exposes all dates and the next future
+  start; the public waiting tile shows that start and a native disclosure for
+  multiple upcoming times. Past remote dates are not mislabeled as upcoming.
+  No script is needed to open the disclosure.
+- The real PeerTube 8.3.0 inbound live test passed **1/1 in 68.95 s**:
+  two announced dates arrived, PeerTube changed them to one then cleared them,
+  and the stream still moved through on-air playback and its ending state. A
+  Chromium scripts-disabled 320px browser opened the two-date disclosure,
+  showed no horizontal overflow and saved
+  `target/e2e/remote-live-schedules-320.png`; the JS-enabled accessibility
+  scan found no WCAG A/AA violations on that tile. The database was backed up
+  before migration 0099 to
+  `ap09-runtime-trt7qd/plamenu-before-remote-live-schedules.dump` and its
+  archive listing was verified.
+- LIVE05 remains **partial**: local creators still have one planned date per
+  broadcast, and this is calendar metadata rather than reminders,
+  subscriptions or automatic ingest start. Migration 0099 adds no companion
+  process or installation step.

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE native_live_sessions SET ended_at = now()\n         WHERE session_id = $1 AND media_id = $2 AND ended_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7683ba9d1d5980953bf84083e4654aa9dc7cf4ae56cecd849ba6f9c538a260d5"
+}

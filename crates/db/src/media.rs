@@ -156,7 +156,7 @@ pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool,
             SELECT m.id, m.account_id, m.status_id FROM media_attachments m
             JOIN media_hls_segments seg ON seg.media_id = m.id WHERE seg.cache_file = $1
         )
-        SELECT ($1 NOT LIKE '%.draft.%' OR EXISTS (
+        SELECT ($1 NOT LIKE '%.draft.%' AND $1 NOT LIKE '%.livereplay.%' OR EXISTS (
             SELECT 1 FROM candidates m
             JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
             JOIN accounts a ON a.id = m.account_id
@@ -170,10 +170,12 @@ pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool,
             SELECT 1 FROM candidates m
             JOIN accounts a ON a.id = m.account_id
             LEFT JOIN video_drafts d ON d.media_id = m.id
+            LEFT JOIN native_live_sessions ls ON ls.replay_media_id = m.id
             LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
             LEFT JOIN accounts c ON c.id = COALESCE(v.channel_id, d.channel_id)
             WHERE a.suspended_at IS NOT NULL OR c.suspended_at IS NOT NULL
               OR (d.media_id IS NOT NULL AND v.media_id IS NULL)
+              OR (ls.replay_media_id IS NOT NULL AND v.media_id IS NULL)
         ) AS "allowed!"
         "#,
         file_name,
@@ -193,11 +195,13 @@ pub async fn public_access_blocked(pool: &PgPool, media_id: i64) -> Result<bool,
             SELECT 1 FROM media_attachments m
             JOIN accounts a ON a.id = m.account_id
             LEFT JOIN video_drafts d ON d.media_id = m.id
+            LEFT JOIN native_live_sessions ls ON ls.replay_media_id = m.id
             LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
             LEFT JOIN accounts c ON c.id = COALESCE(v.channel_id, d.channel_id)
             WHERE m.id = $1 AND (a.suspended_at IS NOT NULL
                 OR c.suspended_at IS NOT NULL
-                OR (d.media_id IS NOT NULL AND v.media_id IS NULL))
+                OR (d.media_id IS NOT NULL AND v.media_id IS NULL)
+                OR (ls.replay_media_id IS NOT NULL AND v.media_id IS NULL))
         ) AS "blocked!"
         "#,
         media_id,

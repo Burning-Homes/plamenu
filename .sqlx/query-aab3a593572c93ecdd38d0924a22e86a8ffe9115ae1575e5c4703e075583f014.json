@@ -1,0 +1,98 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ls.media_id, b.status_id AS \"status_id!\", b.owner_account_id, b.permanent,\n                  ls.session_id, b.dvr_window_seconds, b.latency_mode\n           FROM native_live_sessions ls\n           JOIN native_live_broadcasts b ON b.media_id = ls.media_id\n           WHERE ls.ended_at IS NULL AND b.status_id IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_sessions",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "owner_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "permanent",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "permanent"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "session_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "native_live_sessions",
+            "name": "session_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "dvr_window_seconds",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "dvr_window_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "latency_mode",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "latency_mode"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "aab3a593572c93ecdd38d0924a22e86a8ffe9115ae1575e5c4703e075583f014"
+}
