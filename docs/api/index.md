@@ -42,6 +42,43 @@ and federates as an ActivityPub `Group`; it is not a community submission
 target. Remote channel classification is not yet represented by this extension.
 Clients must not infer channel ownership or authorization from this flag.
 
+### Planned live starts (iCalendar)
+
+For a locally authored native live attachment, the Status media entity's
+Plamenu `live` extension includes `calendar_url` and `channel_calendar_url`.
+These are HTTPS iCalendar subscription URLs, not PeerTube REST endpoints:
+
+- `GET /videos/live/{status_id}/calendar.ics` lists future starts of one
+  public or unlisted broadcast. An unlisted feed is accessible to anyone with
+  its URL; do not put it in a public directory. Private/deleted broadcasts
+  return 404.
+- `GET /videos/channels/{channel_id}/calendar.ics` lists future starts from
+  public broadcasts only. Unlisted broadcasts never appear there.
+- Append `?reminder=15` to either URL to include a 15-minute display alarm,
+  or `?reminder=0` for no alarm. Other values return 400. The subscriber's
+  calendar app, not Plamenu, delivers the reminder.
+
+Both feeds are readable without an API token so ordinary calendar clients can
+subscribe. They support `ETag`/`If-None-Match` and have a five-minute cache
+lifetime. The feed describes *planned starts*, not guaranteed on-air times or
+durations. Importing an `.ics` file once may not receive later reschedules;
+subscribe to its URL for updates. Calendar-client-specific refresh behavior
+varies.
+
+### Public status embeds
+
+`GET /api/oembed?url={local-status-URL}` returns an iframe snippet for a
+public or unlisted local post, including native videos and live broadcasts.
+Its frame URL is `GET /web/statuses/{id}/embed`; this is read-only and always
+renders as an anonymous viewer, even if the browser holds a Plamenu session.
+Private, direct, local-only and deleted posts cannot be framed. The ordinary
+first-party HLS player, captions, descriptions and PeerTube-compatible P2P
+choice are present inside the frame. Peer sharing defaults on where supported;
+the choice appears **before** Play, explains network-address disclosure, and
+can be turned off to use the server only. With JavaScript disabled, the
+native/progressive video remains available without P2P. The frame is a
+Plamenu contract, not a claim of PeerTube's full embed API compatibility.
+
 ## Identity statements
 
 FEP-c390 uses signed statements to link an actor to a user-owned key. These

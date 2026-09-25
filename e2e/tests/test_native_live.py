@@ -66,6 +66,7 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
             form.raise_for_status()
             csrf = re.search(r'name="csrf" value="([^"]+)"', form.text).group(1)
             planned = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
+            next_planned = (datetime.now(timezone.utc) + timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M")
             created = browser.post(
                 f"{config.PLAMENU_URL}/web/videos/live",
                 data={
@@ -78,6 +79,7 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
                     "dvr_minutes": "5",
                     "latency": "low",
                     "scheduled_at": planned,
+                    "scheduled_starts": next_planned,
                 },
                 timeout=30,
             )
@@ -106,10 +108,12 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
             assert waiting["live"]["dvr_window_seconds"] == 300
             assert waiting["live"]["latency_mode"] == 3
             assert waiting["live"]["scheduled_at"].startswith(planned)
+            assert [date[:16] for date in waiting["live"]["schedules"]] == [planned, next_planned]
             public_page = browser.get(f"{config.PLAMENU_URL}/web/statuses/{status_id}", timeout=30)
             assert "Planned start:" in public_page.text and "<time" in public_page.text
             ap = plamenu_api.ap_get(waiting_status["uri"].removeprefix(config.PLAMENU_URL))
             assert ap["schedules"][0]["startDate"].startswith(planned)
+            assert ap["schedules"][1]["startDate"].startswith(next_planned)
             assert waiting["url"] is None
             assert requests.get(
                 f"{config.PLAMENU_URL}/media/hls/{media_id}/master.m3u8",
@@ -137,6 +141,7 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
                 desc="PeerTube imports the planned start", timeout=60,
             )
             assert remote_planned["schedules"][0]["startAt"].startswith(planned)
+            assert remote_planned["schedules"][1]["startAt"].startswith(next_planned)
 
         def output_args(publish_key: str):
             if transport == "rtmp":

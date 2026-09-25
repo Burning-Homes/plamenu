@@ -26,6 +26,7 @@ mod inbox;
 mod instance_meta;
 mod lemmy;
 mod lists;
+pub(crate) mod live_dvr;
 mod live_stream;
 mod markers;
 pub(crate) mod media;
@@ -1348,6 +1349,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/media/live/{media_id}/stream.mp4",
             get(live_stream::stream),
+        )
+        .route(
+            "/media/live/{media_id}/rewind/{bucket}/{name}",
+            get(live_dvr::clip),
         )
         // Stable single-file compatibility URL for clients that do not know
         // Plamenu's additive HLS extension.

@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.status_id AS \"status_id!\", b.broadcast_uuid,\n                COALESCE(s.title, 'Live broadcast') AS \"title!\",\n                future.start_at AS \"start_at!\", s.updated_at\n         FROM native_live_broadcasts b\n         JOIN statuses s ON s.id = b.status_id\n         JOIN accounts a ON a.id = b.channel_id\n         CROSS JOIN LATERAL unnest(b.scheduled_starts) future(start_at)\n         WHERE b.channel_id = $1 AND s.visibility = 'public'\n           AND s.deleted_at IS NULL AND a.domain IS NULL AND a.suspended_at IS NULL\n           AND future.start_at > now()\n         ORDER BY future.start_at, b.status_id LIMIT 200",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "status_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "broadcast_uuid",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "broadcast_uuid"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "start_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "ec2771ed4d3089b87b84d3238f42e832b6d08c413cfdd29c03d8151c56a48d20"
+}

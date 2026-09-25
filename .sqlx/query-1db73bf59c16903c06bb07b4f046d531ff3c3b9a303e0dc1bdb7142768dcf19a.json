@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE native_live_broadcasts b SET scheduled_at = $3, scheduled_starts = $4\n         FROM statuses s WHERE b.status_id = $1 AND b.owner_account_id = $2\n           AND s.id = b.status_id AND s.account_id = $2 AND s.uri IS NULL\n           AND b.state = 'waiting'\n           AND NOT EXISTS (SELECT 1 FROM native_live_sessions ls\n                           WHERE ls.media_id = b.media_id AND ls.ended_at IS NULL)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Timestamptz",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1db73bf59c16903c06bb07b4f046d531ff3c3b9a303e0dc1bdb7142768dcf19a"
+}

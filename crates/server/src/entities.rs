@@ -3346,15 +3346,43 @@ fn attach_native_live_peer_hints(
     });
 }
 
-fn attach_native_live_details(value: &mut Value, details: &plamenu_db::native_live::PublicDetails) {
+fn attach_native_live_details(
+    value: &mut Value,
+    details: &plamenu_db::native_live::PublicDetails,
+    domain: &str,
+    media: &media::Media,
+) {
     value["live"]["dvr_window_seconds"] = json!(details.playback.dvr_window_seconds);
     value["live"]["latency_mode"] = json!(details.playback.latency_mode);
+    if let Some(status_id) = media.status_id {
+        value["live"]["calendar_url"] = json!(format!(
+            "https://{domain}/videos/live/{status_id}/calendar.ics"
+        ));
+        value["live"]["channel_calendar_url"] = json!(format!(
+            "https://{domain}/videos/channels/{}/calendar.ics",
+            details.channel_id
+        ));
+    }
+    if media.live_state.as_deref() == Some("live") && details.playback.dvr_window_seconds > 0 {
+        value["live"]["rewind_url"] =
+            json!(format!("https://{domain}/videos/live/{}/rewind", media.id));
+    }
+    if !details.scheduled_starts.is_empty() {
+        let dates: Vec<_> = details
+            .scheduled_starts
+            .iter()
+            .filter_map(|at| {
+                at.format(&time::format_description::well_known::Rfc3339)
+                    .ok()
+            })
+            .collect();
+        value["live"]["schedules"] = json!(dates);
+    }
     if let Some(at) = details.scheduled_at {
-        let iso = at
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_default();
-        value["live"]["scheduled_at"] = json!(iso.clone());
-        value["live"]["schedules"] = json!([iso]);
+        value["live"]["scheduled_at"] = json!(
+            at.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default()
+        );
     }
 }
 
@@ -3437,7 +3465,7 @@ async fn media_maps(
                         attach_native_live_peer_hints(&mut value, session, domain);
                     }
                     if let Some(details) = live_details.get(&file.id) {
-                        attach_native_live_details(&mut value, details);
+                        attach_native_live_details(&mut value, details, domain, file);
                     }
                     if let Some(dates) = remote_schedules.get(&file.id) {
                         let iso_dates: Vec<_> = dates

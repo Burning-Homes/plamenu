@@ -171,7 +171,17 @@ pub async fn oembed(
     State(state): State<AppState>,
     Query(query): Query<OembedQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let url = query.url.as_deref().unwrap_or_default().trim();
+    // The web permalink deliberately carries a #post-id scroll target. It is
+    // not part of the resource identity, so copy-pasted URLs with that
+    // fragment should still resolve through oEmbed.
+    let url = query
+        .url
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .split('#')
+        .next()
+        .unwrap_or_default();
     let status_id = parse_status_url(&state.config.domain, url).ok_or(ApiError::NotFound)?;
     let item = status::find_by_id(&state.pool, status_id)
         .await?

@@ -135,9 +135,9 @@ before becoming `verified`. Keep partial results and failures visible.
 | M2 | Long-form VOD pipeline | Large/resumable and no-JS uploads; durable processing; quality ladder; poster/storyboard; audio-only/silent inputs; failures/restart/quota evidence | in progress |
 | M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | in progress: captions and VOD chapters in both directions, no-JS/JS authoring and seeking; on-demand readable caption transcripts verified; wider browser/AT and description matrix pending |
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | pending |
-| M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | partial: no-JS authoring, RTMP/RTMPS/HTTPS-FLV and browser ingest, bounded HLS/MP4, crash-recoverable one-shot and recurring replays, schedule announcements, DVR/latency controls, PeerTube updates, local/live P2P, active-session key revocation and 5/30-minute window plus 16-viewer load verified; no-JS DVR seeking, partial-fragment recovery UX and multi-node storage remain |
-| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | pending |
-| M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress: remote and local-origin VOD/live PeerTube P2P exchange and pre-play opt-out verified; embeds, operations and scale evidence remain |
+| M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | verified 2026-09-25 for this stated functional gate; see the M5 sign-off below. Cross-node storage, additional device/browser combinations, and broader fault matrices remain in M7/M9, not silently counted as done |
+| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders and in-session browser camera ↔ screen switching verified; discovery, editing, wider settings/imports and browser/hardware evidence remain |
+| M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress: remote and local-origin VOD/live PeerTube P2P exchange and pre-play opt-out verified; public VOD embed opt-out verified; wider embeds, operations and scale evidence remain |
 | M8 | Ecosystem and beyond parity | Defined REST/embed/runner compatibility scope; chosen extensions; end-to-end tests per supported contract; no PeerTube plugin ABI in round one | pending |
 | M9 | Completion gate | All accepted inventory entries verified; current and prior PeerTube matrices; browser/a11y/performance gates; operator and user documentation | pending |
 
@@ -223,13 +223,12 @@ unwatched remote videos do not trigger whole-file downloads.
 
 ## Next work
 
-The current priority is M5's no-JS DVR/recovery UX and wider live/browser
-fault-injection coverage, then larger multi-node and P2P pressure. Verified
-live P2P, active-session key revocation and long-window load do not close M5
-or M7. M2 still owes difficult-input,
+M5's stated native-live gate is verified. AP09 remains open: M7 owns
+multi-node storage, operations and larger P2P pressure; M9 owns the wider
+browser/device and fault-injection matrix. M6 owns source-switching and
+reminder UX. M2 still owes difficult-input,
 maximum-size and concurrent-upload stress; M1 channel lifecycle/collaboration
-and several federation paths remain open. Do not treat the current publication
-slices as a milestone sign-off.
+and several federation paths remain open. M5 completion is not AP09 completion.
 
 ### 2026-09-22 — publication slice and browser verification
 
@@ -2070,3 +2069,229 @@ record above predates migrations 0087–0088 and is not evidence for their write
   baseline PeerTube HLS/progressive/audio playback E2E passed. Strict Clippy
   passed for server and database. An actual PeerTube re-transcode that changes
   rendition URLs is covered by the database test, not yet by a live-peer E2E.
+
+### 2026-09-25 — browser live device choice and silent-screen capture
+
+- The live manager now offers camera and microphone selectors and an explicit
+  screen-audio request. Device enumeration is progressive: names appear when
+  the browser exposes them, current selections survive device refreshes, and
+  changes apply to the next broadcast. The fieldset stays hidden without JS,
+  preserving the existing RTMP/RTMPS/HTTPS-FLV encoder workflow. The controls
+  are responsive and labelled in English and Russian.
+- Firefox accepts a VP8+Opus recorder MIME for a video-only screen stream but
+  may not emit chunks until recording stops. The publisher now requests a
+  video-only codec when capture has no audio track. FFmpeg's WebM probe is
+  bounded to 256 KiB for live startup. A focused browser/encoder trace confirmed
+  one chunk per second reaches FFmpeg and that camera and silent-screen HLS
+  segments are delivered over HTTP before stop.
+- Real browser E2E passed camera -> silent screen -> separate replay sessions
+  on the same recurring broadcast in Chromium and Firefox, desktop and mobile
+  (**4/4** after retrying a transient blank login page in two parallel Chromium
+  workers). The test checks selected device constraints, no requested screen
+  audio, video-only recorder MIME, actual MPEG-TS bytes, replay playback,
+  320px reflow, and light/dark Axe scans. The isolated browser suite passed
+  **7/7** for Chromium/Firefox device UI, WebKit external-encoder fallback and
+  no-JS live authoring. Firefox mobile screenshots were visually inspected.
+  These are synthetic camera/screen sources with real MediaRecorder, WebSocket,
+  FFmpeg, HTTP and playback; physical devices and browser permission prompts
+  remain untested.
+
+### 2026-09-25 — bounded browser broadcast startup and failure recovery
+
+- Browser broadcasting now bounds the WebSocket ready handshake at 15 seconds.
+  A timeout or early socket failure closes the attempt, releases captured
+  tracks, restores the form controls and announces a retryable error. The
+  handoff also checks that the socket is still open before creating a recorder.
+  Permission denial, unavailable or busy devices and cancelled screen sharing
+  use distinct localized status messages; they do not claim a broadcast is on
+  air. The HTML/encoder workflow is unchanged without scripts.
+- A new real-browser test injects each capture failure and a never-ready
+  connection, checks that no live session was claimed, verifies the captured
+  tracks end after timeout, then retries through the real authenticated
+  WebSocket to an on-air session and clean stop. Chromium and Firefox desktop
+  passed **2/2** in the isolated HTTPS runner. The normal camera/silent-screen
+  journey and the existing unexpected-close reconnect case also passed in
+  the local browser regression run (one first-run Chromium login request hit
+  the transient service startup window and was rerun after readiness).
+  This verifies application recovery, not physical-device permission dialogs.
+
+### 2026-09-25 — visible recovery from live HLS outages
+
+- The enhanced live player no longer dies silently after a failed HLS master
+  or sustained segment outage. A pre-manifest network failure reloads the
+  source because `startLoad()` alone has no parsed levels to resume. Repeated
+  segment errors can remain non-fatal to hls.js indefinitely even while no
+  media buffers; a 30-second deadline now stops that traffic unless a fresh
+  fragment buffers. Successful buffering clears the deadline and resets the
+  fatal retry count, preserving normal DVR seeking through brief holes.
+- On exhaustion, the first-party player announces an accessible status with
+  a basic same-origin stream link and a real page reload to discover an ended
+  broadcast or replay. When the player is visible, the status scrolls into
+  view; at 320px its links sit above the fixed tab bar. The scripts-disabled
+  progressive source and existing external HLS playlist link are unchanged.
+- A real browser broadcast with injected 503 responses verified both master
+  and segment failures, the 30-second bound, accessible actions, and resumed
+  decoded playback after removing the outage and refreshing. Chromium desktop
+  and 320px mobile passed **2/2**. Light/dark Axe scans found no violations in
+  the failed player, and screenshots were visually inspected. Initial tests
+  exposed the pre-manifest no-op retry, same-URL hash navigation that failed
+  to reload, and non-fatal fragment retries that otherwise ran for 90 seconds;
+  each was corrected before the passing run. Broader network/codec/device
+  failures and no-JS rewind are still open. The ordinary desktop/mobile DVR
+  rewind-and-return journey also passed **2/2** after this change, and the
+  PeerTube 8.3 inbound live lifecycle/playback E2E passed **1/1 in 69.71 s**.
+
+### 2026-09-25 — locally authored multi-date live schedules
+
+- Local one-shot and recurring broadcasts now accept up to 16 distinct planned
+  starts. The no-JS HTML form accepts one local date-time per line, and JS adds
+  a date-picker shortcut to the same field; both paths use the account time
+  zone and a single server-side parser. Waiting creators can reorder or clear
+  the list. The database stores the ordered list with its first date as a
+  constrained projection, keeping existing queries and client API fields
+  stable. The client API and PeerTube-compatible ActivityPub Video publish all
+  dates. A new recurring episode consumes one date; a reconnect preserves the
+  remaining dates; a one-shot start clears the list. Dates are announcements,
+  not automatic starts or ingest restrictions.
+- A database regression passed owner-only edits, the first and second
+  recurring-session consumption, and active-session edit rejection. Browser
+  tests passed **4/4** across Chromium desktop/mobile, Firefox desktop and
+  scripts-disabled Chromium at 320px, plus Firefox at 320px **1/1**. They cover
+  chronological sorting, duplicate rejection, clearing, public semantic time
+  display, reflow and an Axe accessibility scan. Isolated WebKit desktop and
+  mobile passed **2/2**; the 320px Chromium screenshot was visually inspected.
+  The real PeerTube 8.3.0 outbound lifecycle passed RTMP, RTMPS and HTTPS-FLV
+  **3/3**: PeerTube imported both dates and accepted the one-shot on-air
+  clearing Update. Strict Clippy
+  passed. Calendar subscriptions and reminders are still outside this slice.
+
+### 2026-09-25 — M5 native-live functional sign-off
+
+- Added an explicit rewind link on local live status pages and a scripts-off
+  first-party page with a GET-based five-minute portion selector, native MP4
+  controls, byte-range seeking and return-to-live navigation. The endpoint
+  stream-copies the existing fragmented recording into a finite fast-start
+  clip, rather than re-encoding or requiring a second persistent rendition.
+  It waits for the archive header before reading, bounds FFmpeg time/output,
+  preserves the configured DVR window, caps per-session scratch cache, checks
+  available disk, expires old URLs, and invalidates clips when the session
+  ends. Builds share a per-session lock, so simultaneous viewers do not
+  duplicate work while independent broadcasts can proceed concurrently.
+  The first browser run exposed a real `moov atom not found` startup race;
+  the bounded header wait/retry fixed it before sign-off.
+- M5's stated gate is met: real RTMP, RTMPS and HTTPS-FLV ingest; Chromium and
+  Firefox desktop/mobile browser camera, microphone and screen ingest through
+  HLS and replay; waiting, on-air, interrupted, ended and recurring replay
+  identities; locally authored and imported multi-date schedules; three
+  latency modes and 5/30-minute DVR; no-JS external encoder, scheduling,
+  playback and rewind paths; and Plamenu-to-PeerTube plus
+  PeerTube-to-Plamenu live updates and playable streams. Stable session IDs
+  and replay relationships are in place for a later federated live chat.
+- Final local evidence: strict server and database Clippy passed; the native-live
+  PeerTube/encoder suite passed **13/13** (including key revocation, P2P and
+  reconnect/replay variants), inbound PeerTube live lifecycle/playback passed
+  **1/1**, and accelerated 5/30-minute retention and load passed **2/2**.
+  The latter probed the oldest permitted rewind MP4 and had 16 concurrent
+  clients range-seek the same clip, as well as 16 ordinary HLS viewers.
+  Scripts-disabled Chromium at 320px passed finite playback, native seek,
+  `206` and `416` byte-range behavior, stale/out-of-window rejection and
+  post-session `404` **1/1**; even an extreme negative expiry bucket is a
+  bounded `404`, not an overflow. Browser live checks passed **25** across
+  Chromium/Firefox/no-JS, with **11** intentional applicability skips;
+  isolated WebKit desktop/mobile passed **4** applicable fallback/authoring
+  checks with **12** capture/playback skips. WebKit's local test runtime was
+  supplied missing shared libraries in user-local test artifacts, not an
+  application runtime dependency. The 320px no-JS screenshot was inspected;
+  it revealed a return link obscured by fixed navigation, which was moved
+  above the selector and rechecked.
+- This closes **M5's written functional acceptance**, not every AP09 live
+  enhancement. Physical camera/OS permission prompts, WebKit capture support
+  and wider viewer fault injection remain M9 validation; seamless in-session
+  camera/screen switching and the broader reminder experience remain M6 work;
+  cross-node scratch/storage, redundancy and greater P2P/load pressure remain
+  M7 operations work. The requested future live-chat architecture exists, but
+  chat implementation remains outside this round. These items remain visible
+  in the inventory rather than being represented as complete.
+
+### M6 live calendar subscription slice — 2026-09-25
+
+- Added per-broadcast iCalendar feeds for public and direct-link unlisted
+  planned starts, plus a strictly public per-channel feed. The existing
+  schedule records are authoritative; no reminder worker, companion service,
+  or new installation step is required. The optional 15-minute `VALARM` is
+  delivered by the subscriber's calendar app, not Plamenu. Feeds use UTC,
+  escaped/folded iCalendar text, stable occurrence UIDs, ETags and bounded
+  five-minute cache lifetime. An event is a planned start, not a claim about
+  broadcast duration or actual on-air time.
+- The owner gets a selectable subscription URL and reminder link in the
+  no-JS management page; viewers get calendar and channel-subscription links
+  under planned dates. The UI explains that opening a feed once may only
+  import a snapshot. Client API native-live media expose both feed URLs.
+- Verification: scripts-disabled Chromium at 320px passed the scheduled
+  broadcast, anonymous per-broadcast feed, 15-minute alarm, conditional GET,
+  unlisted channel exclusion and public channel inclusion paths (**2/2**).
+  Chromium and Firefox mobile schedule-picker checks passed (**2/2**), with
+  a zero-violation axe scan on the scheduled status figure. The Chromium
+  mobile status screenshot was inspected for readable links and reflow.
+  The database visibility regression covers public, unlisted and private
+  feed access. Rust calendar unit tests and strict database/server Clippy
+  passed. Isolated WebKit desktop was attempted twice but its WPE web process
+  aborted on post-login navigation before reaching this UI; this is an open
+  browser-matrix result, not a WebKit pass.
+- This is not M6 completion. Calendar-app-specific subscription refresh and
+  reminders, server-side notification preferences, publication scheduling,
+  in-session source switching, discovery/search and the wider M6 experience
+  matrix remain open. No staging deployment was performed.
+
+### M7 public video/P2P embed slice — 2026-09-25
+
+- Closed the oEmbed placeholder gap with a real, read-only, local-status frame
+  that uses the first-party media renderer, captions, descriptions, no-JS
+  progressive fallback and the existing default-on P2P player. Its peer
+  disclosure and opt-out precede the embedded video, so a viewer can choose
+  server-only playback before any tracker or swarm contact. The CSP framing
+  exception is scoped to a successful numeric status embed path; every other
+  HTML page retains frame denial. Frame rendering ignores session cookies and
+  rejects non-public, remote and deleted statuses. oEmbed now accepts a
+  copy-pasted permalink with its `#post-id` fragment.
+- Verification: the scripts-disabled browser rejects a private post's frame
+  even for its author. A real cross-origin loopback host loads the VOD frame;
+  browser assertions cover the visible default-on choice, keyboard-operable
+  pre-play opt-out, decoded playback and absence of tracker socket or P2P
+  module request after opt-out. Its 400px and 320px frame screenshots were
+  inspected, and the narrow frame has no horizontal overflow.
+  The native-video browser fixture now reuses an owned channel when the local
+  test account reaches its 50-channel cap, preserving accumulated test data.
+- This is a Plamenu public embed, not PeerTube's complete embed API. The wider
+  PeerTube embed, live-frame, WebKit, performance and abuse matrices remain
+  open. No push, merge or staging deployment was performed.
+
+### M6 in-session browser source switching — 2026-09-25
+
+- Browser broadcasts now retain one authenticated WebSocket, one MediaRecorder,
+  one live status/HLS session and one replay while switching camera → screen →
+  camera. A capped 720p canvas feeds the stable video track; a Web Audio
+  destination preserves the audio track when switching to a screen without
+  captured audio. Only the active source is connected; previous capture tracks
+  are released after the replacement is playable. This adds no external
+  service, installation step or stored intermediate media.
+- A rejected capture request leaves the previous source broadcasting. The
+  controls name the active source, dim its unavailable action, announce the
+  transition and error in the live region, and restore keyboard focus to Stop
+  or the retry action. Device-choice help now reflects switch-time changes.
+  External RTMP/RTMPS/HTTPS-FLV encoder authoring remains the no-JS route.
+- The canvas WebM time base was advertised as 1000 fps to replay validation;
+  browser WebM ingest now emits an explicit constant 30 fps HLS/replay output,
+  matching its 30 fps GOP size. This was found by the real replay E2E gate,
+  not inferred from the preview alone.
+- Verification: the new in-session test and the existing separate camera/screen
+  capture-to-HLS/replay test passed in Chromium and Firefox, desktop and 320px
+  mobile (**8/8**). The new test checks one recorder/socket, live status,
+  changed preview pixels, released old tracks, denied-switch continuity, a
+  live HLS segment, one saved and playable replay, focus, overflow and zero axe violations.
+  The no-JS encoder-authoring test passed (**1/1**). A 320px viewport screenshot
+  was inspected after switching; controls, status and preview reflow without
+  horizontal overflow. Strict server Clippy, formatting, JS syntax and diff
+  checks passed. Actual hardware/OS permission prompts, WebKit, mid-switch
+  device loss, long-duration CPU/battery measurements and broader recovery
+  remain open. M6 is not yet complete; no push, merge or deployment occurred.

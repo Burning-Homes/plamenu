@@ -514,9 +514,9 @@ pub fn enrich_object(
         if let Some(mode) = publication.live_latency_mode {
             note["latencyMode"] = json!(mode);
         }
-        note["schedules"] = json!(publication.live_scheduled_at.map_or_else(Vec::new, |at| {
-            vec![json!({"startDate": at.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()})]
-        }));
+        note["schedules"] = json!(publication.live_scheduled_starts.as_deref().unwrap_or_default()
+            .iter().map(|at| json!({"startDate": at.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()}))
+            .collect::<Vec<_>>());
         note["attachment"] = json!([]);
     }
     note["commentsPolicy"] = json!(1);

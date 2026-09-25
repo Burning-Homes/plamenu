@@ -33,6 +33,7 @@ mod landing;
 pub(crate) mod layout;
 mod lists;
 mod live;
+mod live_calendar;
 mod meta;
 mod migration;
 mod notification_requests;
@@ -419,6 +420,15 @@ pub fn router() -> Router<AppState> {
         .route("/videos/live/new", get(live::new_page))
         .route("/web/videos/live", post(live::create))
         .route("/videos/live/{id}", get(live::manage))
+        .route("/videos/live/{id}/rewind", get(live::rewind_page))
+        .route(
+            "/videos/live/{id}/calendar.ics",
+            get(live_calendar::broadcast),
+        )
+        .route(
+            "/videos/channels/{id}/calendar.ics",
+            get(live_calendar::channel),
+        )
         .route("/web/videos/live/{id}/rotate-key", post(live::rotate_key))
         .route(
             "/web/videos/live/{id}/playback",
@@ -636,6 +646,7 @@ pub fn router() -> Router<AppState> {
         .route("/logout", post(session::logout))
         .route("/web/accounts/switch", post(session::switch_account))
         .route("/web/statuses/{id}", get(pages::status_redirect))
+        .route("/web/statuses/{id}/embed", get(pages::status_embed))
         .route("/web/statuses/{id}/favourite", post(actions::favourite))
         .route("/web/statuses/{id}/unfavourite", post(actions::unfavourite))
         // Group-post vote cluster; upvote == favourite underneath.

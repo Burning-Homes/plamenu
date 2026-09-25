@@ -2890,6 +2890,9 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                         data-p2p-swarm=[p2p.and_then(|p| p.get("swarm_id")).and_then(Value::as_str)]
                                         data-live=[live_state]
                                         data-live-dvr=[item.get("live").and_then(|l| l.get("dvr_window_seconds")).and_then(Value::as_i64)]
+                                        data-live-playback-error=[(live_state == Some("live")).then(|| ctx.locale.text("status-live-playback-error"))]
+                                        data-live-basic=[(live_state == Some("live")).then(|| ctx.locale.text("status-live-basic-stream"))]
+                                        data-live-refresh=[(live_state == Some("live")).then(|| ctx.locale.text("status-live-refresh"))]
                                         width=[width] height=[height]
                                         lang=[language]
                                         title=[Some(alt).filter(|a| !a.is_empty())] {
@@ -2941,6 +2944,11 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                         (ctx.locale.text("status-go-live"))
                                     }
                                     @if item.get("live").and_then(|l| l.get("dvr_window_seconds")).and_then(Value::as_i64).unwrap_or(0) > 0 {
+                                        @if let Some(rewind) = item.get("live").and_then(|l| l.get("rewind_url")).and_then(Value::as_str) {
+                                            a.media__live-playlist href=(rewind) {
+                                                (ctx.locale.text("status-live-rewind"))
+                                            }
+                                        }
                                         @if let Some(master) = hls_master {
                                             a.media__live-playlist href=(master) {
                                                 (ctx.locale.text("status-live-playlist"))
@@ -3065,6 +3073,12 @@ fn offline_live(
             OffsetDateTime::parse(at, &Rfc3339).is_ok_and(|date| date > OffsetDateTime::now_utc())
         })
         .collect();
+    let calendar_url = live
+        .and_then(|l| l.get("calendar_url"))
+        .and_then(Value::as_str);
+    let channel_calendar_url = live
+        .and_then(|l| l.get("channel_calendar_url"))
+        .and_then(Value::as_str);
     let caption = match state {
         "interrupted" => "status-live-interrupted",
         "ended" if permanent => "status-live-waiting-recurring",
@@ -3073,7 +3087,7 @@ fn offline_live(
         _ => "status-live-waiting",
     };
     html! {
-        figure.media.media--video.media--live-offline data-multiple-schedules=(future_dates.len() > 1) {
+        figure.media.media--video.media--live-offline data-has-schedules=(!future_dates.is_empty()) {
             @if !preview.is_empty() {
                 img src=(preview) alt=(alt) lang=[language]
                     loading="lazy" width=[width] height=[height];
@@ -3089,10 +3103,22 @@ fn offline_live(
                 details.media__transcript {
                     summary { (ctx.locale.text("status-live-future-schedules")) }
                     ol {
-                        @for date in future_dates {
+                        @for date in &future_dates {
                             li { (ctx.clock.element_absolute_iso(date)) }
                         }
                     }
+                }
+            }
+            @if !future_dates.is_empty() {
+                nav.media__live-calendars aria-label=(ctx.locale.text("status-live-calendar-navigation")) {
+                    @if let Some(url) = calendar_url {
+                        a href=(url) { (ctx.locale.text("status-live-calendar-add")) }
+                        a href=(format!("{url}?reminder=15")) { (ctx.locale.text("status-live-calendar-reminder")) }
+                    }
+                    @if let Some(url) = channel_calendar_url {
+                        a href=(url) { (ctx.locale.text("status-live-calendar-channel")) }
+                    }
+                    p { (ctx.locale.text("status-live-calendar-hint")) }
                 }
             }
             (media_badges(alt, &[], ctx.locale))

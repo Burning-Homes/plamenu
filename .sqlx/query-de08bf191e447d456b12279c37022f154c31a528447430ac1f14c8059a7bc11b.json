@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT media_id, dvr_window_seconds, latency_mode, scheduled_at\n         FROM native_live_broadcasts WHERE media_id = ANY($1)",
+  "query": "SELECT media_id, dvr_window_seconds, latency_mode, scheduled_at, scheduled_starts\n         FROM native_live_broadcasts WHERE media_id = ANY($1)",
   "describe": {
     "columns": [
       {
@@ -46,6 +46,17 @@
             "name": "scheduled_at"
           }
         }
+      },
+      {
+        "ordinal": 4,
+        "name": "scheduled_starts",
+        "type_info": "TimestamptzArray",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "scheduled_starts"
+          }
+        }
       }
     ],
     "parameters": {
@@ -57,8 +68,9 @@
       false,
       false,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "95d4db556842259f46198da8a7c32c4b5f6fda6e1276b065038a3ad9b55a0ab4"
+  "hash": "de08bf191e447d456b12279c37022f154c31a528447430ac1f14c8059a7bc11b"
 }

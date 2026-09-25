@@ -16,6 +16,7 @@ pub struct Broadcast {
     pub state: String,
     pub permanent: bool,
     pub scheduled_at: Option<OffsetDateTime>,
+    pub scheduled_starts: Vec<OffsetDateTime>,
     pub reconnect_deadline: Option<OffsetDateTime>,
     pub key_generation: i64,
     pub dvr_window_seconds: i32,
@@ -29,10 +30,12 @@ pub struct PlaybackOptions {
     pub latency_mode: i32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct PublicDetails {
+    pub channel_id: i64,
     pub playback: PlaybackOptions,
     pub scheduled_at: Option<OffsetDateTime>,
+    pub scheduled_starts: Vec<OffsetDateTime>,
 }
 
 impl PlaybackOptions {
@@ -145,6 +148,31 @@ pub async fn public_session(pool: &PgPool, media_id: i64) -> Result<Option<Strin
 }
 
 #[derive(Debug, Clone)]
+pub struct PublicDvr {
+    pub session_id: String,
+    pub started_at: OffsetDateTime,
+    pub window_seconds: i32,
+}
+
+/// The live generation and its published rewind limit. Every consumer still
+/// checks the ordinary media visibility gate before exposing bytes.
+pub async fn public_dvr(pool: &PgPool, media_id: i64) -> Result<Option<PublicDvr>, DbError> {
+    Ok(sqlx::query_as!(
+        PublicDvr,
+        "SELECT ls.session_id, ls.started_at, b.dvr_window_seconds AS window_seconds
+         FROM native_live_sessions ls
+         JOIN native_live_broadcasts b ON b.media_id = ls.media_id
+         JOIN statuses s ON s.id = b.status_id
+         WHERE ls.media_id = $1 AND ls.ended_at IS NULL AND b.state = 'live'
+           AND b.dvr_window_seconds > 0
+           AND s.visibility IN ('public', 'unlisted')",
+        media_id,
+    )
+    .fetch_optional(pool)
+    .await?)
+}
+
+#[derive(Debug, Clone)]
 pub struct PublicPeerSession {
     pub media_id: i64,
     pub video_uuid: String,
@@ -216,7 +244,7 @@ pub async fn details_for_media(
         return Ok(std::collections::HashMap::new());
     }
     let rows = sqlx::query!(
-        "SELECT media_id, dvr_window_seconds, latency_mode, scheduled_at
+        "SELECT media_id, channel_id, dvr_window_seconds, latency_mode, scheduled_at, scheduled_starts
          FROM native_live_broadcasts WHERE media_id = ANY($1)",
         media_ids,
     )
@@ -228,15 +256,96 @@ pub async fn details_for_media(
             (
                 row.media_id,
                 PublicDetails {
+                    channel_id: row.channel_id,
                     playback: PlaybackOptions {
                         dvr_window_seconds: row.dvr_window_seconds,
                         latency_mode: row.latency_mode,
                     },
                     scheduled_at: row.scheduled_at,
+                    scheduled_starts: row.scheduled_starts,
                 },
             )
         })
         .collect())
+}
+
+#[derive(Debug, Clone)]
+pub struct CalendarBroadcast {
+    pub status_id: i64,
+    pub broadcast_uuid: String,
+    pub title: String,
+    pub scheduled_starts: Vec<OffsetDateTime>,
+    pub updated_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone)]
+pub struct CalendarOccurrence {
+    pub status_id: i64,
+    pub broadcast_uuid: String,
+    pub title: String,
+    pub start_at: OffsetDateTime,
+    pub updated_at: OffsetDateTime,
+}
+
+/// A public or unlisted local broadcast may publish a calendar for people
+/// who already have its URL. Private/local statuses never enter this query.
+pub async fn calendar_broadcast(
+    pool: &PgPool,
+    status_id: i64,
+) -> Result<Option<CalendarBroadcast>, DbError> {
+    Ok(sqlx::query_as!(
+        CalendarBroadcast,
+        "SELECT b.status_id AS \"status_id!\", b.broadcast_uuid,
+                COALESCE(s.title, 'Live broadcast') AS \"title!\",
+                b.scheduled_starts, s.updated_at
+         FROM native_live_broadcasts b
+         JOIN statuses s ON s.id = b.status_id
+         JOIN accounts a ON a.id = b.channel_id
+         WHERE b.status_id = $1 AND s.visibility IN ('public', 'unlisted')
+           AND s.deleted_at IS NULL AND a.domain IS NULL AND a.suspended_at IS NULL",
+        status_id,
+    )
+    .fetch_optional(pool)
+    .await?)
+}
+
+/// The channel feed is strictly public: an unlisted broadcast is never
+/// disclosed by a channel-level list or calendar subscription.
+pub async fn channel_calendar_broadcasts(
+    pool: &PgPool,
+    channel_id: i64,
+) -> Result<Vec<CalendarOccurrence>, DbError> {
+    Ok(sqlx::query_as!(
+        CalendarOccurrence,
+        "SELECT b.status_id AS \"status_id!\", b.broadcast_uuid,
+                COALESCE(s.title, 'Live broadcast') AS \"title!\",
+                future.start_at AS \"start_at!\", s.updated_at
+         FROM native_live_broadcasts b
+         JOIN statuses s ON s.id = b.status_id
+         JOIN accounts a ON a.id = b.channel_id
+         CROSS JOIN LATERAL unnest(b.scheduled_starts) future(start_at)
+         WHERE b.channel_id = $1 AND s.visibility = 'public'
+           AND s.deleted_at IS NULL AND a.domain IS NULL AND a.suspended_at IS NULL
+           AND future.start_at > now()
+         ORDER BY future.start_at, b.status_id LIMIT 200",
+        channel_id,
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn calendar_channel_name(
+    pool: &PgPool,
+    channel_id: i64,
+) -> Result<Option<String>, DbError> {
+    Ok(sqlx::query_scalar!(
+        "SELECT COALESCE(NULLIF(a.display_name, ''), a.username) AS \"name!\"
+         FROM video_channels c JOIN accounts a ON a.id = c.account_id
+         WHERE c.account_id = $1 AND a.domain IS NULL AND a.suspended_at IS NULL",
+        channel_id,
+    )
+    .fetch_optional(pool)
+    .await?)
 }
 
 /// Edit or clear a public calendar announcement only while no publisher is
@@ -245,11 +354,12 @@ pub async fn update_schedule(
     pool: &PgPool,
     status_id: i64,
     owner: i64,
-    scheduled_at: Option<OffsetDateTime>,
+    scheduled_starts: &[OffsetDateTime],
 ) -> Result<bool, DbError> {
     let mut tx = pool.begin().await?;
+    let scheduled_at = scheduled_starts.first().copied();
     let changed = sqlx::query!(
-        "UPDATE native_live_broadcasts b SET scheduled_at = $3
+        "UPDATE native_live_broadcasts b SET scheduled_at = $3, scheduled_starts = $4
          FROM statuses s WHERE b.status_id = $1 AND b.owner_account_id = $2
            AND s.id = b.status_id AND s.account_id = $2 AND s.uri IS NULL
            AND b.state = 'waiting'
@@ -258,6 +368,7 @@ pub async fn update_schedule(
         status_id,
         owner,
         scheduled_at,
+        scheduled_starts,
     )
     .execute(&mut *tx)
     .await?
@@ -429,7 +540,13 @@ async fn activate(
         return Ok(None);
     };
     sqlx::query!(
-        "UPDATE native_live_broadcasts SET state = 'live', scheduled_at = NULL,
+        "UPDATE native_live_broadcasts SET state = 'live',
+         scheduled_starts = CASE WHEN NOT permanent THEN '{}'::timestamptz[]
+                                 WHEN state = 'waiting' THEN scheduled_starts[2:16]
+                                 ELSE scheduled_starts END,
+         scheduled_at = CASE WHEN NOT permanent THEN NULL
+                             WHEN state = 'waiting' THEN scheduled_starts[2]
+                             ELSE scheduled_at END,
          reconnect_deadline = NULL, started_at = COALESCE(started_at, now()) WHERE media_id = $1",
         media_id,
     )
@@ -1100,12 +1217,13 @@ pub async fn allocate(
     channel_id: i64,
     key_hash: &[u8; 32],
     permanent: bool,
-    scheduled_at: Option<OffsetDateTime>,
+    scheduled_starts: &[OffsetDateTime],
     playback: PlaybackOptions,
 ) -> Result<Option<Broadcast>, DbError> {
     if !playback.valid() {
         return Ok(None);
     }
+    let scheduled_at = scheduled_starts.first().copied();
     let mut tx = pool.begin().await?;
     if !video::lock_owned_channel(&mut tx, channel_id, owner).await? {
         return Ok(None);
@@ -1139,10 +1257,10 @@ pub async fn allocate(
         Broadcast,
         r#"INSERT INTO native_live_broadcasts
             (media_id, owner_account_id, channel_id, ingest_key_hash, permanent, scheduled_at,
-             dvr_window_seconds, latency_mode)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             scheduled_starts, dvr_window_seconds, latency_mode)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            RETURNING media_id, status_id, owner_account_id, channel_id,
-                     broadcast_uuid, state, permanent, scheduled_at,
+                     broadcast_uuid, state, permanent, scheduled_at, scheduled_starts,
                      reconnect_deadline, key_generation, dvr_window_seconds, latency_mode"#,
         media_id,
         owner,
@@ -1150,6 +1268,7 @@ pub async fn allocate(
         key_hash.as_slice(),
         permanent,
         scheduled_at,
+        scheduled_starts,
         playback.dvr_window_seconds,
         playback.latency_mode,
     )
@@ -1205,7 +1324,7 @@ pub async fn owned_by_status(
     Ok(sqlx::query_as!(
         Broadcast,
         r#"SELECT b.media_id, b.status_id, b.owner_account_id, b.channel_id,
-                  b.broadcast_uuid, b.state, b.permanent, b.scheduled_at,
+                  b.broadcast_uuid, b.state, b.permanent, b.scheduled_at, b.scheduled_starts,
                   b.reconnect_deadline, b.key_generation,
                   b.dvr_window_seconds, b.latency_mode
            FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id
@@ -1288,7 +1407,7 @@ mod tests {
             channel.id,
             &[5; 32],
             true,
-            None,
+            &[],
             PlaybackOptions {
                 dvr_window_seconds: 600,
                 latency_mode: 1,
@@ -1335,32 +1454,69 @@ mod tests {
         let planned =
             OffsetDateTime::from_unix_timestamp(OffsetDateTime::now_utc().unix_timestamp() + 7200)
                 .unwrap();
+        let next_planned = planned + time::Duration::hours(2);
         assert!(
-            !update_schedule(&pool, live.id, channel.id, Some(planned))
+            !update_schedule(&pool, live.id, channel.id, &[planned])
                 .await
                 .unwrap()
         );
         assert!(
-            update_schedule(&pool, live.id, owner.id, Some(planned))
+            update_schedule(&pool, live.id, owner.id, &[planned, next_planned])
                 .await
                 .unwrap()
+        );
+        let details = details_for_media(&pool, &[media_id]).await.unwrap();
+        assert_eq!(details[&media_id].scheduled_at, Some(planned));
+        assert_eq!(details[&media_id].scheduled_starts, [planned, next_planned]);
+        assert_eq!(
+            calendar_broadcast(&pool, live.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .scheduled_starts,
+            [planned, next_planned]
         );
         assert_eq!(
-            details_for_media(&pool, &[media_id]).await.unwrap()[&media_id].scheduled_at,
-            Some(planned)
+            channel_calendar_broadcasts(&pool, channel.id)
+                .await
+                .unwrap()
+                .len(),
+            2
         );
+        sqlx::query("UPDATE statuses SET visibility = 'unlisted' WHERE id = $1")
+            .bind(live.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(calendar_broadcast(&pool, live.id).await.unwrap().is_some());
+        assert!(
+            channel_calendar_broadcasts(&pool, channel.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        sqlx::query("UPDATE statuses SET visibility = 'private' WHERE id = $1")
+            .bind(live.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(calendar_broadcast(&pool, live.id).await.unwrap().is_none());
+        sqlx::query("UPDATE statuses SET visibility = 'public' WHERE id = $1")
+            .bind(live.id)
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let first = claim_owned(&pool, live.id, owner.id)
             .await
             .unwrap()
             .unwrap();
         assert_eq!(first.playback, changed_options);
-        assert_eq!(
-            details_for_media(&pool, &[media_id]).await.unwrap()[&media_id].scheduled_at,
-            None
-        );
+        let details = details_for_media(&pool, &[media_id]).await.unwrap();
+        assert_eq!(details[&media_id].scheduled_at, Some(next_planned));
+        assert_eq!(details[&media_id].scheduled_starts, [next_planned]);
         assert!(
-            !update_schedule(&pool, live.id, owner.id, Some(planned))
+            !update_schedule(&pool, live.id, owner.id, &[planned])
                 .await
                 .unwrap()
         );
@@ -1383,6 +1539,9 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_ne!(first.session_id, second.session_id);
+        let details = details_for_media(&pool, &[media_id]).await.unwrap();
+        assert_eq!(details[&media_id].scheduled_at, None);
+        assert!(details[&media_id].scheduled_starts.is_empty());
         assert!(replay_eligible(&pool, &first).await.unwrap());
         assert!(
             recoverable_replays(&pool)

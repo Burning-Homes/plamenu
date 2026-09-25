@@ -41,9 +41,9 @@ pub async fn create(
     visibility: &str,
     permanent: bool,
     playback: native_live::PlaybackOptions,
-    scheduled_at: Option<OffsetDateTime>,
+    scheduled_starts: &[OffsetDateTime],
 ) -> Result<Created, ApiError> {
-    validate_schedule(scheduled_at)?;
+    validate_schedules(scheduled_starts)?;
     if !(3..=120).contains(&title.trim().chars().count())
         || description.chars().count() > 10_000
         || !matches!(visibility, "public" | "unlisted")
@@ -62,7 +62,7 @@ pub async fn create(
         channel_id,
         &hash,
         permanent,
-        scheduled_at,
+        scheduled_starts,
         playback,
     )
     .await?
@@ -111,6 +111,18 @@ pub fn validate_schedule(at: Option<OffsetDateTime>) -> Result<(), ApiError> {
                 "Choose a planned start between one minute and one year from now".into(),
             ));
         }
+    }
+    Ok(())
+}
+
+pub fn validate_schedules(starts: &[OffsetDateTime]) -> Result<(), ApiError> {
+    if starts.len() > 16 || starts.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err(ApiError::Unprocessable(
+            "Choose no more than 16 distinct planned starts".into(),
+        ));
+    }
+    for at in starts {
+        validate_schedule(Some(*at))?;
     }
     Ok(())
 }

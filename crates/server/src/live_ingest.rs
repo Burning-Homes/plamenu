@@ -375,9 +375,16 @@ async fn pump(
         }
         InputFormat::BrowserWebm => {
             let gop = (segment_seconds * 30).to_string();
-            command.args(["-f", "matroska", "-i", "pipe:0", "-map", "0:v:0", "-map", "0:a:0?",
+            // FFmpeg's multi-megabyte default probe waits until a Firefox
+            // MediaRecorder stream ends: its WebM chunks are only ~80 KiB/s.
+            // WebM declares its tracks in the first header, so 256 KiB is
+            // enough for bounded, live startup without waiting for EOF.
+            // Canvas capture is variable-rate; WebM may advertise a 1/1000
+            // time base as 1000 fps. Emit a real 30 fps output for both HLS
+            // and replay rather than failing replay validation on metadata.
+            command.args(["-probesize", "262144", "-f", "matroska", "-i", "pipe:0", "-map", "0:v:0", "-map", "0:a:0?",
                 "-vf", "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
-                "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+                "-r", "30", "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
                 "-pix_fmt", "yuv420p", "-g", &gop, "-b:v", "2500k", "-maxrate", "2500k",
                 "-bufsize", "5000k", "-c:a", "aac", "-b:a", "128k"]);
         }

@@ -41,6 +41,8 @@
   - [Webxdc FEP draft](fep/fep-752d.md)
   - [Webxdc app libraries and catalogs](WEBXDC-LIBRARY.md)
 - [Interoperability testing](INTEROPERABILITY.md)
+  - [AP09 video and live progress](AP09-VIDEO-PROGRESS.md)
+  - [AP09 feature acceptance inventory](AP09-FEATURE-INVENTORY.md)
 
 # Contribute and maintain
 

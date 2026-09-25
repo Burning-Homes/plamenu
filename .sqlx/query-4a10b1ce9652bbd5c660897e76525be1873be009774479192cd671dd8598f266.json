@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ls.session_id, ls.started_at, b.dvr_window_seconds AS window_seconds\n         FROM native_live_sessions ls\n         JOIN native_live_broadcasts b ON b.media_id = ls.media_id\n         JOIN statuses s ON s.id = b.status_id\n         WHERE ls.media_id = $1 AND ls.ended_at IS NULL AND b.state = 'live'\n           AND b.dvr_window_seconds > 0\n           AND s.visibility IN ('public', 'unlisted')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "session_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "native_live_sessions",
+            "name": "session_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "native_live_sessions",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "window_seconds",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "dvr_window_seconds"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4a10b1ce9652bbd5c660897e76525be1873be009774479192cd671dd8598f266"
+}

@@ -3653,6 +3653,52 @@ pub async fn status_redirect(
     )
 }
 
+/// A public, read-only frame for oEmbed. It does not use the viewer's session:
+/// third-party framing must never turn a private post into an embeddable one.
+pub async fn status_embed(
+    State(state): State<AppState>,
+    request_locale: Locale,
+    Path(status_id): Path<i64>,
+) -> Result<Response, ApiError> {
+    let focus = status::find_by_id(&state.pool, status_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if focus.uri.is_some()
+        || !matches!(focus.visibility.as_str(), "public" | "unlisted")
+        || status::is_deleted(&state.pool, status_id).await?
+        || !can_view(&state.pool, &focus, None).await?
+    {
+        return Err(ApiError::NotFound);
+    }
+    Box::pin(crate::live_refresh::refresh_statuses(&state, &[status_id])).await;
+    let entity = render_status(&state.pool, &state.config.domain, &focus, None).await?;
+    let permalink = view::Status(&entity).permalink();
+    let ctx = view::Ctx {
+        csrf: None,
+        viewer_id: None,
+        return_to: &permalink,
+        filter_context: Some(view::FilterContext::Thread),
+        prefs: view::ViewPrefs::default(),
+        locale: request_locale,
+        clock: clock_for(None, request_locale),
+        admin: super::session::AdminCapabilities::default(),
+    };
+    let body = html! {
+        div.status-embed {
+            (view::status_preview(&view::Status(&entity), &ctx))
+            p.embed__original { a href=(permalink) target="_blank" rel="noopener noreferrer" {
+                (request_locale.text("status-embed-open-original"))
+            } }
+        }
+    };
+    Ok(layout::focused_shell_localized(
+        &request_locale.text("status-embed-title"),
+        &body,
+        request_locale,
+    )
+    .into_response())
+}
+
 /// Renders a resolved (and already viewer-authorized) status in thread context.
 /// Shared by the `/@handle/{id}` web route and the content-negotiated
 /// `/users/{username}/statuses/{id}` `ActivityPub` route.

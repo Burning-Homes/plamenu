@@ -25,6 +25,7 @@ pub struct Publication {
     pub live_dvr_window_seconds: Option<i32>,
     pub live_latency_mode: Option<i32>,
     pub live_scheduled_at: Option<time::OffsetDateTime>,
+    pub live_scheduled_starts: Option<Vec<time::OffsetDateTime>>,
 }
 
 pub async fn create_channel(
@@ -179,7 +180,8 @@ pub async fn publications<'e, E: PgExecutor<'e>>(
                   d.poster_alt AS "poster_alt?",
                   b.dvr_window_seconds AS "live_dvr_window_seconds?",
                   b.latency_mode AS "live_latency_mode?",
-                  b.scheduled_at AS "live_scheduled_at?"
+                  b.scheduled_at AS "live_scheduled_at?",
+                  b.scheduled_starts AS "live_scheduled_starts?"
            FROM video_publications v JOIN accounts a ON a.id = v.channel_id
            JOIN media_attachments m ON m.id = v.media_id
            LEFT JOIN video_compatibility_posters p ON p.media_id = v.media_id

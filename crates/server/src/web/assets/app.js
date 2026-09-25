@@ -4246,7 +4246,39 @@
     const hlsUrl = video.getAttribute("data-hls");
     if (!hlsUrl) return;
     const goLive = video.closest("figure")?.querySelector(".media__go-live");
+    const progressive = video.getAttribute("src") || video.getAttribute("data-src");
     let hlsPlayer = null;
+    const showLiveFailure = () => {
+      const figure = video.closest("figure");
+      if (!figure || figure.querySelector(".media__live-recovery")) return;
+      figure.classList.add("media--live-failed");
+      const message = document.createElement("p");
+      message.className = "media__live-recovery";
+      message.setAttribute("role", "status");
+      message.textContent = video.dataset.livePlaybackError || "Live playback was interrupted.";
+      const actions = document.createElement("span");
+      actions.className = "media__live-recovery-actions";
+      if (progressive) {
+        const basic = document.createElement("a");
+        basic.href = progressive;
+        basic.textContent = video.dataset.liveBasic || "Try basic stream";
+        actions.appendChild(basic);
+      }
+      const refresh = document.createElement("a");
+      refresh.href = window.location.href;
+      refresh.textContent = video.dataset.liveRefresh || "Refresh broadcast status";
+      refresh.addEventListener("click", (event) => {
+        event.preventDefault();
+        window.location.reload();
+      });
+      actions.appendChild(refresh);
+      message.appendChild(actions);
+      figure.appendChild(message);
+      const bounds = video.getBoundingClientRect();
+      if (bounds.bottom > 0 && bounds.top < window.innerHeight) {
+        message.scrollIntoView({ block: "center" });
+      }
+    };
     const choice = video.closest("figure")?.querySelector(".media__p2p-toggle");
     if (choice && window.RTCPeerConnection && window.crypto?.subtle) {
       choice.checked = peerSharingEnabled();
@@ -4291,8 +4323,6 @@
     // preserve it as the fallback. It must remain attached until the viewer
     // presses play: with no source the browser disables its native play button,
     // so the very `play` event that bootstraps hls.js can never happen.
-    const progressive =
-      video.getAttribute("src") || video.getAttribute("data-src");
     const native = video.canPlayType("application/vnd.apple.mpegurl");
     // Calling video.load() to cancel the progressive request also cancels an
     // already-loading external WebVTT track in Chromium. Replacing only our
@@ -4371,14 +4401,40 @@
               // rather than hammering an origin that has nothing left to
               // serve. The page then shows the ended state on its next load.
               let recoveries = 0;
+              let recoveryDeadline = null;
+              let failed = false;
+              const stopAfterFailedRecovery = () => {
+                if (failed) return;
+                failed = true;
+                clearTimeout(recoveryDeadline);
+                hls.destroy();
+                if (goLive) goLive.hidden = true;
+                showLiveFailure();
+              };
+              hls.on(Hls.Events.FRAG_BUFFERED, () => {
+                recoveries = 0;
+                clearTimeout(recoveryDeadline);
+                recoveryDeadline = null;
+              });
               hls.on(Hls.Events.ERROR, (_evt, data) => {
-                if (!data || !data.fatal) return;
+                if (failed || !data) return;
+                // A live playlist can keep loading successfully while every
+                // segment fails. hls.js calls these errors non-fatal and may
+                // retry forever, so bound the time to a buffered fragment.
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                  recoveryDeadline ||= setTimeout(stopAfterFailedRecovery, 30000);
+                }
+                if (!data.fatal) return;
                 if (data.type === Hls.ErrorTypes.NETWORK_ERROR && recoveries < 3) {
                   recoveries += 1;
-                  hls.startLoad();
+                  // startLoad cannot retry a master that never parsed: there
+                  // are no levels to start. A failed fragment can resume in
+                  // place without throwing away the viewer's DVR position.
+                  if (hls.levels.length) hls.startLoad();
+                  else hls.loadSource(hlsUrl);
                   return;
                 }
-                hls.destroy();
+                stopAfterFailedRecovery();
               });
             }
             // Separated audio (hls.audioTracks) is only known after
@@ -5477,6 +5533,36 @@
     });
   }
 
+  function bindLiveSchedules(root) {
+    root.querySelectorAll("form[data-live-schedules]").forEach(form => {
+      if (form.dataset.liveScheduleBound) return;
+      form.dataset.liveScheduleBound = "true";
+      const helper = form.querySelector("[data-live-schedule-picker]");
+      const picker = form.querySelector("[data-live-schedule-date]");
+      const primary = form.querySelector('[name="scheduled_at"]');
+      const additional = form.querySelector('[name="scheduled_starts"]');
+      const status = form.querySelector("[data-live-schedule-status]");
+      if (!helper || !picker || !primary || !additional || !status) return;
+      helper.hidden = false;
+      form.querySelector("[data-live-schedule-add]").addEventListener("click", () => {
+        const value = picker.value;
+        if (!value) { picker.focus(); return; }
+        const dates = additional.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+        if (primary.value === value || dates.includes(value)) {
+          status.textContent = form.dataset.duplicate;
+          picker.focus();
+          return;
+        }
+        dates.push(value);
+        dates.sort();
+        additional.value = dates.join("\n");
+        picker.value = "";
+        status.textContent = form.dataset.added;
+        picker.focus();
+      });
+    });
+  }
+
   // ---- Wiring -----------------------------------------------------------
   function enhance(root) {
     bindVideoPosterPicker(root);
@@ -5520,6 +5606,7 @@
     bindPush(root);
     bindRemoteHistory(root);
     bindLiveNotifications();
+    bindLiveSchedules(root);
     refreshTimes(root);
   }
 

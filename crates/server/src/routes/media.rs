@@ -463,7 +463,7 @@ pub async fn destroy(
 }
 
 /// One parsed `Range: bytes=…` request against a file of known length.
-enum ByteRange {
+pub(crate) enum ByteRange {
     /// No (or an ignorable) range: serve the whole file with a 200.
     Full,
     /// A satisfiable single range: serve a 206 of `[start, end]` (inclusive).
@@ -475,7 +475,7 @@ enum ByteRange {
 /// Parses a `Range` header for a `total`-byte file. Only single byte ranges
 /// are honored; multipart ranges (rare, and useless for media scrubbing) and
 /// malformed values fall back to the full body, as RFC 9110 permits.
-fn parse_range(header: Option<&axum::http::HeaderValue>, total: u64) -> ByteRange {
+pub(crate) fn parse_range(header: Option<&axum::http::HeaderValue>, total: u64) -> ByteRange {
     let Some(raw) = header.and_then(|value| value.to_str().ok()) else {
         return ByteRange::Full;
     };

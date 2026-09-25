@@ -4,7 +4,7 @@
 use axum::{
     body::Bytes,
     extract::{
-        Path, State,
+        Path, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, HeaderValue, header},
@@ -17,7 +17,7 @@ use serde::Deserialize;
 use super::{
     i18n::Locale,
     layout,
-    session::{WebUser, csrf_rejection},
+    session::{MaybeWebUser, WebUser, csrf_rejection},
     settings::{field, form_pairs, redirect_to},
 };
 use crate::{AppState, error::ApiError};
@@ -95,16 +95,30 @@ fn playback_controls(locale: Locale, selected: native_live::PlaybackOptions) -> 
     }
 }
 
-fn schedule_form(user: &WebUser, id: i64, scheduled_at: Option<time::OffsetDateTime>) -> Markup {
+fn schedule_form(user: &WebUser, id: i64, starts: &[time::OffsetDateTime]) -> Markup {
     let locale = user.locale;
+    let additional = starts
+        .iter()
+        .skip(1)
+        .map(|at| user.clock.input_value(*at))
+        .collect::<Vec<_>>()
+        .join("\n");
     html! {
-        form.settings-form method="post" action=(format!("/web/videos/live/{id}/schedule")) {
+        form.settings-form method="post" action=(format!("/web/videos/live/{id}/schedule")) data-live-schedules
+            data-added=(locale.text("videos-live-schedule-added"))
+            data-duplicate=(locale.text("videos-live-schedule-duplicate")) {
             input type="hidden" name="csrf" value=(user.csrf);
             label.settings-field {
                 span.settings-field__label { (locale.text("videos-live-planned-start")) }
                 input type="datetime-local" name="scheduled_at"
-                    value=(scheduled_at.map(|at| user.clock.input_value(at)).unwrap_or_default());
+                    value=(starts.first().map(|at| user.clock.input_value(*at)).unwrap_or_default());
             }
+            label.settings-field {
+                span.settings-field__label { (locale.text("videos-live-additional-starts")) }
+                textarea name="scheduled_starts" rows="4" { (additional) }
+            }
+            p.settings-field__hint { (locale.text("videos-live-additional-starts-hint")) }
+            (schedule_picker(locale))
             p.settings-field__hint {
                 (locale.text("videos-live-schedule-hint")) " " (user.clock.name())
             }
@@ -128,7 +142,9 @@ async fn creation_form(state: &AppState, user: &WebUser) -> Result<Markup, ApiEr
             @if channels.is_empty() {
                 p { a href="/videos" { (locale.text("videos-new-channel")) } }
             } @else {
-                form.settings-form method="post" action="/web/videos/live" {
+                form.settings-form method="post" action="/web/videos/live" data-live-schedules
+                    data-added=(locale.text("videos-live-schedule-added"))
+                    data-duplicate=(locale.text("videos-live-schedule-duplicate")) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     fieldset.settings-form__group {
                         legend { (locale.text("videos-details")) }
@@ -171,6 +187,12 @@ async fn creation_form(state: &AppState, user: &WebUser) -> Result<Markup, ApiEr
                             span.settings-field__label { (locale.text("videos-live-planned-start")) }
                             input type="datetime-local" name="scheduled_at";
                         }
+                        label.settings-field {
+                            span.settings-field__label { (locale.text("videos-live-additional-starts")) }
+                            textarea name="scheduled_starts" rows="4" {}
+                        }
+                        p.settings-field__hint { (locale.text("videos-live-additional-starts-hint")) }
+                        (schedule_picker(locale))
                         p.settings-field__hint {
                             (locale.text("videos-live-schedule-hint")) " " (user.clock.name())
                         }
@@ -187,12 +209,92 @@ async fn creation_form(state: &AppState, user: &WebUser) -> Result<Markup, ApiEr
     ))
 }
 
+fn schedule_picker(locale: Locale) -> Markup {
+    html! {
+        div hidden data-live-schedule-picker {
+            label.settings-field {
+                span.settings-field__label { (locale.text("videos-live-pick-another-start")) }
+                input type="datetime-local" data-live-schedule-date;
+            }
+            button type="button" data-live-schedule-add { (locale.text("videos-live-add-start")) }
+            p role="status" aria-live="polite" data-live-schedule-status {}
+        }
+    }
+}
+
 pub async fn new_page(State(state): State<AppState>, user: WebUser) -> Response {
     private(
         creation_form(&state, &user)
             .await
             .map(IntoResponse::into_response),
     )
+}
+
+#[derive(Deserialize)]
+pub struct RewindQuery {
+    #[serde(default)]
+    slice: i32,
+}
+
+/// Native controls and an ordinary GET form keep the DVR reachable with
+/// scripts disabled; each selection gets a finite, seekable MP4 snapshot.
+pub async fn rewind_page(
+    State(state): State<AppState>,
+    Path(media_id): Path<i64>,
+    Query(query): Query<RewindQuery>,
+    MaybeWebUser(session): MaybeWebUser,
+    request_locale: Locale,
+) -> Result<Response, ApiError> {
+    if plamenu_db::media::public_access_blocked(&state.pool, media_id).await? {
+        return Err(ApiError::NotFound);
+    }
+    let live = native_live::public_dvr(&state.pool, media_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let media = plamenu_db::media::find_by_ids(&state.pool, &[media_id])
+        .await?
+        .into_iter()
+        .next()
+        .ok_or(ApiError::NotFound)?;
+    let status_id = media.status_id.ok_or(ApiError::NotFound)?;
+    let locale = session.as_ref().map_or(request_locale, |user| user.locale);
+    let elapsed = (time::OffsetDateTime::now_utc() - live.started_at)
+        .whole_seconds()
+        .max(0);
+    let configured = live.window_seconds / crate::routes::live_dvr::CLIP_SECONDS;
+    let available =
+        (elapsed / i64::from(crate::routes::live_dvr::CLIP_SECONDS) + 1).min(i64::from(configured));
+    if query.slice < 0 || i64::from(query.slice) >= available {
+        return Err(ApiError::NotFound);
+    }
+    let bucket = crate::routes::live_dvr::current_bucket();
+    let src = crate::routes::live_dvr::clip_url(media_id, bucket, query.slice);
+    let body = html! {
+        section.column {
+            h1 { (locale.text("status-live-rewind")) }
+            p { (locale.text("status-live-rewind-intro")) }
+            p { a href=(format!("/web/statuses/{status_id}")) { (locale.text("status-live-return")) } }
+            form.settings-form method="get" action=(format!("/videos/live/{media_id}/rewind")) {
+                label.settings-field {
+                    span.settings-field__label { (locale.text("status-live-rewind-position")) }
+                    select name="slice" {
+                        @for slice in 0..available {
+                            @let start = slice * 5;
+                            @let end = start + 5;
+                            option value=(slice) selected[i64::from(query.slice) == slice] {
+                                (start) "–" (end)
+                            }
+                        }
+                    }
+                }
+                button type="submit" { (locale.text("status-live-rewind-load")) }
+            }
+            video.live-rewind-player src=(src) controls playsinline preload="metadata"
+                aria-label=(locale.text("status-live-rewind-player")) {}
+            p.settings-field__hint { (locale.text("status-live-rewind-hint")) }
+        }
+    };
+    Ok(layout::shell(&locale.text("status-live-rewind"), session.as_ref(), &body).into_response())
 }
 
 fn key_page(state: &AppState, user: &WebUser, status_id: i64, title: &str, key: &str) -> Markup {
@@ -269,13 +371,7 @@ async fn create_inner(
     let visibility = field(&pairs, "visibility").unwrap_or("public");
     let permanent = field(&pairs, "permanent") == Some("yes");
     let playback = playback_fields(&pairs)?;
-    let scheduled_at = match field(&pairs, "scheduled_at").filter(|value| !value.trim().is_empty())
-    {
-        Some(raw) => {
-            Some(super::scheduled::resolve_local_instant(state, user, raw, "Planned start").await?)
-        }
-        None => None,
-    };
+    let scheduled_starts = schedule_fields(state, user, &pairs).await?;
     let created = crate::native_live::create(
         state,
         &user.current.account,
@@ -286,10 +382,37 @@ async fn create_inner(
         visibility,
         permanent,
         playback,
-        scheduled_at,
+        &scheduled_starts,
     )
     .await?;
     Ok(key_page(state, user, created.status.id, title, &created.ingest_key).into_response())
+}
+
+async fn schedule_fields(
+    state: &AppState,
+    user: &WebUser,
+    pairs: &[(String, String)],
+) -> Result<Vec<time::OffsetDateTime>, ApiError> {
+    let first = field(pairs, "scheduled_at").unwrap_or_default().trim();
+    let additional = field(pairs, "scheduled_starts").unwrap_or_default();
+    let raw = std::iter::once(first)
+        .chain(additional.lines().map(str::trim))
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if raw.len() > 16 {
+        return Err(ApiError::Unprocessable(
+            "Choose no more than 16 planned starts".into(),
+        ));
+    }
+    let mut starts = Vec::with_capacity(raw.len());
+    for value in raw {
+        starts.push(
+            super::scheduled::resolve_local_instant(state, user, value, "Planned start").await?,
+        );
+    }
+    starts.sort_unstable();
+    crate::native_live::validate_schedules(&starts)?;
+    Ok(starts)
 }
 
 pub async fn manage(State(state): State<AppState>, Path(id): Path<i64>, user: WebUser) -> Response {
@@ -324,14 +447,8 @@ async fn update_schedule_inner(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return Ok(csrf_rejection());
     }
-    let planned = match field(&pairs, "scheduled_at").filter(|value| !value.trim().is_empty()) {
-        Some(raw) => {
-            Some(super::scheduled::resolve_local_instant(state, user, raw, "Planned start").await?)
-        }
-        None => None,
-    };
-    crate::native_live::validate_schedule(planned)?;
-    if !native_live::update_schedule(&state.pool, id, user.current.account.id, planned).await? {
+    let planned = schedule_fields(state, user, &pairs).await?;
+    if !native_live::update_schedule(&state.pool, id, user.current.account.id, &planned).await? {
         return Err(ApiError::Conflict(
             "The planned start can only change while the broadcast is waiting".into(),
         ));
@@ -382,12 +499,11 @@ async fn manage_inner(state: &AppState, user: &WebUser, id: i64) -> Result<Respo
         Vec::new()
     };
     let locale = user.locale;
-    let state_label = match broadcast.state.as_str() {
-        "live" => "videos-live-state-live",
-        "interrupted" => "videos-live-state-interrupted",
-        "ended" => "videos-live-state-ended",
-        _ => "videos-live-state-waiting",
-    };
+    let state_label = live_state_label(&broadcast.state);
+    let calendar_url = format!(
+        "https://{}/videos/live/{id}/calendar.ics",
+        state.config.domain
+    );
     let body = html! {
         section.column {
             h1 { (locale.text("videos-live-manage")) }
@@ -419,7 +535,19 @@ async fn manage_inner(state: &AppState, user: &WebUser, id: i64) -> Result<Respo
             }
             p { (locale.text("videos-live-key-hidden")) }
             @if broadcast.state == "waiting" {
-                (schedule_form(user, id, broadcast.scheduled_at))
+                (schedule_form(user, id, &broadcast.scheduled_starts))
+                section aria-labelledby="live-calendar-heading" {
+                    h3 id="live-calendar-heading" { (locale.text("videos-live-calendar-heading")) }
+                    p { (locale.text("videos-live-calendar-hint")) }
+                    label for="live-calendar-url" { (locale.text("videos-live-calendar-broadcast")) }
+                    input id="live-calendar-url" type="url" readonly value=(&calendar_url);
+                    p { a href=(&calendar_url) {
+                        (locale.text("videos-live-calendar-broadcast"))
+                    } }
+                    p { a href=(format!("{calendar_url}?reminder=15")) {
+                        (locale.text("videos-live-calendar-reminder"))
+                    } }
+                }
                 form.settings-form method="post" action=(format!("/web/videos/live/{id}/playback")) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     fieldset.settings-form__group {
@@ -438,31 +566,88 @@ async fn manage_inner(state: &AppState, user: &WebUser, id: i64) -> Result<Respo
                 button type="submit" aria-describedby="live-rotate-warning" { (locale.text("videos-live-rotate")) }
             }
             @if broadcast.state != "ended" {
-                section.live-browser-publisher hidden data-live-browser
-                    data-status-id=(id) data-csrf=(user.csrf)
-                    data-unsupported=(locale.text("videos-live-browser-unsupported"))
-                    data-connection-error=(locale.text("videos-live-browser-connection-error"))
-                    data-requesting=(locale.text("videos-live-browser-requesting"))
-                    data-slow-connection=(locale.text("videos-live-browser-slow"))
-                    data-on-air=(locale.text("videos-live-browser-on-air"))
-                    data-stopped=(locale.text("videos-live-browser-stopped")) {
-                    h2 { (locale.text("videos-live-browser-title")) }
-                    p { (locale.text("videos-live-browser-intro")) }
-                    div.live-browser-publisher__actions {
-                        button type="button" data-live-camera { (locale.text("videos-live-browser-camera")) }
-                        button type="button" data-live-screen { (locale.text("videos-live-browser-screen")) }
-                        button type="button" data-live-stop hidden { (locale.text("videos-live-browser-stop")) }
-                    }
-                    p role="status" aria-live="polite" data-live-status {}
-                    video autoplay muted playsinline hidden data-live-preview
-                        aria-label=(locale.text("videos-live-browser-preview")) {}
-                }
-                script defer src="/assets/live-broadcast.js" {}
+                (browser_publisher(locale, user, id))
             }
             p { a href=(format!("/web/statuses/{id}")) { (locale.text("videos-preview")) } }
         }
     };
     Ok(layout::shell(&locale.text("videos-live-manage"), Some(user), &body).into_response())
+}
+
+fn browser_publisher(locale: Locale, user: &WebUser, id: i64) -> Markup {
+    html! {
+        section.live-browser-publisher hidden data-live-browser
+            data-status-id=(id) data-csrf=(user.csrf)
+            data-unsupported=(locale.text("videos-live-browser-unsupported"))
+            data-connection-error=(locale.text("videos-live-browser-connection-error"))
+            data-start-error=(locale.text("videos-live-browser-start-error"))
+            data-start-timeout=(locale.text("videos-live-browser-start-timeout"))
+            data-permission-denied=(locale.text("videos-live-browser-permission-denied"))
+            data-device-unavailable=(locale.text("videos-live-browser-device-unavailable"))
+            data-device-busy=(locale.text("videos-live-browser-device-busy"))
+            data-capture-cancelled=(locale.text("videos-live-browser-capture-cancelled"))
+            data-requesting=(locale.text("videos-live-browser-requesting"))
+            data-slow-connection=(locale.text("videos-live-browser-slow"))
+            data-on-air=(locale.text("videos-live-browser-on-air"))
+            data-current-camera=(locale.text("videos-live-browser-current-camera"))
+            data-current-screen=(locale.text("videos-live-browser-current-screen"))
+            data-switching=(locale.text("videos-live-browser-switching"))
+            data-switch-failed=(locale.text("videos-live-browser-switch-failed"))
+            data-switch-camera=(locale.text("videos-live-browser-switch-camera"))
+            data-switch-screen=(locale.text("videos-live-browser-switch-screen"))
+            data-live-camera-label=(locale.text("videos-live-browser-camera-live"))
+            data-live-screen-label=(locale.text("videos-live-browser-screen-live"))
+            data-stopped=(locale.text("videos-live-browser-stopped"))
+            data-camera-unknown=(locale.text("videos-live-browser-unknown-camera"))
+            data-mic-unknown=(locale.text("videos-live-browser-unknown-mic")) {
+            h2 { (locale.text("videos-live-browser-title")) }
+            p { (locale.text("videos-live-browser-intro")) }
+            (browser_capture_controls(locale))
+            div.live-browser-publisher__actions {
+                button type="button" data-live-camera { (locale.text("videos-live-browser-camera")) }
+                button type="button" data-live-screen { (locale.text("videos-live-browser-screen")) }
+                button type="button" data-live-stop hidden { (locale.text("videos-live-browser-stop")) }
+            }
+            p role="status" aria-live="polite" data-live-status {}
+            video autoplay muted playsinline hidden data-live-preview
+                aria-label=(locale.text("videos-live-browser-preview")) {}
+        }
+        script defer src="/assets/live-broadcast.js" {}
+    }
+}
+
+fn browser_capture_controls(locale: Locale) -> Markup {
+    html! {
+        fieldset.live-browser-publisher__devices hidden data-live-devices {
+            legend { (locale.text("videos-live-browser-devices")) }
+            label {
+                span { (locale.text("videos-live-browser-camera-device")) }
+                select data-live-camera-device {
+                    option value="" { (locale.text("videos-live-browser-default-camera")) }
+                }
+            }
+            label {
+                span { (locale.text("videos-live-browser-mic-device")) }
+                select data-live-mic-device {
+                    option value="" { (locale.text("videos-live-browser-default-mic")) }
+                }
+            }
+            label.live-browser-publisher__screen-audio {
+                input type="checkbox" checked data-live-screen-audio;
+                (locale.text("videos-live-browser-screen-audio"))
+            }
+            p.settings-field__hint { (locale.text("videos-live-browser-device-hint")) }
+        }
+    }
+}
+
+fn live_state_label(state: &str) -> &'static str {
+    match state {
+        "live" => "videos-live-state-live",
+        "interrupted" => "videos-live-state-interrupted",
+        "ended" => "videos-live-state-ended",
+        _ => "videos-live-state-waiting",
+    }
 }
 
 pub async fn rotate_key(

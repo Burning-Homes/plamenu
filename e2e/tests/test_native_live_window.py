@@ -219,6 +219,37 @@ def test_native_live_dvr_window_and_viewer_pressure(
                 f"p95 {metrics['p95_ms']} ms, max {metrics['max_ms']} ms; "
                 f"remux RSS {after_rss} KiB")
 
+        with step("native no-JS rewind can seek the configured historical window"):
+            # The accelerated encoder advances media time 20x faster than wall
+            # time, so exercise the oldest allowed slice through the media URL.
+            slice_number = dvr_minutes // 5 - 1
+            bucket = int(time.time() // 60)
+            rewind_url = (f"{config.PLAMENU_URL}/media/live/{media_id}/rewind/"
+                          f"{bucket}/{slice_number}.mp4")
+            def seek_request(_index):
+                return requests.get(rewind_url, headers={"Range": "bytes=0-63"},
+                                    verify=False, timeout=30)
+            with ThreadPoolExecutor(max_workers=16) as pool:
+                seeks = list(pool.map(seek_request, range(16)))
+            assert all(response.status_code == 206 and len(response.content) == 64
+                       for response in seeks)
+            clip = _get(rewind_url)
+            clip.raise_for_status()
+            assert clip.headers["content-type"].startswith("video/mp4")
+            assert clip.content[4:8] == b"ftyp"
+            probe = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "csv=p=0", "-i", "pipe:0"],
+                input=clip.content, capture_output=True, check=True,
+            )
+            duration = float(probe.stdout)
+            assert 20 < duration <= 301, duration
+            assert seeks[0].headers["content-range"].startswith("bytes 0-63/")
+            assert len(list((scratch / "rewind").glob(f"{bucket}-{slice_number}.mp4"))) == 1
+            assert _get(rewind_url.replace(f"/{slice_number}.mp4", "/99.mp4")).status_code == 404
+            log(f"slice {slice_number} duration {duration:.1f}s, "
+                f"{len(clip.content)} bytes; 16 concurrent byte-range seeks 206")
+
         with step("stop and publish the long recording without leaving live scratch"):
             _, error = publisher.communicate(input=b"q\n", timeout=30)
             assert publisher.returncode == 0, error.decode(errors="replace")[-700:]

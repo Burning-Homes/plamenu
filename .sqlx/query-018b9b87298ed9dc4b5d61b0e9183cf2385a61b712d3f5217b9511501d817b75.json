@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT b.media_id, b.status_id, b.owner_account_id, b.channel_id,\n                  b.broadcast_uuid, b.state, b.permanent, b.scheduled_at,\n                  b.reconnect_deadline, b.key_generation,\n                  b.dvr_window_seconds, b.latency_mode\n           FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id\n           WHERE b.status_id = $1 AND b.owner_account_id = $2\n             AND s.account_id = $2 AND s.uri IS NULL",
+  "query": "INSERT INTO native_live_broadcasts\n            (media_id, owner_account_id, channel_id, ingest_key_hash, permanent, scheduled_at,\n             scheduled_starts, dvr_window_seconds, latency_mode)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n           RETURNING media_id, status_id, owner_account_id, channel_id,\n                     broadcast_uuid, state, permanent, scheduled_at, scheduled_starts,\n                     reconnect_deadline, key_generation, dvr_window_seconds, latency_mode",
   "describe": {
     "columns": [
       {
@@ -93,6 +93,17 @@
       },
       {
         "ordinal": 8,
+        "name": "scheduled_starts",
+        "type_info": "TimestamptzArray",
+        "origin": {
+          "Table": {
+            "table": "native_live_broadcasts",
+            "name": "scheduled_starts"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
         "name": "reconnect_deadline",
         "type_info": "Timestamptz",
         "origin": {
@@ -103,7 +114,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "key_generation",
         "type_info": "Int8",
         "origin": {
@@ -114,7 +125,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "dvr_window_seconds",
         "type_info": "Int4",
         "origin": {
@@ -125,7 +136,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "latency_mode",
         "type_info": "Int4",
         "origin": {
@@ -139,7 +150,14 @@
     "parameters": {
       "Left": [
         "Int8",
-        "Int8"
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Bool",
+        "Timestamptz",
+        "TimestamptzArray",
+        "Int4",
+        "Int4"
       ]
     },
     "nullable": [
@@ -151,11 +169,12 @@
       false,
       false,
       true,
+      false,
       true,
       false,
       false,
       false
     ]
   },
-  "hash": "528d973b2f323d151464b9358413bae4b7d2916292d19318b1082ca153d98565"
+  "hash": "018b9b87298ed9dc4b5d61b0e9183cf2385a61b712d3f5217b9511501d817b75"
 }

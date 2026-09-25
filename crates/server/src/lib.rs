@@ -228,6 +228,7 @@ fn content_security_policy(
     webxdc_domain: &str,
     csp_reporting: bool,
     oauth_form_action: Option<&str>,
+    embeddable: bool,
 ) -> axum::http::HeaderValue {
     use base64::Engine;
     use sha2::Digest;
@@ -247,6 +248,7 @@ fn content_security_policy(
         || "'self'".to_owned(),
         |callback| format!("'self' {callback}"),
     );
+    let frame_ancestors = if embeddable { "*" } else { "'none'" };
     // Federated P2P HLS needs to signal to the publisher's signed WSS tracker.
     // Hash manifests and all media HTTP still use our same-origin proxy; do
     // not broaden connect-src to cross-origin HTTPS.
@@ -257,14 +259,14 @@ fn content_security_policy(
              img-src {media_sources}; media-src {media_sources}; connect-src 'self' wss:; \
              worker-src 'self' blob:; frame-src https://*.{webxdc_domain}; \
              manifest-src 'self'; form-action {form_action}; \
-             base-uri 'none'; frame-ancestors 'none'; object-src 'none'{reporting}"
+             base-uri 'none'; frame-ancestors {frame_ancestors}; object-src 'none'{reporting}"
     ))
     .expect("a base64 hash is always a valid header value")
 }
 
-/// Global response hardening. Denies framing of every HTML page (no first-party
-/// surface is meant to be embedded, so this blocks clickjacking of login, OAuth
-/// consent, and settings actions) and marks credential-bearing responses
+/// Global response hardening. Denies framing of every HTML page except the
+/// public, read-only status embed; this blocks clickjacking of login, OAuth
+/// consent, and settings actions, and marks credential-bearing responses
 /// `no-store` so browsers and shared proxies never retain them. Wired in
 /// application middleware so direct deployments are protected regardless of the
 /// reverse proxy.
@@ -276,9 +278,16 @@ async fn security_headers(
     use axum::http::{HeaderValue, header};
 
     let sensitive = is_credential_path(request.uri().path());
+    let embeddable_status = request
+        .uri()
+        .path()
+        .strip_prefix("/web/statuses/")
+        .and_then(|rest| rest.strip_suffix("/embed"))
+        .is_some_and(|id| id.parse::<i64>().is_ok());
     let security = RequestSecurityContext::default();
     request.extensions_mut().insert(security.clone());
     let mut response = next.run(request).await;
+    let embeddable_response = embeddable_status && response.status().is_success();
     let headers = response.headers_mut();
     // Content-type sniffing is refused everywhere, not just on HTML. It
     // matters most on `/media/{file}`, which serves attacker-supplied bytes
@@ -321,7 +330,9 @@ async fn security_headers(
         .expect("validated domains form valid CSP values");
         headers.insert(header::CONTENT_SECURITY_POLICY, policy);
     } else if is_html {
-        headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+        if !embeddable_response {
+            headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+        }
         headers.insert(
             header::CONTENT_SECURITY_POLICY,
             content_security_policy(
@@ -329,6 +340,7 @@ async fn security_headers(
                 &state.config.webxdc_domain(),
                 state.config.csp_reporting,
                 security.oauth_form_action(),
+                embeddable_response,
             ),
         );
     }

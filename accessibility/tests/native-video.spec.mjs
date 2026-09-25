@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { createServer } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -45,14 +46,24 @@ async function publish(page, projectName, noScript) {
   await page.goto('/videos');
   await expect(page.getByRole('heading', { name: 'Videos', exact: true })).toBeVisible();
   const name = `film_${Date.now().toString(36)}_${projectName.slice(0, 3)}`;
-  const channelForm = page.locator('form[action="/web/video-channels"]');
-  if (!await channelForm.isVisible()) await page.locator('summary').filter({ hasText: 'Create a video channel' }).click();
-  await channelForm.getByLabel('Channel address').fill(name);
-  await channelForm.getByLabel('Channel name').fill(`Films ${name}`);
-  await channelForm.getByRole('button', { name: 'Create a video channel' }).click();
-  await page.waitForURL(url => url.pathname === '/videos');
-  const form = page.locator('form[action="/web/videos"]');
-  await form.getByRole('combobox', { name: 'Channel', exact: true }).selectOption({ label: `Films ${name}` });
+  let channelName = `Films ${name}`;
+  let form = page.locator('form[action="/web/videos"]');
+  const ownedCount = await form.getByRole('combobox', { name: 'Channel', exact: true }).locator('option').count();
+  if (ownedCount >= 50) {
+    // Long-running local matrices retain evidence channels. Reuse one at the
+    // supported cap instead of deleting existing local-instance data.
+    channelName = (await form.getByRole('combobox', { name: 'Channel', exact: true })
+      .locator('option').first().textContent()).trim();
+  } else {
+    const channelForm = page.locator('form[action="/web/video-channels"]');
+    if (!await channelForm.isVisible()) await page.locator('summary').filter({ hasText: 'Create a video channel' }).click();
+    await channelForm.getByLabel('Channel address').fill(name);
+    await channelForm.getByLabel('Channel name').fill(`Films ${name}`);
+    await channelForm.getByRole('button', { name: 'Create a video channel' }).click();
+    await page.waitForURL(url => url.pathname === '/videos');
+    form = page.locator('form[action="/web/videos"]');
+  }
+  await form.getByRole('combobox', { name: 'Channel', exact: true }).selectOption({ label: channelName });
   await form.getByLabel('Video title').fill(`Browser video ${name}`);
   await form.getByLabel('Description', { exact: true }).fill('Native video from an ordinary HTML form.');
   await form.getByLabel('Language code').fill('en');
@@ -193,6 +204,72 @@ async function publish(page, projectName, noScript) {
   await player.evaluate(video => video.pause());
   const permalink = page.url();
   const statusId = new URL(permalink).pathname.split('/').pop();
+  const embedUrl = `${new URL(permalink).origin}/web/statuses/${statusId}/embed`;
+  const oembedResponse = await page.request.get(`/api/oembed?url=${encodeURIComponent(permalink)}`);
+  expect(oembedResponse.status()).toBe(200);
+  const oembed = await oembedResponse.json();
+  expect(oembed.html).toContain(`<iframe class="plamenu-embed" src="${embedUrl}"`);
+  const embedResponse = await page.request.get(embedUrl);
+  expect(embedResponse.status()).toBe(200);
+  expect(embedResponse.headers()['content-security-policy']).toContain('frame-ancestors *');
+  expect(embedResponse.headers()['x-frame-options']).toBeUndefined();
+  expect(await embedResponse.text()).toContain('media__p2p-toggle');
+  if (noScript) {
+    const standaloneEmbed = await page.context().newPage();
+    try {
+      await standaloneEmbed.goto(embedUrl);
+      const basicVideo = standaloneEmbed.locator('video').first();
+      await expect(basicVideo).toBeVisible();
+      await expect(standaloneEmbed.locator('.media__p2p-toggle')).toBeHidden();
+      await basicVideo.evaluate(video => { video.muted = true; video.play().catch(() => {}); });
+      await expect.poll(() => basicVideo.evaluate(video => video.currentTime)).toBeGreaterThan(0.1);
+    } finally {
+      await standaloneEmbed.close();
+    }
+  }
+  if (!noScript && projectName === 'chromium-desktop') {
+    const host = await page.context().newPage();
+    const hostServer = createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(`<!doctype html><html><title>Embed host</title><body>${oembed.html}</body></html>`);
+    });
+    await new Promise(resolve => hostServer.listen(0, '127.0.0.1', resolve));
+    const trackerSockets = [];
+    const peerAssets = [];
+    host.on('websocket', socket => { if (socket.url().includes('/tracker/socket')) trackerSockets.push(socket.url()); });
+    host.on('request', request => { if (request.url().includes('p2p-media-loader')) peerAssets.push(request.url()); });
+    try {
+      // A real loopback host is cross-origin but in the same private-network
+      // address space; a mocked public host would be blocked by Chromium PNA.
+      await host.goto(`http://127.0.0.1:${hostServer.address().port}/`);
+      const frame = host.frameLocator('iframe.plamenu-embed');
+      await expect(frame.locator('video[data-hls]')).toBeVisible();
+      const choice = frame.getByRole('checkbox', { name: 'Share video with other viewers' });
+      await expect(choice).toBeChecked();
+      expect(await frame.locator('figure[data-p2p="true"]').evaluate(figure => {
+        const control = figure.querySelector('.media__p2p').getBoundingClientRect();
+        const video = figure.querySelector('video').getBoundingClientRect();
+        return control.bottom <= video.top;
+      })).toBe(true);
+      await host.locator('iframe.plamenu-embed').screenshot({ path: '../target/e2e/native-video-p2p-embed-before.png' });
+      await choice.focus();
+      await host.keyboard.press('Space');
+      await expect(choice).not.toBeChecked();
+      const embeddedPlayer = frame.locator('video[data-hls]');
+      await embeddedPlayer.evaluate(video => { video.muted = true; video.play().catch(() => {}); });
+      await expect.poll(() => embeddedPlayer.evaluate(video => video.currentTime)).toBeGreaterThan(0.1);
+      expect(trackerSockets).toEqual([]);
+      expect(peerAssets).toEqual([]);
+      expect(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+      await host.locator('iframe.plamenu-embed').screenshot({ path: '../target/e2e/native-video-p2p-embed.png' });
+      await host.locator('iframe.plamenu-embed').evaluate(element => { element.width = '320'; });
+      expect(await frame.locator('body').evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+      await host.locator('iframe.plamenu-embed').screenshot({ path: '../target/e2e/native-video-p2p-embed-320.png' });
+    } finally {
+      await host.close();
+      await new Promise(resolve => hostServer.close(resolve));
+    }
+  }
   await page.locator(`#post-${statusId}`).getByTitle('More options', { exact: true }).click();
   await expect(page.locator(`form[action="/web/statuses/${statusId}/redraft"]`)).toHaveCount(0);
   await page.getByRole('link', { name: 'Edit', exact: true }).click();
@@ -223,15 +300,16 @@ async function publish(page, projectName, noScript) {
   await expect(edit.getByRole('textbox', { name: 'Post text', exact: true })).toHaveValue(description);
   await page.goto('/videos');
   await page.getByRole('navigation', { name: 'Your video channels', exact: true })
-    .getByRole('link', { name: `Films ${name}`, exact: true }).click();
+    .getByRole('link', { name: channelName, exact: true }).click();
   await expect(page.getByText(editedTitle, { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Hot', exact: true })).toHaveCount(0);
   await expect(page.getByText('Video channel', { exact: true })).toBeVisible();
   await expect(page.locator('.profile__badge').filter({ hasText: /^Group$/ })).toHaveCount(0);
-  await expect(page.locator('.status__boost')).toContainText('published on');
+  await expect(page.locator('.status__boost').first()).toContainText('published on');
 }
 
 test('native video upload, review and publication', async ({ page }, info) => {
+  test.setTimeout(120_000);
   await publish(page, info.project.name, false);
 });
 test('native video upload, captions and publication @no-js', async ({ page }, info) => {

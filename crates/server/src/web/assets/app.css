@@ -312,6 +312,38 @@ img.emoji {
   padding: var(--space-4);
 }
 
+.focused-main:has(.status-embed) {
+  max-width: none;
+  padding: var(--space-2);
+}
+
+/* In a small frame, the peer-sharing choice must precede Play. Keep the ALT
+   badge and quality selector in the flow instead of overlaid on that choice. */
+.status-embed .media--video[data-p2p="true"] {
+  display: flex;
+  flex-direction: column;
+
+  .media__p2p { order: -3; }
+  .media__badges {
+    position: static;
+    order: -2;
+    padding: var(--space-1) var(--space-2);
+    background: var(--surface-2);
+  }
+  .video-quality {
+    position: static;
+    order: -1;
+    align-self: flex-end;
+    margin: var(--space-1);
+  }
+  .media__go-live { position: static; }
+}
+
+.embed__original {
+  margin: var(--space-2) var(--space-3);
+  overflow-wrap: anywhere;
+}
+
 /* Branded, deliberately small network-failure destination cached by the PWA
    worker. It uses the ordinary theme tokens, so the page matches the launch
    screen and current colour scheme without shipping a second inline style. */
@@ -7985,9 +8017,9 @@ a.settings-button--plain {
   filter: brightness(0.55);
 }
 
-/* Multiple dates need readable room below the poster; keeping the ordinary
-   fixed-aspect overlay would cover the disclosure on narrow/no-JS screens. */
-.media--live-offline[data-multiple-schedules="true"] {
+/* Planned dates and calendar actions need room below the poster on narrow and
+   no-JS screens; the ordinary fixed-aspect overlay would obscure them. */
+.media--live-offline[data-has-schedules="true"] {
   aspect-ratio: auto;
 
   img {
@@ -8000,6 +8032,16 @@ a.settings-button--plain {
     color: var(--text);
     background: var(--surface);
   }
+}
+
+.media__live-calendars {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  min-inline-size: 0;
+
+  a { overflow-wrap: anywhere; }
+  p { margin: 0; font-size: 0.8125rem; color: var(--text-muted); }
 }
 
 .media__live-state {
@@ -8107,6 +8149,35 @@ a.settings-button--plain {
   font-size: 0.875rem;
 }
 
+.live-rewind-player {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-block: var(--space-3);
+}
+
+.media--video.media--live-failed {
+  aspect-ratio: auto;
+  max-block-size: none;
+}
+
+.media__live-recovery {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+  border-block-start: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.media__live-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
 /* A transcript extends the figure below the bounded player. Keep the player
    itself capped without clipping the disclosure on single-attachment posts. */
 .status__media[data-count="1"] .media--video {
@@ -8115,6 +8186,14 @@ a.settings-button--plain {
   video {
     max-block-size: 32rem;
   }
+}
+
+.status-embed .status__media[data-count="1"] .media--video video {
+  inline-size: 100%;
+  block-size: 14rem;
+  max-block-size: 14rem;
+  object-fit: contain;
+  background: #000;
 }
 .video-quality {
   position: absolute;
@@ -8475,6 +8554,36 @@ a.settings-button--plain {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+.live-browser-publisher__actions button:disabled {
+  opacity: .6;
+  cursor: default;
+}
+.live-browser-publisher__devices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-3);
+  min-inline-size: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.live-browser-publisher__devices legend {
+  padding-inline: var(--space-2);
+  font-weight: 600;
+}
+.live-browser-publisher__devices label:not(.live-browser-publisher__screen-audio) {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+.live-browser-publisher__devices select {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.live-browser-publisher__screen-audio,
+.live-browser-publisher__devices .settings-field__hint {
+  grid-column: 1 / -1;
 }
 .live-browser-publisher video {
   width: 100%;

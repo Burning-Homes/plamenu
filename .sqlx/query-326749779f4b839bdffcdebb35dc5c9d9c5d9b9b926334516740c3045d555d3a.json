@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE native_live_broadcasts SET state = 'live',\n         scheduled_starts = CASE WHEN NOT permanent THEN '{}'::timestamptz[]\n                                 WHEN state = 'waiting' THEN scheduled_starts[2:16]\n                                 ELSE scheduled_starts END,\n         scheduled_at = CASE WHEN NOT permanent THEN NULL\n                             WHEN state = 'waiting' THEN scheduled_starts[2]\n                             ELSE scheduled_at END,\n         reconnect_deadline = NULL, started_at = COALESCE(started_at, now()) WHERE media_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "326749779f4b839bdffcdebb35dc5c9d9c5d9b9b926334516740c3045d555d3a"
+}

@@ -190,9 +190,22 @@ pub fn oembed_entity(
     };
     let escaped_status_url = plamenu_ap::text::escape_html(&status_url);
     let escaped_author = plamenu_ap::text::escape_html(&author.username);
-    let html = format!(
-        r#"<blockquote class="plamenu-embed" data-embed-url="{escaped_status_url}/embed"><a href="{escaped_status_url}" target="_blank" rel="noopener noreferrer">Post by @{escaped_author}</a></blockquote>"#
-    );
+    let public_embed = matches!(item.visibility.as_str(), "public" | "unlisted");
+    let embed_width = width.clamp(1, 800);
+    let embed_height = height.unwrap_or(600).clamp(1, 1000);
+    let html = if public_embed {
+        let frame_url = plamenu_ap::text::escape_html(&format!(
+            "https://{domain}/web/statuses/{}/embed",
+            item.id
+        ));
+        format!(
+            r#"<iframe class="plamenu-embed" src="{frame_url}" title="Post by @{escaped_author}" width="{embed_width}" height="{embed_height}" loading="lazy" referrerpolicy="no-referrer" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen><a href="{escaped_status_url}">Open post by @{escaped_author}</a></iframe>"#
+        )
+    } else {
+        format!(
+            r#"<blockquote class="plamenu-embed"><a href="{escaped_status_url}" target="_blank" rel="noopener noreferrer">Post by @{escaped_author}</a></blockquote>"#
+        )
+    };
     json!({
         "type": "rich",
         "version": "1.0",
@@ -202,7 +215,7 @@ pub fn oembed_entity(
         "provider_url": format!("https://{domain}"),
         "cache_age": 86400,
         "html": html,
-        "width": width,
-        "height": height,
+        "width": embed_width,
+        "height": public_embed.then_some(embed_height).or(height),
     })
 }
