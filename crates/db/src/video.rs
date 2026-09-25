@@ -4,6 +4,278 @@ use sqlx::{PgConnection, PgExecutor};
 
 use crate::DbError;
 
+/// A public Video and the actor a viewer subscribes to for future videos.
+/// Native publications and verified remote Videos use their channel; other
+/// remote Videos fall back to their author.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DiscoveryHit {
+    pub status_id: i64,
+    pub channel_id: i64,
+}
+
+/// Keyset-paged Video catalogue. Search uses a dedicated partial GIN index;
+/// moderation and follow checks run only on a bounded newest-match window.
+/// Fetch one extra row to decide whether an Older link is warranted.
+pub async fn discover(
+    pool: &sqlx::PgPool,
+    query: Option<&str>,
+    viewer: Option<i64>,
+    followed: bool,
+    before: Option<i64>,
+    limit: i64,
+) -> Result<Vec<DiscoveryHit>, DbError> {
+    Ok(sqlx::query_as!(
+        DiscoveryHit,
+        r#"WITH candidates AS MATERIALIZED (
+            SELECT s.id, s.account_id,
+                   COALESCE(v.channel_id, r.channel_id, s.account_id) AS channel_id
+            FROM statuses s
+            LEFT JOIN video_publications v ON v.status_id = s.id
+            LEFT JOIN remote_video_channels r ON r.status_id = s.id
+            WHERE s.object_type = 'Video' AND s.visibility = 'public'
+              AND s.reblog_of_id IS NULL AND s.deleted_at IS NULL
+              AND s.ingest_provenance <> 'history'
+              AND ($1::bigint IS NULL OR s.id < $1)
+              AND ($2::text IS NULL OR
+                   to_tsvector('simple', coalesce(s.title, '') || ' ' || s.content)
+                     @@ websearch_to_tsquery('simple', $2))
+              AND EXISTS (SELECT 1 FROM media_attachments m
+                          WHERE m.status_id = s.id
+                            AND (m.kind IN ('video', 'gifv') OR m.content_type LIKE 'video/%')
+                            AND (m.processing = 'complete' OR m.download_on_demand))
+              AND (NOT $4::boolean OR EXISTS (
+                   SELECT 1 FROM follows f WHERE f.account_id = $3
+                     AND f.target_account_id = COALESCE(v.channel_id, r.channel_id, s.account_id)
+                     AND NOT f.pending))
+            ORDER BY s.id DESC LIMIT 1000
+        )
+        SELECT c.id AS "status_id!", c.channel_id AS "channel_id!"
+        FROM candidates c
+        WHERE NOT account_hidden($3, c.account_id)
+          AND NOT account_hidden($3, c.channel_id)
+        ORDER BY c.id DESC LIMIT $5"#,
+        before,
+        query,
+        viewer,
+        followed,
+        limit,
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Whether an actor may be shown as a public video library. Native channels
+/// also depend on their owner; a suspended/blocked owner must not leave an
+/// otherwise discoverable channel page behind.
+pub async fn library_visible(
+    pool: &sqlx::PgPool,
+    channel_id: i64,
+    viewer: Option<i64>,
+) -> Result<bool, DbError> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM accounts a
+             LEFT JOIN video_channels v ON v.account_id = a.id
+             WHERE a.id = $1 AND NOT account_hidden($2, a.id)
+               AND (v.owner_account_id IS NULL OR NOT account_hidden($2, v.owner_account_id))
+           ) AS "visible!""#,
+        channel_id,
+        viewer,
+    )
+    .fetch_one(pool)
+    .await?)
+}
+
+/// A single channel/creator's public Video library, indexed by
+/// `video_publications(channel_id, status_id)` for native publications,
+/// `remote_video_channels(channel_id, status_id)` for verified imported
+/// channels and `statuses(account_id, id)` for author-only imported Videos.
+/// Both branches filter before their bounded window, so search and deep
+/// keyset pages cannot disappear behind unrelated global catalogue entries.
+pub async fn discover_channel(
+    pool: &sqlx::PgPool,
+    channel_id: i64,
+    query: Option<&str>,
+    viewer: Option<i64>,
+    before: Option<i64>,
+    limit: i64,
+) -> Result<Vec<DiscoveryHit>, DbError> {
+    Ok(sqlx::query_as!(
+        DiscoveryHit,
+        r#"WITH candidates AS MATERIALIZED (
+            SELECT scoped.id, scoped.account_id, scoped.channel_id FROM (
+                (SELECT s.id, s.account_id, v.channel_id
+                 FROM video_publications v JOIN statuses s ON s.id = v.status_id
+                 WHERE v.channel_id = $1
+                   AND s.object_type = 'Video' AND s.visibility = 'public'
+                   AND s.reblog_of_id IS NULL AND s.deleted_at IS NULL
+                   AND s.ingest_provenance <> 'history'
+                   AND ($2::bigint IS NULL OR s.id < $2)
+                   AND ($3::text IS NULL OR
+                        to_tsvector('simple', coalesce(s.title, '') || ' ' || s.content)
+                          @@ websearch_to_tsquery('simple', $3))
+                   AND EXISTS (SELECT 1 FROM media_attachments m
+                               WHERE m.status_id = s.id
+                                 AND (m.kind IN ('video', 'gifv') OR m.content_type LIKE 'video/%')
+                                 AND (m.processing = 'complete' OR m.download_on_demand))
+                ORDER BY v.status_id DESC LIMIT 1000)
+                UNION ALL
+                (SELECT s.id, s.account_id, r.channel_id
+                 FROM remote_video_channels r JOIN statuses s ON s.id = r.status_id
+                 WHERE r.channel_id = $1
+                   AND s.object_type = 'Video' AND s.visibility = 'public'
+                   AND s.reblog_of_id IS NULL AND s.deleted_at IS NULL
+                   AND s.ingest_provenance <> 'history'
+                   AND ($2::bigint IS NULL OR s.id < $2)
+                   AND ($3::text IS NULL OR
+                        to_tsvector('simple', coalesce(s.title, '') || ' ' || s.content)
+                          @@ websearch_to_tsquery('simple', $3))
+                   AND EXISTS (SELECT 1 FROM media_attachments m
+                               WHERE m.status_id = s.id
+                                 AND (m.kind IN ('video', 'gifv') OR m.content_type LIKE 'video/%')
+                                 AND (m.processing = 'complete' OR m.download_on_demand))
+                 ORDER BY r.status_id DESC LIMIT 1000)
+                UNION ALL
+                (SELECT s.id, s.account_id, s.account_id AS channel_id
+                 FROM statuses s
+                 WHERE s.account_id = $1
+                   AND NOT EXISTS (SELECT 1 FROM video_publications v WHERE v.status_id = s.id)
+                   AND NOT EXISTS (SELECT 1 FROM remote_video_channels r WHERE r.status_id = s.id)
+                   AND s.object_type = 'Video' AND s.visibility = 'public'
+                   AND s.reblog_of_id IS NULL AND s.deleted_at IS NULL
+                   AND s.ingest_provenance <> 'history'
+                   AND ($2::bigint IS NULL OR s.id < $2)
+                   AND ($3::text IS NULL OR
+                        to_tsvector('simple', coalesce(s.title, '') || ' ' || s.content)
+                          @@ websearch_to_tsquery('simple', $3))
+                   AND EXISTS (SELECT 1 FROM media_attachments m
+                               WHERE m.status_id = s.id
+                                 AND (m.kind IN ('video', 'gifv') OR m.content_type LIKE 'video/%')
+                                 AND (m.processing = 'complete' OR m.download_on_demand))
+                 ORDER BY s.id DESC LIMIT 1000)
+            ) scoped ORDER BY scoped.id DESC LIMIT 1000
+        )
+        SELECT c.id AS "status_id!", c.channel_id AS "channel_id!"
+        FROM candidates c
+        WHERE NOT account_hidden($4, c.account_id)
+          AND NOT account_hidden($4, c.channel_id)
+        ORDER BY c.id DESC LIMIT $5"#,
+        channel_id,
+        before,
+        query,
+        viewer,
+        limit,
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Reconciles the verified channel of an imported Video. An Update can move a
+/// Video between channels; no attribution leaves it in the author's library.
+pub async fn set_remote_channel(
+    pool: &sqlx::PgPool,
+    status_id: i64,
+    channel_id: Option<i64>,
+) -> Result<(), DbError> {
+    if let Some(channel_id) = channel_id {
+        sqlx::query(
+            "INSERT INTO remote_video_channels (status_id, channel_id) VALUES ($1, $2) \
+             ON CONFLICT (status_id) DO UPDATE SET channel_id = EXCLUDED.channel_id",
+        )
+        .bind(status_id)
+        .bind(channel_id)
+        .execute(pool)
+        .await?;
+    } else {
+        sqlx::query("DELETE FROM remote_video_channels WHERE status_id = $1")
+            .bind(status_id)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct RemoteChannelBackfill {
+    pub status_id: i64,
+    pub uri: String,
+    pub account_id: i64,
+    pub attempts: i32,
+}
+
+/// Lease at most one older public remote Video for channel verification. The
+/// catalogue's partial newest index bounds the ordered scan; leases survive a
+/// worker crash and let another process retry after five minutes.
+pub async fn claim_remote_channel_backfill(
+    pool: &sqlx::PgPool,
+) -> Result<Option<RemoteChannelBackfill>, DbError> {
+    Ok(sqlx::query_as!(
+        RemoteChannelBackfill,
+        r#"WITH candidates AS MATERIALIZED (
+            SELECT s.id, s.uri, s.account_id
+            FROM statuses s
+            JOIN accounts a ON a.id = s.account_id
+            LEFT JOIN remote_video_channels r ON r.status_id = s.id
+            LEFT JOIN remote_video_channel_checks c ON c.status_id = s.id
+            WHERE s.object_type = 'Video' AND s.visibility = 'public'
+              AND s.reblog_of_id IS NULL AND s.deleted_at IS NULL
+              AND s.ingest_provenance <> 'history'
+              AND s.uri IS NOT NULL AND a.domain IS NOT NULL
+              AND r.status_id IS NULL
+              AND (c.status_id IS NULL OR c.retry_at <= now())
+            ORDER BY s.id DESC LIMIT 1 FOR UPDATE OF s SKIP LOCKED
+        ), claimed AS (
+            INSERT INTO remote_video_channel_checks (status_id, retry_at)
+            SELECT id, now() + interval '5 minutes' FROM candidates
+            ON CONFLICT (status_id) DO UPDATE SET retry_at = EXCLUDED.retry_at
+              WHERE remote_video_channel_checks.retry_at <= now()
+            RETURNING status_id, attempts
+        )
+        SELECT c.id AS "status_id!", c.uri AS "uri!", c.account_id AS "account_id!",
+               claimed.attempts AS "attempts!"
+        FROM candidates c JOIN claimed ON claimed.status_id = c.id"#,
+    )
+    .fetch_optional(pool)
+    .await?)
+}
+
+/// A conclusive origin check suppresses future refetches. A later signed
+/// Video Update can still reconcile the channel in the ordinary ingest path.
+pub async fn complete_remote_channel_check(
+    pool: &sqlx::PgPool,
+    status_id: i64,
+) -> Result<(), DbError> {
+    sqlx::query(
+        "INSERT INTO remote_video_channel_checks (status_id, retry_at, checked_at) \
+         SELECT id, NULL, now() FROM statuses WHERE id = $1 \
+         ON CONFLICT (status_id) DO UPDATE \
+         SET retry_at = NULL, checked_at = now()",
+    )
+    .bind(status_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Retry origin or Group-fetch failures with backoff; the claim's lease is
+/// overwritten only by the worker that finished the attempt.
+pub async fn retry_remote_channel_check(
+    pool: &sqlx::PgPool,
+    status_id: i64,
+    delay: std::time::Duration,
+) -> Result<(), DbError> {
+    sqlx::query(
+        "UPDATE remote_video_channel_checks \
+         SET retry_at = now() + make_interval(secs => $2), attempts = attempts + 1 \
+         WHERE status_id = $1 AND retry_at IS NOT NULL",
+    )
+    .bind(status_id)
+    .bind(delay.as_secs_f64())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct Channel {
     pub account_id: i64,
@@ -246,4 +518,465 @@ pub async fn outbox_count(
              AND NOT account_hidden($2, s.account_id) AND NOT account_hidden($2, v.channel_id)"#,
         channel_id, viewer,
     ).fetch_one(pool).await?)
+}
+
+#[cfg(test)]
+mod discovery_tests {
+    use super::*;
+    use crate::account::{self, NewLocalAccount};
+    use crate::follow;
+    use crate::status::{self, NewLocalStatus};
+
+    async fn actor(pool: &sqlx::PgPool, username: &str) -> i64 {
+        account::create_local(
+            pool,
+            NewLocalAccount {
+                username,
+                display_name: username,
+                note: "",
+                public_key_pem: "pub",
+            },
+        )
+        .await
+        .unwrap()
+        .id
+    }
+
+    async fn film(
+        pool: &sqlx::PgPool,
+        owner: i64,
+        title: &str,
+        description: &str,
+        visibility: &str,
+        video: bool,
+        attach: bool,
+    ) -> (i64, Option<i64>) {
+        let mut new = NewLocalStatus::new(owner, description, visibility, None);
+        new.title = Some(title);
+        new.object_type = video.then_some("Video");
+        let stored = status::create_local(pool, new).await.unwrap();
+        let media_id = if attach {
+            let id = crate::id::next();
+            sqlx::query(
+                "INSERT INTO media_attachments \
+                 (id, account_id, status_id, file_name, content_type, kind) \
+                 VALUES ($1, $2, $3, 'fixture.mp4', 'video/mp4', 'video')",
+            )
+            .bind(id)
+            .bind(owner)
+            .bind(stored.id)
+            .execute(pool)
+            .await
+            .unwrap();
+            Some(id)
+        } else {
+            None
+        };
+        (stored.id, media_id)
+    }
+
+    #[sqlx::test]
+    async fn discovery_scopes_search_follows_moderation_and_cursor(pool: sqlx::PgPool) {
+        let owner = actor(&pool, "filmowner").await;
+        let channel = actor(&pool, "filmchannel").await;
+        let viewer = actor(&pool, "filmviewer").await;
+        sqlx::query("INSERT INTO video_channels (account_id, owner_account_id) VALUES ($1, $2)")
+            .bind(channel)
+            .bind(owner)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (first, media) = film(
+            &pool,
+            owner,
+            "Blue ocean",
+            "<p>A meadow by the sea.</p>",
+            "public",
+            true,
+            true,
+        )
+        .await;
+        sqlx::query(
+            "INSERT INTO video_publications (status_id, channel_id, media_id) VALUES ($1, $2, $3)",
+        )
+        .bind(first)
+        .bind(channel)
+        .bind(media.unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+        let (second, _) = film(
+            &pool,
+            owner,
+            "Golden sunset",
+            "<p>Warm sky</p>",
+            "public",
+            true,
+            true,
+        )
+        .await;
+        film(
+            &pool,
+            owner,
+            "Unlisted ocean",
+            "<p>Private link</p>",
+            "unlisted",
+            true,
+            true,
+        )
+        .await;
+        film(
+            &pool,
+            owner,
+            "Private ocean",
+            "<p>Secret</p>",
+            "private",
+            true,
+            true,
+        )
+        .await;
+        film(
+            &pool,
+            owner,
+            "Video-looking Note",
+            "<p>Not a film</p>",
+            "public",
+            false,
+            true,
+        )
+        .await;
+        film(
+            &pool,
+            owner,
+            "Empty ocean",
+            "<p>Not playable</p>",
+            "public",
+            true,
+            false,
+        )
+        .await;
+        let (history, _) = film(
+            &pool,
+            owner,
+            "History ocean",
+            "<p>Backfill</p>",
+            "public",
+            true,
+            true,
+        )
+        .await;
+        sqlx::query("UPDATE statuses SET ingest_provenance = 'history' WHERE id = $1")
+            .bind(history)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let all = discover(&pool, None, Some(viewer), false, None, 20)
+            .await
+            .unwrap();
+        assert_eq!(
+            all.iter().map(|hit| hit.status_id).collect::<Vec<_>>(),
+            [second, first]
+        );
+        assert_eq!(all[1].channel_id, channel);
+        assert_eq!(
+            discover(&pool, Some("ocean"), Some(viewer), false, None, 20)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            discover(&pool, Some("meadow"), Some(viewer), false, None, 20)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        let newest = discover(&pool, None, Some(viewer), false, None, 1)
+            .await
+            .unwrap();
+        assert_eq!(newest[0].status_id, second);
+        assert_eq!(
+            discover(&pool, None, Some(viewer), false, Some(second), 1)
+                .await
+                .unwrap()[0]
+                .status_id,
+            first
+        );
+
+        assert!(
+            discover(&pool, None, Some(viewer), true, None, 20)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        follow::create_request(&pool, viewer, channel, None)
+            .await
+            .unwrap();
+        assert!(
+            discover(&pool, None, Some(viewer), true, None, 20)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        follow::mark_accepted(&pool, viewer, channel).await.unwrap();
+        let followed = discover(&pool, None, Some(viewer), true, None, 20)
+            .await
+            .unwrap();
+        assert_eq!(
+            followed.iter().map(|hit| hit.status_id).collect::<Vec<_>>(),
+            [first]
+        );
+        sqlx::query("INSERT INTO blocks (id, account_id, target_account_id) VALUES ($1, $2, $3)")
+            .bind(crate::id::next())
+            .bind(viewer)
+            .bind(channel)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            discover(&pool, None, Some(viewer), true, None, 20)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        sqlx::query("UPDATE statuses SET deleted_at = now() WHERE id = $1")
+            .bind(second)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            discover(&pool, None, None, false, None, 20)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[sqlx::test]
+    async fn channel_library_scopes_publication_search_cursor_and_moderation(pool: sqlx::PgPool) {
+        let owner = actor(&pool, "libraryowner").await;
+        let channel = actor(&pool, "librarychannel").await;
+        let viewer = actor(&pool, "libraryviewer").await;
+        sqlx::query("INSERT INTO video_channels (account_id, owner_account_id) VALUES ($1, $2)")
+            .bind(channel)
+            .bind(owner)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (first, first_media) =
+            film(&pool, owner, "Blue film", "Sea", "public", true, true).await;
+        let (second, second_media) =
+            film(&pool, owner, "Gold film", "Sky", "public", true, true).await;
+        let (unlisted, unlisted_media) = film(
+            &pool,
+            owner,
+            "Hidden film",
+            "Private link",
+            "unlisted",
+            true,
+            true,
+        )
+        .await;
+        for (status_id, media_id) in [
+            (first, first_media),
+            (second, second_media),
+            (unlisted, unlisted_media),
+        ] {
+            sqlx::query("INSERT INTO video_publications (status_id, channel_id, media_id) VALUES ($1, $2, $3)")
+                .bind(status_id)
+                .bind(channel)
+                .bind(media_id.unwrap())
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let (creator_video, _) =
+            film(&pool, owner, "Solo film", "Fallback", "public", true, true).await;
+        assert!(library_visible(&pool, channel, Some(viewer)).await.unwrap());
+        assert_eq!(
+            discover_channel(&pool, channel, None, Some(viewer), None, 20)
+                .await
+                .unwrap()
+                .iter()
+                .map(|hit| hit.status_id)
+                .collect::<Vec<_>>(),
+            [second, first]
+        );
+        assert_eq!(
+            discover_channel(&pool, channel, Some("Blue"), Some(viewer), None, 20)
+                .await
+                .unwrap()[0]
+                .status_id,
+            first
+        );
+        assert_eq!(
+            discover_channel(&pool, channel, None, Some(viewer), Some(second), 20)
+                .await
+                .unwrap()[0]
+                .status_id,
+            first
+        );
+        assert_eq!(
+            discover_channel(&pool, owner, None, Some(viewer), None, 20)
+                .await
+                .unwrap()[0]
+                .status_id,
+            creator_video
+        );
+
+        sqlx::query("INSERT INTO blocks (id, account_id, target_account_id) VALUES ($1, $2, $3)")
+            .bind(crate::id::next())
+            .bind(viewer)
+            .bind(channel)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(!library_visible(&pool, channel, Some(viewer)).await.unwrap());
+        assert!(
+            discover_channel(&pool, channel, None, Some(viewer), None, 20)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(library_visible(&pool, owner, Some(viewer)).await.unwrap());
+        sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+            .bind(owner)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(!library_visible(&pool, channel, None).await.unwrap());
+        assert!(!library_visible(&pool, owner, None).await.unwrap());
+        assert!(
+            discover_channel(&pool, owner, None, None, None, 20)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[sqlx::test]
+    async fn remote_channel_attribution_moves_library_and_followed_video(pool: sqlx::PgPool) {
+        let author = actor(&pool, "remotefilmauthor").await;
+        let channel = actor(&pool, "remotefilmchannel").await;
+        let viewer = actor(&pool, "remotefilmviewer").await;
+        let (video, _) = film(
+            &pool,
+            author,
+            "Channel film",
+            "Screen",
+            "public",
+            true,
+            true,
+        )
+        .await;
+        // Remote video rows can have no `kind`; their MIME type still makes
+        // them playable Videos in API serialization and in this catalogue.
+        sqlx::query("UPDATE media_attachments SET kind = NULL WHERE status_id = $1")
+            .bind(video)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            discover(&pool, None, Some(viewer), false, None, 20)
+                .await
+                .unwrap()[0]
+                .channel_id,
+            author
+        );
+        set_remote_channel(&pool, video, Some(channel))
+            .await
+            .unwrap();
+        assert_eq!(
+            discover(&pool, None, Some(viewer), false, None, 20)
+                .await
+                .unwrap()[0]
+                .channel_id,
+            channel
+        );
+        assert!(
+            discover_channel(&pool, author, None, Some(viewer), None, 20)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            discover_channel(&pool, channel, None, Some(viewer), None, 20)
+                .await
+                .unwrap()[0]
+                .status_id,
+            video
+        );
+        assert!(
+            discover(&pool, None, Some(viewer), true, None, 20)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        follow::create_request(&pool, viewer, channel, None)
+            .await
+            .unwrap();
+        follow::mark_accepted(&pool, viewer, channel).await.unwrap();
+        assert_eq!(
+            discover(&pool, None, Some(viewer), true, None, 20)
+                .await
+                .unwrap()[0]
+                .status_id,
+            video
+        );
+        set_remote_channel(&pool, video, None).await.unwrap();
+        assert!(
+            discover(&pool, None, Some(viewer), true, None, 20)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            discover_channel(&pool, author, None, Some(viewer), None, 20)
+                .await
+                .unwrap()[0]
+                .status_id,
+            video
+        );
+    }
+
+    #[sqlx::test]
+    async fn remote_channel_backfill_claim_is_leased_and_settled(pool: sqlx::PgPool) {
+        let author = actor(&pool, "legacyfilmowner").await;
+        sqlx::query("UPDATE accounts SET domain = 'remote.example', uri = 'https://remote.example/users/legacyfilmowner' WHERE id = $1")
+            .bind(author)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (video, _) = film(&pool, author, "Old film", "Archive", "public", true, true).await;
+        sqlx::query("UPDATE statuses SET uri = 'https://remote.example/videos/watch/old-film', ingest_provenance = 'delivery' WHERE id = $1")
+            .bind(video)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let claimed = claim_remote_channel_backfill(&pool).await.unwrap().unwrap();
+        assert_eq!(claimed.status_id, video);
+        assert_eq!(claimed.account_id, author);
+        assert_eq!(claimed.attempts, 0);
+        assert!(
+            claim_remote_channel_backfill(&pool)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        retry_remote_channel_check(&pool, video, std::time::Duration::from_secs(0))
+            .await
+            .unwrap();
+        let retried = claim_remote_channel_backfill(&pool).await.unwrap().unwrap();
+        assert_eq!(retried.attempts, 1);
+        complete_remote_channel_check(&pool, video).await.unwrap();
+        assert!(
+            claim_remote_channel_backfill(&pool)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
 }

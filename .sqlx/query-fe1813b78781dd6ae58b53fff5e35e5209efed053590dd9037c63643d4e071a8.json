@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH candidates AS MATERIALIZED (\n            SELECT s.id, s.uri, s.account_id\n            FROM statuses s\n            JOIN accounts a ON a.id = s.account_id\n            LEFT JOIN remote_video_channels r ON r.status_id = s.id\n            LEFT JOIN remote_video_channel_checks c ON c.status_id = s.id\n            WHERE s.object_type = 'Video' AND s.visibility = 'public'\n              AND s.reblog_of_id IS NULL AND s.deleted_at IS NULL\n              AND s.ingest_provenance <> 'history'\n              AND s.uri IS NOT NULL AND a.domain IS NOT NULL\n              AND r.status_id IS NULL\n              AND (c.status_id IS NULL OR c.retry_at <= now())\n            ORDER BY s.id DESC LIMIT 1 FOR UPDATE OF s SKIP LOCKED\n        ), claimed AS (\n            INSERT INTO remote_video_channel_checks (status_id, retry_at)\n            SELECT id, now() + interval '5 minutes' FROM candidates\n            ON CONFLICT (status_id) DO UPDATE SET retry_at = EXCLUDED.retry_at\n              WHERE remote_video_channel_checks.retry_at <= now()\n            RETURNING status_id, attempts\n        )\n        SELECT c.id AS \"status_id!\", c.uri AS \"uri!\", c.account_id AS \"account_id!\",\n               claimed.attempts AS \"attempts!\"\n        FROM candidates c JOIN claimed ON claimed.status_id = c.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "uri!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "attempts!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "remote_video_channel_checks",
+            "name": "attempts"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "fe1813b78781dd6ae58b53fff5e35e5209efed053590dd9037c63643d4e071a8"
+}

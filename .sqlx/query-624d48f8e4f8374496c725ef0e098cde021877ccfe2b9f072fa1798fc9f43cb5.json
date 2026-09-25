@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM accounts a\n             LEFT JOIN video_channels v ON v.account_id = a.id\n             WHERE a.id = $1 AND NOT account_hidden($2, a.id)\n               AND (v.owner_account_id IS NULL OR NOT account_hidden($2, v.owner_account_id))\n           ) AS \"visible!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "visible!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "624d48f8e4f8374496c725ef0e098cde021877ccfe2b9f072fa1798fc9f43cb5"
+}

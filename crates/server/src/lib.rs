@@ -80,6 +80,7 @@ pub mod totp;
 pub mod translation;
 pub mod trends;
 pub mod video;
+pub mod video_channel_backfill;
 pub mod video_poster;
 pub mod video_resources;
 pub mod video_worker;

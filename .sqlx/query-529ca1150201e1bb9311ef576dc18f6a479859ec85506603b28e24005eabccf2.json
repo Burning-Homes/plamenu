@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH candidates AS MATERIALIZED (\n            SELECT scoped.id, scoped.account_id, scoped.channel_id FROM (\n                (SELECT s.id, s.account_id, v.channel_id\n                 FROM video_publications v JOIN statuses s ON s.id = v.status_id\n                 WHERE v.channel_id = $1\n                   AND s.object_type = 'Video' AND s.visibility = 'public'\n                   AND s.reblog_of_id IS NULL AND s.deleted_at IS NULL\n                   AND s.ingest_provenance <> 'history'\n                   AND ($2::bigint IS NULL OR s.id < $2)\n                   AND ($3::text IS NULL OR\n                        to_tsvector('simple', coalesce(s.title, '') || ' ' || s.content)\n                          @@ websearch_to_tsquery('simple', $3))\n                   AND EXISTS (SELECT 1 FROM media_attachments m\n                               WHERE m.status_id = s.id\n                                 AND (m.kind IN ('video', 'gifv') OR m.content_type LIKE 'video/%')\n                                 AND (m.processing = 'complete' OR m.download_on_demand))\n                ORDER BY v.status_id DESC LIMIT 1000)\n                UNION ALL\n                (SELECT s.id, s.account_id, r.channel_id\n                 FROM remote_video_channels r JOIN statuses s ON s.id = r.status_id\n                 WHERE r.channel_id = $1\n                   AND s.object_type = 'Video' AND s.visibility = 'public'\n                   AND s.reblog_of_id IS NULL AND s.deleted_at IS NULL\n                   AND s.ingest_provenance <> 'history'\n                   AND ($2::bigint IS NULL OR s.id < $2)\n                   AND ($3::text IS NULL OR\n                        to_tsvector('simple', coalesce(s.title, '') || ' ' || s.content)\n                          @@ websearch_to_tsquery('simple', $3))\n                   AND EXISTS (SELECT 1 FROM media_attachments m\n                               WHERE m.status_id = s.id\n                                 AND (m.kind IN ('video', 'gifv') OR m.content_type LIKE 'video/%')\n                                 AND (m.processing = 'complete' OR m.download_on_demand))\n                 ORDER BY r.status_id DESC LIMIT 1000)\n                UNION ALL\n                (SELECT s.id, s.account_id, s.account_id AS channel_id\n                 FROM statuses s\n                 WHERE s.account_id = $1\n                   AND NOT EXISTS (SELECT 1 FROM video_publications v WHERE v.status_id = s.id)\n                   AND NOT EXISTS (SELECT 1 FROM remote_video_channels r WHERE r.status_id = s.id)\n                   AND s.object_type = 'Video' AND s.visibility = 'public'\n                   AND s.reblog_of_id IS NULL AND s.deleted_at IS NULL\n                   AND s.ingest_provenance <> 'history'\n                   AND ($2::bigint IS NULL OR s.id < $2)\n                   AND ($3::text IS NULL OR\n                        to_tsvector('simple', coalesce(s.title, '') || ' ' || s.content)\n                          @@ websearch_to_tsquery('simple', $3))\n                   AND EXISTS (SELECT 1 FROM media_attachments m\n                               WHERE m.status_id = s.id\n                                 AND (m.kind IN ('video', 'gifv') OR m.content_type LIKE 'video/%')\n                                 AND (m.processing = 'complete' OR m.download_on_demand))\n                 ORDER BY s.id DESC LIMIT 1000)\n            ) scoped ORDER BY scoped.id DESC LIMIT 1000\n        )\n        SELECT c.id AS \"status_id!\", c.channel_id AS \"channel_id!\"\n        FROM candidates c\n        WHERE NOT account_hidden($4, c.account_id)\n          AND NOT account_hidden($4, c.channel_id)\n        ORDER BY c.id DESC LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "529ca1150201e1bb9311ef576dc18f6a479859ec85506603b28e24005eabccf2"
+}

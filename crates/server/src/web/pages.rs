@@ -57,6 +57,7 @@ async fn render_live_rows(
 pub(crate) async fn anon_nav(state: &AppState) -> layout::AnonNav {
     layout::AnonNav {
         feeds: state.timeline_preview_federated().await || state.timeline_preview_local().await,
+        videos: state.timeline_preview_federated().await,
         trends: state.anon_trends().await,
         people: state.anon_directory().await,
         groups: state.anon_groups().await,
@@ -1081,6 +1082,13 @@ async fn profile_tab_view_sorted(
         section.column {
             @if silenced { (silenced_notice(locale)) }
             (profile_header(&account_entity, session.as_ref(), relation.as_ref(), &sanctions, &posted_languages, manage_group.as_deref(), &ctx.clock, locale))
+            @if video_channel && account.is_local() {
+                p {
+                    a href=(format!("/videos/explore?channel={}", account.id)) {
+                        (locale.text("videos-explore-browse"))
+                    }
+                }
+            }
             (super::identity::profile_proofs(&identity_proofs, account.id, locale))
             // The section selector and the Activity tab's filter selector sit
             // side by side on one row.

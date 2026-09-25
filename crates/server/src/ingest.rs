@@ -10,7 +10,7 @@ use plamenu_ap::urls;
 use plamenu_db::account::{self, Account};
 use plamenu_db::remote_hls_peers::RemoteHlsPeers;
 use plamenu_db::status::NewRemoteStatus;
-use plamenu_db::{media, mention, notification, status, status_edit, tag};
+use plamenu_db::{media, mention, notification, status, status_edit, tag, video};
 use regex::Regex;
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -94,6 +94,80 @@ const SUPPORTED_STATUS_TYPES: &[&str] = &["Note", "Question"];
 const CONVERTED_STATUS_TYPES: &[&str] = &[
     "Image", "Audio", "Video", "Article", "Page", "Event", "Document",
 ];
+
+/// A `PeerTube` Video declares its uploader and channel separately. Only an
+/// explicit Group entry is a candidate; a generic `audience` Group is not a
+/// publishing channel, and two competing Group claims are ambiguous.
+fn remote_video_channel_uri(object: &Value) -> Option<&str> {
+    if object.get("type").and_then(Value::as_str) != Some("Video") {
+        return None;
+    }
+    let mut groups = one_or_many(object.get("attributedTo"))
+        .iter()
+        .filter(|entry| entry.get("type").and_then(Value::as_str) == Some("Group"))
+        .filter_map(id_of);
+    let channel = groups.next()?;
+    groups.next().is_none().then_some(channel)
+}
+
+fn remote_video_channel_owned_by(
+    channel: &plamenu_ap::actor::RemoteActor,
+    author_uri: &str,
+) -> bool {
+    channel.kind == "Group"
+        && one_or_many(channel.attributed_to.as_ref())
+            .iter()
+            .filter_map(id_of)
+            .any(|owner| owner == author_uri)
+}
+
+/// Record a remote channel only after fetching the Group actor and checking
+/// that it independently names the Video's verified human author as owner.
+/// A signed uploader may not attach a Video to somebody else's Group. A
+/// transient actor-fetch failure leaves an existing verified mapping intact.
+pub(crate) async fn store_remote_video_channel(
+    state: &AppState,
+    author: &Account,
+    stored: &status::Status,
+    object: &Value,
+) -> Result<bool, ApiError> {
+    if stored.object_type.as_deref() != Some("Video") {
+        return Ok(true);
+    }
+    let Some(channel_uri) = remote_video_channel_uri(object) else {
+        video::set_remote_channel(&state.pool, stored.id, None).await?;
+        return Ok(true);
+    };
+    let Some(author_uri) = author.uri.as_deref() else {
+        return Ok(true);
+    };
+    let object_host = id_of(object).and_then(host_of);
+    if object_host.is_none()
+        || host_of(channel_uri) != object_host
+        || host_of(author_uri) != object_host
+        || !crate::instance_policy::can_federate_url(&state.pool, &state.config.domain, channel_uri)
+            .await?
+    {
+        video::set_remote_channel(&state.pool, stored.id, None).await?;
+        return Ok(true);
+    }
+    let channel = match state.federation.fetch_actor(channel_uri).await {
+        Ok(channel) => channel,
+        Err(error) => {
+            tracing::debug!(channel_uri, %error, "remote video channel fetch deferred");
+            return Ok(false);
+        }
+    };
+    if !remote_video_channel_owned_by(&channel, author_uri) {
+        video::set_remote_channel(&state.pool, stored.id, None).await?;
+        return Ok(true);
+    }
+    let channel = refresh_remote_actor(state, &channel).await?;
+    if channel.actor_type.as_deref() == Some("Group") {
+        video::set_remote_channel(&state.pool, stored.id, Some(channel.id)).await?;
+    }
+    Ok(true)
+}
 
 /// Resolves a status reference: a stored remote URI, or one of our own
 /// status URLs.
@@ -1966,6 +2040,14 @@ async fn store_remote_note(
         )
     };
     store_remote_attachments(state, &stored, object, context.is_history()).await?;
+    // Cold history is not in discovery and must not add one actor fetch per
+    // archived Video. Promotion through live delivery resolves the channel.
+    if !context.is_history()
+        && stored.object_type.as_deref() == Some("Video")
+        && store_remote_video_channel(state, author, &stored, object).await?
+    {
+        video::complete_remote_channel_check(&state.pool, stored.id).await?;
+    }
     let rewritten = rewrite_remote_inline_images(state, stored.id, &content_with_images).await?;
     if rewritten != stored.content {
         stored = status::replace_content(&state.pool, stored.id, &rewritten).await?;
@@ -2360,6 +2442,12 @@ pub async fn update_remote_note_in_context(
     store_remote_hls_peers(state, existing.id, object).await?;
     store_remote_captions(state, existing.id, object).await?;
     store_remote_chapters(state, existing.id, object).await?;
+    if !context.is_history()
+        && existing.object_type.as_deref() == Some("Video")
+        && store_remote_video_channel(state, author, existing, object).await?
+    {
+        video::complete_remote_channel_check(&state.pool, existing.id).await?;
+    }
 
     // Link-only invitation updates must also refresh when the post text is unchanged.
     plamenu_db::webxdc::set_remote_invitation(
@@ -3774,6 +3862,50 @@ async fn store_inline_image_attachments(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn peertube_video_channel_requires_one_explicit_group() {
+        let video: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/peertube/create_video.json"))
+                .unwrap();
+        let object = &video["object"];
+        assert_eq!(
+            remote_video_channel_uri(object),
+            Some("https://remote.example/video-channels/tech_channel")
+        );
+        let mut ambiguous = object.clone();
+        ambiguous["attributedTo"].as_array_mut().unwrap().push(
+            serde_json::json!({"type":"Group","id":"https://remote.example/video-channels/other"}),
+        );
+        assert_eq!(remote_video_channel_uri(&ambiguous), None);
+        ambiguous["type"] = serde_json::json!("Note");
+        assert_eq!(remote_video_channel_uri(&ambiguous), None);
+    }
+
+    #[test]
+    fn video_channel_owner_must_match_the_verified_uploader() {
+        let channel: plamenu_ap::actor::RemoteActor = serde_json::from_value(serde_json::json!({
+            "id": "https://remote.example/video-channels/tech_channel",
+            "type": "Group",
+            "inbox": "https://remote.example/video-channels/tech_channel/inbox",
+            "attributedTo": ["https://remote.example/users/bob"],
+        }))
+        .unwrap();
+        assert!(remote_video_channel_owned_by(
+            &channel,
+            "https://remote.example/users/bob"
+        ));
+        assert!(!remote_video_channel_owned_by(
+            &channel,
+            "https://remote.example/users/eve"
+        ));
+        let mut person = channel.clone();
+        person.kind = "Person".to_owned();
+        assert!(!remote_video_channel_owned_by(
+            &person,
+            "https://remote.example/users/bob"
+        ));
+    }
 
     #[test]
     fn iso8601_durations_parse() {

@@ -170,6 +170,7 @@ pub(super) async fn page(
             h1 { (locale.text("videos-title")) }
             @if let Some(message) = error { p.settings__error role="alert" { (message) } }
             p { (locale.text("videos-intro")) }
+            p { a href="/videos/explore" { (locale.text("videos-explore-browse")) } }
             @if !recent.is_empty() {
                 nav aria-label=(locale.text("videos-recent-drafts")) {
                     h2 { (locale.text("videos-recent-drafts")) }
@@ -229,7 +230,12 @@ pub(super) async fn page(
                     h2 { (locale.text("videos-your-channels")) }
                     ul {
                         @for channel in &channels {
-                            li { a href=(format!("/@{}", channel.username)) { (channel.display_name) } }
+                            @let name = if channel.display_name.is_empty() {
+                                &channel.username
+                            } else {
+                                &channel.display_name
+                            };
+                            li { a href=(format!("/videos/explore?channel={}", channel.id)) { (name) } }
                         }
                     }
                 }

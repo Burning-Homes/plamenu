@@ -195,6 +195,8 @@ fn head(title: &str, meta: &PageMeta) -> Markup {
 pub struct AnonNav {
     /// The Live-feeds public timelines: at least one scope's preview is on.
     pub feeds: bool,
+    /// Public Video catalogue is browsable without signing in.
+    pub videos: bool,
     /// The Trending pages are browsable without signing in.
     pub trends: bool,
     /// The People directory is browsable without signing in.
@@ -211,6 +213,7 @@ impl AnonNav {
     fn all() -> Self {
         Self {
             feeds: true,
+            videos: true,
             trends: true,
             people: true,
             groups: true,
@@ -393,7 +396,7 @@ fn primary_nav(user: &WebUser) -> Markup {
         (nav_link("/favourites", "favourite", &locale.text("nav-favourites")))
         (nav_link("/lists", "list", &locale.text("nav-lists")))
         (nav_link("/groups", "group", &locale.text("nav-groups")))
-        (nav_link("/videos", "video", &locale.text("videos-title")))
+        (nav_link("/videos/explore", "video", &locale.text("videos-title")))
         (nav_link("/webxdc", "apps", &locale.text("nav-webxdc")))
         (nav_link("/people", "profile", &locale.text("nav-people")))
         (nav_link("/explore", "explore", &locale.text("nav-trending")))
@@ -414,6 +417,7 @@ fn anon_primary_nav(anon: AnonNav, locale: Locale) -> Markup {
         (nav_link("/", "home", &locale.text("nav-home")))
         @if anon.trends { (nav_link("/explore", "explore", &locale.text("nav-trending"))) }
         @if anon.feeds { (nav_link("/public", "feeds", &locale.text("nav-live-feeds"))) }
+        @if anon.videos { (nav_link("/videos/explore", "video", &locale.text("videos-title"))) }
         @if anon.people { (nav_link("/people", "profile", &locale.text("nav-people"))) }
         @if anon.groups { (nav_link("/groups", "group", &locale.text("nav-groups"))) }
         @if anon.search { (nav_link("/search", "search", &locale.text("nav-search"))) }
@@ -589,5 +593,23 @@ mod tests {
             "skip link must precede repeated navigation"
         );
         assert!(rendered.contains(r#"<main class="app-main" id="main-content" tabindex="-1">"#));
+    }
+
+    #[test]
+    fn signed_out_video_navigation_follows_public_preview_policy() {
+        let locale = Locale::negotiate(Some("en"), None);
+        let hidden = anon_primary_nav(AnonNav::default(), locale).into_string();
+        assert!(!hidden.contains("/videos/explore"));
+
+        let visible = anon_primary_nav(
+            AnonNav {
+                videos: true,
+                ..AnonNav::default()
+            },
+            locale,
+        )
+        .into_string();
+        assert!(visible.contains("/videos/explore"));
+        assert!(visible.contains("Videos"));
     }
 }

@@ -55,6 +55,7 @@ mod user_agent;
 mod video_captions;
 mod video_chapters;
 mod video_drafts;
+mod video_explore;
 mod video_upload;
 mod videos;
 mod view;
@@ -403,6 +404,7 @@ pub fn router() -> Router<AppState> {
         .route("/groups", get(groups::index))
         .route("/groups/new", get(groups::new_page))
         .route("/videos", get(videos::index))
+        .route("/videos/explore", get(video_explore::page))
         .route("/videos/{id}/captions", get(video_captions::manage))
         .route("/videos/{id}/chapters", get(video_chapters::manage))
         .route(

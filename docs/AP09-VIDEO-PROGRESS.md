@@ -136,7 +136,7 @@ before becoming `verified`. Keep partial results and failures visible.
 | M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | in progress: captions and VOD chapters in both directions, no-JS/JS authoring and seeking; on-demand readable caption transcripts verified; wider browser/AT and description matrix pending |
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | pending |
 | M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | verified 2026-09-25 for this stated functional gate; see the M5 sign-off below. Cross-node storage, additional device/browser combinations, and broader fault matrices remain in M7/M9, not silently counted as done |
-| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders and in-session browser camera ↔ screen switching verified; discovery, editing, wider settings/imports and browser/hardware evidence remain |
+| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders, in-session browser camera ↔ screen switching, and searchable/followable HTML video and channel libraries verified; larger/remote channel matrices, settings/imports, history and browser/hardware evidence remain |
 | M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress: remote and local-origin VOD/live PeerTube P2P exchange and pre-play opt-out verified; public VOD embed opt-out verified; wider embeds, operations and scale evidence remain |
 | M8 | Ecosystem and beyond parity | Defined REST/embed/runner compatibility scope; chosen extensions; end-to-end tests per supported contract; no PeerTube plugin ABI in round one | pending |
 | M9 | Completion gate | All accepted inventory entries verified; current and prior PeerTube matrices; browser/a11y/performance gates; operator and user documentation | pending |
@@ -2295,3 +2295,163 @@ record above predates migrations 0087–0088 and is not evidence for their write
   checks passed. Actual hardware/OS permission prompts, WebKit, mid-switch
   device loss, long-duration CPU/battery measurements and broader recovery
   remain open. M6 is not yet complete; no push, merge or deployment occurred.
+
+### M6 video discovery and subscriptions slice — 2026-09-25
+
+- Added `/videos/explore` as the signed-in Videos navigation destination and,
+  when federated public preview is enabled, to signed-out navigation. It has
+  an authoring link back to `/videos`. The server-rendered catalogue has
+  public local and imported Video cards, title/description search, a followed-
+  channel view, follow/unfollow actions, and keyset-based Older navigation.
+  Search and follow work as ordinary HTML forms and links without JavaScript.
+  The cards load a lazy poster rather than instantiating a player per result;
+  the Video permalink retains the established accessible playback, caption,
+  description and pre-play P2P choice. Sensitive videos expose neither title
+  nor thumbnail on the catalogue card.
+- Discovery identifies local publishing channels through
+  `video_publications`, falling back to the source actor for imported Videos.
+  The database query restricts to public, original, attached Videos and
+  excludes unlisted/private/deleted/history-only posts; owner/channel blocks,
+  mutes and suspensions are checked before display. Anonymous catalogue access
+  follows the federated public-timeline preview switch, while anonymous text
+  search requires the existing public-search switch. A dedicated newest index
+  and title/description GIN index are included in migration 0106; the local
+  indexed title/description `EXPLAIN ANALYZE` completed in 0.266 ms on the
+  current development corpus. No external search process is required.
+- A layout regression checks that the signed-out Videos link appears only
+  when its public preview is enabled. The page itself also enforces the
+  anonymous preview/search switches; the navigation alone never grants access.
+  On the local instance, a real 320px Chromium browser with scripts disabled
+  opened the signed-out mobile drawer, found its Videos link and the catalogue
+  search field, and showed no horizontal overflow; the page returned HTTP 200.
+- Verification: the database regression passed public/privacy, indexed title
+  and description matches, cursor pagination, pending/accepted channel
+  follows, and channel blocking. The real native Video upload/publication test
+  now visits the catalogue, submits its search form, checks its poster and
+  channel link, follows through the HTML form, enters the followed view via
+  its disclosure, and unfollows. The complete journey passed Chromium and
+  Firefox desktop/mobile plus Chromium with JavaScript disabled at 320px
+  (**5/5**). The 320px screenshot was inspected; the channel link received an
+  underline after axe caught a color-only distinction, and the subsequent
+  mobile run passed with no axe violations or horizontal overflow. Strict
+  database/server Clippy passed. WebKit desktop was attempted but its local
+  page process crashed immediately after login, before the catalogue was
+  reached; it remains unverified, not an app failure. Remote-channel acceptance, large-
+  corpus/concurrent search load, broader channel libraries and M6's other
+  creator/viewer features remain open. No push, merge or deployment occurred.
+
+### M6 video catalogue poster and calendar visibility fixes — 2026-09-25
+
+- Catalogue cards previously selected the first attachment's thumbnail, even
+  when that attachment was an image before the actual Video. They now choose
+  the first `video`/`gifv` attachment. A focused unit regression covers image-
+  first media, and a second checks that sensitive poster URLs remain hidden.
+- The local video poster's authored description was available on the playback
+  page but lost in the catalogue. Cards now expose it through a native HTML
+  disclosure outside the watch link, with the video's language; it remains
+  available without scripts. The real upload/publication browser journey opens
+  that disclosure and checks its text in Chromium mobile, Firefox desktop and
+  Chromium without JavaScript (**3/3**). The 320px screenshot was inspected;
+  poster text and controls fit without horizontal overflow.
+- A public broadcast calendar checked the channel's suspension but not the
+  creator's. Both broadcast and channel event queries now exclude suspended
+  creators, and a channel calendar name is unavailable while its owner is
+  suspended. The existing isolated recurring-live regression failed at the
+  new suspension assertion before this fix, then passed after it. No calendar
+  data is deleted; clearing a suspension restores availability.
+- Sensitive or content-warned live titles were still exported to `NAME` and
+  `SUMMARY` in public iCalendar feeds. Their query titles are now a generic
+  label. The same isolated regression failed before that change with the
+  secret title, then passed with sensitive and spoiler-text redaction for both
+  broadcast and channel feeds. Feed identity, links and planned times are
+  unchanged; only the sensitive title is withheld.
+- The final offline database and web unit regressions passed, as did strict
+  database/server Clippy, formatting, JavaScript syntax and diff checks.
+  These fixes do not complete M6; WebKit and calendar-app subscription refresh
+  remain unverified. No push, merge or staging deployment occurred.
+
+### M6 channel/creator video libraries — 2026-09-25
+
+- The catalogue's channel name now opens a public Video-only library for that
+  actor; the author's channel list and local channel profile link there too.
+  The library has channel-specific title/description search, keyset Older
+  links, a creator-profile link and an HTML follow/unfollow form with the
+  current search and page preserved after submission. JavaScript is optional.
+- Native publications are selected by the indexed channel/publication relation;
+  imported Videos without that relation are selected by their author-account
+  index. Filters run within each channel branch before its bounded candidate
+  window, so an older channel's videos cannot disappear merely because 1,000
+  unrelated Videos were published globally. The public-only, completed-media,
+  deletion/history and owner/channel moderation predicates remain in force;
+  blocked or suspended libraries return no page. The local development query
+  plan returned a 21-row native-channel page in 4.46 ms; this is not a
+  large-corpus or concurrency benchmark.
+- The isolated database regression covers native channel vs author fallback,
+  public vs unlisted, scoped search and cursor paging, a viewer block and owner
+  suspension. URL preservation and translation-key unit checks passed. The
+  real native Video publication journey enters the library, searches, tests
+  its follow form, returns to global discovery and the followed view, and
+  checks the owner's channel link and profile navigation. Chromium mobile,
+  Firefox desktop and Chromium without JavaScript at 320px passed (**3/3**)
+  with axe and overflow checks. The first browser run had an assertion with
+  reversed query-parameter order; the next run exposed an old test assumption
+  that the owner's channel link still opened the profile, plus a missing wait
+  after returning to global search. Those test expectations were corrected
+  without application changes. The final **3/3** browser run passed after the
+  compact, wrapping header was built; its 320px screenshot was inspected.
+  Anonymous HTTP checks returned 200 for a public library, 400 for an invalid
+  channel id and 404 for an unknown one. Strict Clippy passed.
+- M6 remains open: larger channel libraries, remote PeerTube channel
+  attribution/follow acceptance, scheduling/settings/imports/history and the
+  wider browser/hardware matrix still need verification. No push, merge or
+  staging deployment occurred.
+
+### M6 imported PeerTube channel libraries — 2026-09-25
+
+- PeerTube 8.3.0's Video declares both a Person uploader and a Group channel;
+  the Group actor independently declares that Person as its owner. Imported
+  Videos now retain the Person as the status author but persist a verified
+  Group-channel relation for catalogue cards, channel-scoped libraries and the
+  Followed filter. Ingest and Update both reconcile it. A missing, ambiguous,
+  cross-origin or non-owner Group claim cannot place a Video into a channel;
+  a temporary actor-fetch failure leaves an already verified mapping intact.
+- The fresh PeerTube upload test exposed that remote video attachments may have
+  `kind = NULL` despite a playable `video/mp4` MIME type. All catalogue
+  branches now accept that media shape; the database regression uses it.
+- The isolated database regression verifies attribution, author-library
+  exclusion, channel-library inclusion, accepted-channel Followed filtering
+  and removal. Fixture parsing and wrong-owner/type checks pass. A real
+  PeerTube 8.3.0 upload was resolved into Plamenu, displayed in the
+  server-rendered public channel library, and its Group Follow was accepted
+  (**1/1** E2E). The first live run discovered the null-kind gallery bug; the
+  next exposed an incorrect test permalink assumption; the final run passed.
+- This is not M6 completion. Already imported Videos have no stored AP object
+  from which to derive their Group without a remote refresh; the new relation
+  applies on new live ingest or Update, so a bounded historical backfill remains.
+  Cold-history imports defer channel actor fetch until live promotion because
+  those rows are excluded from public discovery.
+  Remote-channel discovery at larger scale, live browser accessibility, wider
+  follow/ownership-change cases and the rest of M6 still need verification.
+  No push, merge or staging deployment occurred.
+
+### M6 automatic legacy PeerTube channel backfill — 2026-09-25
+
+- An in-process worker now recovers channel attribution for public remote
+  Videos imported before that relation existed. It refetches the canonical
+  Video, requires the same stored author, then applies the same Group-owner
+  verification as live ingestion. It changes only the channel relation: no
+  historical notification, status edit, media rebuild or timeline fan-out.
+- One Video is claimed every 15 seconds. A durable five-minute lease survives
+  a crash or restart; transient origin/Group failures retry with bounded
+  exponential backoff, while conclusively absent/invalid claims are marked
+  checked. Idle scans run every five minutes. Cold-history-only rows stay
+  outside public discovery and are not fetched until promoted. The automatic
+  worker needs no extra installation or operator maintenance step.
+- Database tests cover claim, lease, retry and terminal settlement; the worker
+  backoff unit test passes. In a real PeerTube 8.3.0 E2E, a newly imported
+  Video's two attribution rows were removed to simulate a legacy import; the
+  running server restored the verified channel from the remote AP object
+  without an operator command (**1/1**). Strict Clippy and SQLx checks pass.
+- M6 remains open. This slice does not establish large-corpus scan cost,
+  multi-instance contention or the broader remote ownership-change matrix.
+  No push, merge or staging deployment occurred.

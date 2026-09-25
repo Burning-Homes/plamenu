@@ -64,6 +64,9 @@ async function publish(page, projectName, noScript) {
     form = page.locator('form[action="/web/videos"]');
   }
   await form.getByRole('combobox', { name: 'Channel', exact: true }).selectOption({ label: channelName });
+  await expect(page.getByRole('navigation', { name: 'Your video channels' })
+    .getByRole('link', { name: channelName, exact: true }))
+    .toHaveAttribute('href', /\/videos\/explore\?channel=\d+/);
   await form.getByLabel('Video title').fill(`Browser video ${name}`);
   await form.getByLabel('Description', { exact: true }).fill('Native video from an ordinary HTML form.');
   await form.getByLabel('Language code').fill('en');
@@ -204,6 +207,79 @@ async function publish(page, projectName, noScript) {
   await player.evaluate(video => video.pause());
   const permalink = page.url();
   const statusId = new URL(permalink).pathname.split('/').pop();
+  if (noScript) await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto('/videos/explore');
+  await page.getByRole('searchbox', { name: 'Search video titles and descriptions' })
+    .fill(`Browser video ${name}`);
+  await page.getByRole('button', { name: 'Search videos' }).click();
+  await expect(page.getByRole('heading', { name: 'Explore videos' })).toBeVisible();
+  const discovered = page.locator('article.video-explore__card').filter({ hasText: `Browser video ${name}` });
+  await expect(discovered).toHaveCount(1);
+  await expect(discovered.getByRole('link', { name: `Browser video ${name}` })).toHaveAttribute('href', new URL(permalink).pathname);
+  const channelLibrary = discovered.getByRole('link', { name: channelName, exact: true });
+  await expect(channelLibrary).toHaveAttribute('href', /\/videos\/explore\?channel=\d+/);
+  await expect(discovered.locator('.video-explore__poster img')).toBeVisible();
+  await discovered.getByText('Poster image description', { exact: true }).click();
+  await expect(discovered.getByText('A solid blue square.', { exact: true })).toBeVisible();
+  await expect(page.locator('.video-explore video')).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  if (projectName === 'chromium-mobile') {
+    await discovered.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: '../target/e2e/video-explore-mobile.png' });
+  }
+  if (!noScript) {
+    const audit = await new AxeBuilder({ page }).include('.video-explore').analyze();
+    expect(audit.violations).toEqual([]);
+  }
+  await channelLibrary.click();
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Videos by');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(channelName);
+  await expect(page.getByRole('link', { name: 'Creator profile' })).toBeVisible();
+  await page.getByRole('searchbox', { name: 'Search video titles and descriptions' })
+    .fill('Browser video ' + name);
+  await page.getByRole('button', { name: 'Search videos' }).click();
+  await expect(page).toHaveURL(/\/videos\/explore\?channel=\d+&q=/);
+  await expect(page.locator('article.video-explore__card')
+    .filter({ hasText: 'Browser video ' + name })).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  if (projectName === 'chromium-mobile') {
+    await page.screenshot({ path: '../target/e2e/video-channel-library-mobile.png' });
+  }
+  if (!noScript) {
+    const audit = await new AxeBuilder({ page }).include('.video-explore').analyze();
+    expect(audit.violations).toEqual([]);
+  }
+  const libraryFollow = page.locator('.video-explore > form.video-explore__follow');
+  if (await libraryFollow.getByRole('button', { name: 'Follow channel' }).isVisible()) {
+    await libraryFollow.getByRole('button', { name: 'Follow channel' }).click();
+    await expect(libraryFollow.getByRole('button', { name: 'Unfollow' })).toBeVisible();
+    await libraryFollow.getByRole('button', { name: 'Unfollow' }).click();
+    await expect(libraryFollow.getByRole('button', { name: 'Follow channel' })).toBeVisible();
+  }
+  await page.getByRole('link', { name: 'All videos' }).click();
+  await page.getByRole('searchbox', { name: 'Search video titles and descriptions' })
+    .fill('Browser video ' + name);
+  await page.getByRole('button', { name: 'Search videos' }).click();
+  await expect(discovered).toHaveCount(1);
+  const follow = discovered.getByRole('button', { name: 'Follow channel' });
+  const unfollow = discovered.getByRole('button', { name: 'Unfollow' });
+  await expect.poll(async () => await follow.isVisible() || await unfollow.isVisible()).toBe(true);
+  const wasFollowing = await unfollow.isVisible();
+  if (!wasFollowing) {
+    await follow.click();
+    await expect(discovered.getByRole('button', { name: 'Unfollow' })).toBeVisible();
+  }
+  const videoViews = page.getByRole('navigation', { name: 'Video views' });
+  await videoViews.locator('summary').click();
+  await videoViews.getByRole('link', { name: 'Followed channels' }).click();
+  await expect(page).toHaveURL(/\/videos\/explore\?q=.*&following=1/);
+  await expect(page.locator('article.video-explore__card').filter({ hasText: `Browser video ${name}` })).toHaveCount(1);
+  if (!wasFollowing) {
+    await page.locator('article.video-explore__card').filter({ hasText: `Browser video ${name}` })
+      .getByRole('button', { name: 'Unfollow' }).click();
+  }
+  if (noScript) await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(permalink);
   const embedUrl = `${new URL(permalink).origin}/web/statuses/${statusId}/embed`;
   const oembedResponse = await page.request.get(`/api/oembed?url=${encodeURIComponent(permalink)}`);
   expect(oembedResponse.status()).toBe(200);
@@ -301,9 +377,14 @@ async function publish(page, projectName, noScript) {
   await page.goto('/videos');
   await page.getByRole('navigation', { name: 'Your video channels', exact: true })
     .getByRole('link', { name: channelName, exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(channelName);
+  await expect(page.getByText(editedTitle, { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Creator profile' }).click();
   await expect(page.getByText(editedTitle, { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Hot', exact: true })).toHaveCount(0);
   await expect(page.getByText('Video channel', { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Browse videos' }))
+    .toHaveAttribute('href', /\/videos\/explore\?channel=\d+/);
   await expect(page.locator('.profile__badge').filter({ hasText: /^Group$/ })).toHaveCount(0);
   await expect(page.locator('.status__boost').first()).toContainText('published on');
 }

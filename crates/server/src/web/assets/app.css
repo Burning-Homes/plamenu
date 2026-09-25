@@ -8594,6 +8594,92 @@ a.settings-button--plain {
   object-fit: contain;
 }
 
+.video-explore__search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: end;
+}
+.video-explore__search label {
+  grid-column: 1 / -1;
+}
+.video-explore__search input {
+  min-inline-size: 0;
+  inline-size: 100%;
+}
+.video-explore__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+.video-explore__card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.video-explore__watch {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+.video-explore__watch h2 {
+  margin: var(--space-2) var(--space-3);
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+.video-explore__poster {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  overflow: hidden;
+}
+.video-explore__poster img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+}
+.video-explore__placeholder {
+  padding: var(--space-3);
+  text-align: center;
+}
+.video-explore__meta,
+.video-explore__follow {
+  margin: var(--space-2) var(--space-3);
+}
+.video-explore__description {
+  margin: var(--space-2) var(--space-3);
+}
+.video-explore__description p {
+  overflow-wrap: anywhere;
+}
+.video-explore__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-block: var(--space-2);
+}
+.video-explore__links a {
+  text-decoration: underline;
+  text-underline-offset: .15em;
+}
+.video-explore > .video-explore__follow {
+  margin-inline: 0;
+}
+.video-explore__meta a {
+  text-decoration: underline;
+  text-underline-offset: .15em;
+}
+@media (max-width: 480px) {
+  .video-explore__search {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 } /* @layer app */
 
 .profile-identity-proofs { padding: 1rem; overflow-wrap: anywhere; }

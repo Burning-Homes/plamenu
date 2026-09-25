@@ -217,6 +217,109 @@ def test_peertube_history_revalidation_preserves_the_cached_collection(
         pt.delete(f"/api/v1/users/{created['id']}")
 
 
+@pytest.mark.federation(direction="inbound", peer="peertube")
+def test_peertube_video_uses_its_verified_channel_library(plamenu_api: Api, db: Db):
+    pt = peertube.root()
+    created = None
+    channel_account_id = None
+    followed = False
+    title = unique("channel-library")
+    try:
+        with step("PeerTube publishes a Video attributed to its owner and Group channel"):
+            with tempfile.TemporaryDirectory() as directory:
+                sample = peertube.make_sample_mp4(Path(directory) / "channel.mp4")
+                created = pt.upload_video(sample, title)
+            pt.wait_for_hls(created["uuid"])
+            ap = pt.fetch_ap(created["uuid"])
+            channel_uri = next(
+                item["id"] for item in ap["attributedTo"]
+                if item["type"] == "Group"
+            )
+
+        with step("the imported Video keeps the uploader as author but uses the Group library"):
+            status = wait_for(
+                lambda: plamenu_api.resolve_status(pt.ap_id(created["uuid"])),
+                desc="fresh PeerTube channel Video imports",
+            )
+            row = wait_for(
+                lambda: db.conn.execute(
+                    "SELECT s.account_id, r.channel_id, a.uri "
+                    "FROM statuses s JOIN remote_video_channels r ON r.status_id = s.id "
+                    "JOIN accounts a ON a.id = r.channel_id WHERE s.id = %s",
+                    (int(status["id"]),),
+                ).fetchone(),
+                desc="verified remote channel attribution stores",
+            )
+            assert row[0] != row[1], row
+            assert row[2] == channel_uri, row
+            assert status["account"]["id"] == str(row[0]), status
+            channel_account_id = str(row[1])
+
+        with step("the server-rendered channel library links the imported Video"):
+            def library_with_video():
+                library = _get(f"https://plamenu.local/videos/explore?channel={row[1]}")
+                assert library.status_code == 200, library.status_code
+                return library.text if title in library.text else None
+
+            html = wait_for(library_with_video, desc="PeerTube Video appears in channel library")
+            assert f"/{status['id']}\"" in html, html[:500]
+
+        with step("a follow of the PeerTube Group is accepted for channel subscriptions"):
+            plamenu_api.follow(channel_account_id)
+            followed = True
+            wait_for(
+                lambda: plamenu_api.relationship(channel_account_id)["following"],
+                desc="PeerTube channel accepts the follow",
+            )
+    finally:
+        if followed:
+            plamenu_api.unfollow(channel_account_id)
+        if created is not None:
+            pt.delete_video(created["uuid"])
+
+
+@pytest.mark.federation(direction="inbound", peer="peertube")
+def test_existing_peertube_video_channel_is_backfilled_automatically(
+    plamenu_api: Api, db: Db
+):
+    pt = peertube.root()
+    created = None
+    try:
+        with step("import a PeerTube Video and simulate its pre-attribution database state"):
+            with tempfile.TemporaryDirectory() as directory:
+                sample = peertube.make_sample_mp4(Path(directory) / "legacy-channel.mp4")
+                created = pt.upload_video(sample, unique("legacy-channel"))
+            pt.wait_for_hls(created["uuid"])
+            status = wait_for(
+                lambda: plamenu_api.resolve_status(pt.ap_id(created["uuid"])),
+                desc="PeerTube Video imports before backfill test",
+            )
+            status_id = int(status["id"])
+            channel_uri = next(
+                item["id"] for item in pt.fetch_ap(created["uuid"])["attributedTo"]
+                if item["type"] == "Group"
+            )
+            db.conn.execute("DELETE FROM remote_video_channels WHERE status_id = %s", (status_id,))
+            db.conn.execute("DELETE FROM remote_video_channel_checks WHERE status_id = %s", (status_id,))
+
+        with step("the in-process worker refetches and verifies the old Video without an operator command"):
+            row = wait_for(
+                lambda: db.conn.execute(
+                    "SELECT a.uri, c.checked_at, c.retry_at "
+                    "FROM remote_video_channels r JOIN accounts a ON a.id = r.channel_id "
+                    "JOIN remote_video_channel_checks c ON c.status_id = r.status_id "
+                    "WHERE r.status_id = %s",
+                    (status_id,),
+                ).fetchone(),
+                desc="automatic legacy PeerTube channel backfill",
+                timeout=180,
+            )
+            assert row[0] == channel_uri and row[1] is not None and row[2] is None, row
+    finally:
+        if created is not None:
+            pt.delete_video(created["uuid"])
+
+
 @pytest.mark.federation(
     direction="inbound",
     peer="peertube",

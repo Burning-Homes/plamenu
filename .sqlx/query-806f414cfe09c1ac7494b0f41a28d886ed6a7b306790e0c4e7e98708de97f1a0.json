@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT b.status_id AS \"status_id!\", b.broadcast_uuid,\n                COALESCE(s.title, 'Live broadcast') AS \"title!\",\n                b.scheduled_starts, s.updated_at\n         FROM native_live_broadcasts b\n         JOIN statuses s ON s.id = b.status_id\n         JOIN accounts a ON a.id = b.channel_id\n         WHERE b.status_id = $1 AND s.visibility IN ('public', 'unlisted')\n           AND s.deleted_at IS NULL AND a.domain IS NULL AND a.suspended_at IS NULL",
+  "query": "SELECT b.status_id AS \"status_id!\", b.broadcast_uuid,\n                CASE WHEN s.sensitive OR s.spoiler_text <> ''\n                     THEN 'Sensitive live broadcast'\n                     ELSE COALESCE(s.title, 'Live broadcast') END AS \"title!\",\n                future.start_at AS \"start_at!\", s.updated_at\n         FROM native_live_broadcasts b\n         JOIN statuses s ON s.id = b.status_id\n         JOIN accounts a ON a.id = b.channel_id\n         JOIN accounts owner ON owner.id = s.account_id\n         CROSS JOIN LATERAL unnest(b.scheduled_starts) future(start_at)\n         WHERE b.channel_id = $1 AND s.visibility = 'public'\n           AND s.deleted_at IS NULL AND a.domain IS NULL AND a.suspended_at IS NULL\n           AND owner.suspended_at IS NULL\n           AND future.start_at > now()\n         ORDER BY future.start_at, b.status_id LIMIT 200",
   "describe": {
     "columns": [
       {
@@ -33,14 +33,9 @@
       },
       {
         "ordinal": 3,
-        "name": "scheduled_starts",
-        "type_info": "TimestamptzArray",
-        "origin": {
-          "Table": {
-            "table": "native_live_broadcasts",
-            "name": "scheduled_starts"
-          }
-        }
+        "name": "start_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
       },
       {
         "ordinal": 4,
@@ -63,9 +58,9 @@
       true,
       false,
       null,
-      false,
+      null,
       false
     ]
   },
-  "hash": "d928860dacbb06aa8d484444e76596dc1f3bf6d8319112f0e822bd165176e3f3"
+  "hash": "806f414cfe09c1ac7494b0f41a28d886ed6a7b306790e0c4e7e98708de97f1a0"
 }

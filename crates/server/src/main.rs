@@ -899,6 +899,11 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
         supervise("trends", state.clone(), plamenu::trends::spawn),
         supervise("maintenance", state.clone(), plamenu::maintenance::spawn),
         supervise(
+            "remote video channels",
+            state.clone(),
+            plamenu::video_channel_backfill::spawn,
+        ),
+        supervise(
             "self destruct",
             state.clone(),
             plamenu::self_destruct::spawn,

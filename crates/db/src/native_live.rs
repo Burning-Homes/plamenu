@@ -296,13 +296,17 @@ pub async fn calendar_broadcast(
     Ok(sqlx::query_as!(
         CalendarBroadcast,
         "SELECT b.status_id AS \"status_id!\", b.broadcast_uuid,
-                COALESCE(s.title, 'Live broadcast') AS \"title!\",
+                CASE WHEN s.sensitive OR s.spoiler_text <> ''
+                     THEN 'Sensitive live broadcast'
+                     ELSE COALESCE(s.title, 'Live broadcast') END AS \"title!\",
                 b.scheduled_starts, s.updated_at
          FROM native_live_broadcasts b
          JOIN statuses s ON s.id = b.status_id
          JOIN accounts a ON a.id = b.channel_id
+         JOIN accounts owner ON owner.id = s.account_id
          WHERE b.status_id = $1 AND s.visibility IN ('public', 'unlisted')
-           AND s.deleted_at IS NULL AND a.domain IS NULL AND a.suspended_at IS NULL",
+           AND s.deleted_at IS NULL AND a.domain IS NULL AND a.suspended_at IS NULL
+           AND owner.suspended_at IS NULL",
         status_id,
     )
     .fetch_optional(pool)
@@ -318,14 +322,18 @@ pub async fn channel_calendar_broadcasts(
     Ok(sqlx::query_as!(
         CalendarOccurrence,
         "SELECT b.status_id AS \"status_id!\", b.broadcast_uuid,
-                COALESCE(s.title, 'Live broadcast') AS \"title!\",
+                CASE WHEN s.sensitive OR s.spoiler_text <> ''
+                     THEN 'Sensitive live broadcast'
+                     ELSE COALESCE(s.title, 'Live broadcast') END AS \"title!\",
                 future.start_at AS \"start_at!\", s.updated_at
          FROM native_live_broadcasts b
          JOIN statuses s ON s.id = b.status_id
          JOIN accounts a ON a.id = b.channel_id
+         JOIN accounts owner ON owner.id = s.account_id
          CROSS JOIN LATERAL unnest(b.scheduled_starts) future(start_at)
          WHERE b.channel_id = $1 AND s.visibility = 'public'
            AND s.deleted_at IS NULL AND a.domain IS NULL AND a.suspended_at IS NULL
+           AND owner.suspended_at IS NULL
            AND future.start_at > now()
          ORDER BY future.start_at, b.status_id LIMIT 200",
         channel_id,
@@ -341,7 +349,9 @@ pub async fn calendar_channel_name(
     Ok(sqlx::query_scalar!(
         "SELECT COALESCE(NULLIF(a.display_name, ''), a.username) AS \"name!\"
          FROM video_channels c JOIN accounts a ON a.id = c.account_id
-         WHERE c.account_id = $1 AND a.domain IS NULL AND a.suspended_at IS NULL",
+         JOIN accounts owner ON owner.id = c.owner_account_id
+         WHERE c.account_id = $1 AND a.domain IS NULL AND a.suspended_at IS NULL
+           AND owner.suspended_at IS NULL",
         channel_id,
     )
     .fetch_optional(pool)
@@ -1506,6 +1516,92 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
+
+        sqlx::query("UPDATE statuses SET title = 'Secret launch', sensitive = true WHERE id = $1")
+            .bind(live.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            calendar_broadcast(&pool, live.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .title,
+            "Sensitive live broadcast"
+        );
+        assert_eq!(
+            channel_calendar_broadcasts(&pool, channel.id)
+                .await
+                .unwrap()[0]
+                .title,
+            "Sensitive live broadcast"
+        );
+        sqlx::query(
+            "UPDATE statuses SET sensitive = false, spoiler_text = 'Content warning' WHERE id = $1",
+        )
+        .bind(live.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            calendar_broadcast(&pool, live.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .title,
+            "Sensitive live broadcast"
+        );
+        assert_eq!(
+            channel_calendar_broadcasts(&pool, channel.id)
+                .await
+                .unwrap()[0]
+                .title,
+            "Sensitive live broadcast"
+        );
+        sqlx::query("UPDATE statuses SET spoiler_text = '' WHERE id = $1")
+            .bind(live.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query("UPDATE accounts SET suspended_at = now() WHERE id = $1")
+            .bind(owner.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(calendar_broadcast(&pool, live.id).await.unwrap().is_none());
+        assert!(
+            channel_calendar_broadcasts(&pool, channel.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            calendar_channel_name(&pool, channel.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        sqlx::query("UPDATE accounts SET suspended_at = NULL WHERE id = $1")
+            .bind(owner.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(calendar_broadcast(&pool, live.id).await.unwrap().is_some());
+        assert_eq!(
+            channel_calendar_broadcasts(&pool, channel.id)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(
+            calendar_channel_name(&pool, channel.id)
+                .await
+                .unwrap()
+                .is_some()
+        );
 
         let first = claim_owned(&pool, live.id, owner.id)
             .await
