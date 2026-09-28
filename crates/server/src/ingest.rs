@@ -2040,6 +2040,7 @@ async fn store_remote_note(
         )
     };
     store_remote_attachments(state, &stored, object, context.is_history()).await?;
+    crate::video_metadata::ingest(state, stored.id, object).await?;
     // Cold history is not in discovery and must not add one actor fetch per
     // archived Video. Promotion through live delivery resolves the channel.
     if !context.is_history()
@@ -2442,6 +2443,10 @@ pub async fn update_remote_note_in_context(
     store_remote_hls_peers(state, existing.id, object).await?;
     store_remote_captions(state, existing.id, object).await?;
     store_remote_chapters(state, existing.id, object).await?;
+    // Category/licence-only Updates are author edits, not unchanged-text
+    // redistributions. Refresh before the fast path, then after any media
+    // reconciliation below so replacement rows inherit the same metadata.
+    let video_metadata_changed = crate::video_metadata::ingest(state, existing.id, object).await?;
     if !context.is_history()
         && existing.object_type.as_deref() == Some("Video")
         && store_remote_video_channel(state, author, existing, object).await?
@@ -2464,7 +2469,8 @@ pub async fn update_remote_note_in_context(
     // is the reliable change signal, so a differing one forces a re-ingest (else
     // the proxy keeps serving a stale, now-404 master URL).
     let stored_hls_master = media::hls_master_for_status(&state.pool, existing.id).await?;
-    if content == existing.content
+    if !video_metadata_changed
+        && content == existing.content
         && spoiler_text == existing.spoiler_text
         && sensitive == existing.sensitive
         && language.as_deref() == existing.language.as_deref()
@@ -2563,6 +2569,7 @@ pub async fn update_remote_note_in_context(
         plamenu_db::media::delete_remote_for_status(&state.pool, existing.id).await?;
         store_remote_attachments(state, &updated, object, context.is_history()).await?;
     }
+    crate::video_metadata::ingest(state, updated.id, object).await?;
     let rewritten = rewrite_remote_inline_images(state, updated.id, &content_with_images).await?;
     if rewritten != updated.content {
         updated = status::replace_content(&state.pool, updated.id, &rewritten).await?;

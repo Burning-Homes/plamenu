@@ -11,7 +11,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use maud::{Markup, html};
-use plamenu_db::{account, native_live, video};
+use plamenu_db::{account, native_live};
 use serde::Deserialize;
 
 use super::{
@@ -128,7 +128,8 @@ fn schedule_form(user: &WebUser, id: i64, starts: &[time::OffsetDateTime]) -> Ma
 }
 
 async fn creation_form(state: &AppState, user: &WebUser) -> Result<Markup, ApiError> {
-    let owned = video::owned_channels(&state.pool, user.current.account.id).await?;
+    let owned =
+        plamenu_db::video_channel_access::available(&state.pool, user.current.account.id).await?;
     let ids = owned
         .iter()
         .map(|channel| channel.account_id)

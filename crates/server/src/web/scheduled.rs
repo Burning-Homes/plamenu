@@ -227,6 +227,8 @@ fn queue_entry(
     let mut facts = vec![visibility_label(&row.visibility, locale)];
     if row.object_type == "Article" {
         facts.push(locale.text("compose-kind-article"));
+    } else if row.object_type == "Video" {
+        facts.push(locale.text("videos-title"));
     }
     if !row.spoiler_text.is_empty() {
         let mut args = FluentArgs::new();

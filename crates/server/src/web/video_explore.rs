@@ -230,6 +230,7 @@ pub async fn page(
                     }
                     @if session.is_some() {
                         a href="/videos" { (locale.text("videos-explore-publish")) }
+                        a href="/videos/channels" { (locale.text("video-channel-manage")) }
                     }
                 }
                 @if let Some(user) = session.as_ref() {
@@ -238,7 +239,9 @@ pub async fn page(
             } @else {
                 p { (locale.text("videos-explore-intro")) }
                 @if session.is_some() {
-                    p { a href="/videos" { (locale.text("videos-explore-publish")) } }
+                    p { a href="/videos" { (locale.text("videos-explore-publish")) }
+                        " · " a href="/videos/channels" { (locale.text("video-channel-manage")) }
+                    }
                 }
             }
             @if session.is_some() && channel_id.is_none() {

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "WITH due AS (\n             SELECT m.id FROM media_attachments m JOIN video_drafts d ON d.media_id = m.id\n             WHERE m.status_id IS NULL AND d.expires_at <= clock_timestamp()\n               AND (d.lease_until IS NULL OR d.lease_until <= clock_timestamp())\n             ORDER BY d.expires_at LIMIT $1 FOR UPDATE OF m SKIP LOCKED\n         ) DELETE FROM media_attachments m USING due WHERE m.id = due.id\n         RETURNING m.file_name, m.small_file_name",
+  "query": "WITH due AS (\n             SELECT m.id FROM media_attachments m JOIN video_drafts d ON d.media_id = m.id\n             WHERE m.status_id IS NULL AND m.scheduled_status_id IS NULL\n               AND d.expires_at <= clock_timestamp()\n               AND (d.lease_until IS NULL OR d.lease_until <= clock_timestamp())\n             ORDER BY d.expires_at LIMIT $1 FOR UPDATE OF m SKIP LOCKED\n         ) DELETE FROM media_attachments m USING due WHERE m.id = due.id\n         RETURNING m.file_name, m.small_file_name",
   "describe": {
     "columns": [
       {
@@ -36,5 +36,5 @@
       true
     ]
   },
-  "hash": "32dae29ae14883d01ef3b6b3ed50f5a5cf7539ef74c17cb6f2702b4413f320b1"
+  "hash": "0254159a4f62aeb70b3f51e45315d0c05effeef84beec7ff9c09429077b1f45d"
 }

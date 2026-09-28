@@ -3275,11 +3275,10 @@ pub async fn edit_page(
     Path(status_id): Path<i64>,
 ) -> Result<Response, ApiError> {
     let viewer_id = user.current.account.id;
-    let stored = status::find_local(&state.pool, viewer_id, status_id)
-        .await?
-        .filter(|s| s.reblog_of_id.is_none());
-    let Some(stored) = stored else {
-        return Ok(not_found(&state, Some(&user), user.locale).await);
+    let stored = match crate::video_channels::editable_status(&state, viewer_id, status_id).await {
+        Ok(stored) => stored,
+        Err(ApiError::NotFound) => return Ok(not_found(&state, Some(&user), user.locale).await),
+        Err(error) => return Err(error),
     };
     let source = status::source_of(&state.pool, stored.id)
         .await?

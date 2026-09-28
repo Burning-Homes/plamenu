@@ -367,6 +367,18 @@ pub async fn update_schedule(
     scheduled_starts: &[OffsetDateTime],
 ) -> Result<bool, DbError> {
     let mut tx = pool.begin().await?;
+    let media: Option<i64> =
+        sqlx::query_scalar("SELECT media_id FROM video_publications WHERE status_id=$1")
+            .bind(status_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if let Some(media) = media {
+        if !crate::video_channel_access::lock_publication(&mut tx, media, owner).await? {
+            return Ok(false);
+        }
+    } else {
+        return Ok(false);
+    }
     let scheduled_at = scheduled_starts.first().copied();
     let changed = sqlx::query!(
         "UPDATE native_live_broadcasts b SET scheduled_at = $3, scheduled_starts = $4
@@ -409,6 +421,18 @@ pub async fn update_playback(
         return Ok(false);
     }
     let mut tx = pool.begin().await?;
+    let media: Option<i64> =
+        sqlx::query_scalar("SELECT media_id FROM video_publications WHERE status_id=$1")
+            .bind(status_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if let Some(media) = media {
+        if !crate::video_channel_access::lock_publication(&mut tx, media, owner).await? {
+            return Ok(false);
+        }
+    } else {
+        return Ok(false);
+    }
     let changed = sqlx::query!(
         "UPDATE native_live_broadcasts b SET dvr_window_seconds = $3, latency_mode = $4
          FROM statuses s WHERE b.status_id = $1 AND b.owner_account_id = $2
@@ -520,6 +544,9 @@ async fn activate(
     playback: PlaybackOptions,
     ingest_key_generation: Option<i64>,
 ) -> Result<Option<ActiveSession>, DbError> {
+    if !crate::video_channel_access::lock_publication(tx, media_id, owner_account_id).await? {
+        return Ok(None);
+    }
     let generation = sqlx::query_scalar!(
         "SELECT COALESCE(max(generation), 0) + 1 FROM native_live_sessions WHERE media_id = $1",
         media_id,
@@ -589,22 +616,21 @@ async fn activate(
 /// A rotated key revokes an already connected key-authenticated publisher.
 /// The session fence also rejects a delayed poll from an older generation.
 pub async fn ingest_key_current(pool: &PgPool, session: &ActiveSession) -> Result<bool, DbError> {
-    let Some(generation) = session.ingest_key_generation else {
-        return Ok(true);
-    };
-    Ok(sqlx::query_scalar!(
+    Ok(sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM native_live_broadcasts b
          JOIN native_live_sessions ls ON ls.media_id = b.media_id
+         JOIN video_channels c ON c.account_id=b.channel_id
+         JOIN accounts ca ON ca.id=c.account_id JOIN accounts o ON o.id=c.owner_account_id
+         JOIN accounts a ON a.id=b.owner_account_id
          WHERE b.media_id = $1 AND b.status_id = $2 AND b.state = 'live'
-           AND b.key_generation = $3 AND ls.session_id = $4 AND ls.ended_at IS NULL)",
-        session.media_id,
-        session.status_id,
-        generation,
-        session.session_id,
+           AND ($3::bigint IS NULL OR b.key_generation=$3) AND ls.session_id = $4 AND ls.ended_at IS NULL
+           AND ca.suspended_at IS NULL AND o.suspended_at IS NULL AND a.suspended_at IS NULL
+           AND (c.owner_account_id=b.owner_account_id OR EXISTS(SELECT 1 FROM video_channel_grants g
+             WHERE g.channel_id=c.account_id AND g.account_id=b.owner_account_id AND g.accepted)))",
     )
+    .bind(session.media_id).bind(session.status_id).bind(session.ingest_key_generation).bind(&session.session_id)
     .fetch_one(pool)
-    .await?
-    .unwrap_or(false))
+    .await?)
 }
 
 /// The generation fence prevents a delayed disconnect from stopping a newer
@@ -1331,6 +1357,12 @@ pub async fn owned_by_status(
     status_id: i64,
     owner: i64,
 ) -> Result<Option<Broadcast>, DbError> {
+    if crate::video_channel_access::publication_author(pool, status_id, owner)
+        .await?
+        .is_none()
+    {
+        return Ok(None);
+    }
     Ok(sqlx::query_as!(
         Broadcast,
         r#"SELECT b.media_id, b.status_id, b.owner_account_id, b.channel_id,
@@ -1355,7 +1387,20 @@ pub async fn rotate_key(
     owner: i64,
     key_hash: &[u8; 32],
 ) -> Result<bool, DbError> {
-    Ok(sqlx::query!(
+    let mut tx = pool.begin().await?;
+    let media: Option<i64> =
+        sqlx::query_scalar("SELECT media_id FROM video_publications WHERE status_id=$1")
+            .bind(status_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if let Some(media) = media {
+        if !crate::video_channel_access::lock_publication(&mut tx, media, owner).await? {
+            return Ok(false);
+        }
+    } else {
+        return Ok(false);
+    }
+    let changed = sqlx::query!(
         "UPDATE native_live_broadcasts b SET ingest_key_hash = $3,
             key_generation = b.key_generation + 1
          FROM statuses s WHERE b.status_id = $1 AND b.owner_account_id = $2
@@ -1365,10 +1410,12 @@ pub async fn rotate_key(
         owner,
         key_hash.as_slice(),
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?
     .rows_affected()
-        == 1)
+        == 1;
+    tx.commit().await?;
+    Ok(changed)
 }
 
 #[cfg(test)]
@@ -1735,6 +1782,7 @@ mod tests {
                 owner.id,
                 channel.id,
                 Some(&first.session_id),
+                None,
             )
             .await
             .unwrap()

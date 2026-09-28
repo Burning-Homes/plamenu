@@ -1,7 +1,7 @@
 //! Scheduled posts remain queued until publication commits. Claims are leased;
 //! their generations fence stale workers and rescheduled entries.
 
-use sqlx::PgPool;
+use sqlx::{PgExecutor, PgPool};
 use time::OffsetDateTime;
 
 use crate::{DbError, id};
@@ -13,6 +13,7 @@ pub struct ScheduledStatus {
     pub scheduled_at: OffsetDateTime,
     pub text: String,
     pub object_type: String,
+    pub video_channel_id: Option<i64>,
     pub title: Option<String>,
     /// The format `text` was authored in (P4, Pleroma's `content_type`),
     /// captured at schedule time and replayed on publish.
@@ -41,7 +42,7 @@ pub struct ScheduledStatus {
 const COLS: &str = "id, account_id, scheduled_at, text, content_type, visibility, \
                     in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language, \
                     application_id, media_ids, poll_options, poll_expires_in, \
-                    poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation";
+                    poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id, created_at, publish_generation";
 const _: &str = COLS; // documentation: every query selects exactly these
 
 #[derive(Debug)]
@@ -50,6 +51,7 @@ pub struct NewScheduledStatus<'a> {
     pub scheduled_at: OffsetDateTime,
     pub text: &'a str,
     pub object_type: &'a str,
+    pub video_channel_id: Option<i64>,
     pub title: Option<&'a str>,
     pub content_type: &'a str,
     pub visibility: &'a str,
@@ -67,8 +69,8 @@ pub struct NewScheduledStatus<'a> {
     pub quote_approval_policy: Option<i32>,
 }
 
-pub async fn create(
-    pool: &PgPool,
+pub async fn create<'e, E: PgExecutor<'e>>(
+    executor: E,
     new: NewScheduledStatus<'_>,
 ) -> Result<ScheduledStatus, DbError> {
     let row = sqlx::query_as!(
@@ -78,13 +80,13 @@ pub async fn create(
             (id, account_id, scheduled_at, text, content_type, visibility,
              in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,
              application_id, media_ids, poll_options, poll_expires_in, poll_multiple,
-             poll_hide_totals, quote_approval_policy, object_type, title)
+             poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-                $18, $19, $20)
+                $18, $19, $20, $21)
         RETURNING id, account_id, scheduled_at, text, content_type, visibility,
                   in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,
                   application_id, media_ids, poll_options, poll_expires_in,
-                  poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation
+                  poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id, created_at, publish_generation
         "#,
         id::next(),
         new.account_id,
@@ -106,8 +108,9 @@ pub async fn create(
         new.quote_approval_policy,
         new.object_type,
         new.title,
+        new.video_channel_id,
     )
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await?;
     Ok(row)
 }
@@ -124,7 +127,7 @@ pub async fn find_for_account(
         SELECT id, account_id, scheduled_at, text, content_type, visibility,
                in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,
                application_id, media_ids, poll_options, poll_expires_in,
-               poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation
+               poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id, created_at, publish_generation
         FROM scheduled_statuses
         WHERE id = $1 AND account_id = $2
         "#,
@@ -152,7 +155,7 @@ pub async fn list_for_account(
             SELECT id, account_id, scheduled_at, text, content_type, visibility,
                    in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,
                    application_id, media_ids, poll_options, poll_expires_in,
-                   poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation
+                   poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id, created_at, publish_generation
             FROM scheduled_statuses
             WHERE account_id = $1 AND id > $2
               AND ($3::bigint IS NULL OR id < $3)
@@ -175,7 +178,7 @@ pub async fn list_for_account(
         SELECT id, account_id, scheduled_at, text, content_type, visibility,
                in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,
                application_id, media_ids, poll_options, poll_expires_in,
-               poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation
+               poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id, created_at, publish_generation
         FROM scheduled_statuses
         WHERE account_id = $1
           AND ($2::bigint IS NULL OR id < $2)
@@ -200,6 +203,7 @@ pub async fn update_scheduled_at(
     id: i64,
     scheduled_at: OffsetDateTime,
 ) -> Result<Option<ScheduledStatus>, DbError> {
+    let mut tx = pool.begin().await?;
     let row = sqlx::query_as!(
         ScheduledStatus,
         r#"
@@ -209,27 +213,52 @@ pub async fn update_scheduled_at(
         RETURNING id, account_id, scheduled_at, text, content_type, visibility,
                   in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,
                   application_id, media_ids, poll_options, poll_expires_in,
-                  poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation
+                  poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id, created_at, publish_generation
         "#,
         id,
         account_id,
         scheduled_at,
     )
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
+    if row.as_ref().and_then(|row| row.video_channel_id).is_some() {
+        sqlx::query(
+            "UPDATE video_drafts d SET expires_at = GREATEST(now() + interval '7 days', $2 + interval '7 days') \
+             FROM media_attachments m WHERE m.id = d.media_id AND m.scheduled_status_id = $1",
+        )
+        .bind(id)
+        .bind(scheduled_at)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
     Ok(row)
 }
 
 /// Deletes one owned scheduled status; the `ON DELETE SET NULL` on
 /// `media_attachments.scheduled_status_id` releases any reserved media.
 pub async fn delete(pool: &PgPool, account_id: i64, id: i64) -> Result<bool, DbError> {
+    let mut tx = pool.begin().await?;
+    // Keep a cancelled Video draft available for another seven days instead
+    // of retaining its source until the originally scheduled date.
+    sqlx::query(
+        "UPDATE video_drafts d SET expires_at = now() + interval '7 days' \
+         FROM media_attachments m JOIN scheduled_statuses s ON s.id = m.scheduled_status_id \
+         WHERE m.id = d.media_id AND s.id = $1 AND s.account_id = $2 \
+           AND s.video_channel_id IS NOT NULL",
+    )
+    .bind(id)
+    .bind(account_id)
+    .execute(&mut *tx)
+    .await?;
     let result = sqlx::query!(
         "DELETE FROM scheduled_statuses WHERE id = $1 AND account_id = $2",
         id,
         account_id,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(result.rows_affected() > 0)
 }
 
@@ -296,7 +325,7 @@ pub async fn claim_due(pool: &PgPool, limit: i64) -> Result<Vec<ScheduledStatus>
         RETURNING id, account_id, scheduled_at, text, content_type, visibility,
                   in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,
                   application_id, media_ids, poll_options, poll_expires_in,
-                  poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation
+                  poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id, created_at, publish_generation
         "#,
         limit,
     )

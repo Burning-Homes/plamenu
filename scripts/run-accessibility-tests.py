@@ -253,6 +253,10 @@ def main():
                 "--password",
                 "plamenu-development-only",
             )
+            for username in ("channel_editor",):
+                run("cargo", "run", "--locked", "-q", "--", "--config", config,
+                    "account", "add", username, "--email", f"{username}@localhost",
+                    "--password", "plamenu-development-only")
             seed_native_draft_pages(name, fixture, video_fixture)
             log = ROOT / "target/accessibility/server.log"
             log.parent.mkdir(parents=True, exist_ok=True)

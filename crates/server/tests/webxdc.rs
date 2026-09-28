@@ -1919,6 +1919,7 @@ async fn scheduled_invitation_uses_the_same_posting_path(pool: PgPool) {
             scheduled_at: time::OffsetDateTime::now_utc() - time::Duration::seconds(1),
             text: &text,
             object_type: "Note",
+            video_channel_id: None,
             title: None,
             content_type: "text/plain",
             visibility: "public",

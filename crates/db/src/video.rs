@@ -276,7 +276,7 @@ pub async fn retry_remote_channel_check(
     Ok(())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Channel {
     pub account_id: i64,
     pub owner_account_id: i64,
@@ -339,7 +339,7 @@ pub async fn owned_channels<'e, E: PgExecutor<'e>>(
     owner: i64,
 ) -> Result<Vec<Channel>, DbError> {
     Ok(sqlx::query_as!(Channel,
-        "SELECT account_id, owner_account_id FROM video_channels WHERE owner_account_id = $1 ORDER BY account_id",
+        "SELECT c.account_id, c.owner_account_id FROM video_channels c JOIN accounts a ON a.id=c.account_id WHERE c.owner_account_id=$1 AND a.deleted_at IS NULL ORDER BY c.account_id",
         owner,
     ).fetch_all(conn).await?)
 }
@@ -351,10 +351,11 @@ pub async fn lock_owned_channel(
     channel_id: i64,
     owner: i64,
 ) -> Result<bool, DbError> {
-    Ok(sqlx::query_scalar!(
-        "SELECT c.account_id FROM video_channels c JOIN accounts a ON a.id = c.account_id JOIN accounts o ON o.id = c.owner_account_id WHERE c.account_id = $1 AND c.owner_account_id = $2 AND a.suspended_at IS NULL AND o.suspended_at IS NULL FOR SHARE OF c, a, o",
-        channel_id, owner,
-    ).fetch_optional(conn).await?.is_some())
+    Ok(
+        crate::video_channel_access::lock_access(conn, channel_id, owner)
+            .await?
+            .is_some(),
+    )
 }
 
 pub async fn publish(
@@ -390,10 +391,12 @@ pub async fn lock_publishable_media(
     owner: i64,
     channel_id: i64,
     replay_session_id: Option<&str>,
+    scheduled_status_id: Option<i64>,
 ) -> Result<bool, DbError> {
     Ok(sqlx::query_scalar!(
         "SELECT m.id FROM media_attachments m LEFT JOIN video_drafts d ON d.media_id = m.id
          WHERE m.id = $1 AND m.account_id = $2 AND m.status_id IS NULL AND m.processing = 'complete'
+           AND m.scheduled_status_id IS NOT DISTINCT FROM $5
            AND (d.media_id IS NULL OR (d.account_id = $2 AND d.channel_id = $3
                 AND d.state = 'ready' AND d.expires_at > clock_timestamp()))
            AND (NOT EXISTS (SELECT 1 FROM native_live_sessions ls WHERE ls.replay_media_id = m.id)
@@ -407,6 +410,7 @@ pub async fn lock_publishable_media(
         owner,
         channel_id,
         replay_session_id,
+        scheduled_status_id,
     )
     .fetch_optional(conn)
     .await?

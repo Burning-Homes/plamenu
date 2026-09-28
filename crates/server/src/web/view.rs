@@ -2984,6 +2984,7 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                 }
                                 (media_transcript(item, language, ctx.locale))
                                 (media_caption_transcripts(item, ctx.locale))
+                                (video_metadata_details(item, ctx.locale))
                             },
                         }
                     },
@@ -3192,8 +3193,40 @@ fn media_transcript(item: &Value, language: Option<&str>, locale: Locale) -> Mar
     }
 }
 
-/// Caption-derived text is useful for reading or searching dialogue, but is
-/// deliberately labeled separately from the author's visual description.
+/// Recognized Video metadata, with versioned links only when established.
+fn video_metadata_details(item: &Value, locale: Locale) -> Markup {
+    let Some(metadata) = item.get("video_metadata") else {
+        return html! {};
+    };
+    let category = metadata.get("category").filter(|value| !value.is_null());
+    let licence = metadata.get("licence").filter(|value| !value.is_null());
+    if category.is_none() && licence.is_none() {
+        return html! {};
+    }
+    html! {
+        details.media__transcript.media__metadata {
+            summary { (locale.text("videos-details")) }
+            dl {
+                @if let Some(category) = category {
+                    dt { (locale.text("videos-category")) }
+                    dd { (locale.text(&format!("videos-category-{}", category["id"]))) }
+                }
+                @if let Some(licence) = licence {
+                    dt { (locale.text("videos-licence")) }
+                    dd {
+                        @if let Some(url) = licence["url"].as_str() {
+                            a href=(url) target="_blank" rel="noopener noreferrer" { (licence["name"].as_str().unwrap_or_default()) }
+                        } @else {
+                            @if licence["id"] == 9 { (locale.text("videos-all-rights-reserved")) }
+                            @else { (licence["name"].as_str().unwrap_or_default()) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn media_caption_transcripts(item: &Value, locale: Locale) -> Markup {
     let Some(tracks) = item
         .get("captions")
@@ -5099,6 +5132,11 @@ pub fn edit_compose_form(
 
             @if let Some(title) = prefill.title {
                 (edit_title_field(title, status.object_type() == Some("Video"), locale))
+            }
+            @if status.object_type() == Some("Video") {
+                @if let Some(media_id) = prefill.media.first().and_then(|item| item["id"].as_str()) {
+                    p { a href=(format!("/videos/{media_id}/metadata")) { (locale.text("videos-metadata-manage")) } }
+                }
             }
 
             div.compose__section data-compose-section="cw" {

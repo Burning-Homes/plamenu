@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO video_metadata (media_id, category, licence, spoiler_text, sensitive, licence_version_known)\n        VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (media_id) DO UPDATE SET\n        category = EXCLUDED.category, licence = EXCLUDED.licence,\n        spoiler_text = EXCLUDED.spoiler_text, sensitive = EXCLUDED.sensitive,\n        licence_version_known = EXCLUDED.licence_version_known",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int4",
+        "Text",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b6bc75a5d40d709152024cfde8c0c3a8c51f707aa065d8012c79d4d553d1d91b"
+}

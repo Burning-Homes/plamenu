@@ -131,12 +131,12 @@ before becoming `verified`. Keep partial results and failures visible.
 | ID | Milestone | Required acceptance evidence | State |
 | --- | --- | --- | --- |
 | M0 | Baseline and finite parity inventory | Current-version feature inventory; local peer/version records; baseline E2E; browser gap observations; product decisions | verified 2026-09-23 |
-| M1 | Channels and native publication | Channel/account lifecycle; authorized collaboration; real Plamenu Video accepted, playable and attributed correctly in PeerTube; edit/delete/follow exchange | in progress |
+| M1 | Channels and native publication | Channel/account lifecycle; authorized collaboration; real Plamenu Video accepted, playable and attributed correctly in PeerTube; edit/delete/follow exchange | verified 2026-09-29; see M1 sign-off below |
 | M2 | Long-form VOD pipeline | Large/resumable and no-JS uploads; durable processing; quality ladder; poster/storyboard; audio-only/silent inputs; failures/restart/quota evidence | in progress |
 | M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | in progress: captions and VOD chapters in both directions, no-JS/JS authoring and seeking; on-demand readable caption transcripts verified; wider browser/AT and description matrix pending |
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | pending |
 | M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | verified 2026-09-25 for this stated functional gate; see the M5 sign-off below. Cross-node storage, additional device/browser combinations, and broader fault matrices remain in M7/M9, not silently counted as done |
-| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders, in-session browser camera ↔ screen switching, and searchable/followable HTML video and channel libraries verified; larger/remote channel matrices, settings/imports, history and browser/hardware evidence remain |
+| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders, scheduled VOD publication, in-session browser camera ↔ screen switching, and searchable/followable HTML video and channel libraries verified; larger/remote channel matrices, settings/imports, history and browser/hardware evidence remain |
 | M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress: remote and local-origin VOD/live PeerTube P2P exchange and pre-play opt-out verified; public VOD embed opt-out verified; wider embeds, operations and scale evidence remain |
 | M8 | Ecosystem and beyond parity | Defined REST/embed/runner compatibility scope; chosen extensions; end-to-end tests per supported contract; no PeerTube plugin ABI in round one | pending |
 | M9 | Completion gate | All accepted inventory entries verified; current and prior PeerTube matrices; browser/a11y/performance gates; operator and user documentation | pending |
@@ -146,6 +146,61 @@ percentage is reported. A milestone count is not a feature-parity percentage.
 No "100%" claim while required rows are missing, deferred, failed, or untested.
 AP09's Audio/Image/Document authoring also needs an explicit disposition; video
 delivery alone must not silently close those parts of the original finding.
+
+## M1 sign-off — 2026-09-29
+
+The original functional M1 gate is now verified. Channel management at
+`/videos/channels` is HTML-first: profile editing, explicit publisher/editor
+invitations and consent, refusal/revocation, accepted owner transfer and confirmed
+deletion. The client API exposes the same authority and pending invitations.
+Owners/editors can manage channel Videos; publishers can manage their own.
+Original authorship, channel URI, Video URI/UUID and social identity are immutable.
+Permission locks fence revocation through commit, including caption/metadata and
+live-ingest authority. Suspended identities cannot consent or retain ingest access.
+
+Ownership handoff is deliberately quiescent: finish/cancel drafts, scheduled
+publication and live work (including replay finalization and recurring broadcasts)
+first. Acceptance enforces the recipient's channel quota and revokes previous
+grants. Channel deletion retracts collaborator Videos but preserves their accounts;
+person deletion still retracts that person's original publications after transfer.
+Database/outbox failures roll the authority/content change back atomically.
+
+Verification:
+
+- Rust integration: `cargo test -p plamenu --test native_video --test
+  scheduled_statuses --test edits --test atomic_outbox --test profile --
+  --test-threads=2`: **69 passed**. Includes live credential revocation, pending
+  scheduled-work transfer refusal, recipient quota/deletion recovery, consent,
+  active identities, original signer, concurrent permission fencing and injected
+  outbox rollback. DB recurring-live replay regression: **1 passed**.
+- Real local peers, refreshed runtime: `e2e/tests/test_video_channel_lifecycle.py`,
+  native Video publication/update/delete, inbound PeerTube HLS playback and
+  verified-channel library tests: **7 passed, no skips**. PeerTube 8.3 receives
+  profile and accepted ownership updates, imports a collaborator's Video, serves
+  byte ranges and FFmpeg-decodable media, accepts edits before/after handoff and
+  retracts deletion. No-JS HTTP forms prove CSRF/privacy and two-step published
+  Video deletion. Evidence: `target/e2e/ap09-channel-lifecycle-20260929.xml`.
+- `./dev a11y` with `video-channels.spec.mjs`: **7 passed**, all pinned-container
+  projects: Chromium desktop/mobile, Firefox desktop/narrow-touch, WebKit
+  desktop/mobile and scripts-disabled Chromium. Keyboard-only submissions cover
+  invitation, accept, profile edit, revoke, transfer consent and delete. Axe and
+  320px reflow checks pass; the mobile full-page screenshot was visually checked
+  for readable labels, native controls and no horizontal clipping. Evidence:
+  `target/accessibility/ap09-channels-20260929/passed/`.
+- Strict workspace/all-target Clippy, SQLx offline metadata check, formatting and
+  whitespace checks pass. [Channel guide](VIDEO_CHANNELS.md) and API contracts
+  document the workflow, limits, roles and handoff constraints.
+
+Failures were not hidden: the initial browser run failed a test locator whose
+label query included textarea contents; the actual accessible textbox name was
+correct, and the corrected role-based query passed every project. First-run traces
+remain in `target/accessibility/ap09-channels-20260929/first-run/`. A Rust regression
+first exposed cached-account suspension acceptance; fresh locked identity checks
+fixed it. Two E2E setup attempts had wrong peer-root paths, before the real run.
+These are supporting browser accessibility checks, not human AT testing or a WCAG
+claim. Large-history/load, wider audience/asset rules and the manual release gate
+remain in their original M2/M7/M9 inventory scope. This closes **one** milestone in
+the current two-milestone goal; M4 remains open until its complete gate passes.
 
 ## Verification matrix
 
@@ -2455,3 +2510,88 @@ record above predates migrations 0087–0088 and is not evidence for their write
 - M6 remains open. This slice does not establish large-corpus scan cost,
   multi-instance contention or the broader remote ownership-change matrix.
   No push, merge or staging deployment occurred.
+
+### M6 scheduled native Video publication — 2026-09-25
+
+- `POST /api/v1/videos` accepts an RFC 3339 `scheduled_at` and returns a
+  scheduled-status entity. The first-party Video review form offers an
+  independently labeled, timezone-aware Schedule action. Its
+  `datetime-local` value resolves through the author's configured zone, works
+  with JavaScript disabled, and gains required-field validation with JavaScript.
+  The existing queue supports owner reschedule and cancel; a queued draft now
+  points to that queue instead of offering a misleading Publish/Delete action.
+- The scheduled row stores its channel and reserves exactly one ready Video
+  media row in the same transaction. Immediate publication, duplicate queues,
+  draft cancellation, ordinary media deletion and draft expiry cannot take
+  that reservation. A distant schedule extends draft retention; rescheduling
+  adjusts it, and cancellation releases the media with seven days of ordinary
+  draft life. The due worker reuses the normal Video/Create/outbox transaction
+  and generation-fenced claim, so publication and queue removal commit once.
+- Database-backed Video reservation/due/cancel tests pass (**2/2**); existing
+  scheduled-post tests pass (**15/15**). Real PeerTube 8.3.0 E2E confirms no
+  early Video, one due publication and channel import (**1/1**). A separate
+  no-JS HTML upload/review/schedule/reschedule/cancel E2E passes (**1/1**),
+  including refusal to delete a reserved draft. Browser review-to-queue
+  journeys pass Chromium desktop/mobile, Firefox desktop and Chromium with
+  JavaScript disabled (**4/4**), with reflow and axe checks on JS variants.
+  Strict Clippy and SQLx preparation pass. Migrations 0109–0110 were applied
+  only to the disposable AP09 development/test database.
+- This closes the scheduled-VOD portion of PUB03, not M6. Reminders,
+  category/licence/settings/imports, published-media editing, larger-library
+  and device matrices, and failure/recovery drills remain open. No push,
+  merge or staging deployment occurred.
+
+### M6 interoperable Video publication metadata — 2026-09-28
+
+- Native VOD upload/review now offers category, explicit licence, content warning
+  and sensitive-media choices alongside title, description and language. Hashtags
+  in the description use the existing tag system. Private draft options survive
+  HTML and resumable upload, review reloads and scheduled publication. Draft
+  updates merge under the media lock; scheduling reads warnings under the same
+  lock as its reservation. No upload silently grants reuse rights.
+- Published category/licence editing is available from `/videos` and the ordinary
+  Video edit form, through the owner-only `/videos/{media_id}/metadata` manager.
+  It works without JavaScript, reports successful saves, and uses native selects.
+  Script-enabled selection updates a trusted licence link immediately; no-JS
+  review/edit pages get the selected link from the server. The viewer exposes
+  metadata in a native disclosure under the player. English and Russian labels
+  are included. Warnings continue to use the existing whole-post native details
+  gate and normal Status editor, rather than a second incompatible warning path.
+- The client API accepts metadata on `POST /api/v1/videos`, exposes it on media
+  entities/previews/schedules, and supports sparse owned published edits through
+  `PUT /api/v1/videos/{media_id}/metadata`. Metadata, edited timestamp and canonical
+  Update enqueue share a transaction; injected outbox failure rolls them all back.
+  Exact no-ops create neither an edit timestamp nor another delivery job. The
+  initial Create now carries the same metadata as dereference/history/Update.
+- PeerTube 8.3.0 checks caught and fixed two wire incompatibilities: native Video
+  Hashtag names must be bare (PeerTube stores them verbatim), and explicit metadata
+  clears must send zero-ID `Unspecified` objects (omitted/null fields leave remote
+  values unchanged). Ordinary Note hashtags are unchanged. Inbound metadata-only
+  Updates now bypass the unchanged-text fast path, retain stable attachment IDs,
+  and update category/licence even when no text or warning changes.
+- Only bounded recognized category/licence IDs acquire local semantics. Remote
+  labels and arbitrary links are discarded. PeerTube's licence ID alone does not
+  establish a version, so imported CC licences remain generic and unlinked unless
+  the exact trusted canonical URL is supplied. Local chooser options explicitly
+  state CC 4.0 or public-domain 1.0; clearing a choice never leaves a local grant.
+- Verification: native Video regressions **15/15**; metadata parser unit **1/1**;
+  scheduled-post regressions **15/15**; dedicated metadata query-count guard
+  **1/1** (3 Videos: 43 statements; 12: 42, with one initial-cache statement).
+  Real PeerTube/API/HTML E2E **5/5** covers new delivery, late channel history,
+  metadata edits/clears and warning/tag interoperability in both directions,
+  range/decode checks, invalid API input, CSRF refusal and private manager caching,
+  scheduled publication and no-JS schedule/reschedule/cancel retention.
+- Final browser journeys **8/8** cover metadata upload/review/publication,
+  keyboard warning/metadata disclosure, navigation from ordinary edit to manager,
+  save confirmation and clearing, plus existing scheduling journeys in Chromium
+  desktop/320px, Firefox desktop and Chromium with JavaScript disabled. JS variants
+  have no axe violations, and reflow/screenshot inspection passes. Evidence is
+  retained in `target/accessibility/ap09-video-metadata-20260928/` and
+  `target/e2e/ap09-video-metadata-20260928.xml`. Strict Clippy and workspace SQLx
+  preparation/check pass; migrations 0111–0112 were applied only to the disposable
+  AP09 dev/test database. The rebooted local AP09 service was restored. About
+  153 GiB remained free; no source, media, backups or audit evidence were removed.
+- This completes the native-VOD PUB04 gate, not M6 or all publication parity.
+  Initial live-form metadata controls, legacy-library metadata hydration, wider
+  remote-vocabulary/assistive-technology/device cases and the other M6 inventory
+  work remain. No push, merge or staging deployment occurred.

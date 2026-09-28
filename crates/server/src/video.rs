@@ -358,6 +358,21 @@ pub fn enrich_object(
     captions: &[plamenu_db::video_captions::Caption],
     chapters: &[plamenu_db::video_chapters::Chapter],
 ) -> Result<(), ApiError> {
+    // PeerTube stores Hashtag names verbatim (and adds its own display '#').
+    // Keep the ordinary Note convention elsewhere, but use its bare Video
+    // tag vocabulary for Create, dereference, history and Update alike.
+    if let Some(tags) = note
+        .get_mut("tag")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for tag in tags {
+            if tag["type"] == "Hashtag"
+                && let Some(name) = tag["name"].as_str()
+            {
+                tag["name"] = json!(name.trim_start_matches('#'));
+            }
+        }
+    }
     let live = media.live_state.is_some();
     let file = if live {
         None
@@ -583,6 +598,7 @@ fn context() -> Value {
         .push(json!({
             "sc":"http://schema.org/", "pt":"https://joinpeertube.org/ns#",
             "subtitleLanguage":"sc:subtitleLanguage", "language":"sc:inLanguage",
+            "category":"sc:category", "licence":"sc:license",
             "hasParts":"sc:hasParts",
             "identifier":"sc:identifier", "isLiveBroadcast":"sc:isLiveBroadcast",
             "uuid":{"@type":"sc:identifier","@id":"pt:uuid"},

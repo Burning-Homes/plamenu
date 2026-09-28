@@ -1745,8 +1745,8 @@ pub async fn attach<'e, E: PgExecutor<'e>>(
 /// orphan-upload vacuum leaves them alone until the post is published (it then
 /// attaches them normally and the scheduled row's deletion clears this link via
 /// `ON DELETE SET NULL`). Mirrors Mastodon's `media_attachments.scheduled_status_id`.
-pub async fn bind_to_scheduled(
-    pool: &PgPool,
+pub async fn bind_to_scheduled<'e, E: PgExecutor<'e>>(
+    executor: E,
     media_ids: &[i64],
     scheduled_status_id: i64,
     account_id: i64,
@@ -1755,12 +1755,13 @@ pub async fn bind_to_scheduled(
         r#"
         UPDATE media_attachments SET scheduled_status_id = $1
         WHERE id = ANY($2) AND account_id = $3 AND status_id IS NULL
+          AND scheduled_status_id IS NULL
         "#,
         scheduled_status_id,
         media_ids,
         account_id,
     )
-    .execute(pool)
+    .execute(executor)
     .await?;
     Ok(usize::try_from(result.rows_affected()).unwrap_or(0))
 }
@@ -2178,6 +2179,7 @@ pub async fn delete_unattached(
         r#"
         DELETE FROM media_attachments
         WHERE id = $1 AND account_id = $2 AND status_id IS NULL
+          AND scheduled_status_id IS NULL
         RETURNING id, account_id, status_id, file_name, remote_url, content_type,
                   description, width, height, created_at, kind, blurhash,
                   focus_x, focus_y, small_file_name, small_width, small_height,

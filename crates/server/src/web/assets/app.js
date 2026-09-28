@@ -5390,6 +5390,32 @@
   }
 
   function bindVideoUpload(root) {
+    root.querySelectorAll("[data-video-licence]").forEach((select) => {
+      if (select.dataset.licenceBound) return;
+      select.dataset.licenceBound = "1";
+      const status = select.closest("form")?.querySelector("[data-video-licence-status]");
+      const link = status?.querySelector("[data-video-licence-link]");
+      if (!status || !link) return;
+      const update = () => {
+        const option = select.selectedOptions[0];
+        const url = option?.dataset.licenceUrl;
+        status.hidden = !url;
+        if (url) { link.href = url; link.textContent = option.textContent; }
+      };
+      select.addEventListener("change", update);
+      update();
+    });
+    root.querySelectorAll("form[data-video-schedule-form]").forEach((form) => {
+      const schedule = form.querySelector("[data-video-schedule-at]");
+      const scheduleButton = form.querySelector("[data-video-schedule-submit]");
+      if (schedule && scheduleButton && !form.dataset.videoScheduleBound) {
+        form.dataset.videoScheduleBound = "1";
+        scheduleButton.addEventListener("click", () => { schedule.required = true; });
+        form.querySelector('button[value="publish"]')?.addEventListener("click", () => {
+          schedule.required = false;
+        });
+      }
+    });
     root.querySelectorAll("form[data-video-upload]").forEach((form) => {
       if (form.dataset.videoUploadBound) return;
       form.dataset.videoUploadBound = "1";
@@ -5518,8 +5544,8 @@
           if (labels[phase] && phase !== draft.dataset.phase) {
             draft.dataset.phase = phase;
             draft.querySelector('[role="status"]').textContent = labels[phase];
-            draft.querySelector("[data-video-review]").hidden = phase !== "ready";
-            draft.querySelector("[data-video-retry]").hidden = phase !== "failed";
+            draft.querySelector("[data-video-review]").hidden = phase !== "ready" || draft.hasAttribute("data-video-scheduled");
+            draft.querySelector("[data-video-retry]").hidden = phase !== "failed" || draft.hasAttribute("data-video-scheduled");
           }
           if (terminal.has(phase)) { stop(); return; }
         } catch (_error) {

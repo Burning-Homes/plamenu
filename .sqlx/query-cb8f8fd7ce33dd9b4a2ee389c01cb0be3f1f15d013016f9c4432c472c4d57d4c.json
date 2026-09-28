@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT media_id, category, licence, spoiler_text, sensitive, licence_version_known FROM video_metadata WHERE media_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_metadata",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "category",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "video_metadata",
+            "name": "category"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "licence",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "video_metadata",
+            "name": "licence"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "spoiler_text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_metadata",
+            "name": "spoiler_text"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "sensitive",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "video_metadata",
+            "name": "sensitive"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "licence_version_known",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "video_metadata",
+            "name": "licence_version_known"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "cb8f8fd7ce33dd9b4a2ee389c01cb0be3f1f15d013016f9c4432c472c4d57d4c"
+}

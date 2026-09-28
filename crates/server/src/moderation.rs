@@ -737,10 +737,66 @@ pub async fn self_delete_account_conn(
     // only their owner would leave apparently active orphan actors at peers.
     for channel in plamenu_db::video::owned_channels(&mut *conn, target.id).await? {
         if let Some(account) = account::find_by_id(&mut *conn, channel.account_id).await? {
+            delete_channel_publications_conn(state, conn, account.id, None).await?;
             self_delete_one_account_conn(state, conn, &account).await?;
         }
     }
+    // A channel's videos are authored by people, not by its Group actor. A
+    // channel deletion must not leave these files or posts publicly readable.
+    // Conversely, a deleting person's old Videos in a transferred channel still
+    // need individual signed Deletes: peers now attribute that channel elsewhere.
+    delete_channel_publications_conn(state, conn, target.id, Some(target.id)).await?;
     self_delete_one_account_conn(state, conn, target).await
+}
+
+async fn delete_channel_publications_conn(
+    state: &AppState,
+    conn: &mut plamenu_db::PgConnection,
+    channel: i64,
+    author: Option<i64>,
+) -> Result<(), ApiError> {
+    // Fence uploads/publications and transfer through the same channel lock.
+    sqlx::query("SELECT account_id FROM video_channels WHERE account_id=$1 FOR UPDATE")
+        .bind(channel)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(plamenu_db::DbError::from)?;
+    let rows:Vec<(i64,i64)>=sqlx::query_as("SELECT s.id,s.account_id FROM video_publications v JOIN statuses s ON s.id=v.status_id WHERE (v.channel_id=$1 OR s.account_id=$2) AND s.deleted_at IS NULL ORDER BY s.id")
+        .bind(channel).bind(author).fetch_all(&mut *conn).await.map_err(plamenu_db::DbError::from)?;
+    for (id, account_id) in rows {
+        let Some(stored) = plamenu_db::status::find_by_id(&mut *conn, id).await? else {
+            continue;
+        };
+        let Some(author) = account::find_by_id(&mut *conn, account_id).await? else {
+            continue;
+        };
+        let uri = crate::entities::status_uri_for_account(&state.config.domain, &stored, &author);
+        let extras = crate::video::follower_inboxes(&mut *conn, id).await?;
+        let delete =
+            plamenu_ap::activity::delete_note(&state.config.domain, &author.username, &uri);
+        crate::actions::fan_out_conn(state, &mut *conn, &author, &delete, &extras).await?;
+        plamenu_db::status_tombstone::record(&mut *conn, id, account_id, &uri).await?;
+        plamenu_db::status::stub_local_conn(&mut *conn, id, account_id).await?;
+    }
+    // Unpublished content has no federated audience. Durable media/source
+    // cleanup triggers preserve deletion/retention accounting.
+    sqlx::query("DELETE FROM scheduled_statuses WHERE video_channel_id=$1")
+        .bind(channel)
+        .execute(&mut *conn)
+        .await
+        .map_err(plamenu_db::DbError::from)?;
+    let drafts:Vec<i64>=sqlx::query_scalar("SELECT d.media_id FROM video_drafts d JOIN media_attachments m ON m.id=d.media_id WHERE d.channel_id=$1 AND m.status_id IS NULL").bind(channel).fetch_all(&mut *conn).await.map_err(plamenu_db::DbError::from)?;
+    for id in drafts {
+        let keys:Vec<String>=sqlx::query_scalar("SELECT key FROM media_attachments m CROSS JOIN LATERAL unnest(ARRAY[m.file_name,m.small_file_name]) key WHERE m.id=$1 AND key IS NOT NULL")
+            .bind(id).fetch_all(&mut *conn).await.map_err(plamenu_db::DbError::from)?;
+        plamenu_db::media_cleanup::enqueue_many(&mut *conn, &keys).await?;
+        sqlx::query("DELETE FROM media_attachments WHERE id=$1")
+            .bind(id)
+            .execute(&mut *conn)
+            .await
+            .map_err(plamenu_db::DbError::from)?;
+    }
+    Ok(())
 }
 
 async fn self_delete_one_account_conn(

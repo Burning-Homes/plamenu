@@ -2047,19 +2047,18 @@ pub async fn edit(
 
     if field(&pairs, "op") == Some("preview") {
         let fragment = headers.contains_key("x-compose-preview");
-        let stored = match status::find_local(&state.pool, user.current.account.id, id).await {
-            Ok(Some(stored)) if stored.reblog_of_id.is_none() => stored,
-            Ok(_) => return ApiError::NotFound.into_response(),
-            Err(err) => return ApiError::from(err).into_response(),
+        let stored =
+            match crate::video_channels::editable_status(&state, user.current.account.id, id).await
+            {
+                Ok(stored) => stored,
+                Err(err) => return err.into_response(),
+            };
+        let author = match plamenu_db::account::find_by_id(&state.pool, stored.account_id).await {
+            Ok(Some(author)) => author,
+            Ok(None) => return ApiError::NotFound.into_response(),
+            Err(error) => return ApiError::from(error).into_response(),
         };
-        return match actions::prepare_status_edit(
-            &state,
-            &user.current.account,
-            stored.clone(),
-            params,
-        )
-        .await
-        {
+        return match actions::prepare_status_edit(&state, &author, stored.clone(), params).await {
             Ok(prepared) => {
                 let sensitive = prepared.sensitive;
                 match build_edit_preview_card(&state, &user, prepared).await {

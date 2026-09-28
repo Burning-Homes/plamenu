@@ -8,6 +8,7 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
+use plamenu_db::account::Account;
 use plamenu_db::media;
 use plamenu_db::scheduled_status::{self, NewScheduledStatus};
 use serde::Deserialize;
@@ -280,6 +281,7 @@ pub async fn create_scheduled(
             scheduled_at,
             text: draft.text,
             object_type: if article { "Article" } else { "Note" },
+            video_channel_id: None,
             title,
             content_type: draft.content_type,
             visibility: draft.visibility,
@@ -301,5 +303,137 @@ pub async fn create_scheduled(
     if !draft.media_ids.is_empty() {
         media::bind_to_scheduled(&state.pool, draft.media_ids, row.id, account_id).await?;
     }
+    render_scheduled_status(&state.pool, &state.config.domain, &row).await
+}
+
+/// Queue a processed VOD with its channel and media reservation in one
+/// transaction. The due worker replays this through the normal Video path.
+#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "validation and reservation are one queue operation"
+)]
+pub async fn create_scheduled_video(
+    state: &AppState,
+    author: &Account,
+    scheduled_at: OffsetDateTime,
+    channel_id: i64,
+    media_id: i64,
+    title: &str,
+    description: &str,
+    visibility: &str,
+    language: Option<&str>,
+    application_id: Option<i64>,
+) -> Result<Value, ApiError> {
+    validate_future(scheduled_at)?;
+    if description.chars().count()
+        > usize::try_from(crate::video::MAX_DESCRIPTION_CHARACTERS).unwrap_or(10_000)
+    {
+        return Err(ApiError::Unprocessable(
+            "Video description is too long".into(),
+        ));
+    }
+    if language.is_some_and(|code| !actions::is_language_code(code)) {
+        return Err(ApiError::Unprocessable(
+            "Validation failed: Language is not included in the list".into(),
+        ));
+    }
+    let media = media::find_owned_many(&state.pool, &[media_id], author.id)
+        .await?
+        .into_iter()
+        .find(|item| item.status_id.is_none())
+        .ok_or_else(|| ApiError::Unprocessable("Choose an unpublished video".into()))?;
+    crate::video::validate_publication(
+        &actions::PostParams {
+            username: &author.username,
+            title: Some(title),
+            text: description,
+            visibility,
+            language,
+            media_ids: &[media_id],
+            ..Default::default()
+        },
+        std::slice::from_ref(&media),
+    )?;
+    if media.live_state.is_some() {
+        return Err(ApiError::Unprocessable(
+            "Schedule a processed video, not a live broadcast".into(),
+        ));
+    }
+    crate::video::ensure_compatible_poster(state, &media).await?;
+    if scheduled_status::count_total(&state.pool, author.id).await? >= TOTAL_LIMIT {
+        return Err(ApiError::Unprocessable(format!(
+            "Validation failed: Limit of {TOTAL_LIMIT} scheduled statuses exceeded"
+        )));
+    }
+    let owner_zone = plamenu_db::user::time_zone_by_account_id(&state.pool, author.id)
+        .await?
+        .as_deref()
+        .and_then(crate::time_zones::normalize)
+        .unwrap_or("UTC");
+    if scheduled_status::count_on_day(&state.pool, author.id, scheduled_at, owner_zone).await?
+        >= DAILY_LIMIT
+    {
+        return Err(ApiError::Unprocessable(format!(
+            "Validation failed: Limit of {DAILY_LIMIT} scheduled statuses per day exceeded"
+        )));
+    }
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(plamenu_db::DbError::from)?;
+    if !plamenu_db::video::lock_owned_channel(&mut tx, channel_id, author.id).await? {
+        return Err(ApiError::Forbidden("This is not your video channel".into()));
+    }
+    if !plamenu_db::video::lock_publishable_media(
+        &mut tx, media_id, author.id, channel_id, None, None,
+    )
+    .await?
+    {
+        return Err(ApiError::Unprocessable(
+            "This video is not ready or is already scheduled".into(),
+        ));
+    }
+    let metadata = plamenu_db::video_metadata::for_media(&mut *tx, &[media_id])
+        .await?
+        .remove(&media_id)
+        .unwrap_or_default();
+    let row = scheduled_status::create(
+        &mut *tx,
+        NewScheduledStatus {
+            account_id: author.id,
+            scheduled_at,
+            text: description,
+            object_type: "Video",
+            video_channel_id: Some(channel_id),
+            title: Some(title.trim()),
+            content_type: "text/plain",
+            visibility,
+            in_reply_to_id: None,
+            quoted_status_id: None,
+            spoiler_text: &metadata.spoiler_text,
+            sensitive: metadata.sensitive,
+            language,
+            application_id,
+            media_ids: &[media_id],
+            poll_options: None,
+            poll_expires_in: None,
+            poll_multiple: false,
+            poll_hide_totals: false,
+            quote_approval_policy: None,
+        },
+    )
+    .await?;
+    if media::bind_to_scheduled(&mut *tx, &[media_id], row.id, author.id).await? != 1 {
+        return Err(ApiError::Conflict("Video reservation changed".into()));
+    }
+    sqlx::query("UPDATE video_drafts SET expires_at = GREATEST(expires_at, $2 + interval '7 days') WHERE media_id = $1")
+        .bind(media_id)
+        .bind(scheduled_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(plamenu_db::DbError::from)?;
+    tx.commit().await.map_err(plamenu_db::DbError::from)?;
     render_scheduled_status(&state.pool, &state.config.domain, &row).await
 }

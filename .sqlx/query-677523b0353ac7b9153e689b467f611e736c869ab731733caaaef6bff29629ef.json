@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE scheduled_statuses\n        SET scheduled_at = $3, publish_after = NULL, publish_generation = publish_generation + 1\n        WHERE id = $1 AND account_id = $2\n        RETURNING id, account_id, scheduled_at, text, content_type, visibility,\n                  in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,\n                  application_id, media_ids, poll_options, poll_expires_in,\n                  poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation\n        ",
+  "query": "\n        UPDATE scheduled_statuses\n        SET publish_after = now() + interval '5 minutes',\n            publish_generation = publish_generation + 1\n        WHERE id IN (\n            SELECT id FROM scheduled_statuses\n            WHERE GREATEST(scheduled_at, publish_after) <= now()\n            ORDER BY GREATEST(scheduled_at, publish_after), id\n            LIMIT $1\n            FOR UPDATE SKIP LOCKED\n        )\n        RETURNING id, account_id, scheduled_at, text, content_type, visibility,\n                  in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,\n                  application_id, media_ids, poll_options, poll_expires_in,\n                  poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id, created_at, publish_generation\n        ",
   "describe": {
     "columns": [
       {
@@ -225,6 +225,17 @@
       },
       {
         "ordinal": 20,
+        "name": "video_channel_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "video_channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -235,7 +246,7 @@
         }
       },
       {
-        "ordinal": 21,
+        "ordinal": 22,
         "name": "publish_generation",
         "type_info": "Int8",
         "origin": {
@@ -248,9 +259,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Int8",
-        "Timestamptz"
+        "Int8"
       ]
     },
     "nullable": [
@@ -274,9 +283,10 @@
       true,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "28b99eff283db79f379d7235a2c55a3daa3871c687cec7196ac7b4f7620c0ea2"
+  "hash": "677523b0353ac7b9153e689b467f611e736c869ab731733caaaef6bff29629ef"
 }

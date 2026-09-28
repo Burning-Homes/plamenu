@@ -866,6 +866,7 @@ pub(crate) async fn preview_media_json(
     let poster_alts = video_poster_alts(pool, &poster_ids).await?;
     let captions = plamenu_db::video_captions::for_media(pool, media_ids).await?;
     let chapters = plamenu_db::video_chapters::for_media(pool, media_ids).await?;
+    let video_metadata = plamenu_db::video_metadata::for_media(pool, &poster_ids).await?;
     Ok(media
         .iter()
         .map(|item| {
@@ -880,6 +881,9 @@ pub(crate) async fn preview_media_json(
             }
             attach_caption_tracks(&mut value, item, &captions, domain);
             attach_chapters(&mut value, item, &chapters);
+            if let Some(metadata) = video_metadata.get(&item.id) {
+                value["video_metadata"] = crate::video_metadata::entity(metadata);
+            }
             value
         })
         .collect())
@@ -3386,6 +3390,10 @@ fn attach_native_live_details(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "batched attachment extensions share a single traversal"
+)]
 async fn media_maps(
     pool: &PgPool,
     domain: &str,
@@ -3425,6 +3433,7 @@ async fn media_maps(
     let remote_peers = plamenu_db::remote_hls_peers::for_media(pool, &media_ids).await?;
     let captions = plamenu_db::video_captions::for_media(pool, &media_ids).await?;
     let chapters = plamenu_db::video_chapters::for_media(pool, &media_ids).await?;
+    let video_metadata = plamenu_db::video_metadata::for_media(pool, &poster_ids).await?;
     let native_peers = plamenu_db::native_video_hls::public_peer_uuids(pool, &media_ids).await?;
     let now = time::OffsetDateTime::now_utc();
     // Skip the round-trip entirely on the common attachment-less batch.
@@ -3457,6 +3466,9 @@ async fn media_maps(
                     }
                     attach_caption_tracks(&mut value, file, &captions, domain);
                     attach_chapters(&mut value, file, &chapters);
+                    if let Some(metadata) = video_metadata.get(&file.id) {
+                        value["video_metadata"] = crate::video_metadata::entity(metadata);
+                    }
                     attach_remote_peer_hints(&mut value, file, &remote_peers, domain);
                     if let Some(uuid) = native_peers.get(&file.id) {
                         attach_native_peer_hints(&mut value, file, uuid, domain);
@@ -5963,12 +5975,29 @@ pub async fn render_scheduled_status(
     let mut rows = media::find_by_ids(pool, &item.media_ids).await?;
     rows.sort_by_key(|m| item.media_ids.iter().position(|id| *id == m.id));
     // Scheduled posts carry the owner's own local uploads (always cached).
-    let media_attachments: Vec<Value> = rows.iter().map(|m| media_json(domain, m, false)).collect();
+    let metadata = plamenu_db::video_metadata::for_media(pool, &item.media_ids).await?;
+    let media_attachments: Vec<Value> = rows
+        .iter()
+        .map(|m| {
+            let mut entity = media_json(domain, m, false);
+            if let Some(value) = metadata.get(&m.id) {
+                entity["video_metadata"] = crate::video_metadata::entity(value);
+            }
+            entity
+        })
+        .collect();
 
     let mut params = serde_json::Map::new();
     if item.object_type == "Article" {
         params.insert("post_kind".into(), json!("article"));
         params.insert("title".into(), json!(item.title));
+    } else if item.object_type == "Video" {
+        params.insert("post_kind".into(), json!("video"));
+        params.insert("title".into(), json!(item.title));
+        params.insert(
+            "channel_id".into(),
+            json!(item.video_channel_id.map(|id| id.to_string())),
+        );
     }
     params.insert("text".into(), json!(item.text));
     params.insert("visibility".into(), json!(item.visibility));

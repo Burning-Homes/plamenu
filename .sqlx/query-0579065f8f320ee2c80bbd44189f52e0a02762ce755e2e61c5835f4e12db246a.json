@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, account_id, scheduled_at, text, content_type, visibility,\n               in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,\n               application_id, media_ids, poll_options, poll_expires_in,\n               poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation\n        FROM scheduled_statuses\n        WHERE account_id = $1\n          AND ($2::bigint IS NULL OR id < $2)\n          AND ($3::bigint IS NULL OR id > $3)\n        ORDER BY id DESC\n        LIMIT $4\n        ",
+  "query": "\n        UPDATE scheduled_statuses\n        SET scheduled_at = $3, publish_after = NULL, publish_generation = publish_generation + 1\n        WHERE id = $1 AND account_id = $2\n        RETURNING id, account_id, scheduled_at, text, content_type, visibility,\n                  in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,\n                  application_id, media_ids, poll_options, poll_expires_in,\n                  poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id, created_at, publish_generation\n        ",
   "describe": {
     "columns": [
       {
@@ -225,6 +225,17 @@
       },
       {
         "ordinal": 20,
+        "name": "video_channel_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "video_channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -235,7 +246,7 @@
         }
       },
       {
-        "ordinal": 21,
+        "ordinal": 22,
         "name": "publish_generation",
         "type_info": "Int8",
         "origin": {
@@ -250,8 +261,7 @@
       "Left": [
         "Int8",
         "Int8",
-        "Int8",
-        "Int8"
+        "Timestamptz"
       ]
     },
     "nullable": [
@@ -275,9 +285,10 @@
       true,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "837d4b1c1c2a5d4b6e584a6b005eb0acc6eb702d857dbaff2548f34d64e71ecd"
+  "hash": "0579065f8f320ee2c80bbd44189f52e0a02762ce755e2e61c5835f4e12db246a"
 }

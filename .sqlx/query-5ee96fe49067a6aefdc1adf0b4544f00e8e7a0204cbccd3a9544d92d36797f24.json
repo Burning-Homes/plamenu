@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO scheduled_statuses\n            (id, account_id, scheduled_at, text, content_type, visibility,\n             in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,\n             application_id, media_ids, poll_options, poll_expires_in, poll_multiple,\n             poll_hide_totals, quote_approval_policy, object_type, title)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,\n                $18, $19, $20)\n        RETURNING id, account_id, scheduled_at, text, content_type, visibility,\n                  in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,\n                  application_id, media_ids, poll_options, poll_expires_in,\n                  poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation\n        ",
+  "query": "\n        SELECT id, account_id, scheduled_at, text, content_type, visibility,\n               in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,\n               application_id, media_ids, poll_options, poll_expires_in,\n               poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id, created_at, publish_generation\n        FROM scheduled_statuses\n        WHERE account_id = $1\n          AND ($2::bigint IS NULL OR id < $2)\n          AND ($3::bigint IS NULL OR id > $3)\n        ORDER BY id DESC\n        LIMIT $4\n        ",
   "describe": {
     "columns": [
       {
@@ -225,6 +225,17 @@
       },
       {
         "ordinal": 20,
+        "name": "video_channel_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "video_channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -235,7 +246,7 @@
         }
       },
       {
-        "ordinal": 21,
+        "ordinal": 22,
         "name": "publish_generation",
         "type_info": "Int8",
         "origin": {
@@ -250,24 +261,8 @@
       "Left": [
         "Int8",
         "Int8",
-        "Timestamptz",
-        "Text",
-        "Text",
-        "Text",
         "Int8",
-        "Int8",
-        "Text",
-        "Bool",
-        "Text",
-        "Int8",
-        "Int8Array",
-        "TextArray",
-        "Int8",
-        "Bool",
-        "Bool",
-        "Int4",
-        "Text",
-        "Text"
+        "Int8"
       ]
     },
     "nullable": [
@@ -291,9 +286,10 @@
       true,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "9b77f1ef16dc5fbf20514f5225986827a03612bb038d9a5e70a8c3c513cfb2ed"
+  "hash": "5ee96fe49067a6aefdc1adf0b4544f00e8e7a0204cbccd3a9544d92d36797f24"
 }

@@ -29,6 +29,11 @@ pub(super) struct Draft {
     pub poster_time: String,
     pub poster_alt: Option<String>,
     pub media_id: Option<i64>,
+    pub scheduled_at: String,
+    pub category: String,
+    pub licence: String,
+    pub spoiler_text: String,
+    pub sensitive: bool,
 }
 
 async fn owned_preview(
@@ -123,7 +128,8 @@ pub(super) async fn page(
     draft: &Draft,
     error: Option<&str>,
 ) -> Result<Markup, ApiError> {
-    let owned = plamenu_db::video::owned_channels(&state.pool, user.current.account.id).await?;
+    let owned =
+        plamenu_db::video_channel_access::available(&state.pool, user.current.account.id).await?;
     let ids = owned.iter().map(|c| c.account_id).collect::<Vec<_>>();
     let channels = account::find_by_ids(&state.pool, &ids).await?;
     let locale = user.locale;
@@ -171,6 +177,7 @@ pub(super) async fn page(
             @if let Some(message) = error { p.settings__error role="alert" { (message) } }
             p { (locale.text("videos-intro")) }
             p { a href="/videos/explore" { (locale.text("videos-explore-browse")) } }
+            p { a href="/videos/channels" { (locale.text("video-channel-manage")) } }
             @if !recent.is_empty() {
                 nav aria-label=(locale.text("videos-recent-drafts")) {
                     h2 { (locale.text("videos-recent-drafts")) }
@@ -194,6 +201,8 @@ pub(super) async fn page(
                                 a href=(format!("/videos/{}/chapters", published.media_id)) {
                                     (locale.text("videos-chapters-title"))
                                 }
+                                " · " a href=(format!("/videos/{}/metadata", published.media_id)) { (locale.text("videos-metadata-manage")) }
+                                " · " a href=(format!("/web/statuses/{}/edit",published.status_id)) { (locale.text("status-edit")) }
                             }
                         }
                     }
@@ -235,12 +244,14 @@ pub(super) async fn page(
                             } else {
                                 &channel.display_name
                             };
-                            li { a href=(format!("/videos/explore?channel={}", channel.id)) { (name) } }
+                            li { a href=(format!("/videos/explore?channel={}", channel.id)) { (name) }
+                                " · " a href=(format!("/videos/channels/{}",channel.id)) { (locale.text("video-channel-manage")) }
+                            }
                         }
                     }
                 }
                 }
-                form.settings-form data-video-upload[preview.is_none()] method="post" action="/web/videos" enctype="multipart/form-data" {
+                form.settings-form data-video-upload[preview.is_none()] data-video-schedule-form[preview.is_some()] method="post" action="/web/videos" enctype="multipart/form-data" {
                     input type="hidden" name="csrf" value=(user.csrf);
                     @if let Some(media) = &preview {
                         input type="hidden" name="media_id" value=(media.id);
@@ -284,6 +295,19 @@ pub(super) async fn page(
                             span.settings-field__label { (locale.text("videos-description")) }
                             textarea name="description" rows="5" maxlength="10000" { (draft.description) }
                         }
+                        p.settings-field__hint { (locale.text("videos-tags-hint")) }
+                        (super::video_metadata::fields(&draft.category, &draft.licence, locale))
+                        label.settings-field {
+                            span.settings-field__label { (locale.text("compose-content-warning")) }
+                            input name="spoiler_text" value=(draft.spoiler_text) maxlength="500";
+                        }
+                        label.settings-field {
+                            input type="hidden" name="sensitive" value="false";
+                            span.settings-field__label {
+                                input type="checkbox" name="sensitive" value="true" checked[draft.sensitive];
+                                " " (locale.text("compose-sensitive"))
+                            }
+                        }
                         label.settings-field {
                             span.settings-field__label { (locale.text("videos-language")) }
                             input name="language" value=(draft.language) placeholder="en" maxlength="35";
@@ -321,6 +345,17 @@ pub(super) async fn page(
                     } @else {
                         input type="hidden" name="alt" value=(draft.alt);
                         input type="hidden" name="transcript" value=(draft.transcript);
+                        fieldset.settings-form__group {
+                            legend { (locale.text("videos-schedule-title")) }
+                            label.settings-field {
+                                span.settings-field__label { (locale.text("videos-schedule-at")) }
+                                input type="datetime-local" name="scheduled_at" value=(draft.scheduled_at)
+                                    aria-describedby="videos-schedule-hint" data-video-schedule-at;
+                            }
+                            p.settings-field__hint id="videos-schedule-hint" {
+                                (locale.text("videos-schedule-hint")) " " (user.clock.label()) "."
+                            }
+                        }
                     }
                     @if preview.is_none() {
                         div.video-upload__progress data-video-upload-progress
@@ -338,6 +373,7 @@ pub(super) async fn page(
                     div.settings-form__actions {
                         @if preview.is_some() {
                             button type="submit" name="op" value="publish" { (locale.text("videos-publish")) }
+                            button type="submit" name="op" value="schedule" data-video-schedule-submit { (locale.text("videos-schedule-button")) }
                             a href="/videos" { (locale.text("videos-start-over")) }
                         } @else {
                             button type="submit" name="op" value="review" { (locale.text("videos-upload-review")) }
@@ -565,6 +601,10 @@ pub async fn submit(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "bounded streaming multipart dispatch"
+)]
 async fn submit_inner(
     state: &AppState,
     user: &WebUser,
@@ -613,6 +653,10 @@ async fn submit_inner(
                     | "visibility"
                     | "poster_time"
                     | "media_id"
+                    | "category"
+                    | "licence"
+                    | "spoiler_text"
+                    | "sensitive"
             )
         {
             return Err(ApiError::BadRequest(
@@ -641,6 +685,11 @@ async fn submit_inner(
             "language" => draft.language = value,
             "visibility" => draft.visibility = value,
             "poster_time" => draft.poster_time = value,
+            "scheduled_at" => draft.scheduled_at = value,
+            "category" => draft.category = value,
+            "licence" => draft.licence = value,
+            "spoiler_text" => draft.spoiler_text = value,
+            "sensitive" => draft.sensitive = crate::routes::params::truthy(Some(&value)),
             "alt" => draft.alt = value,
             "transcript" => draft.transcript = value,
             "media_id" => draft.media_id = value.parse().ok(),
@@ -670,6 +719,10 @@ async fn submit_inner(
     process(state, user, draft, &operation).await
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one recoverable private draft reservation and rollback"
+)]
 pub(super) async fn reserve_upload(
     state: &AppState,
     user: &WebUser,
@@ -762,7 +815,13 @@ pub(super) async fn reserve_upload(
         reserved_bytes,
     };
     match video_draft::reserve(&state.pool, &new, &limits).await? {
-        video_draft::Admission::Accepted => Ok(id),
+        video_draft::Admission::Accepted => {
+            if let Err(error) = save_options(state, user.current.account.id, id, draft).await {
+                video_draft::cancel(&state.pool, id, user.current.account.id).await?;
+                return Err(error);
+            }
+            Ok(id)
+        },
         video_draft::Admission::Forbidden => Err(ApiError::Forbidden(
             "This is not your video channel".into(),
         )),
@@ -841,23 +900,44 @@ async fn process(
         .channel
         .parse()
         .map_err(|_| ApiError::Unprocessable("Choose a channel".into()))?;
-    let channel = plamenu_db::video::channel(&state.pool, channel_id)
+    if plamenu_db::video_channel_access::role(&state.pool, channel_id, user.current.account.id)
         .await?
-        .ok_or(ApiError::NotFound)?;
-    if channel.owner_account_id != user.current.account.id {
+        .is_none()
+    {
         return Err(ApiError::Forbidden("This is not your channel".into()));
     }
     let id = draft
         .media_id
         .ok_or_else(|| ApiError::Unprocessable("Choose a video or audio file".into()))?;
-    if operation != "publish" {
+    if operation != "publish" && operation != "schedule" {
         return Ok(page(state, user, draft, None).await?.into_response());
+    }
+    let metadata = save_options(state, user.current.account.id, id, draft).await?;
+    if operation == "schedule" {
+        let instant =
+            super::scheduled::resolve_schedule_input(state, user, &draft.scheduled_at).await?;
+        crate::routes::scheduled_statuses::create_scheduled_video(
+            state,
+            &user.current.account,
+            instant,
+            channel_id,
+            id,
+            &draft.title,
+            &draft.description,
+            &draft.visibility,
+            (!draft.language.is_empty()).then_some(draft.language.as_str()),
+            None,
+        )
+        .await?;
+        return Ok(redirect_to("/settings/scheduled?saved=1"));
     }
     let (stored, _) = crate::actions::post_video(
         state,
         PostParams {
             username: &user.current.account.username,
             media_ids: &[id],
+            spoiler_text: &metadata.spoiler_text,
+            sensitive: metadata.sensitive,
             title: Some(&draft.title),
             text: &draft.description,
             language: (!draft.language.is_empty()).then_some(draft.language.as_str()),
@@ -868,6 +948,26 @@ async fn process(
     )
     .await?;
     Ok(redirect_to(&format!("/web/statuses/{}", stored.id)))
+}
+
+async fn save_options(
+    state: &AppState,
+    owner: i64,
+    id: i64,
+    draft: &Draft,
+) -> Result<plamenu_db::video_metadata::Metadata, ApiError> {
+    crate::video_metadata::draft(
+        state,
+        owner,
+        id,
+        &crate::video_metadata::Input {
+            category: Some(serde_json::Value::from(draft.category.as_str())),
+            licence: Some(serde_json::Value::from(draft.licence.as_str())),
+            spoiler_text: Some(draft.spoiler_text.clone()),
+            sensitive: Some(serde_json::Value::from(draft.sensitive)),
+        },
+    )
+    .await
 }
 
 /// Small metadata fields are bounded while reading, not after allocation.

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT account_id, owner_account_id FROM video_channels WHERE owner_account_id = $1 ORDER BY account_id",
+  "query": "SELECT c.account_id, c.owner_account_id FROM video_channels c JOIN accounts a ON a.id=c.account_id WHERE c.owner_account_id=$1 AND a.deleted_at IS NULL ORDER BY c.account_id",
   "describe": {
     "columns": [
       {
@@ -36,5 +36,5 @@
       false
     ]
   },
-  "hash": "7106a901e9c000ceb29dc6b07e8f192b9f6cc4fec6cc3f0568b183827071f7a3"
+  "hash": "aed6018e5b0458eea963d89d226968facdf91b3b687e7962adf7eced87a635a7"
 }

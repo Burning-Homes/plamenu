@@ -422,7 +422,7 @@ async fn pump(
                 loop {
                     let next = tokio::select! {
                         tag = rx.recv() => tag,
-                        _ = credential_check.tick(), if session.ingest_key_generation.is_some() => {
+                        _ = credential_check.tick() => {
                             match plamenu_db::native_live::ingest_key_current(&state.pool, &session).await {
                                 Ok(true) => continue,
                                 Ok(false) => {

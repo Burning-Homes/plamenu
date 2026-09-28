@@ -76,10 +76,10 @@ pub async fn publish_claimed(
         title: row.title.as_deref(),
         external_url: None,
         event: None,
-        kind: if row.object_type == "Article" {
-            plamenu_ap::activity::PostKind::Article
-        } else {
-            plamenu_ap::activity::PostKind::Note
+        kind: match row.object_type.as_str() {
+            "Article" => plamenu_ap::activity::PostKind::Article,
+            "Video" => plamenu_ap::activity::PostKind::Video,
+            _ => plamenu_ap::activity::PostKind::Note,
         },
     };
     actions::post_scheduled_status(state, params, row).await?;

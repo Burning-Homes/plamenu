@@ -8,7 +8,7 @@ use http_body_util::BodyExt;
 use plamenu::actions::{self, DeleteMode, EditParams, PostParams};
 use plamenu::error::ApiError;
 use plamenu_ap::activity::PostKind;
-use plamenu_db::{PgPool, follow, media};
+use plamenu_db::{PgPool, follow, media, scheduled_status};
 use tower::ServiceExt;
 
 #[tokio::test]
@@ -672,6 +672,931 @@ async fn video_media(pool: &PgPool, account_id: i64) -> media::Media {
     .unwrap()
 }
 
+async fn channel_change(
+    state: &plamenu::AppState,
+    actor: &plamenu_db::account::Account,
+    channel: i64,
+    operation: &str,
+    username: Option<&str>,
+    role: Option<&str>,
+    confirm: Option<&str>,
+) -> Result<(), ApiError> {
+    plamenu::video_channels::change(
+        state,
+        actor,
+        channel,
+        &plamenu::video_channels::Change {
+            operation: operation.into(),
+            username: username.map(str::to_owned),
+            role: role.map(str::to_owned),
+            confirm: confirm.map(str::to_owned),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn channel_collaboration_consent_roles_revocation_and_signer(pool: PgPool) {
+    use plamenu_db::video_channel_access as access;
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let carol = create_local_account(&pool, "carol", "Carol").await;
+    let remote = RemoteUser::new("remote.test", "viewer");
+    let stub = StubFederation::with_users(&[&remote]);
+    let state = test_state_with(pool.clone(), stub.clone());
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let viewer = plamenu::remote::store_remote_actor(&pool, &remote.actor)
+        .await
+        .unwrap();
+    follow::create(&pool, viewer.id, channel.id, None)
+        .await
+        .unwrap();
+    let alice_media = video_media(&pool, alice.id).await;
+    let (alice_video, _) =
+        actions::post_video(&state, params("alice", &[alice_media.id]), channel.id)
+            .await
+            .unwrap();
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "invite",
+        Some("bob"),
+        Some("publisher"),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(access::role(&pool, channel.id, bob.id).await.unwrap(), None);
+    let bob_media = video_media(&pool, bob.id).await;
+    assert!(
+        actions::post_video(&state, params("bob", &[bob_media.id]), channel.id)
+            .await
+            .is_err()
+    );
+    assert!(
+        channel_change(&state, &carol, channel.id, "accept", None, None, None)
+            .await
+            .is_err()
+    );
+    channel_change(&state, &bob, channel.id, "accept", None, None, None)
+        .await
+        .unwrap();
+    let (bob_video, _) = actions::post_video(&state, params("bob", &[bob_media.id]), channel.id)
+        .await
+        .unwrap();
+    assert_eq!(bob_video.account_id, bob.id);
+    assert!(
+        actions::edit_status(
+            &state,
+            &bob,
+            alice_video.id,
+            EditParams {
+                title: Some("Not permitted"),
+                ..Default::default()
+            }
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        plamenu::video_metadata::update(
+            &state,
+            bob.id,
+            alice_media.id,
+            &plamenu::video_metadata::Input::default()
+        )
+        .await
+        .is_err()
+    );
+    actions::edit_status(
+        &state,
+        &bob,
+        bob_video.id,
+        EditParams {
+            title: Some("Own publisher edit"),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    // Upgrade is not ambient new authority: the old role is revoked until consent.
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "invite",
+        Some("bob"),
+        Some("editor"),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(access::role(&pool, channel.id, bob.id).await.unwrap(), None);
+    channel_change(&state, &bob, channel.id, "accept", None, None, None)
+        .await
+        .unwrap();
+    let edited = actions::edit_status(
+        &state,
+        &bob,
+        alice_video.id,
+        EditParams {
+            title: Some("Editor correction"),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(edited.account_id, alice.id);
+    assert!(
+        channel_change(
+            &state,
+            &bob,
+            channel.id,
+            "invite",
+            Some("carol"),
+            Some("editor"),
+            None
+        )
+        .await
+        .is_err()
+    );
+    plamenu::video_metadata::update(
+        &state,
+        bob.id,
+        alice_media.id,
+        &plamenu::video_metadata::Input {
+            category: Some(serde_json::json!(13)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    plamenu::delivery::run_due(&state).await;
+    assert!(
+        stub.deliveries()
+            .iter()
+            .any(|d| d.activity["type"] == "Update"
+                && d.activity["object"]["name"] == "Editor correction"
+                && d.activity["actor"] == "https://plamenu.test/users/alice")
+    );
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "revoke",
+        Some("bob"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(
+        actions::edit_status(
+            &state,
+            &bob,
+            bob_video.id,
+            EditParams {
+                title: Some("After revocation"),
+                ..Default::default()
+            }
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        actions::delete_status(&state, &bob, bob_video.id, DeleteMode::Stub)
+            .await
+            .is_err()
+    );
+    assert!(
+        plamenu_db::video_captions::owned_publication(&pool, bob_media.id, bob.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    actions::delete_status(&state, &alice, bob_video.id, DeleteMode::Stub)
+        .await
+        .unwrap();
+    assert!(
+        plamenu_db::video::publications(&pool, &[bob_video.id])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn channel_transfer_requires_recipient_and_preserves_authorship(pool: PgPool) {
+    use plamenu_db::video_channel_access as access;
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let file = video_media(&pool, alice.id).await;
+    let (video, _) = actions::post_video(&state, params("alice", &[file.id]), channel.id)
+        .await
+        .unwrap();
+    let before = plamenu::note::note_for_status(&state, &video, &alice)
+        .await
+        .unwrap();
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "invite",
+        Some("bob"),
+        Some("editor"),
+        None,
+    )
+    .await
+    .unwrap();
+    channel_change(&state, &bob, channel.id, "accept", None, None, None)
+        .await
+        .unwrap();
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "transfer",
+        Some("bob"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(
+        channel_change(
+            &state,
+            &alice,
+            channel.id,
+            "accept_transfer",
+            None,
+            None,
+            Some("films")
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        channel_change(
+            &state,
+            &bob,
+            channel.id,
+            "accept_transfer",
+            None,
+            None,
+            Some("wrong")
+        )
+        .await
+        .is_err()
+    );
+    channel_change(
+        &state,
+        &bob,
+        channel.id,
+        "accept_transfer",
+        None,
+        None,
+        Some("films"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        access::role(&pool, channel.id, alice.id).await.unwrap(),
+        None
+    );
+    assert_eq!(
+        access::role(&pool, channel.id, bob.id)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("owner")
+    );
+    assert!(access::grants(&pool, channel.id).await.unwrap().is_empty());
+    let actor = serde_json::to_value(
+        plamenu::profile::local_actor(&state, &channel)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(actor["attributedTo"], "https://plamenu.test/users/bob");
+    let edited = actions::edit_status(
+        &state,
+        &bob,
+        video.id,
+        EditParams {
+            title: Some("New owner correction"),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(edited.account_id, alice.id);
+    let after = plamenu::note::note_for_status(&state, &edited, &alice)
+        .await
+        .unwrap();
+    for field in ["id", "uuid", "attributedTo"] {
+        assert_eq!(before[field], after[field]);
+    }
+    assert!(
+        actions::edit_status(
+            &state,
+            &alice,
+            video.id,
+            EditParams {
+                title: Some("Former owner"),
+                ..Default::default()
+            }
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        actions::delete_status(&state, &alice, video.id, DeleteMode::Stub)
+            .await
+            .is_err()
+    );
+    actions::delete_status(&state, &bob, video.id, DeleteMode::Stub)
+        .await
+        .unwrap();
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn channel_deletion_retracts_collaborator_videos_not_accounts(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let remote = RemoteUser::new("remote.test", "viewer");
+    let stub = StubFederation::with_users(&[&remote]);
+    let state = test_state_with(pool.clone(), stub.clone());
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let viewer = plamenu::remote::store_remote_actor(&pool, &remote.actor)
+        .await
+        .unwrap();
+    follow::create(&pool, viewer.id, channel.id, None)
+        .await
+        .unwrap();
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "invite",
+        Some("bob"),
+        Some("publisher"),
+        None,
+    )
+    .await
+    .unwrap();
+    channel_change(&state, &bob, channel.id, "accept", None, None, None)
+        .await
+        .unwrap();
+    let file = video_media(&pool, bob.id).await;
+    let (video, _) = actions::post_video(&state, params("bob", &[file.id]), channel.id)
+        .await
+        .unwrap();
+    assert!(
+        channel_change(
+            &state,
+            &alice,
+            channel.id,
+            "delete",
+            None,
+            None,
+            Some("wrong")
+        )
+        .await
+        .is_err()
+    );
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "delete",
+        None,
+        None,
+        Some("films"),
+    )
+    .await
+    .unwrap();
+    assert!(
+        plamenu_db::account::find_by_id(&pool, channel.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .suspended()
+    );
+    assert!(
+        !plamenu_db::account::find_by_id(&pool, bob.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .suspended()
+    );
+    assert!(
+        plamenu_db::video::publications(&pool, &[video.id])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        media::find_by_ids(&pool, &[file.id])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    plamenu::delivery::run_due(&state).await;
+    assert!(
+        stub.deliveries()
+            .iter()
+            .any(|d| d.activity["type"] == "Delete"
+                && d.activity["actor"] == "https://plamenu.test/users/bob")
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn channel_consent_refusal_suspension_and_quota_gate(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    assert!(
+        channel_change(
+            &state,
+            &alice,
+            channel.id,
+            "invite",
+            Some("films"),
+            Some("editor"),
+            None
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        channel_change(
+            &state,
+            &alice,
+            channel.id,
+            "invite",
+            Some("bob"),
+            Some("owner"),
+            None
+        )
+        .await
+        .is_err()
+    );
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "invite",
+        Some("bob"),
+        Some("publisher"),
+        None,
+    )
+    .await
+    .unwrap();
+    channel_change(&state, &bob, channel.id, "refuse", None, None, None)
+        .await
+        .unwrap();
+    assert!(
+        plamenu_db::video_channel_access::invitations(&pool, bob.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "invite",
+        Some("bob"),
+        Some("publisher"),
+        None,
+    )
+    .await
+    .unwrap();
+    plamenu_db::account::suspend(&pool, bob.id, "local")
+        .await
+        .unwrap();
+    assert!(
+        channel_change(&state, &bob, channel.id, "accept", None, None, None)
+            .await
+            .is_err()
+    );
+    assert!(
+        plamenu_db::video_channel_access::role(&pool, channel.id, bob.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn channel_revocation_waits_for_committed_publication_permission(pool: PgPool) {
+    use plamenu_db::video_channel_access as access;
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "invite",
+        Some("bob"),
+        Some("publisher"),
+        None,
+    )
+    .await
+    .unwrap();
+    channel_change(&state, &bob, channel.id, "accept", None, None, None)
+        .await
+        .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    assert!(
+        access::lock_access(&mut tx, channel.id, bob.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let state2 = state.clone();
+    let alice2 = alice.clone();
+    let mut revocation = tokio::spawn(async move {
+        channel_change(
+            &state2,
+            &alice2,
+            channel.id,
+            "revoke",
+            Some("bob"),
+            None,
+            None,
+        )
+        .await
+    });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(80), &mut revocation)
+            .await
+            .is_err()
+    );
+    tx.commit().await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(3), revocation)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let mut after = pool.begin().await.unwrap();
+    assert!(
+        access::lock_access(&mut after, channel.id, bob.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn channel_profile_transfer_and_deletion_rollback_with_outbox(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let remote = RemoteUser::new("remote.test", "viewer");
+    let stub = StubFederation::with_users(&[&remote]);
+    let state = test_state_with(pool.clone(), stub.clone());
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let viewer = plamenu::remote::store_remote_actor(&pool, &remote.actor)
+        .await
+        .unwrap();
+    follow::create(&pool, viewer.id, channel.id, None)
+        .await
+        .unwrap();
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "transfer",
+        Some("bob"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    sqlx::query("CREATE FUNCTION reject_channel_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected channel outbox failure'; END; $$").execute(&pool).await.unwrap();
+    sqlx::query("CREATE TRIGGER reject_channel_delivery BEFORE INSERT ON delivery_jobs FOR EACH ROW EXECUTE FUNCTION reject_channel_delivery()").execute(&pool).await.unwrap();
+    assert!(
+        plamenu::video_channels::change(
+            &state,
+            &alice,
+            channel.id,
+            &plamenu::video_channels::Change {
+                operation: "profile".into(),
+                display_name: Some("Must roll back".into()),
+                ..Default::default()
+            }
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        plamenu_db::account::find_by_id(&pool, channel.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .display_name,
+        "Films"
+    );
+    assert!(
+        channel_change(
+            &state,
+            &bob,
+            channel.id,
+            "accept_transfer",
+            None,
+            None,
+            Some("films")
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        plamenu_db::video::channel(&pool, channel.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .owner_account_id,
+        alice.id
+    );
+    assert!(
+        channel_change(
+            &state,
+            &alice,
+            channel.id,
+            "delete",
+            None,
+            None,
+            Some("films")
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        !plamenu_db::account::find_by_id(&pool, channel.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .suspended()
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn channel_collaborator_live_revocation_rejects_keys_and_browser_sessions(pool: PgPool) {
+    use plamenu_db::native_live;
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "invite",
+        Some("bob"),
+        Some("publisher"),
+        None,
+    )
+    .await
+    .unwrap();
+    channel_change(&state, &bob, channel.id, "accept", None, None, None)
+        .await
+        .unwrap();
+    let live = plamenu::native_live::create(
+        &state,
+        &bob,
+        channel.id,
+        "Collaborator stream",
+        "A live test",
+        None,
+        "public",
+        true,
+        native_live::PlaybackOptions {
+            dvr_window_seconds: 600,
+            latency_mode: 1,
+        },
+        &[],
+    )
+    .await
+    .unwrap();
+    let browser = native_live::claim_owned(&pool, live.status.id, bob.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        native_live::ingest_key_current(&pool, &browser)
+            .await
+            .unwrap()
+    );
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "revoke",
+        Some("bob"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(
+        !native_live::ingest_key_current(&pool, &browser)
+            .await
+            .unwrap()
+    );
+    assert!(
+        native_live::owned_by_status(&pool, live.status.id, bob.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        !native_live::rotate_key(&pool, live.status.id, bob.id, &[7; 32])
+            .await
+            .unwrap()
+    );
+    native_live::finish(&pool, &browser, native_live::FinishReason::Interrupted)
+        .await
+        .unwrap();
+    assert!(
+        native_live::claim_owned(&pool, live.status.id, bob.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn channel_transfer_refuses_scheduled_work_until_cancelled(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let file = video_media(&pool, alice.id).await;
+    let queued = plamenu::create_scheduled_video(
+        &state,
+        &alice,
+        time::OffsetDateTime::now_utc() + time::Duration::days(1),
+        channel.id,
+        file.id,
+        "Scheduled video",
+        "Later",
+        "public",
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "transfer",
+        Some("bob"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        channel_change(
+            &state,
+            &bob,
+            channel.id,
+            "accept_transfer",
+            None,
+            None,
+            Some("films")
+        )
+        .await,
+        Err(ApiError::Conflict(_))
+    ));
+    assert_eq!(
+        plamenu_db::video::channel(&pool, channel.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .owner_account_id,
+        alice.id
+    );
+    assert!(
+        scheduled_status::delete(
+            &pool,
+            alice.id,
+            queued["id"].as_str().unwrap().parse().unwrap()
+        )
+        .await
+        .unwrap()
+    );
+    channel_change(
+        &state,
+        &bob,
+        channel.id,
+        "accept_transfer",
+        None,
+        None,
+        Some("films"),
+    )
+    .await
+    .unwrap();
+    // The unattached upload remains its creator's private media, never silently
+    // transferred or published by the ownership invitation.
+    assert_eq!(
+        media::find_by_ids(&pool, &[file.id]).await.unwrap()[0].account_id,
+        alice.id
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn channel_transfer_enforces_active_channel_quota_and_deletion_releases_it(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let mut first = None;
+    for number in 0..50 {
+        let account = create_local_account(&pool, &format!("q_{number}"), "Quota channel").await;
+        let mut tx = pool.begin().await.unwrap();
+        plamenu_db::video::create_channel(&mut tx, account.id, bob.id)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        if number == 0 {
+            first = Some(account);
+        }
+    }
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "transfer",
+        Some("bob"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        channel_change(
+            &state,
+            &bob,
+            channel.id,
+            "accept_transfer",
+            None,
+            None,
+            Some("films")
+        )
+        .await,
+        Err(ApiError::Unprocessable(_))
+    ));
+    let first = first.unwrap();
+    channel_change(&state, &bob, first.id, "delete", None, None, Some("q_0"))
+        .await
+        .unwrap();
+    channel_change(
+        &state,
+        &bob,
+        channel.id,
+        "accept_transfer",
+        None,
+        None,
+        Some("films"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        plamenu_db::video::owned_channels(&pool, bob.id)
+            .await
+            .unwrap()
+            .len(),
+        50
+    );
+}
+
 fn params<'a>(username: &'a str, media_ids: &'a [i64]) -> PostParams<'a> {
     PostParams {
         username,
@@ -683,6 +1608,468 @@ fn params<'a>(username: &'a str, media_ids: &'a [i64]) -> PostParams<'a> {
         kind: PostKind::Video,
         ..Default::default()
     }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn video_metadata_is_owned_sparse_editable_and_federated(pool: PgPool) {
+    use plamenu::video_metadata::{self, Input};
+    use serde_json::json;
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let remote = RemoteUser::new("remote.test", "viewer");
+    let state = test_state_with(pool.clone(), StubFederation::with_users(&[&remote]));
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let viewer = plamenu::remote::store_remote_actor(&pool, &remote.actor)
+        .await
+        .unwrap();
+    follow::create(&pool, viewer.id, channel.id, None)
+        .await
+        .unwrap();
+    follow::create(&pool, viewer.id, alice.id, None)
+        .await
+        .unwrap();
+    let film = video_media(&pool, alice.id).await;
+    assert!(
+        video_metadata::draft(
+            &state,
+            bob.id,
+            film.id,
+            &Input {
+                category: Some(json!(13)),
+                ..Default::default()
+            }
+        )
+        .await
+        .is_err()
+    );
+    let metadata = video_metadata::draft(
+        &state,
+        alice.id,
+        film.id,
+        &Input {
+            category: Some(json!(13)),
+            licence: Some(json!(2)),
+            spoiler_text: Some("Flashing imagery".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let (posted, _) = actions::post_video(
+        &state,
+        PostParams {
+            spoiler_text: &metadata.spoiler_text,
+            sensitive: metadata.sensitive,
+            text: "An #astronomy lesson.",
+            ..params("alice", &[film.id])
+        },
+        channel.id,
+    )
+    .await
+    .unwrap();
+    let wire = plamenu::note::note_for_status(&state, &posted, &alice)
+        .await
+        .unwrap();
+    assert_eq!(wire["category"]["identifier"], "13");
+    assert_eq!(wire["licence"]["identifier"], "2");
+    assert_eq!(
+        wire["licence"]["url"],
+        video_metadata::licence_url(2).unwrap()
+    );
+    assert_eq!(wire["sensitive"], true);
+    assert_eq!(wire["summary"], "Flashing imagery");
+    let created: serde_json::Value = sqlx::query_scalar(
+        "SELECT activity FROM delivery_jobs WHERE activity->>'type' = 'Create' LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for field in ["category", "licence", "tag", "sensitive", "summary"] {
+        assert_eq!(created["object"][field], wire[field], "{field}");
+    }
+    assert!(
+        wire["tag"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tag| tag["type"] == "Hashtag" && tag["name"] == "astronomy")
+    );
+    assert!(
+        video_metadata::update(
+            &state,
+            bob.id,
+            film.id,
+            &Input {
+                licence: Some(json!(9)),
+                ..Default::default()
+            }
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        video_metadata::draft(
+            &state,
+            alice.id,
+            film.id,
+            &Input {
+                licence: Some(json!(9)),
+                ..Default::default()
+            }
+        )
+        .await
+        .is_err()
+    );
+    video_metadata::update(
+        &state,
+        alice.id,
+        film.id,
+        &Input {
+            category: Some(json!(15)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let updated = plamenu_db::status::find_by_id(&pool, posted.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let wire = plamenu::note::note_for_status(&state, &updated, &alice)
+        .await
+        .unwrap();
+    assert_eq!(wire["category"]["identifier"], "15");
+    assert_eq!(wire["licence"]["identifier"], "2");
+    let before = updated.edited_at;
+    let queued: serde_json::Value = sqlx::query_scalar(
+        "SELECT activity FROM delivery_jobs WHERE activity->>'type' = 'Update' LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(queued["object"]["category"]["identifier"], "15");
+    assert_eq!(queued["object"]["licence"]["identifier"], "2");
+    // Delivery signs the queued canonical payload with this owner's keys.
+    assert_eq!(
+        queued["actor"],
+        format!("https://{}/users/alice", state.config.domain)
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT account_id FROM delivery_jobs WHERE activity->>'type' = 'Update' LIMIT 1"
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        alice.id
+    );
+    let job_count: i64 = sqlx::query_scalar("SELECT count(*) FROM delivery_jobs")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    video_metadata::update(
+        &state,
+        alice.id,
+        film.id,
+        &Input {
+            category: Some(json!(15)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        plamenu_db::status::find_by_id(&pool, posted.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .edited_at,
+        before
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM delivery_jobs")
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        job_count
+    );
+    sqlx::query("CREATE FUNCTION reject_metadata_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected metadata outbox failure'; END; $$").execute(&pool).await.unwrap();
+    sqlx::query("CREATE TRIGGER reject_metadata_delivery BEFORE INSERT ON delivery_jobs FOR EACH ROW EXECUTE FUNCTION reject_metadata_delivery()").execute(&pool).await.unwrap();
+    assert!(
+        video_metadata::update(
+            &state,
+            alice.id,
+            film.id,
+            &Input {
+                licence: Some(json!(9)),
+                ..Default::default()
+            }
+        )
+        .await
+        .is_err()
+    );
+    sqlx::query("DROP TRIGGER reject_metadata_delivery ON delivery_jobs")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let preserved = plamenu_db::video_metadata::for_media(&pool, &[film.id])
+        .await
+        .unwrap()
+        .remove(&film.id)
+        .unwrap();
+    assert_eq!(preserved.licence, Some(2));
+    assert_eq!(
+        plamenu_db::status::find_by_id(&pool, posted.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .edited_at,
+        before
+    );
+    video_metadata::update(
+        &state,
+        alice.id,
+        film.id,
+        &Input {
+            licence: Some(json!(0)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let updated = plamenu_db::status::find_by_id(&pool, posted.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let wire = plamenu::note::note_for_status(&state, &updated, &alice)
+        .await
+        .unwrap();
+    assert_eq!(wire["licence"]["identifier"], "0");
+    assert!(wire["licence"].get("url").is_none());
+    let entity =
+        plamenu::entities::render_status(&pool, &state.config.domain, &updated, Some(alice.id))
+            .await
+            .unwrap();
+    assert_eq!(
+        entity["media_attachments"][0]["video_metadata"]["category"]["id"],
+        15
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn scheduled_video_reserves_media_and_publishes_once_when_due(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let film = video_media(&pool, alice.id).await;
+    plamenu::video_metadata::draft(
+        &state,
+        alice.id,
+        film.id,
+        &plamenu::video_metadata::Input {
+            category: Some(serde_json::json!(13)),
+            licence: Some(serde_json::json!(2)),
+            spoiler_text: Some("Flashing imagery".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let due = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+    let queued = plamenu::create_scheduled_video(
+        &state,
+        &alice,
+        due,
+        channel.id,
+        film.id,
+        "Scheduled film",
+        "Coming soon.",
+        "public",
+        Some("en"),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(queued["params"]["post_kind"], "video");
+    assert_eq!(queued["params"]["channel_id"], channel.id.to_string());
+    assert_eq!(queued["params"]["spoiler_text"], "Flashing imagery");
+    assert_eq!(queued["params"]["sensitive"], true);
+    assert_eq!(
+        queued["media_attachments"][0]["video_metadata"]["licence"]["id"],
+        2
+    );
+    let id: i64 = queued["id"].as_str().unwrap().parse().unwrap();
+    assert!(matches!(
+        plamenu::create_scheduled_video(
+            &state,
+            &alice,
+            due,
+            channel.id,
+            film.id,
+            "Another schedule",
+            "Not allowed.",
+            "public",
+            Some("en"),
+            None,
+        )
+        .await,
+        Err(ApiError::Unprocessable(_))
+    ));
+    assert!(matches!(
+        actions::post_video(&state, params("alice", &[film.id]), channel.id).await,
+        Err(ApiError::Unprocessable(_))
+    ));
+    assert!(
+        media::delete_unattached(&pool, film.id, alice.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let reserved: Option<i64> =
+        sqlx::query_scalar("SELECT scheduled_status_id FROM media_attachments WHERE id = $1")
+            .bind(film.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(reserved, Some(id));
+    sqlx::query(
+        "UPDATE scheduled_statuses SET scheduled_at = now() - interval '1 minute' WHERE id = $1",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(plamenu::scheduled_status_publish::run_due(&state).await, 1);
+    assert_eq!(plamenu::scheduled_status_publish::run_due(&state).await, 0);
+    assert!(
+        scheduled_status::find_for_account(&pool, alice.id, id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let status_id: i64 =
+        sqlx::query_scalar("SELECT status_id FROM media_attachments WHERE id = $1")
+            .bind(film.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let published = plamenu_db::video::publications(&pool, &[status_id])
+        .await
+        .unwrap();
+    assert_eq!(published.len(), 1);
+    assert_eq!(published[0].channel_id, channel.id);
+    let status = plamenu_db::status::find_by_id(&pool, status_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let wire = plamenu::note::note_for_status(&state, &status, &alice)
+        .await
+        .unwrap();
+    assert_eq!(wire["category"]["identifier"], "13");
+    assert_eq!(wire["licence"]["identifier"], "2");
+    assert_eq!(wire["summary"], "Flashing imagery");
+    assert_eq!(wire["sensitive"], true);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn imported_video_metadata_rejects_untrusted_labels_links_and_unknown_ids(pool: PgPool) {
+    use serde_json::json;
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let film = video_media(&pool, alice.id).await;
+    let (posted, _) = actions::post_video(&state, params("alice", &[film.id]), channel.id)
+        .await
+        .unwrap();
+    // Exercise the inbound metadata adapter separately from transport/signature
+    // checks, which are covered by the real PeerTube federation suite.
+    plamenu::video_metadata::ingest(
+        &state,
+        posted.id,
+        &json!({"type":"Video",
+            "category":{"identifier":"13", "name":"<script>not education</script>"},
+            "licence":{"identifier":"2", "name":"All rights granted", "url":"https://evil.invalid/"}
+        }),
+    )
+    .await
+    .unwrap();
+    let entity =
+        plamenu::entities::render_status(&pool, &state.config.domain, &posted, Some(alice.id))
+            .await
+            .unwrap();
+    let metadata = &entity["media_attachments"][0]["video_metadata"];
+    assert_eq!(metadata["category"]["name"], "Education");
+    assert_eq!(metadata["licence"]["name"], "CC BY-SA");
+    assert!(metadata["licence"]["url"].is_null());
+    plamenu::video_metadata::ingest(
+        &state,
+        posted.id,
+        &json!({"type":"Video",
+            "licence":{"identifier":"2", "url":plamenu::video_metadata::licence_url(2)}
+        }),
+    )
+    .await
+    .unwrap();
+    let metadata = plamenu_db::video_metadata::for_media(&pool, &[film.id])
+        .await
+        .unwrap()
+        .remove(&film.id)
+        .unwrap();
+    assert!(metadata.category.is_none());
+    assert!(metadata.licence_version_known);
+    plamenu::video_metadata::ingest(
+        &state,
+        posted.id,
+        &json!({"type":"Video",
+            "category":{"identifier":19}, "licence":{"identifier":"2junk"}
+        }),
+    )
+    .await
+    .unwrap();
+    let metadata = plamenu_db::video_metadata::for_media(&pool, &[film.id])
+        .await
+        .unwrap()
+        .remove(&film.id)
+        .unwrap();
+    assert!(metadata.category.is_none() && metadata.licence.is_none());
+    assert!(!metadata.licence_version_known);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn cancelling_scheduled_video_releases_its_media(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let film = video_media(&pool, alice.id).await;
+    let due = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+    let queued = plamenu::create_scheduled_video(
+        &state,
+        &alice,
+        due,
+        channel.id,
+        film.id,
+        "Scheduled film",
+        "Coming soon.",
+        "public",
+        Some("en"),
+        None,
+    )
+    .await
+    .unwrap();
+    let id: i64 = queued["id"].as_str().unwrap().parse().unwrap();
+    assert!(scheduled_status::delete(&pool, alice.id, id).await.unwrap());
+    let (posted, _) = actions::post_video(&state, params("alice", &[film.id]), channel.id)
+        .await
+        .unwrap();
+    assert_eq!(posted.object_type.as_deref(), Some("Video"));
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

@@ -284,7 +284,12 @@ pub async fn recent_owned_publications(
          JOIN video_channels ch ON ch.account_id = v.channel_id
          JOIN statuses s ON s.id = v.status_id
          JOIN media_attachments m ON m.id = v.media_id
-         WHERE ch.owner_account_id = $1 AND m.account_id = $1
+         JOIN accounts ca ON ca.id=ch.account_id
+         JOIN accounts o ON o.id=ch.owner_account_id
+         WHERE ca.suspended_at IS NULL AND o.suspended_at IS NULL
+           AND (ch.owner_account_id=$1 OR EXISTS(SELECT 1 FROM video_channel_grants g
+                WHERE g.channel_id=ch.account_id AND g.account_id=$1 AND g.accepted
+                  AND (g.role='editor' OR s.account_id=$1)))
            AND s.deleted_at IS NULL AND s.visibility IN ('public', 'unlisted')
          ORDER BY s.created_at DESC LIMIT 30",
     )
@@ -298,24 +303,10 @@ pub async fn owned_publication(
     media_id: i64,
     owner: i64,
 ) -> Result<Option<OwnedPublication>, DbError> {
-    Ok(sqlx::query_as::<_, OwnedPublication>(
-        "SELECT v.media_id, v.status_id, s.account_id AS actor_id,
-                COALESCE(s.title, 'Video') AS title
-         FROM video_publications v
-         JOIN video_channels ch ON ch.account_id = v.channel_id
-         JOIN statuses s ON s.id = v.status_id
-         JOIN media_attachments m ON m.id = v.media_id
-         JOIN accounts a ON a.id = ch.owner_account_id
-         JOIN accounts ca ON ca.id = v.channel_id
-         WHERE v.media_id = $1 AND ch.owner_account_id = $2
-           AND m.account_id = $2 AND s.deleted_at IS NULL
-           AND s.visibility IN ('public', 'unlisted')
-           AND a.suspended_at IS NULL AND ca.suspended_at IS NULL",
-    )
-    .bind(media_id)
-    .bind(owner)
-    .fetch_optional(pool)
-    .await?)
+    let mut tx = pool.begin().await?;
+    let publication = lock_owned_publication(&mut tx, media_id, owner).await?;
+    tx.commit().await?;
+    Ok(publication)
 }
 
 /// Call from a transaction and retain the lock across caption mutation,
@@ -325,6 +316,9 @@ pub async fn lock_owned_publication(
     media_id: i64,
     owner: i64,
 ) -> Result<Option<OwnedPublication>, DbError> {
+    if !crate::video_channel_access::lock_publication(conn, media_id, owner).await? {
+        return Ok(None);
+    }
     Ok(sqlx::query_as::<_, OwnedPublication>(
         "SELECT v.media_id, v.status_id, s.account_id AS actor_id,
                 COALESCE(s.title, 'Video') AS title
@@ -332,16 +326,11 @@ pub async fn lock_owned_publication(
          JOIN video_channels ch ON ch.account_id = v.channel_id
          JOIN statuses s ON s.id = v.status_id
          JOIN media_attachments m ON m.id = v.media_id
-         JOIN accounts a ON a.id = ch.owner_account_id
-         JOIN accounts ca ON ca.id = v.channel_id
-         WHERE v.media_id = $1 AND ch.owner_account_id = $2
-           AND m.account_id = $2 AND s.deleted_at IS NULL
+         WHERE v.media_id = $1 AND s.deleted_at IS NULL
            AND s.visibility IN ('public', 'unlisted')
-           AND a.suspended_at IS NULL AND ca.suspended_at IS NULL
          FOR UPDATE OF m, s",
     )
     .bind(media_id)
-    .bind(owner)
     .fetch_optional(conn)
     .await?)
 }

@@ -1295,7 +1295,7 @@ pub(crate) async fn post_scheduled_status(
         scheduled.application_id,
         None,
         Some((scheduled.id, scheduled.publish_generation)),
-        None,
+        scheduled.video_channel_id,
         None,
     )
     .await
@@ -1714,6 +1714,7 @@ async fn post_status_inner(
             author.id,
             channel_id,
             replay_session_id,
+            scheduled_claim.map(|(id, _)| id),
         )
         .await?
     {
@@ -1996,6 +1997,13 @@ async fn post_status_inner(
                 .map(Vec::as_slice)
                 .unwrap_or_default(),
         )?;
+        if let Some(metadata) =
+            plamenu_db::video_metadata::for_media(&mut *conn, &[publication.media_id])
+                .await?
+                .remove(&publication.media_id)
+        {
+            crate::video_metadata::enrich_object(&mut create["object"], &metadata);
+        }
         publication_streams
             .push(crate::video::announce(conn, &publication, &create["object"]).await?);
     }
@@ -2605,10 +2613,12 @@ pub async fn edit_status(
     status_id: i64,
     params: EditParams<'_>,
 ) -> Result<Status, ApiError> {
-    let stored = status::find_local(&state.pool, actor.id, status_id)
+    let requester = actor.id;
+    let stored = crate::video_channels::editable_status(state, requester, status_id).await?;
+    let original_author = account::find_by_id(&state.pool, stored.account_id)
         .await?
-        .filter(|s| s.reblog_of_id.is_none())
         .ok_or(ApiError::NotFound)?;
+    let actor = &original_author;
     let PreparedStatusEdit {
         stored,
         current_source,
@@ -2688,6 +2698,9 @@ pub async fn edit_status(
         .map_err(plamenu_db::DbError::from)?;
     // Written before the `Update` is built (it reads the sidecar back), so a moved
     // or cancelled event federates with this edit rather than one delivery later.
+    if stored.object_type.as_deref() == Some("Video") {
+        crate::video_channels::lock_status(&mut tx, requester, stored.id).await?;
+    }
     let event_disruption = match &event_rewrite {
         Some((next, disrupted)) => {
             plamenu_db::status_event::upsert(&mut *tx, next).await?;
@@ -4196,9 +4209,16 @@ pub async fn delete_status(
     status_id: i64,
     mode: DeleteMode,
 ) -> Result<Status, ApiError> {
-    let existing = status::find_local(&state.pool, actor.id, status_id)
+    let requester = actor.id;
+    // Boost deletion retains its original owner-only path.
+    let existing = match status::find_local(&state.pool, requester, status_id).await? {
+        Some(row) if row.object_type.as_deref() != Some("Video") => row,
+        _ => crate::video_channels::editable_status(state, requester, status_id).await?,
+    };
+    let original_author = account::find_by_id(&state.pool, existing.account_id)
         .await?
         .ok_or(ApiError::NotFound)?;
+    let actor = &original_author;
     // The streaming event's routing data (tags, mentioned locals) must be
     // captured before the delete cascades those rows away.
     let delete_event = crate::streaming::prepare_delete_event(state, &existing).await?;
@@ -4258,6 +4278,7 @@ pub async fn delete_status(
         .await
         .map_err(plamenu_db::DbError::from)?;
     if existing.object_type.as_deref() == Some("Video") {
+        crate::video_channels::lock_status(&mut tx, requester, existing.id).await?;
         original_extras.extend(crate::video::follower_inboxes(&mut tx, existing.id).await?);
     }
     let deleted = match mode {

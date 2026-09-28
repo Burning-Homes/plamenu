@@ -277,6 +277,7 @@ async fn daily_limit_is_enforced(pool: PgPool) {
             &pool,
             scheduled_status::NewScheduledStatus {
                 object_type: "Note",
+                video_channel_id: None,
                 title: None,
                 account_id: account.id,
                 scheduled_at: day,
@@ -338,6 +339,7 @@ async fn daily_limit_counts_the_owners_day_not_the_utc_day(pool: PgPool) {
             &pool,
             scheduled_status::NewScheduledStatus {
                 object_type: "Note",
+                video_channel_id: None,
                 title: None,
                 account_id: account.id,
                 scheduled_at: early,
@@ -406,6 +408,7 @@ async fn sweeper_publishes_due_status(pool: PgPool) {
         &pool,
         scheduled_status::NewScheduledStatus {
             object_type: "Note",
+            video_channel_id: None,
             title: None,
             account_id: account.id,
             scheduled_at: OffsetDateTime::now_utc() - time::Duration::seconds(1),
@@ -521,6 +524,7 @@ async fn due_note(pool: &PgPool, account_id: i64, text: &str) -> scheduled_statu
         pool,
         scheduled_status::NewScheduledStatus {
             object_type: "Note",
+            video_channel_id: None,
             title: None,
             account_id,
             scheduled_at: OffsetDateTime::now_utc() - time::Duration::seconds(1),

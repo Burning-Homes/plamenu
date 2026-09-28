@@ -935,9 +935,10 @@ pub async fn delete(
 ) -> Result<Json<Value>, ApiError> {
     current.require_scope("write:statuses")?;
     // Render before deletion so the client receives the final representation.
-    let stored = status::find_local(&state.pool, current.account.id, status_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    let stored = match status::find_local(&state.pool, current.account.id, status_id).await? {
+        Some(row) if row.object_type.as_deref() != Some("Video") => row,
+        _ => crate::video_channels::editable_status(&state, current.account.id, status_id).await?,
+    };
     let mut rendered = render_status(
         &state.pool,
         &state.config.domain,

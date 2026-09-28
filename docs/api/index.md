@@ -24,17 +24,77 @@ incompatibly during the experimental release series.
 These are Plamenu APIs, not a PeerTube REST API implementation. ActivityPub
 video interoperability is tracked separately in the [AP09 inventory](../AP09-FEATURE-INVENTORY.md).
 
-- `GET /api/v1/video_channels` (`read:accounts`): list your owned channels.
+- `GET /api/v1/video_channels` (`read:accounts`): list channels you own or have
+  accepted access to, with `owner_id` and `role` (`owner`, `publisher`, `editor`).
 - `POST /api/v1/video_channels` (`write:accounts`): create a channel with
   `username` and `display_name`. Responses include string `id`, `username`,
   `display_name`, actor `uri`, and `owner_id`.
+- `GET /api/v1/video_channel_invitations` (`read:accounts`): pending collaboration
+  or ownership invitations, with `channel_id`, `display_name`, invited `role`
+  and `ownership_transfer`. Invitations confer no authority until accepted.
+- `GET /api/v1/video_channels/{id}` (`read:accounts`): accessible channel profile
+  and your role. Only the owner receives its collaborator grant list.
+- `POST /api/v1/video_channels/{id}` (`write:accounts`): channel lifecycle action.
+  Send `operation`: `profile` (`display_name`, `description`, at most 1000
+  characters); `invite` (`username`, `role`); `revoke` (`username`); `accept` or
+  `refuse` (your invitation/accepted collaboration); `transfer` (`username`);
+  `cancel_transfer`; `accept_transfer` or `refuse_transfer` (recipient only);
+  `delete`. Ownership acceptance and deletion require `confirm` equal to the
+  immutable channel username. Success is `{ok:true}`. Unauthorized targets
+  return 404; validation returns 422; an unsafe active handoff returns 409.
+  Role changes require fresh consent. Transfers revoke all former collaborator
+  grants and invitations and confer no implicit privilege on the former owner.
+  Finish/cancel unpublished uploads, scheduled videos and live broadcasts before
+  accepting ownership. Existing Video authors, URLs and social identities remain
+  unchanged. Channel deletion removes its videos, including collaborators'
+  publications, but not their accounts. See [the channel guide](../VIDEO_CHANNELS.md).
 - Upload video through the shared media endpoint, then
   `POST /api/v1/videos` (`write:statuses`) with `channel_id`, `media_id`, `title`,
   optional `description`, `language`, and `visibility` (`public` or `unlisted`).
-  The channel and unattached, processed video must belong to the authenticated
-  creator. Publication returns the ordinary Status entity with a playable
+  Optional `category` (1–18) and `licence` (1–9) use PeerTube's numeric IDs;
+  integer strings work in form bodies. Zero clears either field. Neither is
+  inferred: unspecified does not grant reuse permission. Local licence choices
+  mean CC BY/BY-SA/BY-ND/BY-NC/BY-NC-SA/BY-NC-ND 4.0 (1–6), CC0 1.0 (7),
+  Public Domain Mark 1.0 (8), or All rights reserved (9).
+  `spoiler_text` is a content warning of at most 500 characters;
+  `sensitive` marks the media sensitive, and a nonempty warning also does so.
+  Write `#hashtags` in the description to use the existing tag system.
+  The authenticated creator must own or have accepted access to the channel;
+  the unattached processed media must belong to that creator. Publication
+  retains the actual creator as the Video author, not the channel owner.
+  Publication returns the ordinary Status entity with a playable
   video attachment. Titles have 3–120 characters; descriptions have a separate
   10,000-character budget, also bounded after HTML serialization.
+  Supply an RFC 3339 `scheduled_at` at least five minutes ahead to reserve
+  the processed video instead and receive a scheduled-status entity. List,
+  reschedule, or cancel it through `/api/v1/scheduled_statuses`. The video stays
+  private until its due publication, which uses the same channel and metadata.
+  The first-party `/videos` review form also accepts a wall-clock publication
+  time in the author's configured time zone without JavaScript.
+- `PUT /api/v1/videos/{media_id}/metadata` (`write:statuses`): sparsely edit
+  `category` and/or `licence` on your published native Video. This ID is the
+  primary media attachment ID, not the Status ID. Omitted fields stay unchanged;
+  zero clears. Invalid IDs return 422 and unauthorized publications return 404.
+  Owners/editors can manage all channel videos; publishers can manage only their
+  own. The same authority applies to the normal Status edit/delete API, caption
+  and chapter managers. Revocation takes effect even for the original author.
+  The response is `{category, licence}`, each null or `{id, name}`; licence
+  also has `url` (null when no versioned link is established). Changes enqueue
+  the normal signed Video Update atomically; an exact no-op does not edit the
+  timestamp. Edit title, description, language and warnings through the existing
+  Status editor. `/videos/{media_id}/metadata` is the equivalent owner-only HTML
+  editor, linked from `/videos` and the Video's ordinary edit form.
+
+Video attachments include a Plamenu `video_metadata` extension when metadata
+has been stored. This uses the same category/licence shape as the edit response,
+in draft previews, scheduled statuses and published/imported Status entities.
+Remote labels and links are not trusted. A recognized PeerTube licence ID alone
+does not establish a version: it gets a generic name (for example, `CC BY-SA`)
+and null URL, unless the AP object supplies the exact supported canonical URL.
+Explicit clears federate as zero-ID `Unspecified` objects: PeerTube accepts
+these markers, whereas omitted/null category/licence fields leave its old
+values untouched on Update. Native Video Hashtag names are sent without a
+leading `#`, matching PeerTube's tag vocabulary; ordinary Note tags are unchanged.
 
 Account entities include the Plamenu extension `video_channel`: true for
 native video channels and false otherwise. A channel still has `group: true`

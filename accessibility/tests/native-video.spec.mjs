@@ -397,6 +397,161 @@ test('native video upload, captions and publication @no-js', async ({ page }, in
   await publish(page, info.project.name, true);
 });
 
+async function scheduleVideo(page, noScript) {
+  test.setTimeout(120_000);
+  await signIn(page);
+  await page.goto('/videos');
+  const form = page.locator('form[action="/web/videos"]');
+  const channel = form.getByRole('combobox', { name: 'Channel', exact: true });
+  await channel.selectOption({ index: 0 });
+  const title = `Scheduled browser film ${Date.now()}`;
+  await form.getByLabel('Video title').fill(title);
+  await form.getByLabel('Description', { exact: true }).fill('A planned film.');
+  await form.getByLabel('Video or audio file', { exact: true }).setInputFiles(fixture);
+  await form.getByRole('button', { name: 'Upload video' }).click();
+  await page.waitForURL(url => /\/videos\/drafts\/\d+$/.test(url.pathname));
+  const mediaId = page.url().split('/').pop();
+  if (noScript) {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      if (await page.getByRole('link', { name: 'Review your video' }).isVisible()) break;
+      await page.getByRole('link', { name: 'Refresh status' }).click();
+      await page.waitForTimeout(500);
+    }
+  }
+  await page.getByRole('link', { name: 'Review your video' }).click();
+  const review = page.locator('form[data-video-schedule-form]');
+  const when = review.getByLabel('Publication time');
+  await expect(when).toBeVisible();
+  await expect(page.locator('#videos-schedule-hint')).toContainText('UTC');
+  if (!noScript) {
+    await review.getByRole('button', { name: 'Schedule video' }).click();
+    await expect(when).toBeFocused();
+    await expect(when).toHaveAttribute('required', '');
+  }
+  const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 16);
+  await when.fill(tomorrow);
+  if (!noScript) {
+    const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+    expect(result.violations.map(v => ({ id: v.id, targets: v.nodes.map(n => n.target) }))).toEqual([]);
+  }
+  const reflow = await page.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth }));
+  expect(reflow.content).toBeLessThanOrEqual(reflow.width);
+  await page.screenshot({ path: test.info().outputPath('scheduled-video-review.png'), fullPage: true });
+  await review.getByRole('button', { name: 'Schedule video' }).click();
+  await page.waitForURL(url => url.pathname === '/settings/scheduled');
+  await expect(page.getByText(title, { exact: true })).toBeVisible();
+  const entry = page.locator('.list-index__item').filter({ hasText: title });
+  await expect(entry).toContainText('Videos');
+  await entry.getByRole('button', { name: 'Cancel post', exact: true }).click();
+  await expect(page.getByText(title, { exact: true })).toHaveCount(0);
+  await page.goto(`/videos/drafts/${mediaId}`);
+  await page.getByRole('checkbox', { name: 'I want to delete this draft and its files' }).check();
+  await page.getByRole('button', { name: 'Cancel and delete draft' }).click();
+  await page.waitForURL(url => url.pathname === '/videos');
+}
+
+test('native video review schedules accessibly', async ({ page }) => scheduleVideo(page, false));
+test('native video review schedules without JavaScript @no-js', async ({ page }) => scheduleVideo(page, true));
+
+async function metadataVideo(page, noScript) {
+  test.setTimeout(120_000);
+  await signIn(page);
+  await page.goto('/videos');
+  const form = page.locator('form[action="/web/videos"]');
+  await expect(form).toBeVisible();
+  if (await form.getByRole('combobox', { name: 'Channel', exact: true }).locator('option').count() === 0) {
+    const create = page.locator('form[action="/web/video-channels"]');
+    if (!await create.isVisible()) await page.locator('summary').filter({ hasText: 'Create a video channel' }).click();
+    await create.getByLabel('Channel address').fill(`metadata_${Date.now()}`);
+    await create.getByLabel('Channel name').fill('Metadata films');
+    await create.getByRole('button', { name: 'Create a video channel' }).click();
+    await page.waitForURL(url => url.pathname === '/videos');
+  }
+  await form.getByRole('combobox', { name: 'Channel', exact: true }).selectOption({ index: 0 });
+  const title = `Metadata film ${Date.now()}`;
+  await form.getByLabel('Video title').fill(title);
+  await form.getByLabel('Description', { exact: true }).fill('A lesson in #astronomy.');
+  await expect(form.getByRole('combobox', { name: 'Category', exact: true })).toHaveValue('0');
+  await expect(form.getByRole('combobox', { name: 'Licence', exact: true })).toHaveValue('0');
+  await form.getByRole('combobox', { name: 'Category', exact: true }).selectOption('13');
+  await form.getByRole('combobox', { name: 'Licence', exact: true }).selectOption('2');
+  if (!noScript) {
+    await expect(form.locator('[data-video-licence-link]')).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/4.0/');
+    await expect(form.locator('[data-video-licence-status]')).toBeVisible();
+  }
+  await form.getByLabel('Content warning', { exact: true }).fill('Flashing imagery');
+  await form.getByLabel('Video or audio file', { exact: true }).setInputFiles(fixture);
+  await form.getByRole('button', { name: 'Upload video' }).click();
+  await page.waitForURL(url => /\/videos\/drafts\/\d+$/.test(url.pathname));
+  const mediaId = page.url().split('/').pop();
+  if (noScript) {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      if (await page.getByRole('link', { name: 'Review your video' }).isVisible()) break;
+      await page.getByRole('link', { name: 'Refresh status' }).click();
+      await page.waitForTimeout(500);
+    }
+  }
+  await page.getByRole('link', { name: 'Review your video' }).click();
+  const review = page.locator('form[action="/web/videos"]');
+  await expect(review.getByRole('combobox', { name: 'Category', exact: true })).toHaveValue('13');
+  await expect(review.getByRole('combobox', { name: 'Licence', exact: true })).toHaveValue('2');
+  await expect(review.locator('[data-video-licence-link]')).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/4.0/');
+  await expect(review.locator('[data-video-licence-status]')).toBeVisible();
+  await expect(review.getByLabel('Content warning', { exact: true })).toHaveValue('Flashing imagery');
+  await expect(review.locator('[name="sensitive"][type="checkbox"]')).toBeChecked();
+  await page.screenshot({ path: test.info().outputPath('video-metadata-review.png'), fullPage: true });
+  if (!noScript) {
+    const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+    expect(result.violations.map(v => ({ id: v.id, targets: v.nodes.map(n => n.target) }))).toEqual([]);
+  }
+  await review.getByRole('button', { name: 'Publish video', exact: true }).click();
+  await page.waitForURL(url => /\/@[^/]+\/\d+/.test(url.pathname));
+  const watchUrl = page.url();
+  // The native details gate remains operable without scripts and covers media.
+  const warning = page.locator('details.status__cw');
+  await expect(warning).not.toHaveAttribute('open', '');
+  await warning.locator(':scope > summary').press('Enter');
+  await expect(page.locator('video').first()).toBeVisible();
+  const metadata = page.locator('details.media__metadata');
+  await metadata.locator('summary').press('Enter');
+  await expect(metadata).toContainText('Education');
+  await expect(metadata.getByRole('link', { name: 'CC BY-SA 4.0' })).toHaveAttribute('href', 'https://creativecommons.org/licenses/by-sa/4.0/');
+  const statusId = new URL(watchUrl).pathname.split('/').pop();
+  await page.goto(`/web/statuses/${statusId}/edit`);
+  await page.getByRole('link', { name: 'Manage category and licence', exact: true }).click();
+  await expect(page).toHaveURL(url => url.pathname === `/videos/${mediaId}/metadata`);
+  await expect(page.getByRole('heading', { name: 'Manage category and licence' })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Category', exact: true }).selectOption('15');
+  await page.getByRole('combobox', { name: 'Licence', exact: true }).selectOption('9');
+  await page.screenshot({ path: test.info().outputPath('video-metadata-edit.png'), fullPage: true });
+  const reflow = await page.evaluate(() => ({ width: innerWidth, content: document.documentElement.scrollWidth }));
+  expect(reflow.content).toBeLessThanOrEqual(reflow.width);
+  if (!noScript) {
+    await expect(page.locator('[data-video-licence-status]')).toBeHidden();
+    const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+    expect(result.violations.map(v => ({ id: v.id, targets: v.nodes.map(n => n.target) }))).toEqual([]);
+  }
+  await page.getByRole('button', { name: 'Save video metadata' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Video metadata saved.' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Category', exact: true })).toHaveValue('15');
+  await expect(page.getByRole('combobox', { name: 'Licence', exact: true })).toHaveValue('9');
+  await page.goto(watchUrl);
+  await page.locator('details.status__cw > summary').press('Enter');
+  await metadata.locator('summary').press('Enter');
+  await expect(metadata).toContainText('Science and technology');
+  await expect(metadata).toContainText('All rights reserved');
+  await expect(metadata.locator('a')).toHaveCount(0);
+  await page.goto(`/videos/${mediaId}/metadata`);
+  await page.getByRole('combobox', { name: 'Category', exact: true }).selectOption('0');
+  await page.getByRole('combobox', { name: 'Licence', exact: true }).selectOption('0');
+  await page.getByRole('button', { name: 'Save video metadata' }).click();
+  await page.goto(watchUrl);
+  await expect(page.locator('details.media__metadata')).toHaveCount(0);
+}
+
+test('Video metadata upload, review, disclosure and editing', async ({ page }) => metadataVideo(page, false));
+test('Video metadata authoring and editing without JavaScript @no-js', async ({ page }) => metadataVideo(page, true));
+
 async function publishAudioOnly(page, projectName, noScript) {
   test.setTimeout(90_000);
   await signIn(page);

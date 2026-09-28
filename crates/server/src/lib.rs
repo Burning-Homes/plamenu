@@ -65,6 +65,8 @@ pub mod remote;
 pub mod remote_history;
 pub mod reply_fetch;
 mod routes;
+#[doc(hidden)]
+pub use routes::scheduled_statuses::create_scheduled_video;
 pub mod scheduled_status_publish;
 pub mod self_destruct;
 pub mod severance;
@@ -81,6 +83,8 @@ pub mod translation;
 pub mod trends;
 pub mod video;
 pub mod video_channel_backfill;
+pub mod video_channels;
+pub mod video_metadata;
 pub mod video_poster;
 pub mod video_resources;
 pub mod video_worker;

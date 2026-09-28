@@ -259,6 +259,69 @@ async fn render_statuses_query_count_is_flat(pool: PgPool) {
     );
 }
 
+#[sqlx::test(migrations = "../db/migrations")]
+async fn video_metadata_rendering_is_batched(pool: PgPool) {
+    use plamenu_db::{media, video_metadata};
+    let counter = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(QueryCounter(counter.clone())),
+    );
+    let author = create_local_account(&pool, "filmmaker", "Filmmaker").await;
+    let mut posts = Vec::new();
+    for _ in 0..12 {
+        let mut input = NewLocalStatus::new(author.id, "Film", "public", None);
+        input.object_type = Some("Video");
+        let post = status::create_local(&pool, input).await.unwrap();
+        let file = media::create_local(
+            &pool,
+            media::NewLocalMedia {
+                kind: "video",
+                ..media::NewLocalMedia::new(author.id, id::next(), "film.mp4", "video/mp4")
+            },
+        )
+        .await
+        .unwrap();
+        assert!(
+            media::set_attachments(&pool, post.id, author.id, &[file.id])
+                .await
+                .unwrap()
+        );
+        video_metadata::upsert(
+            &pool,
+            &video_metadata::Metadata {
+                media_id: file.id,
+                category: Some(13),
+                licence: Some(2),
+                licence_version_known: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        posts.push(post);
+    }
+    counter.store(0, Ordering::Relaxed);
+    let small = entities::render_statuses(&pool, "plamenu.test", &posts[..3], Some(author.id))
+        .await
+        .unwrap();
+    let small_queries = counter.swap(0, Ordering::Relaxed);
+    let big = entities::render_statuses(&pool, "plamenu.test", &posts, Some(author.id))
+        .await
+        .unwrap();
+    let big_queries = counter.load(Ordering::Relaxed);
+    for card in small.iter().chain(&big) {
+        assert_eq!(
+            card["media_attachments"][0]["video_metadata"]["licence"]["id"],
+            2
+        );
+    }
+    println!("Video metadata: 3 statuses -> {small_queries} queries, 12 -> {big_queries}");
+    assert!(
+        big_queries <= small_queries + 2,
+        "Video metadata N+1: {small_queries} -> {big_queries}"
+    );
+}
+
 /// The soft-delete placeholder path: a page containing stubs must cost no more
 /// than the same page fully live. The deleted-id set is one batched lookup
 /// (`RenderMaps` and `NoteBatch` both), and a stub renders from data the batch

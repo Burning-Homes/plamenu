@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, account_id, scheduled_at, text, content_type, visibility,\n                   in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,\n                   application_id, media_ids, poll_options, poll_expires_in,\n                   poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation\n            FROM scheduled_statuses\n            WHERE account_id = $1 AND id > $2\n              AND ($3::bigint IS NULL OR id < $3)\n            ORDER BY id ASC\n            LIMIT $4\n            ",
+  "query": "\n            SELECT id, account_id, scheduled_at, text, content_type, visibility,\n                   in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,\n                   application_id, media_ids, poll_options, poll_expires_in,\n                   poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id, created_at, publish_generation\n            FROM scheduled_statuses\n            WHERE account_id = $1 AND id > $2\n              AND ($3::bigint IS NULL OR id < $3)\n            ORDER BY id ASC\n            LIMIT $4\n            ",
   "describe": {
     "columns": [
       {
@@ -225,6 +225,17 @@
       },
       {
         "ordinal": 20,
+        "name": "video_channel_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "video_channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -235,7 +246,7 @@
         }
       },
       {
-        "ordinal": 21,
+        "ordinal": 22,
         "name": "publish_generation",
         "type_info": "Int8",
         "origin": {
@@ -275,9 +286,10 @@
       true,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "2ecc59e6f38fb3dc628bbe6d5d0d336e532953767ee20aff4c40fc8e282e5bfd"
+  "hash": "d8f80ace0ddd0cc4031807ce80d7d395df78e1323a27bf4660f9d7ca82e0048a"
 }

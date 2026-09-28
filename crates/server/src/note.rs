@@ -215,6 +215,7 @@ pub struct NoteBatch {
     native_hls: HashMap<i64, Vec<plamenu_db::native_video_hls::FileTag>>,
     video_captions: HashMap<i64, Vec<plamenu_db::video_captions::Caption>>,
     video_chapters: HashMap<i64, Vec<plamenu_db::video_chapters::Chapter>>,
+    video_metadata: HashMap<i64, plamenu_db::video_metadata::Metadata>,
     engagement: HashMap<i64, plamenu_db::status::Engagement>,
     self_reply_ids: HashMap<i64, Vec<i64>>,
     sources: HashMap<i64, plamenu_db::status::StatusSource>,
@@ -294,6 +295,8 @@ impl NoteBatch {
                 .map(|v| (v.status_id, v))
                 .collect();
             let media_ids: Vec<i64> = batch.videos.values().map(|v| v.media_id).collect();
+            batch.video_metadata =
+                plamenu_db::video_metadata::for_media(&mut *conn, &media_ids).await?;
             batch.native_hls =
                 plamenu_db::native_video_hls::tags_for_media(&mut *conn, &media_ids).await?;
             batch.video_captions =
@@ -738,6 +741,9 @@ pub fn note_in_batch(
                 .map(Vec::as_slice)
                 .unwrap_or_default(),
         )?;
+        if let Some(metadata) = batch.video_metadata.get(&media.id) {
+            crate::video_metadata::enrich_object(&mut note, metadata);
+        }
     }
     if let Some((_, session_uri, session_name)) = batch.webxdc_invitations.get(&item.id) {
         crate::webxdc::enhance_invitation(&mut note, session_uri, session_name);

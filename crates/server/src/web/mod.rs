@@ -53,9 +53,11 @@ mod thread;
 pub(crate) mod two_factor;
 mod user_agent;
 mod video_captions;
+mod video_channels;
 mod video_chapters;
 mod video_drafts;
 mod video_explore;
+mod video_metadata;
 mod video_upload;
 mod videos;
 mod view;
@@ -407,6 +409,8 @@ pub fn router() -> Router<AppState> {
         .route("/videos/explore", get(video_explore::page))
         .route("/videos/{id}/captions", get(video_captions::manage))
         .route("/videos/{id}/chapters", get(video_chapters::manage))
+        .route("/videos/{id}/metadata", get(video_metadata::manage))
+        .route("/web/videos/{id}/metadata", post(video_metadata::save))
         .route(
             "/web/videos/{id}/chapters",
             post(video_chapters::published_update),
@@ -482,6 +486,9 @@ pub fn router() -> Router<AppState> {
             get(videos::draft_caption),
         )
         .route("/web/video-channels", post(videos::create_channel))
+        .route("/videos/channels", get(video_channels::index))
+        .route("/videos/channels/{id}", get(video_channels::manage))
+        .route("/web/video-channels/{id}", post(video_channels::change))
         .route(
             "/web/videos",
             post(videos::submit).layer(axum::extract::DefaultBodyLimit::max(

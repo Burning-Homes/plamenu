@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.id FROM media_attachments m LEFT JOIN video_drafts d ON d.media_id = m.id\n         WHERE m.id = $1 AND m.account_id = $2 AND m.status_id IS NULL AND m.processing = 'complete'\n           AND m.scheduled_status_id IS NOT DISTINCT FROM $5\n           AND (d.media_id IS NULL OR (d.account_id = $2 AND d.channel_id = $3\n                AND d.state = 'ready' AND d.expires_at > clock_timestamp()))\n           AND (NOT EXISTS (SELECT 1 FROM native_live_sessions ls WHERE ls.replay_media_id = m.id)\n                OR EXISTS (SELECT 1 FROM native_live_sessions ls\n                    JOIN native_live_broadcasts b ON b.media_id = ls.media_id\n                    WHERE ls.replay_media_id = m.id AND ls.session_id = $4\n                      AND ls.ended_at IS NOT NULL AND b.permanent\n                      AND b.owner_account_id = $2 AND b.channel_id = $3))\n         FOR UPDATE OF m",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1d9cace0450216e21662b0745c650bd138caad5d3e58f5c78e329e3edd56eefd"
+}

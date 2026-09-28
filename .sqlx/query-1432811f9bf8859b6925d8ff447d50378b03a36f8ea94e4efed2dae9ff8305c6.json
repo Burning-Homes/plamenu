@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, account_id, scheduled_at, text, content_type, visibility,\n               in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,\n               application_id, media_ids, poll_options, poll_expires_in,\n               poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, created_at, publish_generation\n        FROM scheduled_statuses\n        WHERE id = $1 AND account_id = $2\n        ",
+  "query": "\n        SELECT id, account_id, scheduled_at, text, content_type, visibility,\n               in_reply_to_id, quoted_status_id, spoiler_text, sensitive, language,\n               application_id, media_ids, poll_options, poll_expires_in,\n               poll_multiple, poll_hide_totals, quote_approval_policy, object_type, title, video_channel_id, created_at, publish_generation\n        FROM scheduled_statuses\n        WHERE id = $1 AND account_id = $2\n        ",
   "describe": {
     "columns": [
       {
@@ -225,6 +225,17 @@
       },
       {
         "ordinal": 20,
+        "name": "video_channel_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "scheduled_statuses",
+            "name": "video_channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -235,7 +246,7 @@
         }
       },
       {
-        "ordinal": 21,
+        "ordinal": 22,
         "name": "publish_generation",
         "type_info": "Int8",
         "origin": {
@@ -273,9 +284,10 @@
       true,
       false,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "f9a864dd370504d3d527188ff5e2d4d4a1c231448752208cc18d53ccd9f6b942"
+  "hash": "1432811f9bf8859b6925d8ff447d50378b03a36f8ea94e4efed2dae9ff8305c6"
 }

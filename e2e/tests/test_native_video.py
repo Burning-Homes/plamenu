@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -31,13 +32,244 @@ def _csrf(html: str) -> str:
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
+    one_way_reason="scheduled native Video publication shares the normal outbound PeerTube path",
+)
+def test_scheduled_native_video_is_delivered_once_when_due(plamenu_api: Api, db: Db):
+    pt = peertube.root()
+    name = unique("scheduledfilm")[:30]
+    title = f"Scheduled film {name}"
+    channel = plamenu_api.post(
+        "/api/v1/video_channels", username=name, display_name="Scheduled films"
+    )
+    handle = f"{name}@{config.PLAMENU_DOMAIN}"
+    scheduled_id = None
+    published_id = None
+    subscribed = False
+    try:
+        pt.post("/api/v1/users/me/subscriptions", uri=handle)
+        subscribed = True
+        wait_for(lambda: db.follower_count(name) > 0, desc="PeerTube follows channel")
+        with tempfile.TemporaryDirectory() as temp:
+            sample = peertube.make_sample_mp4(Path(temp) / "scheduled.mp4", seconds=5)
+            media = plamenu_api.upload_media(
+                sample.read_bytes(), filename="scheduled.mp4", mime="video/mp4",
+                description="Moving test pattern",
+            )
+        when = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        queued = plamenu_api.post(
+            "/api/v1/videos", channel_id=channel["id"], media_id=media["id"],
+            title=title, description="Published later from Plamenu.",
+            language="en", scheduled_at=when, category=13, licence=2,
+            spoiler_text="Flashing imagery", sensitive=True,
+        )
+        scheduled_id = queued["id"]
+        assert queued["params"]["post_kind"] == "video", queued
+        assert queued["params"]["channel_id"] == channel["id"]
+        assert queued["params"]["spoiler_text"] == "Flashing imagery"
+        assert queued["params"]["sensitive"] is True
+        assert queued["media_attachments"][0]["video_metadata"]["licence"]["id"] == 2
+        assert db._value("SELECT status_id FROM media_attachments WHERE id = %s", media["id"]) is None
+        before = pt.get("/api/v1/users/me/subscriptions/videos", count=100)["data"]
+        assert all(video["name"] != title for video in before)
+        db.conn.execute(
+            "UPDATE scheduled_statuses SET scheduled_at = now() - interval '1 minute' "
+            "WHERE id = %s", (scheduled_id,),
+        )
+        def posted():
+            return db._value(
+                "SELECT status_id FROM media_attachments WHERE id = %s", media["id"]
+            )
+        published_id = wait_for(posted, desc="scheduled Video publishes once")
+        scheduled_id = None
+        def imported():
+            videos = pt.get("/api/v1/users/me/subscriptions/videos", count=100, nsfw="both")["data"]
+            return next((video for video in videos if video["name"] == title), None)
+        remote = wait_for(imported, desc="PeerTube receives scheduled Video")
+        detail = pt.video(remote["uuid"])
+        assert detail["channel"]["name"] == name
+        assert detail["files"]
+        assert detail["category"]["id"] == 13
+        assert detail["licence"]["id"] == 2
+        assert detail["nsfw"] is True
+        assert detail["nsfwSummary"] == "Flashing imagery"
+        assert db._value(
+            "SELECT count(*) FROM video_publications WHERE media_id = %s", media["id"]
+        ) == 1
+    finally:
+        if scheduled_id is not None:
+            plamenu_api._request("DELETE", f"/api/v1/scheduled_statuses/{scheduled_id}")
+        if published_id is not None:
+            plamenu_api.delete_status(str(published_id))
+        if subscribed:
+            response = pt.http.delete(
+                f"{pt.base_url}/api/v1/users/me/subscriptions/{handle}", timeout=30
+            )
+            assert response.status_code in (204, 404), response.text
+
+
+def test_no_js_video_review_can_schedule_reschedule_and_cancel(
+    plamenu_api: Api, plamenu_user, db: Db
+):
+    browser = requests.Session()
+    browser.verify = False
+    name = unique("webschedule")[:30]
+    title = f"Web scheduled film {name}"
+    channel = plamenu_api.post(
+        "/api/v1/video_channels", username=name, display_name="Scheduled films"
+    )
+    media_id = None
+    scheduled_id = None
+    try:
+        login = browser.post(
+            f"{config.PLAMENU_URL}/login",
+            data={"email": plamenu_user.email, "password": plamenu_user.password},
+            allow_redirects=False, timeout=30,
+        )
+        assert login.status_code == 303
+        compose = browser.get(f"{config.PLAMENU_URL}/videos", timeout=30)
+        compose.raise_for_status()
+        with tempfile.TemporaryDirectory() as temp:
+            sample = peertube.make_sample_mp4(Path(temp) / "scheduled.mp4", seconds=5)
+            upload = browser.post(
+                f"{config.PLAMENU_URL}/web/videos",
+                files=[
+                    ("csrf", (None, _csrf(compose.text))),
+                    ("channel", (None, channel["id"])),
+                    ("title", (None, title)),
+                    ("description", (None, "A planned film.")),
+                    ("language", (None, "en")),
+                    ("visibility", (None, "public")),
+                    ("category", (None, "13")),
+                    ("licence", (None, "2")),
+                    ("spoiler_text", (None, "Flashing imagery")),
+                    ("sensitive", (None, "true")),
+                    ("poster_time", (None, "0")),
+                    ("file", ("scheduled.mp4", sample.read_bytes(), "video/mp4")),
+                    ("alt", (None, "Moving colour pattern")),
+                    ("op", (None, "review")),
+                ],
+                allow_redirects=False, timeout=60,
+            )
+        assert upload.status_code == 303, upload.text[:500]
+        media_id = upload.headers["Location"].rsplit("/", 1)[1]
+        def ready():
+            response = browser.get(
+                f"{config.PLAMENU_URL}/videos/drafts/{media_id}/status", timeout=30
+            )
+            response.raise_for_status()
+            assert response.json()["phase"] != "failed"
+            return response.json()["phase"] == "ready"
+        wait_for(ready, desc="no-JS video draft processing")
+        review = browser.get(
+            f"{config.PLAMENU_URL}/videos/drafts/{media_id}/review", timeout=30
+        )
+        review.raise_for_status()
+        assert 'name="scheduled_at"' in review.text
+        assert 'value="schedule"' in review.text
+        assert 'value="13" selected' in review.text
+        assert 'value="2" selected' in review.text
+        assert 'value="Flashing imagery"' in review.text
+        when = datetime.now(timezone.utc) + timedelta(days=30)
+        local = when.strftime("%Y-%m-%dT%H:%M")  # fixture account uses UTC
+        scheduled = browser.post(
+            f"{config.PLAMENU_URL}/web/videos",
+            files=[
+                ("csrf", (None, _csrf(review.text))),
+                ("channel", (None, channel["id"])),
+                ("media_id", (None, media_id)),
+                ("title", (None, title)),
+                ("description", (None, "A planned film.")),
+                ("language", (None, "en")),
+                ("visibility", (None, "public")),
+                ("category", (None, "13")),
+                ("licence", (None, "2")),
+                ("spoiler_text", (None, "Flashing imagery")),
+                ("sensitive", (None, "true")),
+                ("scheduled_at", (None, local)),
+                ("op", (None, "schedule")),
+            ],
+            allow_redirects=False, timeout=30,
+        )
+        assert scheduled.status_code == 303, scheduled.text[:500]
+        assert scheduled.headers["Location"].startswith("/settings/scheduled")
+        queue = plamenu_api.get("/api/v1/scheduled_statuses")
+        row = next(item for item in queue if item["params"]["title"] == title)
+        scheduled_id = row["id"]
+        assert row["params"]["spoiler_text"] == "Flashing imagery"
+        assert row["params"]["sensitive"] is True
+        assert row["media_attachments"][0]["video_metadata"]["category"]["id"] == 13
+        expiry = db._value("SELECT expires_at FROM video_drafts WHERE media_id = %s", media_id)
+        assert expiry > when + timedelta(days=6)
+        draft_page = browser.get(
+            f"{config.PLAMENU_URL}/videos/drafts/{media_id}", timeout=30
+        )
+        assert "scheduled and reserved" in draft_page.text
+        assert "Cancel and delete draft" not in draft_page.text
+        refused = browser.post(
+            f"{config.PLAMENU_URL}/web/videos/drafts/{media_id}",
+            data={"csrf": _csrf(draft_page.text), "op": "cancel", "confirm": "yes"},
+            allow_redirects=False, timeout=30,
+        )
+        assert refused.status_code == 409
+        assert browser.get(
+            f"{config.PLAMENU_URL}/videos/drafts/{media_id}/review",
+            allow_redirects=False, timeout=30,
+        ).status_code == 303
+        queue_page = browser.get(f"{config.PLAMENU_URL}/settings/scheduled", timeout=30)
+        queue_page.raise_for_status()
+        assert title in queue_page.text
+        moved = when + timedelta(days=2)
+        rescheduled = browser.post(
+            f"{config.PLAMENU_URL}/web/settings/scheduled/{scheduled_id}/reschedule",
+            data={
+                "csrf": _csrf(queue_page.text),
+                "scheduled_at": moved.strftime("%Y-%m-%dT%H:%M"),
+            },
+            allow_redirects=False, timeout=30,
+        )
+        assert rescheduled.status_code == 303, rescheduled.text[:500]
+        expiry = db._value("SELECT expires_at FROM video_drafts WHERE media_id = %s", media_id)
+        assert expiry > moved + timedelta(days=6)
+        queue_page = browser.get(f"{config.PLAMENU_URL}/settings/scheduled", timeout=30)
+        cancelled = browser.post(
+            f"{config.PLAMENU_URL}/web/settings/scheduled/{scheduled_id}/cancel",
+            data={"csrf": _csrf(queue_page.text)},
+            allow_redirects=False, timeout=30,
+        )
+        assert cancelled.status_code == 303, cancelled.text[:500]
+        scheduled_id = None
+        released = db._value(
+            "SELECT scheduled_status_id FROM media_attachments WHERE id = %s", media_id
+        )
+        assert released is None
+        expiry = db._value("SELECT expires_at FROM video_drafts WHERE media_id = %s", media_id)
+        assert expiry < datetime.now(timezone.utc) + timedelta(days=8)
+    finally:
+        if scheduled_id is not None:
+            plamenu_api._request("DELETE", f"/api/v1/scheduled_statuses/{scheduled_id}")
+        if media_id is not None:
+            draft_page = browser.get(
+                f"{config.PLAMENU_URL}/videos/drafts/{media_id}", timeout=30
+            )
+            if draft_page.status_code == 200:
+                browser.post(
+                    f"{config.PLAMENU_URL}/web/videos/drafts/{media_id}",
+                    data={"csrf": _csrf(draft_page.text), "op": "cancel", "confirm": "yes"},
+                    allow_redirects=False, timeout=30,
+                )
+
+
+@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.federation(
+    direction="outbound",
+    peer="peertube",
     reverse_of="test_peertube_video_federates_and_plays_through_the_hls_proxy",
 )
 @pytest.mark.parametrize(
     "subscribe_before", [True, False], ids=["new-publication", "channel-history"]
 )
 def test_native_video_channel_publication_update_and_delete(
-    plamenu_api: Api, db: Db, subscribe_before
+    plamenu_api: Api, plamenu_user, db: Db, subscribe_before
 ):
     pt = peertube.root()
     name = unique("film")[:30]
@@ -69,8 +301,9 @@ def test_native_video_channel_publication_update_and_delete(
                 channel_id=channel["id"],
                 media_id=media["id"],
                 title=f"Native video {name}",
-                description="Published from Plamenu. " * 40 + "*literal asterisks*",
+                description="Published from Plamenu. " * 40 + "*literal asterisks* #astronomy",
                 language="en",
+                category=13, licence=2, spoiler_text="Flashing imagery", sensitive=True,
             )
             assert published["object_type"] == "Video", published
             assert published["media_attachments"][0]["type"] == "video"
@@ -92,6 +325,7 @@ def test_native_video_channel_publication_update_and_delete(
                     "/api/v1/users/me/subscriptions/videos",
                     count=100,
                     sort="-publishedAt",
+                    nsfw="both",
                 )["data"]
                 return next(
                     (v for v in videos if v["name"] == f"Native video {name}"), None
@@ -102,6 +336,11 @@ def test_native_video_channel_publication_update_and_delete(
             assert detail["channel"]["name"] == name, detail
             assert detail["channel"]["host"] == config.PLAMENU_DOMAIN, detail
             assert detail["isLocal"] is False
+            assert detail["category"]["id"] == 13
+            assert detail["licence"]["id"] == 2
+            assert detail["nsfw"] is True
+            assert detail["nsfwSummary"] == "Flashing imagery"
+            assert "astronomy" in detail["tags"]
             # PeerTube 8.3 includes the full description in video details;
             # the former /description subresource no longer exists.
             description = detail["description"]
@@ -151,7 +390,37 @@ def test_native_video_channel_publication_update_and_delete(
                     timeout=30,
                 )
 
-        with step("an owner edit reaches a channel-only subscriber"):
+        with step("invalid API edits and CSRF-less HTML edits cannot change metadata"):
+            endpoint = f"{config.PLAMENU_URL}/api/v1/videos/{media['id']}/metadata"
+            for invalid in ({"category": 19}, {"licence": "2junk"}, {"spoiler_text": "wrong endpoint"}):
+                rejected = plamenu_api.http.put(endpoint, json=invalid, timeout=30)
+                assert rejected.status_code == 422, rejected.text[:500]
+            browser = requests.Session()
+            browser.verify = False
+            login = browser.post(f"{config.PLAMENU_URL}/login",
+                                 data={"email": plamenu_user.email, "password": plamenu_user.password},
+                                 allow_redirects=False, timeout=30)
+            assert login.status_code == 303
+            manager = browser.get(f"{config.PLAMENU_URL}/videos/{media['id']}/metadata", timeout=30)
+            manager.raise_for_status()
+            assert manager.headers["Cache-Control"] == "private, no-store"
+            assert "Cookie" in manager.headers["Vary"]
+            rejected = browser.post(f"{config.PLAMENU_URL}/web/videos/{media['id']}/metadata",
+                                    data={"category": "15", "licence": "9"}, timeout=30)
+            assert rejected.status_code == 403
+            assert rejected.headers["Cache-Control"] == "private, no-store"
+            current = plamenu_api.get_status(published["id"])["media_attachments"][0]["video_metadata"]
+            assert current["category"]["id"] == 13 and current["licence"]["id"] == 2
+            browser.close()
+
+        with step("a metadata-only signed Update reaches a channel-only subscriber"):
+            plamenu_api.put(f"/api/v1/videos/{media['id']}/metadata", category=15, licence=9)
+            wait_for(lambda: pt.video(remote["uuid"])["licence"]["id"] == 9,
+                     desc="PeerTube receives category/licence Update")
+            assert pt.video(remote["uuid"])["category"]["id"] == 15
+            assert pt.video(remote["uuid"])["nsfw"] is True
+
+        with step("an owner edit reaches a channel-only subscriber and retains metadata"):
             plamenu_api._request(
                 "PUT",
                 f"/api/v1/statuses/{published['id']}",
@@ -162,6 +431,14 @@ def test_native_video_channel_publication_update_and_delete(
                 desc="PeerTube receives Video Update",
             )
             assert pt.video(remote["uuid"])["description"] == "<p>x</p>"
+            assert pt.video(remote["uuid"])["category"]["id"] == 15
+            assert pt.video(remote["uuid"])["licence"]["id"] == 9
+
+        with step("unspecified metadata clears rather than retaining stale reuse rights"):
+            plamenu_api.put(f"/api/v1/videos/{media['id']}/metadata", category=0, licence=0)
+            wait_for(lambda: pt.video(remote["uuid"])["licence"]["id"] == 0,
+                     desc="PeerTube clears category/licence")
+            assert pt.video(remote["uuid"])["category"]["id"] == 0
 
         with step("deletion removes the remote video"):
             plamenu_api.delete_status(published["id"])

@@ -5161,6 +5161,33 @@ img.reaction__emoji {
   text-underline-offset: 0.15em;
 }
 
+[data-video-schedule-form] .settings-form__actions {
+  flex-wrap: wrap;
+}
+
+[data-video-schedule-form] .settings-form__actions button,
+[data-video-schedule-form] .settings-form__actions a {
+  min-block-size: 44px;
+}
+
+@media (max-width: 34rem) {
+  [data-video-schedule-form] .settings-form__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  [data-video-schedule-form] .settings-form__actions button {
+    inline-size: 100%;
+  }
+
+  [data-video-schedule-form] .settings-form__actions a {
+    grid-column: 1 / -1;
+    justify-self: center;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
 .video-poster-picker {
   display: grid;
   gap: var(--space-2);

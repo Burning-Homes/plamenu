@@ -44,6 +44,22 @@ async fn owned(
     Ok((draft, media))
 }
 
+async fn scheduled_reservation(
+    state: &AppState,
+    media_id: i64,
+    owner: i64,
+) -> Result<Option<i64>, ApiError> {
+    sqlx::query_scalar(
+        "SELECT scheduled_status_id FROM media_attachments WHERE id = $1 AND account_id = $2",
+    )
+    .bind(media_id)
+    .bind(owner)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(plamenu_db::DbError::from)
+    .map_err(ApiError::from)
+}
+
 pub async fn show(State(state): State<AppState>, Path(id): Path<i64>, user: WebUser) -> Response {
     private(show_inner(&state, &user, id, false).await)
 }
@@ -90,6 +106,9 @@ async fn show_inner(
 ) -> Result<Response, ApiError> {
     let (draft, _) = owned(state, id, user.current.account.id).await?;
     let locale = user.locale;
+    let scheduled = scheduled_reservation(state, id, user.current.account.id)
+        .await?
+        .is_some();
     let expired = draft.expires_at <= time::OffsetDateTime::now_utc();
     let phase = if expired {
         "expired"
@@ -106,7 +125,7 @@ async fn show_inner(
         phase
     };
     let body = html! {
-        section.column.video-draft data-video-draft=(id) data-phase=(phase)
+        section.column.video-draft data-video-draft=(id) data-video-scheduled[scheduled] data-phase=(phase)
             data-phase-receiving=(locale.text("videos-draft-receiving"))
             data-phase-queued=(locale.text("videos-draft-queued"))
             data-phase-processing=(locale.text("videos-draft-processing"))
@@ -118,6 +137,9 @@ async fn show_inner(
             h2 { (draft.title) }
             @if conflict { p.settings__error role="alert" { (locale.text("videos-draft-changed")) } }
             p { (locale.text("videos-draft-private")) }
+            @if scheduled {
+                p { (locale.text("videos-draft-scheduled")) " " a href="/settings/scheduled" { (locale.text("compose-scheduled-posts")) } }
+            }
             p role="status" aria-live="polite" { (locale.text(&format!("videos-draft-{phase}"))) }
             @if phase == "receiving" {
                 p { (locale.text("videos-draft-receiving-help")) }
@@ -142,19 +164,19 @@ async fn show_inner(
                     }
                 }
             }
-            p { (locale.text("videos-draft-expiry")) }
+            @if !scheduled { p { (locale.text("videos-draft-expiry")) } }
             p data-draft-expiry { (locale.text("videos-draft-expires-at")) " " (user.clock.element_absolute(draft.expires_at)) }
             (super::clock::zone_chip(&user.clock))
             div.settings-form__actions {
                 a href=(format!("/videos/drafts/{id}")) { (locale.text("videos-draft-refresh")) }
-                a data-video-review hidden[!ready] href=(format!("/videos/drafts/{id}/review")) { (locale.text("videos-review")) }
+                a data-video-review hidden[!ready || scheduled] href=(format!("/videos/drafts/{id}/review")) { (locale.text("videos-review")) }
                 a href="/videos" { (locale.text("videos-title")) }
             }
-            form.settings-form data-video-retry hidden[phase != "failed"] method="post" action=(format!("/web/videos/drafts/{id}")) {
+            form.settings-form data-video-retry hidden[phase != "failed" || scheduled] method="post" action=(format!("/web/videos/drafts/{id}")) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     button type="submit" name="op" value="retry" { (locale.text("videos-draft-retry")) }
             }
-            form.settings-form method="post" action=(format!("/web/videos/drafts/{id}")) {
+            @if !scheduled { form.settings-form method="post" action=(format!("/web/videos/drafts/{id}")) {
                 input type="hidden" name="csrf" value=(user.csrf);
                 p id="draft-cancel-help" { (locale.text("videos-draft-cancel-help")) }
                 label.settings-field {
@@ -164,7 +186,7 @@ async fn show_inner(
                     }
                 }
                 button.settings-button--danger type="submit" name="op" value="cancel" { (locale.text("videos-draft-cancel")) }
-            }
+            } }
         }
     };
     Ok((
@@ -189,12 +211,22 @@ pub(super) async fn review_inner(
     error: Option<&str>,
 ) -> Result<Response, ApiError> {
     let (draft, media) = owned(state, id, user.current.account.id).await?;
+    if scheduled_reservation(state, id, user.current.account.id)
+        .await?
+        .is_some()
+    {
+        return Ok(redirect_to("/settings/scheduled"));
+    }
     if video_draft::preview(&state.pool, id, user.current.account.id)
         .await?
         .is_none()
     {
         return Ok(redirect_to(&format!("/videos/drafts/{id}")));
     }
+    let metadata = plamenu_db::video_metadata::for_media(&state.pool, &[id])
+        .await?
+        .remove(&id)
+        .unwrap_or_default();
     let draft = videos::Draft {
         channel: draft.channel_id.to_string(),
         title: draft.title,
@@ -206,6 +238,17 @@ pub(super) async fn review_inner(
         poster_time: draft.poster_time_seconds.to_string(),
         poster_alt: draft.poster_alt,
         media_id: Some(id),
+        scheduled_at: String::new(),
+        category: metadata
+            .category
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
+        licence: metadata
+            .licence
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
+        spoiler_text: metadata.spoiler_text,
+        sensitive: metadata.sensitive,
     };
     let page = videos::page(state, user, &draft, error).await?;
     Ok((

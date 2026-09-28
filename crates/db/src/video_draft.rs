@@ -630,6 +630,7 @@ pub async fn cancel(pool: &PgPool, media_id: i64, owner: i64) -> Result<bool, Db
     let mut tx = pool.begin().await?;
     let removed = sqlx::query!(
         "DELETE FROM media_attachments m WHERE id = $1 AND account_id = $2 AND status_id IS NULL
+         AND scheduled_status_id IS NULL
          AND EXISTS (SELECT 1 FROM video_drafts d WHERE d.media_id = m.id)
          RETURNING file_name, small_file_name",
         media_id,
@@ -657,7 +658,8 @@ pub async fn expire(pool: &PgPool, limit: i64) -> Result<usize, DbError> {
     let removed = sqlx::query!(
         "WITH due AS (
              SELECT m.id FROM media_attachments m JOIN video_drafts d ON d.media_id = m.id
-             WHERE m.status_id IS NULL AND d.expires_at <= clock_timestamp()
+             WHERE m.status_id IS NULL AND m.scheduled_status_id IS NULL
+               AND d.expires_at <= clock_timestamp()
                AND (d.lease_until IS NULL OR d.lease_until <= clock_timestamp())
              ORDER BY d.expires_at LIMIT $1 FOR UPDATE OF m SKIP LOCKED
          ) DELETE FROM media_attachments m USING due WHERE m.id = due.id
