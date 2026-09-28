@@ -8707,6 +8707,17 @@ a.settings-button--plain {
   }
 }
 
+.video-playlists, .video-playlist { overflow-wrap: anywhere; }
+.video-playlists__library, .video-playlist__entries { padding-inline-start: 1.6rem; }
+.video-playlist__entry { padding: 1rem .5rem; border-block-end: 1px solid var(--border); }
+.video-playlist__entry > a[aria-current="true"] { font-weight: 700; }
+.video-playlist__entry > p { margin-block: .4rem; }
+.video-playlist__entry details { margin-block-start: .75rem; }
+.video-playlist__entry .settings-form { margin-block: 1rem; }
+.video-playlist__next { display: flex; flex-wrap: wrap; gap: 1rem; margin-block: 1rem; }
+.video-playlist__description { white-space: pre-wrap; }
+.video-playlist__player > .status { border: 1px solid var(--border); border-radius: .5rem; }
+
 } /* @layer app */
 
 .profile-identity-proofs { padding: 1rem; overflow-wrap: anywhere; }

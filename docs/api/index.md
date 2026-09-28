@@ -19,6 +19,36 @@ Test authentication, timelines, posting, uploads, and notifications against the
 exact Plamenu version you intend to support. Plamenu-specific APIs may change
 incompatibly during the experimental release series.
 
+## Video playlists (experimental)
+
+These are native Plamenu endpoints; see the [playlist guide](../VIDEO_PLAYLISTS.md).
+Reads use `read:statuses` when authenticated; mutations require `write:statuses`.
+
+- `GET /api/v1/video_playlists`: public catalogue, optionally `mine=true` for
+  accessible native collections and `max_id` for older results.
+- `POST /api/v1/video_playlists`: `channel_id`, `name`, optional `description`
+  and `visibility` (`private` default, `public`, `unlisted`).
+- `GET /api/v1/video_playlists/{id}`: metadata, revision and ordered entries.
+  Each entry has a string `id`, position, nullable status/title/Video URI,
+  `available`/`unresolved`, start seconds and optional stop seconds. Inaccessible
+  Videos do not leak titles, status IDs or media. `can_edit` is channel-scoped.
+- `POST /api/v1/video_playlists/{id}`: required current `revision` and operation:
+  `profile` (name/description/visibility), `add` (status_id or video_url and clip
+  bounds), `move` (entry_id, one-based position), `clip` (entry_id and bounds),
+  `remove` (entry_id), or `delete` (confirm equal to the exact playlist title).
+  Clip bounds are integer `start_seconds` and optional `stop_seconds`; omission
+  of the stop clears it. Duplicate Videos are distinct stable entries.
+- `POST /api/v1/video_playlists/import`: `url`, guarded canonical metadata import
+  or refresh; remote ownership is retained and editing is not granted.
+
+IDs are strings; `revision` is an integer. JSON and URL-encoded bodies work.
+Unauthorized/private/deleted reads return 404, missing OAuth scope 403, invalid
+limits/bounds/confirmation 422, and stale revisions 409. Native playlist and
+outbox mutations are one transaction. Account/channel lifecycle and accepted
+collaboration determine authority. Public/unlisted AP roots, pages and elements
+are independently readable for PeerTube's auxiliary fetches; private ones are
+never exposed. This does not weaken authorized fetch on general status routes.
+
 ## Native video (experimental)
 
 These are Plamenu APIs, not a PeerTube REST API implementation. ActivityPub

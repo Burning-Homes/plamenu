@@ -541,6 +541,12 @@ pub fn enrich_object(
     // Keep the canonical sanitized HTML instead of relabelling unescaped plain
     // text as Markdown (which changed literal asterisks and discarded links).
     note["mediaType"] = json!("text/html");
+    // PeerTube distinguishes an absent optional description from an invalid
+    // empty string. Keep the client entity's empty value but serialize absence
+    // as null consistently in Create, dereference, history and Update.
+    if note["content"].as_str() == Some("") {
+        note["content"] = Value::Null;
+    }
     if note["content"].as_str().unwrap_or_default().chars().count() > 10_000 {
         return Err(ApiError::Unprocessable(
             "The formatted video description exceeds 10000 characters; shorten it before publishing".into(),
@@ -590,7 +596,7 @@ pub async fn validate_edit(
     validate_title(title)
 }
 
-fn context() -> Value {
+pub(crate) fn context() -> Value {
     let mut context = activity::quote_context();
     context
         .as_array_mut()
@@ -626,6 +632,41 @@ pub async fn follower_inboxes(
         return Ok(Vec::new());
     };
     Ok(plamenu_db::follow::follower_inboxes(conn, publication.channel_id).await?)
+}
+
+/// `PeerTube` authorizes Video deletion by the current channel owner. Preserve
+/// the original-author Delete for other peers, and add this owner-signed
+/// retraction when channel authority differs. Enqueue before publication FK
+/// cleanup, within the caller's transaction, so failure rolls everything back.
+pub async fn federate_owner_delete_conn(
+    state: &AppState,
+    conn: &mut plamenu_db::PgConnection,
+    stored: &plamenu_db::status::Status,
+    author: &Account,
+) -> Result<(), ApiError> {
+    let Some(publication) = video::publications(&mut *conn, &[stored.id]).await?.pop() else {
+        return Ok(());
+    };
+    let owner: i64 =
+        sqlx::query_scalar("SELECT owner_account_id FROM video_channels WHERE account_id=$1")
+            .bind(publication.channel_id)
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(plamenu_db::DbError::from)?;
+    if owner == author.id || stored.visibility == "local" {
+        return Ok(());
+    }
+    let signer = plamenu_db::account::find_by_id(&mut *conn, owner)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let uri = crate::entities::status_uri_for_account(&state.config.domain, stored, author);
+    let mut delete = activity::delete_note(&state.config.domain, &signer.username, &uri);
+    // Distinct identity: a peer rejecting delegated authority must not dedupe
+    // the original author's subsequently delivered retraction as the same event.
+    delete["id"] = json!(format!("{uri}#channel-owner-delete-{owner}"));
+    let inboxes = plamenu_db::follow::follower_inboxes(&mut *conn, publication.channel_id).await?;
+    crate::actions::fan_out_conn(state, conn, &signer, &delete, &inboxes).await?;
+    Ok(())
 }
 
 pub async fn announce(

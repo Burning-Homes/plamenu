@@ -23,15 +23,21 @@ results, retained first-run failures, browser observations and scope boundaries.
 
 ## M4 — Playlists and library
 
-- [ ] Create/import/edit/confirmed delete; public/unlisted/private visibility.
-- [ ] Add/remove/reorder with stable entry identity, bounded duplicates and
+- [x] Create/import/edit/confirmed delete; public/unlisted/private visibility.
+- [x] Add/remove/reorder with stable entry identity, bounded duplicates and
       missing/deleted video entries that cannot widen the video's audience.
-- [ ] Validated clip start/end boundaries and accessible playback/navigation.
-- [ ] Authenticated ownership, guarded remote import, delayed/update/delete
+- [x] Validated clip start/end boundaries and accessible playback/navigation.
+- [x] Authenticated ownership, guarded remote import, delayed/update/delete
       retention and real PeerTube round-trip federation.
-- [ ] Keyboard and no-JS management/playback, responsive styling and the browser
+- [x] Keyboard and no-JS management/playback, responsive styling and the browser
       matrix; API permission and transactional failure regressions.
-- [ ] Evidence linked in the master progress log and relevant inventory rows.
+- [x] Evidence linked in the master progress log and relevant inventory rows.
+
+M4 signed off 2026-09-29. The master sign-off records 61 Rust tests, three actual
+PeerTube/API/HTML E2E cases, seven browser projects and quality checks. The
+post-transfer standalone Video Delete extension also closes the current-owner
+signer edge found while reviewing PeerTube cleanup logs. Both selected functional
+milestones are verified; this is not an overall parity or manual-AT claim.
 
 ## Evidence rules
 

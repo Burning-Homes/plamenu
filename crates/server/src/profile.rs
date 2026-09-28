@@ -250,6 +250,7 @@ pub async fn local_actor_conn(
         keys,
     );
     crate::video::channel_actor(state, conn, account, &mut actor).await?;
+    actor.playlists = Some(format!("{}/playlists", actor.id));
     let proofs = crate::identity::list_conn(conn, account, &actor.id).await?;
     actor.attachment.extend(proofs);
     Ok(actor)

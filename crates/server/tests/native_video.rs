@@ -11,6 +11,67 @@ use plamenu_ap::activity::PostKind;
 use plamenu_db::{PgPool, follow, media, scheduled_status};
 use tower::ServiceExt;
 
+#[sqlx::test(migrations = "../db/migrations")]
+async fn absent_video_description_serializes_as_null_for_peertube(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let media = video_media(&pool, alice.id).await;
+    let (stored, _) = actions::post_video(
+        &state,
+        PostParams {
+            text: "",
+            ..params("alice", &[media.id])
+        },
+        channel.id,
+    )
+    .await
+    .unwrap();
+    let served = plamenu::note::note_for_status(&state, &stored, &alice)
+        .await
+        .unwrap();
+    assert!(served["content"].is_null());
+    assert!(served["contentMap"]["en"].is_null());
+    let edited = actions::edit_status(
+        &state,
+        &alice,
+        stored.id,
+        EditParams {
+            text: Some("A description"),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        plamenu::note::note_for_status(&state, &edited, &alice)
+            .await
+            .unwrap()["content"]
+            .as_str()
+            .unwrap()
+            .contains("A description")
+    );
+    let cleared = actions::edit_status(
+        &state,
+        &alice,
+        stored.id,
+        EditParams {
+            text: Some(""),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        plamenu::note::note_for_status(&state, &cleared, &alice)
+            .await
+            .unwrap()["content"]
+            .is_null()
+    );
+}
+
 #[tokio::test]
 async fn spooled_video_is_not_truncated_at_the_old_attachment_frame_limit() {
     let dir = tempfile::tempdir().unwrap();
@@ -898,6 +959,13 @@ async fn channel_transfer_requires_recipient_and_preserves_authorship(pool: PgPo
     let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
         .await
         .unwrap();
+    let viewer = RemoteUser::new("remote.test", "viewer");
+    let viewer = plamenu::remote::store_remote_actor(&pool, &viewer.actor)
+        .await
+        .unwrap();
+    follow::create(&pool, viewer.id, channel.id, None)
+        .await
+        .unwrap();
     let file = video_media(&pool, alice.id).await;
     let (video, _) = actions::post_video(&state, params("alice", &[file.id]), channel.id)
         .await
@@ -1025,6 +1093,29 @@ async fn channel_transfer_requires_recipient_and_preserves_authorship(pool: PgPo
     actions::delete_status(&state, &bob, video.id, DeleteMode::Stub)
         .await
         .unwrap();
+    let deletes: Vec<serde_json::Value> =
+        sqlx::query_scalar("SELECT activity FROM delivery_jobs WHERE activity->>'type'='Delete'")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(
+        deletes
+            .iter()
+            .any(|a| a["actor"] == "https://plamenu.test/users/alice")
+    );
+    assert!(
+        deletes
+            .iter()
+            .any(|a| a["actor"] == "https://plamenu.test/users/bob")
+    );
+    assert_eq!(
+        deletes
+            .iter()
+            .map(|a| a["id"].as_str().unwrap())
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        2
+    );
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

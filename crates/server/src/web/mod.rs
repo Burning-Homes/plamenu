@@ -58,6 +58,7 @@ mod video_chapters;
 mod video_drafts;
 mod video_explore;
 mod video_metadata;
+mod video_playlists;
 mod video_upload;
 mod videos;
 mod view;
@@ -108,6 +109,11 @@ pub fn router() -> Router<AppState> {
             get(caption_transcripts::show),
         )
         .route("/", get(pages::home))
+        .route("/videos/playlists", get(video_playlists::index))
+        .route("/videos/playlists/{id}", get(video_playlists::show))
+        .route("/web/video-playlists", post(video_playlists::create))
+        .route("/web/video-playlists/import", post(video_playlists::import))
+        .route("/web/video-playlists/{id}", post(video_playlists::change))
         .route("/public", get(pages::public))
         .route("/explore", get(explore::posts))
         .route("/explore/hashtags", get(explore::hashtags))

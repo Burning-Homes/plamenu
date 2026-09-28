@@ -98,7 +98,10 @@ pub(super) fn prefs_of(
 /// The viewer's reading preferences as the [`view::ViewPrefs`] the renderers
 /// consume. A logged-out viewer gets the defaults (gate sensitive media, keep
 /// content warnings collapsed).
-async fn view_prefs(state: &AppState, user: Option<&WebUser>) -> Result<view::ViewPrefs, ApiError> {
+pub(super) async fn view_prefs(
+    state: &AppState,
+    user: Option<&WebUser>,
+) -> Result<view::ViewPrefs, ApiError> {
     let Some(user) = user else {
         return Ok(view::ViewPrefs::default());
     };

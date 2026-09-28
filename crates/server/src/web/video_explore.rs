@@ -225,6 +225,7 @@ pub async fn page(
             @if let Some(channel) = channel.as_ref() {
                 nav.video-explore__links aria-label=(locale.text("videos-explore-navigation")) {
                     a href="/videos/explore" { (locale.text("videos-explore-all")) }
+                    a href="/videos/playlists" { (locale.text("playlist-title")) }
                     a href=(account_local_path(channel, &state.config.domain)) {
                         (locale.text("videos-explore-profile"))
                     }
@@ -241,6 +242,7 @@ pub async fn page(
                 @if session.is_some() {
                     p { a href="/videos" { (locale.text("videos-explore-publish")) }
                         " · " a href="/videos/channels" { (locale.text("video-channel-manage")) }
+                        " · " a href="/videos/playlists" { (locale.text("playlist-title")) }
                     }
                 }
             }

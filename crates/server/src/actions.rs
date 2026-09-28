@@ -4280,6 +4280,7 @@ pub async fn delete_status(
     if existing.object_type.as_deref() == Some("Video") {
         crate::video_channels::lock_status(&mut tx, requester, existing.id).await?;
         original_extras.extend(crate::video::follower_inboxes(&mut tx, existing.id).await?);
+        crate::video::federate_owner_delete_conn(state, &mut tx, &existing, actor).await?;
     }
     let deleted = match mode {
         DeleteMode::Stub => status::stub_local_conn(&mut tx, status_id, actor.id).await?,

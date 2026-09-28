@@ -58,8 +58,20 @@ pub async fn ensure_web_app(state: &AppState) -> Result<App, crate::error::ApiEr
             scopes: WEB_SCOPES,
         },
     )
-    .await?;
-    Ok(app)
+    .await;
+    match app {
+        Ok(app) => Ok(app),
+        Err(plamenu_db::DbError::Sqlx(sqlx::Error::Database(error)))
+            if error.is_unique_violation() =>
+        {
+            // Two first logins may race the initial lookup. The winning row
+            // is the same fixed first-party app; never return an avoidable 500.
+            oauth::find_app_by_client_id(&state.pool, WEB_CLIENT_ID)
+                .await?
+                .ok_or_else(|| crate::error::ApiError::Internal(Box::new(error)))
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// Reads a single cookie value out of the request's `Cookie` header.

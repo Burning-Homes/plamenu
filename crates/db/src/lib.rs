@@ -121,6 +121,7 @@ pub mod video_channel_access;
 pub mod video_chapters;
 pub mod video_draft;
 pub mod video_metadata;
+pub mod video_playlists;
 pub mod video_storage;
 pub mod warning_preset;
 pub mod web_push;

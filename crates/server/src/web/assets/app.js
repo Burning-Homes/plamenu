@@ -5589,6 +5589,71 @@
     });
   }
 
+  // Playlist clips reuse the normal HLS/progressive player. No autoplay or
+  // forced navigation: finish is announced, and Next remains a native link.
+  function bindPlaylistClips(root) {
+    root.querySelectorAll("[data-playlist-start]").forEach(region => {
+      const video = region.querySelector("video[controls]");
+      if (!video || region.dataset.clipBound) return;
+      region.dataset.clipBound = "1";
+      const start = Number(region.dataset.playlistStart);
+      const stop = region.dataset.playlistStop === "" ? null : Number(region.dataset.playlistStop);
+      if (!Number.isFinite(start) || start < 0 || (stop !== null && (!Number.isFinite(stop) || stop <= start))) return;
+      let started = false;
+      let finished = false;
+      const status = region.querySelector("[data-playlist-status]");
+      const seekStart = () => {
+        if (started || video.readyState < HTMLMediaElement.HAVE_METADATA) return;
+        try { video.currentTime = start; started = true; } catch { /* retry when metadata is ready */ }
+      };
+      // The normal player replaces progressive src with HLS on first play.
+      // Its load() clears the earlier seek, so apply the clip to the new source
+      // too, without resetting it for an ordinary pause/resume.
+      video.addEventListener("emptied", () => { started = false; finished = false; });
+      video.addEventListener("loadedmetadata", seekStart);
+      video.addEventListener("play", () => {
+        if (finished) { finished = false; started = false; }
+        seekStart();
+        if (status) status.textContent = "";
+      });
+      video.addEventListener("timeupdate", () => {
+        if (stop === null || video.currentTime < stop || finished) return;
+        video.pause(); finished = true;
+        if (status) status.textContent = region.dataset.playlistEnded;
+      });
+      seekStart();
+    });
+  }
+
+  function bindPlaylistMoves(root) {
+    root.querySelectorAll("form[data-playlist-move]").forEach(form => {
+      if (form.dataset.moveBound) return;
+      form.dataset.moveBound = "1";
+      const position = form.elements.namedItem("position");
+      form.querySelectorAll("[data-playlist-delta]").forEach(button => {
+        button.hidden = false;
+        const target = Number(position.value) + Number(button.dataset.playlistDelta);
+        button.disabled = target < Number(position.min) || target > Number(position.max);
+        button.addEventListener("click", () => {
+          position.value = String(target);
+          try { sessionStorage.setItem("plamenu-playlist-focus", JSON.stringify({
+            path: location.pathname, entry: form.elements.namedItem("entry_id").value,
+          })); } catch { /* native submission remains available without storage */ }
+          form.requestSubmit();
+        });
+      });
+    });
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("plamenu-playlist-focus") || "null");
+      if (saved?.path === location.pathname && /^\d+$/.test(saved.entry)) {
+        sessionStorage.removeItem("plamenu-playlist-focus");
+        const entry = document.getElementById(`entry-${saved.entry}`);
+        const details = entry?.querySelector("details");
+        if (details) { details.open = true; details.querySelector('[name="position"]')?.focus(); }
+      }
+    } catch { /* storage is optional */ }
+  }
+
   // ---- Wiring -----------------------------------------------------------
   function enhance(root) {
     bindVideoPosterPicker(root);
@@ -5622,6 +5687,8 @@
     bindBlurhashes(root);
     bindHlsVideos(root);
     bindVideoChapters(root);
+    bindPlaylistClips(root);
+    bindPlaylistMoves(root);
     bindCaptionTranscript(root);
     bindMediaWarmup(root);
     bindCompose(root);

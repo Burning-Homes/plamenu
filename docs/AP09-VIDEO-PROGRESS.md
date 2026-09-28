@@ -134,7 +134,7 @@ before becoming `verified`. Keep partial results and failures visible.
 | M1 | Channels and native publication | Channel/account lifecycle; authorized collaboration; real Plamenu Video accepted, playable and attributed correctly in PeerTube; edit/delete/follow exchange | verified 2026-09-29; see M1 sign-off below |
 | M2 | Long-form VOD pipeline | Large/resumable and no-JS uploads; durable processing; quality ladder; poster/storyboard; audio-only/silent inputs; failures/restart/quota evidence | in progress |
 | M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | in progress: captions and VOD chapters in both directions, no-JS/JS authoring and seeking; on-demand readable caption transcripts verified; wider browser/AT and description matrix pending |
-| M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | pending |
+| M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | verified 2026-09-29; see M4 sign-off below |
 | M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | verified 2026-09-25 for this stated functional gate; see the M5 sign-off below. Cross-node storage, additional device/browser combinations, and broader fault matrices remain in M7/M9, not silently counted as done |
 | M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders, scheduled VOD publication, in-session browser camera ↔ screen switching, and searchable/followable HTML video and channel libraries verified; larger/remote channel matrices, settings/imports, history and browser/hardware evidence remain |
 | M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress: remote and local-origin VOD/live PeerTube P2P exchange and pre-play opt-out verified; public VOD embed opt-out verified; wider embeds, operations and scale evidence remain |
@@ -178,7 +178,11 @@ Verification:
   verified-channel library tests: **7 passed, no skips**. PeerTube 8.3 receives
   profile and accepted ownership updates, imports a collaborator's Video, serves
   byte ranges and FFmpeg-decodable media, accepts edits before/after handoff and
-  retracts deletion. No-JS HTTP forms prove CSRF/privacy and two-step published
+  retracts deletion. The M4 run additionally verifies standalone Video deletion
+  after transfer from the original uploader to a different Person: the original
+  author's Delete is preserved for other peers, supplemented by a distinct,
+  current-owner-signed Delete that PeerTube authorizes. Both enqueue in the
+  deletion transaction, including channel/person cleanup. No-JS HTTP forms prove CSRF/privacy and two-step published
   Video deletion. Evidence: `target/e2e/ap09-channel-lifecycle-20260929.xml`.
 - `./dev a11y` with `video-channels.spec.mjs`: **7 passed**, all pinned-container
   projects: Chromium desktop/mobile, Firefox desktop/narrow-touch, WebKit
@@ -199,8 +203,94 @@ first exposed cached-account suspension acceptance; fresh locked identity checks
 fixed it. Two E2E setup attempts had wrong peer-root paths, before the real run.
 These are supporting browser accessibility checks, not human AT testing or a WCAG
 claim. Large-history/load, wider audience/asset rules and the manual release gate
-remain in their original M2/M7/M9 inventory scope. This closes **one** milestone in
-the current two-milestone goal; M4 remains open until its complete gate passes.
+remain in their original M2/M7/M9 inventory scope. M1 and the M4 sign-off below
+close the requested two-milestone goal without changing either acceptance gate.
+
+## M4 sign-off — 2026-09-29
+
+The original functional M4 gate is verified. `/videos/playlists` is the native
+public library and HTML-first creator/import surface, also linked from the Video
+space and channel libraries. Public/unlisted/private collections support create,
+profile edit, stable duplicate occurrences, add/remove/reorder, per-entry clip
+boundaries and title-confirmed deletion. Owners/editors manage channel lists;
+consenting publishers manage their own. Revocation, transfer, concurrent revision
+checks and transactional outbox failure protect authority and saved content.
+
+Playlist deletion preserves Videos. Video deletion preserves entry identity,
+position and boundaries as an unavailable placeholder, including hard deletion,
+thread stubs and moderation/channel/person cleanup. A collection cannot widen a
+Video's audience, reveal restricted titles/status IDs or grant media access.
+Accepted channel transfer preserves native Playlist/element identities and
+revokes the previous owner's implicit authority.
+
+The normal player supplies captions, descriptions, adaptive HLS, default-on
+compatible P2P and opt-out. Clips use native progressive media fragments without
+scripts; JS reapplies the seek on HLS takeover, pauses at the boundary and
+announces completion. Previous/Next remain ordinary links; there is no forced
+autoplay/navigation, clip encoding or media copying. Native numeric positioning
+is enhanced with keyboard-operable up/down controls and focus restoration.
+
+PeerTube `Playlist`/`PlaylistElement` roots, pages and stable occurrence URLs
+federate Create/Update/Delete under current channel-owner authority. Activity
+and object audiences agree, including unlisted re-publication after private
+retraction. Optional empty descriptions serialize as null for PeerTube, both
+for Playlists and Videos. Native actor `playlists` exposes public history only.
+Explicit import/refresh verifies canonical origin, Group/Person ownership and
+bounded auxiliary metadata; it never eagerly downloads every Video or media.
+Stale updates, foreign signers, looping/cross-origin pages, invalid identities,
+timestamps/counts, old-owner Deletes and delayed resurrection are rejected.
+
+Verification:
+
+- Rust integration: `cargo test -p plamenu --test video_playlists --test
+  native_video --test profile --test atomic_outbox -- --test-threads=2`:
+  **61 passed, no skips** (12 playlist, 25 native Video, 20 profile, 4 atomic
+  outbox). Includes consent/roles/revocation, handoff and distinct author/owner
+  Delete identities, restricted/deleted Videos, empty/cleared descriptions,
+  copied anchored permalinks, transactional rollback and hostile remote input.
+  The final ownership regression also denies cached former-owner deletion when
+  the channel origin is unavailable, without mutating the saved collection.
+  The 1000-entry limit and full 1000-entry API rendering pass a three-second
+  gate with batched audience/metadata reads; 16 simultaneous first-party app
+  bootstraps return one application identity.
+- Real local PeerTube 8.3, refreshed runtime: `e2e/tests/test_video_playlists.py`:
+  **3 passed, no skips**. Covers empty-description native publication, signed
+  duplicate/clip/reorder/profile/remove updates, private retraction and unlisted
+  sharing, accepted ownership transfer, new-owner edit/Delete and standalone
+  Video deletion, both-direction import/updates/deletion, deleted-video
+  placeholders, no-JS HTML import/CSRF/confirmation, scoped API authorization,
+  revision conflicts and private cache headers. Evidence:
+  `target/e2e/ap09-playlists-20260929.xml`.
+- `./dev a11y video-playlists.spec.mjs --workers=2`: **7 passed** in the pinned
+  Chromium desktop/mobile, Firefox desktop/narrow-touch, WebKit desktop/mobile
+  and scripts-disabled Chromium projects. Real HTML upload/publication, copied
+  URL authoring, duplicate clips, keyboard reordering/settings/confirmed delete,
+  decoded clip playback with start/end assertions and Previous/Next navigation
+  pass. Axe and 320px reflow checks pass; a mobile screenshot was visually
+  checked for readable labels, controls and wrapping. The repeated final run
+  includes the deleted-entry migration. Evidence:
+  `target/accessibility/ap09-playlists-20260929/passed-final/`.
+- Strict workspace/all-target Clippy, SQLx offline metadata check, Rust
+  formatting, JavaScript syntax and whitespace checks pass. The
+  [playlist guide](VIDEO_PLAYLISTS.md) and API contracts document workflows,
+  permissions, limits, metadata-only import and deliberate no-autoplay behavior.
+
+Failures remain visible. The four failed browser runs retain traces in
+`target/accessibility/ap09-playlists-20260929/{first,second,third,fourth}-run/`.
+They exposed real anchored-URL, concurrent first-login and HLS source-reset
+issues as well as incorrect test locators/source assumptions. Earlier E2E XMLs
+(`ap09-playlists-{first,second,third,fourth,fifth,sixth}-20260929.xml`) retain
+empty-description and envelope-audience interoperability failures and corrected
+test assumptions about PeerTube's element-shaped API, UUID-only unlisted reads
+and combined Vary headers. The final standalone-delete extension also caught
+PeerTube's current-channel-owner deletion rule; it now passes without dropping
+the original author retraction for other peers.
+
+These are supporting automated accessibility checks, not human AT testing or a
+WCAG claim. M9's manual release gate is unchanged. No full PeerTube REST or
+plugin-ABI compatibility is claimed. M4 adds no companion service or native
+installation/maintenance step. M2/M3/M6/M7/M8/M9 retain their existing open gates;
+two closed functional milestones are not an overall parity percentage.
 
 ## Verification matrix
 

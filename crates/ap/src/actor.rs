@@ -297,6 +297,9 @@ pub struct Actor {
     /// The account's `featuredCollections` endpoint (FEP-7aa9). Emitted as a
     /// bare property, like Mastodon (no JSON-LD term defines it).
     pub featured_collections: String,
+    /// Public Video playlists (`PeerTube` collection discovery).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playlists: Option<String>,
     /// RFC 3339 timestamp of account creation.
     pub published: String,
     pub manually_approves_followers: bool,
@@ -613,6 +616,7 @@ impl Actor {
             featured: urls.featured,
             featured_tags: urls.featured_tags,
             featured_collections: urls.featured_collections,
+            playlists: None,
             published: params.published.clone(),
             manually_approves_followers: params.locked,
             discoverable: params.discoverable,

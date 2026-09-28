@@ -3276,6 +3276,12 @@ async fn handle_create(
         None
     };
     let object = fetched_object.as_ref().unwrap_or(&activity.object);
+    if object.get("type").and_then(Value::as_str) == Some("Playlist") {
+        if let Some(uri) = id_of(object) {
+            crate::video_playlists_remote::import(state, uri, Some(sender)).await?;
+        }
+        return Ok(());
+    }
     if !crate::ingest::is_ingestible_note(object) {
         return Ok(());
     }
@@ -3353,6 +3359,11 @@ async fn handle_update(
 ) -> Result<(), ApiError> {
     let object = &activity.object;
     match object.get("type").and_then(Value::as_str) {
+        Some("Playlist") => {
+            if let Some(uri) = id_of(object) {
+                crate::video_playlists_remote::import(state, uri, Some(sender)).await?;
+            }
+        }
         _ if is_ingestible_note(object) => {
             let Some(object_uri) = id_of(object) else {
                 return Ok(());
@@ -3429,6 +3440,15 @@ async fn handle_delete(
     activity: &Activity,
     raw: &Value,
 ) -> Result<(), ApiError> {
+    if let Some(uri) = activity.object_id()
+        && (uri.contains("/video-playlists/")
+            || plamenu_db::video_playlists::by_uri(&state.pool, uri)
+                .await?
+                .is_some())
+        && crate::video_playlists_remote::delete(state, sender, uri).await?
+    {
+        return Ok(());
+    }
     // FEP-7aa9: a remote member revoking the consent it granted to one of our
     // local collections (`Delete(FeatureAuthorization)`).
     if activity.object.get("type").and_then(Value::as_str) == Some("FeatureAuthorization") {

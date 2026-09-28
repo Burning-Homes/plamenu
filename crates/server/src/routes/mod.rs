@@ -53,6 +53,7 @@ pub(crate) mod tags;
 mod timelines;
 mod trends;
 mod video;
+pub(crate) mod video_playlists;
 mod virtual_mp4;
 mod web_api;
 mod webxdc;
@@ -921,6 +922,7 @@ fn api_routes(state: AppState) -> Router<AppState> {
         .merge(list_routes())
         .merge(collection_routes())
         .merge(video::router())
+        .merge(video_playlists::router())
         .merge(filter_routes())
         .merge(admin_routes())
         .merge(email_routes())
@@ -1373,6 +1375,7 @@ pub fn router(state: AppState) -> Router {
         .merge(actor_route)
         .merge(federation_object_routes)
         .merge(public_video_chapters)
+        .merge(video_playlists::public_router())
         .merge(api_routes(state.clone()))
         .merge(oauth_token_routes)
         .merge(crate::web::router())

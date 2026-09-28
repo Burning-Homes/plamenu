@@ -737,6 +737,7 @@ pub async fn self_delete_account_conn(
     // only their owner would leave apparently active orphan actors at peers.
     for channel in plamenu_db::video::owned_channels(&mut *conn, target.id).await? {
         if let Some(account) = account::find_by_id(&mut *conn, channel.account_id).await? {
+            crate::video_playlists::delete_for_account_conn(state, conn, account.id).await?;
             delete_channel_publications_conn(state, conn, account.id, None).await?;
             self_delete_one_account_conn(state, conn, &account).await?;
         }
@@ -745,6 +746,7 @@ pub async fn self_delete_account_conn(
     // channel deletion must not leave these files or posts publicly readable.
     // Conversely, a deleting person's old Videos in a transferred channel still
     // need individual signed Deletes: peers now attribute that channel elsewhere.
+    crate::video_playlists::delete_for_account_conn(state, conn, target.id).await?;
     delete_channel_publications_conn(state, conn, target.id, Some(target.id)).await?;
     self_delete_one_account_conn(state, conn, target).await
 }
@@ -772,6 +774,7 @@ async fn delete_channel_publications_conn(
         };
         let uri = crate::entities::status_uri_for_account(&state.config.domain, &stored, &author);
         let extras = crate::video::follower_inboxes(&mut *conn, id).await?;
+        crate::video::federate_owner_delete_conn(state, &mut *conn, &stored, &author).await?;
         let delete =
             plamenu_ap::activity::delete_note(&state.config.domain, &author.username, &uri);
         crate::actions::fan_out_conn(state, &mut *conn, &author, &delete, &extras).await?;
