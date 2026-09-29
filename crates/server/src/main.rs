@@ -895,6 +895,11 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
         ),
         supervise("webhook", state.clone(), plamenu::webhooks::spawn),
         supervise("import", state.clone(), plamenu::import_worker::spawn),
+        supervise(
+            "video source import",
+            state.clone(),
+            plamenu::video_source_import::spawn,
+        ),
         supervise("archive", state.clone(), plamenu::archive_worker::spawn),
         supervise("trends", state.clone(), plamenu::trends::spawn),
         supervise("maintenance", state.clone(), plamenu::maintenance::spawn),

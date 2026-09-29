@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT media_id FROM video_source_imports WHERE media_id = $1 AND generation = $2\n        AND state = 'downloading' AND lease_until > clock_timestamp() FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "video_source_imports",
+            "name": "media_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5210a08baed59b205fb828ebfe5efb3c0efd4bef0b756014861666516436f044"
+}

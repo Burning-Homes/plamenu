@@ -10,6 +10,7 @@
   - [Accessible video metadata](VIDEO_ACCESSIBILITY.md)
   - [Native Video publishing](VIDEO_PUBLISHING.md)
   - [Video viewing and private history](VIDEO_VIEWING.md)
+  - [Importing a video](VIDEO_IMPORTS.md)
 - [Known issues](KNOWN_ISSUES.md)
 
 # Install and operate

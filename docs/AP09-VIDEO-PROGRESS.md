@@ -136,7 +136,7 @@ before becoming `verified`. Keep partial results and failures visible.
 | M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | verified 2026-09-29 for the stated functional gate; see M3 sign-off below. Human AT/WCAG release evidence remains M9 |
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | verified 2026-09-29; see M4 sign-off below |
 | M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | verified 2026-09-25 for this stated functional gate; see the M5 sign-off below. Cross-node storage, additional device/browser combinations, and broader fault matrices remain in M7/M9, not silently counted as done |
-| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders, scheduled VOD publication, in-session browser camera ↔ screen switching, searchable/followable HTML libraries and private opt-in viewer history/resume verified; larger/remote channel matrices, imports/editing/downloads and broader browser/hardware evidence remain. See M6/M7 closure checklist |
+| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders, scheduled VOD publication, in-session browser camera ↔ screen switching, searchable/followable HTML libraries, private opt-in viewer history/resume and guarded one-time native file/ActivityPub/PeerTube imports verified; larger/remote channel matrices, scheduled source sync, editing/downloads and broader browser/hardware evidence remain. See M6/M7 closure checklist |
 | M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress: both-origin VOD/live P2P exchange; durable HTML-first account opt-out and public/cookie-free VOD embeds; bounded VOD startup recovery; actual native VOD/upload backup and fresh-store restore verified. Worker/offload/redundancy, moderation/analytics, wider live/fault/load and resource budgets remain. See M6/M7 closure checklist |
 | M8 | Ecosystem and beyond parity | Defined REST/embed/runner compatibility scope; chosen extensions; end-to-end tests per supported contract; no PeerTube plugin ABI in round one | pending |
 | M9 | Completion gate | All accepted inventory entries verified; current and prior PeerTube matrices; browser/a11y/performance gates; operator and user documentation | pending |
@@ -2840,3 +2840,21 @@ record above predates migrations 0087–0088 and is not evidence for their write
   Initial live-form metadata controls, legacy-library metadata hydration, wider
   remote-vocabulary/assistive-technology/device cases and the other M6 inventory
   work remain. No push, merge or staging deployment occurred.
+
+### M6 guarded native source imports — 2026-09-29
+
+- Ordinary HTML public file/recorded ActivityPub Video imports now enter a private
+  native draft with upfront quota, bounded streaming, existing processing/review
+  and explicit publication. PeerTube's finite fragmented MP4 links are supported;
+  no companion downloader or extra basic installation step is introduced.
+- Five Rust integrations plus a URL/public-object unit check pass lifecycle,
+  privacy, quota, consent/CSRF, restart-generation fences, actual cancellation,
+  current-owner suspension and collaborator revocation. Both real PeerTube source
+  modes pass native review, captioning, new-identity federation and signed Delete.
+- Seven desktop/narrow/no-JS browser projects pass native decoding, keyboard
+  validation/recovery, private review/cancellation, Axe and 320px reflow. Positive
+  and failed evidence, scope and binary identity are recorded in
+  [`AP09-M6-M7-CLOSURE.md`](AP09-M6-M7-CLOSURE.md); user guide:
+  [`VIDEO_IMPORTS.md`](VIDEO_IMPORTS.md).
+- Scheduled source sync, stable-identity replacement/reprocess/trim and the other
+  original M6/M7 gates are still open. Neither milestone is marked complete.

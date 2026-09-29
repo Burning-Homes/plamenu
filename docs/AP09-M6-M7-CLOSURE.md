@@ -11,8 +11,8 @@ The milestone and inventory acceptance gates remain unchanged.
 - [ ] Complete drafts/scheduling/reminders and recovery UX; retain existing
       live calendar and in-session camera/screen switching evidence.
 - [ ] Discoverable, HTML-first settings and guarded imports/source sync.
-      Viewer P2P/history settings are verified; guarded source import/sync is
-      still outstanding.
+      Viewer P2P/history settings and one-time guarded file/ActivityPub imports
+      are verified; scheduled source synchronization is still outstanding.
 - [ ] Complete stable-identity media editing/reprocessing/trim workflows.
 - [x] Private opt-in watch history/resume with deletion, bounded retention and
       accessible non-JS controls; never record merely opening a page.
@@ -139,3 +139,60 @@ without changing or deleting that template. Native VOD/upload recovery is
 verified; live-session/cache/offload and production disaster matrices remain
 separate open work. Operator procedure:
 [`backup-and-restore.md`](operators/backup-and-restore.md).
+
+### Guarded native source imports — 2026-09-29
+
+Videos → Import a video offers ordinary HTML URL authoring into a private,
+quota-reserved native draft. It copies a finite public file or public recorded
+ActivityPub Video, including PeerTube 8.3's fragmented MP4 links inside HLS
+metadata. No companion downloader, crawling, scripts, credentials, playlists,
+live imports, automatic publication or identity impersonation is introduced.
+Processing/review/captions/chapters/posters/scheduling reuse the native pipeline.
+
+The importer streams to a unique temporary file, reserves the remote ceiling
+rather than the tiny HTML form's length, preserves DNS/redirect/byte/stall guards
+and uses a separate one-hour finite-import deadline without widening ordinary
+federation/cache timeouts. One in-process source download runs at a time. Durable
+two-minute leases/generations fence restart/retry and the short storage commit;
+five-second renewal checks stop cancelled/revoked/suspended work. Failed downloads
+require explicit retry; completed downloads discard their saved source URL.
+Originals stay private and cancellation cannot refund unacknowledged deletion.
+
+Five Rust integrations and one URL/public-object unit check pass: quota bounds,
+private/cache/CSRF/rights/ownership/OAuth gates, exact source bytes, no automatic post,
+failure/retry, crash reclaim, stale claims, current-owner suspension, collaborator
+revocation and actual in-flight controller cancellation/scratch cleanup.
+
+Real PeerTube direct-file and ActivityPub imports both pass native processing,
+exact source integrity, private preview/ranges, caption authoring and separate
+new-identity publication received by PeerTube with category/licence/captions,
+P2P metadata and acknowledged signed Delete: **2 passed in 42.15 seconds**;
+`target/e2e/ap09-source-import-20260929.xml`.
+
+All seven Chromium/Firefox/WebKit desktop/narrow plus Chromium no-JS projects
+pass actual native playback, keyboard consent/validation/retry, metadata
+retention, private review and confirmed cancellation, 320px reflow and Axe:
+**7 passed in 59.3 seconds**. Evidence:
+`target/accessibility/ap09-source-import-20260929/final/`. The standing browser
+form was inspected at 320px; viewport override was reset. PeerTube source tests
+use an explicitly isolated local-peer transport opt-in; production SSRF defaults
+are unchanged. Earlier failures are retained: an exact-label test selector,
+over-fast no-JS refreshes followed by waiting on an intentionally static page,
+metadata entity-shape/catalogue test assumptions and a readiness preflight race.
+The repeated wrong-catalogue E2E was interrupted with normal fixture cleanup;
+no content authority, timeouts or test retry count was relaxed to obtain a pass.
+
+The final authority fence requires `write:media` even when an OAuth token is
+transported as a cookie; read-only and unrelated granular tokens cannot allocate
+quota or make origin requests. The strengthened five-test integration run passes
+in 5.99 seconds. Final frozen-candidate real PeerTube E2E: **2 passed in 39.20
+seconds**; `target/e2e/ap09-source-import-20260929-final.xml`. A second complete
+seven-project matrix passes in **58.6 seconds** with no retries; final evidence:
+`target/accessibility/ap09-source-import-20260929/final-scope-fence/`.
+Strict workspace/all-target Clippy passes.
+
+Final frozen native binary SHA-256:
+`365cb677136b2b1ba390bfdc28127f9d148f2d6d4bb8bc445df7e1caa5a581c9`.
+User guide: [`VIDEO_IMPORTS.md`](VIDEO_IMPORTS.md). Scheduled source sync and
+stable-identity media replacement/reprocess/trim remain open. This is the
+one-time import slice, **not M6 or M7 completion**.

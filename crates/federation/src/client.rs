@@ -1156,13 +1156,35 @@ impl FederationClient {
         dest: &std::path::Path,
         max_bytes: u64,
     ) -> Result<FetchedMediaFile, FederationError> {
+        self.fetch_media_to_file_inner(raw_url, dest, max_bytes, AV_FETCH_TIMEOUT)
+            .await
+    }
+
+    /// Explicit native imports may legitimately take longer than an ordinary
+    /// remote-cache request. Retain every DNS/redirect/byte/stall guard; only
+    /// this caller's total download deadline changes, never federation reads.
+    pub async fn fetch_video_source_to_file(
+        &self,
+        raw_url: &str,
+        dest: &std::path::Path,
+        max_bytes: u64,
+    ) -> Result<FetchedMediaFile, FederationError> {
+        self.fetch_media_to_file_inner(raw_url, dest, max_bytes, Duration::from_secs(3600))
+            .await
+    }
+
+    async fn fetch_media_to_file_inner(
+        &self,
+        raw_url: &str,
+        dest: &std::path::Path,
+        max_bytes: u64,
+        timeout: Duration,
+    ) -> Result<FetchedMediaFile, FederationError> {
         use tokio::io::AsyncWriteExt;
 
         let mut url = self.checked(raw_url)?;
         for _ in 0..=PAGE_MAX_REDIRECTS {
-            let response = self
-                .send_media_get(&url, None, Some(AV_FETCH_TIMEOUT))
-                .await?;
+            let response = self.send_media_get(&url, None, Some(timeout)).await?;
             if response.status().is_redirection() {
                 let location = response
                     .headers()

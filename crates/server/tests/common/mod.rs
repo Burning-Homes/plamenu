@@ -79,6 +79,9 @@ pub struct StubFederation {
     pub media: Mutex<HashMap<String, FetchedMedia>>,
     /// Every `fetch_media` URL requested, in order.
     pub media_fetches: Mutex<Vec<String>>,
+    /// Native source-import tests can hold a whole-file stream until it is
+    /// cancelled, without replacing the production download/lease controller.
+    pub media_download_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
     /// Canned `(status, body)` replies for `service_request` (translation
     /// backend), keyed by request URL.
     pub service_responses: Mutex<HashMap<String, (u16, String)>>,
@@ -441,6 +444,7 @@ impl FederationApi for StubFederation {
         max_bytes: u64,
     ) -> BoxFuture<'a, Result<FetchedMediaFile, FederationError>> {
         self.media_fetches.lock().unwrap().push(url.to_owned());
+        let gate = self.media_download_gate.lock().unwrap().clone();
         let result = self
             .media
             .lock()
@@ -450,6 +454,9 @@ impl FederationApi for StubFederation {
             .ok_or(FederationError::Status(404));
         let dest = dest.to_path_buf();
         Box::pin(async move {
+            if let Some(gate) = gate {
+                gate.acquire().await.unwrap().forget();
+            }
             let fetched = result?;
             if fetched.bytes.len() as u64 > max_bytes {
                 return Err(FederationError::TooLarge(url.to_owned()));

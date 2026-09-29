@@ -84,8 +84,15 @@ async fn status_inner(
         .await
         .map_err(|_| ApiError::NotFound)?;
     let (draft, _) = owned(state, id, user.account.id).await?;
+    let import = plamenu_db::video_source_import::phase(&state.pool, id).await?;
     let phase = if draft.expires_at <= time::OffsetDateTime::now_utc() {
         "expired"
+    } else if draft.state == "receiving" && import.is_some() {
+        if import.as_deref() == Some("failed") {
+            "import-failed"
+        } else {
+            "importing"
+        }
     } else if draft.state == "ready"
         && video_draft::preview(&state.pool, id, user.account.id)
             .await?
@@ -110,8 +117,15 @@ async fn show_inner(
         .await?
         .is_some();
     let expired = draft.expires_at <= time::OffsetDateTime::now_utc();
+    let import = plamenu_db::video_source_import::phase(&state.pool, id).await?;
     let phase = if expired {
         "expired"
+    } else if draft.state == "receiving" && import.is_some() {
+        if import.as_deref() == Some("failed") {
+            "import-failed"
+        } else {
+            "importing"
+        }
     } else {
         draft.state.as_str()
     };
@@ -127,6 +141,8 @@ async fn show_inner(
     let body = html! {
         section.column.video-draft data-video-draft=(id) data-video-scheduled[scheduled] data-phase=(phase)
             data-phase-receiving=(locale.text("videos-draft-receiving"))
+            data-phase-importing=(locale.text("videos-draft-importing"))
+            data-phase-import-failed=(locale.text("videos-draft-import-failed"))
             data-phase-queued=(locale.text("videos-draft-queued"))
             data-phase-processing=(locale.text("videos-draft-processing"))
             data-phase-ready=(locale.text("videos-draft-ready"))
@@ -172,7 +188,7 @@ async fn show_inner(
                 a data-video-review hidden[!ready || scheduled] href=(format!("/videos/drafts/{id}/review")) { (locale.text("videos-review")) }
                 a href="/videos" { (locale.text("videos-title")) }
             }
-            form.settings-form data-video-retry hidden[phase != "failed" || scheduled] method="post" action=(format!("/web/videos/drafts/{id}")) {
+            form.settings-form data-video-retry hidden[!matches!(phase, "failed" | "import-failed") || scheduled] method="post" action=(format!("/web/videos/drafts/{id}")) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     button type="submit" name="op" value="retry" { (locale.text("videos-draft-retry")) }
             }
@@ -499,7 +515,11 @@ async fn action_inner(
     }
     owned(state, id, user.current.account.id).await?;
     match field(&pairs, "op") {
-        Some("retry") if video_draft::retry(&state.pool, id, user.current.account.id).await? => {
+        Some("retry")
+            if plamenu_db::video_source_import::retry(&state.pool, id, user.current.account.id)
+                .await?
+                || video_draft::retry(&state.pool, id, user.current.account.id).await? =>
+        {
             Ok(redirect_to(&format!("/videos/drafts/{id}")))
         }
         Some("cancel") if field(&pairs, "confirm") == Some("yes") => {

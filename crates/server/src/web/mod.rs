@@ -58,6 +58,7 @@ mod video_chapters;
 mod video_drafts;
 mod video_explore;
 pub(crate) mod video_history;
+mod video_import;
 mod video_metadata;
 mod video_playlists;
 mod video_upload;
@@ -111,6 +112,11 @@ pub fn router() -> Router<AppState> {
         )
         .route("/", get(pages::home))
         .route("/videos/settings", get(video_history::settings))
+        .route("/videos/import", get(video_import::page))
+        .route(
+            "/web/videos/import",
+            post(video_import::submit).layer(axum::extract::DefaultBodyLimit::max(512 * 1024)),
+        )
         .route("/videos/history", get(video_history::page))
         .route("/web/videos/settings", post(video_history::settings_action))
         .route("/web/videos/p2p", post(video_history::p2p_action))

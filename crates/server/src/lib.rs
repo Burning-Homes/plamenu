@@ -90,6 +90,7 @@ pub mod video_playlists;
 pub mod video_playlists_remote;
 pub mod video_poster;
 pub mod video_resources;
+pub mod video_source_import;
 pub mod video_worker;
 pub mod web;
 pub mod web_push;

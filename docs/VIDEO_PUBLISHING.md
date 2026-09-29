@@ -13,6 +13,10 @@ requires confirmation. Storage is refunded only when deletion is acknowledged.
 The [operator configuration](operators/configuration.md#native-video-storage-and-processing)
 describes quotas and temporary-space reservations.
 
+Videos also offers [Import a video](VIDEO_IMPORTS.md): a guarded, one-time copy
+of a public file or recorded ActivityPub/PeerTube Video into the same private
+review pipeline. It never automatically publishes or synchronizes the source.
+
 ## Posters and navigation
 
 Choose a poster frame using a numeric time without scripts or the visual

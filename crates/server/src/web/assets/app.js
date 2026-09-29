@@ -5745,6 +5745,8 @@
       draft.dataset.videoDraftBound = "1";
       const labels = {
         receiving: draft.dataset.phaseReceiving,
+        importing: draft.dataset.phaseImporting,
+        "import-failed": draft.dataset.phaseImportFailed,
         queued: draft.dataset.phaseQueued,
         processing: draft.dataset.phaseProcessing,
         ready: draft.dataset.phaseReady,
@@ -5752,7 +5754,7 @@
         expired: draft.dataset.phaseExpired,
         unavailable: draft.dataset.phaseUnavailable,
       };
-      const terminal = new Set(["ready", "failed", "expired", "unavailable"]);
+      const terminal = new Set(["ready", "failed", "import-failed", "expired", "unavailable"]);
       if (terminal.has(draft.dataset.phase)) return;
       const id = draft.dataset.videoDraft;
       const controller = new AbortController();
@@ -5781,7 +5783,7 @@
             draft.dataset.phase = phase;
             draft.querySelector('[role="status"]').textContent = labels[phase];
             draft.querySelector("[data-video-review]").hidden = phase !== "ready" || draft.hasAttribute("data-video-scheduled");
-            draft.querySelector("[data-video-retry]").hidden = phase !== "failed" || draft.hasAttribute("data-video-scheduled");
+            draft.querySelector("[data-video-retry]").hidden = !["failed", "import-failed"].includes(phase) || draft.hasAttribute("data-video-scheduled");
           }
           if (terminal.has(phase)) { stop(); return; }
         } catch (_error) {

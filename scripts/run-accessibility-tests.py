@@ -212,8 +212,14 @@ def main():
                 f"postgres://postgres:{password}@127.0.0.1:{database_port}/plamenu_a11y"
             )
             config = fixture / "plamenu.toml"
+            # Explicit local-peer import drills permit local addresses; ordinary
+            # browser fixtures retain the production-default SSRF guards.
+            import_private_fetch = (
+                "allow_private_fetch = true\n" if os.environ.get("A11Y_IMPORT_SOURCE_URL") else ""
+            )
             config.write_text(
                 'domain = "localhost"\n'
+                f'{import_private_fetch}'
                 f'database_url = "{database_url}"\n'
                 f'bind = "{app_address}:{app_port}"\n'
                 f'live_ingest_bind = "127.0.0.1:{live_port}"\n'
@@ -379,6 +385,8 @@ def main():
                     "A11Y_AUDIO_FIXTURE=/tmp/native-audio.m4a",
                     "--env",
                     "A11Y_POSTER_FIXTURE=/tmp/native-poster.png",
+                    *(["--env", f"A11Y_IMPORT_SOURCE_URL={os.environ['A11Y_IMPORT_SOURCE_URL']}"]
+                      if os.environ.get("A11Y_IMPORT_SOURCE_URL") else []),
                     "--volume",
                     f"{video_fixture}:/tmp/native-video.mp4:ro",
                     "--volume",

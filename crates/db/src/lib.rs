@@ -123,6 +123,7 @@ pub mod video_draft;
 pub mod video_history;
 pub mod video_metadata;
 pub mod video_playlists;
+pub mod video_source_import;
 pub mod video_storage;
 pub mod video_storyboards;
 pub mod warning_preset;

@@ -185,6 +185,7 @@ pub(super) async fn page(
             @if let Some(message) = error { p.settings__error role="alert" { (message) } }
             p { (locale.text("videos-intro")) }
             p { a href="/videos/explore" { (locale.text("videos-explore-browse")) } }
+            p { a href="/videos/import" { (locale.text("video-import-title")) } }
             p { a href="/videos/channels" { (locale.text("video-channel-manage")) } }
             p { a href="/videos/playlists" { (locale.text("playlist-title")) } }
             p { a href="/videos/history" { (locale.text("video-history-title")) } " · " a href="/videos/settings" { (locale.text("video-viewer-settings")) } }

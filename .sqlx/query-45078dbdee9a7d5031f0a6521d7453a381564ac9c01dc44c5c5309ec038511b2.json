@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE video_source_imports SET state = 'failed', lease_until = NULL\n        WHERE media_id = $1 AND generation = $2 AND state = 'downloading'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "45078dbdee9a7d5031f0a6521d7453a381564ac9c01dc44c5c5309ec038511b2"
+}
