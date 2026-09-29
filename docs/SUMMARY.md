@@ -9,6 +9,8 @@
   - [Account settings and safety](members/account-and-safety.md)
   - [Accessible video metadata](VIDEO_ACCESSIBILITY.md)
   - [Native Video publishing](VIDEO_PUBLISHING.md)
+  - [Video channels](VIDEO_CHANNELS.md)
+  - [Video playlists](VIDEO_PLAYLISTS.md)
   - [Replacing a published film](VIDEO_EDITING.md)
   - [Video viewing and private history](VIDEO_VIEWING.md)
   - [Importing a video](VIDEO_IMPORTS.md)
@@ -49,6 +51,8 @@
 - [Interoperability testing](INTEROPERABILITY.md)
   - [AP09 video and live progress](AP09-VIDEO-PROGRESS.md)
   - [AP09 feature acceptance inventory](AP09-FEATURE-INVENTORY.md)
+  - [AP09 processing and accessibility closure](AP09-M2-M3-CLOSURE.md)
+  - [AP09 experience and operations closure](AP09-M6-M7-CLOSURE.md)
 
 # Contribute and maintain
 

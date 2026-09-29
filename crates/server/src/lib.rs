@@ -85,6 +85,7 @@ pub mod video;
 pub mod video_channel_backfill;
 pub mod video_channels;
 pub mod video_clip;
+pub mod video_distribution;
 pub mod video_edit;
 pub mod video_history;
 pub mod video_metadata;
@@ -94,6 +95,7 @@ pub mod video_poster;
 pub mod video_resources;
 pub mod video_source_edit;
 pub mod video_source_import;
+pub mod video_source_sync;
 pub mod video_worker;
 pub mod web;
 pub mod web_push;
@@ -317,10 +319,16 @@ async fn security_headers(
     let webxdc_runtime = headers.remove("x-plamenu-webxdc-runtime").is_some();
     // Keep paths and query strings — password-reset and confirmation links
     // carry their token there — out of cross-origin referrers. The untrusted
-    // Webxdc origin has the stricter contract that it sends no referrer at all.
+    // Webxdc origin and explicit sensitive-route responses have the stricter
+    // contract that they send no referrer at all. Preserve only that exact
+    // stronger policy, never an arbitrary handler-supplied weaker policy.
+    let no_referrer = webxdc_runtime
+        || headers
+            .get(header::REFERRER_POLICY)
+            .is_some_and(|value| value == "no-referrer");
     headers.insert(
         header::REFERRER_POLICY,
-        HeaderValue::from_static(if webxdc_runtime {
+        HeaderValue::from_static(if no_referrer {
             "no-referrer"
         } else {
             "strict-origin-when-cross-origin"

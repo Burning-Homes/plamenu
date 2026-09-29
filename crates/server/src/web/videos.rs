@@ -200,6 +200,7 @@ pub(super) async fn page(
             p { (locale.text("videos-intro")) }
             p { a href="/videos/explore" { (locale.text("videos-explore-browse")) } }
             p { a href="/videos/import" { (locale.text("video-import-title")) } }
+            p { a href="/videos/sources" { (locale.text("video-sources-title")) } }
             p { a href="/videos/channels" { (locale.text("video-channel-manage")) } }
             p { a href="/videos/playlists" { (locale.text("playlist-title")) } }
             p { a href="/videos/history" { (locale.text("video-history-title")) } " · " a href="/videos/settings" { (locale.text("video-viewer-settings")) } }
@@ -227,6 +228,7 @@ pub(super) async fn page(
                                     (locale.text("videos-chapters-title"))
                                 }
                                 " · " a href=(format!("/videos/{}/metadata", published.media_id)) { (locale.text("videos-metadata-manage")) }
+                                " · " a href=(format!("/videos/{}/sharing",published.media_id)){(locale.text("video-sharing-title"))}
                                 @if editable_ids.contains(&published.media_id) { " · " a href=(format!("/videos/{}/edit", published.media_id)) { (locale.text("video-edit-title")) } }
                                 " · " a href=(format!("/videos/{}/metadata#video-poster-replace", published.media_id)) { (locale.text("videos-replace-poster")) }
                                 " · " a href=(format!("/web/statuses/{}/edit",published.status_id)) { (locale.text("status-edit")) }
@@ -316,6 +318,7 @@ pub(super) async fn page(
                                 }
                             }
                         }
+                        @if preview.is_some() && edit.is_none(){p{a href=(format!("/videos/{}/sharing",draft.media_id.unwrap())){(locale.text("video-sharing-title"))}}}
                         label.settings-field {
                             span.settings-field__label { (locale.text("videos-name")) }
                             input name="title" value=(draft.title) minlength="3" maxlength="120" required;
@@ -565,6 +568,8 @@ async fn preview_inner(
     let user = crate::auth::user_for_token(state, token)
         .await
         .map_err(|_| ApiError::NotFound)?;
+    user.require_scope("read:media")
+        .map_err(|_| ApiError::NotFound)?;
     let preview = plamenu_db::video_draft::preview(&state.pool, id, user.account.id)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -618,14 +623,14 @@ pub async fn create_channel(State(state): State<AppState>, user: WebUser, body: 
 }
 
 async fn refusal(state: &AppState, user: &WebUser, draft: &Draft, error: ApiError) -> Response {
-    match error {
-        ApiError::Unprocessable(message) | ApiError::Forbidden(message) => {
-            match page(state, user, draft, Some(&message)).await {
-                Ok(page) => (axum::http::StatusCode::UNPROCESSABLE_ENTITY, page).into_response(),
-                Err(error) => error.into_response(),
-            }
-        }
-        other => other.into_response(),
+    let (status, message) = match error {
+        ApiError::Unprocessable(message) => (axum::http::StatusCode::UNPROCESSABLE_ENTITY, message),
+        ApiError::Forbidden(message) => (axum::http::StatusCode::FORBIDDEN, message),
+        other => return other.into_response(),
+    };
+    match page(state, user, draft, Some(&message)).await {
+        Ok(page) => (status, page).into_response(),
+        Err(error) => error.into_response(),
     }
 }
 
@@ -670,6 +675,7 @@ async fn submit_inner(
     draft: &mut Draft,
     reserved: &mut Option<i64>,
 ) -> Result<Response, ApiError> {
+    user.current.require_scope("write:media")?;
     let mut csrf = String::new();
     let mut operation = String::new();
     let mut upload = None;
@@ -997,6 +1003,7 @@ async fn process(
     if operation != "publish" && operation != "schedule" {
         return Ok(page(state, user, draft, None).await?.into_response());
     }
+    user.current.require_scope("write:statuses")?;
     let metadata = save_options(state, user.current.account.id, id, draft).await?;
     if operation == "schedule" {
         let instant =

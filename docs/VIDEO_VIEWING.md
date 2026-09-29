@@ -5,6 +5,26 @@ watch history and viewing settings. Watching never requires peer-assisted
 delivery: the player offers a server-only choice before contacting a tracker,
 and the ordinary MP4 player works without JavaScript.
 
+## Browsing, searching and subscriptions
+
+Open **Videos** in the primary navigation. **Latest** lists public Videos;
+**Followed channels** lists Videos from accepted channel subscriptions, not all
+uploads by the channel's owner. Search matches video titles and descriptions.
+Open a card's creator/channel link to search just that library or visit its
+profile. **Follow channel**, **Unfollow** and pending-request cancellation are
+ordinary keyboard-operable forms, including without scripts.
+
+The gallery loads posters and links, not a player for every card. Warnings hide
+sensitive titles and posters. Blocked, muted, suspended or deleted content is
+not revealed by searching; native channel libraries also respect their current
+owner after a handoff. Anonymous browsing and searching depend on separate
+instance policies; subscriptions require signing in.
+
+**Show more** advances older results. Very heavily filtered pages can be empty
+and still offer this link: continue to reach older visible matches. Without
+scripts, each populated page has at most twenty cards. With scripts, the gallery
+can load another page ahead as you browse; the ordinary link remains available.
+
 ## Peer-assisted delivery and server-only playback
 
 Eligible HLS videos and live streams use PeerTube-compatible peer delivery by
@@ -36,6 +56,26 @@ preference is not changed. The player preserves its position and caption
 selection. Paused, hidden and detached players do not restart automatically;
 live playback retains its separate interruption/DVR recovery. If standard
 playback also fails, the link remains available rather than retrying endlessly.
+
+## Downloading and embedding a native Video
+
+When its creator permits it, **Download playable video (MP4)** saves the current
+native film, with range requests supported. The download and frame routes check
+current publication/audience and account/channel authority on every request;
+their responses are private and not stored by caches. A private or deleted
+publication never becomes downloadable or embeddable by signing in.
+
+Open **Embed this video** beneath an eligible native Video. Its labelled,
+read-only text fields can be selected and copied without JavaScript. Enhanced
+**Copy embed code** buttons report success, and focus/select the field for manual
+copying if clipboard permission is unavailable. The standard code retains the
+player's peer-sharing notice and choice; **Server-only embed code** forces
+`?p2p=0` without changing your account preference. Neither code contains credentials.
+
+Public native attachment entities expose a `video_distribution` extension with
+`download_enabled`, `embed_enabled`, and eligible `download_url`/`embed_url`.
+Active live streams have no MP4 download offer; their completed recordings can.
+Flags describe explicit offers, not DRM or a new permission to read content.
 
 ## Private watch history and resume
 

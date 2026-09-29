@@ -76,6 +76,9 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
                     "description": "A live test pattern with an audible 440 Hz tone.",
                     "language": "en",
                     "visibility": "public",
+                    "category": "15",
+                    "licence": "2",
+                    "spoiler_text": "Flashing test imagery",
                     "dvr_minutes": "5",
                     "latency": "low",
                     "scheduled_at": planned,
@@ -101,6 +104,7 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
             ).text
 
             waiting_status = plamenu_api.get(f"/api/v1/statuses/{status_id}")
+            assert waiting_status["sensitive"] and waiting_status["spoiler_text"] == "Flashing test imagery"
             waiting = waiting_status["media_attachments"][0]
             media_id = waiting["id"]
             assert waiting["live"]["state"] == "waiting"
@@ -113,6 +117,9 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
             assert "Planned start:" in public_page.text and "<time" in public_page.text
             ap = plamenu_api.ap_get(waiting_status["uri"].removeprefix(config.PLAMENU_URL))
             assert ap["schedules"][0]["startDate"].startswith(planned)
+            assert ap["category"]["identifier"] == "15" and ap["licence"]["identifier"] == "2"
+            assert ap["licence"]["url"] == "https://creativecommons.org/licenses/by-sa/4.0/"
+            assert ap["sensitive"] and ap["summary"] == "Flashing test imagery"
             assert ap["schedules"][1]["startDate"].startswith(next_planned)
             assert waiting["url"] is None
             assert requests.get(
@@ -251,6 +258,7 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
                 desc="PeerTube sees the live state",
             )
             assert remote["name"] == title
+            assert remote["category"]["id"] == 15 and remote["licence"]["id"] == 2 and remote["nsfw"]
             assert remote["streamingPlaylists"], "PeerTube can expose the stream"
             remote_live = pt.get(f"/api/v1/videos/live/{uuid}")
             assert remote_live["dvrWindow"] == 300, remote_live
@@ -317,6 +325,7 @@ def test_native_live_hls_and_peertube(plamenu_api: Api, plamenu_user, db: Db, tr
             except TimeoutError as error:
                 raise AssertionError(f"{error}; last PeerTube video: {remote_observation}") from error
             assert remote_replay["name"] == title
+            assert remote_replay["category"]["id"] == 15 and remote_replay["licence"]["id"] == 2 and remote_replay["nsfw"]
             remote_file = remote_replay["files"][0]["fileUrl"]
             ranged = requests.get(remote_file, headers={"Range": "bytes=0-63"},
                                   verify=False, timeout=30)
@@ -727,6 +736,9 @@ def test_native_live_interruption_and_reconnect(
                     "title": f"Reconnect live {name}",
                     "description": "A reconnecting live test pattern.",
                     "visibility": "public",
+                    "category": "13",
+                    "licence": "9",
+                    "spoiler_text": "Flashing recurring test imagery",
                     **({"permanent": "yes"} if permanent else {}),
                 },
                 timeout=30,
@@ -849,7 +861,10 @@ def test_native_live_interruption_and_reconnect(
                 assert all(row[1] != media_id for row in replays)
                 for generation, replay_media_id, replay_status_id, replay_uuid in replays:
                     local = plamenu_api.get(f"/api/v1/statuses/{replay_status_id}")
+                    assert local["sensitive"] and local["spoiler_text"] == "Flashing recurring test imagery"
                     attachment = local["media_attachments"][0]
+                    assert attachment["video_metadata"]["category"]["id"] == 13
+                    assert attachment["video_metadata"]["licence"]["id"] == 9
                     assert int(attachment["id"]) == replay_media_id
                     assert attachment["type"] == "video" and attachment["url"].endswith(".mp4")
                     assert attachment["meta"]["original"]["duration"] > 0
@@ -869,6 +884,7 @@ def test_native_live_interruption_and_reconnect(
                     imported = wait_for(remote_replay,
                                         desc=f"PeerTube imports replay {generation}", timeout=120)
                     assert f"Replay {generation}" in imported["name"]
+                    assert imported["category"]["id"] == 13 and imported["licence"]["id"] == 9 and imported["nsfw"]
                 manage = browser.get(f"{config.PLAMENU_URL}/videos/live/{status_id}", timeout=30)
                 assert "Session replays" in manage.text
                 public_live = requests.get(
@@ -878,9 +894,12 @@ def test_native_live_interruption_and_reconnect(
                 for _, _, replay_status_id, _ in replays:
                     assert f"/web/statuses/{replay_status_id}" in manage.text
                     assert f"/web/statuses/{replay_status_id}" in public_live.text
-                assert plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]["live"] == {
+                retained_live = plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]["live"]
+                assert retained_live == {
                     "state": "waiting", "permanent": True,
                     "dvr_window_seconds": 600, "latency_mode": 1,
+                    "calendar_url": f"{config.PLAMENU_URL}/videos/live/{status_id}/calendar.ics",
+                    "channel_calendar_url": f"{config.PLAMENU_URL}/videos/channels/{channel['id']}/calendar.ics",
                 }
         else:
             with step("a second loss expires and preserves a one-shot replay"):
@@ -893,6 +912,10 @@ def test_native_live_interruption_and_reconnect(
                     return item if "live" not in item and (item.get("url") or "").endswith(".mp4") else None
 
                 replay = wait_for(local_replay, desc="reconnect expiry finalizes replay", timeout=180)
+                local = plamenu_api.get(f"/api/v1/statuses/{status_id}")
+                assert local["sensitive"] and local["spoiler_text"] == "Flashing recurring test imagery"
+                assert replay["video_metadata"]["category"]["id"] == 13
+                assert replay["video_metadata"]["licence"]["id"] == 9
                 assert replay["meta"]["original"]["duration"] > 0
                 assert requests.get(replay["url"], headers={"Range": "bytes=0-31"},
                                     verify=False, timeout=20).status_code == 206
@@ -902,11 +925,12 @@ def test_native_live_interruption_and_reconnect(
                     "SELECT replay_media_id FROM native_live_sessions "
                     "WHERE media_id = %s ORDER BY generation DESC LIMIT 1", (media_id,),
                 ).fetchone()[0] == media_id
-                wait_for(
+                imported = wait_for(
                     lambda: video if (video := _remote_video_state(pt, uuid, 1))
                     and not video["isLive"] and video["files"] else None,
                     desc="PeerTube imports replay after reconnect expiry", timeout=90,
                 )
+                assert imported["category"]["id"] == 13 and imported["licence"]["id"] == 9 and imported["nsfw"]
     finally:
         if publisher is not None:
             if publisher.poll() is None:

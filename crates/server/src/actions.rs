@@ -2004,6 +2004,13 @@ async fn post_status_inner(
         {
             crate::video_metadata::enrich_object(&mut create["object"], &metadata);
         }
+        let policy = plamenu_db::video_distribution::for_media(&mut *conn, &[publication.media_id])
+            .await?
+            .remove(&publication.media_id)
+            .unwrap_or(plamenu_db::video_distribution::Policy::default_for(
+                publication.media_id,
+            ));
+        crate::video_distribution::enrich(&mut create["object"], policy);
         publication_streams
             .push(crate::video::announce(conn, &publication, &create["object"]).await?);
     }

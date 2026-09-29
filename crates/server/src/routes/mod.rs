@@ -1316,6 +1316,7 @@ pub fn router(state: AppState) -> Router {
     // we do it here so the header travels with the response.
     let media_routes = Router::new()
         .route("/media/{file_name}", get(media::serve))
+        .route("/media/{media_id}/download", get(media::download))
         .route("/media/{media_id}/captions.vtt", get(media::captions))
         .route(
             "/media/{media_id}/captions/{name}",

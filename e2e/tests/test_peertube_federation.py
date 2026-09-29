@@ -9,6 +9,7 @@ queuing a detached whole-video download. See PEERTUBE_HLS_DESIGN.md.
 """
 
 import json
+import re
 import secrets
 import struct
 import subprocess
@@ -218,11 +219,14 @@ def test_peertube_history_revalidation_preserves_the_cached_collection(
 
 
 @pytest.mark.federation(direction="inbound", peer="peertube")
-def test_peertube_video_uses_its_verified_channel_library(plamenu_api: Api, db: Db):
+def test_peertube_video_uses_its_verified_channel_library(plamenu_api: Api, plamenu_user, db: Db):
     pt = peertube.root()
     created = None
     channel_account_id = None
     followed = False
+    blocked = False
+    browser = requests.Session()
+    browser.verify = False
     title = unique("channel-library")
     try:
         with step("PeerTube publishes a Video attributed to its owner and Group channel"):
@@ -271,11 +275,44 @@ def test_peertube_video_uses_its_verified_channel_library(plamenu_api: Api, db: 
                 lambda: plamenu_api.relationship(channel_account_id)["following"],
                 desc="PeerTube channel accepts the follow",
             )
+        with step("authenticated search, channel library and subscriptions retain verified attribution"):
+            login = browser.post(config.PLAMENU_URL + "/login", data={
+                "email": plamenu_user.email, "password": plamenu_user.password,
+            }, allow_redirects=False, timeout=30)
+            assert login.status_code == 303
+            for params in ({"q": title}, {"q": title, "channel": channel_account_id},
+                           {"q": title, "following": "1"}):
+                response = browser.get(config.PLAMENU_URL + "/videos/explore", params=params, timeout=30)
+                assert response.status_code == 200 and title in response.text
+                assert '<video' not in response.text, "catalogue must stay poster-only"
+                assert f'channel={channel_account_id}' in response.text
+        with step("blocking a real remote channel removes its videos without leaking its library"):
+            plamenu_api.block(channel_account_id)
+            blocked = True
+            for params in ({"q": title}, {"q": title, "following": "1"}):
+                response = browser.get(config.PLAMENU_URL + "/videos/explore", params=params, timeout=30)
+                assert response.status_code == 200
+                # Search terms remain in the form/navigation even on an empty
+                # result page. Check rendered cards, not that echoed query.
+                cards = re.findall(r'<article\b[^>]*class="[^"]*\bvideo-explore__card\b.*?</article>',
+                                   response.text, re.DOTALL)
+                assert not cards, "blocked channel must have no matching video cards"
+            hidden = browser.get(config.PLAMENU_URL + "/videos/explore",
+                                 params={"channel": channel_account_id}, timeout=30)
+            assert hidden.status_code == 404 and title not in hidden.text
+            plamenu_api.unblock(channel_account_id)
+            blocked = False
+            visible = browser.get(config.PLAMENU_URL + "/videos/explore",
+                                  params={"channel": channel_account_id, "q": title}, timeout=30)
+            assert visible.status_code == 200 and title in visible.text
     finally:
+        if blocked:
+            plamenu_api.unblock(channel_account_id)
         if followed:
             plamenu_api.unfollow(channel_account_id)
         if created is not None:
             pt.delete_video(created["uuid"])
+        browser.close()
 
 
 @pytest.mark.federation(direction="inbound", peer="peertube")

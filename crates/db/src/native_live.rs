@@ -892,6 +892,14 @@ pub async fn prepare_recurring_replay(
         .bind(replay.blurhash)
         .execute(&mut *tx)
         .await?;
+        // Snapshot creator-selected terms and warnings with the independently
+        // allocated episode. A retry must not produce an unlabelled recording.
+        sqlx::query("INSERT INTO video_metadata(media_id,category,licence,spoiler_text,sensitive,licence_version_known)
+            SELECT $1,vm.category,vm.licence,s.spoiler_text,s.sensitive,COALESCE(vm.licence_version_known,false)
+            FROM statuses s LEFT JOIN video_metadata vm ON vm.media_id=$2 WHERE s.id=$3")
+            .bind(media_id).bind(session.media_id).bind(session.status_id).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO video_distribution(media_id,download_enabled,embed_enabled) SELECT $1,download_enabled,embed_enabled FROM video_distribution WHERE media_id=$2")
+            .bind(media_id).bind(session.media_id).execute(&mut *tx).await?;
         sqlx::query("UPDATE native_live_sessions SET replay_media_id = $2 WHERE session_id = $1")
             .bind(&session.session_id)
             .bind(media_id)
@@ -967,6 +975,8 @@ pub struct ReplayPublication {
     pub language: Option<String>,
     pub content_type: String,
     pub media_id: i64,
+    pub spoiler_text: String,
+    pub sensitive: bool,
 }
 
 #[derive(sqlx::FromRow)]
@@ -980,6 +990,8 @@ struct ReplayPublicationRow {
     content_type: String,
     media_id: i64,
     generation: i64,
+    spoiler_text: String,
+    sensitive: bool,
 }
 
 pub async fn recurring_replay_publication(
@@ -989,12 +1001,15 @@ pub async fn recurring_replay_publication(
     let row: Option<ReplayPublicationRow> = sqlx::query_as(
         "SELECT a.username, b.channel_id, COALESCE(s.title, 'Live video') AS title,
                 s.text, s.visibility, s.language, s.content_type,
-                ls.replay_media_id AS media_id, ls.generation
+                ls.replay_media_id AS media_id, ls.generation,
+                COALESCE(NULLIF(s.spoiler_text,''),vm.spoiler_text,'') AS spoiler_text,
+                (s.sensitive OR COALESCE(vm.sensitive,false)) AS sensitive
          FROM native_live_sessions ls
          JOIN native_live_broadcasts b ON b.media_id = ls.media_id
          JOIN statuses s ON s.id = b.status_id
          JOIN accounts a ON a.id = b.owner_account_id
          JOIN media_attachments m ON m.id = ls.replay_media_id
+         LEFT JOIN video_metadata vm ON vm.media_id=m.id
          WHERE ls.session_id = $1 AND ls.media_id = $2 AND b.permanent
            AND ls.ended_at IS NOT NULL AND m.status_id IS NULL",
     )
@@ -1015,6 +1030,8 @@ pub async fn recurring_replay_publication(
         language: row.language,
         content_type: row.content_type,
         media_id: row.media_id,
+        spoiler_text: row.spoiler_text,
+        sensitive: row.sensitive,
     }))
 }
 

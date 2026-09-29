@@ -50,12 +50,17 @@ export default class EvidenceReporter {
       cwd: repository,
       encoding: 'utf8',
     }).trim() !== '';
+    let encoderVersion = null;
+    try { encoderVersion = execFileSync('ffmpeg', ['-version'], {encoding:'utf8'}).split('\n')[0]; }
+    catch { /* Non-media UI checks can run without a test encoder. */ }
     const record = {
       schema: 1,
       standard: 'WCAG 2.2',
       level: 'AA',
       source_revision: revision,
       source_dirty: dirty,
+      browser_image: process.env.A11Y_BROWSER_IMAGE || null,
+      encoder_version: encoderVersion,
       base_url: process.env.A11Y_BASE_URL || 'https://plamenu.local',
       started_at: this.startedAt,
       completed_at: new Date().toISOString(),

@@ -900,6 +900,11 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
             state.clone(),
             plamenu::video_source_import::spawn,
         ),
+        supervise(
+            "video source sync",
+            state.clone(),
+            plamenu::video_source_sync::spawn,
+        ),
         supervise("archive", state.clone(), plamenu::archive_worker::spawn),
         supervise("trends", state.clone(), plamenu::trends::spawn),
         supervise("maintenance", state.clone(), plamenu::maintenance::spawn),

@@ -83,6 +83,7 @@ async fn status_inner(
     let user = crate::auth::user_for_token(state, token)
         .await
         .map_err(|_| ApiError::NotFound)?;
+    user.require_scope("read:media")?;
     let (draft, _) = owned(state, id, user.account.id).await?;
     let import = plamenu_db::video_source_import::phase(&state.pool, id).await?;
     let phase = if draft.expires_at <= time::OffsetDateTime::now_utc() {
@@ -111,6 +112,7 @@ async fn show_inner(
     id: i64,
     conflict: bool,
 ) -> Result<Response, ApiError> {
+    user.current.require_scope("read:media")?;
     let (draft, _) = owned(state, id, user.current.account.id).await?;
     let locale = user.locale;
     let scheduled = scheduled_reservation(state, id, user.current.account.id)
@@ -229,6 +231,7 @@ pub(super) async fn review_inner(
     id: i64,
     error: Option<&str>,
 ) -> Result<Response, ApiError> {
+    user.current.require_scope("read:media")?;
     let (draft, media) = owned(state, id, user.current.account.id).await?;
     if scheduled_reservation(state, id, user.current.account.id)
         .await?
@@ -383,6 +386,7 @@ async fn replace_poster_inner(
     id: i64,
     multipart: Multipart,
 ) -> Result<Response, ApiError> {
+    user.current.require_scope("write:media")?;
     owned(state, id, user.current.account.id).await?;
     video_draft::preview(&state.pool, id, user.current.account.id)
         .await?
@@ -474,6 +478,7 @@ async fn add_caption_inner(
     id: i64,
     mut multipart: Multipart,
 ) -> Result<Response, ApiError> {
+    user.current.require_scope("write:media")?;
     owned(state, id, user.current.account.id).await?;
     video_draft::preview(&state.pool, id, user.current.account.id)
         .await?
@@ -553,6 +558,7 @@ async fn remove_caption_inner(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return Ok(super::session::csrf_rejection());
     }
+    user.current.require_scope("write:media")?;
     if !plamenu_db::video_captions::valid_language(language)
         || !plamenu_db::video_captions::remove_draft(
             &state.pool,
@@ -579,6 +585,7 @@ async fn action_inner(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return Ok(super::session::csrf_rejection());
     }
+    user.current.require_scope("write:media")?;
     owned(state, id, user.current.account.id).await?;
     if field(&pairs, "op") == Some("retry") {
         match crate::video_source_edit::check_retry(state, id, user.current.account.id).await {

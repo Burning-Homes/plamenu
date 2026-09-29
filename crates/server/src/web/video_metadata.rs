@@ -159,6 +159,13 @@ pub async fn save(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return private(csrf_rejection());
     }
+    if let Err(error) = user
+        .current
+        .require_scope("write:media")
+        .and_then(|()| user.current.require_scope("write:statuses"))
+    {
+        return private(error.into_response());
+    }
     let input = crate::video_metadata::Input {
         category: field(&pairs, "category").map(serde_json::Value::from),
         licence: field(&pairs, "licence").map(serde_json::Value::from),
@@ -182,6 +189,8 @@ pub async fn poster(
     multipart: Multipart,
 ) -> Response {
     let attempt = async {
+        user.current.require_scope("write:media")?;
+        user.current.require_scope("write:statuses")?;
         plamenu_db::video_captions::owned_publication(&state.pool, id, user.current.account.id)
             .await?
             .ok_or(ApiError::NotFound)?;

@@ -1,6 +1,7 @@
 import { expect, request, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { spawn, spawnSync } from 'node:child_process';
+import { createConnection } from 'node:net';
 import { signIn } from '../session.mjs';
 
 const createdLives = new WeakMap();
@@ -49,12 +50,18 @@ async function createLive(page, permanent, returnCredentials = false, visibility
   await form.getByLabel('Video title').fill(`Browser live ${name}`);
   await form.getByLabel('Description', { exact: true }).fill('A browser-authored live test.');
   await form.getByRole('combobox', { name: 'Visibility' }).selectOption(visibility);
-  if (permanent) await form.getByRole('checkbox').check();
+  if (permanent) await form.getByRole('checkbox', {name:'Keep this broadcast reusable after the encoder disconnects',exact:true}).check();
   await form.getByRole('button', { name: 'Create waiting broadcast' }).click();
   await expect(page.getByRole('heading', { name: 'Manage live broadcast' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Stream key' })).toHaveValue(/[A-Za-z0-9_-]{43}/);
   const key = await page.getByRole('textbox', { name: 'Stream key' }).inputValue();
-  const server = await page.getByRole('textbox', { name: 'Plain RTMP server (trusted network only)' }).inputValue();
+  const advertisedServer = await page.getByRole('textbox', { name: 'Plain RTMP server (trusted network only)' }).inputValue();
+  const encoderServer = new URL(advertisedServer);
+  // The pinned fixture's canonical localhost resolves to the TLS/browser
+  // container, whereas native ingest runs on the isolated host-side address.
+  // Do not change the displayed production endpoint or put keys in test logs.
+  if (process.env.A11Y_LIVE_INGEST_HOST) encoderServer.hostname = process.env.A11Y_LIVE_INGEST_HOST;
+  const server = encoderServer.toString().replace(/\/$/, '');
   await expect(page.getByRole('textbox', { name: 'Secure HTTPS-FLV ingest' })).toHaveValue(`https://${new URL(page.url()).host}/live/ingest`);
   if (process.env.PLAMENU_RTMPS === '1') {
     await expect(page.getByRole('textbox', { name: 'RTMPS server (encrypted)' })).toHaveValue(/^rtmps:\/\//);
@@ -704,8 +711,8 @@ test('@no-js live authoring retains external encoder routes', async ({ page }) =
   expect(await liveState(page, id)).toBe('waiting');
 });
 
-test('@no-js public live starts appear in the channel calendar', async ({ page }) => {
-  test.skip(test.info().project.name !== 'chromium-no-javascript');
+async function publicLiveCalendar(page, noScript) {
+  await page.setViewportSize({width:320,height:800});
   const id = await createLive(page, false, false, 'public');
   const schedule = page.locator(`form[action="/web/videos/live/${id}/schedule"]`);
   const planned = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
@@ -716,11 +723,29 @@ test('@no-js public live starts appear in the channel calendar', async ({ page }
   const feed = await anonymous.get(live.channel_calendar_url);
   expect(feed.status()).toBe(200);
   expect(await feed.text()).toContain(`URL:https://${new URL(page.url()).host}/web/statuses/${id}`);
+  const reminder=await anonymous.get(`${live.calendar_url}?reminder=15`);
+  expect(reminder.status()).toBe(200);
+  expect(await reminder.text()).toContain('TRIGGER:-PT15M');
+  const etag=feed.headers().etag;
+  expect(etag).toBeTruthy();
+  const unchanged=await anonymous.get(live.channel_calendar_url,{headers:{'If-None-Match':etag}});
+  expect(unchanged.status()).toBe(304);
   const invalid = await page.request.get(`${live.channel_calendar_url}?reminder=30`);
   expect(invalid.status()).toBe(400);
   await anonymous.dispose();
   await page.goto(`/web/statuses/${id}`);
   await expect(page.getByRole('link', { name: 'Subscribe to public channel live calendar' })).toBeVisible();
+  await expect(page.getByRole('link',{name:'Add with a 15-minute reminder'})).toHaveAttribute('href',`${live.calendar_url}?reminder=15`);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  if(!noScript) {
+    const result=await new AxeBuilder({page}).include('figure.media--live-offline').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();
+    expect(result.violations).toEqual([]);
+  }
+  await page.screenshot({path:test.info().outputPath('public-live-calendar-320px.png'),fullPage:true});
+}
+test('public live starts and reminders appear in the channel calendar',async({page})=>publicLiveCalendar(page,false));
+test('@no-js public live starts appear in the channel calendar', async ({ page }) => {
+  await publicLiveCalendar(page,true);
 });
 
 test('live schedule picker adds a date accessibly before publishing', async ({ page }) => {
@@ -815,12 +840,20 @@ test('@no-js recurring encoder publishes a separately navigable replay', async (
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 320, height: 800 });
   const { id, key, server } = await createLive(page, true, true);
+  const endpoint = new URL(server);
+  await new Promise((resolve, reject) => {
+    const socket = createConnection({host:endpoint.hostname,port:Number(endpoint.port)});
+    socket.setTimeout(5000);
+    socket.once('connect',()=>{socket.destroy();resolve();});
+    socket.once('error',error=>reject(new Error(`Native encoder fixture is unreachable: ${error.code}`)));
+    socket.once('timeout',()=>{socket.destroy();reject(new Error(`Native encoder fixture timed out at ${endpoint.host}`));});
+  });
   const sent = spawnSync('ffmpeg', [
     '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=15',
     '-f', 'lavfi', '-i', 'sine=frequency=440', '-t', '5', '-c:v', 'libx264',
     '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-f', 'flv', `${server}/${key}`,
   ], { encoding: 'utf8', timeout: 30_000 });
-  expect(sent.status, sent.stderr).toBe(0);
+  expect(sent.status, JSON.stringify({stderr:sent.stderr?.replaceAll(key,'[redacted]'),signal:sent.signal,error:sent.error?.code,endpoint:endpoint.host})).toBe(0);
   await expect.poll(() => liveState(page, id), { timeout: 30_000 }).toBe('waiting');
   await expect.poll(async () => {
     await page.reload();

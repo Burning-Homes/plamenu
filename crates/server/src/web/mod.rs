@@ -55,6 +55,7 @@ mod user_agent;
 mod video_captions;
 mod video_channels;
 mod video_chapters;
+mod video_distribution;
 mod video_drafts;
 mod video_edit;
 mod video_explore;
@@ -62,6 +63,7 @@ pub(crate) mod video_history;
 mod video_import;
 mod video_metadata;
 mod video_playlists;
+mod video_sources;
 mod video_upload;
 mod videos;
 mod view;
@@ -113,7 +115,16 @@ pub fn router() -> Router<AppState> {
         )
         .route("/", get(pages::home))
         .route("/videos/settings", get(video_history::settings))
+        .route("/videos/{id}/sharing", get(video_distribution::page))
+        .route("/web/videos/{id}/sharing", post(video_distribution::save))
         .route("/videos/import", get(video_import::page))
+        .route("/videos/sources", get(video_sources::page))
+        .route("/videos/sources/state", get(video_sources::state))
+        .route("/web/videos/sources", post(video_sources::create))
+        .route(
+            "/web/videos/sources/{id}/{operation}",
+            post(video_sources::action),
+        )
         .route(
             "/web/videos/import",
             post(video_import::submit).layer(axum::extract::DefaultBodyLimit::max(512 * 1024)),

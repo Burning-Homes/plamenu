@@ -565,6 +565,39 @@ pub async fn serve(
     .await
 }
 
+/// Explicit native MP4 download offer; anonymous audience checks still apply.
+pub async fn download(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Response {
+    let result=async{
+        let file:Option<String>=sqlx::query_scalar("SELECT m.file_name
+            FROM video_publications v
+            JOIN media_attachments m ON m.id=v.media_id AND m.status_id=v.status_id
+            JOIN statuses s ON s.id=v.status_id
+            JOIN accounts a ON a.id=s.account_id
+            JOIN video_channels c ON c.account_id=v.channel_id
+            JOIN accounts o ON o.id=c.owner_account_id
+            LEFT JOIN video_distribution p ON p.media_id=m.id
+            WHERE v.media_id=$1 AND COALESCE(p.download_enabled,true)
+                AND s.deleted_at IS NULL AND s.visibility IN ('public','unlisted')
+                AND a.suspended_at IS NULL AND o.suspended_at IS NULL
+                AND m.processing='complete' AND m.content_type='video/mp4' AND m.file_name IS NOT NULL")
+            .bind(id).fetch_optional(&state.pool).await.map_err(plamenu_db::DbError::from)?;
+        let file=file.ok_or(ApiError::NotFound)?;
+        if !media::public_file_allowed(&state.pool,&file).await?{return Err(ApiError::NotFound);}
+        let mut response=stream_stored_file(&state,&file,"video/mp4","private, no-store",&headers).await?;
+        response.headers_mut().insert(header::CONTENT_DISPOSITION,format!("attachment; filename=\"video-{id}.mp4\"").parse().unwrap());
+        Ok::<_,ApiError>(response)
+    }.await;
+    let mut response = result.unwrap_or_else(IntoResponse::into_response);
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, "private, no-store".parse().unwrap());
+    response
+}
+
 /// `GET /media/{id}/captions.vtt` — mutable, author-supplied timed captions.
 /// Caption URLs are same-origin so native players do not need cross-origin
 /// track credentials. Unlike immutable media bytes, edits may replace the

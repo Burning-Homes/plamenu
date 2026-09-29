@@ -58,6 +58,7 @@ async fn initiate_inner(
     headers: &HeaderMap,
     multipart: &mut Multipart,
 ) -> Result<Response, ApiError> {
+    user.current.require_scope("write:media")?;
     let mut draft = Draft::default();
     let mut csrf = String::new();
     let mut bytes = None;
@@ -155,6 +156,7 @@ async fn owned_receiving(
 pub async fn status(State(state): State<AppState>, Path(id): Path<i64>, user: WebUser) -> Response {
     private(
         async {
+            user.current.require_scope("read:media")?;
             let draft = owned_receiving(&state, id, user.current.account.id).await?;
             Ok(Json(serde_json::json!({
                 "id": id.to_string(),
@@ -190,6 +192,7 @@ async fn chunk_inner(
     if !csrf_header(user, headers) {
         return Ok(csrf_rejection());
     }
+    user.current.require_scope("write:media")?;
     if body.is_empty() || body.len() > CHUNK_BYTES {
         return Err(ApiError::PayloadTooLarge);
     }
@@ -261,6 +264,7 @@ async fn finish_inner(
     if !csrf_header(user, headers) {
         return Ok(csrf_rejection());
     }
+    user.current.require_scope("write:media")?;
     let mut tx = state
         .pool
         .begin()

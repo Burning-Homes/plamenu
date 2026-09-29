@@ -216,6 +216,7 @@ pub struct NoteBatch {
     video_captions: HashMap<i64, Vec<plamenu_db::video_captions::Caption>>,
     video_chapters: HashMap<i64, Vec<plamenu_db::video_chapters::Chapter>>,
     video_metadata: HashMap<i64, plamenu_db::video_metadata::Metadata>,
+    video_distribution: HashMap<i64, plamenu_db::video_distribution::Policy>,
     video_storyboards: HashMap<i64, plamenu_db::video_storyboards::Storyboard>,
     engagement: HashMap<i64, plamenu_db::status::Engagement>,
     self_reply_ids: HashMap<i64, Vec<i64>>,
@@ -298,6 +299,8 @@ impl NoteBatch {
             let media_ids: Vec<i64> = batch.videos.values().map(|v| v.media_id).collect();
             batch.video_metadata =
                 plamenu_db::video_metadata::for_media(&mut *conn, &media_ids).await?;
+            batch.video_distribution =
+                plamenu_db::video_distribution::for_media(&mut *conn, &media_ids).await?;
             batch.native_hls =
                 plamenu_db::native_video_hls::tags_for_media(&mut *conn, &media_ids).await?;
             batch.video_captions =
@@ -747,6 +750,12 @@ pub fn note_in_batch(
         if let Some(metadata) = batch.video_metadata.get(&media.id) {
             crate::video_metadata::enrich_object(&mut note, metadata);
         }
+        crate::video_distribution::enrich(
+            &mut note,
+            batch.video_distribution.get(&media.id).copied().unwrap_or(
+                plamenu_db::video_distribution::Policy::default_for(media.id),
+            ),
+        );
         if let Some(board) = batch.video_storyboards.get(&media.id) {
             note["preview"] = json!([{"type":"Image","rel":["storyboard"],"url":[{
                 "mediaType":"image/jpeg","href":format!("https://{domain}/media/{}", board.file_name),

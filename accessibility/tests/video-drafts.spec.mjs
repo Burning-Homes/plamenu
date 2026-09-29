@@ -18,6 +18,7 @@ async function recovery(page, info, noScript) {
   await expect(page.getByRole('combobox', { name: 'Channel', exact: true })).toBeDisabled();
   await page.locator('summary').filter({ hasText: /^Visual description$/ }).press('Enter');
   await expect(page.getByText('A moving colour test pattern.', { exact: true })).toBeVisible();
+  await player.scrollIntoViewIfNeeded();
   await player.evaluate(async video => {
     video.muted = true;
     video.textTracks[0].mode = 'showing';

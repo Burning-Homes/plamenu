@@ -27,7 +27,7 @@ pub fn validate_url(raw: &str, allow_private: bool) -> Result<String, ApiError> 
 /// Accept generic public `ActivityPub` Video objects, including `PeerTube`'s
 /// public watch URLs. Do not fetch playlists/live sources, scripts, credentials
 /// or a private object's file. Authentication cannot be supplied by an importer.
-fn progressive_source(value: &serde_json::Value) -> Result<&str, ApiError> {
+pub(crate) fn progressive_source(value: &serde_json::Value) -> Result<&str, ApiError> {
     let public = |field: &str| {
         value.get(field).is_some_and(|v| {
             v.as_str() == Some("https://www.w3.org/ns/activitystreams#Public")

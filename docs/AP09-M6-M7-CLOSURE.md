@@ -2,27 +2,29 @@
 
 Goal: close both original milestones, with positive, failure, authorization,
 PeerTube and browser evidence. This checklist is a work plan, not a sign-off.
-The milestone and inventory acceptance gates remain unchanged.
+The milestone and inventory acceptance gates remain unchanged. M6 is signed
+off below; M7 remains open until its original operations gates are verified.
 
 ## M6 — Creator/viewer experience
 
-- [ ] Verify catalogue/channel/subscription/search authority and bounded paging,
+- [x] Verify catalogue/channel/subscription/search authority and bounded paging,
       including ownership changes, anonymous policy and a larger corpus.
-- [ ] Complete drafts/scheduling/reminders and recovery UX; retain existing
+- [x] Complete drafts/scheduling/reminders and recovery UX; retain existing
       live calendar and in-session camera/screen switching evidence.
-- [ ] Discoverable, HTML-first settings and guarded imports/source sync.
+- [x] Discoverable, HTML-first settings and guarded imports/source sync.
       Viewer P2P/history settings and one-time guarded file/ActivityPub imports
-      are verified; scheduled source synchronization is still outstanding.
+      and scheduled public ActivityPub/PeerTube channel/playlist copies are verified.
 - [x] Complete stable-identity media editing/reprocessing/trim workflows.
       Replacement, retained-source reprocessing and exact trimming pass local,
       real PeerTube and desktop/mobile/no-JS browser verification below.
 - [x] Private opt-in watch history/resume with deletion, bounded retention and
       accessible non-JS controls; never record merely opening a page.
-- [ ] Download/embed controls and authorization/cache/range matrix.
-- [ ] Initial live metadata; desktop/mobile Chromium/Firefox/WebKit and non-JS
+- [x] Download/embed controls and authorization/cache/range matrix.
+- [x] Initial live category/licence/warning and independent replay inheritance.
+- [x] Remaining desktop/mobile Chromium/Firefox/WebKit and non-JS
       journeys, reflow, keyboard and accessibility checks. Real hardware/AT
       release evidence must stay explicitly separate where required by M9.
-- [ ] User documentation, inventory updates and original-gate sign-off.
+- [x] User documentation, inventory updates and original-gate sign-off.
 
 ## M7 — Operations and scale
 
@@ -39,6 +41,150 @@ The milestone and inventory acceptance gates remain unchanged.
 No push, merge, deployment or PeerTube plugin ABI work is authorized here.
 
 ## Verified slices
+
+### M6 original-gate sign-off — 2026-09-29
+
+The original creator/viewer milestone is verified. This includes discovery,
+native and real PeerTube channel libraries/subscriptions/search, drafts and
+recovery, VOD/live scheduling and calendar reminders, the previously verified
+in-session camera/screen switching, settings and guarded imports/source sync,
+stable-identity replacement/reprocess/trim, private history, embeds/downloads,
+and desktop/narrow Chromium/Firefox/WebKit plus native no-JS journeys.
+
+Catalogue requests now bound each filtered scan to four 1,000-candidate windows
+and retain an Older cursor across entirely hidden windows. Current channel
+ownership participates in visibility after transfer. Three server integrations
+cover 5,550 matches, ownership/suspension, anonymous policy and independent
+preview authority; four database discovery regressions pass. The native Video
+(27), scheduled-status (15), distribution (7) and live-metadata (3) integration
+regressions also pass. A large filtered HTML request, including rendering, took
+about 860 ms on this development host; this is not the sustained M7 workload.
+
+The six-case actual PeerTube 8.3 matrix passes in 96.50 seconds: fresh and
+backfilled channel attribution, authenticated global/scoped/followed searches,
+block/unblock, once-only due publication, native HTML reschedule/cancel,
+collaborative ownership lifecycle, and distribution Create/Update/Delete.
+Evidence: `target/e2e/ap09-m6-closure-20260929-final.xml`.
+
+The complete browser run finishes all 76 cases without retries/skips. Seventy
+pass, including every upload/audio-only/metadata/recovery/scheduling/channel/
+calendar journey. Six catalogue cases expose an incorrect test assumption that
+the ordinary pager appends rather than navigating. The corrected seven-project
+catalogue run passes all seven cases: automatic prefetch, keyboard HTML paging,
+all 50 unique visible identities behind 5,500 hidden rows, no title leaks,
+320px reflow, screenshots and Axe. Retained reports:
+`target/accessibility/ap09-m6-closure-20260929/final/automated.json` and
+`target/accessibility/ap09-m6-closure-20260929/catalogue-final/automated.json`.
+The initial run also retains the ambiguous transcript selector and off-screen
+WebKit autoplay failures; final journeys scope the intended disclosure and
+bring the preview into view before playback. No product guard was weakened.
+
+The frozen serving executable SHA-256 is
+`30a3a7ce3d93688e5b5aeeecb22a41135240bca8cdf7a1d6f691fafd4917f309`.
+Strict all-target Clippy, SQLx metadata, formatting, JavaScript/Python syntax,
+rendered documentation and local documentation links pass. The standing
+first-party viewer and sharing page were visually inspected; existing media and
+preferences were not changed. User workflows are documented in
+[`VIDEO_PUBLISHING.md`](VIDEO_PUBLISHING.md),
+[`VIDEO_VIEWING.md`](VIDEO_VIEWING.md) and
+[`VIDEO_IMPORTS.md`](VIDEO_IMPORTS.md).
+
+This closes M6's stated functional gate. Real device/assistive-technology
+release checks retain M9 scope; sustained capacity and wider operations/fault
+matrices retain M7 scope. Neither milestone's acceptance criteria were removed.
+
+### Creator download/embed controls — 2026-09-29
+
+Videos → Download and embed settings provides ordinary HTML controls before
+publication and on existing Videos. Downloads and first-party frames may be
+disabled independently without breaking ordinary playback. These flags control
+offers, not DRM or recall of already fetched public bytes. Live broadcasts do
+not offer a finite download; independent replay episodes inherit the initial
+choice once. Creator API mutations require media scope, and published changes
+also require status scope, current channel authority and transactional outbox
+delivery by the immutable original signer.
+
+Viewers receive a range-capable MP4 attachment and manually selectable embed
+code, including server-only `p2p=0` code. No-JS needs neither clipboard access
+nor a script for playback. Enhanced clipboard failures preserve manual selection
+and announce their outcome. Default frame dimensions fit a 320px host. Private,
+deleted, suspended and disabled frames/downloads are refused even with cookies;
+denials and private management responses are not shared-cacheable.
+
+Distribution/replay integration: **10 passed**, plus the finite-download live
+lifecycle unit. Strict all-target Clippy and SQLx metadata checks pass. Actual
+PeerTube first Create and later enable/disable Updates, stable UUID, decoded
+playback, captions/HLS, exact MP4/ranges, cookie-bound frame refusal and signed
+Delete: **1 passed in 28.69 seconds**. Evidence:
+`target/e2e/ap09-distribution-20260929-initial.xml`.
+
+Seven canonical desktop/narrow Chromium/Firefox/WebKit and Chromium no-JS
+projects pass, with zero retries/skips:
+`target/accessibility/ap09-distribution-20260929/local-host-final/automated.json`.
+Each includes actual decoded playback in copied frame code served from an
+independent local HTTP origin, native upload/publication, disable/re-enable,
+32-byte ranges, keyboard/manual copy, clipboard success/denial, reflow and Axe
+where scripts are enabled. Screenshots include `copied-iframe-decoded-320px.png`.
+Candidate executable SHA-256:
+`f2e849a5810c261857f5524f1630245e817a9fbf5272980b0da17655c9230fce`.
+
+Earlier failures are retained: one Firefox subpixel measurement of an actual
+44px target; a synthetic first-party host blocked by the intended frame CSP;
+and a synthetic public-origin host blocked by Chromium local-network protection.
+The final harness uses a real independent localhost origin. Product CSP and
+browser network security are unchanged. This closes the download/embed gate,
+not the remaining M6/M7 gates or full PeerTube REST compatibility.
+
+### Scheduled native source synchronization — 2026-09-29
+
+Videos → Scheduled video sources supplies ordinary HTML channel selection,
+explicit periodic-copy consent, status, pause/resume/check/remove and private
+review navigation. One supervised native discovery worker consumes bounded
+public ActivityPub channel outboxes or Playlists; no companion downloader,
+automatic publication, follows or source-identity impersonation is introduced.
+PeerTube element IRIs are dereferenced once; complete Videos are deduplicated,
+not guessed playlist clips. Page-and-entry cursors advance large/duplicate-heavy
+feeds. Metadata is bounded to four collection documents, twenty candidates,
+forty-eight requests, eight MiB and forty-five seconds per check.
+
+Allocation, full source-ceiling quota reservation, metadata, download registration
+and deduplication commit together. Pause/revocation/suspension/lease generations
+fence allocation; network lease renewal never suspends a database transaction.
+Copies already queued remain independently cancellable private drafts. Five
+sources/account and 10,000 remembered identities/source are hard bounds; history
+survives cancelling a copy and pauses at its cap instead of silently forgetting.
+Status JSON discloses no source URL, CSRF token, identity or generation.
+
+Candidate source/native-publication/native-worker integration regression:
+**63 passed** (10 + 27 + 26); one-time importer regression **5 passed**.
+Strict workspace/all-target Clippy, SQLx metadata, formatting/syntax and rendered
+documentation/link checks pass. The standing browser confirms discovery,
+native controls and consistent styling without modifying existing media or
+preferences. Frozen candidate SHA-256:
+`8e6ba1ad783bb230bea7f1f2ec4de7b8c5813e87122c4575d19e2ea4ecb29043`.
+
+Actual PeerTube channel/playlist E2E: **2 passed in 279.68 seconds**, including
+new source Videos after pause/resume, exact fragmented MP4 bytes, independently
+encoded private previews/ranges, repeated-check deduplication, no automatic post,
+confirmed source removal preserving copies, explicit new-identity publication
+and acknowledged signed Delete. Evidence:
+`target/e2e/ap09-source-sync-20260929-final.xml`.
+
+The pinned seven-project desktop/narrow Chromium/Firefox/WebKit plus Chromium
+no-JS matrix passes every journey with no retries/skips: native consent and
+filled validation, pause/resume/remove, injected status-503 failure/manual
+refresh, actual decoded private previews, cancellation, 320px reflow, Axe and
+forced-colour/reduced-motion checks. Evidence:
+`target/accessibility/ap09-source-sync-20260929/final/`.
+
+This closes the scheduled ActivityPub-source slice, **not M6/M7 or arbitrary
+website import parity**. Retained first failures:
+an immediate post-restart preflight saw 502 before readiness; real PeerTube
+licence identifiers lack a verified versioned URI, so the test must not expect
+a silently invented 4.0 grant; PeerTube channel deletion requires its name/UUID,
+not its numeric REST creation ID. Only the two empty dedicated source fixture
+channels were removed after resolving those exact targets. Source/security rules
+were not weakened. User guide: [`VIDEO_IMPORTS.md`](VIDEO_IMPORTS.md).
 
 ### Private viewer history — 2026-09-29
 
@@ -338,3 +484,65 @@ Logs/failed XML are retained under `target/e2e/`.
 This closes the original editing workflow gate (VOD08), not M6 or M7. Source
 synchronization, the remaining creator journeys and operations/scale gates above
 remain open. User/API guide: [`VIDEO_EDITING.md`](VIDEO_EDITING.md).
+
+### Initial live labels and independently labelled recordings — 2026-09-29
+
+The ordinary live-creation form now offers category, explicit licence,
+content warning and sensitivity. Invalid schedules/labels return a filled HTML
+form with an alert; title/description/channel/audience and reusable/playback
+choices are preserved. Validation occurs before allocating a broadcast/key.
+The initial signed Create carries the same terms and warning as dereference,
+client entities and later on-air/replay updates. Unspecified grants no reuse
+rights. One-shot recordings retain their original labels; recurring recordings
+snapshot terms when privately prepared and preserve warnings through retry,
+without merging independent session/publication identities.
+
+Cookie-backed OAuth scopes remain granular: creating requires both media and
+status writes, rotating/uploading requires media writes, and changing schedule/
+playback announcements requires status writes. Current channel authority,
+CSRF and browser WebSocket origin checks remain required. The stronger private
+live-page `no-referrer` policy survives global response headers; ordinary pages
+keep their original policy. Filled textarea labels have explicit associations.
+Error-text contrast now passes both light and dark themes without changing
+danger-button or decoration colours.
+
+Focused Rust verification: **40 integrations** (initial labels, durable
+recurring snapshot/retry/publication, native live/video, scope/CSRF, actual
+WebSocket upgrade and security-header regressions), plus the DB recurring
+session test. All **seven** Chromium/Firefox/WebKit desktop/narrow and Chromium
+no-JS metadata/validation journeys pass keyboard, 320px reflow and complete
+light/dark reduced-motion Axe checks where scripts are enabled. Evidence:
+`target/accessibility/ap09-live-metadata-20260929/final/`. The standing
+first-party form was inspected read-only; no existing broadcast was changed.
+
+Earlier failures remain protected evidence: a real low-contrast error panel,
+WebKit descendant styles not yet recalculated after a theme switch, an outdated
+test assertion omitting calendar fields, and a changed disposable proxy address
+rejected by exact-host trust. Production trust was not widened. The canonical
+browser fixture separately exposes native ingest on its isolated host-side
+address; encoder tests do not confuse the TLS container's localhost with the
+host's localhost. Broader authoring/device/AT and operations gates remain open.
+
+Final standing-candidate transport matrix: **6 passed in 391.94 seconds**.
+Real RTMP, TLS-certificate-verified RTMPS and HTTPS-FLV each pass one-shot
+and interrupted/reconnected recurring sessions. Both independent recordings
+retain their exact category/licence/warnings and playable/range-served MP4s;
+PeerTube 8.3 receives on-air/replay transitions and the same labels. Evidence:
+`target/e2e/ap09-live-metadata-and-replays-20260929-final.xml`; original failed
+run is retained separately. Frozen binary SHA-256:
+`67fca200a9dd39557570d5a8976306c69a7528eeab324e6706f98bbd1486c3a4`.
+Workspace/all-target strict Clippy, SQLx metadata check, formatter and syntax
+checks pass. Documentation renders and passes the built-link check; previously
+linked channel/playlist and closure pages are now included in the book.
+
+Final combined canonical browser run: **16 passed, four Chromium-only
+recording cases skipped in Firefox/WebKit**, no retries, in 1.1 minutes. All seven
+metadata/validation journeys, six capture-choice/encoder-fallback checks, two
+desktop/mobile Chromium one-shot browser recordings and the actual no-JS
+external-encoder recurring recording/replay journey pass. Evidence:
+`target/accessibility/ap09-live-metadata-20260929/final-combined/`.
+The general-purpose test encoder was absent from the upstream browser image
+(`ENOENT`); the cached test image now includes Ubuntu's FFmpeg 6.1.1. Its image
+ID and encoder version are recorded in the report. Only Ubuntu repositories
+are needed for that layer. No production installation/runtime dependency was
+added; browser engines retain their original pinned base.

@@ -3676,6 +3676,17 @@ pub async fn status_embed(
     request_locale: Locale,
     Path(status_id): Path<i64>,
     Query(query): Query<EmbedQuery>,
+) -> Response {
+    let result = status_embed_inner(state, session, request_locale, status_id, query).await;
+    super::video_history::private(result.unwrap_or_else(IntoResponse::into_response))
+}
+
+async fn status_embed_inner(
+    state: AppState,
+    session: Option<WebUser>,
+    request_locale: Locale,
+    status_id: i64,
+    query: EmbedQuery,
 ) -> Result<Response, ApiError> {
     if query.p2p.is_some_and(|value| value > 1) {
         return Err(ApiError::BadRequest(
@@ -3689,6 +3700,7 @@ pub async fn status_embed(
         || !matches!(focus.visibility.as_str(), "public" | "unlisted")
         || status::is_deleted(&state.pool, status_id).await?
         || !can_view(&state.pool, &focus, None).await?
+        || !plamenu_db::video_distribution::embed_allowed(&state.pool, status_id).await?
     {
         return Err(ApiError::NotFound);
     }

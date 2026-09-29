@@ -868,6 +868,7 @@ pub(crate) async fn preview_media_json(
     let storyboards = plamenu_db::video_storyboards::for_media(pool, media_ids).await?;
     let chapters = plamenu_db::video_chapters::for_media(pool, media_ids).await?;
     let video_metadata = plamenu_db::video_metadata::for_media(pool, &poster_ids).await?;
+    let distribution = plamenu_db::video_distribution::offers(pool, &poster_ids).await?;
     Ok(media
         .iter()
         .map(|item| {
@@ -888,6 +889,7 @@ pub(crate) async fn preview_media_json(
             if let Some(metadata) = video_metadata.get(&item.id) {
                 value["video_metadata"] = crate::video_metadata::entity(metadata);
             }
+            attach_video_distribution(&mut value, item, distribution.get(&item.id), domain);
             value
         })
         .collect())
@@ -914,6 +916,21 @@ fn storyboard_entity(board: &plamenu_db::video_storyboards::Storyboard, domain: 
     json!({"url":format!("https://{domain}/media/{}", board.file_name),
         "tile_width":160,"tile_height":90,"columns":board.columns,"rows":board.rows,
         "tile_count":board.tile_count,"interval_seconds":board.interval_seconds})
+}
+
+fn attach_video_distribution(
+    value: &mut Value,
+    file: &media::Media,
+    offer: Option<&plamenu_db::video_distribution::Offer>,
+    domain: &str,
+) {
+    if let Some(offer) = offer {
+        value["video_distribution"] = json!({
+            "download_enabled":offer.download_enabled,"embed_enabled":offer.embed_enabled,
+            "download_url":(offer.download_enabled&&file.file_name.is_some()&&file.content_type=="video/mp4"&&file.live_state.is_none()).then(||format!("https://{domain}/media/{}/download",file.id)),
+            "embed_url":offer.embed_enabled.then(||format!("https://{domain}/web/statuses/{}/embed",offer.status_id))
+        });
+    }
 }
 
 /// The non-text draft attributes a status [preview](preview_status_json)
@@ -3462,6 +3479,7 @@ async fn media_maps(
     let chapters = plamenu_db::video_chapters::for_media(pool, &media_ids).await?;
     let video_metadata = plamenu_db::video_metadata::for_media(pool, &poster_ids).await?;
     let native_peers = plamenu_db::native_video_hls::public_peer_uuids(pool, &media_ids).await?;
+    let distribution = plamenu_db::video_distribution::offers(pool, &media_ids).await?;
     // Content revisions are useful even when an older native generation has
     // no P2P integrity metadata. Do not tie history/cache fencing to P2P support.
     let native_ids = per_status
@@ -3517,6 +3535,7 @@ async fn media_maps(
                         value["video_metadata"] = crate::video_metadata::entity(metadata);
                     }
                     attach_remote_peer_hints(&mut value, file, &remote_peers, domain);
+                    attach_video_distribution(&mut value, file, distribution.get(&file.id), domain);
                     if let Some(revision) = native_revisions.get(&file.id) {
                         value["content_revision"] = json!(revision);
                         if *revision > 0 && value.get("hls").is_some() {

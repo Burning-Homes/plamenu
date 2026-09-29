@@ -76,8 +76,22 @@ pub async fn reserve(
     limits: &AdmissionLimits,
 ) -> Result<Admission, DbError> {
     let mut tx = pool.begin().await?;
-    crate::video_storage::lock(&mut tx).await?;
-    if !crate::video::lock_owned_channel(&mut tx, new.channel_id, new.account_id).await? {
+    let admission = reserve_in_transaction(&mut tx, new, limits).await?;
+    if admission == Admission::Accepted {
+        tx.commit().await?;
+    }
+    Ok(admission)
+}
+
+/// Compose admission with a durable import/provenance fence. The caller must
+/// commit only Accepted work; network or encoder work never runs under it.
+pub async fn reserve_in_transaction(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    new: &NewDraft<'_>,
+    limits: &AdmissionLimits,
+) -> Result<Admission, DbError> {
+    crate::video_storage::lock(tx).await?;
+    if !crate::video::lock_owned_channel(tx, new.channel_id, new.account_id).await? {
         return Ok(Admission::Forbidden);
     }
     let usage = sqlx::query!(
@@ -90,7 +104,7 @@ pub async fn reserve(
             JOIN video_drafts d ON d.media_id = m.id WHERE m.status_id IS NULL) AS "pending!""#,
         new.account_id,
     )
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut **tx)
     .await?;
     if usage.unfinished >= limits.unfinished_per_account {
         return Ok(Admission::AccountFull);
@@ -116,7 +130,7 @@ pub async fn reserve(
         return Ok(Admission::StorageFull);
     }
     if !crate::video_storage::reserve_locked(
-        &mut tx,
+        tx,
         new.account_id,
         new.media_id,
         &[new.source_file.to_owned()],
@@ -138,7 +152,7 @@ pub async fn reserve(
         new.media_transcript,
         new.caption_vtt,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     sqlx::query!(
         "INSERT INTO video_drafts (media_id, account_id, channel_id, title, description,
@@ -158,14 +172,13 @@ pub async fn reserve(
         new.source_fingerprint,
         new.poster_time_seconds,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
-    tx.commit().await?;
     Ok(Admission::Accepted)
 }
 
-pub async fn find_owned(
-    pool: &PgPool,
+pub async fn find_owned<'e, E: sqlx::PgExecutor<'e>>(
+    executor: E,
     media_id: i64,
     owner: i64,
 ) -> Result<Option<Draft>, DbError> {
@@ -177,7 +190,7 @@ pub async fn find_owned(
         media_id,
         owner,
     )
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?)
 }
 

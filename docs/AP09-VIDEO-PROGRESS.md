@@ -136,7 +136,7 @@ before becoming `verified`. Keep partial results and failures visible.
 | M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | verified 2026-09-29 for the stated functional gate; see M3 sign-off below. Human AT/WCAG release evidence remains M9 |
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | verified 2026-09-29; see M4 sign-off below |
 | M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | verified 2026-09-25 for this stated functional gate; see the M5 sign-off below. Cross-node storage, additional device/browser combinations, and broader fault matrices remain in M7/M9, not silently counted as done |
-| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders, scheduled VOD publication, in-session browser camera ↔ screen switching, searchable/followable HTML libraries, private opt-in viewer history/resume, guarded one-time native file/ActivityPub/PeerTube imports and complete stable-identity native replacement/reprocess/trim workflows verified; larger/remote channel matrices, scheduled source sync, downloads and broader creator/browser/hardware evidence remain. See M6/M7 closure checklist |
+| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | verified 2026-09-29 for the original functional gate. Bounded 5,550-match catalogue, current-owner/anonymous authority, actual PeerTube subscriptions/search/blocking/scheduling/transfer/distribution, and all seven desktop/narrow/no-JS browser configurations pass. Detailed sign-off and retained failures are in the M6/M7 closure record. Sustained operations and independent real-device/AT release gates remain M7/M9 |
 | M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress: both-origin VOD/live P2P exchange; durable HTML-first account opt-out and public/cookie-free VOD embeds; bounded VOD startup recovery; actual native VOD/upload backup and fresh-store restore verified. Worker/offload/redundancy, moderation/analytics, wider live/fault/load and resource budgets remain. See M6/M7 closure checklist |
 | M8 | Ecosystem and beyond parity | Defined REST/embed/runner compatibility scope; chosen extensions; end-to-end tests per supported contract; no PeerTube plugin ABI in round one | pending |
 | M9 | Completion gate | All accepted inventory entries verified; current and prior PeerTube matrices; browser/a11y/performance gates; operator and user documentation | pending |
@@ -2901,3 +2901,48 @@ record above predates migrations 0087–0088 and is not evidence for their write
 - This closes VOD08's complete editing workflow gate, not either milestone.
   Scheduled source sync, remaining creator journeys and the original operations/
   scale gates are unchanged. No push, merge or deployment occurred.
+
+### M6 initial live terms, warnings and recurring recording inheritance — 2026-09-29
+
+- Live creation now exposes category/licence/warning/sensitivity in ordinary
+  HTML, retaining authored fields through validation correction. Unsupported
+  metadata is rejected before allocating a broadcast or stream key.
+- Initial Create/dereference/client entities and one-shot recordings retain
+  labels; independently published recurring recordings snapshot creator terms
+  and preserve warnings through retry. No recording inherits a licence that
+  was never granted, nor becomes unlabelled merely because its parent clears.
+- Current authority, CSRF, granular media/status scopes and actual WebSocket
+  origin/upgrade checks pass. The global header layer preserves the stronger
+  `no-referrer` policy on private live management pages.
+- Forty focused Rust integrations and the DB recurring-session regression pass.
+  All seven canonical browser projects pass creation/correction, keyboard,
+  320px reflow and light/dark reduced-motion Axe checks. Evidence and original
+  failures are retained in the M6/M7 closure record.
+- This closes initial-live metadata authoring, **not M6 or M7**. Remaining
+  source synchronization, wider creator/viewer journeys and operations/scale
+  acceptance gates are unchanged. No push, merge or deployment occurred.
+
+### M6 scheduled native source synchronization — 2026-09-29
+
+- Videos → Scheduled video sources provides HTML-first periodic-copy consent,
+  channel/interval selection, pause/resume/check/remove and independent private
+  draft review. One supervised in-process worker performs bounded public
+  ActivityPub channel/Playlist discovery; no companion downloader, automatic
+  publication, follows or source-identity impersonation is introduced.
+- Canonical PeerTube PlaylistElement IRIs are resolved once; page-and-entry
+  cursors advance large/duplicate-heavy playlists. Atomic quota/draft/import/
+  deduplication registration, generation/permission fencing, five sources per
+  account and 10,000 remembered identities per source bound work and history.
+- Source/native-publication/native-worker regressions: **63 passed**; existing
+  importer regressions: **5 passed**. Real PeerTube channel and playlist copies,
+  new-Video pause/resume, exact source bytes, repeat-check deduplication, private
+  previews, separate new-identity publication and signed Delete: **2 passed in
+  279.68 seconds**. Seven pinned desktop/narrow/no-JS browser journeys pass
+  native consent/validation/recovery, actual decode, reflow/Axe/keyboard and
+  forced-colour/reduced-motion checks with zero retries/skips.
+- Strict Clippy, SQLx metadata, formatting/syntax and rendered docs/link checks
+  pass. Frozen candidate, retained original failures and protected evidence are
+  recorded in [`AP09-M6-M7-CLOSURE.md`](AP09-M6-M7-CLOSURE.md); user guide:
+  [`VIDEO_IMPORTS.md`](VIDEO_IMPORTS.md).
+- This verifies scheduled ActivityPub-source synchronization, **not arbitrary
+  website scraping or M6/M7 completion**. Remaining original gates are unchanged.

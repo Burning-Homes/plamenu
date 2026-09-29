@@ -79,6 +79,15 @@ the remaining manual and assistive-technology evidence.
 - Detailed release procedures and evidence formats are documented in
   [Accessibility release verification](ACCESSIBILITY_RELEASE.md).
 
+The isolated browser harness automatically caches `accessibility/Dockerfile`:
+the browser-engine base remains digest-pinned and a distro-packaged FFmpeg
+acts as the external encoder for real RTMP/no-JS broadcast tests. This is test
+infrastructure, not a required Plamenu companion or an installation change.
+`./dev a11y-install` prepares the image ahead of time. The fixture's native
+ingest listens only on its isolated host-side address; test encoders use that
+address instead of the TLS container's localhost. Encoder failures include
+exit/transport diagnostics with stream keys redacted.
+
 ## Pending before a WCAG 2.2 AA claim
 
 - Complete the manual criterion inventory for the release candidate, including

@@ -102,6 +102,11 @@ fn merge(mut current: Metadata, input: &Input) -> Result<Metadata, ApiError> {
     Ok(current)
 }
 
+/// Validate authoring fields before allocating a live broadcast or storage.
+pub fn authoring(input: &Input) -> Result<Metadata, ApiError> {
+    merge(Metadata::default(), input)
+}
+
 pub async fn draft(
     state: &AppState,
     owner: i64,

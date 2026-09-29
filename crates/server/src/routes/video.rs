@@ -13,6 +13,10 @@ use serde_json::{Value, json};
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route(
+            "/api/v1/videos/{id}/distribution",
+            get(distribution).put(save_distribution),
+        )
         .route("/api/v1/video_channels", get(channels).post(create_channel))
         .route(
             "/api/v1/video_channels/{id}",
@@ -46,6 +50,47 @@ pub fn router() -> Router<AppState> {
             "/api/v1/videos/{id}/metadata",
             axum::routing::put(update_metadata),
         )
+}
+
+#[derive(Deserialize)]
+struct DistributionInput {
+    download_enabled: bool,
+    embed_enabled: bool,
+}
+async fn distribution(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("read:media")?;
+    let (policy, _) = crate::video_distribution::owned(&state, current.account.id, id).await?;
+    Ok(private_json(
+        json!({"download_enabled":policy.download_enabled,"embed_enabled":policy.embed_enabled}),
+    ))
+}
+async fn save_distribution(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("write:media")?;
+    let input: DistributionInput = super::params::parse_body(&headers, &body)?;
+    crate::video_distribution::save(
+        &state,
+        current.account.id,
+        plamenu_db::video_distribution::Policy {
+            media_id: id,
+            download_enabled: input.download_enabled,
+            embed_enabled: input.embed_enabled,
+        },
+        current.require_scope("write:statuses").is_ok(),
+    )
+    .await?;
+    Ok(private_json(
+        json!({"download_enabled":input.download_enabled,"embed_enabled":input.embed_enabled}),
+    ))
 }
 
 async fn content(

@@ -32,8 +32,56 @@ Enhanced draft pages poll only while visible, announce phase changes once and
 stop when ready, failed, expired or unavailable. Native private previews work
 with scripts disabled. Originals are never HTTP-readable, even by their owner.
 
-This is a one-time copy. Automatic source synchronization, source replacement
-and trimming are separate workflows, not implied by importing a URL.
+This form makes a one-time copy. Scheduled sources are configured separately
+below. Published-video replacement and trimming are separate, reviewed
+[editing workflows](VIDEO_EDITING.md), not implied by importing a URL.
+
+## Scheduled channel and playlist sources
+
+Open Videos → Scheduled video sources. Select your destination channel, enter
+a public ActivityPub channel actor or Playlist URL, choose a check interval and
+explicitly authorize periodic retrieval. PeerTube public channels and playlists
+are supported. The server performs discovery and copying itself; no external
+downloader, task scheduler or companion service is required. Arbitrary website
+scraping, authenticated/private sources and live-stream imports are not supported.
+
+Each newly discovered finite Video becomes a private native draft. Nothing is
+published automatically. Review the complete video (playlist clip boundaries
+do not trim the source), alternatives, captions, credit and actual licence terms
+before publishing. Imported category/licence labels and warnings are review
+suggestions, not permission to reproduce the material. A reuse licence without a
+verified versioned URI stays unselected rather than inventing a new reuse grant.
+New publication uses
+your own channel and a new Video identity, not the remote creator's identity.
+
+Pause discovery stops further allocations; copies already queued remain private
+and continue through the ordinary import/review pipeline. Cancel those drafts
+separately if you also want to stop downloading them. Resume and Check now use
+the same bounded worker. Manual checks are limited to one per minute. Removing
+a source requires confirmation, keeps its copies and forgets deduplication
+history; adding that source again can create new copies of old videos.
+
+The ordinary HTML forms, status and Refresh source status link work without
+JavaScript. Enhanced pages refresh pending checks only while visible, announce
+changed statuses and expose a manual refresh when a status request fails.
+Open Review prepared videos to inspect newly created private drafts.
+
+Up to five sources are allowed per account, with intervals from fifteen minutes
+to one week. Each check traverses at most four collection documents and twenty
+candidate entries, with an eight-MiB metadata budget, forty-eight request ceiling
+and forty-five-second network deadline. Durable page-and-entry cursors advance
+large playlists over later checks, including PeerTube's PlaylistElement IRIs.
+Source URLs and results are private. Source and referenced video servers see
+requests from this instance; never supply credentials or private links.
+
+Copies reserve the full configured source ceiling and obey normal draft/storage
+quotas. A quota refusal retains its retry position for a later check; existing
+copies are not removed. Deduplication survives deleting a draft or published
+copy. At 10,000 remembered Video identities a source pauses rather than silently
+forgetting history or growing without limit. Channel access loss and suspension
+fence discovery and allocation. Restart reclaims an expired lease; generation
+checks reject superseded workers. Backups include private source configuration,
+cursors and deduplication history along with the ordinary import jobs.
 
 ## Failure, cancellation and privacy
 

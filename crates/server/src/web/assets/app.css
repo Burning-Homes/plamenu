@@ -90,6 +90,9 @@
   --accent-contrast: light-dark(#ffffff, #15191e);
   --danger: light-dark(#c93a2b, #ec7064);
   --danger-soft: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  /* Body-size error text must also reach 4.5:1 on the tinted error panel,
+     not just on a white surface. Keep decoration and text separately themed. */
+  --danger-text: light-dark(#b3261e, #ec7064);
   /* Solid danger buttons need a different dark-theme colour from danger text:
      white on the brighter `--danger` is only about 3:1. */
   --danger-solid: #b3261e;
@@ -5069,9 +5072,12 @@ img.reaction__emoji {
   background: var(--danger-soft);
   border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
   border-radius: var(--radius);
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
 }
+
+/* Source URLs are untrusted text, never allowed to widen mobile reflow. */
+.video-source-url { overflow-wrap: anywhere; }
 
 /* ---- Pill link-buttons -------------------------------------------------- *
  * A link styled as the profile header's pill button: the group "New post"
@@ -6072,6 +6078,11 @@ a.settings-button--plain {
   align-items: baseline;
   gap: var(--space-2);
   padding: var(--space-1) 0;
+}
+
+.video-sharing .settings-field__choice {
+  min-block-size: 2.75rem;
+  align-items: center;
 }
 
 /* The TOTP enrolment QR (its SVG carries a white quiet zone of its own, so it

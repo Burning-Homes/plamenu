@@ -127,7 +127,12 @@ fn schedule_form(user: &WebUser, id: i64, starts: &[time::OffsetDateTime]) -> Ma
     }
 }
 
-async fn creation_form(state: &AppState, user: &WebUser) -> Result<Markup, ApiError> {
+async fn creation_form(
+    state: &AppState,
+    user: &WebUser,
+    pairs: &[(String, String)],
+    error: Option<&str>,
+) -> Result<Markup, ApiError> {
     let owned =
         plamenu_db::video_channel_access::available(&state.pool, user.current.account.id).await?;
     let ids = owned
@@ -136,10 +141,12 @@ async fn creation_form(state: &AppState, user: &WebUser) -> Result<Markup, ApiEr
         .collect::<Vec<_>>();
     let channels = account::find_by_ids(&state.pool, &ids).await?;
     let locale = user.locale;
+    let value = |key| field(pairs, key).unwrap_or_default();
     let body = html! {
         section.column {
             h1 { (locale.text("videos-live-title")) }
             p { (locale.text("videos-live-intro")) }
+            @if let Some(error)=error {p.settings__error role="alert" {(error)}}
             @if channels.is_empty() {
                 p { a href="/videos" { (locale.text("videos-new-channel")) } }
             } @else {
@@ -153,44 +160,53 @@ async fn creation_form(state: &AppState, user: &WebUser) -> Result<Markup, ApiEr
                             span.settings-field__label { (locale.text("videos-channel")) }
                             select name="channel" required {
                                 @for channel in &channels {
-                                    option value=(channel.id) { (channel.display_name) }
+                                    option value=(channel.id) selected[value("channel")==channel.id.to_string()] { (channel.display_name) }
                                 }
                             }
                         }
                         label.settings-field {
                             span.settings-field__label { (locale.text("videos-name")) }
-                            input name="title" minlength="3" maxlength="120" required;
+                            input name="title" minlength="3" maxlength="120" required value=(value("title"));
                         }
-                        label.settings-field {
-                            span.settings-field__label { (locale.text("videos-description")) }
-                            textarea name="description" rows="5" maxlength="10000" {}
+                        div.settings-field {
+                            label.settings-field__label for="live-description" { (locale.text("videos-description")) }
+                            textarea id="live-description" name="description" rows="5" maxlength="10000" { (value("description")) }
                         }
                         label.settings-field {
                             span.settings-field__label { (locale.text("videos-language")) }
-                            input name="language" placeholder="en" maxlength="35";
+                            input name="language" placeholder="en" maxlength="35" value=(value("language"));
                         }
                         label.settings-field {
                             span.settings-field__label { (locale.text("videos-visibility")) }
                             select name="visibility" {
-                                option value="public" { (locale.text("videos-public")) }
-                                option value="unlisted" { (locale.text("videos-unlisted")) }
+                                option value="public" selected[value("visibility")!="unlisted"] { (locale.text("videos-public")) }
+                                option value="unlisted" selected[value("visibility")=="unlisted"] { (locale.text("videos-unlisted")) }
                             }
                         }
+                        (super::video_metadata::fields(value("category"), value("licence"), locale))
+                        label.settings-field {
+                            span.settings-field__label { (locale.text("compose-content-warning")) }
+                            input name="spoiler_text" maxlength="500" value=(value("spoiler_text"));
+                        }
                         label.settings-field__choice {
-                            input type="checkbox" name="permanent" value="yes";
+                            input type="checkbox" name="sensitive" value="true" checked[value("sensitive")=="true"];
+                            span.settings-field__label { (locale.text("compose-sensitive")) }
+                        }
+                        label.settings-field__choice {
+                            input type="checkbox" name="permanent" value="yes" checked[value("permanent")=="yes"];
                             span.settings-field__label { (locale.text("videos-live-permanent")) }
                         }
-                        (playback_controls(locale, native_live::PlaybackOptions {
+                        (playback_controls(locale, playback_fields(pairs).unwrap_or(native_live::PlaybackOptions {
                             dvr_window_seconds: 600,
                             latency_mode: 1,
-                        }))
+                        })))
                         label.settings-field {
                             span.settings-field__label { (locale.text("videos-live-planned-start")) }
-                            input type="datetime-local" name="scheduled_at";
+                            input type="datetime-local" name="scheduled_at" value=(value("scheduled_at"));
                         }
-                        label.settings-field {
-                            span.settings-field__label { (locale.text("videos-live-additional-starts")) }
-                            textarea name="scheduled_starts" rows="4" {}
+                        div.settings-field {
+                            label.settings-field__label for="live-additional-starts" { (locale.text("videos-live-additional-starts")) }
+                            textarea id="live-additional-starts" name="scheduled_starts" rows="4" { (value("scheduled_starts")) }
                         }
                         p.settings-field__hint { (locale.text("videos-live-additional-starts-hint")) }
                         (schedule_picker(locale))
@@ -225,7 +241,7 @@ fn schedule_picker(locale: Locale) -> Markup {
 
 pub async fn new_page(State(state): State<AppState>, user: WebUser) -> Response {
     private(
-        creation_form(&state, &user)
+        creation_form(&state, &user, &[], None)
             .await
             .map(IntoResponse::into_response),
     )
@@ -363,30 +379,51 @@ async fn create_inner(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return Ok(csrf_rejection());
     }
-    let channel_id = field(&pairs, "channel")
-        .and_then(|value| value.parse::<i64>().ok())
-        .ok_or(ApiError::Unprocessable("Choose a video channel".into()))?;
-    let title = field(&pairs, "title").unwrap_or_default().trim();
-    let description = field(&pairs, "description").unwrap_or_default().trim();
-    let language = field(&pairs, "language").filter(|value| !value.is_empty());
-    let visibility = field(&pairs, "visibility").unwrap_or("public");
-    let permanent = field(&pairs, "permanent") == Some("yes");
-    let playback = playback_fields(&pairs)?;
-    let scheduled_starts = schedule_fields(state, user, &pairs).await?;
-    let created = crate::native_live::create(
-        state,
-        &user.current.account,
-        channel_id,
-        title,
-        description,
-        language,
-        visibility,
-        permanent,
-        playback,
-        &scheduled_starts,
-    )
-    .await?;
-    Ok(key_page(state, user, created.status.id, title, &created.ingest_key).into_response())
+    user.current.require_scope("write:media")?;
+    user.current.require_scope("write:statuses")?;
+    let result = async {
+        let channel_id = field(&pairs, "channel")
+            .and_then(|value| value.parse::<i64>().ok())
+            .ok_or(ApiError::Unprocessable("Choose a video channel".into()))?;
+        let title = field(&pairs, "title").unwrap_or_default().trim();
+        let description = field(&pairs, "description").unwrap_or_default().trim();
+        let language = field(&pairs, "language").filter(|value| !value.is_empty());
+        let visibility = field(&pairs, "visibility").unwrap_or("public");
+        let permanent = field(&pairs, "permanent") == Some("yes");
+        let playback = playback_fields(&pairs)?;
+        let scheduled_starts = schedule_fields(state, user, &pairs).await?;
+        let created = crate::native_live::create(
+            state,
+            &user.current.account,
+            channel_id,
+            title,
+            description,
+            language,
+            visibility,
+            permanent,
+            playback,
+            &scheduled_starts,
+            &crate::video_metadata::Input {
+                category: field(&pairs, "category").map(serde_json::Value::from),
+                licence: field(&pairs, "licence").map(serde_json::Value::from),
+                spoiler_text: field(&pairs, "spoiler_text").map(str::to_owned),
+                sensitive: Some(serde_json::Value::Bool(
+                    field(&pairs, "sensitive") == Some("true"),
+                )),
+            },
+        )
+        .await?;
+        Ok(key_page(state, user, created.status.id, title, &created.ingest_key).into_response())
+    }
+    .await;
+    match result {
+        Err(ApiError::Unprocessable(message)) => Ok((
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            creation_form(state, user, &pairs, Some(&message)).await?,
+        )
+            .into_response()),
+        other => other,
+    }
 }
 
 async fn schedule_fields(
@@ -448,6 +485,7 @@ async fn update_schedule_inner(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return Ok(csrf_rejection());
     }
+    user.current.require_scope("write:statuses")?;
     let planned = schedule_fields(state, user, &pairs).await?;
     if !native_live::update_schedule(&state.pool, id, user.current.account.id, &planned).await? {
         return Err(ApiError::Conflict(
@@ -470,6 +508,7 @@ async fn update_playback_inner(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return Ok(csrf_rejection());
     }
+    user.current.require_scope("write:statuses")?;
     let playback = playback_fields(&pairs)?;
     if !native_live::update_playback(&state.pool, id, user.current.account.id, playback).await? {
         return Err(ApiError::Conflict(
@@ -676,6 +715,7 @@ pub async fn browser_publish(
     headers: HeaderMap,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
+    user.current.require_scope("write:media")?;
     if headers
         .get(header::ORIGIN)
         .and_then(|value| value.to_str().ok())
@@ -784,6 +824,7 @@ async fn rotate_inner(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return Ok(csrf_rejection());
     }
+    user.current.require_scope("write:media")?;
     let key = crate::native_live::rotate_ingest_key(state, id, user.current.account.id)
         .await?
         .ok_or(ApiError::NotFound)?;

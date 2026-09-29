@@ -1747,6 +1747,7 @@ async fn channel_collaborator_live_revocation_rejects_keys_and_browser_sessions(
             latency_mode: 1,
         },
         &[],
+        &plamenu::video_metadata::Input::default(),
     )
     .await
     .unwrap();

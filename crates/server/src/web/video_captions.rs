@@ -156,6 +156,8 @@ async fn add_inner(
     id: i64,
     mut multipart: Multipart,
 ) -> Result<Response, ApiError> {
+    user.current.require_scope("write:media")?;
+    user.current.require_scope("write:statuses")?;
     video_captions::owned_publication(&state.pool, id, user.current.account.id)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -222,6 +224,8 @@ async fn remove_inner(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return Ok(csrf_rejection());
     }
+    user.current.require_scope("write:media")?;
+    user.current.require_scope("write:statuses")?;
     if !video_captions::valid_language(language) {
         return Err(ApiError::NotFound);
     }

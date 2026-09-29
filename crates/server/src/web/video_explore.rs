@@ -155,30 +155,25 @@ pub async fn page(
         None
     };
     let before = query.max_id.filter(|id| *id > 0);
-    let mut hits = if let Some(id) = channel_id {
-        video::discover_channel(
-            &state.pool,
-            id,
-            (!q.is_empty()).then_some(q.as_str()),
-            viewer_id,
-            before,
-            LIMIT + 1,
-        )
-        .await?
-    } else {
-        video::discover(
-            &state.pool,
-            (!q.is_empty()).then_some(q.as_str()),
-            viewer_id,
-            followed,
-            before,
-            LIMIT + 1,
-        )
-        .await?
-    };
+    let page = video::discovery_page(
+        &state.pool,
+        channel_id,
+        (!q.is_empty()).then_some(q.as_str()),
+        viewer_id,
+        followed,
+        before,
+        LIMIT + 1,
+    )
+    .await?;
+    let mut hits = page.hits;
     let page_size = usize::try_from(LIMIT).unwrap_or(20);
     let has_more = hits.len() > page_size;
     hits.truncate(page_size);
+    let older = if has_more {
+        hits.last().map(|hit| hit.status_id)
+    } else {
+        page.scan_before
+    };
     let status_ids = hits.iter().map(|hit| hit.status_id).collect::<Vec<_>>();
     let mut channel_ids = hits.iter().map(|hit| hit.channel_id).collect::<Vec<_>>();
     if let Some(id) = channel_id {
@@ -264,7 +259,7 @@ pub async fn page(
                 button type="submit" { (locale.text("videos-explore-search-button")) }
             }
             @if hits.is_empty() {
-                p.empty { (locale.text("videos-explore-empty")) }
+                p.empty { (locale.text(if older.is_some(){"videos-explore-filtered-page"}else{"videos-explore-empty"})) }
             } @else {
                 ul.video-explore__grid data-paged {
                     @for hit in &hits {
@@ -317,13 +312,11 @@ pub async fn page(
                         }
                     }
                 }
-                @if has_more {
-                    @if let Some(last) = hits.last() {
-                        nav.pager aria-label=(locale.text("videos-explore-pages")) {
-                            a.pager__more href=(href(&q, channel_id, followed, Some(last.status_id))) {
-                                (locale.text("pager-show-more"))
-                            }
-                        }
+            }
+            @if let Some(cursor) = older {
+                nav.pager aria-label=(locale.text("videos-explore-pages")) {
+                    a.pager__more href=(href(&q, channel_id, followed, Some(cursor))) {
+                        (locale.text("pager-show-more"))
                     }
                 }
             }

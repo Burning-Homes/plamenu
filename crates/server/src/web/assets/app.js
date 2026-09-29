@@ -5798,6 +5798,73 @@
     });
   }
 
+  function bindVideoEmbedCodes(root) {
+    root.querySelectorAll('[data-video-embed-code]').forEach(panel => {
+      if (panel.dataset.copyBound) return;
+      panel.dataset.copyBound = '1';
+      const code = panel.querySelector('textarea');
+      const button = panel.querySelector('[data-video-embed-copy]');
+      const result = panel.querySelector('[data-video-embed-result]');
+      button.hidden = false;
+      button.addEventListener('click', async () => {
+        if (button.disabled) return;
+        button.disabled = true;
+        let timer;
+        try {
+          await Promise.race([
+            navigator.clipboard.writeText(code.value),
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Copy timed out')), 10000); })
+          ]);
+          result.textContent = panel.dataset.copied;
+        } catch {
+          result.textContent = panel.dataset.copyFailed;
+          code.focus();
+          code.select();
+        } finally {
+          clearTimeout(timer);
+          button.disabled = false;
+          result.hidden = false;
+        }
+      });
+    });
+  }
+
+  function bindVideoSources(root) {
+    root.querySelectorAll('[data-video-source-sync][data-source-pending="true"]').forEach(panel => {
+      if (panel.dataset.sourceBound) return;
+      panel.dataset.sourceBound = "1";
+      const controller = new AbortController();
+      const deadline = Date.now() + 10 * 60 * 1000;
+      let timer, failures = 0;
+      const stop = () => { controller.abort(); clearTimeout(timer); };
+      const poll = async () => {
+        if (controller.signal.aborted || !panel.isConnected || Date.now() >= deadline) { stop(); return; }
+        if (document.hidden) { timer = setTimeout(poll, 5000); return; }
+        try {
+          const response = await fetch('/videos/sources/state', {credentials:'same-origin',cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(10000)])});
+          if (!response.ok) throw new Error('Source status unavailable');
+          const sources = await response.json();
+          if (!Array.isArray(sources) || sources.length > 5) throw new Error('Invalid source status');
+          for (const source of sources) {
+            const label = [...panel.querySelectorAll('[data-source-state]')].find(node => node.dataset.sourceState === source.id);
+            if (label && typeof source.label === 'string' && source.label.length < 1000 && label.textContent.trim() !== source.label) label.textContent = source.label;
+          }
+          failures = 0;
+          panel.querySelector('[data-source-refresh-error]').hidden = true;
+          if (!sources.some(source => source.checking === true)) { stop(); return; }
+        } catch {
+          if (controller.signal.aborted) return;
+          const error = panel.querySelector('[data-source-refresh-error]');
+          if (error.hidden) { error.textContent = panel.dataset.sourceRefreshFailed; error.hidden = false; }
+          if (++failures >= 6) { stop(); return; }
+        }
+        timer = setTimeout(poll, Math.min(30000, 3000 * 2 ** failures));
+      };
+      addEventListener('pagehide', stop, {once:true});
+      timer = setTimeout(poll, 1000);
+    });
+  }
+
   function bindLiveSchedules(root) {
     root.querySelectorAll("form[data-live-schedules]").forEach(form => {
       if (form.dataset.liveScheduleBound) return;
@@ -5902,6 +5969,8 @@
     bindVideoUpload(root);
     bindVideoResume(root);
     bindVideoDraft(root);
+    bindVideoSources(root);
+    bindVideoEmbedCodes(root);
     bindFileLimits(root);
     bindLibraryFilters(root);
     bindWebxdcCreate(root);

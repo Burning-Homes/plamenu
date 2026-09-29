@@ -2994,6 +2994,7 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                 (media_seek_previews(item, url, ctx.locale))
                                 (media_history(item, url, ctx))
                                 (video_metadata_details(item, ctx.locale))
+                                (video_distribution_controls(item,ctx.locale))
                             },
                         }
                     },
@@ -3264,6 +3265,26 @@ fn media_caption_transcripts(item: &Value, locale: Locale) -> Markup {
                         li {
                             a href=(url) lang=(language) { (language) }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn video_distribution_controls(item: &Value, locale: Locale) -> Markup {
+    let distribution = &item["video_distribution"];
+    html! {
+        @if let Some(download)=distribution["download_url"].as_str(){p{a href=(download) download{(locale.text("video-sharing-download-link"))}}}
+        @if let Some(embed)=distribution["embed_url"].as_str(){
+            details.media__embed{
+                summary{(locale.text("video-sharing-embed-code"))}
+                @for (url,key) in [(embed.to_owned(),"video-sharing-standard-code"),(format!("{embed}?p2p=0"),"video-sharing-server-code")]{
+                    @let code=html! { iframe src=(url) title=(locale.text("status-embed-title")) width="300" height="360" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen" allowfullscreen {} }.into_string();
+                    div.settings-field data-video-embed-code data-copied=(locale.text("video-sharing-copied")) data-copy-failed=(locale.text("video-sharing-copy-failed")){
+                        label.settings-field{span.settings-field__label{(locale.text(key))}textarea readonly rows="4" aria-label=(locale.text(key)){(code)}}
+                        button type="button" data-video-embed-copy hidden{(locale.text("video-sharing-copy"))}
+                        p role="status" aria-live="polite" data-video-embed-result hidden{}
                     }
                 }
             }
@@ -5197,6 +5218,7 @@ fn video_edit_links(media_id: &str, locale: Locale) -> Markup {
     html! {
         p {
             a href=(format!("/videos/{media_id}/metadata")) { (locale.text("videos-metadata-manage")) }
+            " · " a href=(format!("/videos/{media_id}/sharing")){(locale.text("video-sharing-title"))}
             " · " a href=(format!("/videos/{media_id}/metadata#video-poster-replace")) { (locale.text("videos-replace-poster")) }
         }
     }

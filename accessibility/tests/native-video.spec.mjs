@@ -655,7 +655,8 @@ async function publishAudioOnly(page, projectName, noScript) {
   await page.waitForURL(url => /\/@[^/]+\/\d+/.test(url.pathname));
   const player = page.locator('video').first();
   await expect(player).toBeVisible();
-  await page.locator('details.media__transcript summary').click();
+  await page.locator('details.media__transcript summary')
+    .filter({ hasText: /^Transcript and visual description$/ }).click();
   await expect(page.getByText('A steady test tone plays.', { exact: true })).toBeVisible();
   const alt = page.getByRole('button', { name: 'ALT: A blue waveform on a dark background.', exact: true });
   await alt.press('Enter');

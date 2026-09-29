@@ -13,9 +13,72 @@ pub struct DiscoveryHit {
     pub channel_id: i64,
 }
 
-/// Keyset-paged Video catalogue. Search uses a dedicated partial GIN index;
-/// moderation and follow checks run only on a bounded newest-match window.
-/// Fetch one extra row to decide whether an Older link is warranted.
+/// A bounded page can carry a scan cursor even when every match was hidden.
+/// The cursor never carries those posts' titles or media URLs.
+pub struct DiscoveryPage {
+    pub hits: Vec<DiscoveryHit>,
+    pub scan_before: Option<i64>,
+}
+
+#[derive(sqlx::FromRow)]
+struct DiscoveryRow {
+    status_id: Option<i64>,
+    channel_id: Option<i64>,
+    scan_before: Option<i64>,
+    scanned: i64,
+}
+
+fn window(rows: Vec<DiscoveryRow>) -> DiscoveryPage {
+    let scan_before = rows
+        .first()
+        .and_then(|row| (row.scanned == 1000).then_some(row.scan_before).flatten());
+    let hits = rows
+        .into_iter()
+        .filter_map(|row| {
+            Some(DiscoveryHit {
+                status_id: row.status_id?,
+                channel_id: row.channel_id?,
+            })
+        })
+        .collect();
+    DiscoveryPage { hits, scan_before }
+}
+
+/// At most four 1,000-match windows per request, never an unbounded scan of
+/// filtered spam. HTML Older navigation can advance even across an empty page.
+pub async fn discovery_page(
+    pool: &sqlx::PgPool,
+    channel: Option<i64>,
+    query: Option<&str>,
+    viewer: Option<i64>,
+    followed: bool,
+    mut before: Option<i64>,
+    limit: i64,
+) -> Result<DiscoveryPage, DbError> {
+    let limit = limit.clamp(1, 100);
+    let mut hits = Vec::new();
+    for _ in 0..4 {
+        let remaining = limit - i64::try_from(hits.len()).unwrap_or(limit);
+        let page = if let Some(channel) = channel {
+            channel_window(pool, channel, query, viewer, before, remaining).await?
+        } else {
+            catalogue_window(pool, query, viewer, followed, before, remaining).await?
+        };
+        hits.extend(page.hits);
+        if i64::try_from(hits.len()).unwrap_or(limit) >= limit || page.scan_before.is_none() {
+            return Ok(DiscoveryPage {
+                hits,
+                scan_before: page.scan_before,
+            });
+        }
+        before = page.scan_before;
+    }
+    Ok(DiscoveryPage {
+        hits,
+        scan_before: before,
+    })
+}
+
 pub async fn discover(
     pool: &sqlx::PgPool,
     query: Option<&str>,
@@ -24,9 +87,25 @@ pub async fn discover(
     before: Option<i64>,
     limit: i64,
 ) -> Result<Vec<DiscoveryHit>, DbError> {
-    Ok(sqlx::query_as!(
-        DiscoveryHit,
-        r#"WITH candidates AS MATERIALIZED (
+    Ok(
+        discovery_page(pool, None, query, viewer, followed, before, limit)
+            .await?
+            .hits,
+    )
+}
+
+async fn catalogue_window(
+    pool: &sqlx::PgPool,
+    query: Option<&str>,
+    viewer: Option<i64>,
+    followed: bool,
+    before: Option<i64>,
+    limit: i64,
+) -> Result<DiscoveryPage, DbError> {
+    Ok(window(
+        sqlx::query_as!(
+            DiscoveryRow,
+            r#"WITH candidates AS MATERIALIZED (
             SELECT s.id, s.account_id,
                    COALESCE(v.channel_id, r.channel_id, s.account_id) AS channel_id
             FROM statuses s
@@ -49,19 +128,26 @@ pub async fn discover(
                      AND NOT f.pending))
             ORDER BY s.id DESC LIMIT 1000
         )
-        SELECT c.id AS "status_id!", c.channel_id AS "channel_id!"
-        FROM candidates c
-        WHERE NOT account_hidden($3, c.account_id)
-          AND NOT account_hidden($3, c.channel_id)
-        ORDER BY c.id DESC LIMIT $5"#,
-        before,
-        query,
-        viewer,
-        followed,
-        limit,
-    )
-    .fetch_all(pool)
-    .await?)
+        , visible AS (
+            SELECT c.id, c.channel_id FROM candidates c
+            LEFT JOIN video_channels vc ON vc.account_id=c.channel_id
+            WHERE NOT account_hidden($3, c.account_id)
+              AND NOT account_hidden($3, c.channel_id)
+              AND (vc.owner_account_id IS NULL OR NOT account_hidden($3, vc.owner_account_id))
+        ), scan AS (SELECT min(id) AS scan_before,count(*) AS scanned FROM candidates)
+        SELECT v.id AS "status_id?", v.channel_id AS "channel_id?",
+            scan.scan_before AS "scan_before?",scan.scanned AS "scanned!"
+        FROM scan LEFT JOIN visible v ON true
+        ORDER BY v.id DESC NULLS LAST LIMIT $5"#,
+            before,
+            query,
+            viewer,
+            followed,
+            limit,
+        )
+        .fetch_all(pool)
+        .await?,
+    ))
 }
 
 /// Whether an actor may be shown as a public video library. Native channels
@@ -100,9 +186,25 @@ pub async fn discover_channel(
     before: Option<i64>,
     limit: i64,
 ) -> Result<Vec<DiscoveryHit>, DbError> {
-    Ok(sqlx::query_as!(
-        DiscoveryHit,
-        r#"WITH candidates AS MATERIALIZED (
+    Ok(
+        discovery_page(pool, Some(channel_id), query, viewer, false, before, limit)
+            .await?
+            .hits,
+    )
+}
+
+async fn channel_window(
+    pool: &sqlx::PgPool,
+    channel_id: i64,
+    query: Option<&str>,
+    viewer: Option<i64>,
+    before: Option<i64>,
+    limit: i64,
+) -> Result<DiscoveryPage, DbError> {
+    Ok(window(
+        sqlx::query_as!(
+            DiscoveryRow,
+            r#"WITH candidates AS MATERIALIZED (
             SELECT scoped.id, scoped.account_id, scoped.channel_id FROM (
                 (SELECT s.id, s.account_id, v.channel_id
                  FROM video_publications v JOIN statuses s ON s.id = v.status_id
@@ -155,19 +257,26 @@ pub async fn discover_channel(
                  ORDER BY s.id DESC LIMIT 1000)
             ) scoped ORDER BY scoped.id DESC LIMIT 1000
         )
-        SELECT c.id AS "status_id!", c.channel_id AS "channel_id!"
-        FROM candidates c
-        WHERE NOT account_hidden($4, c.account_id)
-          AND NOT account_hidden($4, c.channel_id)
-        ORDER BY c.id DESC LIMIT $5"#,
-        channel_id,
-        before,
-        query,
-        viewer,
-        limit,
-    )
-    .fetch_all(pool)
-    .await?)
+        , visible AS (
+            SELECT c.id, c.channel_id FROM candidates c
+            LEFT JOIN video_channels vc ON vc.account_id=c.channel_id
+            WHERE NOT account_hidden($4, c.account_id)
+              AND NOT account_hidden($4, c.channel_id)
+              AND (vc.owner_account_id IS NULL OR NOT account_hidden($4, vc.owner_account_id))
+        ), scan AS (SELECT min(id) AS scan_before,count(*) AS scanned FROM candidates)
+        SELECT v.id AS "status_id?", v.channel_id AS "channel_id?",
+            scan.scan_before AS "scan_before?",scan.scanned AS "scanned!"
+        FROM scan LEFT JOIN visible v ON true
+        ORDER BY v.id DESC NULLS LAST LIMIT $5"#,
+            channel_id,
+            before,
+            query,
+            viewer,
+            limit,
+        )
+        .fetch_all(pool)
+        .await?,
+    ))
 }
 
 /// Reconciles the verified channel of an imported Video. An Update can move a

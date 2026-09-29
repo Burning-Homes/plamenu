@@ -167,6 +167,8 @@ pub async fn finalize(
                     &publication.content_type,
                 ),
                 title: Some(&publication.title),
+                spoiler_text: &publication.spoiler_text,
+                sensitive: publication.sensitive,
                 ..Default::default()
             };
             crate::actions::post_recurring_live_replay(

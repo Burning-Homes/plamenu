@@ -243,6 +243,7 @@ async fn draft_update_inner(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return Ok(csrf_rejection());
     }
+    user.current.require_scope("write:media")?;
     let media = media::find_by_ids(&state.pool, &[id])
         .await?
         .into_iter()
@@ -287,6 +288,8 @@ async fn published_update_inner(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return Ok(csrf_rejection());
     }
+    user.current.require_scope("write:media")?;
+    user.current.require_scope("write:statuses")?;
     video_captions::owned_publication(&state.pool, id, user.current.account.id)
         .await?
         .ok_or(ApiError::NotFound)?;

@@ -2,6 +2,7 @@
 """Run the browser accessibility matrix against an isolated Plamenu fixture."""
 
 import ipaddress
+import hashlib
 import os
 import secrets
 import shutil
@@ -27,6 +28,18 @@ def run(*args, **kwargs):
     return subprocess.run(args, cwd=ROOT, check=True, **kwargs)
 
 
+def browser_image():
+    """Cache the pinned engines plus a real, distro-packaged test encoder."""
+    dockerfile = ROOT / "accessibility/Dockerfile"
+    image = "plamenu-accessibility-encoder:" + hashlib.sha256(dockerfile.read_bytes()).hexdigest()[:16]
+    present = subprocess.run(["docker", "image", "inspect", image],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    if present.returncode:
+        run("docker", "build", "--file", dockerfile, "--tag", image, ROOT / "accessibility")
+    run("docker", "run", "--rm", image, "ffmpeg", "-version", stdout=subprocess.DEVNULL)
+    return image
+
+
 def free_port(address="127.0.0.1"):
     with socket.socket() as listener:
         listener.bind((address, 0))
@@ -43,6 +56,9 @@ def seed_native_draft_pages(container, fixture, video):
     run("docker", "exec", "-i", container, "psql", "-U", "postgres", "-d", "plamenu_a11y",
         "-v", f"source_bytes={video.stat().st_size}", "-v", f"poster_bytes={poster.stat().st_size}",
         input=(ROOT / "accessibility/fixtures/native-drafts.sql").read_text(), text=True,
+        stdout=subprocess.DEVNULL)
+    run("docker", "exec", "-i", container, "psql", "-U", "postgres", "-d", "plamenu_a11y",
+        input=(ROOT / "accessibility/fixtures/video-catalogue.sql").read_text(), text=True,
         stdout=subprocess.DEVNULL)
     for media_id in range(9001, 9015):
         shutil.copyfile(video, media / f"{media_id}.orig")
@@ -109,6 +125,9 @@ def wait_for_https(name, url):
 
 
 def main():
+    if sys.argv[1:] == ["--prepare-browser-image"]:
+        print(browser_image())
+        return 0
     for tool in ("cargo", "curl", "docker", "npm", "ffmpeg"):
         if not shutil.which(tool):
             print(f"Accessibility fixture requires {tool}", file=sys.stderr)
@@ -119,6 +138,7 @@ def main():
     server = None
     log_handle = None
     local_browsers = os.environ.get("A11Y_LOCAL_BROWSERS") == "1"
+    encoder_image = BROWSER_IMAGE if local_browsers else browser_image()
     with tempfile.TemporaryDirectory(prefix="plamenu-a11y-") as temporary:
         fixture = Path(temporary)
         try:
@@ -207,7 +227,7 @@ def main():
                     )
                 )
             app_port = free_port(app_address)
-            live_port = free_port()
+            live_port = free_port(app_address)
             database_url = (
                 f"postgres://postgres:{password}@127.0.0.1:{database_port}/plamenu_a11y"
             )
@@ -215,14 +235,17 @@ def main():
             # Explicit local-peer import drills permit local addresses; ordinary
             # browser fixtures retain the production-default SSRF guards.
             import_private_fetch = (
-                "allow_private_fetch = true\n" if os.environ.get("A11Y_IMPORT_SOURCE_URL") else ""
+                "allow_private_fetch = true\n" if (os.environ.get("A11Y_IMPORT_SOURCE_URL") or os.environ.get("A11Y_SOURCE_SYNC_URL")) else ""
             )
             config.write_text(
                 'domain = "localhost"\n'
                 f'{import_private_fetch}'
                 f'database_url = "{database_url}"\n'
                 f'bind = "{app_address}:{app_port}"\n'
-                f'live_ingest_bind = "127.0.0.1:{live_port}"\n'
+                # External encoder tests run in the browser/TLS namespace.
+                # Bind only the same isolated host-side address as HTTP; a
+                # container's loopback cannot reach the host's loopback.
+                f'live_ingest_bind = "{app_address}:{live_port}"\n'
                 f'media_dir = "{fixture / "media"}"\n'
                 'encryption_secret = "plamenu-accessibility-fixture-only"\n'
                 "encryption_secret_version = 1\n"
@@ -385,8 +408,16 @@ def main():
                     "A11Y_AUDIO_FIXTURE=/tmp/native-audio.m4a",
                     "--env",
                     "A11Y_POSTER_FIXTURE=/tmp/native-poster.png",
+                    "--env",
+                    f"A11Y_LIVE_INGEST_HOST={app_address}",
+                    "--env",
+                    "A11Y_BROWSER_IMAGE=" + subprocess.check_output(
+                        ["docker", "image", "inspect", "--format", "{{.Id}}", encoder_image], text=True
+                    ).strip(),
                     *(["--env", f"A11Y_IMPORT_SOURCE_URL={os.environ['A11Y_IMPORT_SOURCE_URL']}"]
                       if os.environ.get("A11Y_IMPORT_SOURCE_URL") else []),
+                    *(["--env", f"A11Y_SOURCE_SYNC_URL={os.environ['A11Y_SOURCE_SYNC_URL']}"]
+                      if os.environ.get("A11Y_SOURCE_SYNC_URL") else []),
                     "--volume",
                     f"{video_fixture}:/tmp/native-video.mp4:ro",
                     "--volume",
@@ -409,7 +440,7 @@ def main():
                     *git_mount,
                     "--workdir",
                     str(ROOT),
-                    BROWSER_IMAGE,
+                    encoder_image,
                     "npm",
                     "--prefix",
                     "accessibility",

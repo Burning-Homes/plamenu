@@ -42,8 +42,10 @@ pub async fn create(
     permanent: bool,
     playback: native_live::PlaybackOptions,
     scheduled_starts: &[OffsetDateTime],
+    metadata: &crate::video_metadata::Input,
 ) -> Result<Created, ApiError> {
     validate_schedules(scheduled_starts)?;
+    crate::video_metadata::authoring(metadata)?;
     if !(3..=120).contains(&title.trim().chars().count())
         || description.chars().count() > 10_000
         || !matches!(visibility, "public" | "unlisted")
@@ -69,19 +71,25 @@ pub async fn create(
     .ok_or(ApiError::Forbidden(
         "This channel cannot create another live broadcast".into(),
     ))?;
-    let result = crate::actions::post_video(
-        state,
-        PostParams {
-            username: &owner.username,
-            media_ids: &[media_id],
-            title: Some(title.trim()),
-            text: description,
-            language,
-            visibility,
-            ..Default::default()
-        },
-        channel_id,
-    )
+    let result = async {
+        let metadata = crate::video_metadata::draft(state, owner.id, media_id, metadata).await?;
+        crate::actions::post_video(
+            state,
+            PostParams {
+                username: &owner.username,
+                media_ids: &[media_id],
+                title: Some(title.trim()),
+                text: description,
+                language,
+                visibility,
+                spoiler_text: &metadata.spoiler_text,
+                sensitive: metadata.sensitive,
+                ..Default::default()
+            },
+            channel_id,
+        )
+        .await
+    }
     .await;
     let status = match result {
         Ok((status, _)) => status,
