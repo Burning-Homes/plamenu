@@ -235,6 +235,14 @@ pub(super) async fn review_inner(
         visibility: draft.visibility,
         alt: media.description.unwrap_or_default(),
         transcript: media.transcript.unwrap_or_default(),
+        visual_audio: if media.audio_described {
+            "audio_description"
+        } else if media.visuals_conveyed_in_audio {
+            "soundtrack"
+        } else {
+            ""
+        }
+        .to_owned(),
         poster_time: draft.poster_time_seconds.to_string(),
         poster_alt: draft.poster_alt,
         media_id: Some(id),

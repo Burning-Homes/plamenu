@@ -7,6 +7,7 @@
 - [Web interface](members/index.md)
   - [Posting](members/posting.md)
   - [Account settings and safety](members/account-and-safety.md)
+  - [Accessible video metadata](VIDEO_ACCESSIBILITY.md)
 - [Known issues](KNOWN_ISSUES.md)
 
 # Install and operate
@@ -38,6 +39,7 @@
   - [OAuth](api/authentication.md)
 - [Lemmy API (experimental)](LEMMY_API_COMPATIBILITY.md)
 - [ActivityPub protocol and extensions](federation/protocol.md)
+  - [Media alternatives vocabulary](federation/media.md)
   - [Webxdc FEP draft](fep/fep-752d.md)
   - [Webxdc app libraries and catalogs](WEBXDC-LIBRARY.md)
 - [Interoperability testing](INTEROPERABILITY.md)

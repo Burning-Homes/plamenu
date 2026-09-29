@@ -5339,6 +5339,7 @@ img.reaction__emoji {
 
 .settings-form__group {
   display: grid;
+  min-inline-size: 0;
   gap: var(--space-4);
   padding: var(--space-5);
   border: 1px solid var(--border);
@@ -5362,6 +5363,7 @@ img.reaction__emoji {
 
 .settings-field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
 }
 
@@ -5372,6 +5374,17 @@ img.reaction__emoji {
 .settings-field__hint {
   color: var(--text-muted);
   font-size: var(--text-sm);
+}
+
+/* WebKit can include a native control's long value in the page's scrollable
+   overflow even when its box fits. Confine only the control's inner text, not
+   the label or focus outline. Native text scrolling/pickers remain operable. */
+.settings-field input,
+.settings-field select {
+  min-inline-size: 0;
+  contain: paint;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .settings-field__pair {

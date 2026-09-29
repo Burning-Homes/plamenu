@@ -1359,6 +1359,7 @@ pub async fn cancel_event(
         &user.current.account,
         id,
         actions::EditParams {
+            media_accessibility: Vec::new(),
             title: None,
             text: None,
             content_type: None,
@@ -1742,6 +1743,10 @@ pub async fn quote_policy(
 /// dry-run entity; immutable context (poll, quote, event and group attribution)
 /// is copied from the currently rendered status so editing never makes those
 /// parts disappear from Preview.
+#[expect(
+    clippy::too_many_lines,
+    reason = "one in-memory edit preview with all current status metadata"
+)]
 async fn build_edit_preview_card(
     state: &AppState,
     user: &WebUser,
@@ -1798,6 +1803,24 @@ async fn build_edit_preview_card(
     // The preview serializer reads current media rows. Overlay submitted alt
     // text in memory so Preview shows what Save changes would publish without
     // updating the attachment itself.
+    if let Some(items) = value
+        .get_mut("media_attachments")
+        .and_then(Value::as_array_mut)
+    {
+        for item in items {
+            if let Some(next) = prepared
+                .kept_media
+                .iter()
+                .find(|m| item["id"].as_str().is_some_and(|id| id == m.id.to_string()))
+            {
+                item["transcript"] = serde_json::json!(next.transcript);
+                item["decorative"] = serde_json::json!(next.decorative);
+                item["audio_described"] = serde_json::json!(next.audio_described);
+                item["visuals_conveyed_in_audio"] =
+                    serde_json::json!(next.visuals_conveyed_in_audio);
+            }
+        }
+    }
     if let Some(media) = value
         .get_mut("media_attachments")
         .and_then(Value::as_array_mut)
@@ -2004,13 +2027,13 @@ pub async fn edit(
             &pairs,
             &format!("media_visual_audio_{media_id}"),
         ));
-        media_accessibility.push((
-            *media_id,
+        media_accessibility.push(actions::MediaAccessibilityEdit {
+            id: *media_id,
             transcript,
             decorative,
             audio_described,
             visuals_conveyed_in_audio,
-        ));
+        });
     }
     // The sensitive checkbox rides over a hidden `false`, so the last value
     // wins; no field at all (a post without media) keeps the current flag.
@@ -2040,6 +2063,7 @@ pub async fn edit(
         media_ids: Some(media_keep.clone()),
         quote_approval_policy,
         media_attributes,
+        media_accessibility,
         // Event edits ride their own action (`/web/statuses/{id}/event`), so
         // the ordinary edit form never rewrites event fields by omission.
         event: None,
@@ -2117,29 +2141,7 @@ pub async fn edit(
 
     let result = actions::edit_status(&state, &user.current.account, id, params).await;
     match result {
-        Ok(_) => {
-            for (media_id, transcript, decorative, audio_described, visuals_conveyed_in_audio) in
-                media_accessibility
-            {
-                if let Err(err) = media::update_edit_accessibility(
-                    &state.pool,
-                    media_id,
-                    user.current.account.id,
-                    media::AccessibilityUpdate {
-                        transcript: transcript.as_deref(),
-                        decorative,
-                        audio_described,
-                        visuals_conveyed_in_audio,
-                        ..Default::default()
-                    },
-                )
-                .await
-                {
-                    return ApiError::from(err).into_response();
-                }
-            }
-            redirect_to(&format!("/@{}/{id}", user.current.account.username))
-        }
+        Ok(_) => redirect_to(&format!("/@{}/{id}", user.current.account.username)),
         Err(err) => err.into_response(),
     }
 }

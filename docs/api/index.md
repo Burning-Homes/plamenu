@@ -115,6 +115,16 @@ video interoperability is tracked separately in the [AP09 inventory](../AP09-FEA
   Status editor. `/videos/{media_id}/metadata` is the equivalent owner-only HTML
   editor, linked from `/videos` and the Video's ordinary edit form.
 
+JSON `PUT /api/v1/statuses/{id}` additionally accepts `media_accessibility` entries
+`{id, transcript, decorative, audio_described, visuals_conveyed_in_audio}` for
+kept attachments. Omit the array to retain alternatives; each supplied entry
+fully replaces that attachment's structured alternatives. Null/empty transcript
+clears it, a 50,000-character limit applies, and the two soundtrack claims
+cannot both be true. The update shares the status edit/outbox transaction and
+channel authority. The Status media entity includes equivalent keys and
+language-specific caption/transcript links. See [Video accessibility](../VIDEO_ACCESSIBILITY.md)
+and the [federated alternative vocabulary](../federation/media.md).
+
 Video attachments include a Plamenu `video_metadata` extension when metadata
 has been stored. This uses the same category/licence shape as the edit response,
 in draft previews, scheduled statuses and published/imported Status entities.

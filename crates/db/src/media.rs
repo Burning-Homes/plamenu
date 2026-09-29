@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use sqlx::{PgExecutor, PgPool};
+use sqlx::{PgConnection, PgExecutor, PgPool};
 use time::OffsetDateTime;
 
 use crate::{DbError, id};
@@ -59,8 +59,8 @@ pub struct Media {
     /// `None` for plain-mp4 media, and for a live that has not started yet.
     pub hls_master_url: Option<String>,
     /// Plain-text transcript (video transcripts should also describe important
-    /// visual information). Local authoring only; federated support has no
-    /// interoperable `ActivityPub` field yet.
+    /// visual information). Native Videos federate this as schema:transcript;
+    /// peers that do not support it still receive ordinary timed captions.
     pub transcript: Option<String>,
     /// Author-supplied `WebVTT` captions, served from a same-origin media route.
     pub caption_vtt: Option<String>,
@@ -1979,7 +1979,7 @@ pub async fn update_accessibility(
 /// validated that it belongs to the edited local status. Captions are retained:
 /// the urlencoded edit form cannot carry a replacement file.
 pub async fn update_edit_accessibility(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     media_id: i64,
     account_id: i64,
     update: AccessibilityUpdate<'_>,
@@ -1999,7 +1999,7 @@ pub async fn update_edit_accessibility(
         update.audio_described,
         update.visuals_conveyed_in_audio,
     )
-    .fetch_optional(pool)
+    .fetch_optional(conn)
     .await?;
     Ok(updated.is_some())
 }

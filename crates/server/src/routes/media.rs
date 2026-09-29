@@ -572,10 +572,12 @@ pub async fn serve(
 pub async fn captions(
     State(state): State<AppState>,
     Path(media_id): Path<i64>,
+    Query(query): Query<CaptionRevision>,
 ) -> Result<Response, ApiError> {
     let body = media::public_caption_vtt(&state.pool, media_id)
         .await?
         .ok_or(ApiError::NotFound)?;
+    check_caption_revision(query.v.as_deref(), &body)?;
     Ok((
         [
             (header::CONTENT_TYPE, "text/vtt; charset=utf-8"),
@@ -592,9 +594,13 @@ pub async fn captions(
 pub async fn language_caption(
     State(state): State<AppState>,
     Path((media_id, name)): Path<(i64, String)>,
+    Query(query): Query<CaptionRevision>,
 ) -> Result<Response, ApiError> {
     let language = name.strip_suffix(".vtt").ok_or(ApiError::NotFound)?;
     let (body, remote) = public_language_caption_text(&state, media_id, language).await?;
+    if !remote {
+        check_caption_revision(query.v.as_deref(), &body)?;
+    }
     Ok((
         [
             (header::CONTENT_TYPE, "text/vtt; charset=utf-8"),
@@ -606,6 +612,23 @@ pub async fn language_caption(
         body,
     )
         .into_response())
+}
+
+#[derive(Deserialize)]
+pub struct CaptionRevision {
+    v: Option<String>,
+}
+
+fn check_caption_revision(revision: Option<&str>, body: &str) -> Result<(), ApiError> {
+    use base64::Engine as _;
+    use sha2::{Digest, Sha256};
+    if let Some(revision) = revision {
+        let hash = Sha256::digest(body.as_bytes());
+        if revision != base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&hash[..12]) {
+            return Err(ApiError::NotFound);
+        }
+    }
+    Ok(())
 }
 
 /// Shared by the raw track and the opt-in, server-rendered text transcript.

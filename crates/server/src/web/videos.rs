@@ -26,6 +26,7 @@ pub(super) struct Draft {
     pub visibility: String,
     pub alt: String,
     pub transcript: String,
+    pub visual_audio: String,
     pub poster_time: String,
     pub poster_alt: Option<String>,
     pub media_id: Option<i64>,
@@ -332,7 +333,7 @@ pub(super) async fn page(
                             }
                             label.settings-field {
                                 span.settings-field__label { (locale.text("videos-alt")) }
-                                textarea name="alt" rows="3" { (draft.alt) }
+                                textarea name="alt" rows="3" maxlength="1500" { (draft.alt) }
                             }
                             label.settings-field {
                                 span.settings-field__label { (locale.text("videos-captions")) }
@@ -340,7 +341,16 @@ pub(super) async fn page(
                             }
                             label.settings-field {
                                 span.settings-field__label { (locale.text("videos-transcript")) }
-                                textarea name="transcript" rows="5" { (draft.transcript) }
+                                textarea name="transcript" rows="5" maxlength="50000" aria-describedby="video-transcript-hint" { (draft.transcript) }
+                            }
+                            p.settings-field__hint id="video-transcript-hint" { (locale.text("compose-transcript-description")) }
+                            label.settings-field {
+                                span.settings-field__label { (locale.text("compose-visual-audio")) }
+                                select name="visual_audio" {
+                                    option value="" selected[draft.visual_audio.is_empty()] { (locale.text("compose-visual-audio-none")) }
+                                    option value="audio_description" selected[draft.visual_audio == "audio_description"] { (locale.text("compose-audio-described")) }
+                                    option value="soundtrack" selected[draft.visual_audio == "soundtrack"] { (locale.text("compose-visuals-in-audio")) }
+                                }
                             }
                         }
                     } @else {
@@ -666,6 +676,8 @@ async fn submit_inner(
         }
         let limit = if name == "captions" {
             super::actions::MAX_CAPTION_BYTES
+        } else if name == "transcript" {
+            200_000
         } else {
             64 * 1024
         };
@@ -693,6 +705,7 @@ async fn submit_inner(
             "sensitive" => draft.sensitive = crate::routes::params::truthy(Some(&value)),
             "alt" => draft.alt = value,
             "transcript" => draft.transcript = value,
+            "visual_audio" => draft.visual_audio = value,
             "media_id" => draft.media_id = value.parse().ok(),
             _ => {}
         }
@@ -701,6 +714,7 @@ async fn submit_inner(
         return Ok(csrf_rejection());
     }
     if let Some(id) = *reserved {
+        validate_alternatives(draft)?;
         let (file, length) = upload.ok_or_else(|| {
             ApiError::Unprocessable("Choose a non-empty video or audio file".into())
         })?;
@@ -712,6 +726,7 @@ async fn submit_inner(
             length,
             draft.alt.clone(),
             draft.transcript.clone(),
+            draft.visual_audio.clone(),
             captions,
         )
         .await?;
@@ -733,6 +748,7 @@ pub(super) async fn reserve_upload(
     fingerprint: Option<&str>,
     captions: Option<&str>,
 ) -> Result<i64, ApiError> {
+    validate_alternatives(draft)?;
     let channel_id: i64 = draft
         .channel
         .parse()
@@ -817,6 +833,9 @@ pub(super) async fn reserve_upload(
     };
     match video_draft::reserve(&state.pool, &new, &limits).await? {
         video_draft::Admission::Accepted => {
+            sqlx::query("UPDATE media_attachments SET audio_described=$2, visuals_conveyed_in_audio=$3 WHERE id=$1 AND status_id IS NULL")
+                .bind(id).bind(draft.visual_audio == "audio_description").bind(draft.visual_audio == "soundtrack")
+                .execute(&state.pool).await.map_err(plamenu_db::DbError::from)?;
             if let Err(error) = save_options(state, user.current.account.id, id, draft).await {
                 video_draft::cancel(&state.pool, id, user.current.account.id).await?;
                 return Err(error);
@@ -849,6 +868,7 @@ async fn finish_upload(
     bytes: i64,
     alt: String,
     transcript: String,
+    visual_audio: String,
     captions: Option<String>,
 ) -> Result<(), ApiError> {
     tokio::spawn(async move {
@@ -879,6 +899,9 @@ async fn finish_upload(
         .execute(&mut *tx)
         .await
         .map_err(plamenu_db::DbError::from)?;
+        sqlx::query("UPDATE media_attachments SET audio_described=$2, visuals_conveyed_in_audio=$3 WHERE id=$1")
+            .bind(id).bind(visual_audio == "audio_description").bind(visual_audio == "soundtrack")
+            .execute(&mut *tx).await.map_err(plamenu_db::DbError::from)?;
         if !video_draft::finish_receiving(&mut tx, id, owner, bytes).await? {
             return Err(ApiError::Conflict(
                 "Video upload was cancelled or expired".into(),
@@ -889,6 +912,21 @@ async fn finish_upload(
     })
     .await
     .map_err(|error| ApiError::Internal(Box::new(error)))?
+}
+
+fn validate_alternatives(draft: &Draft) -> Result<(), ApiError> {
+    if draft.alt.chars().count() > 1_500
+        || draft.transcript.chars().count() > 50_000
+        || draft.transcript.contains('\0')
+        || draft.alt.contains('\0')
+        || !matches!(
+            draft.visual_audio.as_str(),
+            "" | "audio_description" | "soundtrack"
+        )
+    {
+        return Err(ApiError::Unprocessable("Invalid Video alternatives".into()));
+    }
+    Ok(())
 }
 
 async fn process(

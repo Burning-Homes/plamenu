@@ -1237,6 +1237,7 @@ async fn moving_and_cancelling_an_event_notifies_every_live_rsvp(pool: PgPool) {
         &grace,
         item.id,
         plamenu::actions::EditParams {
+            media_accessibility: Vec::new(),
             title: None,
             text: None,
             content_type: None,
@@ -1286,6 +1287,7 @@ async fn moving_and_cancelling_an_event_notifies_every_live_rsvp(pool: PgPool) {
         &grace,
         item.id,
         plamenu::actions::EditParams {
+            media_accessibility: Vec::new(),
             title: None,
             text: None,
             content_type: None,
@@ -1353,6 +1355,7 @@ async fn an_edit_never_promotes_a_note_into_an_event(pool: PgPool) {
         &grace,
         note.id,
         plamenu::actions::EditParams {
+            media_accessibility: Vec::new(),
             title: None,
             text: Some("an ordinary note, edited"),
             content_type: None,
@@ -1407,6 +1410,7 @@ async fn an_event_update_reaches_remote_attendees_who_follow_nobody(pool: PgPool
         &grace,
         item.id,
         plamenu::actions::EditParams {
+            media_accessibility: Vec::new(),
             title: None,
             text: None,
             content_type: None,

@@ -1,6 +1,217 @@
 //! Native Video is an owned publication, not a renamed attachment Note.
 mod common;
 
+#[sqlx::test(migrations = "../db/migrations")]
+async fn video_alternatives_edit_atomically_with_original_signer_and_collaborator_authority(
+    pool: PgPool,
+) {
+    let alice = common::create_immutable_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let remote = RemoteUser::new("remote.test", "viewer");
+    let stub = StubFederation::with_users(&[&remote]);
+    let state = test_state_with(pool.clone(), stub.clone());
+    let channel = plamenu::video::create_channel(&state, &alice, "films", "Films")
+        .await
+        .unwrap();
+    let viewer = plamenu::remote::store_remote_actor(&pool, &remote.actor)
+        .await
+        .unwrap();
+    follow::create(&pool, viewer.id, channel.id, None)
+        .await
+        .unwrap();
+    let film = video_media(&pool, alice.id).await;
+    let (posted, _) = actions::post_video(&state, params("alice", &[film.id]), channel.id)
+        .await
+        .unwrap();
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "invite",
+        Some("bob"),
+        Some("editor"),
+        None,
+    )
+    .await
+    .unwrap();
+    channel_change(&state, &bob, channel.id, "accept", None, None, None)
+        .await
+        .unwrap();
+    let edit = |text: &str| EditParams {
+        media_accessibility: vec![actions::MediaAccessibilityEdit {
+            id: film.id,
+            transcript: Some(text.to_owned()),
+            decorative: false,
+            audio_described: true,
+            visuals_conveyed_in_audio: false,
+        }],
+        ..Default::default()
+    };
+    sqlx::query("CREATE FUNCTION fail_alternative_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected outbox failure'; END $$").execute(&pool).await.unwrap();
+    sqlx::query("CREATE TRIGGER fail_alternative_delivery BEFORE INSERT ON delivery_jobs FOR EACH ROW EXECUTE FUNCTION fail_alternative_delivery()").execute(&pool).await.unwrap();
+    assert!(
+        actions::edit_status(&state, &bob, posted.id, edit("Rejected transcript"))
+            .await
+            .is_err()
+    );
+    let before = media::find_by_ids(&pool, &[film.id])
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert!(before.transcript.is_none() && !before.audio_described);
+    assert!(
+        plamenu_db::status::find_by_id(&pool, posted.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .edited_at
+            .is_none()
+    );
+    sqlx::query("DROP TRIGGER fail_alternative_delivery ON delivery_jobs")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let edited = actions::edit_status(
+        &state,
+        &bob,
+        posted.id,
+        edit("The narrator says <Publish>.\nA blue circle moves right."),
+    )
+    .await
+    .unwrap();
+    let wire = plamenu::note::note_for_status(&state, &edited, &alice)
+        .await
+        .unwrap();
+    assert_eq!(
+        wire["transcript"],
+        "The narrator says <Publish>.\nA blue circle moves right."
+    );
+    assert_eq!(
+        wire["visualDescription"],
+        "A blue circle moving across the screen"
+    );
+    assert_eq!(wire["audioDescribed"], true);
+    assert_eq!(wire["visualsConveyedInAudio"], false);
+    plamenu::delivery::run_due(&state).await;
+    assert!(
+        stub.deliveries()
+            .iter()
+            .any(|d| d.activity["type"] == "Update"
+                && d.activity["object"]["transcript"] == wire["transcript"]
+                && d.activity["actor"] == alice.uri.as_deref().unwrap())
+    );
+    channel_change(
+        &state,
+        &alice,
+        channel.id,
+        "revoke",
+        Some("bob"),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(
+        actions::edit_status(&state, &bob, posted.id, edit("Forbidden"))
+            .await
+            .is_err()
+    );
+    assert!(
+        actions::edit_status(&state, &alice, posted.id, edit(&"x".repeat(50_001)))
+            .await
+            .is_err()
+    );
+    let cleared = actions::edit_status(
+        &state,
+        &alice,
+        posted.id,
+        EditParams {
+            media_accessibility: vec![actions::MediaAccessibilityEdit {
+                id: film.id,
+                transcript: None,
+                decorative: false,
+                audio_described: false,
+                visuals_conveyed_in_audio: true,
+            }],
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let wire = plamenu::note::note_for_status(&state, &cleared, &alice)
+        .await
+        .unwrap();
+    assert!(wire["transcript"].is_null());
+    assert_eq!(wire["audioDescribed"], false);
+    assert_eq!(wire["visualsConveyedInAudio"], true);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn remote_video_alternatives_survive_edit_and_clear_without_replacing_media(pool: PgPool) {
+    use serde_json::json;
+    let remote = RemoteUser::new("remote.test", "uploader");
+    let stub = StubFederation::with_users(&[&remote]);
+    let state = test_state_with(pool.clone(), stub);
+    let author = plamenu::remote::store_remote_actor(&pool, &remote.actor)
+        .await
+        .unwrap();
+    let mut object = json!({"type":"Video", "id":"https://remote.test/videos/alternatives", "attributedTo":remote.actor.id,
+        "to":["https://www.w3.org/ns/activitystreams#Public"], "name":"Alternative film", "content":"A film", "duration":"PT20S",
+        "url":[{"type":"Link","mediaType":"application/x-mpegURL","href":"https://remote.test/media/master.m3u8", "tag":[{"type":"Link","mediaType":"video/mp4","href":"https://remote.test/media/video.mp4","height":360}]}],
+        "transcript":"Spoken words and a visual scene", "visualDescription":"<script>literal scene</script>", "audioDescribed":true});
+    let stored = plamenu::ingest::ingest_remote_note(&state, &author, &object)
+        .await
+        .unwrap();
+    let initial = media::for_statuses_read_only(&pool, &[stored.id])
+        .await
+        .unwrap()
+        .remove(&stored.id)
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(
+        initial.transcript.as_deref(),
+        Some("Spoken words and a visual scene")
+    );
+    assert!(initial.audio_described && !initial.visuals_conveyed_in_audio);
+    object["transcript"] = json!("Revised spoken words");
+    object["audioDescribed"] = json!(false);
+    object["visualsConveyedInAudio"] = json!(true);
+    let edited = plamenu::ingest::update_remote_note(&state, &author, &stored, &object)
+        .await
+        .unwrap();
+    let revised = media::for_statuses_read_only(&pool, &[stored.id])
+        .await
+        .unwrap()
+        .remove(&stored.id)
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(revised.id, initial.id);
+    assert_eq!(revised.transcript.as_deref(), Some("Revised spoken words"));
+    assert!(!revised.audio_described && revised.visuals_conveyed_in_audio);
+    object["transcript"] = json!("x".repeat(50_001));
+    object["visualDescription"] = serde_json::Value::Null;
+    object["visualsConveyedInAudio"] = json!(false);
+    plamenu::ingest::update_remote_note(&state, &author, &edited, &object)
+        .await
+        .unwrap();
+    let cleared = media::for_statuses_read_only(&pool, &[stored.id])
+        .await
+        .unwrap()
+        .remove(&stored.id)
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(cleared.id, initial.id);
+    assert!(
+        cleared.transcript.is_none()
+            && cleared.description.is_none()
+            && !cleared.visuals_conveyed_in_audio
+    );
+}
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use common::{RemoteUser, StubFederation, create_local_account, test_state_with};

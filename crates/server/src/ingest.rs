@@ -2186,7 +2186,10 @@ fn attachment_pairs(object: &Value, caps: MediaCaps) -> Vec<(String, Option<Stri
     if pairs.len() < MAX_REMOTE_ATTACHMENTS
         && let Some(primary) = object_primary_media(object, caps)
     {
-        pairs.push((primary.url.to_owned(), None));
+        pairs.push((
+            primary.url.to_owned(),
+            remote_visual_description(object).map(str::to_owned),
+        ));
     }
     // Inline and structured images are independent channels. Merge both, using
     // inline alt text to fill a structured attachment whose description is
@@ -2447,6 +2450,7 @@ pub async fn update_remote_note_in_context(
     // redistributions. Refresh before the fast path, then after any media
     // reconciliation below so replacement rows inherit the same metadata.
     let video_metadata_changed = crate::video_metadata::ingest(state, existing.id, object).await?;
+    let alternatives_changed = store_remote_video_alternatives(state, existing.id, object).await?;
     if !context.is_history()
         && existing.object_type.as_deref() == Some("Video")
         && store_remote_video_channel(state, author, existing, object).await?
@@ -2470,6 +2474,7 @@ pub async fn update_remote_note_in_context(
     // the proxy keeps serving a stale, now-404 master URL).
     let stored_hls_master = media::hls_master_for_status(&state.pool, existing.id).await?;
     if !video_metadata_changed
+        && !alternatives_changed
         && content == existing.content
         && spoiler_text == existing.spoiler_text
         && sensitive == existing.sensitive
@@ -3637,6 +3642,7 @@ async fn store_remote_media_sidecars(
     is_hls: bool,
 ) -> Result<(), ApiError> {
     store_remote_captions(state, status_id, object).await?;
+    store_remote_video_alternatives(state, status_id, object).await?;
     store_remote_chapters(state, status_id, object).await?;
     if is_live {
         store_remote_live_schedules(state, status_id, object).await?;
@@ -3665,6 +3671,63 @@ async fn store_remote_captions(
         plamenu_db::video_captions::replace_remote(&state.pool, item.id, &tracks).await?;
     }
     Ok(())
+}
+
+/// No external fetches, markup execution or unbounded transcript allocation.
+/// Only the canonical Video primary receives root-level alternatives, never a
+/// neighbouring attachment. Absence clears an earlier extension on Update.
+async fn store_remote_video_alternatives(
+    state: &AppState,
+    status_id: i64,
+    object: &Value,
+) -> Result<bool, ApiError> {
+    if !object_type_in(object, &["Video"]) {
+        return Ok(false);
+    }
+    let primary = object_primary_media(object, MediaCaps::load(state).await?);
+    let Some(primary) = primary else {
+        return Ok(false);
+    };
+    let bounded = |key: &str, max| {
+        object
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|s| !s.contains('\0') && s.chars().count() <= max)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    };
+    let transcript = bounded("transcript", 50_000);
+    let description = remote_visual_description(object);
+    let described = object["audioDescribed"].as_bool().unwrap_or(false);
+    let conveyed = !described && object["visualsConveyedInAudio"].as_bool().unwrap_or(false);
+    let changed = sqlx::query(
+        "UPDATE media_attachments SET transcript=$3,
+        description=CASE WHEN $4 THEN $5 ELSE description END,
+        audio_described=$6, visuals_conveyed_in_audio=$7
+        WHERE status_id=$1 AND remote_url=$2 AND
+        (transcript IS DISTINCT FROM $3 OR ($4 AND description IS DISTINCT FROM $5)
+         OR audio_described IS DISTINCT FROM $6 OR visuals_conveyed_in_audio IS DISTINCT FROM $7)",
+    )
+    .bind(status_id)
+    .bind(primary.url)
+    .bind(transcript)
+    .bind(object.get("visualDescription").is_some())
+    .bind(description)
+    .bind(described)
+    .bind(conveyed)
+    .execute(&state.pool)
+    .await
+    .map_err(plamenu_db::DbError::from)?;
+    Ok(changed.rows_affected() > 0)
+}
+
+fn remote_visual_description(object: &Value) -> Option<&str> {
+    object
+        .get("visualDescription")
+        .and_then(Value::as_str)
+        .filter(|s| !s.contains('\0') && s.chars().count() <= 1_500)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
 }
 
 /// A remote Video may embed `hasParts` or point to a separately signed AP

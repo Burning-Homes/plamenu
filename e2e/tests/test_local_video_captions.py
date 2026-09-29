@@ -58,6 +58,8 @@ def test_local_caption_languages_review_publish_and_play(plamenu_api: Api, plame
                         ("visibility", (None, "public")),
                         ("file", ("captioned.mp4", sample.read_bytes(), "video/mp4")),
                         ("alt", (None, "Moving colour test pattern")),
+                        ("transcript", (None, "An audible tone accompanies a moving pattern.")),
+                        ("visual_audio", (None, "audio_description")),
                         ("captions", ("en.vtt", b"WEBVTT\n\n00:00:00.000 --> 00:00:10.000\nHello from Plamenu\n", "text/vtt")),
                         ("op", (None, "review")),
                     ],
@@ -144,6 +146,8 @@ def test_local_caption_languages_review_publish_and_play(plamenu_api: Api, plame
             assert published.status_code == 303, published.text[:500]
             published_id = published.headers["Location"].rsplit("/", 1)[1]
             status = plamenu_api.get_status(published_id)
+            assert status["media_attachments"][0]["audio_described"] is True
+            assert status["media_attachments"][0]["transcript"] == "An audible tone accompanies a moving pattern."
             tracks = status["media_attachments"][0]["captions"]
             assert [track["language"] for track in tracks] == ["en", "fr"]
             assert all(browser.get(track["url"], timeout=30).status_code == 200 for track in tracks)
@@ -264,6 +268,27 @@ def test_local_caption_languages_review_publish_and_play(plamenu_api: Api, plame
                  "Salut de Plamenu", '["es","fr"]'],
                 cwd=config.PLAMENU_DIR / "accessibility", check=True, timeout=120,
             )
+        with step("structured alternative edits commit before federation and retain caption languages"):
+            edited = plamenu_api._request("PUT", f"/api/v1/statuses/{published_id}", json={
+                "status": "A revised accessible film description.",
+                "media_accessibility": [{"id": draft_id, "transcript": "Revised speech and visual information.",
+                                      "audio_described": False, "visuals_conveyed_in_audio": True}],
+                "media_attributes": [{"id": draft_id, "description": "Revised changing colour pattern"}]})
+            attachment = edited["media_attachments"][0]
+            assert attachment["transcript"] == "Revised speech and visual information."
+            assert attachment["visuals_conveyed_in_audio"] is True and attachment["audio_described"] is False
+            assert [track["language"] for track in attachment["captions"]] == ["es", "fr"]
+            def description_updated():
+                # PeerTube 8.3 embeds the complete description in video details;
+                # the former separate /description endpoint no longer exists.
+                response = pt.video(remote['uuid'])
+                return response if "revised accessible film" in response.get("description", "") else None
+            wait_for(description_updated, desc="PeerTube accepts the supported description alongside additive alternatives", timeout=120)
+            assert {entry['language']['id'] for entry in pt.get(f"/api/v1/videos/{remote['uuid']}/captions")['data']} == {'es', 'fr'}
+            transcript = browser.get(attachment["captions"][1]["transcript_url"], timeout=30)
+            assert "Revised speech and visual information." in transcript.text
+            assert "Revised changing colour pattern" in transcript.text
+
         with step("deleted video captions stop serving immediately"):
             old_urls = [track["url"] for track in remaining]
             plamenu_api.delete_status(published_id)

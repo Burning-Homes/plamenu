@@ -133,7 +133,7 @@ before becoming `verified`. Keep partial results and failures visible.
 | M0 | Baseline and finite parity inventory | Current-version feature inventory; local peer/version records; baseline E2E; browser gap observations; product decisions | verified 2026-09-23 |
 | M1 | Channels and native publication | Channel/account lifecycle; authorized collaboration; real Plamenu Video accepted, playable and attributed correctly in PeerTube; edit/delete/follow exchange | verified 2026-09-29; see M1 sign-off below |
 | M2 | Long-form VOD pipeline | Large/resumable and no-JS uploads; durable processing; quality ladder; poster/storyboard; audio-only/silent inputs; failures/restart/quota evidence | in progress |
-| M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | in progress: captions and VOD chapters in both directions, no-JS/JS authoring and seeking; on-demand readable caption transcripts verified; wider browser/AT and description matrix pending |
+| M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | verified 2026-09-29 for the stated functional gate; see M3 sign-off below. Human AT/WCAG release evidence remains M9 |
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | verified 2026-09-29; see M4 sign-off below |
 | M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | verified 2026-09-25 for this stated functional gate; see the M5 sign-off below. Cross-node storage, additional device/browser combinations, and broader fault matrices remain in M7/M9, not silently counted as done |
 | M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders, scheduled VOD publication, in-session browser camera ↔ screen switching, and searchable/followable HTML video and channel libraries verified; larger/remote channel matrices, settings/imports, history and browser/hardware evidence remain |
@@ -292,6 +292,65 @@ plugin-ABI compatibility is claimed. M4 adds no companion service or native
 installation/maintenance step. M2/M3/M6/M7/M8/M9 retain their existing open gates;
 two closed functional milestones are not an overall parity percentage.
 
+## M3 sign-off — 2026-09-29
+
+Closed the original accessible-metadata functional gate. No acceptance gate was
+removed. Initial and published authoring distinguish visual descriptions,
+written alternatives, timed captions and author soundtrack statements. The
+HTML publisher, edit forms, caption language manager, chapters and readable
+caption transcript work without application scripts. Enhanced transcript and
+chapter links seek the inline player; native links retain media fragments.
+
+Alternative edits now participate in the original status transaction before
+the signed Update is constructed, rather than being written afterwards.
+Authorized collaborators use the original author's media authority and signer;
+outbox failure rolls back alternatives and the edit timestamp. Preview overlays
+the validated alternatives without writing. JSON client edits share this path.
+Canonical Video emission includes bounded schema.org transcript and namespaced
+visual-description/soundtrack statements; authorized remote Video updates
+retain/clear them on the canonical primary without replacing deferred media.
+PeerTube 8.3 accepts supported description/caption/chapter updates and ignores
+the additive alternatives. Lossless PeerTube re-export of extensions is not
+claimed. See [user/API guide](VIDEO_ACCESSIBILITY.md) and
+[federation vocabulary](federation/media.md).
+
+Evidence:
+
+- **74 focused Rust checks passed**: native_video (27), content_universe (21),
+  wire_shapes (12), edits (6), atomic_outbox (4), remote caption/chapter guards
+  (2), caption transcript parser (2). New regressions cover collaborative
+  alternative-only edits, original signer, injected outbox rollback,
+  revocation, oversize/clear semantics, escaped text and deferred-media identity.
+- **Five real PeerTube 8.3 E2E tests passed**: local/remote captions, local/remote
+  chapters and video metadata. Local initial alternatives follow the file in
+  a normal multipart form and survive finalization. Published JSON alternative
+  edits retain languages while PeerTube receives the supported description.
+  Result: `target/e2e/ap09-accessible-metadata-20260929.xml`.
+- **Seven browser projects passed** `video-accessible-metadata.spec.mjs`:
+  Chromium/Firefox/WebKit desktop and narrow/touch configurations, plus
+  scripts-disabled Chromium. Keyboard forms/disclosures, actual decoded frames
+  and active replaced French cues, readable transcript/seek links,
+  published alternatives, retained chapters, removal/revoked routes, 320px
+  reflow, reduced motion, forced colours and Axe checks pass. Evidence:
+  `target/accessibility/ap09-metadata-20260929/final/`.
+- Visual inspection of the real development upload form and keyboard-expanded
+  caption transcript confirmed readable layout, native disclosures and visible
+  focus. Browser screenshots include narrow transcript and forced colours.
+- Workspace all-target strict Clippy, SQLx metadata check, formatting,
+  whitespace and mdBook build passed.
+
+Failed runs remain in the evidence directory. They exposed late multipart
+soundtrack loss, caption URLs ignoring their revision, and WebKit native-control
+value painting overflowing the page. These are fixed. Further test fixes wait
+for decoded frames/removal completion, handle intentionally omitted empty
+optional metadata and use PeerTube 8.3's actual complete-description detail
+endpoint, not the removed separate endpoint.
+
+This is functional/browser evidence, not human screen-reader, real-mobile
+hardware or WCAG release certification. M9's independent human AT gate remains
+open. M2/M6/M7/M8/M9 and the wider inventory retain their original open scope.
+No new installation dependency, push, merge or staging deployment.
+
 ## Verification matrix
 
 For each applicable feature, record all of these separately:
@@ -368,12 +427,12 @@ unwatched remote videos do not trigger whole-file downloads.
 
 ## Next work
 
-M5's stated native-live gate is verified. AP09 remains open: M7 owns
-multi-node storage, operations and larger P2P pressure; M9 owns the wider
-browser/device and fault-injection matrix. M6 owns source-switching and
-reminder UX. M2 still owes difficult-input,
-maximum-size and concurrent-upload stress; M1 channel lifecycle/collaboration
-and several federation paths remain open. M5 completion is not AP09 completion.
+M0/M1/M3/M4/M5 have functional sign-offs. The current two-additional-milestone
+goal has closed M3 and now targets M2: broader bounded ladders, published
+posters/storyboards and maximum-size/concurrent-upload/recovery measurements.
+M6's remaining creator/viewer surfaces, M7's operations/scale and M9's wider
+fault, real-device and human AT release checks remain open. Milestone completion
+is not AP09 completion or a parity percentage.
 
 ### 2026-09-22 — publication slice and browser verification
 

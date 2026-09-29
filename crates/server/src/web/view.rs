@@ -3178,17 +3178,25 @@ fn alt_badge(alt: &str) -> Markup {
 /// player. For video, authoring guidance requires this text to include the
 /// important visual information as well as dialogue and meaningful sounds.
 fn media_transcript(item: &Value, language: Option<&str>, locale: Locale) -> Markup {
-    let Some(transcript) = item
+    let transcript = item
         .get("transcript")
         .and_then(Value::as_str)
-        .filter(|text| !text.is_empty())
-    else {
-        return html! {};
-    };
+        .filter(|text| !text.is_empty());
+    let described = item["audio_described"].as_bool().unwrap_or(false);
+    let conveyed = item["visuals_conveyed_in_audio"].as_bool().unwrap_or(false);
     html! {
-        details.media__transcript {
-            summary { (locale.text("status-transcript")) }
-            p lang=[language] { (transcript) }
+        @if let Some(transcript) = transcript {
+            details.media__transcript {
+                summary { (locale.text("status-transcript")) }
+                p lang=[language] { (transcript) }
+            }
+        }
+        @if described || conveyed {
+            details.media__transcript.media__alternatives {
+                summary { (locale.text("status-visual-alternatives")) }
+                p { (locale.text(if described { "compose-audio-described" } else { "compose-visuals-in-audio" })) }
+                p { (locale.text("status-visual-alternatives-hint")) }
+            }
         }
     }
 }

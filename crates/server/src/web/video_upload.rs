@@ -76,6 +76,8 @@ async fn initiate_inner(
         }
         let limit = if name == "captions" {
             super::actions::MAX_CAPTION_BYTES
+        } else if name == "transcript" {
+            200_000
         } else {
             64 * 1024
         };
@@ -102,6 +104,7 @@ async fn initiate_inner(
             "poster_time" => draft.poster_time = value,
             "alt" => draft.alt = value,
             "transcript" => draft.transcript = value,
+            "visual_audio" => draft.visual_audio = value,
             "source_size" => bytes = value.parse::<u64>().ok(),
             "source_fingerprint" => fingerprint = value,
             _ => {}

@@ -572,6 +572,13 @@ pub fn enrich_object(
             .collect::<Vec<_>>()
     );
     note["hasParts"] = json!(chapter_collection_url(&object_id, chapters));
+    // Additive alternatives: PeerTube understands captions/descriptions and
+    // safely ignores these extensions; compatible peers preserve their distinct
+    // semantics rather than treating captions as a visual description.
+    note["transcript"] = json!(media.transcript);
+    note["visualDescription"] = json!(media.description);
+    note["audioDescribed"] = json!(media.audio_described);
+    note["visualsConveyedInAudio"] = json!(media.visuals_conveyed_in_audio);
     Ok(())
 }
 
@@ -603,6 +610,10 @@ pub(crate) fn context() -> Value {
         .expect("quote context is an array")
         .push(json!({
             "sc":"http://schema.org/", "pt":"https://joinpeertube.org/ns#",
+            "transcript":"sc:transcript",
+            "visualDescription":"https://docs.plamenu.codefloe.page/federation/media#visualDescription",
+            "audioDescribed":"https://docs.plamenu.codefloe.page/federation/media#audioDescribed",
+            "visualsConveyedInAudio":"https://docs.plamenu.codefloe.page/federation/media#visualsConveyedInAudio",
             "subtitleLanguage":"sc:subtitleLanguage", "language":"sc:inLanguage",
             "category":"sc:category", "licence":"sc:license",
             "hasParts":"sc:hasParts",

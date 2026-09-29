@@ -2309,6 +2309,8 @@ pub struct EditParams<'a> {
     /// naming media outside the edited status' final attachment set are
     /// ignored, like Mastodon's `next_media_attachments` intersection.
     pub media_attributes: Vec<MediaEditAttributes>,
+    /// Structured alternatives participate in the same edit/outbox transaction.
+    pub media_accessibility: Vec<MediaAccessibilityEdit>,
     /// A new headline for a post that already has one — a long-form `Article` or
     /// a group `Page`. `None` keeps the stored title; a status with no title
     /// refuses one, because gaining a `name` would change what kind of object the
@@ -2333,6 +2335,15 @@ pub struct MediaEditAttributes {
     pub focus: Option<(f64, f64)>,
 }
 
+#[derive(Debug)]
+pub struct MediaAccessibilityEdit {
+    pub id: i64,
+    pub transcript: Option<String>,
+    pub decorative: bool,
+    pub audio_described: bool,
+    pub visuals_conveyed_in_audio: bool,
+}
+
 /// A fully validated status edit before any durable writes or federation.
 ///
 /// The web edit preview consumes this directly, while [`edit_status`] carries
@@ -2355,6 +2366,7 @@ pub(crate) struct PreparedStatusEdit {
     pub kept_media: Vec<media::Media>,
     pub current_media_ids: Vec<i64>,
     pub media_attributes: Vec<MediaEditAttributes>,
+    pub media_accessibility: Vec<MediaAccessibilityEdit>,
     pub composed: Composed,
     /// The exact content that Save changes would store, including a quote
     /// compatibility fallback when this is a quote post.
@@ -2546,7 +2558,7 @@ pub(crate) async fn prepare_status_edit(
     };
     let effective_title = title.clone().or_else(|| stored.title.clone());
 
-    let (kept_media, current_media_ids) = validated_edit_media(
+    let (mut kept_media, current_media_ids) = validated_edit_media(
         state,
         actor,
         &stored,
@@ -2556,6 +2568,8 @@ pub(crate) async fn prepare_status_edit(
     .await?;
     let media_ids: Vec<i64> = kept_media.iter().map(|m| m.id).collect();
     let media_attributes = changed_media_attributes(&kept_media, &params.media_attributes);
+    let media_accessibility =
+        changed_media_accessibility(&mut kept_media, params.media_accessibility)?;
     crate::video::validate_edit(state, &stored, &media_ids, effective_title.as_deref()).await?;
 
     let composed = compose(state, &text, content_type).await?;
@@ -2595,11 +2609,50 @@ pub(crate) async fn prepare_status_edit(
         kept_media,
         current_media_ids,
         media_attributes,
+        media_accessibility,
         composed,
         html,
         quote_approval_policy,
         event: params.event,
     })
+}
+
+fn changed_media_accessibility(
+    kept_media: &mut [media::Media],
+    changes: Vec<MediaAccessibilityEdit>,
+) -> Result<Vec<MediaAccessibilityEdit>, ApiError> {
+    let mut media_accessibility = Vec::new();
+    for mut change in changes {
+        let Some(item) = kept_media.iter_mut().find(|m| m.id == change.id) else {
+            continue;
+        };
+        change.transcript = change
+            .transcript
+            .map(|text| text.trim().to_owned())
+            .filter(|text| !text.is_empty());
+        if change
+            .transcript
+            .as_ref()
+            .is_some_and(|text| text.chars().count() > 50_000 || text.contains('\0'))
+            || (change.audio_described && change.visuals_conveyed_in_audio)
+        {
+            return Err(ApiError::Unprocessable(
+                "Invalid transcript or conflicting visual audio alternatives".into(),
+            ));
+        }
+        if item.transcript != change.transcript
+            || item.decorative != change.decorative
+            || item.audio_described != change.audio_described
+            || item.visuals_conveyed_in_audio != change.visuals_conveyed_in_audio
+        {
+            item.transcript.clone_from(&change.transcript);
+            item.decorative = change.decorative;
+            item.audio_described = change.audio_described;
+            item.visuals_conveyed_in_audio = change.visuals_conveyed_in_audio;
+            media_accessibility.push(change);
+        }
+    }
+    Ok(media_accessibility)
 }
 
 /// Edits one's own status: merges `params` over the current values, records
@@ -2633,6 +2686,7 @@ pub async fn edit_status(
         kept_media,
         current_media_ids,
         media_attributes,
+        media_accessibility,
         composed,
         html,
         quote_approval_policy,
@@ -2674,6 +2728,7 @@ pub async fn edit_status(
         && media_ids == current_media_ids
         && quote_approval_policy == stored.quote_approval_policy
         && media_attributes.is_empty()
+        && media_accessibility.is_empty()
         && event_rewrite.is_none()
         && title
             .as_deref()
@@ -2788,6 +2843,24 @@ pub async fn edit_status(
         .await?;
     }
 
+    for change in media_accessibility {
+        if !media::update_edit_accessibility(
+            &mut tx,
+            change.id,
+            actor.id,
+            media::AccessibilityUpdate {
+                transcript: change.transcript.as_deref(),
+                decorative: change.decorative,
+                audio_described: change.audio_described,
+                visuals_conveyed_in_audio: change.visuals_conveyed_in_audio,
+                ..Default::default()
+            },
+        )
+        .await?
+        {
+            return Err(ApiError::NotFound);
+        }
+    }
     tag::detach_all(&mut *tx, stored.id).await?;
     // Group attribution (a silent mention row) isn't a text mention:
     // capture it across the rebuild below or an edit would orphan the post

@@ -354,6 +354,7 @@ async fn a_headline_can_be_fixed_and_federates_as_an_update(pool: PgPool) {
         &alice,
         stored.id,
         actions::EditParams {
+            media_accessibility: Vec::new(),
             title: Some("The headline"),
             text: None,
             content_type: None,
@@ -412,6 +413,7 @@ async fn an_untitled_post_refuses_a_title(pool: PgPool) {
         &alice,
         note.id,
         actions::EditParams {
+            media_accessibility: Vec::new(),
             title: Some("Suddenly a headline"),
             text: None,
             content_type: None,

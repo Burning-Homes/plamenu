@@ -122,6 +122,10 @@ fn clock_time(ms: u64) -> String {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one ACL-checked transcript and native HTML media-alternative template"
+)]
 pub async fn show(
     State(state): State<AppState>,
     Path((media_id, language)): Path<(i64, String)>,
@@ -170,6 +174,18 @@ pub async fn show(
         section.column.caption-transcript {
             h1 { (title) }
             p { (locale.text("caption-transcript-disclaimer")) }
+            @if let Some(description) = file.description.as_deref().filter(|s| !s.is_empty()) {
+                details.media__transcript {
+                    summary { (locale.text("videos-alt")) }
+                    p { (description) }
+                }
+            }
+            @if let Some(transcript) = file.transcript.as_deref().filter(|s| !s.is_empty()) {
+                details.media__transcript {
+                    summary { (locale.text("status-transcript")) }
+                    p { (transcript) }
+                }
+            }
             nav aria-label=(locale.text("caption-transcript-title")) {
                 a href=(format!("/web/statuses/{status_id}")) { (locale.text("caption-transcript-back")) }
                 " · "

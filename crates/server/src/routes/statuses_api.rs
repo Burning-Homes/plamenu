@@ -573,6 +573,9 @@ pub struct UpdateParams {
     /// `media_attributes[][id]` / `[][description]` / `[][focus]`.
     #[serde(default)]
     pub media_attributes: Vec<MediaAttributeParams>,
+    /// Additive, full structured-alternative replacement per kept attachment.
+    #[serde(default)]
+    pub media_accessibility: Vec<MediaAccessibilityParams>,
     /// Pleroma's rich-text format (P4). Applied only when present — absent
     /// keeps the stored format, like the other edit fields.
     pub content_type: Option<String>,
@@ -593,6 +596,18 @@ pub struct MediaAttributeParams {
     pub id: Value,
     pub description: Option<String>,
     pub focus: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct MediaAccessibilityParams {
+    pub id: Value,
+    pub transcript: Option<String>,
+    #[serde(default)]
+    pub decorative: bool,
+    #[serde(default)]
+    pub audio_described: bool,
+    #[serde(default)]
+    pub visuals_conveyed_in_audio: bool,
 }
 
 /// `PUT /api/v1/statuses/{id}` — edit one's own status.
@@ -657,6 +672,19 @@ pub async fn update(
             media_ids,
             quote_approval_policy,
             media_attributes,
+            media_accessibility: params
+                .media_accessibility
+                .into_iter()
+                .map(|input| {
+                    Ok(actions::MediaAccessibilityEdit {
+                        id: id_param(&input.id)?,
+                        transcript: input.transcript,
+                        decorative: input.decorative,
+                        audio_described: input.audio_described,
+                        visuals_conveyed_in_audio: input.visuals_conveyed_in_audio,
+                    })
+                })
+                .collect::<Result<Vec<_>, ApiError>>()?,
             event: params.event.map(EventBody::into_patch),
         },
     )
