@@ -4,7 +4,7 @@
 // report checksum-validated playback, not just an attempted WebRTC transfer.
 import { chromium } from 'playwright';
 
-const [localUrl, peerTubeUrl] = process.argv.slice(2);
+const [localUrl, peerTubeUrl, expectedPixel] = process.argv.slice(2);
 if (!localUrl || !peerTubeUrl) throw new Error('expected local watch URL and PeerTube watch URL');
 const trackerUrl = `wss://${new URL(localUrl).host}/tracker/socket`;
 const browser = await chromium.launch();
@@ -29,6 +29,34 @@ function watch(page) {
 async function instrument(page) {
   await page.addInitScript(() => {
     const observations = window.__nativeHlsObservations = [];
+    const playback = window.__nativePlaybackObservations = [];
+    for (const event of ['loadedmetadata', 'playing', 'waiting', 'seeking', 'seeked', 'ended', 'ratechange', 'timeupdate']) {
+      document.addEventListener(event, ({target:video}) => {
+        if (!(video instanceof HTMLVideoElement)) return;
+        playback.push({event,wallMs:Math.round(performance.now()),time:video.currentTime,
+          rate:video.playbackRate,paused:video.paused,readyState:video.readyState,
+          frames:video.getVideoPlaybackQuality?.().totalVideoFrames});
+        if(playback.length>200)playback.shift();
+      },true);
+    }
+    const mse=window.__nativeMseObservations=[];
+    const record=value=>{mse.push(value);if(mse.length>100)mse.shift();};
+    if(window.MediaSource && window.SourceBuffer){
+      const add=MediaSource.prototype.addSourceBuffer;
+      MediaSource.prototype.addSourceBuffer=function(type){
+        record({event:'addSourceBuffer',type,state:this.readyState});
+        const buffer=add.call(this,type);
+        buffer.addEventListener('error',()=>record({event:'sourceBufferError',type}));
+        buffer.addEventListener('updateend',()=>record({event:'updateend',type,offset:buffer.timestampOffset,
+          buffered:[...Array(buffer.buffered.length)].map((_,i)=>[buffer.buffered.start(i),buffer.buffered.end(i)])}));
+        return buffer;
+      };
+      const append=SourceBuffer.prototype.appendBuffer;
+      SourceBuffer.prototype.appendBuffer=function(bytes){
+        record({event:'appendBuffer',bytes:bytes.byteLength,offset:this.timestampOffset});
+        try{return append.call(this,bytes);}catch(error){record({event:'appendError',error:error.message});throw error;}
+      };
+    }
     let player;
     Object.defineProperty(window, 'Hls', {
       configurable: true,
@@ -68,10 +96,12 @@ async function start(page, selector, qualityHeight = null) {
     currentSrc: element.currentSrc, readyState: element.readyState,
     networkState: element.networkState, error: element.error?.message,
     paused: element.paused, currentTime: element.currentTime,
+    playbackRate: element.playbackRate, playback:window.__nativePlaybackObservations,
     sources: [...element.querySelectorAll('source')].map(source => source.src),
     buffered: [...Array(element.buffered.length)].map((_,i)=>[element.buffered.start(i),element.buffered.end(i)]),
     peer: {...element.dataset},
     hls: window.__nativeHlsObservations,
+    mse: window.__nativeMseObservations,
   }));
   throw new Error(`playback did not start for ${selector}: ${JSON.stringify(state)}; ${errors.join(' | ')}; responses=${JSON.stringify(responses.slice(-30))}`);
 }
@@ -127,6 +157,7 @@ try {
   // while the normal fallback remains available if signaling fails.
   const peerContext = await browser.newContext({ ignoreHTTPSErrors: true });
   const peer = await peerContext.newPage();
+  await instrument(peer);
   watch(peer);
   if (process.env.PEERTUBE_E2E_USER && process.env.PEERTUBE_E2E_PASSWORD) {
     await peer.goto(new URL('/login', peerTubeUrl).href, { waitUntil: 'domcontentloaded' });
@@ -136,7 +167,14 @@ try {
     await peer.waitForURL(url => url.pathname !== '/login', { timeout: 30000 });
   }
   await peer.route('**/media/*.m4s*', async route => {
-    await new Promise(resolve => setTimeout(resolve, 4000));
+    // Initialization cannot come from a peer. Delay media fragments only,
+    // below PeerTube's stock 3s no-first-byte deadline. Exceeding that deadline
+    // deliberately caused 20s retry/rebuffer gaps in the recorded fault run;
+    // it is not the baseline cross-product exchange contract. Plamenu's own
+    // >3s no-seeder fallback is independently exercised above.
+    if (!route.request().headers().range?.startsWith('bytes=0-')) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
     await route.continue();
   });
   await peer.goto(peerTubeUrl, { waitUntil: 'domcontentloaded' });
@@ -146,10 +184,10 @@ try {
   await peer.locator('video.vjs-tech').waitFor({ state: 'attached', timeout: 30000 });
   const bigPlay = peer.locator('.vjs-big-play-button');
   if (await bigPlay.isVisible()) await bigPlay.click();
-  const peerVideo = await start(peer, 'video.vjs-tech');
+  const peerVideo = peer.locator('video.vjs-tech');
   // Auto chooses independently in each product. Deliberately align the
-  // quality through the real controls, rather than assuming all new rungs
-  // are seeded by a browser playing one representation.
+  // quality through the real controls before awaiting decoded frames, rather
+  // than starving an unseeded Auto rung with the deliberately slow origin.
   await peerVideo.hover({force:true});
   await peer.locator('.vjs-settings').click();
   await peer.locator('.vjs-main-menu .vjs-menu-item').filter({hasText:'Quality'}).click();
@@ -158,14 +196,39 @@ try {
   });
   await qualityMenu.locator('[role="menuitemradio"]',{hasText:'480p'}).click();
   await peerVideo.evaluate(video=>{video.currentTime=0;video.play().catch(()=>{});});
+  await start(peer, 'video.vjs-tech');
   await peer.waitForFunction(()=>document.querySelector('video.vjs-tech')?.videoHeight===480,
     null,{timeout:15000});
   await local.waitForFunction(baseline =>
     Number(document.querySelector('video[data-hls]')?.dataset.p2pUploaded || 0) > baseline,
     before, { timeout: 30000 });
-  await peer.waitForFunction(() => document.querySelector('video')?.currentTime > 18.5,
-    null, { timeout: 30000 });
+  try{
+    await peer.waitForFunction(() => document.querySelector('video.vjs-tech')?.currentTime > 18.5,
+      null, { timeout: 30000 });
+  }catch(error){
+    const state=await peerVideo.evaluate(video=>({time:video.currentTime,paused:video.paused,
+      rate:video.playbackRate,loop:video.loop,duration:video.duration,
+      playback:window.__nativePlaybackObservations,
+      videos:[...document.querySelectorAll('video')].map(v=>({className:v.className,time:v.currentTime,rate:v.playbackRate})),
+      src:video.currentSrc,error:video.error?.message,readyState:video.readyState,
+      buffered:[...Array(video.buffered.length)].map((_,i)=>[video.buffered.start(i),video.buffered.end(i)]),
+      mse:window.__nativeMseObservations,hls:window.__nativeHlsObservations}));
+    const localState=await localVideo.evaluate(video=>({time:video.currentTime,src:video.currentSrc,dataset:{...video.dataset},
+      mse:window.__nativeMseObservations,hls:window.__nativeHlsObservations}));
+    throw new Error(`PeerTube timed playback assertion failed: ${JSON.stringify({state,localState})}; ${error.message}`);
+  }
   const uploaded = Number(await localVideo.getAttribute('data-p2p-uploaded') || 0) - before;
+  const peerTubePlayback = await peerVideo.evaluate(video => {
+    const canvas=document.createElement('canvas');canvas.width=1;canvas.height=1;
+    const context=canvas.getContext('2d');context.drawImage(video,0,0,1,1);
+    return {time:video.currentTime,rate:video.playbackRate,
+      decodedFrames:video.getVideoPlaybackQuality().totalVideoFrames,
+      pixel:[...context.getImageData(0,0,1,1).data]};
+  });
+  if(expectedPixel==='--expect-blue' && !(peerTubePlayback.pixel[0]<30 &&
+    peerTubePlayback.pixel[1]<30 && peerTubePlayback.pixel[2]>200)) {
+    throw new Error(`PeerTube decoded excluded or superseded footage: ${JSON.stringify(peerTubePlayback)}`);
+  }
   await localContext.close();
 
   // PeerTube is now the only seeded browser. A fresh Plamenu viewer must get
@@ -199,6 +262,7 @@ try {
     null, { timeout: 30000 });
   const result = {
     qualityHeight:480,
+    peerTubePlayback,
     slowAutoStartupMs,
     infohash: hash,
     uploadedToPeerTube: uploaded,

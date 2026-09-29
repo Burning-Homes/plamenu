@@ -128,6 +128,8 @@ async fn process(
     }
     let settings = state.settings_cache.get(&state.pool).await?;
     let mut params = crate::media_transcode::TranscodeParams::from_settings(&settings);
+    (params.force_reencode, params.window) =
+        crate::video_source_edit::processing(state, claim.media_id).await?;
     params.file_size_limit = Some(reservation.limit.clone());
     params.max_av_bytes = usize::try_from(reservation.source_ceiling).unwrap_or(usize::MAX);
     let stem = crate::media_processing::storage_stem(claim.media_id);

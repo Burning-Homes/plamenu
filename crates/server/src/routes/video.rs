@@ -24,6 +24,16 @@ pub fn router() -> Router<AppState> {
         )
         .route("/api/v1/videos", post(publish))
         .route(
+            "/api/v1/videos/{id}/content",
+            get(content).put(replace_content),
+        )
+        .route("/api/v1/videos/{id}/edits", post(prepare_edit))
+        .route(
+            "/api/v1/video_edits/{id}",
+            get(prepared_edit).delete(cancel_edit),
+        )
+        .route("/api/v1/video_edits/{id}/retry", post(retry_edit))
+        .route(
             "/api/v1/video_viewer_preferences",
             get(viewer_preferences).put(update_viewer_preferences),
         )
@@ -38,6 +48,153 @@ pub fn router() -> Router<AppState> {
         )
 }
 
+async fn content(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("read:media")?;
+    let editable = crate::video_edit::editable(&state, id, current.account.id).await?;
+    let candidates = crate::video_edit::candidates(&state, id, current.account.id).await?;
+    Ok(private_json(
+        json!({"media_id":id.to_string(),"status_id":editable.status_id.to_string(),"revision":editable.revision,
+        "candidates":candidates.iter().map(|c|json!({"media_id":c.media_id.to_string(),"title":c.title})).collect::<Vec<_>>() }),
+    ))
+}
+#[derive(Deserialize)]
+struct Replacement {
+    candidate_media_id: String,
+    revision: i64,
+    confirm: bool,
+}
+async fn replace_content(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("write:media")?;
+    current.require_scope("write:statuses")?;
+    let input: Replacement = super::params::parse_body(&headers, &body)?;
+    if !input.confirm {
+        return Err(ApiError::Unprocessable(
+            "Confirm the reviewed replacement".into(),
+        ));
+    }
+    let candidate = input
+        .candidate_media_id
+        .parse()
+        .map_err(|_| ApiError::Unprocessable("Choose a replacement draft".into()))?;
+    crate::video_edit::replace(&state, id, current.account.id, candidate, input.revision).await?;
+    Ok(private_json(
+        json!({"media_id":id.to_string(),"revision":input.revision+1}),
+    ))
+}
+
+#[derive(Deserialize)]
+struct Preparation {
+    revision: i64,
+    operation: String,
+    start_ms: Option<i64>,
+    end_ms: Option<i64>,
+}
+async fn prepare_edit(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("write:media")?;
+    current.require_scope("write:statuses")?;
+    let input: Preparation = super::params::parse_body(&headers, &body)?;
+    let operation = match input.operation.as_str() {
+        "reprocess" if input.start_ms.is_none() && input.end_ms.is_none() => {
+            crate::video_source_edit::Operation::Reprocess
+        }
+        "trim" => crate::video_source_edit::Operation::Trim(crate::video_clip::Window::new(
+            input
+                .start_ms
+                .ok_or(ApiError::Unprocessable("Choose start_ms and end_ms".into()))?,
+            input
+                .end_ms
+                .ok_or(ApiError::Unprocessable("Choose start_ms and end_ms".into()))?,
+        )?),
+        _ => {
+            return Err(ApiError::Unprocessable(
+                "Choose reprocess without a cut, or trim with a millisecond cut".into(),
+            ));
+        }
+    };
+    let candidate = crate::video_source_edit::prepare(
+        &state,
+        id,
+        current.account.id,
+        input.revision,
+        operation,
+    )
+    .await?;
+    let mut response = private_json(
+        json!({"media_id":candidate.to_string(),"status_url":format!("/api/v1/video_edits/{candidate}"),"review_url":format!("/videos/drafts/{candidate}/review")}),
+    );
+    *response.status_mut() = axum::http::StatusCode::ACCEPTED;
+    Ok(response)
+}
+async fn prepared_edit(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("read:media")?;
+    let edit = crate::video_source_edit::prepared(&state, id, current.account.id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(private_json(
+        json!({"media_id":id.to_string(),"target_media_id":edit.target_media_id.map(|id|id.to_string()),"target_revision":edit.target_revision,"operation":edit.operation,"phase":edit.phase}),
+    ))
+}
+async fn retry_edit(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("write:media")?;
+    current.require_scope("write:statuses")?;
+    crate::video_source_edit::prepared(&state, id, current.account.id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    crate::video_source_edit::check_retry(&state, id, current.account.id).await?;
+    if !plamenu_db::video_source_import::retry(&state.pool, id, current.account.id).await?
+        && !plamenu_db::video_draft::retry(&state.pool, id, current.account.id).await?
+    {
+        return Err(ApiError::Conflict(
+            "This edit is not a retryable private draft".into(),
+        ));
+    }
+    let mut response = private_json(json!({"media_id":id.to_string(),"phase":"queued"}));
+    *response.status_mut() = axum::http::StatusCode::ACCEPTED;
+    Ok(response)
+}
+async fn cancel_edit(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("write:media")?;
+    crate::video_source_edit::prepared(&state, id, current.account.id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if !plamenu_db::video_draft::cancel(&state.pool, id, current.account.id).await? {
+        return Err(ApiError::Conflict(
+            "This private edit cannot be cancelled".into(),
+        ));
+    }
+    let mut response = private_json(json!({}));
+    *response.status_mut() = axum::http::StatusCode::NO_CONTENT;
+    *response.body_mut() = axum::body::Body::empty();
+    Ok(response)
+}
 fn private_json(value: Value) -> axum::response::Response {
     use axum::response::IntoResponse;
     crate::web::video_history::private(Json(value).into_response())
@@ -111,8 +268,10 @@ async fn forget_position(
     Ok(private_json(json!({"ok":true})))
 }
 #[derive(Deserialize)]
-struct Position {
+struct PlaybackPosition {
     position_seconds: i32,
+    #[serde(default)]
+    content_revision: i64,
     #[serde(default)]
     completed: bool,
 }
@@ -124,13 +283,14 @@ async fn save_position(
     body: Bytes,
 ) -> Result<axum::response::Response, ApiError> {
     current.require_scope("write:statuses")?;
-    let input: Position = super::params::parse_body(&headers, &body)?;
-    let saved = crate::video_history::save(
+    let input: PlaybackPosition = super::params::parse_body(&headers, &body)?;
+    let saved = crate::video_history::save_revision(
         &state,
         current.account.id,
         id,
         input.position_seconds,
         input.completed,
+        input.content_revision,
     )
     .await?;
     Ok(private_json(json!({"saved":saved})))

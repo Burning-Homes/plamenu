@@ -13,7 +13,9 @@ The milestone and inventory acceptance gates remain unchanged.
 - [ ] Discoverable, HTML-first settings and guarded imports/source sync.
       Viewer P2P/history settings and one-time guarded file/ActivityPub imports
       are verified; scheduled source synchronization is still outstanding.
-- [ ] Complete stable-identity media editing/reprocessing/trim workflows.
+- [x] Complete stable-identity media editing/reprocessing/trim workflows.
+      Replacement, retained-source reprocessing and exact trimming pass local,
+      real PeerTube and desktop/mobile/no-JS browser verification below.
 - [x] Private opt-in watch history/resume with deletion, bounded retention and
       accessible non-JS controls; never record merely opening a page.
 - [ ] Download/embed controls and authorization/cache/range matrix.
@@ -196,3 +198,143 @@ Final frozen native binary SHA-256:
 User guide: [`VIDEO_IMPORTS.md`](VIDEO_IMPORTS.md). Scheduled source sync and
 stable-identity media replacement/reprocess/trim remain open. This is the
 one-time import slice, **not M6 or M7 completion**.
+
+### Stable-identity native film replacement — 2026-09-29
+
+Videos and the metadata manager expose ordinary HTML private-candidate review
+and explicit application. Upload/import, processing, native preview, visible
+descriptions/transcript and timed captions work without scripts; existing
+resumable upload and status enhancements remain available. The old film serves
+until application, which retains the media/status IDs, UUID, original author,
+channel, public title/description/audience/metadata and all social references.
+Candidate film/poster/alternatives/caption languages/chapters replace the old
+content. Current channel authority, candidate readiness/ownership, quotas and
+the reviewed content revision are rechecked under the adoption fences. There
+is no encoding, movie copy or network request inside that transaction.
+
+Superseded files/raw source stay charged until acknowledged cleanup. Adopted
+keys and their journal/reservations are moved, not deleted/recreated. HLS and
+checksum URLs carry content revisions; pinned old requests cannot obtain new
+metadata. Existing buffered bytes cannot be erased from another viewer's
+device. Private history hides positions for superseded content and rejects a
+stale player's save; metadata-only edits do not reset positions. API and HTML
+application require both write scopes; scoped OAuth cookies cannot bypass them.
+
+Five Rust replacement integrations and eight history integrations pass
+atomicity, forced outbox rollback, concurrent/stale/cancelled applications,
+editor/publisher grants, suspension, immutable storage debtor, quota refusal,
+caption-language transfer, cleanup acknowledgement, private cache/CSRF/scopes,
+revisioned HLS and history. A genuine-thumbnail regression covers drafts that
+have no compatibility JPEG before replacement. Shipped-JavaScript units:
+**13 passed**, including equal-length outdated fragments failing the actual
+checksum validator, missing keys and incorrect byte ranges.
+
+Final frozen-candidate real PeerTube 8.3 E2E: **1 passed in 117.89 seconds**;
+`target/e2e/ap09-video-edit-20260929-final.xml`. Update retains the remote UUID
+and URL, changes duration/captions/film/integrity metadata, and preserves local
+replies/favourites/bookmarks. An actual old first-party seeder offers 124,295
+bytes but its incompatible size declaration is refused before payload
+acceptance; the receiver decodes the new blue frame with zero old validated
+bytes. PeerTube's loader exposes this as `peer-closed` with a nested
+`bytes-length-mismatch` cause. Equal-length corruption is covered separately
+by the shipped-validator units, not claimed as an observed real-peer payload.
+The two current products then exchange **332,263 bytes to PeerTube** and
+**104,620 checksum-validated bytes from PeerTube**, with zero integrity errors.
+Delayed, unseeded first-party Auto startup also decodes in 8,700 ms.
+
+Earlier failures are preserved, not counted as passing evidence: short fixtures
+never requested peer fragments beyond the 15-second urgent-HTTP window; the
+loader's nested error cause was initially missed; a real AVIF-only Update was
+silently filtered by PeerTube. Confirmed replacement now prepares the reserved,
+padded JPEG before adoption, retaining the first-party natural-aspect AVIF.
+PeerTube's actual installed validator accepts the corrected public Video.
+A playback test now selects the seeded quality before awaiting decode under
+its deliberately slow origin, and leaves initialization undelayed. A mistakenly
+selected local random-port browser fixture was interrupted and normally cleaned
+up: its canonical media URLs targeted port 443. The canonical container fixture
+is used for the final matrix. Narrow WebKit also exposed a same-URL form-submit
+test race: the waiter must observe the POST acknowledgement before navigating,
+not conclude that an already-matching URL means submission has finished.
+
+Strict workspace/all-target Clippy, SQLx metadata check, formatter, JavaScript/
+Python syntax and rendered docs build pass. Frozen native binary SHA-256:
+`3030db3bf409e76d815f83e7cfd5087ca0fb26268a6c62f13ffde0789bd2f014`.
+Final canonical-container browser matrix: **7 passed in 1.2 minutes**, without
+retries, across Chromium/Firefox/WebKit desktop/narrow and Chromium no-JS.
+Actual private/new-film decoding, caption attachment, visible descriptions and
+transcript, keyboard/native-required confirmation, unchanged permalink/title,
+consumed-draft denial, 320px reflow and Axe pass. Screenshots/report/log:
+`target/accessibility/ap09-video-edit-20260929/final/`. The standing browser's
+published-list link and empty-candidate guidance were inspected read-only;
+existing developer media/preferences were not changed.
+User/API guide: [`VIDEO_EDITING.md`](VIDEO_EDITING.md). Reprocess/trim and the
+other original M6/M7 gates remain open; **neither milestone is signed off**.
+
+### Retained-source reprocessing and exact trim — 2026-09-29
+
+Published native films now offer ordinary HTML reprocess/trim preparation and
+private alternative-text review; API preparation/status/retry/cancellation uses
+the same durable receiving/processing lane. An independent quota-charged source
+copy and output set leave the published film available. Current channel access,
+source revision, candidate provenance and confirmation fence adoption. A later
+reprocess retains its previous trim window; a later trim can only narrow it.
+Reprocessing preserves viewing positions while refusing stale-player writes;
+trimming hides old positions. Captions in every retained language and chapters
+are intersected/rebased; malformed timing fails closed. Untimed alternatives
+are cleared for trim review, not presented as descriptions of different footage.
+Both supported interface languages describe these consequences explicitly.
+
+Exact frame/audio decoder regressions prove an inside-long-GOP cut excludes
+preceding/following footage and selects the intended tone. Forced reprocessing
+actually encodes rather than remuxing otherwise-copyable H.264. Newly encoded
+edits force four-second keyframes so their copy-top adaptive stream no longer
+contains the encoder's default 25-second segments. A controller cancellation
+test covers a blocked source read and scratch removal. A real lease/lock stall
+found during development was fixed by completing DB preflight before entering
+the download/renewal select loop; no publication lock spans a movie copy.
+
+Focused Rust integration suite: **48 passed**, plus **4** timeline/parser units.
+Shipped JavaScript preference/recovery/integrity checks: **13 passed**. Strict
+workspace/all-target Clippy, SQLx metadata check, formatting and syntax pass.
+Canonical browser matrix: **14 passed in 3.9 minutes**, without retries, across
+Chromium/Firefox/WebKit desktop/narrow and Chromium no-JS. Actual private/public
+decoding, both edit operations, saved alternatives, captions, required keyboard
+confirmation, stable identity, 320px reflow and Axe pass. Protected evidence:
+`target/accessibility/ap09-video-source-edit-20260929/localized-final/`.
+
+Real PeerTube 8.3 combined replacement/reprocess/trim E2E: **2 passed in 204.84
+seconds**; `target/e2e/ap09-video-edit-and-source-edit-20260929-bounded-final.xml`.
+Reprocess/trim Updates retain the remote UUID, title and URL, change the duration
+and both caption languages, and keep the old film private until application.
+The trimmed film exchanges **216,492 bytes to PeerTube** and **509,839 validated
+bytes from PeerTube**, with zero integrity errors. The replacement independently
+rejects the running old seeder and exchanges 104,620 bytes in each direction.
+Unseeded first-party Auto playback survives four-second origin delay in 8,679 ms.
+Frozen serving/CLI candidate SHA-256:
+`0923418646340212a97d35b7977151a57048ab15876e6590d9cdaf430505e93f`.
+An additional final run with actual PeerTube decoded-pixel assertions passes
+**2/2 in 203.14 seconds**;
+`target/e2e/ap09-video-edit-and-source-edit-20260929-pixel-final.xml`.
+PeerTube decodes the new replacement's blue pixel `[0,14,253,255]` and the
+trimmed-only blue pixel `[7,16,255,255]` after 18.5 seconds at normal speed
+(187/183 decoded frames respectively); both retain positive bidirectional
+segment byte counts and zero checksum errors. This is decoded imagery in the
+peer's own player, not just correct metadata or a successful segment request.
+The standing first-party editing disclosure and styled labels were also
+inspected read-only in the browser; no existing film or preference was changed.
+
+Failures remain evidence, not passes. Early browser checks incorrectly equated
+the native MP4 duration with its existing B-frame-offset MediaSource timeline;
+native duration and decoded-frame cut checks stay strict. Prefilled implicit
+textarea labels obscured accessible control names and were changed to explicit
+labels. Four-second artificial HTTP delay on PeerTube's stock three-second
+no-first-byte deadline produced a traced 20-second rebuffer gap, not a codec
+failure: playback then resumed at normal speed with decoded frames. Baseline
+cross-product exchange now stays below that deadline (1.5 seconds), preserving
+real bidirectional byte checks; first-party >3-second recovery is tested
+separately. The broader slow-origin PeerTube fault matrix is still M7/M9 work.
+Logs/failed XML are retained under `target/e2e/`.
+
+This closes the original editing workflow gate (VOD08), not M6 or M7. Source
+synchronization, the remaining creator journeys and operations/scale gates above
+remain open. User/API guide: [`VIDEO_EDITING.md`](VIDEO_EDITING.md).

@@ -2,7 +2,7 @@
 use crate::{DbError, PgPool};
 use sqlx::PgConnection;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Claim {
     pub media_id: i64,
     pub account_id: i64,
@@ -11,6 +11,8 @@ pub struct Claim {
     pub source_kind: String,
     pub generation: i64,
     pub reserved_bytes: i64,
+    pub target_media_id: Option<i64>,
+    pub target_revision: Option<i64>,
 }
 
 /// Lock the receiving draft before registering a job, just like the finalizer.
@@ -49,9 +51,10 @@ pub async fn phase(pool: &PgPool, id: i64) -> Result<Option<String>, DbError> {
 /// One download slot in the native server; oldest submitted work first. Expired
 /// attempts restart into distinct temporary files, never append uncertain bytes.
 pub async fn claim(pool: &PgPool) -> Result<Option<Claim>, DbError> {
-    Ok(sqlx::query_as!(Claim, "UPDATE video_source_imports i SET state = 'downloading',
+    Ok(sqlx::query_as::<_,Claim>("UPDATE video_source_imports i SET state = 'downloading',
         generation = i.generation + 1, lease_until = clock_timestamp() + interval '120 seconds'
-        FROM video_drafts d WHERE i.media_id = d.media_id AND i.media_id = (
+        FROM video_drafts d LEFT JOIN video_source_edits e ON e.media_id=d.media_id
+        WHERE i.media_id = d.media_id AND i.media_id = (
             SELECT q.media_id FROM video_source_imports q JOIN video_drafts v ON v.media_id = q.media_id
             JOIN media_attachments m ON m.id = v.media_id
             JOIN accounts a ON a.id = v.account_id JOIN accounts c ON c.id = v.channel_id
@@ -63,7 +66,8 @@ pub async fn claim(pool: &PgPool) -> Result<Option<Claim>, DbError> {
                 AND (ch.owner_account_id = v.account_id OR EXISTS (SELECT 1 FROM video_channel_grants g
                     WHERE g.channel_id = v.channel_id AND g.account_id = v.account_id AND g.accepted)))
             ORDER BY q.media_id FOR UPDATE OF q SKIP LOCKED LIMIT 1)
-        RETURNING i.media_id, d.account_id, d.channel_id, i.source_url, i.source_kind, i.generation, d.reserved_bytes")
+        RETURNING i.media_id, d.account_id, d.channel_id, i.source_url, i.source_kind, i.generation, d.reserved_bytes,
+        e.target_media_id,e.target_revision")
         .fetch_optional(pool).await?)
 }
 

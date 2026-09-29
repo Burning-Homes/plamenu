@@ -94,8 +94,19 @@ pub async fn save(
     seconds: i32,
     completed: bool,
 ) -> Result<bool, ApiError> {
+    save_revision(state, viewer, media_id, seconds, completed, 0).await
+}
+pub async fn save_revision(
+    state: &AppState,
+    viewer: i64,
+    media_id: i64,
+    seconds: i32,
+    completed: bool,
+    revision: i64,
+) -> Result<bool, ApiError> {
     let (m, _) = readable(state, viewer, media_id).await?;
-    if !(0..=604_800).contains(&seconds)
+    if revision < 0
+        || !(0..=604_800).contains(&seconds)
         || m.duration
             .is_some_and(|d| d.is_finite() && f64::from(seconds) > d.ceil())
     {
@@ -113,7 +124,7 @@ pub async fn save(
             "Complete playback before marking it watched".into(),
         ));
     }
-    Ok(db::save(&state.pool, viewer, media_id, seconds, completed).await?)
+    Ok(db::save_revision(&state.pool, viewer, media_id, seconds, completed, revision).await?)
 }
 
 /// First-party focus page only: opt-in controls are not leaked to anonymous
@@ -133,13 +144,26 @@ pub async fn annotate(state: &AppState, viewer: i64, entity: &mut Value) -> Resu
         .filter_map(|m| m["id"].as_str()?.parse().ok())
         .collect();
     let positions = db::for_media(&state.pool, viewer, &ids).await?;
+    let revisions: Vec<(i64, i64)> =
+        sqlx::query_as("SELECT id,video_content_revision FROM media_attachments WHERE id=ANY($1)")
+            .bind(&ids)
+            .fetch_all(&state.pool)
+            .await
+            .map_err(plamenu_db::DbError::from)?;
     for item in items {
         if item["type"] != "video" || item.get("live").is_some() {
             continue;
         }
         let id = item["id"].as_str().and_then(|s| s.parse::<i64>().ok());
-        let found = positions.iter().find(|e| Some(e.media_id) == id);
-        item["viewer_history"] = serde_json::json!({"position_seconds":found.map_or(0,|e|e.position_seconds), "completed":found.is_some_and(|e|e.completed)});
+        let revision = item["content_revision"].as_i64().unwrap_or(0);
+        let current = revisions
+            .iter()
+            .find(|(media, _)| Some(*media) == id)
+            .map_or(0, |(_, r)| *r);
+        let found = positions
+            .iter()
+            .find(|e| Some(e.media_id) == id && current == revision);
+        item["viewer_history"] = serde_json::json!({"position_seconds":found.map_or(0,|e|e.position_seconds), "completed":found.is_some_and(|e|e.completed),"content_revision":revision});
     }
     Ok(())
 }

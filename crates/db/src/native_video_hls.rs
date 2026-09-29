@@ -47,6 +47,7 @@ pub struct LadderEntry {
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct FileTag {
     pub media_id: i64,
+    pub content_revision: i64,
     pub height: i32,
     pub width: i32,
     pub size_bytes: i64,
@@ -63,9 +64,10 @@ pub async fn tags_for_media(
     }
     let rows = sqlx::query_as!(
         FileTag,
-        "SELECT r.media_id, r.height, r.width, r.size_bytes, r.file_name,
+        "SELECT r.media_id, m.video_content_revision AS content_revision, r.height, r.width, r.size_bytes, r.file_name,
                 (r.segment_sha256 <> '{}'::jsonb) AS \"has_segment_sha256!\"
          FROM native_video_hls_renditions r
+         JOIN media_attachments m ON m.id=r.media_id
          JOIN video_drafts d ON d.media_id = r.media_id AND d.generation = r.generation AND d.state = 'ready'
          WHERE r.media_id = ANY($1)
          ORDER BY r.height DESC",
@@ -116,6 +118,13 @@ pub async fn replace(
 /// Only committed, unsuspended publications expose playlist metadata. The
 /// file route has an independent check before serving the referenced bytes.
 pub async fn public_ladder(pool: &PgPool, media_id: i64) -> Result<Vec<LadderEntry>, DbError> {
+    public_ladder_revision(pool, media_id, None).await
+}
+pub async fn public_ladder_revision(
+    pool: &PgPool,
+    media_id: i64,
+    revision: Option<i64>,
+) -> Result<Vec<LadderEntry>, DbError> {
     Ok(sqlx::query_as!(
         LadderEntry,
         "SELECT r.height, r.width, r.bandwidth
@@ -125,9 +134,10 @@ pub async fn public_ladder(pool: &PgPool, media_id: i64) -> Result<Vec<LadderEnt
          JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
          JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
          JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
-         WHERE r.media_id = $1
+         WHERE r.media_id = $1 AND ($2::bigint IS NULL OR m.video_content_revision=$2)
          ORDER BY r.height DESC",
         media_id,
+        revision,
     )
     .fetch_all(pool)
     .await?)
@@ -137,6 +147,7 @@ pub async fn public_playlist(
     pool: &PgPool,
     media_id: i64,
     height: i32,
+    revision: Option<i64>,
 ) -> Result<Option<String>, DbError> {
     Ok(sqlx::query_scalar!(
         "SELECT r.playlist FROM native_video_hls_renditions r
@@ -145,9 +156,10 @@ pub async fn public_playlist(
          JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
          JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
          JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
-         WHERE r.media_id = $1 AND r.height = $2",
+         WHERE r.media_id = $1 AND r.height = $2 AND ($3::bigint IS NULL OR m.video_content_revision=$3)",
         media_id,
         height,
+        revision,
     )
     .fetch_optional(pool)
     .await?)
@@ -158,6 +170,7 @@ pub async fn public_playlist(
 pub async fn public_sha256(
     pool: &PgPool,
     media_id: i64,
+    revision: Option<i64>,
 ) -> Result<Option<serde_json::Value>, DbError> {
     let rows = sqlx::query!(
         "SELECT r.file_name, r.segment_sha256 FROM native_video_hls_renditions r
@@ -166,8 +179,9 @@ pub async fn public_sha256(
          JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
          JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
          JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
-         WHERE r.media_id = $1",
+         WHERE r.media_id = $1 AND ($2::bigint IS NULL OR m.video_content_revision=$2)",
         media_id,
+        revision,
     )
     .fetch_all(pool)
     .await?;
@@ -191,25 +205,28 @@ pub async fn public_sha256(
 pub async fn public_peer_uuids(
     pool: &PgPool,
     media_ids: &[i64],
-) -> Result<HashMap<i64, String>, DbError> {
+) -> Result<HashMap<i64, (String, i64)>, DbError> {
     if media_ids.is_empty() {
         return Ok(HashMap::new());
     }
     let rows = sqlx::query!(
-        "SELECT r.media_id, v.uuid FROM native_video_hls_renditions r
+        "SELECT r.media_id, v.uuid, m.video_content_revision FROM native_video_hls_renditions r
          JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'
          JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'
          JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
          JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
          JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
          WHERE r.media_id = ANY($1)
-         GROUP BY r.media_id, v.uuid
+         GROUP BY r.media_id, v.uuid, m.video_content_revision
          HAVING bool_and(r.segment_sha256 <> '{}'::jsonb AND r.p2p_infohash IS NOT NULL)",
         media_ids,
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|r| (r.media_id, r.uuid)).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.media_id, (r.uuid, r.video_content_revision)))
+        .collect())
 }
 
 pub async fn assign_infohash(

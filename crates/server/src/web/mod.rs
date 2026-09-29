@@ -56,6 +56,7 @@ mod video_captions;
 mod video_channels;
 mod video_chapters;
 mod video_drafts;
+mod video_edit;
 mod video_explore;
 pub(crate) mod video_history;
 mod video_import;
@@ -429,6 +430,13 @@ pub fn router() -> Router<AppState> {
         .route("/videos/{id}/captions", get(video_captions::manage))
         .route("/videos/{id}/chapters", get(video_chapters::manage))
         .route("/videos/{id}/metadata", get(video_metadata::manage))
+        .route("/videos/{id}/edit", get(video_edit::page))
+        .route("/web/videos/{id}/edit", post(video_edit::apply))
+        .route("/web/videos/{id}/prepare-edit", post(video_edit::prepare))
+        .route(
+            "/web/videos/drafts/{id}/alternatives",
+            post(video_drafts::alternatives),
+        )
         .route("/web/videos/{id}/metadata", post(video_metadata::save))
         .route(
             "/web/videos/{id}/poster",

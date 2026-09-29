@@ -201,14 +201,21 @@ pub struct SegQuery {
 /// `GET /media/hls/{media_id}/master.m3u8` — the player's entry point: fetch
 /// the origin master playlist and serve a rewritten copy whose rendition and
 /// audio-group URIs all point back through this proxy.
+#[derive(Default, Deserialize)]
+pub struct ContentRevision {
+    rev: Option<i64>,
+}
+
 pub async fn master(
     State(state): State<AppState>,
     Path(media_id): Path<i64>,
+    Query(revision): Query<ContentRevision>,
 ) -> Result<Response, ApiError> {
     if let Some(response) = super::native_live_hls::master(&state, media_id).await? {
         return Ok(response);
     }
-    let native = native_video_hls::public_ladder(&state.pool, media_id).await?;
+    let native =
+        native_video_hls::public_ladder_revision(&state.pool, media_id, revision.rev).await?;
     if !native.is_empty() {
         let mut body = String::from("#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-INDEPENDENT-SEGMENTS\n");
         for rendition in native {
@@ -221,8 +228,11 @@ pub async fn master(
             .expect("writing to a String cannot fail");
             writeln!(
                 body,
-                "/media/hls/{media_id}/native/{}/index.m3u8",
-                rendition.height
+                "/media/hls/{media_id}/native/{}/index.m3u8{}",
+                rendition.height,
+                revision
+                    .rev
+                    .map_or_else(String::new, |r| format!("?rev={r}"))
             )
             .expect("writing to a String cannot fail");
         }
@@ -234,6 +244,9 @@ pub async fn master(
             body,
         )
             .into_response());
+    }
+    if revision.rev.is_some() {
+        return Err(ApiError::NotFound);
     }
     // Reaching for the master is someone pressing play. For a broadcast that
     // is the moment to be exact about whether it is running: a stream that
@@ -276,19 +289,25 @@ pub async fn master(
 pub async fn sha256_manifest(
     State(state): State<AppState>,
     Path(media_id): Path<i64>,
+    Query(revision): Query<ContentRevision>,
 ) -> Result<Response, ApiError> {
     if let Some(response) = super::native_live_hls::sha256_manifest(&state, media_id).await? {
         return Ok(response);
     }
-    if let Some(manifest) = native_video_hls::public_sha256(&state.pool, media_id).await? {
+    if let Some(manifest) =
+        native_video_hls::public_sha256(&state.pool, media_id, revision.rev).await?
+    {
         return Ok((
             [
                 (header::CONTENT_TYPE, "application/json"),
-                (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+                (header::CACHE_CONTROL, "no-store"),
             ],
             serde_json::to_vec(&manifest).map_err(|e| ApiError::Internal(Box::new(e)))?,
         )
             .into_response());
+    }
+    if revision.rev.is_some() {
+        return Err(ApiError::NotFound);
     }
     let lane = lane(&state, media_id).await?;
     let lane = if lane.live {
@@ -346,8 +365,9 @@ pub async fn sha256_manifest(
 pub async fn native_playlist(
     State(state): State<AppState>,
     Path((media_id, height)): Path<(i64, i32)>,
+    Query(revision): Query<ContentRevision>,
 ) -> Result<Response, ApiError> {
-    let playlist = native_video_hls::public_playlist(&state.pool, media_id, height)
+    let playlist = native_video_hls::public_playlist(&state.pool, media_id, height, revision.rev)
         .await?
         .ok_or(ApiError::NotFound)?;
     Ok((

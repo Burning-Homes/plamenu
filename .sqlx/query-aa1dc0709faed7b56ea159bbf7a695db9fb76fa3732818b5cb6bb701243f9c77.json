@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT r.media_id, r.height, r.width, r.size_bytes, r.file_name,\n                (r.segment_sha256 <> '{}'::jsonb) AS \"has_segment_sha256!\"\n         FROM native_video_hls_renditions r\n         JOIN video_drafts d ON d.media_id = r.media_id AND d.generation = r.generation AND d.state = 'ready'\n         WHERE r.media_id = ANY($1)\n         ORDER BY r.height DESC",
+  "query": "SELECT r.media_id, m.video_content_revision AS content_revision, r.height, r.width, r.size_bytes, r.file_name,\n                (r.segment_sha256 <> '{}'::jsonb) AS \"has_segment_sha256!\"\n         FROM native_video_hls_renditions r\n         JOIN media_attachments m ON m.id=r.media_id\n         JOIN video_drafts d ON d.media_id = r.media_id AND d.generation = r.generation AND d.state = 'ready'\n         WHERE r.media_id = ANY($1)\n         ORDER BY r.height DESC",
   "describe": {
     "columns": [
       {
@@ -16,6 +16,17 @@
       },
       {
         "ordinal": 1,
+        "name": "content_revision",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "video_content_revision"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
         "name": "height",
         "type_info": "Int4",
         "origin": {
@@ -26,7 +37,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "width",
         "type_info": "Int4",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "size_bytes",
         "type_info": "Int8",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "file_name",
         "type_info": "Text",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "has_segment_sha256!",
         "type_info": "Bool",
         "origin": "Expression"
@@ -76,8 +87,9 @@
       false,
       false,
       false,
+      false,
       null
     ]
   },
-  "hash": "125cdbabc34da0c84c8926a7cf3ffe2ef068b58705c39c7fe6b63f1d875608a0"
+  "hash": "aa1dc0709faed7b56ea159bbf7a695db9fb76fa3732818b5cb6bb701243f9c77"
 }

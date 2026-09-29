@@ -3338,11 +3338,27 @@ fn attach_chapters(
     }
 }
 
-fn attach_native_peer_hints(value: &mut Value, file: &media::Media, uuid: &str, domain: &str) {
+fn attach_native_peer_hints(
+    value: &mut Value,
+    file: &media::Media,
+    uuid: &str,
+    domain: &str,
+    revision: i64,
+) {
+    let suffix = if revision > 0 {
+        format!("?rev={revision}")
+    } else {
+        String::new()
+    };
+    value["content_revision"] = json!(revision);
+    value["hls"]["master"] = json!(format!(
+        "https://{domain}/media/hls/{}/master.m3u8{suffix}",
+        file.id
+    ));
     value["hls"]["p2p"] = json!({
         "video_uuid": uuid,
         "trackers": [format!("wss://{domain}/tracker/socket")],
-        "sha256_url": format!("https://{domain}/media/hls/{}/sha256.json", file.id),
+        "sha256_url": format!("https://{domain}/media/hls/{}/sha256.json{suffix}", file.id),
         "swarm_id": format!("https://{domain}/media/hls/{}/master.m3u8", file.id),
     });
 }
@@ -3446,6 +3462,23 @@ async fn media_maps(
     let chapters = plamenu_db::video_chapters::for_media(pool, &media_ids).await?;
     let video_metadata = plamenu_db::video_metadata::for_media(pool, &poster_ids).await?;
     let native_peers = plamenu_db::native_video_hls::public_peer_uuids(pool, &media_ids).await?;
+    // Content revisions are useful even when an older native generation has
+    // no P2P integrity metadata. Do not tie history/cache fencing to P2P support.
+    let native_ids = per_status
+        .values()
+        .flatten()
+        .filter(|m| {
+            m.remote_url.is_none() && m.live_state.is_none() && m.kind_or_derived() == "video"
+        })
+        .map(|m| m.id)
+        .collect::<Vec<_>>();
+    let native_revisions: HashMap<i64, i64> = if native_ids.is_empty() {
+        HashMap::new()
+    } else {
+        sqlx::query_as::<_,(i64,i64)>("SELECT m.id,m.video_content_revision FROM media_attachments m
+            JOIN video_publications v ON v.media_id=m.id WHERE m.id=ANY($1) AND m.live_state IS NULL")
+            .bind(&native_ids).fetch_all(pool).await.map_err(plamenu_db::DbError::from)?.into_iter().collect()
+    };
     let now = time::OffsetDateTime::now_utc();
     // Skip the round-trip entirely on the common attachment-less batch.
     let ladders = if media_ids.is_empty() {
@@ -3484,8 +3517,17 @@ async fn media_maps(
                         value["video_metadata"] = crate::video_metadata::entity(metadata);
                     }
                     attach_remote_peer_hints(&mut value, file, &remote_peers, domain);
-                    if let Some(uuid) = native_peers.get(&file.id) {
-                        attach_native_peer_hints(&mut value, file, uuid, domain);
+                    if let Some(revision) = native_revisions.get(&file.id) {
+                        value["content_revision"] = json!(revision);
+                        if *revision > 0 && value.get("hls").is_some() {
+                            value["hls"]["master"] = json!(format!(
+                                "https://{domain}/media/hls/{}/master.m3u8?rev={revision}",
+                                file.id
+                            ));
+                        }
+                    }
+                    if let Some((uuid, revision)) = native_peers.get(&file.id) {
+                        attach_native_peer_hints(&mut value, file, uuid, domain, *revision);
                     }
                     if let Some(session) = native_live_peers.get(&file.id) {
                         attach_native_live_peer_hints(&mut value, session, domain);

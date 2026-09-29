@@ -93,6 +93,9 @@ async fn render(
         plamenu_db::video_captions::owned_publication(&state.pool, id, user.current.account.id)
             .await?
             .ok_or(ApiError::NotFound)?;
+    let editable = !crate::video_edit::ready_native_ids(state, &[id])
+        .await?
+        .is_empty();
     let value = plamenu_db::video_metadata::for_media(&state.pool, &[id])
         .await?
         .remove(&id)
@@ -107,6 +110,7 @@ async fn render(
             p { a href=(format!("/web/statuses/{}/edit",publication.status_id)) { (user.locale.text("status-edit")) }
                 " · " a href=(format!("/videos/{id}/captions")) { (user.locale.text("videos-caption-published-title")) }
                 " · " a href=(format!("/videos/{id}/chapters")) { (user.locale.text("videos-chapters-title")) }
+                @if editable { " · " a href=(format!("/videos/{id}/edit")) { (user.locale.text("video-edit-title")) } }
             }
             form.settings-form method="post" action=(format!("/web/videos/{id}/metadata")) {
                 input type="hidden" name="csrf" value=(user.csrf);

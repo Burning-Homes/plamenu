@@ -4684,7 +4684,8 @@
         busy = true;
         if (manual || document.activeElement !== input) input.value = String(seconds);
         const body = new URLSearchParams({ csrf: form.elements.csrf.value,
-          position_seconds: String(seconds), completed: completed ? '1' : '0' });
+          position_seconds: String(seconds), completed: completed ? '1' : '0',
+          content_revision: form.elements.content_revision?.value || '0' });
         try {
           const response = await fetch(form.action, { method: 'POST', body,
             credentials: 'same-origin', headers: { Accept: 'application/json' }, keepalive: true });

@@ -118,6 +118,7 @@ async fn show_inner(
         .is_some();
     let expired = draft.expires_at <= time::OffsetDateTime::now_utc();
     let import = plamenu_db::video_source_import::phase(&state.pool, id).await?;
+    let edit = crate::video_source_edit::prepared(state, id, user.current.account.id).await?;
     let phase = if expired {
         "expired"
     } else if draft.state == "receiving" && import.is_some() {
@@ -141,7 +142,7 @@ async fn show_inner(
     let body = html! {
         section.column.video-draft data-video-draft=(id) data-video-scheduled[scheduled] data-phase=(phase)
             data-phase-receiving=(locale.text("videos-draft-receiving"))
-            data-phase-importing=(locale.text("videos-draft-importing"))
+            data-phase-importing=(locale.text(if edit.is_some(){"video-edit-copying"}else{"videos-draft-importing"}))
             data-phase-import-failed=(locale.text("videos-draft-import-failed"))
             data-phase-queued=(locale.text("videos-draft-queued"))
             data-phase-processing=(locale.text("videos-draft-processing"))
@@ -153,10 +154,11 @@ async fn show_inner(
             h2 { (draft.title) }
             @if conflict { p.settings__error role="alert" { (locale.text("videos-draft-changed")) } }
             p { (locale.text("videos-draft-private")) }
+            @if edit.is_some(){p {(locale.text("video-edit-candidate-hint"))}}
             @if scheduled {
                 p { (locale.text("videos-draft-scheduled")) " " a href="/settings/scheduled" { (locale.text("compose-scheduled-posts")) } }
             }
-            p role="status" aria-live="polite" { (locale.text(&format!("videos-draft-{phase}"))) }
+            p role="status" aria-live="polite" { (locale.text(&if phase=="importing" && edit.is_some(){"video-edit-copying".into()}else{format!("videos-draft-{phase}")})) }
             @if phase == "receiving" {
                 p { (locale.text("videos-draft-receiving-help")) }
                 @if draft.source_fingerprint.is_some() {
@@ -186,6 +188,7 @@ async fn show_inner(
             div.settings-form__actions {
                 a href=(format!("/videos/drafts/{id}")) { (locale.text("videos-draft-refresh")) }
                 a data-video-review hidden[!ready || scheduled] href=(format!("/videos/drafts/{id}/review")) { (locale.text("videos-review")) }
+                @if let Some(target)=edit.as_ref().and_then(|e|e.target_media_id){a href=(format!("/videos/{target}/edit?candidate={id}")) {(locale.text("video-edit-return"))}}
                 a href="/videos" { (locale.text("videos-title")) }
             }
             form.settings-form data-video-retry hidden[!matches!(phase, "failed" | "import-failed") || scheduled] method="post" action=(format!("/web/videos/drafts/{id}")) {
@@ -286,6 +289,69 @@ pub(super) async fn review_inner(
         .into_response())
 }
 
+pub async fn alternatives(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    user: WebUser,
+    body: Bytes,
+) -> Response {
+    let result = alternatives_inner(&state, &user, id, &body).await;
+    let result = match result {
+        Err(ApiError::Unprocessable(message)) => {
+            review_inner(&state, &user, id, Some(&message)).await
+        }
+        other => other,
+    };
+    private(result)
+}
+async fn alternatives_inner(
+    state: &AppState,
+    user: &WebUser,
+    id: i64,
+    body: &Bytes,
+) -> Result<Response, ApiError> {
+    let pairs = form_pairs(body).map_err(ApiError::BadRequest)?;
+    if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
+        return Ok(super::session::csrf_rejection());
+    }
+    user.current.require_scope("write:media")?;
+    let draft = videos::Draft {
+        alt: field(&pairs, "alt").unwrap_or_default().into(),
+        transcript: field(&pairs, "transcript").unwrap_or_default().into(),
+        visual_audio: field(&pairs, "visual_audio").unwrap_or_default().into(),
+        ..Default::default()
+    };
+    videos::validate_alternatives(&draft)?;
+    let edit = crate::video_source_edit::prepared(state, id, user.current.account.id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let target = edit.target_media_id.ok_or(ApiError::NotFound)?;
+    let (owned, _) = owned(state, id, user.current.account.id).await?;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(plamenu_db::DbError::from)?;
+    if !plamenu_db::video::lock_owned_channel(&mut tx, owned.channel_id, user.current.account.id)
+        .await?
+    {
+        return Err(ApiError::NotFound);
+    }
+    let changed=sqlx::query("UPDATE media_attachments m SET description=NULLIF($3,''),transcript=NULLIF($4,''),audio_described=$5,visuals_conveyed_in_audio=$6
+        FROM video_drafts d WHERE m.id=$1 AND m.account_id=$2 AND m.status_id IS NULL AND m.scheduled_status_id IS NULL
+        AND d.media_id=m.id AND d.account_id=$2 AND d.state='ready' AND d.expires_at>clock_timestamp()")
+        .bind(id).bind(user.current.account.id).bind(&draft.alt).bind(&draft.transcript).bind(draft.visual_audio=="audio_description").bind(draft.visual_audio=="soundtrack")
+        .execute(&mut *tx).await.map_err(plamenu_db::DbError::from)?.rows_affected();
+    if changed != 1 {
+        return Err(ApiError::Conflict(
+            "The private edit draft is no longer ready".into(),
+        ));
+    }
+    tx.commit().await.map_err(plamenu_db::DbError::from)?;
+    Ok(redirect_to(&format!(
+        "/videos/{target}/edit?candidate={id}"
+    )))
+}
 pub async fn replace_poster(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -514,6 +580,14 @@ async fn action_inner(
         return Ok(super::session::csrf_rejection());
     }
     owned(state, id, user.current.account.id).await?;
+    if field(&pairs, "op") == Some("retry") {
+        match crate::video_source_edit::check_retry(state, id, user.current.account.id).await {
+            Err(ApiError::NotFound | ApiError::Conflict(_)) => {
+                return show_inner(state, user, id, true).await;
+            }
+            result => result?,
+        }
+    }
     match field(&pairs, "op") {
         Some("retry")
             if plamenu_db::video_source_import::retry(&state.pool, id, user.current.account.id)

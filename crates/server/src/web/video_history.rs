@@ -188,12 +188,17 @@ pub async fn save(
         .unwrap_or_default()
         .parse()
         .map_err(|_| ApiError::Unprocessable("Use whole seconds".into()))?;
-    let saved = service::save(
+    let revision = field(&pairs, "content_revision")
+        .unwrap_or("0")
+        .parse()
+        .map_err(|_| ApiError::Unprocessable("Reload the film to save a position".into()))?;
+    let saved = service::save_revision(
         &state,
         user.current.account.id,
         id,
         seconds,
         field(&pairs, "completed") == Some("1"),
+        revision,
     )
     .await?;
     if headers
@@ -202,6 +207,23 @@ pub async fn save(
     {
         return Ok(private(
             axum::Json(serde_json::json!({"saved":saved})).into_response(),
+        ));
+    }
+    if !saved {
+        let (_, film) = service::readable(&state, user.current.account.id, id).await?;
+        let l = user.locale;
+        let body = html! {section.column {
+            h1 {(l.text("video-history-title"))}
+            p.settings__error role="alert" {(l.text("video-history-revision-failed"))}
+            p {a href=(format!("/web/statuses/{}",film.id)) {(l.text("videos-caption-watch"))}}
+            p {a href="/videos/settings" {(l.text("video-viewer-settings"))} " · " a href="/videos/history" {(l.text("video-history-title"))}}
+        }};
+        return Ok(private(
+            (
+                axum::http::StatusCode::CONFLICT,
+                layout::shell(&l.text("video-history-title"), Some(&user), &body),
+            )
+                .into_response(),
         ));
     }
     Ok(private(redirect_to("/videos/history")))

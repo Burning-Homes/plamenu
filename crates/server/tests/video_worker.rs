@@ -774,6 +774,428 @@ async fn custom_poster_quota_refusal_keeps_existing_poster(pool: PgPool) {
     assert_eq!(current.small_file_name, original);
 }
 
+#[sqlx::test(migrations = "../db/migrations")]
+async fn published_source_edits_are_private_durable_retimed_and_cannot_restore_removed_footage(
+    pool: PgPool,
+) {
+    use plamenu::{
+        video_clip::Window,
+        video_edit,
+        video_source_edit::{self, Operation},
+    };
+    use plamenu_db::video_history;
+    let f = fixture_with_source(pool.clone(), false, false, false, SourceShape::ColourCut).await;
+    assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
+    let post = publish_fixture(&f).await;
+    let original = media::find_by_ids(&pool, &[f.media_id])
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    video_history::set_enabled(&pool, f.owner, true)
+        .await
+        .unwrap();
+    assert!(
+        video_history::save(&pool, f.owner, f.media_id, 1, false)
+            .await
+            .unwrap()
+    );
+    sqlx::query("INSERT INTO video_captions(media_id,language,vtt_body) VALUES($1,'en','WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nfirst\n\n00:00:03.000 --> 00:00:04.000\nlast\n')").bind(f.media_id).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO video_chapters(media_id,start_seconds,title) VALUES($1,0,'Intro'),($1,2,'Blue'),($1,4,'Outside')").bind(f.media_id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE media_attachments SET description='Original full-film alternative',transcript='Original full-film transcript' WHERE id=$1").bind(f.media_id).execute(&pool).await.unwrap();
+    let reprocessed =
+        video_source_edit::prepare(&f.state, f.media_id, f.owner, 0, Operation::Reprocess)
+            .await
+            .unwrap();
+    assert_eq!(
+        video_source_edit::prepared(&f.state, reprocessed, f.owner)
+            .await
+            .unwrap()
+            .unwrap()
+            .phase,
+        "queued"
+    );
+    assert_eq!(
+        media::find_by_ids(&pool, &[f.media_id]).await.unwrap()[0].file_name,
+        original.file_name
+    );
+    assert!(
+        plamenu::video_source_import::run_one(&f.state)
+            .await
+            .unwrap()
+    );
+    let private = video_draft::find_owned(&pool, reprocessed, f.owner)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        f.state.media.get(&private.source_file).await.unwrap(),
+        f.original
+    );
+    assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
+    assert!(
+        video_draft::preview(&pool, reprocessed, f.owner)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    video_edit::replace(&f.state, f.media_id, f.owner, reprocessed, 0)
+        .await
+        .unwrap();
+    assert_eq!(
+        video_history::recent(&pool, f.owner).await.unwrap()[0].position_seconds,
+        1
+    );
+    assert!(
+        !video_history::save_revision(&pool, f.owner, f.media_id, 2, false, 0)
+            .await
+            .unwrap()
+    );
+    assert!(
+        video_history::save_revision(&pool, f.owner, f.media_id, 1, false, 1)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        plamenu_db::video_captions::for_media(&pool, &[f.media_id])
+            .await
+            .unwrap()[&f.media_id][0]
+            .vtt_body
+            .as_deref(),
+        Some(
+            "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nfirst\n\n00:00:03.000 --> 00:00:04.000\nlast\n"
+        )
+    );
+    let stale = video_source_edit::prepare(&f.state, f.media_id, f.owner, 1, Operation::Reprocess)
+        .await
+        .unwrap();
+    assert!(
+        plamenu::video_source_import::run_one(&f.state)
+            .await
+            .unwrap()
+    );
+    assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
+    let trimmed = video_source_edit::prepare(
+        &f.state,
+        f.media_id,
+        f.owner,
+        1,
+        Operation::Trim(Window::new(2200, 3800).unwrap()),
+    )
+    .await
+    .unwrap();
+    assert!(
+        plamenu::video_source_import::run_one(&f.state)
+            .await
+            .unwrap()
+    );
+    assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
+    let candidate = media::find_by_ids(&pool, &[trimmed])
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert!(candidate.description.is_none() && candidate.transcript.is_none());
+    assert!((candidate.duration.unwrap() - 1.6).abs() < 0.05);
+    assert_blue_frames(&f, &candidate);
+    let tracks = plamenu_db::video_captions::for_media(&pool, &[trimmed])
+        .await
+        .unwrap();
+    assert!(
+        tracks[&trimmed][0]
+            .vtt_body
+            .as_ref()
+            .unwrap()
+            .contains("00:00:00.000 --> 00:00:00.800\nfirst")
+    );
+    assert!(
+        tracks[&trimmed][0]
+            .vtt_body
+            .as_ref()
+            .unwrap()
+            .contains("00:00:00.800 --> 00:00:01.600\nlast")
+    );
+    let chapters = plamenu_db::video_chapters::for_media(&pool, &[trimmed])
+        .await
+        .unwrap();
+    assert_eq!(
+        chapters[&trimmed]
+            .iter()
+            .map(|c| (c.start_seconds, c.title.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(0, "Blue")]
+    );
+    video_edit::replace(&f.state, f.media_id, f.owner, trimmed, 1)
+        .await
+        .unwrap();
+    assert!(
+        video_history::recent(&pool, f.owner)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        video_edit::replace(&f.state, f.media_id, f.owner, stale, 2)
+            .await
+            .is_err()
+    );
+    assert!(
+        video_source_edit::prepare(
+            &f.state,
+            f.media_id,
+            f.owner,
+            2,
+            Operation::Trim(Window::new(0, 2000).unwrap())
+        )
+        .await
+        .is_err()
+    );
+    let again = video_source_edit::prepare(&f.state, f.media_id, f.owner, 2, Operation::Reprocess)
+        .await
+        .unwrap();
+    let (force, window) = video_source_edit::processing(&f.state, again)
+        .await
+        .unwrap();
+    assert!(force);
+    assert_eq!(window, Some(Window::new(2200, 3800).unwrap()));
+    assert!(
+        plamenu::video_source_import::run_one(&f.state)
+            .await
+            .unwrap()
+    );
+    assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
+    let candidate = media::find_by_ids(&pool, &[again])
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert!((candidate.duration.unwrap() - 1.6).abs() < 0.05);
+    assert_blue_frames(&f, &candidate);
+    let narrower = video_source_edit::prepare(
+        &f.state,
+        f.media_id,
+        f.owner,
+        2,
+        Operation::Trim(Window::new(200, 1400).unwrap()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        video_source_edit::processing(&f.state, narrower)
+            .await
+            .unwrap()
+            .1,
+        Some(Window::new(2400, 3600).unwrap())
+    );
+    assert_eq!(
+        plamenu_db::status::find_by_id(&pool, post.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .title
+            .as_deref(),
+        Some("Published film")
+    );
+    assert_eq!(f.state.media.get(&f.source).await.unwrap(), f.original);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn native_copy_cancellation_during_read_discards_scratch_and_cannot_publish(pool: PgPool) {
+    use plamenu::video_source_edit::{self, Operation};
+    let f = fixture(pool.clone(), true, false, false).await;
+    let first = tokio::spawn({
+        let state = f.state.clone();
+        async move { run_one(&state, reservation(1024 * 1024)).await }
+    });
+    f.store.entered.acquire().await.unwrap().forget();
+    f.store.release.add_permits(1);
+    assert!(first.await.unwrap().unwrap());
+    publish_fixture(&f).await;
+    let candidate =
+        video_source_edit::prepare(&f.state, f.media_id, f.owner, 0, Operation::Reprocess)
+            .await
+            .unwrap();
+    let copying = tokio::spawn({
+        let state = f.state.clone();
+        async move { plamenu::video_source_import::run_one(&state).await }
+    });
+    tokio::time::timeout(Duration::from_secs(3), f.store.entered.acquire())
+        .await
+        .unwrap()
+        .unwrap()
+        .forget();
+    assert!(
+        video_draft::cancel(&pool, candidate, f.owner)
+            .await
+            .unwrap()
+    );
+    // Leave the read blocked: the renewal/cancellation path must release this
+    // operation itself, rather than waiting for an origin/file to finish.
+    assert!(
+        tokio::time::timeout(Duration::from_secs(7), copying)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err()
+    );
+    assert!(
+        f.store
+            .disk
+            .open(&format!("{candidate}.orig"))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT video_content_revision FROM media_attachments WHERE id=$1"
+        )
+        .bind(f.media_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+    assert!(
+        tokio::fs::read_dir(f.state.config.media_dir.join("tmp"))
+            .await
+            .unwrap()
+            .next_entry()
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+fn assert_blue_frames(f: &Fixture, media: &media::Media) {
+    let path = f
+        .store
+        .disk
+        .local_path(media.file_name.as_deref().unwrap())
+        .unwrap();
+    let result = std::process::Command::new("ffmpeg")
+        .args(["-nostdin", "-v", "error", "-i"])
+        .arg(path)
+        .args([
+            "-vf",
+            "scale=1:1",
+            "-pix_fmt",
+            "rgb24",
+            "-f",
+            "rawvideo",
+            "pipe:1",
+        ])
+        .output()
+        .unwrap();
+    assert!(result.status.success());
+    assert!(!result.stdout.is_empty());
+    assert!(
+        result
+            .stdout
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .all(|p| p[0] < 30 && p[1] < 30 && p[2] > 200),
+        "no removed red frames may decode: {:?}",
+        result.stdout
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn native_edit_copy_refuses_superseded_cancelled_missing_and_revoked_sources(pool: PgPool) {
+    use plamenu::video_source_edit::{self, Operation};
+    let f = fixture(pool.clone(), false, false, false).await;
+    assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
+    publish_fixture(&f).await;
+    let cancelled =
+        video_source_edit::prepare(&f.state, f.media_id, f.owner, 0, Operation::Reprocess)
+            .await
+            .unwrap();
+    assert!(
+        video_draft::cancel(&pool, cancelled, f.owner)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !plamenu::video_source_import::run_one(&f.state)
+            .await
+            .unwrap()
+    );
+    let stale = video_source_edit::prepare(&f.state, f.media_id, f.owner, 0, Operation::Reprocess)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE media_attachments SET video_content_revision=1 WHERE id=$1")
+        .bind(f.media_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        plamenu::video_source_import::run_one(&f.state)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        plamenu_db::video_source_import::phase(&pool, stale)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("failed")
+    );
+    assert!(
+        video_source_edit::check_retry(&f.state, stale, f.owner)
+            .await
+            .is_err()
+    );
+    assert!(f.state.media.open(&format!("{stale}.orig")).await.is_err());
+    let owner = common::create_local_account(&pool, "next", "Next").await;
+    let pending =
+        video_source_edit::prepare(&f.state, f.media_id, f.owner, 1, Operation::Reprocess)
+            .await
+            .unwrap();
+    let channel = video_draft::find_owned(&pool, f.media_id, f.owner)
+        .await
+        .unwrap()
+        .unwrap()
+        .channel_id;
+    sqlx::query("UPDATE video_channels SET owner_account_id=$2 WHERE account_id=$1")
+        .bind(channel)
+        .bind(owner.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        video_source_edit::prepare(&f.state, f.media_id, f.owner, 1, Operation::Reprocess)
+            .await
+            .is_err()
+    );
+    // A receiving draft without current channel authority cannot even claim.
+    assert!(
+        !plamenu::video_source_import::run_one(&f.state)
+            .await
+            .unwrap()
+    );
+    assert!(
+        f.state
+            .media
+            .open(&format!("{pending}.orig"))
+            .await
+            .is_err()
+    );
+    sqlx::query("DELETE FROM media_attachments WHERE id=$1")
+        .bind(f.media_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        video_source_edit::prepared(&f.state, pending, f.owner)
+            .await
+            .unwrap()
+            .unwrap()
+            .target_media_id,
+        None
+    );
+    assert!(video_draft::cancel(&pool, pending, f.owner).await.unwrap());
+}
+
 fn reservation(bytes: u64) -> plamenu::video_resources::Reservation {
     let pool = plamenu::video_resources::ProcessingPool::new(1, 32 * 1024 * 1024);
     reserve(&pool, bytes)

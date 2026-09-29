@@ -432,6 +432,12 @@ pub fn enrich_object(
         ));
     }
     if !hls.is_empty() {
+        let revision = hls[0].content_revision;
+        let suffix = if revision > 0 {
+            format!("?rev={revision}")
+        } else {
+            String::new()
+        };
         let mut files: Vec<Value> = hls
             .iter()
             .map(|rendition| {
@@ -452,7 +458,7 @@ pub fn enrich_object(
             }
             files.push(json!({
                 "type": "Link", "name": "sha256", "mediaType": "application/json",
-                "href": format!("https://{domain}/media/hls/{}/sha256.json", media.id),
+                "href": format!("https://{domain}/media/hls/{}/sha256.json{suffix}", media.id),
             }));
             urls.push(json!({
                 "type": "Link", "name": "tracker-websocket",
@@ -462,7 +468,7 @@ pub fn enrich_object(
         }
         urls.push(json!({
             "type": "Link", "mediaType": "application/x-mpegURL",
-            "href": format!("https://{domain}/media/hls/{}/master.m3u8", media.id),
+            "href": format!("https://{domain}/media/hls/{}/master.m3u8{suffix}", media.id),
             "tag": files,
         }));
     } else if live && media.live_state.as_deref() == Some("live") {

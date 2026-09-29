@@ -142,6 +142,12 @@ pub(super) async fn page(
     let channels = account::find_by_ids(&state.pool, &ids).await?;
     let locale = user.locale;
     let preview = owned_preview(state, user.current.account.id, draft.media_id).await?;
+    let edit = if let Some(id) = draft.media_id {
+        crate::video_source_edit::prepared(state, id, user.current.account.id).await?
+    } else {
+        None
+    };
+    let edit_target = edit.as_ref().and_then(|e| e.target_media_id);
     let recent = if preview.is_none() {
         plamenu_db::video_draft::recent_owned(&state.pool, user.current.account.id).await?
     } else {
@@ -153,6 +159,14 @@ pub(super) async fn page(
     } else {
         Vec::new()
     };
+    let editable_ids = crate::video_edit::ready_native_ids(
+        state,
+        &recent_published
+            .iter()
+            .map(|p| p.media_id)
+            .collect::<Vec<_>>(),
+    )
+    .await?;
     let live_broadcasts =
         plamenu_db::native_live::recent_owned(&state.pool, user.current.account.id).await?;
     // Derive privacy from stored ownership, never a client-submitted flag.
@@ -213,6 +227,7 @@ pub(super) async fn page(
                                     (locale.text("videos-chapters-title"))
                                 }
                                 " · " a href=(format!("/videos/{}/metadata", published.media_id)) { (locale.text("videos-metadata-manage")) }
+                                @if editable_ids.contains(&published.media_id) { " · " a href=(format!("/videos/{}/edit", published.media_id)) { (locale.text("video-edit-title")) } }
                                 " · " a href=(format!("/videos/{}/metadata#video-poster-replace", published.media_id)) { (locale.text("videos-replace-poster")) }
                                 " · " a href=(format!("/web/statuses/{}/edit",published.status_id)) { (locale.text("status-edit")) }
                             }
@@ -263,7 +278,9 @@ pub(super) async fn page(
                     }
                 }
                 }
-                form.settings-form data-video-upload[preview.is_none()] data-video-schedule-form[preview.is_some()] method="post" action="/web/videos" enctype="multipart/form-data" {
+                form.settings-form data-video-upload[preview.is_none()] data-video-schedule-form[preview.is_some() && edit.is_none()] method="post"
+                    action=(if edit.is_some(){format!("/web/videos/drafts/{}/alternatives",draft.media_id.unwrap())}else{"/web/videos".into()})
+                    enctype=(if edit.is_some(){"application/x-www-form-urlencoded"}else{"multipart/form-data"}) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     @if let Some(media) = &preview {
                         input type="hidden" name="media_id" value=(media.id);
@@ -288,7 +305,7 @@ pub(super) async fn page(
                         @if !draft.alt.is_empty() { details { summary { (locale.text("videos-alt")) } p { (draft.alt) } } }
                         @if !draft.transcript.is_empty() { details { summary { (locale.text("videos-transcript")) } p { (draft.transcript) } } }
                     }
-                    fieldset.settings-form__group {
+                    @if edit.is_none(){fieldset.settings-form__group {
                         legend { (locale.text("videos-details")) }
                         label.settings-field {
                             span.settings-field__label { (locale.text("videos-channel")) }
@@ -331,7 +348,7 @@ pub(super) async fn page(
                                 option value="unlisted" selected[draft.visibility == "unlisted"] { (locale.text("videos-unlisted")) }
                             }
                         }
-                    }
+                    }}
                     @if preview.is_none() {
                         fieldset.settings-form__group {
                             legend { (locale.text("videos-file")) }
@@ -363,6 +380,22 @@ pub(super) async fn page(
                                 }
                             }
                         }
+                    } @else if edit.is_some() {
+                        p {(locale.text("video-edit-candidate-hint"))}
+                        @if edit.as_ref().is_some_and(|e|e.operation=="trim"){p {(locale.text("video-edit-trim-hint"))}}
+                        div.settings-field {label.settings-field__label for="video-edit-alt" {(locale.text("videos-alt"))}
+                            textarea id="video-edit-alt" name="alt" rows="3" maxlength="1500" {(draft.alt)}
+                        }
+                        div.settings-field {label.settings-field__label for="video-edit-transcript" {(locale.text("videos-transcript"))}
+                            textarea id="video-edit-transcript" name="transcript" rows="5" maxlength="50000" {(draft.transcript)}
+                        }
+                        div.settings-field {label.settings-field__label for="video-edit-visual-audio" {(locale.text("compose-visual-audio"))}
+                            select id="video-edit-visual-audio" name="visual_audio" {
+                                option value="" selected[draft.visual_audio.is_empty()] {(locale.text("compose-visual-audio-none"))}
+                                option value="audio_description" selected[draft.visual_audio=="audio_description"] {(locale.text("compose-audio-described"))}
+                                option value="soundtrack" selected[draft.visual_audio=="soundtrack"] {(locale.text("compose-visuals-in-audio"))}
+                            }
+                        }
                     } @else {
                         input type="hidden" name="alt" value=(draft.alt);
                         input type="hidden" name="transcript" value=(draft.transcript);
@@ -392,7 +425,10 @@ pub(super) async fn page(
                         p.settings__error role="alert" tabindex="-1" data-video-upload-error hidden {}
                     }
                     div.settings-form__actions {
-                        @if preview.is_some() {
+                        @if edit.is_some(){
+                            button type="submit" {(locale.text("video-edit-save-alternatives"))}
+                            @if let Some(target)=edit_target{a href=(format!("/videos/{target}/edit?candidate={}",draft.media_id.unwrap())) {(locale.text("video-edit-return"))}}
+                        } @else if preview.is_some() {
                             button type="submit" name="op" value="publish" { (locale.text("videos-publish")) }
                             button type="submit" name="op" value="schedule" data-video-schedule-submit { (locale.text("videos-schedule-button")) }
                             a href="/videos" { (locale.text("videos-start-over")) }
@@ -924,7 +960,7 @@ async fn finish_upload(
     .map_err(|error| ApiError::Internal(Box::new(error)))?
 }
 
-fn validate_alternatives(draft: &Draft) -> Result<(), ApiError> {
+pub(super) fn validate_alternatives(draft: &Draft) -> Result<(), ApiError> {
     if draft.alt.chars().count() > 1_500
         || draft.transcript.chars().count() > 50_000
         || draft.transcript.contains('\0')

@@ -95,6 +95,19 @@ pub async fn save(
     seconds: i32,
     completed: bool,
 ) -> Result<bool, DbError> {
+    save_revision(pool, account, media, seconds, completed, 0).await
+}
+
+/// An old player cannot save a position against a replacement film. The media
+/// fence also rechecks duration after any concurrent content adoption.
+pub async fn save_revision(
+    pool: &PgPool,
+    account: i64,
+    media: i64,
+    seconds: i32,
+    completed: bool,
+    revision: i64,
+) -> Result<bool, DbError> {
     let mut tx = pool.begin().await?;
     let on: Option<bool> = sqlx::query_scalar(
         "SELECT history_enabled FROM video_viewer_preferences WHERE account_id=$1 FOR UPDATE",
@@ -105,8 +118,23 @@ pub async fn save(
     if on != Some(true) {
         return Ok(false);
     }
-    sqlx::query("INSERT INTO video_watch_history (account_id,media_id,position_seconds,completed) VALUES ($1,$2,$3,$4) ON CONFLICT (account_id,media_id) DO UPDATE SET position_seconds=EXCLUDED.position_seconds,completed=EXCLUDED.completed,updated_at=now()")
-        .bind(account).bind(media).bind(seconds).bind(completed).execute(&mut *tx).await?;
+    let current:Option<(i64,Option<f64>)>=sqlx::query_as("SELECT video_content_revision,duration FROM media_attachments WHERE id=$1 AND status_id IS NOT NULL AND live_state IS NULL FOR SHARE")
+        .bind(media).fetch_optional(&mut *tx).await?;
+    let Some((current, duration)) = current else {
+        return Ok(false);
+    };
+    if current != revision
+        || !(0..=604_800).contains(&seconds)
+        || duration.is_some_and(|d| {
+            d.is_finite()
+                && (f64::from(seconds) > d.ceil()
+                    || completed && f64::from(seconds) < (d - 10.0).max(0.0))
+        })
+    {
+        return Ok(false);
+    }
+    sqlx::query("INSERT INTO video_watch_history (account_id,media_id,position_seconds,completed,content_revision) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (account_id,media_id) DO UPDATE SET position_seconds=EXCLUDED.position_seconds,completed=EXCLUDED.completed,content_revision=EXCLUDED.content_revision,updated_at=now()")
+        .bind(account).bind(media).bind(seconds).bind(completed).bind(revision).execute(&mut *tx).await?;
     sqlx::query("DELETE FROM video_watch_history WHERE account_id=$1 AND (updated_at < now()-interval '90 days' OR media_id IN (SELECT media_id FROM video_watch_history WHERE account_id=$1 ORDER BY updated_at DESC,media_id DESC OFFSET 1000))")
         .bind(account).execute(&mut *tx).await?;
     tx.commit().await?;
@@ -114,7 +142,7 @@ pub async fn save(
 }
 
 pub async fn recent(pool: &PgPool, account: i64) -> Result<Vec<Entry>, DbError> {
-    Ok(sqlx::query_as("SELECT h.media_id,h.position_seconds,h.completed,h.updated_at FROM video_watch_history h JOIN video_viewer_preferences p ON p.account_id=h.account_id AND p.history_enabled WHERE h.account_id=$1 AND h.updated_at >= now()-interval '90 days' ORDER BY h.updated_at DESC,h.media_id DESC LIMIT 1000")
+    Ok(sqlx::query_as("SELECT h.media_id,h.position_seconds,h.completed,h.updated_at FROM video_watch_history h JOIN video_viewer_preferences p ON p.account_id=h.account_id AND p.history_enabled JOIN media_attachments m ON m.id=h.media_id AND m.video_content_revision=h.content_revision WHERE h.account_id=$1 AND h.updated_at >= now()-interval '90 days' ORDER BY h.updated_at DESC,h.media_id DESC LIMIT 1000")
         .bind(account).fetch_all(pool).await?)
 }
 
@@ -124,12 +152,12 @@ pub async fn page(
     before: Option<OffsetDateTime>,
     before_media: i64,
 ) -> Result<Vec<Entry>, DbError> {
-    Ok(sqlx::query_as("SELECT h.media_id,h.position_seconds,h.completed,h.updated_at FROM video_watch_history h JOIN video_viewer_preferences p ON p.account_id=h.account_id AND p.history_enabled WHERE h.account_id=$1 AND h.updated_at >= now()-interval '90 days' AND ($2::timestamptz IS NULL OR (h.updated_at,h.media_id)<($2,$3)) ORDER BY h.updated_at DESC,h.media_id DESC LIMIT 21")
+    Ok(sqlx::query_as("SELECT h.media_id,h.position_seconds,h.completed,h.updated_at FROM video_watch_history h JOIN video_viewer_preferences p ON p.account_id=h.account_id AND p.history_enabled JOIN media_attachments m ON m.id=h.media_id AND m.video_content_revision=h.content_revision WHERE h.account_id=$1 AND h.updated_at >= now()-interval '90 days' AND ($2::timestamptz IS NULL OR (h.updated_at,h.media_id)<($2,$3)) ORDER BY h.updated_at DESC,h.media_id DESC LIMIT 21")
         .bind(account).bind(before).bind(before_media).fetch_all(pool).await?)
 }
 
 pub async fn for_media(pool: &PgPool, account: i64, media: &[i64]) -> Result<Vec<Entry>, DbError> {
-    Ok(sqlx::query_as("SELECT h.media_id,h.position_seconds,h.completed,h.updated_at FROM video_watch_history h JOIN video_viewer_preferences p ON p.account_id=h.account_id AND p.history_enabled WHERE h.account_id=$1 AND h.media_id=ANY($2) AND h.updated_at >= now()-interval '90 days'")
+    Ok(sqlx::query_as("SELECT h.media_id,h.position_seconds,h.completed,h.updated_at FROM video_watch_history h JOIN video_viewer_preferences p ON p.account_id=h.account_id AND p.history_enabled JOIN media_attachments m ON m.id=h.media_id AND m.video_content_revision=h.content_revision WHERE h.account_id=$1 AND h.media_id=ANY($2) AND h.updated_at >= now()-interval '90 days'")
         .bind(account).bind(media).fetch_all(pool).await?)
 }
 

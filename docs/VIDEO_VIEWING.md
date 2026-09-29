@@ -53,6 +53,12 @@ Without JavaScript, open **Saved playback position** beneath a published Video,
 enter whole seconds and submit **Save playback position**. The History page and
 the Video offer **Resume video** links. Their native media-fragment fallback
 opens the playable MP4 at that time; JavaScript seeks/focuses the in-page player.
+
+Replacing the film keeps its post/media identity but invalidates saved positions
+for the different footage. Old players cannot save against the new film: writes
+carry the reviewed content revision. Metadata-only edits preserve positions.
+Without scripts, a rejected save offers links to reload the current film and
+check history settings; it does not silently claim success.
 Resume is explicit, never automatic playback on page load.
 
 History has at most 1,000 positions and exposes only positions saved within
@@ -80,7 +86,7 @@ Bearer authentication is required; no endpoint accepts a target account ID.
 | `GET /api/v1/video_viewer_preferences` | `read:accounts` | `history_enabled`, `p2p_enabled`, `p2p_configured`, `history_max_entries`, `history_retention_days` |
 | `PUT /api/v1/video_viewer_preferences` | `write:accounts` | At least one JSON boolean `history_enabled` or `p2p_enabled`; omitted choices are preserved; history false also deletes history |
 | `GET /api/v1/video_history` | `read:statuses` | `{data, next}`; pass both `next.before` and `next.before_media` as query parameters |
-| `PUT /api/v1/video_history/{media_id}` | `write:statuses` | Whole `position_seconds`, optional boolean `completed`; returns `{saved}` (false when disabled) |
+| `PUT /api/v1/video_history/{media_id}` | `write:statuses` | Whole `position_seconds`, optional boolean `completed`, native attachment's `content_revision` (omitted means 0); returns `{saved}` (false when disabled or stale) |
 | `DELETE /api/v1/video_history/{media_id}` | `write:statuses` | Forget this account's entry only; idempotent |
 | `DELETE /api/v1/video_history` | `write:statuses` | Clear this account's history, without changing its preference |
 

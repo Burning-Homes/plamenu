@@ -17,6 +17,12 @@ Videos also offers [Import a video](VIDEO_IMPORTS.md): a guarded, one-time copy
 of a public file or recorded ActivityPub/PeerTube Video into the same private
 review pipeline. It never automatically publishes or synchronizes the source.
 
+For a recorded native-pipeline film, [replace its published footage](VIDEO_EDITING.md)
+with a separately processed private draft. Explicit review/application preserves
+the original post, media ID, author, UUID and social references; the old film
+remains available until application commits. Reprocessing and trimming remain
+outstanding workflows.
+
 ## Posters and navigation
 
 Choose a poster frame using a numeric time without scripts or the visual

@@ -129,7 +129,24 @@ async fn fetch_source(
     claim: &db::Claim,
     path: &std::path::Path,
 ) -> Result<plamenu_federation::FetchedMediaFile, ApiError> {
+    // Finish DB preflight before entering select!: an immediate lease tick
+    // must not suspend a future holding the same publication lock it renews.
+    let native = if claim.source_kind == "native" {
+        let mut tx = state
+            .pool
+            .begin()
+            .await
+            .map_err(plamenu_db::DbError::from)?;
+        let source = crate::video_source_edit::lock_source(&mut tx, claim).await?;
+        tx.commit().await.map_err(plamenu_db::DbError::from)?;
+        Some(source)
+    } else {
+        None
+    };
     let fetch = async {
+        if let Some((key, expected)) = &native {
+            return fetch_native(state, key, *expected, path).await;
+        }
         let source = if claim.source_kind == "activitypub" {
             let object = state
                 .federation
@@ -165,11 +182,50 @@ async fn fetch_source(
     loop {
         tokio::select! {
             result = &mut fetch => return result,
-            _ = renew.tick() => if !db::renew(&state.pool, claim).await? { return Err(lost_claim()); },
+            _ = renew.tick() => {
+                if claim.source_kind=="native"{
+                    let mut tx=state.pool.begin().await.map_err(plamenu_db::DbError::from)?;
+                    crate::video_source_edit::lock_source(&mut tx,claim).await?;
+                    tx.commit().await.map_err(plamenu_db::DbError::from)?;
+                }
+                if !db::renew(&state.pool, claim).await? { return Err(lost_claim()); }
+            },
             () = &mut deadline => return Err(ApiError::Unprocessable("Video import timed out".into())),
             () = state.shutdown.cancelled() => return Err(lost_claim()),
         }
     }
+}
+
+async fn fetch_native(
+    state: &AppState,
+    key: &str,
+    expected: i64,
+    path: &std::path::Path,
+) -> Result<plamenu_federation::FetchedMediaFile, ApiError> {
+    use tokio::io::AsyncReadExt as _;
+    let stored = state
+        .media
+        .open(key)
+        .await
+        .map_err(|e| ApiError::Internal(Box::new(e)))?;
+    let limit = u64::try_from(expected).unwrap_or(0);
+    if stored.len != limit || limit == 0 {
+        return Err(ApiError::Conflict(
+            "The retained source is incomplete; the published film was not changed".into(),
+        ));
+    }
+    let mut reader = stored.reader.take(limit.saturating_add(1));
+    let mut output = tokio::fs::File::create(path)
+        .await
+        .map_err(|e| ApiError::Internal(Box::new(e)))?;
+    let bytes_written = tokio::io::copy(&mut reader, &mut output)
+        .await
+        .map_err(|e| ApiError::Internal(Box::new(e)))?;
+    Ok(plamenu_federation::FetchedMediaFile {
+        final_url: "native".into(),
+        content_type: "application/octet-stream".into(),
+        bytes_written,
+    })
 }
 
 async fn finish(
@@ -188,6 +244,9 @@ async fn finish(
             .begin()
             .await
             .map_err(plamenu_db::DbError::from)?;
+        if claim.source_kind == "native" {
+            crate::video_source_edit::lock_source(&mut tx, &claim).await?;
+        }
         if !db::lock_claim(&mut tx, &claim).await? {
             return Err(lost_claim());
         }

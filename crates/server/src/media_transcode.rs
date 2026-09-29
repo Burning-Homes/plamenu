@@ -84,6 +84,12 @@ pub struct TranscodeParams {
     /// Native job output ceiling, enforced in the encoder process by the OS.
     /// Ordinary attachment callers leave this unset until their quotas migrate.
     pub file_size_limit: Option<crate::media_limits::FileSizeLimit>,
+    /// Explicit creator reprocessing must use current encoder settings, even
+    /// when the retained source could otherwise be cheaply stream-copied.
+    pub force_reencode: bool,
+    /// Accurate native edit window. Encoding discards input-seek pre-roll;
+    /// stream copy is forbidden so an earlier keyframe cannot escape a trim.
+    pub window: Option<crate::video_clip::Window>,
     /// Poster-frame AVIF encode settings.
     pub avif_quality: u8,
     pub avif_speed_preview: u8,
@@ -98,6 +104,8 @@ impl Default for TranscodeParams {
             gifv_max_seconds: 60.0,
             max_av_bytes: crate::media_processing::MAX_AV_UPLOAD_BYTES,
             file_size_limit: None,
+            force_reencode: false,
+            window: None,
             avif_quality: 70,
             avif_speed_preview: 6,
         }
@@ -120,6 +128,8 @@ impl TranscodeParams {
                 .unwrap_or(99)
                 .saturating_mul(1024 * 1024),
             file_size_limit: None,
+            force_reencode: false,
+            window: None,
             avif_quality: u8::try_from(settings.media_avif_quality.clamp(1, 100)).unwrap_or(70),
             avif_speed_preview: u8::try_from(settings.media_avif_speed_preview.clamp(1, 10))
                 .unwrap_or(6),
@@ -443,6 +453,24 @@ fn eligible_for_passthrough(probe: &Probe) -> bool {
         && matches!(probe.colorspace.as_deref(), Some("yuv420p" | "yuvj420p"))
 }
 
+fn edit_input_args(input: &Path, params: &TranscodeParams) -> Vec<std::ffi::OsString> {
+    let mut args = Vec::new();
+    if let Some(window) = params.window {
+        // Input seek finds a nearby keyframe efficiently. FFmpeg's accurate
+        // seek discards pre-roll during re-encoding; never combine with copy.
+        args.extend(os_args(&[
+            "-ss",
+            &window.start_argument(),
+            "-accurate_seek",
+        ]));
+    }
+    args.extend(["-i".into(), input.into()]);
+    if let Some(window) = params.window {
+        args.extend(os_args(&["-t", &window.duration_argument()]));
+    }
+    args
+}
+
 /// Transcodes (or stream-copies) a video to the delivery mp4.
 async fn transcode_video(
     config: &Config,
@@ -451,7 +479,8 @@ async fn transcode_video(
     output: &Path,
     params: &TranscodeParams,
 ) -> Result<(), ApiError> {
-    let passthrough = eligible_for_passthrough(probe);
+    let passthrough =
+        eligible_for_passthrough(probe) && !params.force_reencode && params.window.is_none();
     // Stream copies are I/O-bound and stay ungated; a real re-encode waits
     // for a heavy-work slot so concurrent uploads can't each grab every core.
     let _permit = if passthrough {
@@ -459,7 +488,7 @@ async fn transcode_video(
     } else {
         Some(crate::media_gate::acquire().await)
     };
-    let mut args: Vec<std::ffi::OsString> = vec!["-i".into(), input.into()];
+    let mut args = edit_input_args(input, params);
     if passthrough {
         args.extend(os_args(&[
             "-map_metadata",
@@ -491,6 +520,17 @@ async fn transcode_video(
         ]));
         args.push("-b:a".into());
         args.push(format!("{}k", params.audio_bitrate_kbps).into());
+        if params.force_reencode || params.window.is_some() {
+            // These native edits already pay for an encode. Keep the copy-top
+            // HLS rendition seekable at the same four-second cadence as the
+            // lower ladder, rather than inheriting x264's 25s default GOP.
+            args.extend(os_args(&[
+                "-force_key_frames",
+                "expr:gte(t,n_forced*4)",
+                "-sc_threshold",
+                "0",
+            ]));
+        }
         if let Some(crf) = params.crf {
             // Constant quality: bytes go where the picture needs them.
             args.push("-crf".into());
@@ -500,7 +540,13 @@ async fn transcode_video(
             // capped so the file fits the upload limit.
             let width = probe.width.unwrap_or(0).max(2);
             let height = probe.height.unwrap_or(0).max(2);
-            let duration = probe.duration.unwrap_or(1.0).max(1.0);
+            let duration = params
+                .window
+                .map_or_else(
+                    || probe.duration.unwrap_or(1.0),
+                    crate::video_clip::Window::duration_seconds,
+                )
+                .max(1.0);
             #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
             let desired = ((width * height * 30) as f64 * BITS_PER_PIXEL).floor() as i64;
             let size_limit_bits = i64::try_from(params.max_av_bytes)
@@ -683,7 +729,7 @@ async fn transcode_audio_visualization(
     params: &TranscodeParams,
 ) -> Result<(), ApiError> {
     let _permit = crate::media_gate::acquire().await;
-    let mut args: Vec<std::ffi::OsString> = vec!["-i".into(), input.into()];
+    let mut args = edit_input_args(input, params);
     args.extend(os_args(&[
         "-filter_complex",
         "[0:a:0]showwaves=s=640x360:mode=line:rate=2:colors=0x80aaff:scale=sqrt,format=yuv420p[v]",
@@ -1462,6 +1508,22 @@ async fn process_av_in_dir(
     native_poster_time: Option<f64>,
 ) -> Result<ProcessedAv, ApiError> {
     let probed = probe(config, input).await?;
+    if let Some(window) = params.window {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "checked seven-day millisecond bound"
+        )]
+        let end_seconds = window.end_ms() as f64 / 1000.0;
+        if native_poster_time.is_none()
+            || probed
+                .duration
+                .is_none_or(|duration| !duration.is_finite() || end_seconds > duration + 0.001)
+        {
+            return Err(ApiError::Unprocessable(
+                "The trim window exceeds the retained native source".into(),
+            ));
+        }
+    }
     let declared = classify(&probed, params.gifv_max_seconds)?;
 
     match declared {

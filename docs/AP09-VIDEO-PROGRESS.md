@@ -136,7 +136,7 @@ before becoming `verified`. Keep partial results and failures visible.
 | M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | verified 2026-09-29 for the stated functional gate; see M3 sign-off below. Human AT/WCAG release evidence remains M9 |
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | verified 2026-09-29; see M4 sign-off below |
 | M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | verified 2026-09-25 for this stated functional gate; see the M5 sign-off below. Cross-node storage, additional device/browser combinations, and broader fault matrices remain in M7/M9, not silently counted as done |
-| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders, scheduled VOD publication, in-session browser camera ↔ screen switching, searchable/followable HTML libraries, private opt-in viewer history/resume and guarded one-time native file/ActivityPub/PeerTube imports verified; larger/remote channel matrices, scheduled source sync, editing/downloads and broader browser/hardware evidence remain. See M6/M7 closure checklist |
+| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders, scheduled VOD publication, in-session browser camera ↔ screen switching, searchable/followable HTML libraries, private opt-in viewer history/resume, guarded one-time native file/ActivityPub/PeerTube imports and complete stable-identity native replacement/reprocess/trim workflows verified; larger/remote channel matrices, scheduled source sync, downloads and broader creator/browser/hardware evidence remain. See M6/M7 closure checklist |
 | M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress: both-origin VOD/live P2P exchange; durable HTML-first account opt-out and public/cookie-free VOD embeds; bounded VOD startup recovery; actual native VOD/upload backup and fresh-store restore verified. Worker/offload/redundancy, moderation/analytics, wider live/fault/load and resource budgets remain. See M6/M7 closure checklist |
 | M8 | Ecosystem and beyond parity | Defined REST/embed/runner compatibility scope; chosen extensions; end-to-end tests per supported contract; no PeerTube plugin ABI in round one | pending |
 | M9 | Completion gate | All accepted inventory entries verified; current and prior PeerTube matrices; browser/a11y/performance gates; operator and user documentation | pending |
@@ -2858,3 +2858,46 @@ record above predates migrations 0087–0088 and is not evidence for their write
   [`VIDEO_IMPORTS.md`](VIDEO_IMPORTS.md).
 - Scheduled source sync, stable-identity replacement/reprocess/trim and the other
   original M6/M7 gates are still open. Neither milestone is marked complete.
+
+### M6 stable-identity native film replacement — 2026-09-29
+
+- Private upload/import candidates can be reviewed and explicitly applied from
+  the published Videos list or metadata manager, using ordinary HTML forms,
+  native decoding, timed captions and visible alternatives. Existing upload and
+  processing enhancements remain available; no installation step was added.
+- Adoption retains media/status identity, Video UUID, author/channel and social
+  references, with current-authority/readiness/quota/revision checks, atomic
+  original-author Update and acknowledged old-file cleanup. Revised HLS/hash
+  URLs and history fences cannot confuse a replacement with the old film.
+- Five replacement and eight history integrations, thirteen shipped-JavaScript
+  checks and a real PeerTube replacement/P2P E2E pass. The latter preserves
+  remote identity, refuses an actual old seeder and proves bidirectional new-byte
+  exchange. It found and fixed an AVIF-only Update rejection by preparing the
+  already-reserved compatibility JPEG before adoption. Evidence and earlier
+  failures are recorded in [`AP09-M6-M7-CLOSURE.md`](AP09-M6-M7-CLOSURE.md).
+- This completes native replacement, **not all VOD08 editing or M6/M7**.
+  Reprocessing, trimming, source synchronization and the remaining original
+  gates stay open. Guide: [`VIDEO_EDITING.md`](VIDEO_EDITING.md). No push,
+  merge or deployment occurred.
+
+### M6 retained-source reprocessing and exact trimming — 2026-09-29
+
+- Published native films now prepare quota-charged private reprocess/trim
+  candidates through the durable source-copy/encoder lane. Ordinary HTML and
+  scoped APIs review/save alternatives and explicitly apply the candidate;
+  the old publication continues serving until the atomic stable-ID adoption.
+- Trim intersects/rebases every caption language and chapters, clears untimed
+  alternatives for review, hides superseded history and composes retained
+  windows so later edits cannot reintroduce previously removed footage.
+  Reprocessing retains the selected window and viewing positions. Exact
+  long-GOP frame and audio decoder tests, cancellation/authority/revision
+  fences, genuine re-encoding and four-second adaptive keyframes pass.
+- The current focused Rust suite passes 48 integrations and four parser units;
+  13 shipped-JavaScript checks and 14 Chromium/Firefox/WebKit desktop/narrow
+  plus no-JS browser cases pass. Real PeerTube combined replacement/reprocess/
+  trim preserves UUID and caption languages with actual bidirectional validated
+  segment exchange. Detailed evidence, retained failed fault traces and the
+  frozen binary are recorded in the M6/M7 closure checklist.
+- This closes VOD08's complete editing workflow gate, not either milestone.
+  Scheduled source sync, remaining creator journeys and the original operations/
+  scale gates are unchanged. No push, merge or deployment occurred.

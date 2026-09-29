@@ -3345,6 +3345,7 @@ fn media_history(item: &Value, url: &str, ctx: &Ctx) -> Markup {
             form.settings-form data-video-history method="post" action=(format!("/web/videos/{id}/position"))
                 data-history-saved=(ctx.locale.text("video-history-saved")) data-history-failed=(ctx.locale.text("video-history-failed")) {
                 input type="hidden" name="csrf" value=(csrf);
+                input type="hidden" name="content_revision" value=(history["content_revision"].as_i64().unwrap_or(0));
                 label.settings-field {
                     span.settings-field__label {(ctx.locale.text("video-history-position-seconds"))}
                     input type="number" name="position_seconds" value=(position) min="0" max=(max) step="1" required;

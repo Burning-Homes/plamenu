@@ -9,6 +9,7 @@
   - [Account settings and safety](members/account-and-safety.md)
   - [Accessible video metadata](VIDEO_ACCESSIBILITY.md)
   - [Native Video publishing](VIDEO_PUBLISHING.md)
+  - [Replacing a published film](VIDEO_EDITING.md)
   - [Video viewing and private history](VIDEO_VIEWING.md)
   - [Importing a video](VIDEO_IMPORTS.md)
 - [Known issues](KNOWN_ISSUES.md)
