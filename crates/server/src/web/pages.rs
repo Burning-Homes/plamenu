@@ -3663,13 +3663,25 @@ pub async fn status_redirect(
     )
 }
 
-/// A public, read-only frame for oEmbed. It does not use the viewer's session:
-/// third-party framing must never turn a private post into an embeddable one.
+#[derive(Default, Deserialize)]
+pub struct EmbedQuery {
+    p2p: Option<u8>,
+}
+
+/// Public read-only content always authorizes anonymously. A session can apply
+/// only its network-sharing preference, never make private content embeddable.
 pub async fn status_embed(
     State(state): State<AppState>,
+    MaybeWebUser(session): MaybeWebUser,
     request_locale: Locale,
     Path(status_id): Path<i64>,
+    Query(query): Query<EmbedQuery>,
 ) -> Result<Response, ApiError> {
+    if query.p2p.is_some_and(|value| value > 1) {
+        return Err(ApiError::BadRequest(
+            "Use p2p=0 for server-only embeds".into(),
+        ));
+    }
     let focus = status::find_by_id(&state.pool, status_id)
         .await?
         .ok_or(ApiError::NotFound)?;
@@ -3701,12 +3713,22 @@ pub async fn status_embed(
             } }
         }
     };
-    Ok(layout::focused_shell_localized(
-        &request_locale.text("status-embed-title"),
-        &body,
-        request_locale,
-    )
-    .into_response())
+    let p2p = if query.p2p == Some(0) {
+        Some(false)
+    } else {
+        session.as_ref().map(|u| u.p2p_enabled)
+    };
+    Ok(super::video_history::private(
+        layout::focused_shell_p2p(
+            &request_locale.text("status-embed-title"),
+            &body,
+            request_locale,
+            p2p,
+            session.as_ref().map(|u| u.p2p_configured),
+            query.p2p == Some(0),
+        )
+        .into_response(),
+    ))
 }
 
 /// Renders a resolved (and already viewer-authorized) status in thread context.
@@ -3969,6 +3991,11 @@ pub(crate) async fn thread_view(
         render_statuses(&state.pool, &state.config.domain, &ancestors, viewer_id).await?;
     let mut focus_entity =
         render_status(&state.pool, &state.config.domain, &focus, viewer_id).await?;
+    if let Some(viewer) = viewer_id
+        && focus.object_type.as_deref() == Some("Video")
+    {
+        crate::video_history::annotate(state, viewer, &mut focus_entity).await?;
+    }
     let mut descendant_entities =
         render_statuses(&state.pool, &state.config.domain, &descendants, viewer_id).await?;
 

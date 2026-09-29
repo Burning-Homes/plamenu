@@ -2884,6 +2884,8 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                 @if let Some(master) = hls_master {
                                     video src=(url) poster=(preview) controls playsinline preload="none"
                                         data-hls=(master) data-src=(url)
+                                        data-vod-fallback=(ctx.locale.text("status-vod-fallback"))
+                                        data-vod-basic=(ctx.locale.text("status-vod-basic"))
                                         data-p2p-uuid=[p2p.and_then(|p| p.get("video_uuid")).and_then(Value::as_str)]
                                         data-p2p-trackers=[p2p.and_then(|p| p.get("trackers")).map(Value::to_string)]
                                         data-p2p-sha256=[p2p.and_then(|p| p.get("sha256_url")).and_then(Value::as_str)]
@@ -2929,12 +2931,17 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                     }
                                 }
                                 @if p2p.is_some() {
-                                    div.media__p2p hidden {
+                                    div.media__p2p hidden
+                                        data-p2p-csrf=[ctx.csrf]
+                                        data-p2p-saved=(ctx.locale.text("video-p2p-saved"))
+                                        data-p2p-locked=(ctx.locale.text("video-p2p-locked"))
+                                        data-p2p-failed=(ctx.locale.text("video-p2p-failed")) {
                                         label {
                                             input type="checkbox" class="media__p2p-toggle" checked;
                                             (ctx.locale.text("status-p2p-enabled"))
                                         }
                                         small { (ctx.locale.text("status-p2p-explanation")) }
+                                        span.media__p2p-status role="status" {}
                                     }
                                 }
                                 (media_chapters(item, url, ctx.locale))
@@ -2985,6 +2992,7 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                 (media_transcript(item, language, ctx.locale))
                                 (media_caption_transcripts(item, ctx.locale))
                                 (media_seek_previews(item, url, ctx.locale))
+                                (media_history(item, url, ctx))
                                 (video_metadata_details(item, ctx.locale))
                             },
                         }
@@ -3306,6 +3314,46 @@ fn chapter_time(seconds: i64) -> String {
         format!("{hours}:{minutes:02}:{seconds:02}")
     } else {
         format!("{minutes}:{seconds:02}")
+    }
+}
+
+fn media_history(item: &Value, url: &str, ctx: &Ctx) -> Markup {
+    let (Some(history), Some(csrf), Some(id)) =
+        (item.get("viewer_history"), ctx.csrf, item["id"].as_str())
+    else {
+        return html! {};
+    };
+    if url.is_empty() {
+        return html! {};
+    }
+    let position = history["position_seconds"].as_i64().unwrap_or(0);
+    let completed = history["completed"].as_bool().unwrap_or(false);
+    let max = item["meta"]["original"]["duration"]
+        .as_f64()
+        .filter(|d| d.is_finite())
+        .map_or_else(
+            || "604800".into(),
+            |d| d.ceil().clamp(0.0, 604_800.0).to_string(),
+        );
+    html! {
+        details.media__transcript.media__history {
+            summary {(ctx.locale.text("video-history-position"))}
+            p {(ctx.locale.text("video-history-recording-hint"))}
+            @if position>0 && !completed {
+                a href=(format!("{url}#t={position}")) data-history-resume=(position) {(ctx.locale.text("video-history-resume")) " " (chapter_time(position))}
+            }
+            form.settings-form data-video-history method="post" action=(format!("/web/videos/{id}/position"))
+                data-history-saved=(ctx.locale.text("video-history-saved")) data-history-failed=(ctx.locale.text("video-history-failed")) {
+                input type="hidden" name="csrf" value=(csrf);
+                label.settings-field {
+                    span.settings-field__label {(ctx.locale.text("video-history-position-seconds"))}
+                    input type="number" name="position_seconds" value=(position) min="0" max=(max) step="1" required;
+                }
+                button type="submit" {(ctx.locale.text("video-history-save-position"))}
+                p role="status" data-history-status {}
+            }
+            p {a href="/videos/history" {(ctx.locale.text("video-history-title"))} " · " a href="/videos/settings" {(ctx.locale.text("video-viewer-settings"))}}
+        }
     }
 }
 

@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 
 import psycopg
+from psycopg import sql
 import requests
 
 from . import config, plamenu, unique
@@ -84,8 +85,10 @@ class Instance:
         # A fresh database every start: a previous run left accounts, follows
         # and (for doomed) a half-destroyed instance behind on purpose.
         with psycopg.connect(config.DB_DSN, autocommit=True) as conn:
-            conn.execute(f"DROP DATABASE IF EXISTS {self.db_name} WITH (FORCE)")
-            conn.execute(f"CREATE DATABASE {self.db_name}")
+            conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(self.db_name)))
+            # Some developer harnesses seed template1. A disposable instance
+            # must not inherit unrelated accounts, migrations or private data.
+            conn.execute(sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(sql.Identifier(self.db_name)))
         # Use the real media filesystem, not /tmp (often a small RAM-backed
         # mount). Maximum-size video tests must exercise disk admission rather
         # than silently queue forever behind a tmpfs free-space fence.

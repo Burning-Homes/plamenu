@@ -24,9 +24,116 @@ pub fn router() -> Router<AppState> {
         )
         .route("/api/v1/videos", post(publish))
         .route(
+            "/api/v1/video_viewer_preferences",
+            get(viewer_preferences).put(update_viewer_preferences),
+        )
+        .route("/api/v1/video_history", get(history).delete(clear_history))
+        .route(
+            "/api/v1/video_history/{id}",
+            axum::routing::put(save_position).delete(forget_position),
+        )
+        .route(
             "/api/v1/videos/{id}/metadata",
             axum::routing::put(update_metadata),
         )
+}
+
+fn private_json(value: Value) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    crate::web::video_history::private(Json(value).into_response())
+}
+async fn viewer_preferences(
+    State(state): State<AppState>,
+    current: CurrentUser,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("read:accounts")?;
+    let prefs = plamenu_db::video_history::preferences(&state.pool, current.account.id).await?;
+    Ok(private_json(
+        json!({"history_enabled":prefs.history_enabled,"p2p_enabled":prefs.p2p_enabled,"p2p_configured":prefs.p2p_configured,"history_max_entries":plamenu_db::video_history::MAX_ENTRIES,"history_retention_days":plamenu_db::video_history::RETENTION_DAYS}),
+    ))
+}
+#[derive(Deserialize)]
+struct ViewerPreferences {
+    history_enabled: Option<bool>,
+    p2p_enabled: Option<bool>,
+}
+async fn update_viewer_preferences(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("write:accounts")?;
+    let input: ViewerPreferences = super::params::parse_body(&headers, &body)?;
+    if input.history_enabled.is_none() && input.p2p_enabled.is_none() {
+        return Err(ApiError::Unprocessable(
+            "Choose a video viewing preference to change".into(),
+        ));
+    }
+    let prefs = plamenu_db::video_history::update_preferences(
+        &state.pool,
+        current.account.id,
+        input.history_enabled,
+        input.p2p_enabled,
+    )
+    .await?;
+    Ok(private_json(
+        json!({"history_enabled":prefs.history_enabled,"p2p_enabled":prefs.p2p_enabled,"p2p_configured":prefs.p2p_configured}),
+    ))
+}
+async fn history(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    axum::extract::Query(q): axum::extract::Query<crate::web::video_history::HistoryQuery>,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("read:statuses")?;
+    let (at, id) = q.cursor()?;
+    let (entries, next) = crate::video_history::list(&state, current.account.id, at, id).await?;
+    Ok(private_json(
+        json!({"data":entries,"next":next.map(|e|json!({"before":e.updated_at.format(&time::format_description::well_known::Rfc3339).unwrap_or_default(),"before_media":e.media_id.to_string()}))}),
+    ))
+}
+async fn clear_history(
+    State(state): State<AppState>,
+    current: CurrentUser,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("write:statuses")?;
+    plamenu_db::video_history::forget(&state.pool, current.account.id, None).await?;
+    Ok(private_json(json!({"ok":true})))
+}
+async fn forget_position(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("write:statuses")?;
+    plamenu_db::video_history::forget(&state.pool, current.account.id, Some(id)).await?;
+    Ok(private_json(json!({"ok":true})))
+}
+#[derive(Deserialize)]
+struct Position {
+    position_seconds: i32,
+    #[serde(default)]
+    completed: bool,
+}
+async fn save_position(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("write:statuses")?;
+    let input: Position = super::params::parse_body(&headers, &body)?;
+    let saved = crate::video_history::save(
+        &state,
+        current.account.id,
+        id,
+        input.position_seconds,
+        input.completed,
+    )
+    .await?;
+    Ok(private_json(json!({"saved":saved})))
 }
 
 async fn channels(

@@ -392,6 +392,10 @@ pub struct WebUser {
     pub live_notifications: bool,
     pub notification_sound: bool,
     pub notification_volume: u8,
+    /// Durable viewer choice, resolved before any enhanced player initializes.
+    /// A preference read failure must not undo a prior network-sharing opt-out.
+    pub p2p_enabled: bool,
+    pub p2p_configured: bool,
 }
 
 impl WebUser {
@@ -501,6 +505,11 @@ async fn resolve(parts: &mut Parts, state: &AppState) -> Option<WebUser> {
         plamenu_db::web_setting::notification_preferences(&state.pool, current.user.id)
             .await
             .unwrap_or_default();
+    let preferences = plamenu_db::video_history::preferences(&state.pool, current.account.id).await;
+    let (p2p_enabled, p2p_configured) = match preferences {
+        Ok(p) => (p.p2p_enabled, p.p2p_configured),
+        Err(_) => (false, true),
+    };
     Some(WebUser {
         current,
         csrf: csrf_token(&raw),
@@ -514,6 +523,8 @@ async fn resolve(parts: &mut Parts, state: &AppState) -> Option<WebUser> {
         live_notifications: notification_preferences.live_updates,
         notification_sound: notification_preferences.sound,
         notification_volume: notification_preferences.volume,
+        p2p_enabled,
+        p2p_configured,
     })
 }
 

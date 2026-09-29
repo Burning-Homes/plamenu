@@ -120,6 +120,48 @@ Retain the log, script revision, and tested image identity with release evidence
 Both use an isolated network and local CA. Test public DNS/TLS setup and recovery
 from your own backups separately.
 
+## Native-video recovery rehearsal
+
+The AP09 E2E rehearsal supplements the deployment drill with real native
+processing and a surviving PeerTube subscriber:
+
+```sh
+e2e/.venv/bin/pytest -q -s e2e/tests/test_video_backup_restore.py
+```
+
+It requires the documented local E2E peer harness, PostgreSQL's matching
+`pg_dump`/`pg_restore` major version and a free `plamenu2.local` fixture port.
+It does not stop or restore the standing development server. Disposable
+databases are uniquely named and created from `template0`, so an optionally
+seeded developer `template1` cannot leak unrelated data into the fixture.
+
+The test stops its writer before capturing the database and **entire** media
+tree, then removes only its original disposable source directory and restores
+into a new database and directory. It verifies exact files before startup,
+original Video/media identities, compatibility MP4, captions, posters,
+storyboard, every HLS rendition, integrity manifests and exact HTTP ranges.
+Private sources remain unreadable; existing credentials, separate P2P/history
+preferences, positions and private clipped playlists survive. A partly uploaded
+source resumes from its committed offset, finishes native processing and refunds
+its storage reservations only after acknowledged cancellation cleanup.
+
+The matching encryption root is escrowed separately from the media/database
+archive. An incorrect root fails the key audit; the correct root passes, and
+the restored original signer sends a Video Update accepted by the surviving
+PeerTube subscriber without changing its remote UUID.
+
+Evidence is retained under `target/e2e/video-restore/`: mode-0700 directories,
+mode-0600 recovery files/configuration, candidate and archive SHA-256 manifests,
+logs and result records. These backups contain **private account data and
+federation secrets**. Do not publish or upload the archives or escrow files;
+apply a protected evidence/backup retention policy. Keep the original domains,
+binary and PostgreSQL major version when reproducing recovery.
+
+This is native VOD and unfinished-upload recovery evidence, not a claim that
+all live-session/cache fault cases, remote storage or production disaster
+scenarios have been exercised. The separately documented live crash tests and
+the broader AP09 operations/release gates remain necessary.
+
 ## Retention
 
 Keep multiple recovery points and at least one off-host copy. A synchronized

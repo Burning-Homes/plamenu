@@ -232,6 +232,8 @@ pub async fn page(
                     @if session.is_some() {
                         a href="/videos" { (locale.text("videos-explore-publish")) }
                         a href="/videos/channels" { (locale.text("video-channel-manage")) }
+                        a href="/videos/history" { (locale.text("video-history-title")) }
+                        a href="/videos/settings" { (locale.text("video-viewer-settings")) }
                     }
                 }
                 @if let Some(user) = session.as_ref() {
@@ -243,6 +245,8 @@ pub async fn page(
                     p { a href="/videos" { (locale.text("videos-explore-publish")) }
                         " · " a href="/videos/channels" { (locale.text("video-channel-manage")) }
                         " · " a href="/videos/playlists" { (locale.text("playlist-title")) }
+                        " · " a href="/videos/history" { (locale.text("video-history-title")) }
+                        " · " a href="/videos/settings" { (locale.text("video-viewer-settings")) }
                     }
                 }
             }

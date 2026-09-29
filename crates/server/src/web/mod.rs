@@ -57,6 +57,7 @@ mod video_channels;
 mod video_chapters;
 mod video_drafts;
 mod video_explore;
+pub(crate) mod video_history;
 mod video_metadata;
 mod video_playlists;
 mod video_upload;
@@ -109,6 +110,12 @@ pub fn router() -> Router<AppState> {
             get(caption_transcripts::show),
         )
         .route("/", get(pages::home))
+        .route("/videos/settings", get(video_history::settings))
+        .route("/videos/history", get(video_history::page))
+        .route("/web/videos/settings", post(video_history::settings_action))
+        .route("/web/videos/p2p", post(video_history::p2p_action))
+        .route("/web/videos/history/forget", post(video_history::forget))
+        .route("/web/videos/{media_id}/position", post(video_history::save))
         .route("/videos/playlists", get(video_playlists::index))
         .route("/videos/playlists/{id}", get(video_playlists::show))
         .route("/web/video-playlists", post(video_playlists::create))

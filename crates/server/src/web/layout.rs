@@ -290,6 +290,8 @@ fn render_with_locale(
         html lang=(locale.tag()) dir=(locale.direction()) class="no-js" {
             (head(title, meta))
             body data-live-notifications=(live_notifications)
+                data-p2p-default=[user.map(|user|user.p2p_enabled)]
+                data-p2p-configured=[user.map(|user|user.p2p_configured)]
                 data-notification-sound=(notification_sound)
                 data-notification-volume=(notification_volume) {
                 a.skip-link href="#main-content" { (locale.text("nav-skip-to-content")) }
@@ -322,6 +324,19 @@ pub fn focused_shell(title: &str, content: &Markup) -> Markup {
 
 /// [`focused_shell`] with an explicitly negotiated locale.
 pub fn focused_shell_localized(title: &str, content: &Markup, locale: Locale) -> Markup {
+    focused_shell_p2p(title, content, locale, None, None, false)
+}
+
+/// Read-only embed can apply a viewer preference without exposing identity,
+/// CSRF, private content or any authenticated mutation capability.
+pub fn focused_shell_p2p(
+    title: &str,
+    content: &Markup,
+    locale: Locale,
+    p2p: Option<bool>,
+    configured: Option<bool>,
+    locked: bool,
+) -> Markup {
     html! {
         (DOCTYPE)
         // `no-js` is swapped to `js` synchronously below so JS-only affordances
@@ -330,7 +345,7 @@ pub fn focused_shell_localized(title: &str, content: &Markup, locale: Locale) ->
         // script is blocked, leaving the no-JS fallbacks in force.
         html lang=(locale.tag()) dir=(locale.direction()) class="no-js" {
             (head(title, &PageMeta::default()))
-            body {
+            body data-p2p-default=[p2p] data-p2p-configured=[configured] data-p2p-locked=[locked.then_some("true")] {
                 main.focused-main { (content) }
             }
         }

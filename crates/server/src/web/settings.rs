@@ -47,6 +47,10 @@ struct Section {
 
 const SECTIONS: &[Section] = &[
     Section {
+        href: "/videos/settings",
+        message: "video-viewer-settings",
+    },
+    Section {
         href: "/settings/profile",
         message: "settings-section-profile",
     },

@@ -1613,6 +1613,10 @@ pub async fn run_retention(state: &AppState) {
     /// unbounded loop.
     const MAX_SIZE_BATCHES: u32 = 20;
 
+    if let Err(error) = plamenu_db::video_history::expire(&state.pool).await {
+        tracing::error!(%error, "private video history retention failed");
+    }
+
     // A transient settings read failure skips this pass's eviction rather
     // than surprising the operator with stale fallback behavior.
     let settings = match state.settings_cache.get(&state.pool).await {

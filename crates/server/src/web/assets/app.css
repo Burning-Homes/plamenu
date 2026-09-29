@@ -8766,6 +8766,13 @@ a.settings-button--plain {
 .video-playlist__description { white-space: pre-wrap; }
 .video-playlist__player > .status { border: 1px solid var(--border); border-radius: .5rem; }
 
+.video-history__entries { padding-inline-start: 1.5rem; }
+.video-history__entries > li { margin-block: 1.25rem; overflow-wrap: anywhere; }
+.video-history__entries h2 { font-size: 1rem; }
+.media__history .settings-form { padding: .75rem; }
+.video-viewer-settings .settings-toggle,
+.video-history .settings-toggle { min-block-size: 2.75rem; align-items: center; }
+
 } /* @layer app */
 
 .profile-identity-proofs { padding: 1rem; overflow-wrap: anywhere; }

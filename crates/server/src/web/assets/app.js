@@ -3988,11 +3988,58 @@
   let p2pLoading = null;
   const P2P_PREF = "plamenu:p2p-enabled";
   let p2pChoice = null;
+  let pendingPeerPreference = null;
+  let peerPreferenceBusy = false;
+
+  function savePeerPreference(panel, enabled) {
+    // One in-flight request and one latest choice, shared across every player.
+    // Rapid toggles cannot build an unbounded queue or reorder saved choices.
+    pendingPeerPreference = {panel, enabled};
+    if (peerPreferenceBusy) return;
+    peerPreferenceBusy = true;
+    (async () => {
+      while (pendingPeerPreference) {
+        const next = pendingPeerPreference;
+        pendingPeerPreference = null;
+        try {
+          const response = await fetch('/web/videos/p2p', {method:'POST',
+            credentials:'same-origin',headers:{Accept:'application/json'},
+            body:new URLSearchParams({csrf:next.panel.dataset.p2pCsrf,
+              enabled:String(next.enabled)}),keepalive:true});
+          if(!response.ok)throw new Error('Preference rejected');
+          if(!pendingPeerPreference){
+            document.body.dataset.p2pDefault=String(next.enabled);
+            document.body.dataset.p2pConfigured='true';
+            next.panel.querySelector('.media__p2p-status').textContent=next.panel.dataset.p2pSaved;
+          }
+        } catch {
+          if(!pendingPeerPreference)next.panel.querySelector('.media__p2p-status').textContent=next.panel.dataset.p2pFailed;
+        }
+      }
+      peerPreferenceBusy = false;
+    })();
+  }
 
   function peerSharingEnabled() {
+    if (document.body.dataset.p2pLocked === 'true') return false;
     if (p2pChoice !== null) return p2pChoice;
+    // Account settings (including a non-JS opt-out), or an explicit server-only
+    // embed URL, outrank stale browser storage before any tracker is contacted.
+    if (document.body.dataset.p2pDefault !== undefined) {
+      if (document.body.dataset.p2pDefault === 'false') return false;
+      if (document.body.dataset.p2pConfigured !== 'false') return true;
+      // Preserve an older browser-only opt-out until the viewer deliberately
+      // saves an account setting. A schema default is not consent to reset it.
+    }
     try { return localStorage.getItem(P2P_PREF) !== "false"; }
     catch (_err) { return true; }
+  }
+
+  // A migrated browser-only opt-out must also be reflected by the settings
+  // form before its first explicit account save, not just by the player.
+  const viewerPeerSetting = document.querySelector('form[action="/web/videos/settings"] input[name="p2p_enabled"]');
+  if (viewerPeerSetting && document.body.dataset.p2pConfigured === 'false') {
+    viewerPeerSetting.checked = peerSharingEnabled();
   }
 
   function loadP2P(cb) {
@@ -4252,6 +4299,78 @@
     const goLive = video.closest("figure")?.querySelector(".media__go-live");
     const progressive = video.getAttribute("src") || video.getAttribute("data-src");
     let hlsPlayer = null;
+    const liveVideo = video.dataset.live === 'live';
+    let vodPending = false;
+    let vodTimer = null;
+    let vodFallback = false;
+    let adaptiveStarted = false;
+    const clearVodWatch = () => { clearTimeout(vodTimer); vodTimer = null; };
+    const standardVideo = () => {
+      if (liveVideo || !progressive || vodFallback) return;
+      vodFallback = true;
+      const resume = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      const playing = vodPending || !video.paused;
+      vodPending = false;
+      clearVodWatch();
+      hlsPlayer?.destroy();
+      hlsPlayer = null;
+      delete video.dataset.p2pActive;
+      video.dataset.p2pFallback = 'true';
+      const figure = video.closest('figure');
+      const quality = figure?.querySelector('.video-quality');
+      if (quality === document.activeElement) video.focus();
+      quality?.remove();
+      const sharing = figure?.querySelector('.media__p2p-toggle');
+      if (sharing) { sharing.checked = false; sharing.disabled = true; }
+      if (figure) {
+        const notice = document.createElement('p');
+        notice.className = 'media__live-recovery';
+        notice.setAttribute('role','status');
+        notice.textContent = video.dataset.vodFallback || 'Adaptive playback failed. Using the standard video player; peer sharing is off for this playback.';
+        const link = document.createElement('a');
+        link.href = progressive;
+        link.textContent = video.dataset.vodBasic || 'Open standard video';
+        const actions = document.createElement('span');
+        actions.className = 'media__live-recovery-actions';
+        actions.appendChild(link);
+        notice.appendChild(actions);
+        figure.appendChild(notice);
+      }
+      video.addEventListener('loadedmetadata', () => {
+        if (resume > 0) video.currentTime = Number.isFinite(video.duration) ? Math.min(resume, Math.max(0,video.duration-.1)) : resume;
+        if (playing) video.play().catch(() => {});
+      }, {once:true});
+      video.src = progressive;
+      reloadExternalTracks();
+      video.load();
+    };
+    const watchVodStart = () => {
+      clearVodWatch();
+      if (liveVideo || vodFallback || !progressive) return;
+      const started = performance.now();
+      const position = video.currentTime;
+      let bufferedSince = null;
+      const tick = () => {
+        if (!video.isConnected || document.hidden || (!vodPending && video.paused)) return clearVodWatch();
+        const frames = video.getVideoPlaybackQuality?.().totalVideoFrames;
+        if ((frames === undefined || frames > 0) && video.currentTime > position+.05) return clearVodWatch();
+        const elapsed = performance.now()-started;
+        const noFrames = frames === 0 && video.readyState >= 2 && video.buffered.length;
+        if (noFrames) bufferedSince ??= performance.now();
+        else bufferedSince = null;
+        // A populated buffer with no decoded frames is a decoder stall, not
+        // a slow origin. Otherwise permit the measured slow-peer HTTP startup.
+        if (elapsed >= 15000 || (bufferedSince !== null && performance.now()-bufferedSince >= 5000)) {
+          standardVideo();
+          return;
+        }
+        vodTimer = setTimeout(tick,250);
+      };
+      tick();
+    };
+    video.addEventListener('play',watchVodStart);
+    video.addEventListener('pause',() => { if (!vodPending) clearVodWatch(); });
+    video.addEventListener('error',() => { if (adaptiveStarted) standardVideo(); });
     const showLiveFailure = () => {
       const figure = video.closest("figure");
       if (!figure || figure.querySelector(".media__live-recovery")) return;
@@ -4287,16 +4406,32 @@
     if (choice && window.RTCPeerConnection && window.crypto?.subtle) {
       choice.checked = peerSharingEnabled();
       choice.closest(".media__p2p").hidden = false;
+      if (document.body.dataset.p2pLocked === 'true') {
+        choice.disabled = true;
+        choice.closest('.media__p2p').querySelector('.media__p2p-status').textContent=choice.closest('.media__p2p').dataset.p2pLocked;
+      }
       choice.addEventListener("change", () => {
         p2pChoice = choice.checked;
-        try { localStorage.setItem(P2P_PREF, choice.checked ? "true" : "false"); }
-        catch (_err) { /* The choice still applies to this playback. */ }
+        const panel=choice.closest('.media__p2p');
+        const csrf=panel.dataset.p2pCsrf;
+        if (csrf) {
+          savePeerPreference(panel,choice.checked);
+        } else {
+          try { localStorage.setItem(P2P_PREF, choice.checked ? "true" : "false"); }
+          catch (_err) { /* The choice still applies to this playback. */ }
+        }
         document.querySelectorAll(".media__p2p-toggle").forEach((other) => {
-          other.checked = choice.checked;
+          other.checked = other.disabled ? false : choice.checked;
+          other.closest('figure')?.querySelector('video')?.dispatchEvent(new Event('plamenu:p2p-choice'));
         });
+      });
+      // Notify every mounted player, not just the one whose checkbox changed.
+      // Listener ownership stays on the video so removed timeline cards can
+      // be collected rather than accumulating document-level closures.
+      video.addEventListener('plamenu:p2p-choice', () => {
         if (hlsPlayer?.p2pEngine) {
           hlsPlayer.p2pEngine.applyDynamicConfig({
-            core: { isP2PDisabled: !choice.checked, isP2PUploadDisabled: !choice.checked },
+            core: { isP2PDisabled: !peerSharingEnabled(), isP2PUploadDisabled: !peerSharingEnabled() },
           });
         }
       });
@@ -4343,24 +4478,29 @@
     video.addEventListener(
       "play",
       function onPlay() {
+        adaptiveStarted = true;
         // The progressive source existed only to keep the native control
         // actionable. Stop its just-started request before selecting HLS, so a
         // click never downloads both the MP4 fallback and the HLS ladder.
+        vodPending = !liveVideo;
         video.pause();
         video.removeAttribute("src");
         video.load();
+        watchVodStart();
         // hls.js is the ONLY player that handles PeerTube's multi-rendition
         // ladder + separated-audio alternate track, so it is preferred wherever
         // MediaSource exists (Chrome/Firefox/desktop Safari) — Chrome's *native*
         // HLS silently drops the alternate audio. Only iOS / old Safari (native
         // HLS, no MSE) play directly, skipping the hls.js download.
         if (!window.MediaSource && native) {
+          vodPending = false;
           video.src = hlsUrl;
           reloadExternalTracks();
           video.play().catch(() => {});
           return;
         }
         loadHls((Hls) => {
+          if (vodFallback) return;
           if (Hls && Hls.isSupported()) {
             // A live stream has no beginning to seek to and a window that
             // moves out from under a stalled player, so it starts at the live
@@ -4382,6 +4522,7 @@
             // after the viewer had a chance to opt out and checksums loaded.
             // A failed peer setup must not block ordinary HLS playback.
             const startHls = (options, Engine) => {
+              if (vodFallback) return;
               let hls;
               try {
                 const Player = options && Engine ? Engine.injectMixin(Hls) : Hls;
@@ -4393,10 +4534,16 @@
             hls.loadSource(hlsUrl);
             hls.attachMedia(video);
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
+              vodPending = false;
               buildQualityMenu(video, hls, Hls);
               reloadExternalTracks();
               video.play().catch(() => {});
             });
+            if (!live) {
+              hls.on(Hls.Events.ERROR, (_event,data) => {
+                if (data?.fatal) standardVideo();
+              });
+            }
             if (live) {
               // A live playlist can hiccup — a segment rolls out of the
               // window mid-fetch — and that is worth resuming from. A
@@ -4448,17 +4595,22 @@
             });
             };
             peerOptions(video, live).then((options) => {
+              if (vodFallback) return;
               if (!options || !peerSharingEnabled()) return startHls(null, null);
               loadP2P((Engine) => startHls(Engine && peerSharingEnabled() ? options : null, Engine));
             }).catch(() => startHls(null, null));
           } else if (native) {
+            vodPending = false;
             video.src = hlsUrl; // native HLS (Safari/iOS)
             reloadExternalTracks();
             video.play().catch(() => {});
           } else if (progressive) {
-            video.src = progressive; // last-resort progressive playback
-            reloadExternalTracks();
-            video.play().catch(() => {});
+            if (!liveVideo) standardVideo();
+            else {
+              video.src = progressive; // last-resort live remux playback
+              reloadExternalTracks();
+              video.play().catch(() => {});
+            }
           }
         });
       },
@@ -4493,6 +4645,86 @@
           seek();
         } else {
           video.addEventListener("loadedmetadata", seek, { once: true });
+          if (video.dataset.hls) video.play().catch(() => {});
+          else video.load();
+        }
+      });
+    });
+  }
+
+  // Opt-in history only exists on authenticated focus pages. No page view,
+  // metadata preload, embed, live stream or anonymous player records history.
+  function bindVideoHistory(root) {
+    root.querySelectorAll('form[data-video-history]').forEach((form) => {
+      if (form.dataset.historyBound) return;
+      const video = form.closest('figure')?.querySelector('video[controls]');
+      if (!video) return;
+      form.dataset.historyBound = '1';
+      const input = form.elements.position_seconds;
+      const note = form.querySelector('[data-history-status]');
+      let played = false;
+      let busy = false;
+      let pending = null;
+      let lastSent = null;
+      let lastSave = 0;
+      const save = async (manual = false, snapshot = null) => {
+        if (!manual && !played) return;
+        const seconds = snapshot?.seconds ?? (manual ? Number(input.value) : Math.floor(video.currentTime));
+        if (!Number.isFinite(seconds) || seconds < 0 || seconds > 604800) return;
+        const completed = snapshot?.completed ?? (!manual && video.ended);
+        if (busy) {
+          // One bounded latest-position queue. An ending/pause or explicit
+          // manual save must not disappear behind a slow periodic request.
+          // Automatic updates cannot overwrite a queued manual correction.
+          if (manual || !pending?.manual) pending = {seconds, completed, manual};
+          return;
+        }
+        const value = `${seconds}:${completed}`;
+        if (!manual && value === lastSent) return;
+        busy = true;
+        if (manual || document.activeElement !== input) input.value = String(seconds);
+        const body = new URLSearchParams({ csrf: form.elements.csrf.value,
+          position_seconds: String(seconds), completed: completed ? '1' : '0' });
+        try {
+          const response = await fetch(form.action, { method: 'POST', body,
+            credentials: 'same-origin', headers: { Accept: 'application/json' }, keepalive: true });
+          if (!response.ok) throw new Error('History rejected');
+          const result = await response.json();
+          if (!result.saved) throw new Error('History disabled');
+          lastSent = value;
+          lastSave = Date.now();
+          if (manual) note.textContent = form.dataset.historySaved;
+        } catch { if (manual) note.textContent = form.dataset.historyFailed; }
+        finally {
+          busy = false;
+          const queued = pending;
+          pending = null;
+          if (queued) save(queued.manual, queued);
+        }
+      };
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        save(true);
+      });
+      video.addEventListener('playing', () => { played = true; });
+      video.addEventListener('timeupdate', () => {
+        if (played && !video.paused && Date.now() - lastSave > 15000) {
+          lastSave = Date.now();
+          save();
+        }
+      });
+      video.addEventListener('pause', () => save());
+      video.addEventListener('ended', () => save());
+      window.addEventListener('pagehide', () => save());
+      const resume = form.closest('figure').querySelector('[data-history-resume]');
+      resume?.addEventListener('click', (event) => {
+        const seconds = Number(resume.dataset.historyResume);
+        if (!Number.isFinite(seconds)) return;
+        event.preventDefault();
+        const seek = () => { video.currentTime = seconds; video.focus(); };
+        if (video.readyState >= HTMLMediaElement.HAVE_METADATA) seek();
+        else {
+          video.addEventListener('loadedmetadata', seek, { once: true });
           if (video.dataset.hls) video.play().catch(() => {});
           else video.load();
         }
@@ -5691,6 +5923,7 @@
     bindBlurhashes(root);
     bindHlsVideos(root);
     bindVideoChapters(root);
+    bindVideoHistory(root);
     bindPlaylistClips(root);
     bindPlaylistMoves(root);
     bindCaptionTranscript(root);

@@ -136,8 +136,8 @@ before becoming `verified`. Keep partial results and failures visible.
 | M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | verified 2026-09-29 for the stated functional gate; see M3 sign-off below. Human AT/WCAG release evidence remains M9 |
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | verified 2026-09-29; see M4 sign-off below |
 | M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | verified 2026-09-25 for this stated functional gate; see the M5 sign-off below. Cross-node storage, additional device/browser combinations, and broader fault matrices remain in M7/M9, not silently counted as done |
-| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders, scheduled VOD publication, in-session browser camera ↔ screen switching, and searchable/followable HTML video and channel libraries verified; larger/remote channel matrices, settings/imports, history and browser/hardware evidence remain |
-| M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress: remote and local-origin VOD/live PeerTube P2P exchange and pre-play opt-out verified; public VOD embed opt-out verified; wider embeds, operations and scale evidence remain |
+| M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | in progress: live calendars/reminders, scheduled VOD publication, in-session browser camera ↔ screen switching, searchable/followable HTML libraries and private opt-in viewer history/resume verified; larger/remote channel matrices, imports/editing/downloads and broader browser/hardware evidence remain. See M6/M7 closure checklist |
+| M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress: both-origin VOD/live P2P exchange; durable HTML-first account opt-out and public/cookie-free VOD embeds; bounded VOD startup recovery; actual native VOD/upload backup and fresh-store restore verified. Worker/offload/redundancy, moderation/analytics, wider live/fault/load and resource budgets remain. See M6/M7 closure checklist |
 | M8 | Ecosystem and beyond parity | Defined REST/embed/runner compatibility scope; chosen extensions; end-to-end tests per supported contract; no PeerTube plugin ABI in round one | pending |
 | M9 | Completion gate | All accepted inventory entries verified; current and prior PeerTube matrices; browser/a11y/performance gates; operator and user documentation | pending |
 
@@ -146,6 +146,14 @@ percentage is reported. A milestone count is not a feature-parity percentage.
 No "100%" claim while required rows are missing, deferred, failed, or untested.
 AP09's Audio/Image/Document authoring also needs an explicit disposition; video
 delivery alone must not silently close those parts of the original finding.
+
+Current goal (2026-09-29): fully close original **M6 and M7**. The concrete
+remaining gates and slice evidence are recorded in
+[`AP09-M6-M7-CLOSURE.md`](AP09-M6-M7-CLOSURE.md). Private opt-in history/resume
+is verified; durable account P2P opt-out, cookie-free VOD embeds, bounded VOD
+startup fallback and actual native VOD/upload backup/restore now have additional
+slice evidence there. Neither milestone is yet signed off. No push, merge or
+deployment is part of this goal.
 
 ## M1 sign-off — 2026-09-29
 

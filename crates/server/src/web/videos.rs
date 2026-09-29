@@ -187,6 +187,7 @@ pub(super) async fn page(
             p { a href="/videos/explore" { (locale.text("videos-explore-browse")) } }
             p { a href="/videos/channels" { (locale.text("video-channel-manage")) } }
             p { a href="/videos/playlists" { (locale.text("playlist-title")) } }
+            p { a href="/videos/history" { (locale.text("video-history-title")) } " · " a href="/videos/settings" { (locale.text("video-viewer-settings")) } }
             @if !recent.is_empty() {
                 nav aria-label=(locale.text("videos-recent-drafts")) {
                     h2 { (locale.text("videos-recent-drafts")) }

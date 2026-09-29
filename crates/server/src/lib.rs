@@ -84,6 +84,7 @@ pub mod trends;
 pub mod video;
 pub mod video_channel_backfill;
 pub mod video_channels;
+pub mod video_history;
 pub mod video_metadata;
 pub mod video_playlists;
 pub mod video_playlists_remote;
