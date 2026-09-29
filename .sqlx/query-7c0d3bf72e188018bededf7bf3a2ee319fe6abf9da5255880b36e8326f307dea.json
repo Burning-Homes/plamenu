@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM native_video_hls_renditions r\n         JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'\n         JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'\n         JOIN public_native_videos v ON v.media_id = m.id AND v.status_id = m.status_id\n         WHERE r.p2p_infohash = $1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7c0d3bf72e188018bededf7bf3a2ee319fe6abf9da5255880b36e8326f307dea"
+}

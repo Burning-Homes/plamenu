@@ -131,9 +131,7 @@ pub async fn public_ladder_revision(
          FROM native_video_hls_renditions r
          JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'
          JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'
-         JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
-         JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
-         JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
+         JOIN public_native_videos v ON v.media_id = m.id AND v.status_id = m.status_id
          WHERE r.media_id = $1 AND ($2::bigint IS NULL OR m.video_content_revision=$2)
          ORDER BY r.height DESC",
         media_id,
@@ -153,9 +151,7 @@ pub async fn public_playlist(
         "SELECT r.playlist FROM native_video_hls_renditions r
          JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'
          JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'
-         JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
-         JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
-         JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
+         JOIN public_native_videos v ON v.media_id = m.id AND v.status_id = m.status_id
          WHERE r.media_id = $1 AND r.height = $2 AND ($3::bigint IS NULL OR m.video_content_revision=$3)",
         media_id,
         height,
@@ -176,9 +172,7 @@ pub async fn public_sha256(
         "SELECT r.file_name, r.segment_sha256 FROM native_video_hls_renditions r
          JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'
          JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'
-         JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
-         JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
-         JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
+         JOIN public_native_videos v ON v.media_id = m.id AND v.status_id = m.status_id
          WHERE r.media_id = $1 AND ($2::bigint IS NULL OR m.video_content_revision=$2)",
         media_id,
         revision,
@@ -210,12 +204,10 @@ pub async fn public_peer_uuids(
         return Ok(HashMap::new());
     }
     let rows = sqlx::query!(
-        "SELECT r.media_id, v.uuid, m.video_content_revision FROM native_video_hls_renditions r
+        "SELECT r.media_id, v.uuid AS \"uuid!\", m.video_content_revision FROM native_video_hls_renditions r
          JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'
          JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'
-         JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
-         JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
-         JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
+         JOIN public_native_videos v ON v.media_id = m.id AND v.status_id = m.status_id
          WHERE r.media_id = ANY($1)
          GROUP BY r.media_id, v.uuid, m.video_content_revision
          HAVING bool_and(r.segment_sha256 <> '{}'::jsonb AND r.p2p_infohash IS NOT NULL)",
@@ -254,9 +246,7 @@ pub async fn public_infohash_exists(pool: &PgPool, infohash: &str) -> Result<boo
         "SELECT EXISTS (SELECT 1 FROM native_video_hls_renditions r
          JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'
          JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'
-         JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
-         JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
-         JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
+         JOIN public_native_videos v ON v.media_id = m.id AND v.status_id = m.status_id
          WHERE r.p2p_infohash = $1)",
         infohash,
     )

@@ -5,8 +5,7 @@
 //! worker removes the file from the [`MediaStore`](crate::storage::MediaStore).
 //! The queue is leased (see `docs/QUEUES.md`), so a crash — or a transient store
 //! error — simply lets the job become due again and the removal is retried; a job
-//! that keeps failing is dropped once it exhausts its attempts, rather than
-//! looping forever.
+//! that keeps failing retains its revoked key and backs off for a day.
 //!
 //! It also hosts the reconciliation sweep ([`reconcile`]) that catches files
 //! orphaned by deletions that ran *before* this queue existed: it lists the store
@@ -39,13 +38,12 @@ pub async fn run_due(state: &AppState) -> u64 {
     let mut done: Vec<i64> = Vec::with_capacity(jobs.len());
     let mut exhausted = Vec::new();
     for job in jobs {
-        // A job reclaimed past the cap can never be removed (a permanently
-        // unreadable path); drop it after logging rather than loop forever.
+        // A broken mount must not make deletion lose its revocation record.
         if job.exhausted() {
             tracing::warn!(
                 file = %job.file_name,
                 attempts = job.attempts,
-                "dropping media cleanup after too many failed attempts"
+                "deferring media cleanup for one day after repeated failures; key remains revoked"
             );
             exhausted.push(job.id);
             continue;
@@ -67,8 +65,8 @@ pub async fn run_due(state: &AppState) -> u64 {
     if let Err(error) = plamenu_db::video_storage::complete_deleted(&state.pool, &done).await {
         tracing::error!(%error, "failed to complete media cleanup jobs");
     }
-    if let Err(error) = media_cleanup::complete_many(&state.pool, &exhausted).await {
-        tracing::error!(%error, "failed to discard exhausted cleanup jobs; storage charges retained");
+    if let Err(error) = media_cleanup::defer_exhausted(&state.pool, &exhausted).await {
+        tracing::error!(%error, "failed to defer exhausted cleanup jobs; revocation and storage charges retained");
     }
     claimed
 }

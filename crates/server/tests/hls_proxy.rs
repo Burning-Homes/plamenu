@@ -1096,7 +1096,7 @@ async fn a_live_attachment_is_playable_only_while_it_is_on_air(pool: PgPool) {
         .execute(&pool)
         .await
         .unwrap();
-        let media = plamenu_db::media::find_by_ids(&pool, &[media_id])
+        let mut media = plamenu_db::media::find_by_ids(&pool, &[media_id])
             .await
             .unwrap()
             .into_iter()
@@ -1107,9 +1107,15 @@ async fn a_live_attachment_is_playable_only_while_it_is_on_air(pool: PgPool) {
         assert_eq!(json["type"], "video", "a broadcast is a video: {json}");
         assert_eq!(json["live"]["state"], state);
         assert_eq!(json["live"]["permanent"], false);
-        // The poster is always available, in every state.
+        // Without a remote poster, offer a usable built-in fallback instead
+        // of asking the preview proxy to download an endless live stream.
+        assert_eq!(json["preview_url"], "https://plamenu.test/pwa/icon-512.png");
+        // A declared PeerTube poster remains reachable before it is cached.
+        media.thumbnail_remote_url = Some("https://remote.example/poster.jpg".into());
+        let with_poster =
+            plamenu::entities::media_json_hls("plamenu.test", &media, false, Some(&empty));
         assert_eq!(
-            json["preview_url"],
+            with_poster["preview_url"],
             format!("https://plamenu.test/media/proxy/attachment/{media_id}/small")
         );
 

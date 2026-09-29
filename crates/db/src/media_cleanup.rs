@@ -12,8 +12,8 @@
 //! and deletes the job. This is the lease pattern (see `docs/QUEUES.md`): a claim
 //! pushes `run_at` into the future, the worker deletes the job only once the file
 //! is gone, and a crash simply lets the lease expire so the deletion is retried.
-//! `attempts` bounds a job whose file can never be removed (a permanently
-//! unreadable path) so it is eventually dropped instead of looping forever.
+//! Failed jobs retain their revocation key and storage debt until deletion is
+//! acknowledged. Exhausted bursts back off for a day instead of losing the key.
 
 use sqlx::{PgConnection, PgExecutor, PgPool};
 
@@ -24,8 +24,7 @@ use crate::{DbError, id};
 /// file is a privacy leak we want gone promptly.
 const LEASE_SECONDS: f64 = 120.0;
 
-/// Drop a cleanup job once it has been reclaimed this many times — a file that
-/// cannot be deleted (permissions, a vanished mount) must not loop forever.
+/// Back off a cleanup burst once it has been reclaimed this many times.
 const MAX_ATTEMPTS: i32 = 10;
 
 /// A leased cleanup job: its id (to [`complete`] it) and the store key to delete.
@@ -33,12 +32,12 @@ const MAX_ATTEMPTS: i32 = 10;
 pub struct CleanupJob {
     pub id: i64,
     pub file_name: String,
-    /// Times claimed, including this one; `> MAX_ATTEMPTS` means give up.
+    /// Times claimed in this burst, including this one.
     pub attempts: i32,
 }
 
 impl CleanupJob {
-    /// Whether this job has failed too many times to keep retrying.
+    /// Whether this retry burst should back off.
     #[must_use]
     pub fn exhausted(&self) -> bool {
         self.attempts > MAX_ATTEMPTS
@@ -221,7 +220,7 @@ pub async fn claim_due(pool: &PgPool, limit: i64) -> Result<Vec<CleanupJob>, DbE
     Ok(jobs)
 }
 
-/// Removes a finished (file deleted) or exhausted cleanup job.
+/// Removes a finished (file deleted) cleanup job. Never acknowledge a failure.
 pub async fn complete(pool: &PgPool, id: i64) -> Result<(), DbError> {
     sqlx::query!("DELETE FROM media_cleanup_jobs WHERE id = $1", id)
         .execute(pool)
@@ -238,6 +237,21 @@ pub async fn complete_many(pool: &PgPool, ids: &[i64]) -> Result<(), DbError> {
     sqlx::query!("DELETE FROM media_cleanup_jobs WHERE id = ANY($1)", ids)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+/// Preserve revocation and storage charges while reducing repeated I/O/logging
+/// against broken mounts. A later repaired store can finish the same key.
+pub async fn defer_exhausted(pool: &PgPool, ids: &[i64]) -> Result<(), DbError> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        "UPDATE media_cleanup_jobs SET attempts=0,run_at=now()+interval '1 day' WHERE id=ANY($1)",
+    )
+    .bind(ids)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

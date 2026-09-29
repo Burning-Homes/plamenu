@@ -116,6 +116,13 @@ impl IntoResponse for ApiError {
             }
             _ => json!({ "error": self.to_string() }),
         };
-        (status, Json(body)).into_response()
+        // Refusals must not become a shared-cache authority decision. In
+        // particular, a suspended/private Video can later become public again.
+        let mut response = (status, Json(body)).into_response();
+        response.headers_mut().insert(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("private, no-store"),
+        );
+        response
     }
 }

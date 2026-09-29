@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1 FROM media_attachments m\n            JOIN accounts a ON a.id = m.account_id\n            LEFT JOIN video_drafts d ON d.media_id = m.id\n            LEFT JOIN native_live_sessions ls ON ls.replay_media_id = m.id\n            LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id\n            LEFT JOIN accounts c ON c.id = COALESCE(v.channel_id, d.channel_id)\n            LEFT JOIN statuses s ON s.id = m.status_id\n            LEFT JOIN remote_video_channels rv ON rv.status_id = m.status_id\n            LEFT JOIN accounts rc ON rc.id = rv.channel_id\n            WHERE m.id = $1 AND (a.suspended_at IS NOT NULL\n                OR c.suspended_at IS NOT NULL\n                OR rc.suspended_at IS NOT NULL OR rc.deleted_at IS NOT NULL\n                OR (v.media_id IS NOT NULL AND NOT EXISTS (\n                    SELECT 1 FROM public_native_videos p WHERE p.media_id = m.id))\n                OR (s.object_type = 'Video' AND (s.deleted_at IS NOT NULL\n                    OR s.visibility NOT IN ('public', 'unlisted')))\n                OR (d.media_id IS NOT NULL AND v.media_id IS NULL)\n                OR (ls.replay_media_id IS NOT NULL AND v.media_id IS NULL))\n        ) AS \"blocked!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "blocked!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6bfb87b9dff9bfc4553b33a02ad119063fcdb99326f1d7d1ad05b7184a4a2b2e"
+}

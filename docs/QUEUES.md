@@ -20,7 +20,7 @@ Account archives and bulk imports use `scheduled`/`in_progress` state plus a
 | media processing/account media | at-least-once | lease expiry; remote work backs off |
 | quote verification | at-least-once | bounded retry, then remains pending |
 | reply fetch, link verification/crawl | leased single-attempt work | lease expiry bounds crash loops |
-| media cleanup | at-least-once | lease expiry and bounded retry |
+| media cleanup | at-least-once, acknowledged deletion | lease expiry; repeated failures retain revocation and back off for one day |
 | account archives, bulk imports | at-least-once state lease | stale-claim sweep |
 | scheduled statuses | leased retry; atomic publication | five-minute lease; queue removal commits with the post and delivery jobs |
 | poll-expiry side effects | at-most-once | durable close stamp, no notification replay |
@@ -61,7 +61,21 @@ An account purge keeps its tombstone row, so queue cleanup is explicit:
 
 Media cleanup is inserted transactionally with row deletion. This ensures a
 crash cannot leave a database-deleted attachment permanently retrievable from
-storage. `plamenu media reconcile` finds older orphaned files.
+storage. An enqueued key is refused at the origin before physical removal.
+After ten failed claims, the next claim defers another retry burst for one day;
+it never discards the revocation key or refunds native storage charges. Repair
+the reported permissions/mount problem; the same job completes after the store
+acknowledges deletion. Alert on repeated failures and overdue cleanup debt.
+`plamenu media reconcile` finds older orphaned files.
+
+Native public playback additionally checks the canonical status, immutable
+author/uploader, channel and current channel owner on every origin request.
+Deleted/private statuses and suspended/deleted actors refuse MP4, HLS,
+captions, storyboard and tracker metadata even after a channel transfer.
+Reversible suspension keeps files for later unsuspension. Refusals are
+`private, no-store`. Previously fetched bytes and independent browser/CDN/peer
+copies cannot be recalled by an origin check; do not treat immutable-byte
+caching or distribution controls as DRM.
 
 ## Adding a queue
 

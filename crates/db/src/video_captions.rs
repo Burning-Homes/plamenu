@@ -111,11 +111,14 @@ pub async fn public_source(
          JOIN statuses s ON s.id = m.status_id
          JOIN accounts a ON a.id = m.account_id
          LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = s.id
-         LEFT JOIN accounts ch ON ch.id = v.channel_id
          WHERE c.media_id = $1 AND c.language = $2
            AND s.visibility IN ('public', 'unlisted')
            AND s.deleted_at IS NULL AND a.suspended_at IS NULL
-           AND (v.media_id IS NULL OR ch.suspended_at IS NULL)",
+           AND (v.media_id IS NULL OR EXISTS (
+               SELECT 1 FROM public_native_videos p WHERE p.media_id = m.id))
+           AND NOT EXISTS (SELECT 1 FROM remote_video_channels rv
+               JOIN accounts rc ON rc.id = rv.channel_id
+               WHERE rv.status_id = s.id AND (rc.suspended_at IS NOT NULL OR rc.deleted_at IS NOT NULL))",
     )
     .bind(media_id)
     .bind(language)

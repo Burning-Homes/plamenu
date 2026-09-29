@@ -71,6 +71,7 @@ const PIPE_CHUNK: usize = 64 * 1024;
 
 /// A running remux of one broadcast, shared by every viewer of it.
 struct Session {
+    closed: watch::Receiver<bool>,
     /// `ftyp` + `moov`: the initialization section every viewer needs before
     /// any fragment will decode. Published once, replayed to every joiner.
     init: watch::Receiver<Option<Arc<Vec<u8>>>>,
@@ -137,7 +138,12 @@ pub async fn stream(
         return Err(ApiError::NotFound);
     };
 
-    let body = Body::from_stream(fragment_stream(init, fragments, guard));
+    let body = Body::from_stream(fragment_stream(
+        init,
+        fragments,
+        guard,
+        session.closed.clone(),
+    ));
     Ok((
         [
             (header::CONTENT_TYPE, "video/mp4"),
@@ -155,13 +161,21 @@ pub async fn stream(
 /// holding a request open against a broadcast that never starts producing.
 async fn await_init(session: &Session) -> Option<Arc<Vec<u8>>> {
     let mut init = session.init.clone();
+    let mut closed = session.closed.clone();
     let wait = async {
         loop {
+            if *closed.borrow() {
+                return None;
+            }
             if let Some(bytes) = init.borrow_and_update().clone() {
                 return Some(bytes);
             }
             // The sender is dropped when the session dies; that ends the wait.
-            init.changed().await.ok()?;
+            tokio::select! {
+                biased;
+                result=closed.changed()=>{result.ok()?;},
+                result=init.changed()=>{result.ok()?;},
+            }
         }
     };
     tokio::time::timeout(START_TIMEOUT, wait)
@@ -176,20 +190,29 @@ fn fragment_stream(
     init: Arc<Vec<u8>>,
     fragments: broadcast::Receiver<Arc<Vec<u8>>>,
     guard: ViewerGuard,
+    closed: watch::Receiver<bool>,
 ) -> impl futures_util::Stream<Item = Result<Vec<u8>, std::io::Error>> {
     // The guard rides along in the stream's state, so the viewer count falls
     // exactly when the client disconnects and axum drops the body.
     futures_util::stream::unfold(
-        (Some(init), fragments, guard),
-        |(pending, mut fragments, guard)| async move {
+        (Some(init), fragments, guard, closed),
+        |(pending, mut fragments, guard, mut closed)| async move {
+            if *closed.borrow() {
+                return None;
+            }
             let mut pending = pending;
             if let Some(init) = pending.take() {
-                return Some((Ok(init.to_vec()), (None, fragments, guard)));
+                return Some((Ok(init.to_vec()), (None, fragments, guard, closed)));
             }
             loop {
-                match fragments.recv().await {
+                let received = tokio::select! {
+                    biased;
+                    _=closed.changed()=>return None,
+                    received=fragments.recv()=>received,
+                };
+                match received {
                     Ok(fragment) => {
-                        return Some((Ok(fragment.to_vec()), (None, fragments, guard)));
+                        return Some((Ok(fragment.to_vec()), (None, fragments, guard, closed)));
                     }
                     // Fell behind the backlog: skip to the live edge rather
                     // than ending the stream. A live viewer wants "now", not
@@ -283,7 +306,9 @@ fn spawn_session(state: &AppState, media_id: i64) -> Result<Arc<Session>, ApiErr
     let (init_tx, init_rx) = watch::channel(None);
     let (fragments, _) = broadcast::channel(FRAGMENT_BACKLOG);
     let viewers = Arc::new(AtomicUsize::new(0));
+    let (closed, closed_rx) = watch::channel(false);
     let session = Arc::new(Session {
+        closed: closed_rx,
         init: init_rx,
         fragments: fragments.clone(),
         viewers: Arc::clone(&viewers),
@@ -305,7 +330,7 @@ fn spawn_session(state: &AppState, media_id: i64) -> Result<Arc<Session>, ApiErr
     }
 
     tokio::spawn(pump(media_id, stdout, init_tx, fragments));
-    tokio::spawn(watchdog(media_id, child, viewers));
+    tokio::spawn(watchdog(state.clone(), media_id, child, viewers, closed));
     Ok(session)
 }
 
@@ -402,12 +427,38 @@ fn next_box(buffer: &[u8]) -> Option<([u8; 4], usize)> {
 
 /// Stops the remux once nobody has been watching for [`IDLE_GRACE`], or as
 /// soon as `FFmpeg` exits on its own (the broadcast ended).
-async fn watchdog(media_id: i64, mut child: tokio::process::Child, viewers: Arc<AtomicUsize>) {
+async fn watchdog(
+    state: AppState,
+    media_id: i64,
+    mut child: tokio::process::Child,
+    viewers: Arc<AtomicUsize>,
+    closed: watch::Sender<bool>,
+) {
     let mut idle_since: Option<tokio::time::Instant> = None;
     loop {
         tokio::select! {
             _ = child.wait() => break,
             () = tokio::time::sleep(WATCHDOG_TICK) => {}
+        }
+        // Once per shared broadcast, never per viewer. A failed authority
+        // read closes the stream rather than retaining stale permission.
+        let allowed = tokio::time::timeout(Duration::from_secs(2), async {
+            if plamenu_db::media::public_access_blocked(&state.pool, media_id).await? {
+                return Ok::<_, plamenu_db::DbError>(false);
+            }
+            Ok(plamenu_db::media::find_by_ids(&state.pool, &[media_id])
+                .await?
+                .first()
+                .is_some_and(|m| m.live_state.as_deref() == Some("live")))
+        })
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .unwrap_or(false);
+        if !allowed {
+            let _ = closed.send(true);
+            let _ = child.kill().await;
+            break;
         }
         if viewers.load(Ordering::SeqCst) == 0 {
             let since = idle_since.get_or_insert_with(tokio::time::Instant::now);
@@ -420,6 +471,7 @@ async fn watchdog(media_id: i64, mut child: tokio::process::Child, viewers: Arc<
             idle_since = None;
         }
     }
+    let _ = closed.send(true);
     SESSIONS.lock().await.remove(&media_id);
 }
 
@@ -452,7 +504,44 @@ fn loopback_master_url(state: &AppState, media_id: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures_util::StreamExt;
     use std::net::SocketAddr;
+
+    #[tokio::test]
+    async fn revoked_remux_drops_queued_fragments_and_releases_viewer() {
+        let (fragments, receiver) = broadcast::channel(16);
+        let (closed, closed_rx) = watch::channel(false);
+        let viewers = Arc::new(AtomicUsize::new(1));
+        let mut stream = Box::pin(fragment_stream(
+            Arc::new(vec![1]),
+            receiver,
+            ViewerGuard(Arc::clone(&viewers)),
+            closed_rx,
+        ));
+        assert_eq!(stream.next().await.unwrap().unwrap(), vec![1]);
+        fragments.send(Arc::new(vec![2])).unwrap();
+        fragments.send(Arc::new(vec![3])).unwrap();
+        closed.send(true).unwrap();
+        assert!(
+            stream.next().await.is_none(),
+            "revocation must outrank queued bytes"
+        );
+        assert_eq!(viewers.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn revoked_remux_does_not_replay_initialization_to_waiting_viewer() {
+        let (_init, init_rx) = watch::channel(Some(Arc::new(vec![1])));
+        let (_closed, closed_rx) = watch::channel(true);
+        let (fragments, _) = broadcast::channel(16);
+        let session = Session {
+            init: init_rx,
+            closed: closed_rx,
+            fragments,
+            viewers: Arc::new(AtomicUsize::new(0)),
+        };
+        assert!(await_init(&session).await.is_none());
+    }
 
     #[test]
     fn box_headers_are_read_including_largesize() {

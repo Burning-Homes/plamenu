@@ -128,7 +128,8 @@ impl Media {
 /// private immediately, without deleting bytes; unsuspension therefore
 /// republishes them automatically. Native attempt keys additionally require a
 /// committed publication: failed/cancelled outputs stay private even after
-/// their journal and cleanup queue entries disappear.
+/// their journal and cleanup queue entries disappear. Queued deletion keys
+/// are revoked immediately, including while physical removal is failing.
 pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool, DbError> {
     // The HTTP file route already denies spooled originals. Keep the shared
     // database gate fail-closed too, so future file-serving callers cannot
@@ -163,11 +164,9 @@ pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool,
         )
         SELECT ($1 NOT LIKE '%.draft.%' AND $1 NOT LIKE '%.livereplay.%' OR EXISTS (
             SELECT 1 FROM candidates m
-            JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
-            JOIN accounts a ON a.id = m.account_id
-            JOIN accounts c ON c.id = v.channel_id
-            WHERE a.suspended_at IS NULL AND c.suspended_at IS NULL
-        )) AND NOT EXISTS (
+            JOIN public_native_videos v ON v.media_id = m.id
+        )) AND NOT EXISTS (SELECT 1 FROM media_cleanup_jobs WHERE file_name = $1)
+        AND NOT EXISTS (
             SELECT 1 FROM accounts a
             WHERE a.suspended_at IS NOT NULL
               AND (a.avatar_file_name = $1 OR a.header_file_name = $1)
@@ -178,7 +177,15 @@ pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool,
             LEFT JOIN native_live_sessions ls ON ls.replay_media_id = m.id
             LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
             LEFT JOIN accounts c ON c.id = COALESCE(v.channel_id, d.channel_id)
+            LEFT JOIN statuses s ON s.id = m.status_id
+            LEFT JOIN remote_video_channels rv ON rv.status_id = m.status_id
+            LEFT JOIN accounts rc ON rc.id = rv.channel_id
             WHERE a.suspended_at IS NOT NULL OR c.suspended_at IS NOT NULL
+              OR rc.suspended_at IS NOT NULL OR rc.deleted_at IS NOT NULL
+              OR (v.media_id IS NOT NULL AND NOT EXISTS (
+                  SELECT 1 FROM public_native_videos p WHERE p.media_id = m.id))
+              OR (s.object_type = 'Video' AND (s.deleted_at IS NOT NULL
+                  OR s.visibility NOT IN ('public', 'unlisted')))
               OR (d.media_id IS NOT NULL AND v.media_id IS NULL)
               OR (ls.replay_media_id IS NOT NULL AND v.media_id IS NULL)
         ) AS "allowed!"
@@ -203,8 +210,16 @@ pub async fn public_access_blocked(pool: &PgPool, media_id: i64) -> Result<bool,
             LEFT JOIN native_live_sessions ls ON ls.replay_media_id = m.id
             LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id
             LEFT JOIN accounts c ON c.id = COALESCE(v.channel_id, d.channel_id)
+            LEFT JOIN statuses s ON s.id = m.status_id
+            LEFT JOIN remote_video_channels rv ON rv.status_id = m.status_id
+            LEFT JOIN accounts rc ON rc.id = rv.channel_id
             WHERE m.id = $1 AND (a.suspended_at IS NOT NULL
                 OR c.suspended_at IS NOT NULL
+                OR rc.suspended_at IS NOT NULL OR rc.deleted_at IS NOT NULL
+                OR (v.media_id IS NOT NULL AND NOT EXISTS (
+                    SELECT 1 FROM public_native_videos p WHERE p.media_id = m.id))
+                OR (s.object_type = 'Video' AND (s.deleted_at IS NOT NULL
+                    OR s.visibility NOT IN ('public', 'unlisted')))
                 OR (d.media_id IS NOT NULL AND v.media_id IS NULL)
                 OR (ls.replay_media_id IS NOT NULL AND v.media_id IS NULL))
         ) AS "blocked!"
@@ -2019,10 +2034,13 @@ pub async fn public_caption_vtt(pool: &PgPool, media_id: i64) -> Result<Option<S
         JOIN statuses s ON s.id = m.status_id
         JOIN accounts a ON a.id = m.account_id
         LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = s.id
-        LEFT JOIN accounts c ON c.id = v.channel_id
         WHERE m.id = $1 AND a.suspended_at IS NULL
           AND s.deleted_at IS NULL AND s.visibility IN ('public', 'unlisted')
-          AND (v.media_id IS NULL OR c.suspended_at IS NULL)
+          AND (v.media_id IS NULL OR EXISTS (
+              SELECT 1 FROM public_native_videos p WHERE p.media_id = m.id))
+          AND NOT EXISTS (SELECT 1 FROM remote_video_channels rv
+              JOIN accounts rc ON rc.id = rv.channel_id
+              WHERE rv.status_id = s.id AND (rc.suspended_at IS NOT NULL OR rc.deleted_at IS NOT NULL))
         "#,
         media_id,
     )

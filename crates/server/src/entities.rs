@@ -2540,9 +2540,9 @@ pub fn media_json_hls(
     };
     let preview_url: Option<String> = if let Some(small) = item.small_file_name.as_deref() {
         Some(local_url(small))
-    } else if item.live_state.is_some() {
+    } else if item.live_state.is_some() && item.thumbnail_remote_url.is_none() {
         Some(format!("https://{domain}/pwa/icon-512.png"))
-    } else if item.remote_url.is_some() {
+    } else if item.remote_url.is_some() || item.thumbnail_remote_url.is_some() {
         // Remote, no cached preview yet: the proxy regenerates one when it
         // downloads and re-processes the original.
         Some(proxy(true))

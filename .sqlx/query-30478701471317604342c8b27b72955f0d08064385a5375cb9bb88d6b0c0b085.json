@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.playlist FROM native_video_hls_renditions r\n         JOIN media_attachments m ON m.id = r.media_id AND m.processing = 'complete'\n         JOIN video_drafts d ON d.media_id = m.id AND d.generation = r.generation AND d.state = 'ready'\n         JOIN public_native_videos v ON v.media_id = m.id AND v.status_id = m.status_id\n         WHERE r.media_id = $1 AND r.height = $2 AND ($3::bigint IS NULL OR m.video_content_revision=$3)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "playlist",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "native_video_hls_renditions",
+            "name": "playlist"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "30478701471317604342c8b27b72955f0d08064385a5375cb9bb88d6b0c0b085"
+}

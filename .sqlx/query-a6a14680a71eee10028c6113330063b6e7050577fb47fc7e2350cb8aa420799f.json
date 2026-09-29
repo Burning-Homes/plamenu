@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT ls.session_id, ls.started_at, b.dvr_window_seconds AS window_seconds\n         FROM native_live_sessions ls\n         JOIN native_live_broadcasts b ON b.media_id = ls.media_id\n         JOIN statuses s ON s.id = b.status_id\n         WHERE ls.media_id = $1 AND ls.ended_at IS NULL AND b.state = 'live'\n           AND b.dvr_window_seconds > 0\n           AND s.visibility IN ('public', 'unlisted')",
+  "query": "SELECT ls.session_id, ls.started_at, b.dvr_window_seconds AS window_seconds\n         FROM native_live_sessions ls\n         JOIN native_live_broadcasts b ON b.media_id = ls.media_id\n         JOIN public_native_videos v ON v.media_id = b.media_id AND v.status_id = b.status_id\n         WHERE ls.media_id = $1 AND ls.ended_at IS NULL AND b.state = 'live'\n           AND b.dvr_window_seconds > 0",
   "describe": {
     "columns": [
       {
@@ -48,5 +48,5 @@
       false
     ]
   },
-  "hash": "4a10b1ce9652bbd5c660897e76525be1873be009774479192cd671dd8598f266"
+  "hash": "a6a14680a71eee10028c6113330063b6e7050577fb47fc7e2350cb8aa420799f"
 }

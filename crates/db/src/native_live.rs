@@ -138,9 +138,9 @@ pub async fn public_session(pool: &PgPool, media_id: i64) -> Result<Option<Strin
     Ok(sqlx::query_scalar!(
         "SELECT ls.session_id FROM native_live_sessions ls
          JOIN native_live_broadcasts b ON b.media_id = ls.media_id
-         JOIN statuses s ON s.id = b.status_id
+         JOIN public_native_videos v ON v.media_id = b.media_id AND v.status_id = b.status_id
          WHERE ls.media_id = $1 AND ls.ended_at IS NULL AND b.state = 'live'
-           AND s.visibility IN ('public', 'unlisted')",
+        ",
         media_id,
     )
     .fetch_optional(pool)
@@ -162,10 +162,9 @@ pub async fn public_dvr(pool: &PgPool, media_id: i64) -> Result<Option<PublicDvr
         "SELECT ls.session_id, ls.started_at, b.dvr_window_seconds AS window_seconds
          FROM native_live_sessions ls
          JOIN native_live_broadcasts b ON b.media_id = ls.media_id
-         JOIN statuses s ON s.id = b.status_id
+         JOIN public_native_videos v ON v.media_id = b.media_id AND v.status_id = b.status_id
          WHERE ls.media_id = $1 AND ls.ended_at IS NULL AND b.state = 'live'
-           AND b.dvr_window_seconds > 0
-           AND s.visibility IN ('public', 'unlisted')",
+           AND b.dvr_window_seconds > 0",
         media_id,
     )
     .fetch_optional(pool)
@@ -190,16 +189,13 @@ pub async fn public_peer_sessions(
     }
     let rows = sqlx::query_as!(
         PublicPeerSession,
-        "SELECT ls.media_id, v.uuid AS video_uuid
+        "SELECT ls.media_id, v.uuid AS \"video_uuid!\"
          FROM native_live_sessions ls
          JOIN native_live_broadcasts b ON b.media_id = ls.media_id
-         JOIN video_publications v ON v.media_id = b.media_id AND v.status_id = b.status_id
-         JOIN statuses s ON s.id = b.status_id
+         JOIN public_native_videos v ON v.media_id = b.media_id AND v.status_id = b.status_id
          JOIN media_attachments m ON m.id = b.media_id AND m.live_state = 'live'
-         JOIN accounts a ON a.id = b.owner_account_id AND a.suspended_at IS NULL
-         JOIN accounts c ON c.id = b.channel_id AND c.suspended_at IS NULL
          WHERE ls.media_id = ANY($1) AND ls.ended_at IS NULL AND b.state = 'live'
-           AND b.latency_mode <> 3 AND s.visibility IN ('public', 'unlisted')
+           AND b.latency_mode <> 3
            AND ls.p2p_infohash IS NOT NULL",
         media_ids,
     )
@@ -212,12 +208,10 @@ pub async fn public_infohash_exists(pool: &PgPool, infohash: &str) -> Result<boo
     Ok(sqlx::query_scalar!(
         "SELECT EXISTS (SELECT 1 FROM native_live_sessions ls
          JOIN native_live_broadcasts b ON b.media_id = ls.media_id
-         JOIN statuses s ON s.id = b.status_id
+         JOIN public_native_videos v ON v.media_id = b.media_id AND v.status_id = b.status_id
          JOIN media_attachments m ON m.id = b.media_id AND m.live_state = 'live'
-         JOIN accounts a ON a.id = b.owner_account_id AND a.suspended_at IS NULL
-         JOIN accounts c ON c.id = b.channel_id AND c.suspended_at IS NULL
          WHERE ls.p2p_infohash = $1 AND ls.ended_at IS NULL AND b.state = 'live'
-           AND b.latency_mode <> 3 AND s.visibility IN ('public', 'unlisted'))",
+           AND b.latency_mode <> 3)",
         infohash,
     )
     .fetch_one(pool)
@@ -1065,9 +1059,7 @@ pub async fn published_replays_by_status(
          JOIN native_live_sessions ls ON ls.media_id = b.media_id
          JOIN media_attachments m ON m.id = ls.replay_media_id
          JOIN statuses s ON s.id = m.status_id
-         JOIN video_publications v ON v.status_id = s.id AND v.media_id = m.id
-         JOIN accounts a ON a.id = m.account_id AND a.suspended_at IS NULL
-         JOIN accounts c ON c.id = v.channel_id AND c.suspended_at IS NULL
+         JOIN public_native_videos v ON v.status_id = s.id AND v.media_id = m.id
          WHERE b.status_id = $1 AND b.permanent
            AND s.visibility IN ('public', 'unlisted')
          ORDER BY ls.generation DESC LIMIT 30",

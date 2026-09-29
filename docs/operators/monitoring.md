@@ -19,6 +19,7 @@ failure from application failure.
 - PostgreSQL connection exhaustion, slow queries, and database storage;
 - media and temporary-transcode free space;
 - outbound delivery queue age, due work, and large per-host backlogs;
+- repeated media-cleanup failures, deferred deletions and retained storage debt;
 - mail queue failure when account recovery depends on e-mail;
 - backup age and the last successful restore rehearsal;
 - certificate expiry and DNS changes for both the social and Webxdc hosts.

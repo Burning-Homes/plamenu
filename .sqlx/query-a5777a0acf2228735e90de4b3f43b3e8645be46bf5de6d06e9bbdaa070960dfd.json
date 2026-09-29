@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ls.media_id, v.uuid AS \"video_uuid!\"\n         FROM native_live_sessions ls\n         JOIN native_live_broadcasts b ON b.media_id = ls.media_id\n         JOIN public_native_videos v ON v.media_id = b.media_id AND v.status_id = b.status_id\n         JOIN media_attachments m ON m.id = b.media_id AND m.live_state = 'live'\n         WHERE ls.media_id = ANY($1) AND ls.ended_at IS NULL AND b.state = 'live'\n           AND b.latency_mode <> 3\n           AND ls.p2p_infohash IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "native_live_sessions",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "video_uuid!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "public_native_videos",
+            "name": "uuid"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "a5777a0acf2228735e90de4b3f43b3e8645be46bf5de6d06e9bbdaa070960dfd"
+}

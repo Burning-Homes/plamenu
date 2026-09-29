@@ -63,6 +63,17 @@ async function peerTubePage(context) {
   const bigPlay = page.locator('.vjs-big-play-button');
   if (await bigPlay.isVisible()) await bigPlay.click();
   await play(page, 'video.vjs-tech');
+  // Auto selects independently. Use the real quality controls to join the
+  // same rendition, rather than expecting different swarms to exchange bytes.
+  await page.locator('video.vjs-tech').hover({ force: true });
+  await page.locator('.vjs-settings').click();
+  await page.locator('.vjs-main-menu .vjs-menu-item').filter({ hasText: 'Quality' }).click();
+  const quality = page.locator('.vjs-menu').filter({
+    has: page.locator('.vjs-back-button').filter({ hasText: 'Quality' }),
+  });
+  await quality.locator('[role="menuitemradio"]', { hasText: '360p' }).click();
+  await page.waitForFunction(() => document.querySelector('video.vjs-tech')?.videoHeight === 360,
+    null, { timeout: 15000 });
   return page;
 }
 
@@ -100,6 +111,10 @@ try {
   const localVideo = await play(local, 'video[data-hls]');
   await local.waitForFunction(() => !!document.querySelector('video[data-hls]')?.dataset.p2pInfohash,
     null, { timeout: 25000 });
+  const localQuality = local.getByRole('combobox', { name: 'Video quality' });
+  if (await localQuality.count()) await localQuality.selectOption({ label: '360p' });
+  await local.waitForFunction(() => document.querySelector('video[data-hls]')?.videoHeight === 360,
+    null, { timeout: 15000 });
   const hash = await localVideo.getAttribute('data-p2p-infohash');
   if (!expectedHashes.includes(hash)) {
     throw new Error(`Plamenu joined ${hash}, not PeerTube's AP swarms ${expectedHashes.join(', ')}`);
@@ -110,6 +125,19 @@ try {
     await new Promise(resolve => setTimeout(resolve, 1500));
     await route.continue();
   });
+  // Plamenu's live edge can lead PeerTube's playback buffer. A seeder cannot
+  // supply future bytes. Rewind through the native player's seek surface into
+  // its already-decoded window before testing inbound delivery. Production
+  // latency and peer/HTTP deadlines stay unchanged.
+  const seedTime = await seed.locator('video.vjs-tech').evaluate(element => element.currentTime);
+  const rewind = await localVideo.evaluate((element, peerTime) => {
+    if (!element.seekable.length) throw new Error('live player has no seekable window');
+    const position = Math.max(element.seekable.start(0) + 0.5, peerTime - 6);
+    if (position >= peerTime) throw new Error('the peer has no overlapping seeded live window');
+    element.currentTime = position;
+    element.play().catch(() => {});
+    return position;
+  }, seedTime);
   try {
     await local.waitForFunction(() => Number(document.querySelector('video[data-hls]')?.dataset.p2pValidated || 0) > 0,
       null, { timeout: 45000 });
@@ -139,6 +167,8 @@ try {
   const uploaded = Number(await localVideo.getAttribute('data-p2p-uploaded') || 0) - baselineUpload;
   const result = {
     infohash: hash,
+    overlappingSeedTime: seedTime,
+    rewindPosition: rewind,
     validatedFromPeerTube: validated,
     uploadedToPeerTube: uploaded,
     validationErrors,

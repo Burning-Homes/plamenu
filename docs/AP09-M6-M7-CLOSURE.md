@@ -42,6 +42,112 @@ No push, merge, deployment or PeerTube plugin ABI work is authorized here.
 
 ## Verified slices
 
+### M7 already-connected live revocation — 2026-09-30
+
+The shared fragmented-MP4 remux rechecks publication authority and on-air state
+every five seconds, with a two-second database deadline. Revocation or an
+unavailable authority read closes all attached response streams before queued
+fragments are drained, and stops the shared child. Waiting viewers cannot
+receive retained initialization after closure. The check is per broadcast,
+not per viewer; the existing eight-remux and bounded-fragment ceilings remain.
+This stops new delivery, not already buffered bytes in a viewer's player.
+
+Actual RTMP, RTMPS and HTTPS-FLV key-rotation tests pass, including an already
+connected progressive viewer reaching clean EOF within ten seconds, the
+revoked publisher stopping, and a new key starting generation two with both
+independent replays saved. The initially refused HTTPS test exposed the
+rebooted local Caddy's address changing from the explicitly trusted address;
+only that local /32 was corrected, without broadening production trust.
+Evidence: the three passing transport cases in
+`target/e2e/ap09-m7-live-termination-20260930-final.xml`.
+The serving executable SHA-256 is
+`24ff6a104038d5750506a64535b5400f4dc03445a76dfba9a75599dee545ad60`.
+
+All **463 library tests** pass with the configured disposable SQLx test
+database, including four live-stream units and Russian catalogue coverage.
+The broad run caught three omitted existing preview/poster translations; these
+are supplied rather than weakening catalogue completeness. Log:
+`target/evidence/ap09-m7-library-20260930-final.log`.
+
+PeerTube-origin live P2P's wider run also exposed an unreliable assumption that
+two independently selected Auto renditions and live edges must seed one
+another. Real quality controls now align a 360p rendition, and the receiving
+viewer seeks into the seeder's existing window. Production latency and HTTP/
+P2P deadlines are unchanged; verified received bytes and reverse uploads are
+still required. That regression passes in
+`target/e2e/ap09-m7-mirror-live-peers-20260930-final.xml`; the mirror case in
+that same report initially fails on a test-only account-column name and is
+not counted as passing storage evidence.
+
+Desktop/narrow Chromium, Firefox and WebKit creator/capture controls and the
+Chromium no-JS recurring encoder/replay journey pass **all seven cases, with
+no retries/skips**, using a fresh verification account:
+`target/accessibility/ap09-m7-live-termination-20260930/isolated-controls.json`.
+The narrower capture/replay run passes both Chromium captures and the no-JS
+encoder; its four deliberately unsupported projects are not counted as
+coverage. The first broader run records five passes and two WebKit process
+crashes while navigating the accumulated developer home feed, before live
+authoring. The fresh-account run does not establish the cause of that crash or
+claim it fixed; this remains a separate wider-feed/engine regression to
+investigate. Its report is retained as `full-controls.json` in the same folder.
+
+Strict all-target Clippy and the 42 media/distribution/takedown integrations
+pass, including mirror failover keeping native authority and a failed replica
+deletion retaining its cleanup job until repair. These storage tests are not a
+claim that active live/DVR scratch is replicated.
+
+These are operations sub-gates, not a complete M7 sign-off. Wider storage,
+analytics, backup/fault and sustained-workload gates below remain open.
+
+### M7 origin revocation and acknowledged cleanup — 2026-09-29
+
+`public_native_videos` centralizes the canonical status, original author,
+uploader, channel and current-owner checks for native MP4/HLS/captions,
+integrity metadata, live/DVR session metadata and tracker allowlists. Ownership
+handoff preserves signatures without leaving playback governed by the former
+owner. Private/tombstoned statuses and suspended/deleted actors fail closed;
+unsuspension restores retained files. Remote Video audience/channel moderation
+also participates in cached/proxied playback. Ordinary Note attachment audience
+semantics are unchanged. Error responses carry `private, no-store`.
+
+Deleting a key now revokes it at the origin in the same committed cleanup
+queue state, before any physical deletion. Failed jobs are never discarded:
+after ten attempts, a burst backs off for a day while retaining revocation and
+storage debt. Repairing the store lets that same key complete; quota refunds
+still require acknowledged removal. Four new regressions cover failed physical
+deletion, exhausted/repaired storage, current-owner suspension after transfer,
+private/tombstoned VOD and live/DVR/tracker authority. They reproduce the three
+original gaps before the fix and pass after it. Initial fixture mistakes (an
+invalid synthetic JPEG and omitted positive DVR limit) are retained separately
+from those reproduced defects.
+
+The media/native Video/distribution/live-metadata/status-cleanup regressions
+pass **74 cases**. HLS/report/admin-report/new-takedown regressions pass
+**44 cases**, and database cleanup passes **4 cases**. Strict all-target
+Clippy, SQLx metadata and formatting pass. The wider run additionally exposed
+the first-party live fallback hiding a declared remote poster before caching;
+declared thumbnails now use their guarded proxy, with a built-in poster only
+when no thumbnail exists. All three live-state serialization cases pass.
+
+Actual PeerTube 8.3: **3 passed in 116.79 seconds**, including native processing
+and report review/resolution, acknowledged owner handoff, administrative
+suspension refusing every native origin lane with and without author cookies,
+the actual PeerTube file offer refusing ranges, reversible exact-byte recovery,
+acknowledged original-author/current-owner Delete, distribution regression and
+PeerTube-origin live byte exchange in both first-party players. Evidence:
+`target/e2e/ap09-m7-takedown-20260929-initial.xml`.
+All seven desktop/narrow/no-JS browser projects pass decoded standalone and
+independent-origin embedded playback, private refusal, downloads/ranges,
+keyboard/manual clipboard, 320px reflow and Axe:
+`target/accessibility/ap09-m7-takedown-20260929/automated.json`.
+Frozen serving executable SHA-256:
+`fe9feff77abf7c8b6cdb9e88f05f12bd48b57fed40d6c81418d456c68226ce6a`.
+
+This closes the reproduced origin/cleanup defects, not M7. Continuing-stream
+termination (subsequently verified above), wider remote-cache/takedown faults, storage/offload/redundancy,
+creator analytics and sustained resource/concurrency budgets remain open.
+Previously fetched public bytes and independent caches cannot be recalled.
+
 ### M6 original-gate sign-off — 2026-09-29
 
 The original creator/viewer milestone is verified. This includes discovery,

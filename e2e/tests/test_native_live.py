@@ -8,6 +8,8 @@ import ssl
 import subprocess
 import os
 import tempfile
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -543,6 +545,7 @@ def test_rotating_stream_key_revokes_active_encoder(
     )
     status_id = None
     publishers = []
+    progressive = reader = None
     try:
         login = browser.post(
             f"{config.PLAMENU_URL}/login",
@@ -597,6 +600,9 @@ def test_rotating_stream_key_revokes_active_encoder(
             return process
 
         def state(expected: str):
+            if expected == "live" and publishers[-1].poll() is not None:
+                error = publishers[-1].stderr.read().decode(errors="replace")
+                raise AssertionError(f"{transport} publisher exited before {expected}: {error[-1500:]}")
             item = plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]
             return item if item.get("live", {}).get("state") == expected else None
 
@@ -614,11 +620,32 @@ def test_rotating_stream_key_revokes_active_encoder(
             committed_segment,
             desc="the first live session commits media", timeout=30,
         )
+        progressive=requests.get(f"{config.PLAMENU_URL}/media/live/{media_id}/stream.mp4",
+                                 verify=False,stream=True,timeout=(30,30))
+        assert progressive.status_code==200
+        chunks=progressive.iter_content(1024)
+        assert b"ftyp" in next(chunks),"an already-connected no-JS MP4 viewer must receive initialization"
+        finished=threading.Event()
+        reader_errors=[]
+        def drain_live():
+            try:
+                for _ in chunks:
+                    pass
+            except requests.RequestException as error:
+                reader_errors.append(error)
+            finally:
+                finished.set()
+        reader=threading.Thread(target=drain_live,daemon=True)
+        reader.start()
+        revoked_at=time.monotonic()
         rotated = browser.post(
             f"{config.PLAMENU_URL}/web/videos/live/{status_id}/rotate-key",
             data={"csrf": csrf}, timeout=30,
         )
         assert rotated.status_code == 200, rotated.text[:700]
+        assert finished.wait(10),"revocation must close a connected progressive viewer within the watchdog bound"
+        assert not reader_errors,reader_errors
+        assert time.monotonic()-revoked_at<10
         new_inputs = re.findall(r'<input type="text" readonly value="([^"]+)"', rotated.text)
         new_key = new_inputs[2] if len(new_inputs) == 4 else new_inputs[1]
         assert len(new_key) == 43 and new_key != old_key
@@ -677,6 +704,10 @@ def test_rotating_stream_key_revokes_active_encoder(
             desc="both independent session replays are saved", timeout=180,
         )
     finally:
+        if progressive is not None:
+            progressive.close()
+        if reader is not None:
+            reader.join(timeout=2)
         for publisher in publishers:
             if publisher.poll() is None:
                 publisher.terminate()
