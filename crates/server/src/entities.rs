@@ -865,6 +865,7 @@ pub(crate) async fn preview_media_json(
         .collect();
     let poster_alts = video_poster_alts(pool, &poster_ids).await?;
     let captions = plamenu_db::video_captions::for_media(pool, media_ids).await?;
+    let storyboards = plamenu_db::video_storyboards::for_media(pool, media_ids).await?;
     let chapters = plamenu_db::video_chapters::for_media(pool, media_ids).await?;
     let video_metadata = plamenu_db::video_metadata::for_media(pool, &poster_ids).await?;
     Ok(media
@@ -880,6 +881,9 @@ pub(crate) async fn preview_media_json(
                 value["poster_description"] = json!(alt);
             }
             attach_caption_tracks(&mut value, item, &captions, domain);
+            if let Some(board) = storyboards.get(&item.id) {
+                value["storyboard"] = storyboard_entity(board, domain);
+            }
             attach_chapters(&mut value, item, &chapters);
             if let Some(metadata) = video_metadata.get(&item.id) {
                 value["video_metadata"] = crate::video_metadata::entity(metadata);
@@ -904,6 +908,12 @@ async fn video_poster_alts(pool: &PgPool, ids: &[i64]) -> Result<HashMap<i64, St
     .into_iter()
     .map(|row| (row.media_id, row.poster_alt))
     .collect())
+}
+
+fn storyboard_entity(board: &plamenu_db::video_storyboards::Storyboard, domain: &str) -> Value {
+    json!({"url":format!("https://{domain}/media/{}", board.file_name),
+        "tile_width":160,"tile_height":90,"columns":board.columns,"rows":board.rows,
+        "tile_count":board.tile_count,"interval_seconds":board.interval_seconds})
 }
 
 /// The non-text draft attributes a status [preview](preview_status_json)
@@ -3432,6 +3442,7 @@ async fn media_maps(
         plamenu_db::remote_live_schedules::for_media(pool, &remote_live_ids).await?;
     let remote_peers = plamenu_db::remote_hls_peers::for_media(pool, &media_ids).await?;
     let captions = plamenu_db::video_captions::for_media(pool, &media_ids).await?;
+    let storyboards = plamenu_db::video_storyboards::for_media(pool, &media_ids).await?;
     let chapters = plamenu_db::video_chapters::for_media(pool, &media_ids).await?;
     let video_metadata = plamenu_db::video_metadata::for_media(pool, &poster_ids).await?;
     let native_peers = plamenu_db::native_video_hls::public_peer_uuids(pool, &media_ids).await?;
@@ -3465,6 +3476,9 @@ async fn media_maps(
                         value["poster_description"] = json!(alt);
                     }
                     attach_caption_tracks(&mut value, file, &captions, domain);
+                    if let Some(board) = storyboards.get(&file.id) {
+                        value["storyboard"] = storyboard_entity(board, domain);
+                    }
                     attach_chapters(&mut value, file, &chapters);
                     if let Some(metadata) = video_metadata.get(&file.id) {
                         value["video_metadata"] = crate::video_metadata::entity(metadata);

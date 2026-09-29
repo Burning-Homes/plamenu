@@ -36,6 +36,10 @@ const MAX_FRAME_RATE: f64 = 120.0;
 /// Native scratch reservations include two independently bounded poster files
 /// (the AVIF and a tiny hash frame), not an assumed multiplier of input size.
 pub const POSTER_FILE_LIMIT_BYTES: u64 = 4 * 1024 * 1024;
+/// Copy-only source quality plus at most five useful lower, never upscaled rungs.
+pub const NATIVE_HLS_MAX_RENDITIONS: u64 = 6;
+pub const STORYBOARD_FILE_LIMIT_BYTES: u64 = 2 * 1024 * 1024;
+const NATIVE_HLS_HEIGHTS: [i32; 5] = [1080, 720, 480, 360, 240];
 /// H.264 "High" bits per pixel, Mastodon's bitrate heuristic.
 const BITS_PER_PIXEL: f64 = 0.11;
 
@@ -347,9 +351,27 @@ async fn run_ffmpeg(
     timeout: Duration,
     limit: Option<&crate::media_limits::FileSizeLimit>,
 ) -> Result<(), ApiError> {
+    let mut args = restrict_local_inputs(args);
+    if limit.is_some() {
+        // Native worker slots already bound concurrency. Prevent each codec
+        // from auto-allocating frame threads for every host CPU as well.
+        // Input decoder and output encoder options have separate scopes.
+        let cores = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+        let threads = (cores / config.native_video.jobs.saturating_mul(2).max(1))
+            .clamp(1, 8)
+            .to_string();
+        let mut scoped = os_args(&["-filter_threads", "1", "-filter_complex_threads", "1"]);
+        for arg in args {
+            if arg == "-i" || arg == "-c:v" {
+                scoped.extend(os_args(&["-threads", &threads]));
+            }
+            scoped.push(arg);
+        }
+        args = scoped;
+    }
     let mut child = crate::media_limits::command(Path::new(&config.ffmpeg_path), limit)
         .args(["-nostdin", "-loglevel", "fatal"])
-        .args(restrict_local_inputs(args))
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -746,7 +768,97 @@ pub struct PackagedHls {
     pub segment_sha256: serde_json::Value,
 }
 
-/// Package a copy-only top quality and, when useful, a bounded 360p encode.
+/// One bounded JPEG sprite, generated from keyframes without decoding every
+/// frame of a long film. Tiles are approximate navigation aids, not alt text.
+pub struct PackagedStoryboard {
+    pub file_path: std::path::PathBuf,
+    pub file_name: String,
+    pub file_size: i64,
+    pub columns: i32,
+    pub rows: i32,
+    pub count: i32,
+    pub interval_seconds: i32,
+}
+
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "ceil/clamp produce positive integer-valued preview grid counts and bounded intervals"
+)]
+pub async fn package_native_storyboard(
+    config: &Config,
+    processed: &ProcessedAv,
+    stem: &str,
+    params: &TranscodeParams,
+) -> Result<PackagedStoryboard, ApiError> {
+    let duration = processed
+        .duration
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .ok_or_else(|| transcode_failed("Video has no finite duration for seek previews".into()))?;
+    let interval_seconds = (duration / 100.0).ceil().clamp(1.0, 604_800.0) as i32;
+    let count = (duration / f64::from(interval_seconds))
+        .ceil()
+        .clamp(1.0, 100.0) as i32;
+    let columns = count.min(10);
+    let rows = (count + columns - 1) / columns;
+    let cells = columns * rows;
+    let file_path = processed.scratch.path().join("storyboard.jpg");
+    let filter = format!(
+        "fps=1/{interval_seconds}:start_time=0:round=up:eof_action=pass,scale=160:90:force_original_aspect_ratio=decrease,pad=160:90:(ow-iw)/2:(oh-ih)/2,tpad=stop_mode=clone:stop=100,tile={columns}x{rows}:nb_frames={cells}"
+    );
+    let mut args = os_args(&[
+        "-nostdin",
+        "-v",
+        "error",
+        "-threads",
+        "1",
+        "-skip_frame",
+        "nokey",
+        "-i",
+    ]);
+    args.push(processed.file_path.as_os_str().into());
+    args.extend(os_args(&[
+        "-an",
+        "-map_metadata",
+        "-1",
+        "-vf",
+        &filter,
+        "-frames:v",
+        "1",
+        "-q:v",
+        "3",
+        "-y",
+    ]));
+    args.push(file_path.as_os_str().into());
+    let limit = params
+        .file_size_limit
+        .as_ref()
+        .map(|limit| crate::media_limits::FileSizeLimit {
+            launcher: limit.launcher.clone(),
+            bytes: limit.bytes.min(STORYBOARD_FILE_LIMIT_BYTES),
+        });
+    let _permit = crate::media_gate::acquire().await;
+    run_ffmpeg(config, args, ENCODE_TIMEOUT, limit.as_ref()).await?;
+    let size = tokio::fs::metadata(&file_path)
+        .await
+        .map_err(|error| ApiError::Internal(Box::new(error)))?
+        .len();
+    if size == 0 || size > STORYBOARD_FILE_LIMIT_BYTES {
+        return Err(transcode_failed(
+            "Seek previews exceeded their bounded JPEG limit".into(),
+        ));
+    }
+    Ok(PackagedStoryboard {
+        file_path,
+        file_name: format!("{stem}.draft.storyboard.jpg"),
+        file_size: i64::try_from(size).unwrap_or(i64::MAX),
+        columns,
+        rows,
+        count,
+        interval_seconds,
+    })
+}
+
+/// Package a copy-only top quality and a bounded, sequential lower ladder.
 /// The former avoids a redundant full-resolution transcode; the latter gives
 /// restricted connections a genuinely smaller rendition. The ordinary MP4
 /// remains independently playable in clients without HLS or JavaScript.
@@ -762,19 +874,30 @@ pub async fn package_native_hls(
             "Video has no usable dimensions".into(),
         ));
     }
-    let mut renditions = Vec::with_capacity(2);
-    renditions.push(package_one_hls(config, processed, stem, params, height, false).await?);
-    if height > 360 {
-        renditions.push(package_one_hls(config, processed, stem, params, 360, true).await?);
+    let mut renditions = Vec::with_capacity(NATIVE_HLS_HEIGHTS.len() + 1);
+    renditions.push(package_one_hls(config, processed, stem, params, height, None).await?);
+    for lower in native_lower_heights(height) {
+        if i64::from(processed.width.unwrap_or(0)) * i64::from(lower) / i64::from(height) < 2 {
+            continue;
+        }
+        renditions
+            .push(package_one_hls(config, processed, stem, params, lower, Some(lower)).await?);
     }
     Ok(renditions)
+}
+
+fn native_lower_heights(height: i32) -> impl Iterator<Item = i32> {
+    // Do not add a nearly identical rung (e.g. 240p beneath a 250p source).
+    NATIVE_HLS_HEIGHTS
+        .into_iter()
+        .filter(move |lower| i64::from(*lower) * 10 <= i64::from(height) * 9)
 }
 
 fn native_hls_args(
     processed: &ProcessedAv,
     playlist_path: &Path,
     params: &TranscodeParams,
-    low: bool,
+    target_height: Option<i32>,
 ) -> Vec<std::ffi::OsString> {
     let mut args: Vec<std::ffi::OsString> = vec!["-i".into(), processed.file_path.clone().into()];
     args.extend(os_args(&[
@@ -785,10 +908,20 @@ fn native_hls_args(
         "-map_metadata",
         "-1",
     ]));
-    if low {
+    if let Some(height) = target_height {
+        let scale = format!("scale=-2:{height}:flags=bicubic");
+        let rate = match height {
+            1080 => 6000,
+            720 => 3000,
+            480 => 1800,
+            360 => 1000,
+            _ => 500,
+        };
+        let maxrate = format!("{rate}k");
+        let bufsize = format!("{}k", rate * 2);
         args.extend(os_args(&[
             "-vf",
-            "scale=-2:360:flags=bicubic",
+            &scale,
             "-pix_fmt",
             "yuv420p",
             "-c:v",
@@ -798,9 +931,9 @@ fn native_hls_args(
             "-crf",
             "23",
             "-maxrate",
-            "1200k",
+            &maxrate,
             "-bufsize",
-            "2400k",
+            &bufsize,
             "-force_key_frames",
             "expr:gte(t,n_forced*4)",
             "-sc_threshold",
@@ -834,14 +967,14 @@ async fn package_one_hls(
     stem: &str,
     params: &TranscodeParams,
     target_height: i32,
-    low: bool,
+    encode_height: Option<i32>,
 ) -> Result<PackagedHls, ApiError> {
     let base = format!("hls{target_height}");
     let playlist_path = processed.scratch.path().join(format!("{base}.m3u8"));
     let file_path = processed.scratch.path().join(format!("{base}.m4s"));
-    let args = native_hls_args(processed, &playlist_path, params, low);
-    // Copy-only packaging is I/O-bound; only the lower re-encode takes a heavy slot.
-    let _permit = if low {
+    let args = native_hls_args(processed, &playlist_path, params, encode_height);
+    // Copy-only packaging is I/O-bound; each lower encode takes one heavy slot.
+    let _permit = if encode_height.is_some() {
         Some(crate::media_gate::acquire().await)
     } else {
         None
@@ -992,9 +1125,9 @@ fn native_segment_hashes(
     let mut document = serde_json::Map::new();
     document.insert(file_name.to_owned(), serde_json::Value::Object(hashes));
     let document = serde_json::Value::Object(document);
-    // There are at most two native renditions. Keep their combined document
+    // There are at most six native renditions. Keep their combined document
     // comfortably below the client's 2 MiB fetch ceiling.
-    if document.to_string().len() > 900_000 {
+    if document.to_string().len() > 300_000 {
         return Ok(serde_json::json!({}));
     }
     Ok(document)
@@ -1431,6 +1564,26 @@ async fn checked_output_size(path: &Path, params: &TranscodeParams) -> Result<i6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_ladder_is_finite_downscale_only_and_avoids_redundant_rungs() {
+        for (source, expected) in [
+            (2160, vec![1080, 720, 480, 360, 240]),
+            (1080, vec![720, 480, 360, 240]),
+            (720, vec![480, 360, 240]),
+            (480, vec![360, 240]),
+            (360, vec![240]),
+            (250, vec![]),
+            (240, vec![]),
+            (0, vec![]),
+        ] {
+            assert_eq!(native_lower_heights(source).collect::<Vec<_>>(), expected);
+        }
+        assert_eq!(
+            NATIVE_HLS_MAX_RENDITIONS,
+            NATIVE_HLS_HEIGHTS.len() as u64 + 1
+        );
+    }
 
     #[test]
     fn native_hls_hashes_exact_init_and_media_byte_ranges() {

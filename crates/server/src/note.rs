@@ -216,6 +216,7 @@ pub struct NoteBatch {
     video_captions: HashMap<i64, Vec<plamenu_db::video_captions::Caption>>,
     video_chapters: HashMap<i64, Vec<plamenu_db::video_chapters::Chapter>>,
     video_metadata: HashMap<i64, plamenu_db::video_metadata::Metadata>,
+    video_storyboards: HashMap<i64, plamenu_db::video_storyboards::Storyboard>,
     engagement: HashMap<i64, plamenu_db::status::Engagement>,
     self_reply_ids: HashMap<i64, Vec<i64>>,
     sources: HashMap<i64, plamenu_db::status::StatusSource>,
@@ -303,6 +304,8 @@ impl NoteBatch {
                 plamenu_db::video_captions::for_media(&mut *conn, &media_ids).await?;
             batch.video_chapters =
                 plamenu_db::video_chapters::for_media(&mut *conn, &media_ids).await?;
+            batch.video_storyboards =
+                plamenu_db::video_storyboards::for_media(&mut *conn, &media_ids).await?;
         }
         batch.tag_names = tag::names_for_statuses(&mut *conn, &ids).await?;
         batch.deleted = plamenu_db::status::deleted_ids(&mut *conn, &ids).await?;
@@ -743,6 +746,13 @@ pub fn note_in_batch(
         )?;
         if let Some(metadata) = batch.video_metadata.get(&media.id) {
             crate::video_metadata::enrich_object(&mut note, metadata);
+        }
+        if let Some(board) = batch.video_storyboards.get(&media.id) {
+            note["preview"] = json!([{"type":"Image","rel":["storyboard"],"url":[{
+                "mediaType":"image/jpeg","href":format!("https://{domain}/media/{}", board.file_name),
+                "width":board.columns * 160,"height":board.rows * 90,
+                "tileWidth":160,"tileHeight":90,"tileDuration":format!("PT{}S",board.interval_seconds)
+            }]}]);
         }
     }
     if let Some((_, session_uri, session_name)) = batch.webxdc_invitations.get(&item.id) {

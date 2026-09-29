@@ -4117,7 +4117,11 @@
         validateP2PSegment: peerSegmentValidator(hashes, checksumUrl, live),
         isP2PUploadDisabled: navigator.connection?.type === "cellular" || !!navigator.connection?.saveData,
         highDemandTimeWindow: live ? 4 : 15,
-        ...(live ? {} : { segmentMemoryStorageLimit: 1024 }),
+        // Adaptive VOD startup can request an unseeded quality over HTTP.
+        // The library's 3s no-byte default repeatedly cancels a slow origin
+        // while switching levels, even when other peer bytes were verified.
+        // Keep live's short recovery, but allow bounded 10s VOD HTTP startup.
+        ...(live ? {} : { segmentMemoryStorageLimit: 1024, httpNotReceivingBytesTimeoutMs: 10000 }),
       },
       onHlsJsCreated: (hls) => {
         video.dataset.p2pActive = "true";

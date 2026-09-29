@@ -300,13 +300,14 @@ async fn audio_only_source_gets_bounded_waveform_video_and_poster(pool: PgPool) 
     .fetch_one(&f.state.pool)
     .await
     .unwrap();
-    assert_eq!(renditions, 1);
-    let playlist: String =
-        sqlx::query_scalar("SELECT playlist FROM native_video_hls_renditions WHERE media_id = $1")
-            .bind(f.media_id)
-            .fetch_one(&f.state.pool)
-            .await
-            .unwrap();
+    assert_eq!(renditions, 2);
+    let playlist: String = sqlx::query_scalar(
+        "SELECT playlist FROM native_video_hls_renditions WHERE media_id = $1 AND height = 360",
+    )
+    .bind(f.media_id)
+    .fetch_one(&f.state.pool)
+    .await
+    .unwrap();
     assert!(
         playlist.matches("#EXTINF:").count() >= 2,
         "audio-only HLS must have multiple seekable segments: {playlist}"
@@ -357,8 +358,9 @@ async fn assert_silent_shape(pool: PgPool, shape: SourceShape, dimensions: (i64,
             .all(|(_, _, playlist)| playlist.contains("#EXT-X-ENDLIST"))
     );
     if dimensions.1 > 360 {
-        assert_eq!(renditions.len(), 2);
+        assert_eq!(renditions.len(), 3);
         assert_eq!(renditions[1].1, 360);
+        assert_eq!(renditions[2].1, 240);
         assert!(renditions[1].0 < i32::try_from(dimensions.0).unwrap());
     } else {
         assert_eq!(renditions.len(), 1);
@@ -773,8 +775,219 @@ async fn custom_poster_quota_refusal_keeps_existing_poster(pool: PgPool) {
 }
 
 fn reservation(bytes: u64) -> plamenu::video_resources::Reservation {
-    let pool = plamenu::video_resources::ProcessingPool::new(1, 16 * 1024 * 1024);
+    let pool = plamenu::video_resources::ProcessingPool::new(1, 32 * 1024 * 1024);
     reserve(&pool, bytes)
+}
+
+async fn publish_fixture(f: &Fixture) -> plamenu_db::status::Status {
+    let draft = video_draft::find_owned(&f.state.pool, f.media_id, f.owner)
+        .await
+        .unwrap()
+        .unwrap();
+    actions::post_video(
+        &f.state,
+        PostParams {
+            username: "author",
+            media_ids: &[f.media_id],
+            title: Some("Published film"),
+            text: "A native film",
+            visibility: "unlisted",
+            language: Some("en"),
+            kind: PostKind::Video,
+            ..Default::default()
+        },
+        draft.channel_id,
+    )
+    .await
+    .unwrap()
+    .0
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn published_poster_is_atomic_with_update_and_retains_uploader_quota_and_video_identity(
+    pool: PgPool,
+) {
+    let f = fixture(pool.clone(), false, false, false).await;
+    assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
+    let channel = video_draft::find_owned(&pool, f.media_id, f.owner)
+        .await
+        .unwrap()
+        .unwrap()
+        .channel_id;
+    let remote = common::RemoteUser::new("remote.test", "viewer");
+    let viewer = plamenu::remote::store_remote_actor(&pool, &remote.actor)
+        .await
+        .unwrap();
+    plamenu_db::follow::create(&pool, viewer.id, channel, None)
+        .await
+        .unwrap();
+    let status = publish_fixture(&f).await;
+    let before = media::find_by_ids(&pool, &[f.media_id])
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    let editor = common::create_local_account(&pool, "editor", "Editor").await;
+    sqlx::query("INSERT INTO video_channel_grants (channel_id,account_id,role,accepted) VALUES ($1,$2,'editor',true)")
+        .bind(channel).bind(editor.id).execute(&pool).await.unwrap();
+    // A published generation is not an expiring draft and the collaborator
+    // does not become its media owner, storage debtor or federation signer.
+    sqlx::query("UPDATE video_drafts SET expires_at=now()-interval '1 day' WHERE media_id=$1")
+        .bind(f.media_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql("CREATE FUNCTION reject_poster_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'rejected poster update'; END $$; CREATE TRIGGER reject_poster_delivery BEFORE INSERT ON delivery_jobs FOR EACH ROW EXECUTE FUNCTION reject_poster_delivery()")
+        .execute(&pool).await.unwrap();
+    assert!(
+        plamenu::video_poster::replace_published_poster(
+            &f.state,
+            f.media_id,
+            editor.id,
+            still_poster("blue"),
+            "Blue after publication".into()
+        )
+        .await
+        .is_err()
+    );
+    let failed = media::find_by_ids(&pool, &[f.media_id])
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(failed.small_file_name, before.small_file_name);
+    assert_eq!(
+        plamenu_db::status::find_by_id(&pool, status.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .edited_at,
+        None
+    );
+    sqlx::raw_sql("DROP TRIGGER reject_poster_delivery ON delivery_jobs")
+        .execute(&pool)
+        .await
+        .unwrap();
+    plamenu::video_poster::replace_published_poster(
+        &f.state,
+        f.media_id,
+        editor.id,
+        still_poster("blue"),
+        "Blue after publication".into(),
+    )
+    .await
+    .unwrap();
+    let after = media::find_by_ids(&pool, &[f.media_id])
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(after.file_name, before.file_name);
+    assert_eq!(after.account_id, f.owner);
+    assert_ne!(after.small_file_name, before.small_file_name);
+    assert!(
+        media::public_file_allowed(&pool, after.small_file_name.as_deref().unwrap())
+            .await
+            .unwrap()
+    );
+    assert!(
+        !media::public_file_allowed(&pool, before.small_file_name.as_deref().unwrap())
+            .await
+            .unwrap()
+    );
+    let debt: i64 =
+        sqlx::query_scalar("SELECT account_id FROM video_storage_reservations WHERE file_name=$1")
+            .bind(&after.small_file_name)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(debt, f.owner);
+    let updated: serde_json::Value = sqlx::query_scalar("SELECT activity FROM delivery_jobs WHERE activity->>'type'='Update' ORDER BY id DESC LIMIT 1").fetch_one(&pool).await.unwrap();
+    let actor = plamenu_db::account::find_by_id(&pool, f.owner)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        updated["actor"],
+        plamenu::entities::account_uri(&f.state.config.domain, &actor)
+    );
+    assert_eq!(
+        updated["object"]["icon"][0]["name"],
+        "Blue after publication"
+    );
+    assert_eq!(updated["object"]["preview"][0]["rel"][0], "storyboard");
+    sqlx::query("DELETE FROM video_channel_grants WHERE channel_id=$1 AND account_id=$2")
+        .bind(channel)
+        .bind(editor.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        plamenu::video_poster::replace_published_poster(
+            &f.state,
+            f.media_id,
+            editor.id,
+            still_poster("red"),
+            "Revoked".into()
+        )
+        .await
+        .is_err()
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn published_poster_quota_refusal_and_suspension_preserve_existing_assets(pool: PgPool) {
+    let f = fixture(pool.clone(), false, false, false).await;
+    assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
+    publish_fixture(&f).await;
+    let before = media::find_by_ids(&pool, &[f.media_id])
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    sqlx::query("INSERT INTO video_storage_reservations (file_name,account_id,media_id,reserved_bytes) VALUES ('fixture-full-quota',$1,$2,$3)")
+        .bind(f.owner).bind(f.media_id).bind(f.state.config.native_video.storage_limits().per_account).execute(&pool).await.unwrap();
+    assert!(matches!(
+        plamenu::video_poster::replace_published_poster(
+            &f.state,
+            f.media_id,
+            f.owner,
+            still_poster("red"),
+            "Red".into()
+        )
+        .await,
+        Err(plamenu::error::ApiError::Unprocessable(_))
+    ));
+    assert_eq!(
+        media::find_by_ids(&pool, &[f.media_id]).await.unwrap()[0].small_file_name,
+        before.small_file_name
+    );
+    sqlx::query("UPDATE accounts SET suspended_at=now() WHERE id=$1")
+        .bind(f.owner)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let board = plamenu_db::video_storyboards::for_media(&pool, &[f.media_id])
+        .await
+        .unwrap()
+        .remove(&f.media_id)
+        .unwrap();
+    assert!(
+        !media::public_file_allowed(&pool, &board.file_name)
+            .await
+            .unwrap()
+    );
+    assert!(
+        plamenu::video_poster::replace_published_poster(
+            &f.state,
+            f.media_id,
+            f.owner,
+            still_poster("red"),
+            "Red".into()
+        )
+        .await
+        .is_err()
+    );
 }
 
 fn storage_limits() -> plamenu_db::video_storage::Limits {
@@ -816,6 +1029,7 @@ async fn assert_ready(f: &Fixture) {
         .unwrap();
     assert_eq!(rows[0].processing, "complete");
     assert_eq!(rows[0].kind.as_deref(), Some("video"));
+    assert_private_storyboard(f).await;
     assert!(rows[0].status_id.is_none());
     assert!(
         (rows[0].duration.unwrap() - f.expected_duration).abs() < 0.1,
@@ -874,10 +1088,87 @@ async fn assert_ready(f: &Fixture) {
     );
 }
 
+async fn assert_private_storyboard(f: &Fixture) {
+    let board = plamenu_db::video_storyboards::for_media(&f.state.pool, &[f.media_id])
+        .await
+        .unwrap()
+        .remove(&f.media_id)
+        .unwrap();
+    assert!((1..=100).contains(&board.tile_count));
+    assert!(board.tile_count <= board.columns * board.rows);
+    let path = f.store.disk.local_path(&board.file_name).unwrap();
+    assert_eq!(
+        i64::try_from(std::fs::metadata(&path).unwrap().len()).unwrap(),
+        board.size_bytes
+    );
+    // Source admission deliberately rejects still-image containers. Inspect
+    // this generated JPEG directly rather than routing it through that gate.
+    let output = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        format!("{},{}", board.columns * 160, board.rows * 90)
+    );
+    let last = board.tile_count - 1;
+    let filter = format!(
+        "crop=160:90:{}:{}",
+        last % board.columns * 160,
+        last / board.columns * 90
+    );
+    let output = std::process::Command::new("ffmpeg")
+        .args(["-nostdin", "-v", "error", "-i"])
+        .arg(path)
+        .args([
+            "-vf",
+            &filter,
+            "-pix_fmt",
+            "rgb24",
+            "-frames:v",
+            "1",
+            "-f",
+            "rawvideo",
+            "-",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout.len(), 160 * 90 * 3);
+    assert!(
+        output.stdout.iter().any(|byte| *byte > 32),
+        "the last valid fixture tile must not be an unfilled black cell"
+    );
+    assert!(
+        !media::public_file_allowed(&f.state.pool, &board.file_name)
+            .await
+            .unwrap()
+    );
+    let charged: i64 = sqlx::query_scalar(
+        "SELECT reserved_bytes FROM video_storage_reservations WHERE file_name=$1",
+    )
+    .bind(board.file_name)
+    .fetch_one(&f.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(charged, board.size_bytes);
+}
+
 #[sqlx::test(migrations = "../db/migrations")]
 async fn real_job_is_private_ready_and_preserves_original(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
-    let resources = plamenu::video_resources::ProcessingPool::new(1, 16 * 1024 * 1024);
+    let resources = plamenu::video_resources::ProcessingPool::new(1, 32 * 1024 * 1024);
     assert!(
         run_one(&f.state, reserve(&resources, 1024 * 1024))
             .await
@@ -901,12 +1192,13 @@ async fn real_job_is_private_ready_and_preserves_original(pool: PgPool) {
 async fn published_hls_is_range_playable_and_revoked_on_suspension(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
     assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
-    let key: String =
-        sqlx::query_scalar("SELECT file_name FROM native_video_hls_renditions WHERE media_id = $1")
-            .bind(f.media_id)
-            .fetch_one(&f.state.pool)
-            .await
-            .unwrap();
+    let key: String = sqlx::query_scalar(
+        "SELECT file_name FROM native_video_hls_renditions WHERE media_id = $1 AND height = 64",
+    )
+    .bind(f.media_id)
+    .fetch_one(&f.state.pool)
+    .await
+    .unwrap();
     let app = plamenu::build_router(f.state.clone());
     let master_path = format!("/media/hls/{}/master.m3u8", f.media_id);
     let request = |path: &str| Request::builder().uri(path).body(Body::empty()).unwrap();
@@ -964,13 +1256,12 @@ async fn published_hls_is_range_playable_and_revoked_on_suspension(pool: PgPool)
         .find(|link| link["mediaType"] == "application/x-mpegURL")
         .unwrap();
     assert!(hls_link["href"].as_str().unwrap().ends_with(&master_path));
-    assert_eq!(hls_link["tag"].as_array().unwrap().len(), 1);
-    assert!(
-        hls_link["tag"][0]["href"]
-            .as_str()
-            .unwrap()
-            .ends_with(&format!("/media/{key}"))
-    );
+    assert!(hls_link["tag"].as_array().unwrap().iter().any(|tag| {
+        tag["mediaType"] == "video/mp4"
+            && tag["href"]
+                .as_str()
+                .is_some_and(|href| href.ends_with(&format!("/media/{key}")))
+    }));
 
     let master = app.clone().oneshot(request(&master_path)).await.unwrap();
     assert_eq!(master.status(), StatusCode::OK);
@@ -1053,7 +1344,7 @@ async fn published_hls_is_range_playable_and_revoked_on_suspension(pool: PgPool)
 #[sqlx::test(migrations = "../db/migrations")]
 async fn source_larger_than_reserved_ceiling_is_deferred_without_spooling(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
-    let resources = plamenu::video_resources::ProcessingPool::new(1, 16 * 1024 * 1024);
+    let resources = plamenu::video_resources::ProcessingPool::new(1, 32 * 1024 * 1024);
     let slot = resources
         .try_reserve(
             FileSizeLimit {
@@ -1135,7 +1426,7 @@ async fn cancellation_during_source_read_stops_before_output_write(pool: PgPool)
 async fn aborted_caller_cannot_release_final_write_fence(pool: PgPool) {
     let f = fixture(pool, false, true, false).await;
     let state = f.state.clone();
-    let resources = plamenu::video_resources::ProcessingPool::new(1, 16 * 1024 * 1024);
+    let resources = plamenu::video_resources::ProcessingPool::new(1, 32 * 1024 * 1024);
     let slot = reserve(&resources, 1024 * 1024);
     let worker = tokio::spawn(async move { run_one(&state, slot).await });
     tokio::time::timeout(Duration::from_secs(20), f.store.entered.acquire())
@@ -1167,8 +1458,8 @@ async fn aborted_caller_cannot_release_final_write_fence(pool: PgPool) {
             .is_err()
     );
     tx.rollback().await.unwrap();
-    // Finalization stores both the progressive MP4 and its HLS fMP4 body.
-    f.store.release.add_permits(2);
+    // Finalization stores the MP4, HLS fMP4 body and storyboard JPEG.
+    f.store.release.add_permits(3);
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             if video_draft::find_owned(&f.state.pool, f.media_id, f.owner)
@@ -1231,7 +1522,7 @@ async fn partial_store_failure_keeps_private_journal_and_original(pool: PgPool) 
             .fetch_one(&f.state.pool)
             .await
             .unwrap();
-    assert_eq!(outputs, 4);
+    assert_eq!(outputs, 5);
     assert_eq!(
         f.store.list().await.unwrap().len(),
         2,
@@ -1269,8 +1560,8 @@ async fn stored_output_quota_refuses_writes_and_refunds_only_after_cleanup(pool:
         .await
         .unwrap();
     assert_eq!(
-        count, 5,
-        "original, movie, HLS, preview and compatibility poster are charged"
+        count, 6,
+        "original, movie, HLS, preview, storyboard and compatibility poster are charged"
     );
     let media = media::find_by_ids(&f.state.pool, &[f.media_id])
         .await
@@ -1304,7 +1595,7 @@ async fn stored_output_quota_refuses_writes_and_refunds_only_after_cleanup(pool:
         .fetch_one(&f.state.pool)
         .await
         .unwrap();
-    assert_eq!(count, 5, "deleting a draft is not deleting stored bytes");
+    assert_eq!(count, 6, "deleting a draft is not deleting stored bytes");
     assert!(plamenu::media_cleanup_worker::run_due(&f.state).await >= 5);
     assert!(f.store.list().await.unwrap().is_empty());
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM video_storage_reservations")

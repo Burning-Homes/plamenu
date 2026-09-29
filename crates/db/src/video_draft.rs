@@ -315,7 +315,7 @@ pub async fn advance_receiving(
         == 1)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct Claim {
     pub media_id: i64,
     pub generation: i64,
@@ -328,20 +328,30 @@ pub struct Claim {
 /// claim this row first; callers must validate the actual claim against their
 /// reservation and defer a mismatched job without failing it.
 pub async fn next_source_bytes(pool: &PgPool) -> Result<Option<i64>, DbError> {
-    Ok(sqlx::query_scalar!("SELECT d.source_bytes FROM video_drafts d
+    Ok(sqlx::query_scalar::<_, i64>("SELECT d.source_bytes FROM video_drafts d
         JOIN media_attachments m ON m.id = d.media_id
         JOIN accounts a ON a.id = d.account_id JOIN accounts c ON c.id = d.channel_id
+        LEFT JOIN video_worker_turns t ON t.account_id = d.account_id
         WHERE (d.state = 'queued' OR (d.state = 'processing' AND d.lease_until <= clock_timestamp()))
           AND d.expires_at > clock_timestamp() AND m.status_id IS NULL
           AND a.suspended_at IS NULL AND c.suspended_at IS NULL
-        ORDER BY d.media_id LIMIT 1")
+        ORDER BY (SELECT count(*) FROM video_drafts active
+                  WHERE active.account_id = d.account_id AND active.state = 'processing'
+                    AND active.lease_until > clock_timestamp()),
+                 t.last_claimed_at NULLS FIRST, d.media_id LIMIT 1")
         .fetch_optional(pool).await?)
 }
 
 /// Claim one item per free worker slot. A crashed process leaves its source
 /// intact; expiry makes a new generation eligible, fencing the previous worker.
 pub async fn claim(pool: &PgPool) -> Result<Option<Claim>, DbError> {
-    Ok(sqlx::query_as!(Claim,
+    let mut tx = pool.begin().await?;
+    // Serialize only the tiny scheduling decision, never the encode or a file
+    // write. Every worker sees the previous turn before choosing another one.
+    sqlx::query("SELECT pg_advisory_xact_lock(1448035330, 0)")
+        .execute(&mut *tx)
+        .await?;
+    let claimed = sqlx::query_as::<_, Claim>(
         "UPDATE video_drafts SET state = 'processing', generation = generation + 1,
          lease_until = clock_timestamp() + make_interval(secs => $1)
          WHERE media_id = (
@@ -349,13 +359,25 @@ pub async fn claim(pool: &PgPool) -> Result<Option<Claim>, DbError> {
              JOIN media_attachments m ON m.id = d.media_id
              JOIN accounts a ON a.id = d.account_id
              JOIN accounts c ON c.id = d.channel_id
+             LEFT JOIN video_worker_turns t ON t.account_id = d.account_id
              WHERE (d.state = 'queued' OR (d.state = 'processing' AND d.lease_until <= clock_timestamp()))
                AND d.expires_at > clock_timestamp() AND m.status_id IS NULL
                AND a.suspended_at IS NULL AND c.suspended_at IS NULL
-             ORDER BY d.media_id LIMIT 1 FOR UPDATE OF d SKIP LOCKED
+             ORDER BY (SELECT count(*) FROM video_drafts active
+                       WHERE active.account_id = d.account_id AND active.state = 'processing'
+                         AND active.lease_until > clock_timestamp()),
+                      t.last_claimed_at NULLS FIRST, d.media_id
+             LIMIT 1 FOR UPDATE OF d SKIP LOCKED
          ) RETURNING media_id, generation, source_file, source_bytes, poster_time_seconds",
-        LEASE_SECONDS,
-    ).fetch_optional(pool).await?)
+    ).bind(LEASE_SECONDS).fetch_optional(&mut *tx).await?;
+    if let Some(job) = &claimed {
+        sqlx::query("INSERT INTO video_worker_turns (account_id, last_claimed_at)
+                    SELECT account_id, clock_timestamp() FROM video_drafts WHERE media_id = $1
+                    ON CONFLICT (account_id) DO UPDATE SET last_claimed_at = EXCLUDED.last_claimed_at")
+            .bind(job.media_id).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    Ok(claimed)
 }
 
 /// A raced size hint never consumes a job or its original. Its generation is
@@ -442,14 +464,15 @@ pub async fn reserve_outputs_with_hls(
         || small != format!("{stem}.draft.small.avif")
         || hls.iter().any(|(key, size)| {
             *size <= 0
-                || key
-                    .strip_prefix(&format!("{stem}.draft.hls"))
-                    .and_then(|tail| tail.strip_suffix(".m4s"))
-                    .is_none_or(|height| {
-                        height.is_empty()
-                            || height.starts_with('0')
-                            || !height.bytes().all(|byte| byte.is_ascii_digit())
-                    })
+                || (key != &format!("{stem}.draft.storyboard.jpg")
+                    && key
+                        .strip_prefix(&format!("{stem}.draft.hls"))
+                        .and_then(|tail| tail.strip_suffix(".m4s"))
+                        .is_none_or(|height| {
+                            height.is_empty()
+                                || height.starts_with('0')
+                                || !height.bytes().all(|byte| byte.is_ascii_digit())
+                        }))
         })
     {
         return Ok(false);
@@ -870,6 +893,98 @@ mod tests {
             Admission::StorageFull,
             "the account cap applies even with global space available"
         );
+    }
+
+    async fn fair_queue(pool: &PgPool, owner: i64, channel: i64) -> i64 {
+        let media_id = id::next();
+        let file = format!("{media_id}.orig");
+        let mut policy = limits();
+        policy.unfinished_per_account = 8;
+        policy.retained_source_bytes_per_account = 800;
+        policy.pending_source_bytes_global = 1600;
+        assert_eq!(
+            reserve(pool, &draft(media_id, owner, channel, &file), &policy)
+                .await
+                .unwrap(),
+            Admission::Accepted
+        );
+        let mut tx = pool.begin().await.unwrap();
+        assert!(lock_receiving(&mut tx, media_id, owner).await.unwrap());
+        assert!(
+            finish_receiving(&mut tx, media_id, owner, 80)
+                .await
+                .unwrap()
+        );
+        tx.commit().await.unwrap();
+        media_id
+    }
+
+    async fn other_channel(pool: &PgPool) -> (i64, i64) {
+        let owner = account(pool, "other").await;
+        let channel = account(pool, "otherfilms").await;
+        let mut tx = pool.begin().await.unwrap();
+        crate::video::create_channel(&mut tx, channel, owner)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        (owner, channel)
+    }
+
+    #[sqlx::test]
+    async fn bulk_uploads_do_not_monopolize_concurrent_slots_or_later_turns(pool: PgPool) {
+        let (a, ac) = setup(&pool).await;
+        let (b, bc) = other_channel(&pool).await;
+        let a1 = fair_queue(&pool, a, ac).await;
+        let a2 = fair_queue(&pool, a, ac).await;
+        let b1 = fair_queue(&pool, b, bc).await;
+        let b2 = fair_queue(&pool, b, bc).await;
+        let (left, right) = tokio::join!(claim(&pool), claim(&pool));
+        let mut first = vec![left.unwrap().unwrap(), right.unwrap().unwrap()];
+        first.sort_by_key(|job| job.media_id);
+        assert_eq!(
+            first.iter().map(|job| job.media_id).collect::<Vec<_>>(),
+            [a1, b1]
+        );
+        for job in &first {
+            assert!(fail(&pool, job).await.unwrap());
+        }
+        // With both slots now free, persisted turns break the tie; FIFO is
+        // retained inside each uploader even though B was uploaded later.
+        assert_eq!(claim(&pool).await.unwrap().unwrap().media_id, a2);
+        assert_eq!(claim(&pool).await.unwrap().unwrap().media_id, b2);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM video_worker_turns")
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            2
+        );
+    }
+
+    #[sqlx::test]
+    async fn failed_turn_commit_rolls_back_the_claim_and_skips_suspended_uploaders(pool: PgPool) {
+        let (a, ac) = setup(&pool).await;
+        let (b, bc) = other_channel(&pool).await;
+        let a1 = fair_queue(&pool, a, ac).await;
+        let b1 = fair_queue(&pool, b, bc).await;
+        sqlx::raw_sql("CREATE FUNCTION reject_video_turn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture rejected turn'; END $$; CREATE TRIGGER reject_video_turn BEFORE INSERT ON video_worker_turns FOR EACH ROW EXECUTE FUNCTION reject_video_turn()")
+            .execute(&pool).await.unwrap();
+        assert!(claim(&pool).await.is_err());
+        assert_eq!(
+            find_owned(&pool, a1, a).await.unwrap().unwrap().state,
+            "queued"
+        );
+        sqlx::raw_sql("DROP TRIGGER reject_video_turn ON video_worker_turns")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE accounts SET suspended_at=now() WHERE id=$1")
+            .bind(a)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(next_source_bytes(&pool).await.unwrap(), Some(80));
+        assert_eq!(claim(&pool).await.unwrap().unwrap().media_id, b1);
     }
 
     #[sqlx::test]

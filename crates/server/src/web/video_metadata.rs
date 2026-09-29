@@ -8,7 +8,7 @@ use super::{
 use crate::{AppState, error::ApiError};
 use axum::{
     body::Bytes,
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -113,6 +113,7 @@ async fn render(
                 (fields(&value.category.map(|id| id.to_string()).unwrap_or_default(), &value.licence.map(|id| id.to_string()).unwrap_or_default(), user.locale))
                 button type="submit" { (user.locale.text("videos-metadata-save")) }
             }
+            (super::videos::replace_poster_form(id, &user.csrf, user.locale, true))
             @let delete_action=format!("/web/statuses/{}/delete",publication.status_id);
             @let delete_message=user.locale.text("status-delete-confirm");
             form.settings-form method="post" action=(super::view::CONFIRM_PATH) data-confirm=(&delete_message) data-confirm-action=(&delete_action) {
@@ -168,4 +169,48 @@ pub async fn save(
             Err(error) => error.into_response(),
         },
     )
+}
+
+pub async fn poster(
+    State(state): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+    multipart: Multipart,
+) -> Response {
+    let attempt = async {
+        plamenu_db::video_captions::owned_publication(&state.pool, id, user.current.account.id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        let Some((image, alt)) = super::video_drafts::poster_fields(&user, multipart).await? else {
+            return Ok(csrf_rejection());
+        };
+        crate::video_poster::replace_published_poster(
+            &state,
+            id,
+            user.current.account.id,
+            image,
+            alt,
+        )
+        .await?;
+        Ok::<_, ApiError>(redirect_to(&format!(
+            "/videos/{id}/metadata?saved=1#video-poster-replace"
+        )))
+    }
+    .await;
+    private(match attempt {
+        Ok(response) => response,
+        Err(ApiError::Unprocessable(message)) => render(&state, &user, id, Some(&message), false)
+            .await
+            .unwrap_or_else(IntoResponse::into_response),
+        Err(ApiError::PayloadTooLarge) => render(
+            &state,
+            &user,
+            id,
+            Some("Choose a poster image smaller than 8 MiB"),
+            false,
+        )
+        .await
+        .unwrap_or_else(IntoResponse::into_response),
+        Err(error) => error.into_response(),
+    })
 }

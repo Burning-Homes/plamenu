@@ -299,12 +299,24 @@ async fn replace_poster_inner(
     state: &AppState,
     user: &WebUser,
     id: i64,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> Result<Response, ApiError> {
     owned(state, id, user.current.account.id).await?;
     video_draft::preview(&state.pool, id, user.current.account.id)
         .await?
         .ok_or(ApiError::NotFound)?;
+    let Some((image, alt)) = poster_fields(user, multipart).await? else {
+        return Ok(super::session::csrf_rejection());
+    };
+    crate::video_poster::replace_draft_poster(state, id, user.current.account.id, image, alt)
+        .await?;
+    Ok(redirect_to(&format!("/videos/drafts/{id}/review")))
+}
+
+pub(super) async fn poster_fields(
+    user: &WebUser,
+    mut multipart: Multipart,
+) -> Result<Option<(Vec<u8>, String)>, ApiError> {
     let mut csrf = String::new();
     let mut alt = String::new();
     let mut image = None;
@@ -316,7 +328,7 @@ async fn replace_poster_inner(
         let name = field.name().unwrap_or_default().to_owned();
         if name == "poster_file" {
             if !user.csrf_ok(&csrf) {
-                return Ok(super::session::csrf_rejection());
+                return Ok(None);
             }
             if image.is_some() {
                 return Err(ApiError::BadRequest("Choose one poster image".into()));
@@ -340,12 +352,10 @@ async fn replace_poster_inner(
         }
     }
     if !user.csrf_ok(&csrf) {
-        return Ok(super::session::csrf_rejection());
+        return Ok(None);
     }
     let image = image.ok_or_else(|| ApiError::Unprocessable("Choose a poster image".into()))?;
-    crate::video_poster::replace_draft_poster(state, id, user.current.account.id, image, alt)
-        .await?;
-    Ok(redirect_to(&format!("/videos/drafts/{id}/review")))
+    Ok(Some((image, alt)))
 }
 
 pub async fn action(

@@ -95,6 +95,53 @@ spawn a proxy or a separate transcoder. Keep the plaintext listener on loopback
 unless a trusted local network genuinely requires it. Without `[live_rtmps]`,
 no RTMPS port is opened and installation steps do not change.
 
+## Native Video storage and processing
+
+Native uploads use Plamenu's own durable database queue, media store and
+existing encoder runtime. No companion server or additional install step is
+introduced. Defaults can be overridden in TOML:
+
+```toml
+[native_video]
+max_upload_mib = 2048
+per_account_gib = 50
+global_gib = 1024
+pending_gib = 8
+unfinished_drafts = 32
+jobs = 2
+min_free_gib = 1
+```
+
+Quotas count retained originals and all journaled output revisions. A file
+scheduled for deletion stays charged until the storage worker acknowledges
+removal. A restart recovers committed upload offsets, source reservations and
+generation-fenced processing leases. Failed encoding retains the source for
+retry; unfinished drafts expire, but published media is not draft-expired.
+
+Worker slots are bounded before a job is claimed. Temporary-space reservations
+cover the source spool, a compatibility MP4, at most six HLS files and possible
+destination copies, poster scratch and a 2 MiB storyboard plus its copy. For a
+default-ceiling 2 GiB source, this conservative reservation is about 30 GiB
+plus 16 MiB per active job, in addition to the free-space floor. Actual outputs
+are often much smaller. Insufficient free space leaves work queued; it does
+not delete the original or relax the output ceilings. Other processes can use
+the same filesystem, so monitor real free space too. Do not place large-video
+test/production media on a small RAM-backed `/tmp` mount.
+
+Uploader turns persist in PostgreSQL. Eligible uploaders with fewer active
+jobs and older turns take precedence, retaining FIFO within an uploader.
+Only the short claim/turn transaction is serialized; encoding holds no queue
+transaction. One account's older bulk uploads therefore cannot monopolize
+both free slots while another eligible account waits. Account suspension and
+lease/generation fences continue to apply.
+
+Native jobs also bound FFmpeg decoder/encoder thread shares to half the
+available CPUs divided by the configured worker slots (at least one, at most
+eight threads per decoder/encoder); filter execution uses one thread. Lower
+renditions are sequential, not a second unbounded pool. Increasing `jobs`
+therefore changes CPU shares as well as disk admission; measure the actual
+workload before raising it.
+
 ## Federation fetch and proxies
 
 Authorized fetch and remote transport affect interoperability and privacy.

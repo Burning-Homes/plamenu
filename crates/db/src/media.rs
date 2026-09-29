@@ -154,6 +154,11 @@ pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool,
             WHERE r.file_name = $1
             UNION
             SELECT m.id, m.account_id, m.status_id FROM media_attachments m
+            JOIN video_drafts d ON d.media_id = m.id AND d.state = 'ready'
+            JOIN video_storyboards b ON b.media_id = m.id AND b.generation = d.generation
+            WHERE b.file_name = $1
+            UNION
+            SELECT m.id, m.account_id, m.status_id FROM media_attachments m
             JOIN media_hls_segments seg ON seg.media_id = m.id WHERE seg.cache_file = $1
         )
         SELECT ($1 NOT LIKE '%.draft.%' AND $1 NOT LIKE '%.livereplay.%' OR EXISTS (

@@ -78,13 +78,20 @@ fn review_poster(media_id: i64, time: &str, alt: Option<&str>, locale: Locale) -
     }
 }
 
-fn replace_poster_form(media_id: i64, csrf: &str, locale: Locale) -> Markup {
+pub(super) fn replace_poster_form(
+    media_id: i64,
+    csrf: &str,
+    locale: Locale,
+    published: bool,
+) -> Markup {
     html! {
         section id="video-poster-replace" {
             h2 { (locale.text("videos-replace-poster")) }
-            p.settings-field__hint { (locale.text("videos-replace-poster-hint")) }
+            p.settings-field__hint {
+                (locale.text(if published { "videos-replace-published-poster-hint" } else { "videos-replace-poster-hint" }))
+            }
             form.settings-form data-video-poster-replace method="post"
-                action=(format!("/web/videos/drafts/{media_id}/poster")) enctype="multipart/form-data" {
+                action=(if published { format!("/web/videos/{media_id}/poster") } else { format!("/web/videos/drafts/{media_id}/poster") }) enctype="multipart/form-data" {
                 input type="hidden" name="csrf" value=(csrf);
                 label.settings-field {
                     span.settings-field__label { (locale.text("videos-poster-alt")) }
@@ -204,6 +211,7 @@ pub(super) async fn page(
                                     (locale.text("videos-chapters-title"))
                                 }
                                 " · " a href=(format!("/videos/{}/metadata", published.media_id)) { (locale.text("videos-metadata-manage")) }
+                                " · " a href=(format!("/videos/{}/metadata#video-poster-replace", published.media_id)) { (locale.text("videos-replace-poster")) }
                                 " · " a href=(format!("/web/statuses/{}/edit",published.status_id)) { (locale.text("status-edit")) }
                             }
                         }
@@ -436,7 +444,7 @@ pub(super) async fn page(
                             }
                         }
                         (super::video_chapters::editor(media.id, &chapter_tracks, &user.csrf, false, locale))
-                        (replace_poster_form(media.id, &user.csrf, locale))
+                        (replace_poster_form(media.id, &user.csrf, locale, false))
                     }
                 }
             }

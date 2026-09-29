@@ -28,6 +28,46 @@ def _csrf(html: str) -> str:
     return match.group(1)
 
 
+def _assert_storyboard_image(peer, origin, width, height, media_id):
+    # PeerTube's lazy image downloader may re-encode larger JPEGs through
+    # processImage/sharp. Verify raster dimensions and similarity, not a
+    # byte-identity contract that PeerTube does not offer for these images.
+    with tempfile.TemporaryDirectory() as temp:
+        paths = [Path(temp)/"peer.jpg",Path(temp)/"origin.jpg"]
+        for path, contents in zip(paths,[peer,origin]):
+            path.write_bytes(contents)
+            dimensions = subprocess.check_output(["ffprobe","-v","error","-select_streams","v:0",
+                "-show_entries","stream=width,height","-of","csv=p=0",str(path)],timeout=30).decode().strip()
+            assert dimensions == f"{width},{height}",dimensions
+        result = subprocess.run(["ffmpeg","-nostdin","-i",str(paths[0]),"-i",str(paths[1]),
+            "-filter_complex","[0:v]format=gbrp,boxblur=2:1[a];[1:v]format=gbrp,boxblur=2:1[b];[a][b]psnr","-f","null","-"],
+            capture_output=True,text=True,check=True,timeout=30)
+        # Compare low-frequency RGB structure, not JPEG chroma block edges:
+        # PeerTube re-subsamples and recompresses at JPEG-85. A fixed 5x5
+        # low-pass and >=35 dB (~4.5/255 RMS) still reject missing/reordered
+        # tiles or different content. Geometry is independently exact above.
+        score = re.search(r"average:(inf|[0-9.]+)",result.stderr)
+        if not score or float(score[1]) < 35:
+            evidence = config.PLAMENU_DIR / f"target/e2e/ap09-m2-20260929/storyboard-{media_id}"
+            evidence.mkdir(parents=True,exist_ok=True)
+            for path in paths:
+                (evidence/path.name).write_bytes(path.read_bytes())
+            (evidence/"comparison.txt").write_text(result.stderr)
+        assert score and float(score[1]) >= 35,result.stderr[-1000:]
+
+
+def test_storyboard_raster_comparison_rejects_changed_content(tmp_path):
+    images = []
+    for colour in ("red", "blue"):
+        path = tmp_path / f"{colour}.jpg"
+        subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i",
+            f"color=c={colour}:size=160x90", "-frames:v", "1", str(path)], check=True, timeout=30)
+        images.append(path.read_bytes())
+    _assert_storyboard_image(images[0], images[0], 160, 90, "same-content-control")
+    with pytest.raises(AssertionError, match="PSNR"):
+        _assert_storyboard_image(images[1], images[0], 160, 90, "changed-content-control")
+
+
 @pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
 @pytest.mark.federation(
     direction="outbound",
@@ -514,7 +554,10 @@ def test_first_party_draft_upload_reaches_peertube(
                     visual_description = "Moving colour test pattern"
                     sample = peertube.make_sample_mp4(
                         Path(temp) / "draft.mp4",
-                        seconds=12 if upload_mode == "multipart" else 5,
+                            # More than the two initial concurrent HTTP
+                            # segments leaves a meaningful peer-prefetch
+                            # window after WebRTC discovery.
+                            seconds=30 if upload_mode == "multipart" else 5,
                         size="640x480",
                     )
                 contents = sample.read_bytes()
@@ -714,6 +757,20 @@ def test_first_party_draft_upload_reaches_peertube(
 
             remote = wait_for(delivered, desc="PeerTube imports draft-originated Video")
             detail = pt.video(remote["uuid"])
+            board = status["media_attachments"][0]["storyboard"]
+            peer_boards = pt.get(f"/api/v1/videos/{remote['uuid']}/storyboards")["storyboards"]
+            assert len(peer_boards) == 1, peer_boards
+            peer_board = peer_boards[0]
+            assert peer_board["spriteWidth"] == 160 and peer_board["spriteHeight"] == 90
+            assert peer_board["spriteDuration"] == board["interval_seconds"]
+            assert peer_board["totalWidth"] == board["columns"] * 160
+            assert peer_board["totalHeight"] == board["rows"] * 90
+            image = requests.get(peer_board["fileUrl"], verify=False, timeout=30)
+            image.raise_for_status()
+            assert image.headers["Content-Type"].startswith("image/jpeg")
+            original_board = requests.get(board["url"], verify=False, timeout=30)
+            original_board.raise_for_status()
+            _assert_storyboard_image(image.content,original_board.content,board["columns"]*160,board["rows"]*90,media_id)
             if upload_mode in ("poster-frame", "custom-poster"):
                 thumbnail_url = urljoin(pt.base_url, detail["thumbnailPath"])
                 thumbnail = pt.http.get(thumbnail_url, timeout=30)
@@ -770,7 +827,7 @@ def test_first_party_draft_upload_reaches_peertube(
                             "PEERTUBE_E2E_PASSWORD": peertube.ROOT_PASS,
                         },
                     )
-            expected_heights = [360] if audio_only else [360, 480]
+            expected_heights = [240, 360] if audio_only else [240, 360, 480]
             assert len(hls["files"]) == len(expected_heights), hls
             assert sorted(f["height"] for f in hls["files"]) == expected_heights, hls
             master = requests.get(hls["playlistUrl"], verify=False, timeout=30)
@@ -862,6 +919,37 @@ def test_first_party_draft_upload_reaches_peertube(
                 )
                 assert result.returncode == 0, result.stderr
                 print(result.stdout, flush=True)
+        if upload_mode == "custom-poster":
+            with step("a published poster-only signed Update reaches PeerTube without changing video assets"):
+                metadata = browser.get(f"{config.PLAMENU_URL}/videos/{media_id}/metadata", timeout=30)
+                metadata.raise_for_status()
+                before_thumbnails = {item["fileUrl"] for item in detail["thumbnails"]}
+                with tempfile.TemporaryDirectory() as temp:
+                    red = peertube.make_solid_poster(Path(temp) / "red.png", "red")
+                    rejected = browser.post(f"{config.PLAMENU_URL}/web/videos/{media_id}/poster",
+                        files=[("poster_alt", (None,"A red square")), ("poster_file",("red.png",red.read_bytes(),"image/png"))], timeout=30)
+                    assert rejected.status_code == 403
+                    saved = browser.post(f"{config.PLAMENU_URL}/web/videos/{media_id}/poster",
+                        files=[("csrf",(None,_csrf(metadata.text))), ("poster_alt",(None,"A red square after publication")),
+                               ("poster_file",("red.png",red.read_bytes(),"image/png"))], allow_redirects=False, timeout=60)
+                    assert saved.status_code == 303, saved.text[:500]
+                def revised():
+                    value = pt.video(remote["uuid"])
+                    return value if {item["fileUrl"] for item in value["thumbnails"]} != before_thumbnails else None
+                changed = wait_for(revised, desc="PeerTube receives immutable replacement poster")
+                assert changed["files"] == detail["files"]
+                current = plamenu_api.get(f"/api/v1/statuses/{published_id}")["media_attachments"][0]
+                assert current["poster_description"] == "A red square after publication"
+                assert current["storyboard"] == board
+                assert current["url"] == status["media_attachments"][0]["url"]
+                image = requests.get(urljoin(pt.base_url, changed["thumbnailPath"]), verify=False, timeout=30)
+                image.raise_for_status()
+                with tempfile.TemporaryDirectory() as temp:
+                    path = Path(temp) / "received-red.jpg"
+                    path.write_bytes(image.content)
+                    pixel = subprocess.check_output(["ffmpeg","-v","error","-i",str(path),"-vf","scale=1:1",
+                        "-pix_fmt","rgb24","-frames:v","1","-f","rawvideo","-"], timeout=30)
+                    assert pixel[0] > pixel[2] + 100, pixel
     finally:
         if published_id is not None:
             plamenu_api.delete_status(published_id)

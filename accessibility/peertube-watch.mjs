@@ -130,6 +130,8 @@ for (const [engineName, engine] of [['chromium', chromium], ['firefox', firefox]
             .waitFor({ state: 'visible' });
           await qualityMenu.locator('[role="menuitemradio"]', { hasText: '480p' })
             .waitFor({ state: 'visible' });
+          await qualityMenu.locator('[role="menuitemradio"]', { hasText: '240p' })
+            .waitFor({ state: 'visible' });
           await qualityMenu.locator('[role="menuitemradio"]', { hasText: '360p' }).click();
           await page.waitForFunction(() => {
             const quality = [...document.querySelectorAll('.vjs-menu')]
@@ -144,6 +146,12 @@ for (const [engineName, engine] of [['chromium', chromium], ['firefox', firefox]
         const progress = page.locator('.vjs-progress-holder');
         const box = await progress.boundingBox();
         assert(box && box.width > 20, 'PeerTube seek bar unavailable');
+        await progress.hover({position:{x:box.width * 0.55,y:box.height / 2},force:true});
+        await page.waitForFunction(() => {
+          const sprite = document.querySelector('.vjs-storyboard-sprite-placeholder');
+          return sprite && getComputedStyle(sprite).backgroundImage.includes('url(')
+            && sprite.getBoundingClientRect().height > 20;
+        }, undefined, {timeout:15_000});
         await progress.click({ position: { x: box.width * 0.55, y: box.height / 2 } });
         await page.waitForFunction(() => document.querySelector('video.vjs-tech')?.currentTime > 1.5,
           undefined, { timeout: 15_000 });

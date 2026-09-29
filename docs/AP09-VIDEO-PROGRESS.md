@@ -132,7 +132,7 @@ before becoming `verified`. Keep partial results and failures visible.
 | --- | --- | --- | --- |
 | M0 | Baseline and finite parity inventory | Current-version feature inventory; local peer/version records; baseline E2E; browser gap observations; product decisions | verified 2026-09-23 |
 | M1 | Channels and native publication | Channel/account lifecycle; authorized collaboration; real Plamenu Video accepted, playable and attributed correctly in PeerTube; edit/delete/follow exchange | verified 2026-09-29; see M1 sign-off below |
-| M2 | Long-form VOD pipeline | Large/resumable and no-JS uploads; durable processing; quality ladder; poster/storyboard; audio-only/silent inputs; failures/restart/quota evidence | in progress |
+| M2 | Long-form VOD pipeline | Large/resumable and no-JS uploads; durable processing; quality ladder; poster/storyboard; audio-only/silent inputs; failures/restart/quota evidence | verified 2026-09-29 for the original functional gate; see M2 sign-off below. Sustained scale and independent release/device/AT gates remain M7/M9 |
 | M3 | Accessible metadata | Caption upload/edit/delete and languages; native tracks and transcript; chapters; descriptions; both-direction federation and update retention | verified 2026-09-29 for the stated functional gate; see M3 sign-off below. Human AT/WCAG release evidence remains M9 |
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | verified 2026-09-29; see M4 sign-off below |
 | M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | verified 2026-09-25 for this stated functional gate; see the M5 sign-off below. Cross-node storage, additional device/browser combinations, and broader fault matrices remain in M7/M9, not silently counted as done |
@@ -348,8 +348,96 @@ endpoint, not the removed separate endpoint.
 
 This is functional/browser evidence, not human screen-reader, real-mobile
 hardware or WCAG release certification. M9's independent human AT gate remains
-open. M2/M6/M7/M8/M9 and the wider inventory retain their original open scope.
+open. M2 is signed off separately below; M6/M7/M8/M9 and the wider inventory
+retain their original open scope.
 No new installation dependency, push, merge or staging deployment.
+
+## M2 sign-off — 2026-09-29
+
+Closed the original long-form VOD functional gate without removing acceptance
+criteria. The bounded native pipeline now packages a copy/remux top and useful,
+sequential lower qualities from 1080p/720p/480p/360p/240p. No upscaling or
+near-duplicate rungs; the progressive MP4 remains independently playable.
+Finite hash manifests, kernel output ceilings, disk reservations and codec
+thread shares bound processing. Uploader turns persist across workers/restarts,
+with fewer active jobs and older turns first, FIFO within each uploader.
+
+Native films get one immutable, quota-accounted, at-most-100-tile JPEG seek
+sprite. Sparse keyframe sampling fills its final valid/spare cells rather than
+showing uninitialized blanks. Published HTML exposes decorative tiles with
+native timestamp links; scripts seek/focus the existing player. Client entities
+include bounded storyboard metadata, and canonical PeerTube-compatible Video
+preview relations import into PeerTube's actual seek controls. Inbound remote
+storyboard import and the entire PeerTube REST API are not claimed.
+
+Published posters are replaceable through explicit Replace poster links in
+the editor and Videos list, using the same no-JS still-image/description form
+and enhanced local preview. Immutable AVIF/JPEG pointers, authorization fences,
+original-uploader quota and original-author signed Update commit together.
+Failure retains the old poster; video identity, captions, chapters and seek
+previews stay unchanged. Old files remain charged until acknowledged cleanup.
+
+Evidence:
+
+- **111 focused Rust checks passed**: native_video (27), video_worker (23),
+  durable video_draft queue/ledger/fairness (13), content_universe (21),
+  wire_shapes (12), edits (6), atomic_outbox (4), processing budgets (3),
+  finite ladder (1), bounded native seek-preview rendering (1). These include
+  actual five-rung 1080p encoding, unchanged copy-top packet hashes, complete
+  packet/duration checks, sparse final tiles, silent portrait/ultrawide and
+  audio-only sources, failed storage/outbox, retry, cancellation, stale-worker
+  fences, private/suspended access, quota refusal and uploader fairness.
+- **Three real large/concurrent upload tests passed**. Both multipart and
+  resumable transfer the default 2 GiB ceiling of a decodable one-hour source;
+  the latter survives an interrupted upload and preserves its offset and
+  fingerprint. Both retain all 3600 frames/seconds, survive ready-state restart,
+  reject above-ceiling admission and refund only after confirmed cleanup.
+  Three concurrent 128 MiB, 720p/15 fps sources use two slots and two uploaders.
+  Actual workload/hardware limits and measurements are in
+  [the closure/resource record](AP09-M2-M3-CLOSURE.md#resource-evidence--2026-09-29).
+  Result: `target/e2e/ap09-m2-20260929/long-form-bounded-threads.xml`.
+- **Six real PeerTube 8.3 publication modes plus one raster-control test
+  passed**: multipart, resumable, audio-only, audio-resumable, selected poster
+  frame and custom/published replacement poster. Native ladder imports,
+  progressive/HLS decode, range/hash integrity, signed poster-only updates,
+  storyboard geometry/content and actual desktop/320px Chromium/Firefox
+  quality-switch/seek-preview controls pass. PeerTube may re-encode cached JPEGs;
+  comparison checks exact geometry and low-frequency RGB similarity, with a
+  negative changed-content control, not a false byte-identity contract.
+  Result: `target/e2e/ap09-m2-20260929/peertube-final.xml`.
+- The same matrix exchanges **455,497 bytes to PeerTube and 204,780
+  checksum-validated bytes back**, zero validation errors. The proof aligns
+  the products' visible quality controls and uses a 30-second multi-segment
+  film so initial concurrent HTTP downloads cannot consume the whole fixture
+  before peer discovery. Separately, default-on Auto decodes with no seeder and
+  a four-second origin delay. VOD's no-byte HTTP window is bounded at ten seconds;
+  live retains its shorter policy. The library's stock timeout is documented in
+  [its primary configuration reference](https://novage.github.io/p2p-media-loader/docs/latest/types/p2p-media-loader-core.StreamConfig.html).
+- **Seven browser projects passed** the full native upload/review/publication,
+  selected/generated/replaced posters, actual playback/cues, quality selection,
+  timestamp keyboard seeking, catalogue/channel navigation and published poster
+  replacement journey: Chromium/Firefox/WebKit desktop and narrow/touch plus
+  scripts-disabled Chromium. Axe, rendered sprite geometry and 320px reflow
+  pass. Evidence: `target/e2e/ap09-m2-20260929/browser-final/`.
+- Manual development-browser publication, keyboard preview seeking and 320px
+  visual inspection confirmed correctly clipped multi-row tiles, reachable
+  poster editing, immediate local preview and visible viewer poster description.
+  Retained unlisted sample: `/@developer/117352394959618048` on the local instance.
+- All-target workspace strict Clippy, SQLx metadata check, formatting,
+  whitespace, Python/JavaScript syntax checks and mdBook build pass.
+
+Failed evidence is retained. It exposed unrestricted encoder memory, sparse
+sprite cells, CSS shrinking the complete sprite into one tile, long channel
+heading reflow, and slow-origin startup cancellation. Test corrections also
+remove parallel channel-name collisions and separate independent Auto quality
+selection from proof of exchanging one matching rendition. No pre-existing
+source, media, backups or audit evidence was deleted; disposable upload fixtures are cleaned
+only after their lifecycle checks. About 148 GiB remains free on the host.
+
+This closes M2's functional gate, not production capacity, complete parity,
+all remote storyboard directions, real-device coverage, or human AT/WCAG
+certification. M6/M7/M8/M9 and the broader inventory keep their original gates.
+No installation/maintenance dependency, push, merge or staging deployment.
 
 ## Verification matrix
 
@@ -427,8 +515,8 @@ unwatched remote videos do not trigger whole-file downloads.
 
 ## Next work
 
-M0/M1/M3/M4/M5 have functional sign-offs. The current two-additional-milestone
-goal has closed M3 and now targets M2: broader bounded ladders, published
+M0/M1/M2/M3/M4/M5 have functional sign-offs. The two-additional-milestone goal
+closed M3 and M2: accessible metadata, broader bounded ladders, published
 posters/storyboards and maximum-size/concurrent-upload/recovery measurements.
 M6's remaining creator/viewer surfaces, M7's operations/scale and M9's wider
 fault, real-device and human AT release checks remain open. Milestone completion

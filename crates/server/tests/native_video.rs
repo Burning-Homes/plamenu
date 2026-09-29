@@ -346,7 +346,7 @@ async fn native_hls_packages_copy_top_and_bounded_lower_rendition() {
                 "-f",
                 "lavfi",
                 "-i",
-                "testsrc2=size=640x480:rate=24",
+                "testsrc2=size=1920x1080:rate=10",
                 "-f",
                 "lavfi",
                 "-i",
@@ -385,10 +385,10 @@ async fn native_hls_packages_copy_top_and_bounded_lower_rendition() {
     )
     .await
     .unwrap();
-    assert_eq!(renditions.len(), 2);
+    assert_eq!(renditions.len(), 5);
     assert_eq!(
         renditions.iter().map(|r| r.height).collect::<Vec<_>>(),
-        [480, 360]
+        [1080, 720, 480, 360, 240]
     );
     for rendition in &renditions {
         assert!(rendition.file_size > 1000);
@@ -409,7 +409,56 @@ async fn native_hls_packages_copy_top_and_bounded_lower_rendition() {
             .await
             .unwrap();
         assert_eq!(meta.height, Some(i64::from(rendition.height)));
+        // fMP4 format duration includes encoder/reordering timestamp offsets;
+        // the content timeline and actual video packet count prove no loss.
+        let seconds: f64 = rendition
+            .playlist
+            .lines()
+            .filter_map(|line| line.strip_prefix("#EXTINF:"))
+            .map(|line| line.split(',').next().unwrap().parse::<f64>().unwrap())
+            .sum();
+        assert!(
+            (seconds - 9.0).abs() < 0.1,
+            "{}p: {seconds}",
+            rendition.height
+        );
+        assert_eq!(
+            video_packets(&rendition.file_path)
+                .windows(7)
+                .filter(|text| *text == b"SHA256:")
+                .count(),
+            90
+        );
+        assert_eq!(meta.video_codec.as_deref(), Some("h264"));
+        assert_eq!(meta.audio_codec.as_deref(), Some("aac"));
     }
+    assert_eq!(
+        video_packets(&processed.file_path),
+        video_packets(&renditions[0].file_path),
+        "top quality must remux identical compressed video packets, not encode again"
+    );
+}
+
+fn video_packets(path: &std::path::Path) -> Vec<u8> {
+    let output = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_packets",
+            "-show_entries",
+            "packet=data_hash",
+            "-show_data_hash",
+            "sha256",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    output.stdout
 }
 
 async fn ap_get(app: axum::Router, path: &str) -> (StatusCode, serde_json::Value) {

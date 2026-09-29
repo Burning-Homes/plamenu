@@ -7983,6 +7983,38 @@ a.settings-button--plain {
   padding-inline-start: var(--space-5);
 }
 
+.media__seek-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3);
+  padding: 0;
+  margin-block: var(--space-3);
+  list-style: none;
+}
+.media__seek-grid a {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  min-block-size: 44px;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.media__seek-tile {
+  display: block;
+  inline-size: 160px;
+  block-size: 90px;
+  overflow: hidden;
+  contain: paint;
+}
+.status__media .media .media__seek-tile img {
+  inline-size: var(--sprite-width);
+  max-inline-size: none;
+  block-size: auto;
+  max-block-size: none;
+  transform: translate(var(--sprite-x), var(--sprite-y));
+}
+
 .caption-transcript {
   display: grid;
   gap: var(--space-3);
@@ -8020,7 +8052,7 @@ a.settings-button--plain {
   overflow-wrap: anywhere;
 }
 
-.media__chapters {
+.media__chapters:not(.media__seek-previews) {
   inline-size: 100%;
   padding: var(--space-2) var(--space-3);
   border-block-start: 1px solid var(--border);
@@ -8653,6 +8685,9 @@ a.settings-button--plain {
   gap: var(--space-3);
   padding: 0;
   list-style: none;
+}
+.video-explore h1 {
+  overflow-wrap: anywhere;
 }
 .video-explore__card {
   overflow: hidden;

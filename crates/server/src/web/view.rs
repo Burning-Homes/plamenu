@@ -2984,6 +2984,7 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                 }
                                 (media_transcript(item, language, ctx.locale))
                                 (media_caption_transcripts(item, ctx.locale))
+                                (media_seek_previews(item, url, ctx.locale))
                                 (video_metadata_details(item, ctx.locale))
                             },
                         }
@@ -3305,6 +3306,47 @@ fn chapter_time(seconds: i64) -> String {
         format!("{hours}:{minutes:02}:{seconds:02}")
     } else {
         format!("{minutes}:{seconds:02}")
+    }
+}
+
+fn media_seek_previews(item: &Value, video_url: &str, locale: Locale) -> Markup {
+    let Some(board) = item.get("storyboard") else {
+        return html! {};
+    };
+    let Some(url) = board.get("url").and_then(Value::as_str) else {
+        return html! {};
+    };
+    let columns = board["columns"].as_i64().unwrap_or(0);
+    let rows = board["rows"].as_i64().unwrap_or(0);
+    let count = board["tile_count"].as_i64().unwrap_or(0);
+    let interval = board["interval_seconds"].as_i64().unwrap_or(0);
+    if !(1..=10).contains(&columns)
+        || !(1..=10).contains(&rows)
+        || !(1..=100).contains(&count)
+        || count > columns * rows
+        || !(1..=604_800).contains(&interval)
+    {
+        return html! {};
+    }
+    html! {
+        details.media__transcript.media__chapters.media__seek-previews {
+            summary { (locale.text("videos-seek-previews")) }
+            p { (locale.text("videos-seek-previews-hint")) }
+            ol.media__seek-grid {
+                @for tile in 0..count {
+                    @let seconds=tile * interval;
+                    li {
+                        a href=(format!("{video_url}#t={seconds}")) data-chapter-seek=(seconds) {
+                            span.media__seek-tile aria-hidden="true" {
+                                img src=(url) alt="" loading="lazy" width=(columns * 160) height=(rows * 90)
+                                    style=(format!("--sprite-x:{}px;--sprite-y:{}px;--sprite-width:{}px", -(tile % columns) * 160, -(tile / columns) * 90, columns * 160));
+                            }
+                            span { (chapter_time(seconds)) }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -5102,6 +5144,15 @@ fn edit_title_field(title: &str, video: bool, locale: Locale) -> Markup {
     }
 }
 
+fn video_edit_links(media_id: &str, locale: Locale) -> Markup {
+    html! {
+        p {
+            a href=(format!("/videos/{media_id}/metadata")) { (locale.text("videos-metadata-manage")) }
+            " · " a href=(format!("/videos/{media_id}/metadata#video-poster-replace")) { (locale.text("videos-replace-poster")) }
+        }
+    }
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "one flat edit form mirroring the full composer"
@@ -5143,7 +5194,7 @@ pub fn edit_compose_form(
             }
             @if status.object_type() == Some("Video") {
                 @if let Some(media_id) = prefill.media.first().and_then(|item| item["id"].as_str()) {
-                    p { a href=(format!("/videos/{media_id}/metadata")) { (locale.text("videos-metadata-manage")) } }
+                    (video_edit_links(media_id, locale))
                 }
             }
 
@@ -6133,6 +6184,34 @@ mod tests {
             ),
             "{rendered}"
         );
+    }
+
+    #[test]
+    fn native_seek_previews_have_bounded_native_links_and_decorative_tiles() {
+        let mut value = json!({"storyboard": {"url":"/media/7.draft.storyboard.jpg",
+            "columns":10,"rows":2,"tile_count":12,"interval_seconds":5}});
+        let markup =
+            media_seek_previews(&value, "/media/7.draft.mp4", Locale::default()).into_string();
+        assert_eq!(markup.matches("data-chapter-seek=").count(), 12);
+        assert!(markup.contains("/media/7.draft.mp4#t=55"));
+        assert!(markup.contains("--sprite-x:-160px;--sprite-y:-90px"));
+        assert!(markup.contains("aria-hidden=\"true\""));
+        assert!(markup.contains("alt=\"\""));
+        for (field, invalid) in [
+            ("columns", 0),
+            ("rows", 11),
+            ("tile_count", 101),
+            ("interval_seconds", 0),
+        ] {
+            let previous = value["storyboard"][field].take();
+            value["storyboard"][field] = json!(invalid);
+            assert!(
+                media_seek_previews(&value, "/media/7.draft.mp4", Locale::default())
+                    .into_string()
+                    .is_empty()
+            );
+            value["storyboard"][field] = previous;
+        }
     }
 
     #[test]

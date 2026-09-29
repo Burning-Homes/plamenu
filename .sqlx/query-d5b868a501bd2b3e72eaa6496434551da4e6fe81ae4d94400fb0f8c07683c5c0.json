@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT m.small_file_name AS \"small_file_name!\", p.file_name AS \"jpeg_file?\"\n               FROM video_drafts d JOIN media_attachments m ON m.id = d.media_id\n               LEFT JOIN video_compatibility_posters p ON p.media_id = m.id\n               WHERE d.media_id = $1 AND d.account_id = $2 AND m.account_id = $2\n                 AND d.generation = $3 AND d.state = 'ready'\n                 AND (($4 AND m.status_id IS NOT NULL) OR\n                      (NOT $4 AND d.expires_at > clock_timestamp() AND m.status_id IS NULL))\n                 AND m.processing = 'complete' AND m.small_file_name IS NOT NULL\n               FOR UPDATE OF m, d",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "small_file_name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "small_file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "jpeg_file?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "video_compatibility_posters",
+            "name": "file_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "d5b868a501bd2b3e72eaa6496434551da4e6fe81ae4d94400fb0f8c07683c5c0"
+}

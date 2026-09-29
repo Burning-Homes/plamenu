@@ -418,6 +418,11 @@ pub fn router() -> Router<AppState> {
         .route("/videos/{id}/metadata", get(video_metadata::manage))
         .route("/web/videos/{id}/metadata", post(video_metadata::save))
         .route(
+            "/web/videos/{id}/poster",
+            post(video_metadata::poster)
+                .layer(axum::extract::DefaultBodyLimit::max(9 * 1024 * 1024)),
+        )
+        .route(
             "/web/videos/{id}/chapters",
             post(video_chapters::published_update),
         )

@@ -10,7 +10,7 @@ use plamenu_db::{media, native_video_hls, video_draft};
 use crate::{
     AppState,
     error::ApiError,
-    media_transcode::{PackagedHls, ProcessedAv},
+    media_transcode::{PackagedHls, PackagedStoryboard, ProcessedAv},
     video_resources::Reservation,
 };
 
@@ -145,12 +145,19 @@ async fn process(
         let hls =
             crate::media_transcode::package_native_hls(&state.config, &processed, &stem, &params)
                 .await?;
-        Ok::<_, ApiError>((processed, hls))
+        let storyboard = crate::media_transcode::package_native_storyboard(
+            &state.config,
+            &processed,
+            &stem,
+            &params,
+        )
+        .await?;
+        Ok::<_, ApiError>((processed, hls, storyboard))
     };
     tokio::pin!(encode);
     let mut renew = tokio::time::interval(RENEW_EVERY);
     renew.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let (mut processed, hls) = loop {
+    let (mut processed, hls, storyboard) = loop {
         tokio::select! {
             result = &mut encode => break result?,
             _ = renew.tick() => {
@@ -171,10 +178,11 @@ async fn process(
             .len(),
     )
     .unwrap_or(i64::MAX);
-    let hls_sizes: Vec<_> = hls
+    let mut hls_sizes: Vec<_> = hls
         .iter()
         .map(|item| (item.file_name.clone(), item.file_size))
         .collect();
+    hls_sizes.push((storyboard.file_name.clone(), storyboard.file_size));
     if !video_draft::reserve_outputs_with_hls(
         &state.pool,
         claim,
@@ -205,7 +213,7 @@ async fn process(
     let media_id = claim.media_id;
     let mut finalize = tokio::spawn(async move {
         let _reservation = reservation;
-        let result = store(&state, &claim, &processed, &hls, &main, &small).await;
+        let result = store(&state, &claim, &processed, &hls, &storyboard, &main, &small).await;
         // Remove residual poster/hash scratch before releasing its budget.
         drop(processed);
         if result.is_err() {
@@ -322,6 +330,7 @@ async fn store(
     claim: &video_draft::Claim,
     processed: &ProcessedAv,
     hls: &[PackagedHls],
+    storyboard: &PackagedStoryboard,
     main: &str,
     small: &str,
 ) -> Result<(), ApiError> {
@@ -354,6 +363,11 @@ async fn store(
             .await
             .map_err(|e| ApiError::Internal(Box::new(e)))?;
     }
+    state
+        .media
+        .put_file(&storyboard.file_name, &storyboard.file_path)
+        .await
+        .map_err(|error| ApiError::Internal(Box::new(error)))?;
     let done = media::complete_processing(
         &mut *tx,
         media::ProcessedMedia {
@@ -404,11 +418,28 @@ async fn store(
     }
     let hls_rows = hls_rows(claim, hls);
     native_video_hls::replace(&mut tx, claim.media_id, claim.generation, &hls_rows).await?;
+    plamenu_db::video_storyboards::replace(&mut tx, &storyboard_row(claim, storyboard)).await?;
     if !video_draft::mark_ready(&mut tx, claim).await? {
         return Err(lost_claim());
     }
     tx.commit().await.map_err(plamenu_db::DbError::from)?;
     Ok(())
+}
+
+fn storyboard_row(
+    claim: &video_draft::Claim,
+    board: &PackagedStoryboard,
+) -> plamenu_db::video_storyboards::Storyboard {
+    plamenu_db::video_storyboards::Storyboard {
+        media_id: claim.media_id,
+        generation: claim.generation,
+        file_name: board.file_name.clone(),
+        size_bytes: board.file_size,
+        columns: board.columns,
+        rows: board.rows,
+        tile_count: board.count,
+        interval_seconds: board.interval_seconds,
+    }
 }
 
 fn hls_rows(claim: &video_draft::Claim, hls: &[PackagedHls]) -> Vec<native_video_hls::Rendition> {

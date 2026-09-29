@@ -8,6 +8,7 @@
   - [Posting](members/posting.md)
   - [Account settings and safety](members/account-and-safety.md)
   - [Accessible video metadata](VIDEO_ACCESSIBILITY.md)
+  - [Native Video publishing](VIDEO_PUBLISHING.md)
 - [Known issues](KNOWN_ISSUES.md)
 
 # Install and operate

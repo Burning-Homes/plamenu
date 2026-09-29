@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -45,7 +45,7 @@ async function publish(page, projectName, noScript) {
   await signIn(page);
   await page.goto('/videos');
   await expect(page.getByRole('heading', { name: 'Videos', exact: true })).toBeVisible();
-  const name = `film_${Date.now().toString(36)}_${projectName.slice(0, 3)}`;
+  const name = `film_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
   let channelName = `Films ${name}`;
   let form = page.locator('form[action="/web/videos"]');
   const ownedCount = await form.getByRole('combobox', { name: 'Channel', exact: true }).locator('option').count();
@@ -198,15 +198,50 @@ async function publish(page, projectName, noScript) {
   await expect.poll(() => player.evaluate(video => video.currentTime)).toBeGreaterThan(0.1);
   await expect.poll(() => player.evaluate(video => video.textTracks[0].activeCues?.[0]?.text))
     .toBe('[Steady test tone]');
-  if (!noScript && projectName.startsWith('chromium')) {
+  if (!noScript) {
     const quality = page.getByRole('combobox', { name: 'Video quality' });
-    await expect(quality).toBeVisible();
-    await expect(quality.locator('option')).toHaveText(['Auto', '360p', '480p']);
+    if (await quality.isVisible()) {
+      await expect(quality.locator('option')).toHaveText(['Auto', '240p', '360p', '480p']);
+      await quality.selectOption({ label:'240p' });
+      await player.evaluate(video=>{ video.currentTime=1; video.play().catch(()=>{}); });
+      await expect.poll(()=>player.evaluate(video=>video.videoWidth), {timeout:15_000}).toBe(320);
+      await expect.poll(()=>player.evaluate(video=>video.currentTime), {timeout:15_000}).toBeGreaterThan(1.1);
+    } else {
+      // Native-HLS engines retain their own controls instead of a false UI.
+      expect(await player.evaluate(video=>video.canPlayType('application/vnd.apple.mpegurl'))).not.toBe('');
+    }
   }
   expect(await player.evaluate(video => video.error)).toBeNull();
   await player.evaluate(video => video.pause());
   const permalink = page.url();
   const statusId = new URL(permalink).pathname.split('/').pop();
+  const previews = page.locator('.media__seek-previews');
+  await previews.locator('summary').press('Enter');
+  await expect(previews).toContainText('Approximate keyframe previews');
+  const previewLinks = previews.locator('.media__seek-grid a');
+  await expect(previewLinks).toHaveCount(3);
+  await expect(previewLinks.nth(1)).toHaveAttribute('href', /#t=1$/);
+  await expect.poll(() => previews.locator('img').first().evaluate(image => image.naturalWidth)).toBe(480);
+  // Natural dimensions alone miss the general media rule shrinking the
+  // entire sprite into one tile. Its rendered dimensions must stay intact.
+  await expect.poll(() => previews.locator('img').first().evaluate(image => image.getBoundingClientRect().width)).toBe(480);
+  await expect.poll(() => previews.locator('img').first().evaluate(image => image.getBoundingClientRect().height)).toBe(90);
+  expect(await previews.locator('.media__seek-grid').evaluate(grid => grid.scrollWidth <= grid.clientWidth + 1)).toBe(true);
+  await page.setViewportSize({width:320,height:800});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await previewLinks.nth(1).press('Enter');
+  if (noScript) {
+    await page.waitForURL(url => url.pathname.startsWith('/media/') && url.hash === '#t=1');
+    const native = page.locator('video');
+    await expect.poll(() => native.evaluate(video => video.currentTime)).toBeGreaterThanOrEqual(1);
+    await page.goto(permalink);
+  } else {
+    await expect.poll(() => player.evaluate(video => video.currentTime)).toBeGreaterThanOrEqual(1);
+    await expect(player).toBeFocused();
+    const audit = await new AxeBuilder({page}).include('.media__seek-previews').analyze();
+    expect(audit.violations).toEqual([]);
+  }
+  await page.setViewportSize({width:projectName.includes('mobile') ? 390 : 1440,height:900});
   if (noScript) await page.setViewportSize({ width: 320, height: 800 });
   await page.goto('/videos/explore');
   await page.getByRole('searchbox', { name: 'Search video titles and descriptions' })
@@ -387,13 +422,34 @@ async function publish(page, projectName, noScript) {
     .toHaveAttribute('href', /\/videos\/explore\?channel=\d+/);
   await expect(page.locator('.profile__badge').filter({ hasText: /^Group$/ })).toHaveCount(0);
   await expect(page.locator('.status__boost').first()).toContainText('published on');
+  await page.goto(`/web/statuses/${statusId}/edit`);
+  await page.getByRole('link', {name:'Replace poster', exact:true}).click();
+  const publishedPoster = page.locator('form[data-video-poster-replace]');
+  await publishedPoster.getByLabel('Describe the poster image, including any text shown in it')
+    .fill('Updated blue poster after publication.');
+  await publishedPoster.getByLabel('Still image for the poster').setInputFiles(posterFixture);
+  if (!noScript) await expect(publishedPoster.getByRole('img', {name:'Preview of the new poster image'})).toBeVisible();
+  await page.setViewportSize({width:320,height:800});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  if (!noScript) {
+    const audit = await new AxeBuilder({page}).include('#video-poster-replace').analyze();
+    expect(audit.violations).toEqual([]);
+  }
+  await publishedPoster.getByRole('button', {name:'Save custom poster'}).press('Enter');
+  await page.waitForURL(url => url.searchParams.get('saved') === '1');
+  await page.goto(permalink);
+  await page.getByText('Poster image description', {exact:true}).click();
+  await expect(page.getByText('Updated blue poster after publication.', {exact:true})).toBeVisible();
+  await expect(page.locator('video').first()).toBeVisible();
+  await expect(page.locator('.media__seek-previews')).toBeVisible();
 }
 
 test('native video upload, review and publication', async ({ page }, info) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   await publish(page, info.project.name, false);
 });
 test('native video upload, captions and publication @no-js', async ({ page }, info) => {
+  test.setTimeout(180_000);
   await publish(page, info.project.name, true);
 });
 

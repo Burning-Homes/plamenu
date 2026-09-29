@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH candidates AS (\n            SELECT id, account_id, status_id FROM media_attachments\n            WHERE file_name = $1 OR small_file_name = $1\n            UNION\n            SELECT m.id, m.account_id, m.status_id FROM media_attachments m\n            JOIN video_compatibility_posters p ON p.media_id = m.id WHERE p.file_name = $1\n            UNION\n            SELECT m.id, m.account_id, m.status_id FROM media_attachments m\n            JOIN video_drafts d ON d.media_id = m.id AND d.state = 'ready'\n            JOIN native_video_hls_renditions r ON r.media_id = m.id AND r.generation = d.generation\n            WHERE r.file_name = $1\n            UNION\n            SELECT m.id, m.account_id, m.status_id FROM media_attachments m\n            JOIN video_drafts d ON d.media_id = m.id AND d.state = 'ready'\n            JOIN video_storyboards b ON b.media_id = m.id AND b.generation = d.generation\n            WHERE b.file_name = $1\n            UNION\n            SELECT m.id, m.account_id, m.status_id FROM media_attachments m\n            JOIN media_hls_segments seg ON seg.media_id = m.id WHERE seg.cache_file = $1\n        )\n        SELECT ($1 NOT LIKE '%.draft.%' AND $1 NOT LIKE '%.livereplay.%' OR EXISTS (\n            SELECT 1 FROM candidates m\n            JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id\n            JOIN accounts a ON a.id = m.account_id\n            JOIN accounts c ON c.id = v.channel_id\n            WHERE a.suspended_at IS NULL AND c.suspended_at IS NULL\n        )) AND NOT EXISTS (\n            SELECT 1 FROM accounts a\n            WHERE a.suspended_at IS NOT NULL\n              AND (a.avatar_file_name = $1 OR a.header_file_name = $1)\n            UNION ALL\n            SELECT 1 FROM candidates m\n            JOIN accounts a ON a.id = m.account_id\n            LEFT JOIN video_drafts d ON d.media_id = m.id\n            LEFT JOIN native_live_sessions ls ON ls.replay_media_id = m.id\n            LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = m.status_id\n            LEFT JOIN accounts c ON c.id = COALESCE(v.channel_id, d.channel_id)\n            WHERE a.suspended_at IS NOT NULL OR c.suspended_at IS NOT NULL\n              OR (d.media_id IS NOT NULL AND v.media_id IS NULL)\n              OR (ls.replay_media_id IS NOT NULL AND v.media_id IS NULL)\n        ) AS \"allowed!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "allowed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "89179ba33fbb68437602ffab45175fcd8b336a97142e0419d40ab4738c8ce12e"
+}

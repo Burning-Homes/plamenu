@@ -86,11 +86,17 @@ class Instance:
         with psycopg.connect(config.DB_DSN, autocommit=True) as conn:
             conn.execute(f"DROP DATABASE IF EXISTS {self.db_name} WITH (FORCE)")
             conn.execute(f"CREATE DATABASE {self.db_name}")
-        self._dir = tempfile.TemporaryDirectory(prefix=f"plamenu-{self.db_name}-")
+        # Use the real media filesystem, not /tmp (often a small RAM-backed
+        # mount). Maximum-size video tests must exercise disk admission rather
+        # than silently queue forever behind a tmpfs free-space fence.
+        instances = config.PLAMENU_DIR / "target/e2e/instances"
+        instances.mkdir(parents=True, exist_ok=True)
+        self._dir = tempfile.TemporaryDirectory(prefix=f"plamenu-{self.db_name}-", dir=instances)
         self._config_path.write_text(
             f'domain = "{self.domain}"\n'
             f'database_url = "{self.dsn}"\n'
             f'bind = "{self.bind}"\n'
+            'live_ingest_bind = "127.0.0.1:0"\n'
             f'encryption_secret = "{secrets.token_hex(32)}"\n'
             "allow_private_fetch = true\n"
             + (

@@ -35,7 +35,7 @@ impl ProcessingPool {
         }))
     }
 
-    /// Cover the source spool, three encoded files (MP4 + up to two HLS
+    /// Cover the source spool, seven encoded files (MP4 + up to six HLS
     /// renditions) plus possible destination copies, and poster/hash scratch.
     /// Every encoder output is independently kernel-bounded by `limit`.
     #[must_use]
@@ -45,8 +45,18 @@ impl ProcessingPool {
         }
         let poster_limit = limit.bytes.min(POSTER_FILE_LIMIT_BYTES);
         let bytes = source_ceiling
-            .checked_add(limit.bytes.checked_mul(6)?)?
+            .checked_add(
+                limit
+                    .bytes
+                    .checked_mul(2 * (1 + crate::media_transcode::NATIVE_HLS_MAX_RENDITIONS))?,
+            )?
             .checked_add(poster_limit.checked_mul(3)?)?;
+        let bytes = bytes.checked_add(
+            limit
+                .bytes
+                .min(crate::media_transcode::STORYBOARD_FILE_LIMIT_BYTES)
+                .checked_mul(2)?,
+        )?;
         let mut usage = self.0.usage.lock_or_recover();
         if usage.jobs >= self.0.max_jobs || bytes > self.0.max_bytes.saturating_sub(usage.bytes) {
             return None;
@@ -100,13 +110,13 @@ mod tests {
 
     #[test]
     fn admission_counts_copy_and_poster_peaks_and_releases_on_drop() {
-        let pool = ProcessingPool::new(2, 200);
+        let pool = ProcessingPool::new(2, 400);
         let a = pool.try_reserve(limit(10), 10).unwrap();
-        assert_eq!(pool.usage(), (1, 100));
+        assert_eq!(pool.usage(), (1, 200));
         assert!(pool.try_reserve(limit(11), 10).is_none());
         let b = pool.try_reserve(limit(10), 10).unwrap();
         assert!(pool.try_reserve(limit(1), 1).is_none());
-        assert_eq!(pool.usage(), (2, 200));
+        assert_eq!(pool.usage(), (2, 400));
         drop(a);
         drop(b);
         assert_eq!(pool.usage(), (0, 0));
@@ -129,7 +139,7 @@ mod tests {
 
     #[test]
     fn concurrent_claims_share_one_budget() {
-        let pool = ProcessingPool::new(8, 100);
+        let pool = ProcessingPool::new(8, 200);
         let rendezvous = Arc::new(std::sync::Barrier::new(8));
         let threads = (0..8)
             .map(|_| {

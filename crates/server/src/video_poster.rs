@@ -1,4 +1,4 @@
-//! Immutable, quota-accounted replacement posters for unpublished Video drafts.
+//! Immutable, quota-accounted replacement posters for native Videos.
 //! Image encoding happens outside database locks. A reservation and journal
 //! commit before any file write; the media row fences the final pointer swap.
 
@@ -12,6 +12,8 @@ const MAX_RENDITION_BYTES: usize = 4 * 1024 * 1024;
 struct Revision {
     media_id: i64,
     owner: i64,
+    requester: i64,
+    published: bool,
     generation: i64,
     old_small: String,
     new_small: String,
@@ -25,6 +27,27 @@ pub async fn replace_draft_poster(
     owner: i64,
     input: Vec<u8>,
     alt: String,
+) -> Result<(), ApiError> {
+    replace_poster(state, media_id, owner, input, alt, false).await
+}
+
+pub async fn replace_published_poster(
+    state: &AppState,
+    media_id: i64,
+    owner: i64,
+    input: Vec<u8>,
+    alt: String,
+) -> Result<(), ApiError> {
+    replace_poster(state, media_id, owner, input, alt, true).await
+}
+
+async fn replace_poster(
+    state: &AppState,
+    media_id: i64,
+    owner: i64,
+    input: Vec<u8>,
+    alt: String,
+    published: bool,
 ) -> Result<(), ApiError> {
     let alt = alt.trim().to_owned();
     if !(1..=500).contains(&alt.chars().count()) {
@@ -42,9 +65,15 @@ pub async fn replace_draft_poster(
     }
     // Check ownership before spending CPU. Recheck under the media fence after
     // encoding and again before the final pointer swap.
-    video_draft::preview(&state.pool, media_id, owner)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    if published {
+        plamenu_db::video_captions::owned_publication(&state.pool, media_id, owner)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    } else {
+        video_draft::preview(&state.pool, media_id, owner)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    }
     let settings = state.settings_cache.get(&state.pool).await?;
     let params =
         media_processing::EncodeParams::from_settings(&settings, &state.config.ffmpeg_path);
@@ -78,7 +107,15 @@ pub async fn replace_draft_poster(
             "Not enough free space for a new video poster".into(),
         ));
     }
-    let revision = reserve(state, media_id, owner, native.bytes.len(), jpeg.bytes.len()).await?;
+    let revision = reserve(
+        state,
+        media_id,
+        owner,
+        native.bytes.len(),
+        jpeg.bytes.len(),
+        published,
+    )
+    .await?;
     // A disconnected client must not cancel a storage write after reserving
     // durable quota. The task owns the entire short finalization window.
     let state = state.clone();
@@ -93,6 +130,7 @@ async fn reserve(
     owner: i64,
     avif_size: usize,
     jpeg_size: usize,
+    published: bool,
 ) -> Result<Revision, ApiError> {
     let mut tx = state
         .pool
@@ -100,14 +138,21 @@ async fn reserve(
         .await
         .map_err(plamenu_db::DbError::from)?;
     video_storage::lock(&mut tx).await?;
+    if published {
+        plamenu_db::video_captions::lock_owned_publication(&mut tx, media_id, owner)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+    }
     let current = sqlx::query!(
         r#"SELECT m.file_name AS "file_name!", m.small_file_name AS "small_file_name!",
-                  d.generation
+                  d.generation, d.account_id
            FROM video_drafts d JOIN media_attachments m ON m.id = d.media_id
            JOIN accounts a ON a.id = d.account_id JOIN accounts c ON c.id = d.channel_id
-           WHERE d.media_id = $1 AND d.account_id = $2 AND m.account_id = $2
-             AND d.state = 'ready' AND d.expires_at > clock_timestamp()
-             AND m.status_id IS NULL AND m.processing = 'complete'
+           WHERE d.media_id = $1 AND m.account_id = d.account_id
+             AND d.state = 'ready'
+             AND (($3 AND m.status_id IS NOT NULL) OR
+                  (NOT $3 AND d.account_id = $2 AND d.expires_at > clock_timestamp() AND m.status_id IS NULL))
+             AND m.processing = 'complete'
              AND m.file_name IS NOT NULL AND m.small_file_name IS NOT NULL
              AND EXISTS (SELECT 1 FROM video_draft_outputs o
                  WHERE o.file_name = m.small_file_name AND o.media_id = m.id
@@ -116,6 +161,7 @@ async fn reserve(
            FOR UPDATE OF m, d"#,
         media_id,
         owner,
+        published,
     )
     .fetch_optional(&mut *tx)
     .await
@@ -137,7 +183,7 @@ async fn reserve(
     ];
     if !video_storage::reserve_locked(
         &mut tx,
-        owner,
+        current.account_id,
         media_id,
         &keys,
         &sizes,
@@ -165,7 +211,9 @@ async fn reserve(
     tx.commit().await.map_err(plamenu_db::DbError::from)?;
     Ok(Revision {
         media_id,
-        owner,
+        owner: current.account_id,
+        requester: owner,
+        published,
         generation: current.generation,
         old_small: current.small_file_name,
         new_small,
@@ -214,18 +262,33 @@ async fn finalize(
         .await
         .map_err(plamenu_db::DbError::from)?;
     let attempt = async {
+        let publication = if revision.published {
+            Some(
+                plamenu_db::video_captions::lock_owned_publication(
+                    &mut tx,
+                    revision.media_id,
+                    revision.requester,
+                )
+                .await?
+                .ok_or(ApiError::NotFound)?,
+            )
+        } else {
+            None
+        };
         let current = sqlx::query!(
             r#"SELECT m.small_file_name AS "small_file_name!", p.file_name AS "jpeg_file?"
                FROM video_drafts d JOIN media_attachments m ON m.id = d.media_id
                LEFT JOIN video_compatibility_posters p ON p.media_id = m.id
                WHERE d.media_id = $1 AND d.account_id = $2 AND m.account_id = $2
                  AND d.generation = $3 AND d.state = 'ready'
-                 AND d.expires_at > clock_timestamp() AND m.status_id IS NULL
+                 AND (($4 AND m.status_id IS NOT NULL) OR
+                      (NOT $4 AND d.expires_at > clock_timestamp() AND m.status_id IS NULL))
                  AND m.processing = 'complete' AND m.small_file_name IS NOT NULL
                FOR UPDATE OF m, d"#,
             revision.media_id,
             revision.owner,
             revision.generation,
+            revision.published,
         )
         .fetch_optional(&mut *tx)
         .await
@@ -305,16 +368,49 @@ async fn finalize(
         .await
         .map_err(plamenu_db::DbError::from)?;
         media_cleanup::enqueue_many(&mut *tx, &old_keys).await?;
-        Ok(())
+        if let Some(publication) = publication {
+            let edited_at = time::OffsetDateTime::now_utc();
+            sqlx::query("UPDATE statuses SET edited_at=$2, updated_at=$2 WHERE id=$1")
+                .bind(publication.status_id)
+                .bind(edited_at)
+                .execute(&mut *tx)
+                .await
+                .map_err(plamenu_db::DbError::from)?;
+            let updated = plamenu_db::status::find_by_id(&mut *tx, publication.status_id)
+                .await?
+                .ok_or(ApiError::NotFound)?;
+            let actor = plamenu_db::account::find_by_id(&mut *tx, publication.actor_id)
+                .await?
+                .ok_or(ApiError::NotFound)?;
+            crate::actions::federate_note_update_conn(
+                state,
+                &mut tx,
+                &actor,
+                &updated,
+                edited_at,
+                Vec::new(),
+            )
+            .await?;
+            Ok(Some(updated))
+        } else {
+            Ok(None)
+        }
     }
     .await;
-    if let Err(error) = attempt {
-        tx.rollback().await.map_err(plamenu_db::DbError::from)?;
-        retire_new(state, &revision).await?;
-        return Err(error);
-    }
+    let updated = match attempt {
+        Ok(updated) => updated,
+        Err(error) => {
+            tx.rollback().await.map_err(plamenu_db::DbError::from)?;
+            retire_new(state, &revision).await?;
+            return Err(error);
+        }
+    };
     // A commit transport failure has an uncertain outcome: leave the new
     // journaled bytes untouched for reconciliation, never delete them here.
     tx.commit().await.map_err(plamenu_db::DbError::from)?;
+    if let Some(updated) = updated {
+        crate::streaming::status_edited(state, updated.id).await;
+        crate::webhooks::status_event(state, plamenu_db::webhook::STATUS_UPDATED, &updated).await;
+    }
     Ok(())
 }
