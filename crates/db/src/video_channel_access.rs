@@ -23,7 +23,8 @@ pub async fn role<'e, E: PgExecutor<'e>>(
          JOIN accounts o ON o.id=c.owner_account_id JOIN accounts a ON a.id=$2
          LEFT JOIN video_channel_grants g ON g.channel_id=c.account_id AND g.account_id=$2 AND g.accepted
          WHERE c.account_id=$1 AND ca.suspended_at IS NULL AND o.suspended_at IS NULL
-           AND a.suspended_at IS NULL AND (c.owner_account_id=$2 OR g.account_id IS NOT NULL)"
+           AND a.suspended_at IS NULL AND ca.deleted_at IS NULL AND o.deleted_at IS NULL
+           AND a.deleted_at IS NULL AND (c.owner_account_id=$2 OR g.account_id IS NOT NULL)"
     ).bind(channel).bind(actor).fetch_optional(conn).await?)
 }
 

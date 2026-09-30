@@ -1069,7 +1069,9 @@ async fn stream_one_block(
         // viewers back through `begin`; exactly one retries while the rest
         // continue waiting instead of receiving a spurious contention error.
     };
-    let _guard = guard;
+    let permit = super::remote_cache_store::admit(state, block_len)
+        .await
+        .map_err(std::io::Error::other)?;
 
     let scratch_root = state.config.media_dir.join("tmp");
     tokio::fs::create_dir_all(&scratch_root).await?;
@@ -1118,16 +1120,21 @@ async fn stream_one_block(
     }
     output.flush().await?;
     drop(output);
-    let cache_file = format!("prog{}.mp4", block_hash(origin, block_start, block_len));
-    state.media.put_file(&cache_file, &tmp_path).await?;
-    media::hls_segment_record(
-        &state.pool,
-        media_id,
-        origin,
-        start_i,
-        len_i,
-        &cache_file,
-        len_i,
+    let cache_file =
+        super::remote_cache_store::key("prog", &block_hash(origin, block_start, block_len));
+    super::remote_cache_store::store(
+        state,
+        super::remote_cache_store::Range {
+            media: media_id,
+            origin: origin.to_owned(),
+            start: start_i,
+            len: len_i,
+            key: cache_file,
+            bytes: len_i,
+        },
+        tmp,
+        permit,
+        guard,
     )
     .await
     .map_err(std::io::Error::other)?;

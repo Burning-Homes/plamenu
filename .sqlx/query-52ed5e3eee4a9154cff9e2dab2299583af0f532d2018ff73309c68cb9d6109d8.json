@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COALESCE(SUM(bytes), 0)::bigint AS \"total!\" FROM media_hls_segments",
+  "query": "SELECT (COALESCE((SELECT SUM(bytes) FROM media_hls_segments), 0) +\n            COALESCE((SELECT SUM(remote_cache_bytes) FROM media_cleanup_jobs), 0))::bigint AS \"total!\"",
   "describe": {
     "columns": [
       {
@@ -17,5 +17,5 @@
       null
     ]
   },
-  "hash": "54ffed1345bf3a226f329d93b4857fd37399241cda1007ae68fc05712b9cccce"
+  "hash": "52ed5e3eee4a9154cff9e2dab2299583af0f532d2018ff73309c68cb9d6109d8"
 }

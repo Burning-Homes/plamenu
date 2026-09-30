@@ -88,6 +88,16 @@ ingest listens only on its isolated host-side address; test encoders use that
 address instead of the TLS container's localhost. Encoder failures include
 exit/transport diagnostics with stream keys redacted.
 
+Prefer the default pinned image for native media tests. Explicit Linux host
+mode (`A11Y_LOCAL_BROWSERS=1`) additionally requires complete WebKit/GStreamer
+dependencies, including `autoaudiosink` and `gst-inspect-1.0`; the harness checks
+these before creating fixtures. A missing host audio sink can crash WebKit even
+with JavaScript disabled and `preload="none"`. These are browser **test**
+dependencies, not production Plamenu installation requirements.
+`accessibility/diagnose-webkit-feed.mjs` is a read-only accumulated-feed probe
+for decoded playback at 320px with and without scripts; it retains aggregates,
+not account cookies or HTML.
+
 ## Pending before a WCAG 2.2 AA claim
 
 - Complete the manual criterion inventory for the release candidate, including

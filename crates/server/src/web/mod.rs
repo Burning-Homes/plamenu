@@ -52,6 +52,7 @@ mod strikes;
 mod thread;
 pub(crate) mod two_factor;
 mod user_agent;
+mod video_analytics;
 mod video_captions;
 mod video_channels;
 mod video_chapters;
@@ -531,6 +532,14 @@ pub fn router() -> Router<AppState> {
         .route("/web/video-channels", post(videos::create_channel))
         .route("/videos/channels", get(video_channels::index))
         .route("/videos/channels/{id}", get(video_channels::manage))
+        .route(
+            "/videos/channels/{id}/analytics",
+            get(video_analytics::page),
+        )
+        .route(
+            "/web/video-channels/{id}/analytics",
+            post(video_analytics::save),
+        )
         .route("/web/video-channels/{id}", post(video_channels::change))
         .route(
             "/web/videos",

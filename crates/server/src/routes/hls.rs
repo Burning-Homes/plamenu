@@ -262,7 +262,6 @@ pub async fn master(
     if lane.live && !lane.on_air {
         return Err(ApiError::NotFound);
     }
-    let master_url = lane.master_url;
     if hls_disabled(&state).await? {
         return Err(ApiError::NotFound);
     }
@@ -270,8 +269,9 @@ pub async fn master(
     if hls_suppressed(&state, "hls-master", media_id).await? {
         return Err(ApiError::NotFound);
     }
-    match serve_playlist(&state, media_id, &master_url, lane.live).await {
+    match serve_playlist(&state, media_id, &lane.master_url, lane.live).await {
         Ok(response) => {
+            ensure_current(&state, media_id, &lane).await?;
             note_hls_result(&state, "hls-master", media_id, true).await;
             Ok(response)
         }
@@ -343,6 +343,14 @@ pub async fn sha256_manifest(
         checksum_cache_put(&peers.sha256_url, &fetched.bytes, lane.live);
         fetched.bytes
     };
+    ensure_current(&state, media_id, &lane).await?;
+    let current = remote_hls_peers::for_media(&state.pool, &[media_id])
+        .await?
+        .remove(&media_id)
+        .ok_or(ApiError::NotFound)?;
+    if current.sha256_url != peers.sha256_url || current.video_uuid != peers.video_uuid {
+        return Err(ApiError::NotFound);
+    }
     Ok((
         [
             (header::CONTENT_TYPE, "application/json"),
@@ -388,11 +396,13 @@ pub async fn playlist(
     Query(q): Query<PlQuery>,
 ) -> Result<Response, ApiError> {
     let lane = lane(&state, media_id).await?;
+    ensure_on_air(&lane)?;
     let url = decode_child(&q.u, &dir_prefix(&lane.master_url)).ok_or(ApiError::NotFound)?;
     if hls_suppressed(&state, "hls-playlist", media_id).await? {
         return Err(ApiError::NotFound);
     }
     let result = serve_playlist(&state, media_id, &url, lane.live).await;
+    ensure_current(&state, media_id, &lane).await?;
     note_hls_result(&state, "hls-playlist", media_id, result.is_ok()).await;
     result
 }
@@ -407,6 +417,7 @@ pub async fn segment(
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let lane = lane(&state, media_id).await?;
+    ensure_on_air(&lane)?;
     let origin = decode_child(&q.u, &dir_prefix(&lane.master_url)).ok_or(ApiError::NotFound)?;
     if hls_suppressed(&state, "hls-segment", media_id).await? {
         return Err(ApiError::NotFound);
@@ -423,6 +434,7 @@ pub async fn segment(
         (None, None) if lane.live => serve_live_segment(&state, media_id, &origin).await,
         _ => Err(ApiError::NotFound),
     };
+    ensure_current(&state, media_id, &lane).await?;
     note_hls_result(&state, "hls-segment", media_id, result.is_ok()).await;
     result
 }
@@ -440,6 +452,7 @@ pub async fn live_child(
     Path((media_id, name)): Path<(i64, String)>,
 ) -> Result<Response, ApiError> {
     let lane = lane(&state, media_id).await?;
+    ensure_on_air(&lane)?;
     if !lane.live {
         return Err(ApiError::NotFound);
     }
@@ -462,6 +475,7 @@ pub async fn live_child(
     } else {
         serve_live_segment(&state, media_id, &origin).await
     };
+    ensure_current(&state, media_id, &lane).await?;
     note_hls_result(&state, kind, media_id, result.is_ok()).await;
     result
 }
@@ -850,6 +864,7 @@ async fn fetch_and_cache_segment(
         return Ok(hit.cache_file);
     }
 
+    let permit = super::remote_cache_store::admit(state, len).await?;
     // Scratch under the media root (same filesystem → the store moves it in by
     // rename); the range streams to disk, constant memory.
     let scratch_root = state.config.media_dir.join("tmp");
@@ -870,35 +885,28 @@ async fn fetch_and_cache_segment(
             ApiError::NotFound
         })?;
 
-    // Content-addressed name: two racers computing it get the same file, so a
-    // duplicate put is idempotent. Alphanumeric+dot, so `/media/{file}` rules
-    // would accept it too.
-    let cache_file = format!("hls{}.mp4", segment_hash(origin, start, len));
-    state
-        .media
-        .put_file(&cache_file, &tmp_path)
-        .await
-        .map_err(|e| ApiError::Internal(Box::new(e)))?;
-    let bytes = i64::try_from(written).unwrap_or(i64::MAX);
-    let recorded = media::hls_segment_record(
-        &state.pool,
-        media_id,
-        origin,
-        start_i,
-        len_i,
-        &cache_file,
-        bytes,
-    )
-    .await?;
-    drop(guard);
-    if !recorded {
-        // Lost the record race — the winner's name is identical (content-
-        // addressed), so either file serves the same bytes; return the row's.
-        if let Some(hit) = media::hls_segment_lookup(&state.pool, origin, start_i, len_i).await? {
-            return Ok(hit.cache_file);
-        }
+    // A retired key must never be recreated while its cleanup is in flight.
+    // The database still coalesces by origin/range, not by this private nonce.
+    if written != len {
+        return Err(ApiError::NotFound);
     }
-    Ok(cache_file)
+    let cache_file = super::remote_cache_store::key("hls", &segment_hash(origin, start, len));
+    let bytes = i64::try_from(written).unwrap_or(i64::MAX);
+    super::remote_cache_store::store(
+        state,
+        super::remote_cache_store::Range {
+            media: media_id,
+            origin: origin.to_owned(),
+            start: start_i,
+            len: len_i,
+            key: cache_file,
+            bytes,
+        },
+        tmp,
+        permit,
+        guard,
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -925,6 +933,24 @@ struct Lane {
     /// that is over, has no playable playlist even when it still advertises a
     /// master URL.
     on_air: bool,
+}
+
+fn ensure_on_air(lane: &Lane) -> Result<(), ApiError> {
+    if lane.live && !lane.on_air {
+        Err(ApiError::NotFound)
+    } else {
+        Ok(())
+    }
+}
+
+/// Origin fetch/single-flight waits can outlive suspension, Delete, replacement
+/// or the end of a broadcast. Cached bytes never substitute for current policy.
+async fn ensure_current(state: &AppState, media_id: i64, expected: &Lane) -> Result<(), ApiError> {
+    let current = lane(state, media_id).await?;
+    if current.master_url != expected.master_url || current.live != expected.live {
+        return Err(ApiError::NotFound);
+    }
+    ensure_on_air(&current)
 }
 
 async fn lane(state: &AppState, media_id: i64) -> Result<Lane, ApiError> {

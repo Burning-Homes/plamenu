@@ -165,7 +165,8 @@ pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool,
         SELECT ($1 NOT LIKE '%.draft.%' AND $1 NOT LIKE '%.livereplay.%' OR EXISTS (
             SELECT 1 FROM candidates m
             JOIN public_native_videos v ON v.media_id = m.id
-        )) AND NOT EXISTS (SELECT 1 FROM media_cleanup_jobs WHERE file_name = $1)
+        )) AND ($1 !~ '^(hls|prog)[0-9a-f]{16}(\.[0-9a-f]{32})?\.mp4$' OR EXISTS (SELECT 1 FROM candidates))
+        AND NOT EXISTS (SELECT 1 FROM media_cleanup_jobs WHERE file_name = $1)
         AND NOT EXISTS (
             SELECT 1 FROM accounts a
             WHERE a.suspended_at IS NOT NULL
@@ -1426,8 +1427,8 @@ pub async fn hls_segment_lookup(
 /// won the race (the caller should drop its now-duplicate cache file and use
 /// the winner's).
 #[allow(clippy::too_many_arguments)]
-pub async fn hls_segment_record(
-    pool: &PgPool,
+pub async fn hls_segment_record<'e, E: sqlx::PgExecutor<'e>>(
+    pool: E,
     media_id: i64,
     origin_url: &str,
     range_start: i64,
@@ -1437,11 +1438,14 @@ pub async fn hls_segment_record(
 ) -> Result<bool, DbError> {
     let inserted = sqlx::query_scalar!(
         r#"
-        INSERT INTO media_hls_segments
+        WITH recorded AS (INSERT INTO media_hls_segments
             (id, media_id, origin_url, range_start, range_len, cache_file, bytes)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (origin_url, range_start, range_len) DO NOTHING
-        RETURNING id
+        RETURNING id), released AS (
+            DELETE FROM media_cleanup_jobs WHERE file_name=$6
+            AND EXISTS (SELECT 1 FROM recorded) RETURNING id
+        ) SELECT id FROM recorded
         "#,
         id::next(),
         media_id,
@@ -1525,11 +1529,12 @@ pub async fn hls_segments_evict(
     Ok(files)
 }
 
-/// Total stored bytes of cached HLS segments — counted into the video
-/// class's size cap alongside the on-demand mp4s.
+/// Known range-cache bytes, including physically unacknowledged retired keys.
+/// Cleanup debt survives suspension, expiry, cascaded Delete and failed disks.
 pub async fn hls_segments_bytes(pool: &PgPool) -> Result<i64, DbError> {
     let total = sqlx::query_scalar!(
-        r#"SELECT COALESCE(SUM(bytes), 0)::bigint AS "total!" FROM media_hls_segments"#,
+        r#"SELECT (COALESCE((SELECT SUM(bytes) FROM media_hls_segments), 0) +
+            COALESCE((SELECT SUM(remote_cache_bytes) FROM media_cleanup_jobs), 0))::bigint AS "total!""#,
     )
     .fetch_one(pool)
     .await?;

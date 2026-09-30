@@ -41,6 +41,13 @@ point. The configuration tests parse both files.
 : Persistent local media root. It must be writable by Plamenu and included in
   coordinated backups.
 
+`video_analytics`
+: Optional root-level boolean (default `true`) allowing privacy-preserving
+  delivery analytics. Each channel still defaults to **off** until its owner
+  opts in. Set `false` to stop collection server-wide on restart and remove
+  retained aggregates in bounded maintenance. No viewer identifiers are stored.
+  See [Private creator delivery analytics](../VIDEO_ANALYTICS.md).
+
 ## Split-domain handles
 
 To host at `social.example.com` while publishing `alice@example.com`, set both
@@ -141,6 +148,13 @@ eight threads per decoder/encoder); filter execution uses one thread. Lower
 renditions are sequential, not a second unbounded pool. Increasing `jobs`
 therefore changes CPU shares as well as disk admission; measure the actual
 workload before raising it.
+
+The normal installation remains a single native media directory. An optional
+`[media_mirror]` pairs it with a second existing disk directory, with serialized
+bandwidth and free-space controls and acknowledged deletion on both disks.
+Read [Native media storage and replication](../VIDEO_STORAGE.md) before
+enabling it: completed media and upload prefixes are mirrored, but active
+live/DVR scratch is not, and replication does not replace a consistent backup.
 
 ## Federation fetch and proxies
 

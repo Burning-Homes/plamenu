@@ -22,6 +22,13 @@ by the publication's original author and preserve its URL and discussion.
 PeerTube presents videos under the channel's current owner; Plamenu's canonical
 ActivityPub object additionally preserves the actual uploader.
 
+## Delivery analytics
+
+Owners and accepted editors can open **Delivery analytics** from the channel
+manager. Collection is opt-in per channel, stores no viewer identities, and
+has owner-controlled UTC retention and erasure. These are delivery aggregates,
+not unique-view estimates. See [Private creator delivery analytics](VIDEO_ANALYTICS.md).
+
 ## Handing over a channel
 
 The owner opens **Transfer ownership**, enters the local recipient's username,

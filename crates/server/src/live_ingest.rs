@@ -33,6 +33,81 @@ const MAX_TAG_BYTES: usize = 2 * 1024 * 1024;
 const QUEUE_TAGS: usize = 32;
 const BROWSER_QUEUE_CHUNKS: usize = 8;
 
+/// One checkpoint worker per admitted publisher, no queue. Its lifetime is
+/// scoped to the pump, including cancellation/unwind. Durable media writes
+/// have priority; a busy mirror reports a degraded checkpoint, not on-air loss.
+struct LiveCheckpointWorker(Option<tokio::task::JoinHandle<()>>);
+impl Drop for LiveCheckpointWorker {
+    fn drop(&mut self) {
+        if let Some(task) = &self.0 {
+            task.abort();
+        }
+    }
+}
+impl LiveCheckpointWorker {
+    fn start(state: &AppState, session: &plamenu_db::native_live::ActiveSession) -> Self {
+        if !state.media.has_live_checkpoints() {
+            return Self(None);
+        }
+        let state = state.clone();
+        let media = session.media_id;
+        let generation = session.session_id.clone();
+        Self(Some(tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut degraded = false;
+            loop {
+                tokio::select! {
+                    () = state.shutdown.cancelled() => return,
+                    _ = interval.tick() => {}
+                }
+                match state.media.checkpoint_live(media, generation.clone()).await {
+                    Ok(()) => {
+                        if degraded {
+                            tracing::info!(media, session = %generation, "live checkpoint recovered");
+                        }
+                        degraded = false;
+                    }
+                    Err(error) => {
+                        if !degraded {
+                            tracing::warn!(%error, media, session = %generation, "live checkpoint degraded; replica may lag");
+                        }
+                        degraded = true;
+                    }
+                }
+            }
+        })))
+    }
+    async fn finish(&mut self, state: &AppState, session: &plamenu_db::native_live::ActiveSession) {
+        if let Some(task) = self.0.take() {
+            task.abort();
+            let _ = task.await;
+            if let Err(error) = state
+                .media
+                .checkpoint_live(session.media_id, session.session_id.clone())
+                .await
+            {
+                tracing::warn!(%error, media = session.media_id, "final live checkpoint unavailable; primary recording retained by replay lifecycle");
+            }
+        }
+    }
+}
+
+async fn cleanup_live(state: &AppState, media: i64, session: &str, output: &Path) {
+    if let Err(error) = tokio::fs::remove_dir_all(output).await
+        && error.kind() != io::ErrorKind::NotFound
+    {
+        tracing::warn!(%error, media, "live scratch cleanup deferred");
+    }
+    if let Err(error) = state
+        .media
+        .delete_live_checkpoint(media, session.to_owned())
+        .await
+    {
+        tracing::warn!(%error, media, "live checkpoint cleanup deferred to startup reconciliation");
+    }
+}
+
 #[derive(Clone)]
 pub struct PublisherInput {
     pub sender: mpsc::Sender<Vec<u8>>,
@@ -405,6 +480,7 @@ async fn pump(
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn();
+    let mut checkpoint = LiveCheckpointWorker::start(&state, &session);
     let mut remux_failed = false;
     let mut recording_limit_reached = false;
     let mut disk_floor_reached = false;
@@ -489,6 +565,7 @@ async fn pump(
         remux_failed = true;
         tracing::error!(%error, media = session.media_id, "cannot start native live remux");
     }
+    checkpoint.finish(&state, &session).await;
     let reason = finish_reason(
         control.stopped.load(Ordering::Acquire),
         remux_failed,
@@ -582,8 +659,8 @@ async fn pump(
         },
     ))
     .await;
-    if !preserve_recording && let Err(error) = tokio::fs::remove_dir_all(&output).await {
-        tracing::debug!(%error, media = session.media_id, "live scratch cleanup");
+    if !preserve_recording {
+        cleanup_live(&state, session.media_id, &session.session_id, &output).await;
     }
 }
 
@@ -658,9 +735,7 @@ pub async fn recover_crashed_replay(
         {
             // A reconnect, deletion or another finalizer superseded this
             // generation. It can never publish its stale recording.
-            if let Err(error) = tokio::fs::remove_dir_all(&output).await {
-                tracing::debug!(%error, media = session.media_id, "superseded live scratch cleanup");
-            }
+            cleanup_live(&state, session.media_id, &session.session_id, &output).await;
             return;
         }
         match plamenu_db::native_live::replay_eligible(&state.pool, &session).await {
@@ -718,9 +793,7 @@ pub async fn recover_crashed_replay(
     {
         tracing::warn!(%error, media = session.media_id, "could not announce recovered live replay");
     }
-    if let Err(error) = tokio::fs::remove_dir_all(&output).await {
-        tracing::debug!(%error, media = session.media_id, "recovered live scratch cleanup");
-    }
+    cleanup_live(&state, session.media_id, &session.session_id, &output).await;
 }
 
 fn finish_reason(deliberate_stop: bool, remux_failed: bool, media_id: i64) -> FinishReason {

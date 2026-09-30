@@ -375,6 +375,10 @@ pub struct AppState {
     pub media: Arc<dyn MediaStore>,
     /// Native Video jobs share these slots and conservative scratch limits.
     pub video_resources: crate::video_resources::ProcessingPool,
+    /// Range-cache fetch/finalization is separate from encoder admission, but
+    /// bounded in both jobs and scratch/copy bytes, including detached writes.
+    pub remote_cache_resources: crate::video_resources::ProcessingPool,
+    pub video_analytics: Arc<crate::video_analytics::Collector>,
     /// Application-only keyring for normalized federation signing keys. `None`
     /// is tolerated only by test/maintenance states with no encrypted key
     /// rows; production startup preflight fails before workers begin.
@@ -475,6 +479,11 @@ impl AppState {
             federation,
             media,
             video_resources,
+            remote_cache_resources: crate::video_resources::ProcessingPool::new(
+                8,
+                512 * 1024 * 1024,
+            ),
+            video_analytics: Arc::new(crate::video_analytics::Collector::default()),
             federation_keyring,
             streaming: Arc::new(Hub::default()),
             webxdc_realtime: Arc::new(crate::webxdc_realtime::Hub::default()),

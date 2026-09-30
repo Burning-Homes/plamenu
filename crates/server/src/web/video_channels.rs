@@ -109,6 +109,9 @@ async fn render(
             h1 { (locale.text("video-channel-manage")) " — " (channel.display_name) }
             p { a href="/videos/channels" { (locale.text("video-channel-manage")) } " · "
                 a href=(format!("/videos/explore?channel={id}")) { (locale.text("videos-explore-browse")) }
+                @if role.as_deref().is_some_and(|role| matches!(role,"owner" | "editor")) {
+                    " · " a href=(format!("/videos/channels/{id}/analytics")) { (locale.text("video-analytics-title")) }
+                }
             }
             @if let Some(error)=error { p.settings__error role="alert" { (error) } }
             @if let Some(role)=role.as_deref() { p { (locale.text("video-channel-your-role")) " " (locale.text(&format!("video-channel-role-{role}"))) } }

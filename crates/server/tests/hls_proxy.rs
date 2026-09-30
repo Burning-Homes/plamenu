@@ -14,8 +14,61 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use common::{StubFederation, create_local_account, test_app_with, test_state_with};
 use http_body_util::BodyExt;
 use plamenu::build_router;
+use plamenu::federation::BoxFuture;
+use plamenu::storage::{MediaRead, MediaStore, MemoryStore};
 use plamenu_db::{PgPool, id, instance_settings};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use tower::ServiceExt;
+
+#[derive(Default)]
+struct CacheFaultStore {
+    inner: MemoryStore,
+    pause: AtomicBool,
+    fail_write: AtomicBool,
+    fail_delete: AtomicBool,
+    entered: tokio::sync::Notify,
+    resume: tokio::sync::Notify,
+}
+impl MediaStore for CacheFaultStore {
+    fn put(&self, key: &str, bytes: Vec<u8>) -> BoxFuture<'_, std::io::Result<()>> {
+        self.inner.put(key, bytes)
+    }
+    fn put_file(&self, key: &str, path: &std::path::Path) -> BoxFuture<'_, std::io::Result<()>> {
+        let key = key.to_owned();
+        let path = path.to_owned();
+        Box::pin(async move {
+            self.inner.put_file(&key, &path).await?;
+            if self.pause.swap(false, Ordering::Relaxed) {
+                self.entered.notify_one();
+                self.resume.notified().await;
+            }
+            if self.fail_write.load(Ordering::Relaxed) {
+                Err(std::io::ErrorKind::PermissionDenied.into())
+            } else {
+                Ok(())
+            }
+        })
+    }
+    fn get(&self, key: &str) -> BoxFuture<'_, std::io::Result<Vec<u8>>> {
+        self.inner.get(key)
+    }
+    fn open(&self, key: &str) -> BoxFuture<'_, std::io::Result<MediaRead>> {
+        self.inner.open(key)
+    }
+    fn list(&self) -> BoxFuture<'_, std::io::Result<Vec<String>>> {
+        self.inner.list()
+    }
+    fn delete(&self, key: &str) -> BoxFuture<'_, std::io::Result<()>> {
+        if self.fail_delete.load(Ordering::Relaxed) {
+            Box::pin(async { Err(std::io::ErrorKind::PermissionDenied.into()) })
+        } else {
+            self.inner.delete(key)
+        }
+    }
+}
 
 const MASTER: &str = "https://remote.example/static/streaming-playlists/hls/vid/master.m3u8";
 const RENDITION: &str =
@@ -324,6 +377,334 @@ async fn segment_is_cached_so_n_viewers_cause_one_origin_fetch(pool: PgPool) {
         "N viewers of a segment cause exactly ONE origin fetch: {fetches:?}"
     );
     assert_eq!(fetches[0], (RENDITION.to_owned(), 10, 5));
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn warm_remote_cache_refuses_suspended_and_ended_live_children(pool: PgPool) {
+    let account = create_local_account(&pool, "cacheviewer", "Cache viewer").await;
+    let mid = hls_media_row(&pool, account.id).await;
+    let origin = format!("https://remote.example/static/streaming-playlists/hls/vid/{mid}.ts");
+    let stub = StubFederation::with_actors([]);
+    stub.serve_media(&origin, "video/mp2t", vec![7; 188]);
+    stub.serve_media(RENDITION, "video/mp4", vec![8; 100]);
+    let app = test_app_with(pool.clone(), stub.clone());
+    let vod = format!("/media/hls/{mid}/seg?u={}&s=10&l=5", B64.encode(RENDITION));
+    assert_eq!(get(&app, &vod).await, (StatusCode::OK, vec![8; 5]));
+    sqlx::query("UPDATE media_attachments SET live_state='live' WHERE id=$1")
+        .bind(mid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let child = format!("/media/hls/{mid}/live/{}.ts", B64.encode(&origin));
+    let segment = format!("/media/hls/{mid}/seg?u={}", B64.encode(&origin));
+    for uri in [&child, &segment] {
+        assert_eq!(get(&app, uri).await, (StatusCode::OK, vec![7; 188]));
+    }
+    let initial = stub.media_fetches.lock().unwrap().len();
+    plamenu_db::account::suspend(&pool, account.id, "local")
+        .await
+        .unwrap();
+    for uri in [&child, &segment, &vod] {
+        let response = request(&app, "GET", uri, None).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "private, no-store"
+        );
+    }
+    sqlx::query("UPDATE accounts SET suspended_at=NULL WHERE id=$1")
+        .bind(account.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for live_state in ["waiting", "ended", "interrupted"] {
+        sqlx::query("UPDATE media_attachments SET live_state=$2 WHERE id=$1")
+            .bind(mid)
+            .bind(live_state)
+            .execute(&pool)
+            .await
+            .unwrap();
+        for uri in [&child, &segment] {
+            assert_eq!(get(&app, uri).await.0, StatusCode::NOT_FOUND);
+        }
+    }
+    assert_eq!(
+        stub.media_fetches.lock().unwrap().len(),
+        initial,
+        "revoked requests must not contact the origin even with warm caches"
+    );
+    sqlx::query("UPDATE media_attachments SET live_state='live' WHERE id=$1")
+        .bind(mid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(get(&app, &child).await, (StatusCode::OK, vec![7; 188]));
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn origin_wait_does_not_outlive_current_remote_authority(pool: PgPool) {
+    let account = create_local_account(&pool, "cachewait", "Cache wait").await;
+    let mid = hls_media_row(&pool, account.id).await;
+    // Unique master prevents another test's in-process memo from satisfying it.
+    let master = format!("https://remote.example/{mid}/master.m3u8");
+    sqlx::query("UPDATE media_attachments SET hls_master_url=$2 WHERE id=$1")
+        .bind(mid)
+        .bind(&master)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let stub = StubFederation::with_actors([]);
+    stub.serve_media(
+        &master,
+        "application/vnd.apple.mpegurl",
+        b"#EXTM3U\n".to_vec(),
+    );
+    let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+    *stub.media_fetch_gate.lock().unwrap() = Some(gate.clone());
+    let app = test_app_with(pool.clone(), stub.clone());
+    let uri = format!("/media/hls/{mid}/master.m3u8");
+    let pending = tokio::spawn(async move { get(&app, &uri).await });
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !stub.media_fetches.lock().unwrap().contains(&master) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    plamenu_db::account::suspend(&pool, account.id, "local")
+        .await
+        .unwrap();
+    gate.add_permits(1);
+    assert_eq!(
+        tokio::time::timeout(std::time::Duration::from_secs(5), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .0,
+        StatusCode::NOT_FOUND,
+        "completed origin bytes must be fenced again before response"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn checksum_wait_does_not_outlive_replaced_peer_authority(pool: PgPool) {
+    let account = create_local_account(&pool, "hashwait", "Hash wait").await;
+    let mid = hls_media_row(&pool, account.id).await;
+    let origin = format!("https://remote.example/{mid}/sha256.json");
+    let hints = plamenu_db::remote_hls_peers::RemoteHlsPeers {
+        video_uuid: "00000000-0000-4000-8000-000000000001".into(),
+        trackers: vec!["wss://remote.example/tracker/socket".into()],
+        sha256_url: origin.clone(),
+    };
+    plamenu_db::remote_hls_peers::replace(&pool, mid, Some(&hints))
+        .await
+        .unwrap();
+    let stub = StubFederation::with_actors([]);
+    stub.serve_media(&origin, "application/json", b"{\"old\":{}}".to_vec());
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    *stub.media_fetch_gate.lock().unwrap() = Some(gate.clone());
+    let app = test_app_with(pool.clone(), stub.clone());
+    let pending =
+        tokio::spawn(async move { get(&app, &format!("/media/hls/{mid}/sha256.json")).await });
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !stub.media_fetches.lock().unwrap().contains(&origin) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let replacement = plamenu_db::remote_hls_peers::RemoteHlsPeers {
+        video_uuid: "00000000-0000-4000-8000-000000000002".into(),
+        ..hints
+    };
+    plamenu_db::remote_hls_peers::replace(&pool, mid, Some(&replacement))
+        .await
+        .unwrap();
+    gate.add_permits(1);
+    assert_eq!(
+        tokio::time::timeout(std::time::Duration::from_secs(5), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .0,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn restored_orphan_cache_keys_do_not_regain_public_access(pool: PgPool) {
+    let account = create_local_account(&pool, "cacheorphan", "Cache orphan").await;
+    let mid = hls_media_row(&pool, account.id).await;
+    let stub = StubFederation::with_actors([]);
+    stub.serve_media(RENDITION, "video/mp4", vec![8; 100]);
+    let state = test_state_with(pool.clone(), stub);
+    let app = build_router(state.clone());
+    let segment = format!("/media/hls/{mid}/seg?u={}&s=20&l=5", B64.encode(RENDITION));
+    assert_eq!(get(&app, &segment).await, (StatusCode::OK, vec![8; 5]));
+    let key: String =
+        sqlx::query_scalar("SELECT cache_file FROM media_hls_segments WHERE media_id=$1")
+            .bind(mid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(get(&app, &format!("/media/{key}")).await.0, StatusCode::OK);
+    // Simulate restoring an old cached file without its acknowledged DB row.
+    // Retained bytes alone cannot resurrect a publication or a serving grant.
+    sqlx::query("DELETE FROM media_hls_segments WHERE media_id=$1")
+        .bind(mid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for orphan in [&key, "prog0123456789abcdef.mp4"] {
+        state.media.put(orphan, vec![8; 5]).await.unwrap();
+        let response = request(&app, "GET", &format!("/media/{orphan}"), Some("bytes=0-1")).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "private, no-store"
+        );
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn caller_abort_keeps_cache_write_fenced_admitted_and_privately_journaled(pool: PgPool) {
+    let account = create_local_account(&pool, "cacheabort", "Cache abort").await;
+    let mid = hls_media_row(&pool, account.id).await;
+    let stub = StubFederation::with_actors([]);
+    stub.serve_media(RENDITION, "video/mp4", vec![8; 100]);
+    let store = Arc::new(CacheFaultStore::default());
+    store.pause.store(true, Ordering::Relaxed);
+    let state = common::test_state_with_store(pool.clone(), stub, store.clone());
+    let app = build_router(state.clone());
+    let uri = format!("/media/hls/{mid}/seg?u={}&s=30&l=5", B64.encode(RENDITION));
+    let pending = tokio::spawn(async move { get(&app, &uri).await });
+    tokio::time::timeout(std::time::Duration::from_secs(5), store.entered.notified())
+        .await
+        .unwrap();
+    pending.abort();
+    let _ = pending.await;
+    assert_eq!(state.remote_cache_resources.usage(), (1, 10));
+    let key: String =
+        sqlx::query_scalar("SELECT file_name FROM media_cleanup_jobs WHERE remote_cache_bytes=5")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        !plamenu_db::media::public_file_allowed(&pool, &key)
+            .await
+            .unwrap()
+    );
+    let unlocked: Vec<i64> =
+        sqlx::query_scalar("SELECT id FROM media_cleanup_jobs FOR UPDATE SKIP LOCKED")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(
+        unlocked.is_empty(),
+        "cleanup must skip the detached, still-writing journal"
+    );
+    store.resume.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while state.remote_cache_resources.usage().0 != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        plamenu_db::media_cleanup::pending_count(&pool)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        plamenu_db::media::hls_segments_bytes(&pool).await.unwrap(),
+        5
+    );
+    assert!(
+        plamenu_db::media::public_file_allowed(&pool, &key)
+            .await
+            .unwrap()
+    );
+    assert_eq!(store.get(&key).await.unwrap(), vec![8; 5]);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn failed_cache_write_and_retirement_keep_debt_until_actual_deletion_ack(pool: PgPool) {
+    let account = create_local_account(&pool, "cachedebt", "Cache debt").await;
+    let mid = hls_media_row(&pool, account.id).await;
+    let stub = StubFederation::with_actors([]);
+    stub.serve_media(RENDITION, "video/mp4", vec![8; 100]);
+    let store = Arc::new(CacheFaultStore::default());
+    store.fail_write.store(true, Ordering::Relaxed);
+    store.fail_delete.store(true, Ordering::Relaxed);
+    let state = common::test_state_with_store(pool.clone(), stub, store.clone());
+    let app = build_router(state.clone());
+    let uri = format!("/media/hls/{mid}/seg?u={}&s=40&l=5", B64.encode(RENDITION));
+    assert_eq!(get(&app, &uri).await.0, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(state.remote_cache_resources.usage(), (0, 0));
+    let key: String =
+        sqlx::query_scalar("SELECT file_name FROM media_cleanup_jobs WHERE remote_cache_bytes=5")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        store.get(&key).await.unwrap(),
+        vec![8; 5],
+        "a failed copy can leave primary bytes"
+    );
+    assert_eq!(
+        get(&app, &format!("/media/{key}")).await.0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(plamenu::media_cleanup_worker::run_due(&state).await, 1);
+    assert_eq!(
+        plamenu_db::media::hls_segments_bytes(&pool).await.unwrap(),
+        5
+    );
+    store.fail_write.store(false, Ordering::Relaxed);
+    // Explicit retry bypasses only this fixture's ordinary fetch backoff.
+    sqlx::query("DELETE FROM media_fetch_failures WHERE target_id=$1")
+        .bind(mid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(get(&app, &uri).await, (StatusCode::OK, vec![8; 5]));
+    let replacement: String =
+        sqlx::query_scalar("SELECT cache_file FROM media_hls_segments WHERE media_id=$1")
+            .bind(mid)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_ne!(key, replacement);
+    assert_eq!(
+        plamenu_db::media::hls_segments_bytes(&pool).await.unwrap(),
+        10
+    );
+    store.fail_delete.store(false, Ordering::Relaxed);
+    sqlx::query("UPDATE media_cleanup_jobs SET run_at=now()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(plamenu::media_cleanup_worker::run_due(&state).await, 1);
+    assert!(store.get(&key).await.is_err() && store.get(&replacement).await.is_ok());
+    assert_eq!(
+        plamenu_db::media::hls_segments_bytes(&pool).await.unwrap(),
+        5
+    );
+    plamenu_db::media::hls_segments_evict_lru(&pool, 1)
+        .await
+        .unwrap();
+    assert_eq!(
+        plamenu_db::media::hls_segments_bytes(&pool).await.unwrap(),
+        5,
+        "retiring the current cache row transfers, rather than refunds, its charge"
+    );
+    assert_eq!(plamenu::media_cleanup_worker::run_due(&state).await, 1);
+    assert_eq!(
+        plamenu_db::media::hls_segments_bytes(&pool).await.unwrap(),
+        0
+    );
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

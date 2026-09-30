@@ -90,6 +90,9 @@ enum ConfigCommand {
 
 #[derive(Subcommand)]
 enum MediaCommand {
+    /// Run the configured cache-retention pass now; failed physical removals
+    /// remain revoked and charged until the normal cleanup worker acknowledges.
+    ExpireCaches,
     /// Fill in missing stored byte sizes for media, avatars, headers and
     /// emoji (backing the admin storage metrics). Stats each file on the
     /// media store; skips any whose file is missing.
@@ -444,7 +447,7 @@ async fn run(cli: Cli) -> Result<(), AnyError> {
         writer
     };
     let operation = async {
-        let state = initialize_state(config).await?;
+        let state = initialize_state(config, matches!(&cli.command, Command::Serve)).await?;
         dispatch(cli.command, state).await
     };
     tokio::select! {
@@ -462,7 +465,7 @@ async fn run(cli: Cli) -> Result<(), AnyError> {
 }
 
 /// Initializes shared services under the server or CLI writer-session monitor.
-async fn initialize_state(config: Config) -> Result<AppState, AnyError> {
+async fn initialize_state(config: Config, seed_mirror: bool) -> Result<AppState, AnyError> {
     let pool = plamenu_db::connect_and_migrate(&config.database_url, config.db_pool_size).await?;
     let legacy_actor_uris =
         account::backfill_legacy_local_actor_uris(&pool, &config.domain).await?;
@@ -544,9 +547,26 @@ async fn initialize_state(config: Config) -> Result<AppState, AnyError> {
         config.domain.clone(),
         Arc::clone(&federation_keyring),
     ));
-    let media = Arc::new(plamenu::storage::LocalDiskStore::new(
-        config.media_dir.clone(),
-    )?);
+    let media: Arc<dyn plamenu::storage::MediaStore> = if let Some(mirror) = &config.media_mirror {
+        let store = plamenu::storage_mirror::MirroredDiskStore::new(
+            config.media_dir.clone(),
+            mirror.directory.clone(),
+            mirror.bandwidth_mib_per_second * 1024 * 1024,
+            mirror.min_free_gib * plamenu::config::NativeVideoConfig::GIB,
+        )?;
+        if seed_mirror {
+            let copied = store.seed().await?;
+            tracing::info!(
+                copied,
+                "native media mirror ready; both disks acknowledge durable media writes"
+            );
+        }
+        Arc::new(store)
+    } else {
+        Arc::new(plamenu::storage::LocalDiskStore::new(
+            config.media_dir.clone(),
+        )?)
+    };
     Ok(AppState::new(pool, config, federation, media)?)
 }
 
@@ -678,6 +698,14 @@ async fn dispatch(command: Command, state: AppState) -> Result<(), AnyError> {
         Command::Rule(cmd) => rule_command(&state, cmd).await,
         Command::Announcement(cmd) => announcement_command(&state, cmd).await,
         Command::Media(MediaCommand::BackfillSizes) => media_backfill_sizes(&state).await,
+        Command::Media(MediaCommand::ExpireCaches) => {
+            plamenu::media_worker::run_retention(&state).await;
+            let pending = plamenu_db::media_cleanup::pending_count(&state.pool).await?;
+            println!(
+                "Cache retention pass finished; {pending} physical cleanup job(s) remain pending. Inspect retention warnings before treating the pass as complete."
+            );
+            Ok(())
+        }
         Command::Media(MediaCommand::Reconcile { delete }) => media_reconcile(&state, delete).await,
         Command::Federation(cmd) => federation_command(&state, cmd).await,
         Command::SelfDestruct => self_destruct(&state).await,
@@ -780,6 +808,24 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
     }
     let mut recoverable = Vec::new();
     for replay in plamenu_db::native_live::recoverable_replays(&state.pool).await? {
+        match state
+            .media
+            .restore_live_recording(replay.session.media_id, replay.session.session_id.clone())
+            .await
+        {
+            Ok(true) => tracing::info!(
+                media = replay.session.media_id,
+                "restored live recording from committed replica fragments"
+            ),
+            Ok(false) => {}
+            Err(error) => {
+                // Keep the replica and its recovery row even if this disk is
+                // unavailable. Never scavenge the only recoverable copy.
+                tracing::warn!(%error, media = replay.session.media_id, "live recording replica recovery deferred");
+                recoverable.push(replay);
+                continue;
+            }
+        }
         if plamenu::live_ingest::has_crashed_recording_dir(
             &state.config.media_dir,
             replay.session.media_id,
@@ -800,6 +846,15 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
         }
         Ok(_) => {}
         Err(error) => tracing::warn!(%error, "could not clear native live scratch"),
+    }
+    match state
+        .media
+        .reconcile_live_checkpoints(retained.into_iter().collect())
+        .await
+    {
+        Ok(removed) if removed > 0 => tracing::info!(removed, "removed abandoned live checkpoints"),
+        Ok(_) => {}
+        Err(error) => tracing::warn!(%error, "live checkpoint reconciliation deferred"),
     }
     if !recoverable.is_empty() {
         tracing::info!(
@@ -906,6 +961,11 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
             plamenu::video_source_sync::spawn,
         ),
         supervise("archive", state.clone(), plamenu::archive_worker::spawn),
+        supervise(
+            "video analytics",
+            state.clone(),
+            plamenu::video_analytics::spawn,
+        ),
         supervise("trends", state.clone(), plamenu::trends::spawn),
         supervise("maintenance", state.clone(), plamenu::maintenance::spawn),
         supervise(

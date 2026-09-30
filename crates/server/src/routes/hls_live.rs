@@ -28,6 +28,9 @@ use crate::sync::RecoverableMutex as _;
 /// of many simultaneous streams; the cap only exists so that a pathological
 /// number of them cannot grow the process without limit.
 const MAX_CACHE_BYTES: usize = 256 * 1024 * 1024;
+/// Byte admission alone does not bound the metadata of tiny hostile segments.
+const MAX_CACHE_ENTRIES: usize = 4_096;
+const MAX_CACHE_URL_BYTES: usize = 8_192;
 /// Ceiling on a single cached segment. A live segment is a few seconds of
 /// video; anything wildly larger is a broken or hostile origin, and is served
 /// through without being cached rather than being allowed to evict everything
@@ -70,11 +73,14 @@ impl Cache {
                 }
             }
         }
+        // Replacement, expiry and purge must release their ordering metadata,
+        // not leave tombstones accumulating forever below the byte ceiling.
+        self.order.retain(|key| key != url);
     }
 
     /// Drops entries until the cache is back under the byte cap, oldest first.
     fn evict_to_fit(&mut self) {
-        while self.bytes > MAX_CACHE_BYTES {
+        while self.bytes > MAX_CACHE_BYTES || self.entries.len() > MAX_CACHE_ENTRIES {
             let Some(oldest) = self.order.pop_front() else {
                 break;
             };
@@ -101,10 +107,20 @@ pub fn get(url: &str) -> Option<Arc<Vec<u8>>> {
 /// Segments over [`MAX_SEGMENT_BYTES`] are refused (the caller still serves
 /// them; they simply are not remembered).
 pub fn put(media_id: i64, url: &str, bytes: Arc<Vec<u8>>) {
-    if bytes.len() as u64 > MAX_SEGMENT_BYTES {
+    if bytes.is_empty() || bytes.len() as u64 > MAX_SEGMENT_BYTES || url.len() > MAX_CACHE_URL_BYTES
+    {
         return;
     }
     let mut cache = CACHE.lock_or_recover();
+    let expired: Vec<_> = cache
+        .entries
+        .iter()
+        .filter(|(_, entry)| entry.stored_at.elapsed() >= ENTRY_TTL)
+        .map(|(url, _)| url.clone())
+        .collect();
+    for url in expired {
+        cache.forget(&url);
+    }
     cache.forget(url); // replacing: drop the old accounting first
     cache.bytes += bytes.len();
     cache.entries.insert(
@@ -129,13 +145,11 @@ pub fn put(media_id: i64, url: &str, bytes: Arc<Vec<u8>>) {
 /// video under the segment names the last one used.
 pub fn purge_media(media_id: i64) {
     let mut cache = CACHE.lock_or_recover();
-    let Some(urls) = cache.by_media.remove(&media_id) else {
+    let Some(urls) = cache.by_media.get(&media_id).cloned() else {
         return;
     };
     for url in urls {
-        if let Some(entry) = cache.entries.remove(&url) {
-            cache.bytes = cache.bytes.saturating_sub(entry.bytes.len());
-        }
+        cache.forget(&url);
     }
 }
 
@@ -193,15 +207,19 @@ pub fn segment_content_type(url: &str) -> &'static str {
 mod tests {
     use super::*;
 
-    fn reset() {
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn reset() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_LOCK.lock_or_recover();
         let mut cache = CACHE.lock_or_recover();
         *cache = Cache::default();
         SEQUENCES.lock_or_recover().clear();
+        guard
     }
 
     #[test]
     fn caches_and_purges_per_broadcast() {
-        reset();
+        let _test = reset();
         put(1, "https://p/1/0-000000.ts", Arc::new(vec![7; 64]));
         put(2, "https://p/2/0-000000.ts", Arc::new(vec![9; 64]));
         assert_eq!(get("https://p/1/0-000000.ts").unwrap().len(), 64);
@@ -213,7 +231,7 @@ mod tests {
 
     #[test]
     fn a_restarted_sequence_is_detected_once() {
-        reset();
+        let _test = reset();
         assert!(
             !sequence_restarted(1, "a.m3u8", 0),
             "first sight is not a restart"
@@ -231,10 +249,50 @@ mod tests {
 
     #[test]
     fn oversized_segments_are_not_remembered() {
-        reset();
+        let _test = reset();
         let huge = Arc::new(vec![0_u8; usize::try_from(MAX_SEGMENT_BYTES).unwrap() + 1]);
         put(1, "https://p/1/huge.ts", huge);
         assert!(get("https://p/1/huge.ts").is_none());
+    }
+
+    #[test]
+    fn tiny_segments_and_repeated_replacements_bound_all_metadata() {
+        let _test = reset();
+        for _ in 0..MAX_CACHE_ENTRIES * 2 {
+            put(1, "https://p/repeated.ts", Arc::new(vec![1]));
+        }
+        assert_eq!(CACHE.lock_or_recover().order.len(), 1);
+        for n in 0..MAX_CACHE_ENTRIES + 10 {
+            put(2, &format!("https://p/{n}.ts"), Arc::new(vec![2]));
+        }
+        {
+            let cache = CACHE.lock_or_recover();
+            assert_eq!(cache.entries.len(), MAX_CACHE_ENTRIES);
+            assert_eq!(cache.order.len(), MAX_CACHE_ENTRIES);
+            assert_eq!(cache.bytes, MAX_CACHE_ENTRIES);
+            assert_eq!(cache.by_media.len(), 1);
+        }
+        purge_media(2);
+        let cache = CACHE.lock_or_recover();
+        assert!(cache.entries.is_empty() && cache.order.is_empty() && cache.by_media.is_empty());
+        assert_eq!(cache.bytes, 0);
+    }
+
+    #[test]
+    fn insertion_reclaims_expired_entries_without_waiting_for_their_readers() {
+        let _test = reset();
+        put(1, "https://p/expired.ts", Arc::new(vec![3; 16]));
+        CACHE
+            .lock_or_recover()
+            .entries
+            .get_mut("https://p/expired.ts")
+            .unwrap()
+            .stored_at = Instant::now().checked_sub(ENTRY_TTL).unwrap();
+        put(2, "https://p/fresh.ts", Arc::new(vec![4; 8]));
+        let cache = CACHE.lock_or_recover();
+        assert_eq!(cache.bytes, 8);
+        assert_eq!(cache.order.len(), 1);
+        assert!(!cache.by_media.contains_key(&1));
     }
 
     #[test]

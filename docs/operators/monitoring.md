@@ -20,6 +20,8 @@ failure from application failure.
 - media and temporary-transcode free space;
 - outbound delivery queue age, due work, and large per-host backlogs;
 - repeated media-cleanup failures, deferred deletions and retained storage debt;
+- repeated `video delivery analytics batch dropped` warnings if creators have
+  opted in; analytics failures must not stop playback and can undercount totals;
 - mail queue failure when account recovery depends on e-mail;
 - backup age and the last successful restore rehearsal;
 - certificate expiry and DNS changes for both the social and Webxdc hosts.
@@ -53,6 +55,18 @@ No general minimum hardware requirement has been established. Measure CPU,
 memory, database growth, and media storage under the workload you expect.
 Video processing and account archives also need temporary space. Keep room
 for a restore and alert before storage is exhausted.
+
+[Creator delivery analytics](../VIDEO_ANALYTICS.md) offers optional bounded
+UTC body-byte/response aggregates. It records no viewer identities and does
+not measure P2P bytes, unique views or confirmed wire transfer. Use process,
+network and database resource measurements for capacity planning instead of
+treating these best-effort counters as a billing or performance ledger.
+
+The [native video scale drill](../VIDEO_SCALE_VERIFICATION.md) defines an
+explicit sustained mixed-delivery workload and budgets before measurement.
+Its local HTTP-body/range and process measurements are not decoded browser
+startup/seek/rebuffer, P2P savings, whole-machine load or a production sizing
+guarantee. Reproduce the relevant workload on your own failure domains.
 
 Increase the default database pool only after observing pool waits and checking
 PostgreSQL memory and connection headroom. CPU saturation in password hashing

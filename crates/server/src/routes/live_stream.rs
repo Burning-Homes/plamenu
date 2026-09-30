@@ -123,7 +123,7 @@ pub async fn stream(
         return Err(ApiError::NotFound);
     }
 
-    let session = session_for(&state, media_id).await?;
+    let session = session_for(&state, media_id, local_session).await?;
     // Claim the viewer slot before waiting for the stream to start, so the
     // watchdog cannot decide the session is idle while its first viewer is
     // still waiting for FFmpeg to produce the initialization section.
@@ -227,12 +227,16 @@ fn fragment_stream(
 }
 
 /// The running session for a broadcast, started if this is the first viewer.
-async fn session_for(state: &AppState, media_id: i64) -> Result<Arc<Session>, ApiError> {
+async fn session_for(
+    state: &AppState,
+    media_id: i64,
+    native_session: Option<String>,
+) -> Result<Arc<Session>, ApiError> {
     let mut sessions = SESSIONS.lock().await;
     if let Some(existing) = sessions.get(&media_id) {
-        // A session whose FFmpeg has exited has no receivers left to feed;
-        // drop it so this viewer starts a fresh one.
-        if existing.fragments.receiver_count() > 0 || existing.init.borrow().is_some() {
+        // A startup waiter is shared even before it has an initialization
+        // section or fragment receivers. Never fork one child per first viewer.
+        if !*existing.closed.borrow() {
             return Ok(Arc::clone(existing));
         }
         sessions.remove(&media_id);
@@ -244,7 +248,7 @@ async fn session_for(state: &AppState, media_id: i64) -> Result<Arc<Session>, Ap
         );
         return Err(ApiError::NotFound);
     }
-    let session = spawn_session(state, media_id)?;
+    let session = spawn_session(state, media_id, native_session);
     sessions.insert(media_id, Arc::clone(&session));
     Ok(session)
 }
@@ -252,9 +256,10 @@ async fn session_for(state: &AppState, media_id: i64) -> Result<Arc<Session>, Ap
 /// Starts the remux for one broadcast: the `FFmpeg` child, the task that turns
 /// its pipe into fragments, and the watchdog that stops it once nobody is
 /// watching.
-fn spawn_session(state: &AppState, media_id: i64) -> Result<Arc<Session>, ApiError> {
+fn spawn_session(state: &AppState, media_id: i64, native_session: Option<String>) -> Arc<Session> {
     let input = loopback_master_url(state, media_id);
-    let mut child = tokio::process::Command::new(&state.config.ffmpeg_path)
+    let mut command = tokio::process::Command::new(&state.config.ffmpeg_path);
+    command
         .args([
             "-hide_banner",
             "-loglevel",
@@ -294,15 +299,7 @@ fn spawn_session(state: &AppState, media_id: i64) -> Result<Arc<Session>, ApiErr
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|error| {
-            tracing::warn!(%error, media = media_id, "cannot start the live remux");
-            ApiError::NotFound
-        })?;
-
-    let stdout = child.stdout.take().ok_or(ApiError::NotFound)?;
-    let stderr = child.stderr.take();
+        .kill_on_drop(true);
     let (init_tx, init_rx) = watch::channel(None);
     let (fragments, _) = broadcast::channel(FRAGMENT_BACKLOG);
     let viewers = Arc::new(AtomicUsize::new(0));
@@ -314,24 +311,83 @@ fn spawn_session(state: &AppState, media_id: i64) -> Result<Arc<Session>, ApiErr
         viewers: Arc::clone(&viewers),
     });
 
-    // Diagnostics only: FFmpeg's complaints are worth a log line, but nothing
-    // waits on them.
-    if let Some(mut stderr) = stderr {
-        tokio::spawn(async move {
-            let mut message = String::new();
-            if tokio::io::AsyncReadExt::read_to_string(&mut stderr, &mut message)
-                .await
-                .is_ok()
-                && !message.trim().is_empty()
-            {
-                tracing::debug!(media = media_id, "live remux: {}", message.trim());
+    let state = state.clone();
+    tokio::spawn(async move {
+        // On-air precedes the first atomic child playlist. FFmpeg's HLS
+        // demuxer does not forward HTTP reconnect options to that child.
+        // One shared, bounded waiter per broadcast (not per viewer) therefore
+        // waits for a playable native segment before starting the remux.
+        if let Some(generation) = native_session
+            && !native_ready(&state, media_id, &generation).await
+        {
+            let _ = closed.send(true);
+            remove_session(media_id, &closed).await;
+            return;
+        }
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                tracing::warn!(%error, media = media_id, "cannot start the live remux");
+                let _ = closed.send(true);
+                remove_session(media_id, &closed).await;
+                return;
             }
-        });
-    }
+        };
+        let stdout = child.stdout.take().expect("configured piped remux stdout");
+        // Diagnostics only; playback never waits on stderr.
+        if let Some(mut stderr) = child.stderr.take() {
+            tokio::spawn(async move {
+                let mut message = String::new();
+                if tokio::io::AsyncReadExt::read_to_string(&mut stderr, &mut message)
+                    .await
+                    .is_ok()
+                    && !message.trim().is_empty()
+                {
+                    tracing::debug!(media = media_id, "live remux: {}", message.trim());
+                }
+            });
+        }
+        tokio::spawn(pump(media_id, stdout, init_tx, fragments));
+        watchdog(state, media_id, child, viewers, closed).await;
+    });
+    session
+}
 
-    tokio::spawn(pump(media_id, stdout, init_tx, fragments));
-    tokio::spawn(watchdog(state.clone(), media_id, child, viewers, closed));
-    Ok(session)
+async fn native_ready(state: &AppState, media_id: i64, generation: &str) -> bool {
+    let wait = async {
+        loop {
+            // The public-session query includes moderation, ownership and
+            // publication checks. Rotation/reconnect must never change the
+            // generation underneath an already waiting viewer.
+            if plamenu_db::native_live::public_session(&state.pool, media_id)
+                .await
+                .ok()
+                .flatten()
+                .as_deref()
+                != Some(generation)
+            {
+                return false;
+            }
+            if super::native_live_hls::ready(state, media_id, generation).await {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    };
+    tokio::time::timeout(START_TIMEOUT, wait)
+        .await
+        .unwrap_or(false)
+}
+
+/// A dying generation must not remove a replacement which won the lock first.
+async fn remove_session(media_id: i64, closed: &watch::Sender<bool>) {
+    let mut sessions = SESSIONS.lock().await;
+    if sessions
+        .get(&media_id)
+        .is_some_and(|session| session.closed.same_channel(&closed.subscribe()))
+    {
+        sessions.remove(&media_id);
+    }
 }
 
 /// Reads `FFmpeg`'s fragmented MP4 out of the pipe and republishes it as an
@@ -472,7 +528,7 @@ async fn watchdog(
         }
     }
     let _ = closed.send(true);
-    SESSIONS.lock().await.remove(&media_id);
+    remove_session(media_id, &closed).await;
 }
 
 /// Where `FFmpeg` reads the broadcast from: this instance's own HLS proxy, on
@@ -506,6 +562,32 @@ mod tests {
     use super::*;
     use futures_util::StreamExt;
     use std::net::SocketAddr;
+
+    #[tokio::test]
+    async fn stale_session_exit_cannot_remove_its_replacement() {
+        let media_id = i64::MIN;
+        let (old_closed, _) = watch::channel(true);
+        let (new_closed, closed) = watch::channel(false);
+        let (_init, init) = watch::channel(None);
+        let (fragments, _) = broadcast::channel(16);
+        let replacement = Arc::new(Session {
+            init,
+            closed,
+            fragments,
+            viewers: Arc::new(AtomicUsize::new(0)),
+        });
+        SESSIONS
+            .lock()
+            .await
+            .insert(media_id, Arc::clone(&replacement));
+        remove_session(media_id, &old_closed).await;
+        assert!(Arc::ptr_eq(
+            SESSIONS.lock().await.get(&media_id).unwrap(),
+            &replacement
+        ));
+        remove_session(media_id, &new_closed).await;
+        assert!(!SESSIONS.lock().await.contains_key(&media_id));
+    }
 
     #[tokio::test]
     async fn revoked_remux_drops_queued_fragments_and_releases_viewer() {

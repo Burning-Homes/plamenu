@@ -42,6 +42,7 @@ mod polls_api;
 mod progressive;
 mod push;
 pub(crate) mod registrations;
+mod remote_cache_store;
 mod reports;
 pub(crate) mod scheduled_statuses;
 pub(crate) mod search;
@@ -1369,6 +1370,10 @@ pub fn router(state: AppState) -> Router {
             "/media/play/{media_id}/audio",
             get(progressive::audio_get).head(progressive::audio_head),
         )
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::video_analytics::observe,
+        ))
         .layer(cors_any_origin().allow_methods([Method::GET, Method::HEAD]));
 
     Router::new()

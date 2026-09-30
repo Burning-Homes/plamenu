@@ -124,6 +124,22 @@ def wait_for_https(name, url):
     raise RuntimeError("accessibility TLS fixture did not become ready")
 
 
+def local_browser_preflight():
+    """Reject unsupported Linux host WebKit before creating test fixtures."""
+    if not sys.platform.startswith("linux"):
+        return
+    inspector = shutil.which("gst-inspect-1.0")
+    if not inspector or subprocess.run(
+        [inspector, "autoaudiosink"], capture_output=True, check=False
+    ).returncode:
+        raise RuntimeError(
+            "Host WebKit needs GStreamer autoaudiosink (gst-plugins-good) and "
+            "gst-inspect-1.0. Use the default pinned browser image by unsetting "
+            "A11Y_LOCAL_BROWSERS, or provide complete host browser test dependencies. "
+            "These are test dependencies, not Plamenu runtime requirements."
+        )
+
+
 def main():
     if sys.argv[1:] == ["--prepare-browser-image"]:
         print(browser_image())
@@ -138,6 +154,12 @@ def main():
     server = None
     log_handle = None
     local_browsers = os.environ.get("A11Y_LOCAL_BROWSERS") == "1"
+    if local_browsers:
+        try:
+            local_browser_preflight()
+        except RuntimeError as error:
+            print(str(error), file=sys.stderr)
+            return 1
     encoder_image = BROWSER_IMAGE if local_browsers else browser_image()
     with tempfile.TemporaryDirectory(prefix="plamenu-a11y-") as temporary:
         fixture = Path(temporary)

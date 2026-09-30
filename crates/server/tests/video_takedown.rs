@@ -114,6 +114,76 @@ async fn failed_cleanup_retains_revocation_and_eventually_acknowledges_repaired_
     assert_eq!(get(&state, "/media/12345.mp4").await, StatusCode::NOT_FOUND);
 }
 
+#[sqlx::test(migrations = "../db/migrations")]
+async fn mirror_failover_keeps_authority_and_failed_replica_delete_keeps_cleanup_debt(
+    pool: PgPool,
+) {
+    let mut f = film(pool.clone()).await;
+    let primary = tempfile::tempdir().unwrap();
+    let replica = tempfile::tempdir().unwrap();
+    let store = Arc::new(
+        plamenu::storage_mirror::MirroredDiskStore::new(
+            primary.path().into(),
+            replica.path().into(),
+            64 * 1024 * 1024,
+            0,
+        )
+        .unwrap(),
+    );
+    for key in f.state.media.list().await.unwrap() {
+        store
+            .put(&key, f.state.media.get(&key).await.unwrap())
+            .await
+            .unwrap();
+    }
+    f.state.media = store;
+    public_lanes(&f, true).await;
+    let key = format!("{}.mp4", f.media);
+    let path = format!("/media/{key}");
+    tokio::fs::remove_file(primary.path().join(&key))
+        .await
+        .unwrap();
+    public_lanes(&f, true).await;
+    plamenu_db::account::suspend(&pool, f.owner, "local")
+        .await
+        .unwrap();
+    public_lanes(&f, false).await;
+    plamenu_db::account::unsuspend(&pool, f.owner)
+        .await
+        .unwrap();
+    public_lanes(&f, true).await;
+
+    let saved = replica.path().join("held.private");
+    tokio::fs::rename(replica.path().join(&key), &saved)
+        .await
+        .unwrap();
+    tokio::fs::create_dir(replica.path().join(&key))
+        .await
+        .unwrap();
+    media_cleanup::enqueue_many(&pool, std::slice::from_ref(&key))
+        .await
+        .unwrap();
+    assert_eq!(get(&f.state, &path).await, StatusCode::NOT_FOUND);
+    assert_eq!(plamenu::media_cleanup_worker::run_due(&f.state).await, 1);
+    assert_eq!(media_cleanup::pending_count(&pool).await.unwrap(), 1);
+    assert!(saved.exists());
+    tokio::fs::remove_dir(replica.path().join(&key))
+        .await
+        .unwrap();
+    tokio::fs::rename(saved, replica.path().join(&key))
+        .await
+        .unwrap();
+    assert_eq!(get(&f.state, &path).await, StatusCode::NOT_FOUND);
+    sqlx::query("UPDATE media_cleanup_jobs SET run_at=now() WHERE file_name=$1")
+        .bind(&key)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(plamenu::media_cleanup_worker::run_due(&f.state).await, 1);
+    assert_eq!(media_cleanup::pending_count(&pool).await.unwrap(), 0);
+    assert!(!replica.path().join(key).exists());
+}
+
 struct Film {
     state: AppState,
     media: i64,

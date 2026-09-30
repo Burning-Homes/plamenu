@@ -6080,9 +6080,17 @@ a.settings-button--plain {
   padding: var(--space-1) 0;
 }
 
-.video-sharing .settings-field__choice {
+.video-sharing .settings-field__choice,
+.video-analytics .settings-field__choice {
   min-block-size: 2.75rem;
   align-items: center;
+}
+
+.video-analytics__days {
+  padding-inline-start: var(--space-6);
+  & dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-2); }
+  & dt { font-weight: 600; }
+  & dd { margin: 0; overflow-wrap: anywhere; }
 }
 
 /* The TOTP enrolment QR (its SVG carries a white quiet zone of its own, so it

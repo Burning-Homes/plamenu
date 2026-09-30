@@ -3,12 +3,14 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::io::Read;
+use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::extract::{Path, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
+use tokio::io::AsyncReadExt;
 
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -17,16 +19,110 @@ use crate::sync::RecoverableMutex as _;
 const M3U8: &str = "application/vnd.apple.mpegurl";
 const MAX_PLAYLIST: u64 = 256 * 1024;
 const MAX_SEGMENT: u64 = 64 * 1024 * 1024;
+const MAX_REPLICA_AGE: Duration = Duration::from_secs(30);
+
+pub(crate) fn primary_directory(state: &AppState, media_id: i64, session: &str) -> Option<PathBuf> {
+    if media_id <= 0 || !valid_uuid(session) {
+        return None;
+    }
+    let mut path = state.config.media_dir.clone();
+    for component in ["native-live", &media_id.to_string(), session] {
+        path.push(component);
+        let meta = std::fs::symlink_metadata(&path).ok()?;
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            return None;
+        }
+    }
+    Some(path)
+}
+
+/// A snapshot is playable only while fresh; canonical DB authority/session
+/// checks happen before callers can use it. A lost publisher cannot leave an
+/// indefinitely on-air frozen replica playlist.
+fn replica_directory(state: &AppState, media_id: i64, session: &str) -> Option<PathBuf> {
+    let path = state.media.live_replica_dir(media_id, session)?;
+    fresh_replica_playlist(&path).then_some(path)
+}
+
+fn fresh_replica_playlist(path: &std::path::Path) -> bool {
+    std::fs::symlink_metadata(path.join("index.m3u8")).is_ok_and(|meta| {
+        meta.is_file()
+            && !meta.file_type().is_symlink()
+            && meta
+                .modified()
+                .is_ok_and(|modified| modified.elapsed().is_ok_and(|age| age <= MAX_REPLICA_AGE))
+    })
+}
+
+async fn playlist_directory(state: &AppState, media_id: i64, session: &str) -> Option<PathBuf> {
+    if let Some(path) = primary_directory(state, media_id, session)
+        && ready_files(&path).await
+    {
+        return Some(path);
+    }
+    if let Some(path) = replica_directory(state, media_id, session)
+        && ready_files(&path).await
+    {
+        return Some(path);
+    }
+    None
+}
+
+/// A native encoder marks on-air before committing its first HLS segment.
+/// Shared progressive startup must wait for an atomic playlist containing a
+/// complete segment, not feed `FFmpeg` a temporarily missing child playlist.
+pub(super) async fn ready(state: &AppState, media_id: i64, session: &str) -> bool {
+    playlist_directory(state, media_id, session).await.is_some()
+}
+
+async fn ready_files(root: &std::path::Path) -> bool {
+    let path = root.join("index.m3u8");
+    let Ok(meta) = tokio::fs::symlink_metadata(&path).await else {
+        return false;
+    };
+    if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > MAX_PLAYLIST {
+        return false;
+    }
+    let Ok(bytes) = tokio::fs::read(&path).await else {
+        return false;
+    };
+    if bytes.len() > usize::try_from(MAX_PLAYLIST).unwrap_or(0) {
+        return false;
+    }
+    let Ok(source) = std::str::from_utf8(&bytes) else {
+        return false;
+    };
+    if !source.starts_with("#EXTM3U") {
+        return false;
+    }
+    for line in source
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+    {
+        if !valid_segment(line) {
+            return false;
+        }
+        if let Ok(meta) = tokio::fs::symlink_metadata(root.join(line)).await
+            && meta.is_file()
+            && !meta.file_type().is_symlink()
+            && meta.len() > 0
+            && meta.len() <= MAX_SEGMENT
+        {
+            return true;
+        }
+    }
+    false
+}
 const MAX_HASHED_SEGMENTS: usize = 2_000;
 const MAX_HASH_SESSIONS: usize = 32;
 type SegmentHashes = Arc<Mutex<HashMap<String, String>>>;
 type HashSessions = Mutex<HashMap<String, (Instant, SegmentHashes)>>;
 static HASH_SESSIONS: LazyLock<HashSessions> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn session_hashes(media_id: i64, session: &str) -> SegmentHashes {
+fn session_hashes(media_id: i64, session: &str, directory: &std::path::Path) -> SegmentHashes {
     let mut sessions = HASH_SESSIONS.lock_or_recover();
     sessions.retain(|_, (at, _)| at.elapsed() < Duration::from_mins(30));
-    let key = format!("{media_id}/{session}");
+    let key = format!("{media_id}/{session}/{}", directory.display());
     if let Some((at, hashes)) = sessions.get_mut(&key) {
         *at = Instant::now();
         return Arc::clone(hashes);
@@ -62,12 +158,9 @@ pub async fn sha256_manifest(
     if !valid_uuid(&session) {
         return Err(ApiError::NotFound);
     }
-    let directory = state
-        .config
-        .media_dir
-        .join("native-live")
-        .join(media_id.to_string())
-        .join(&session);
+    let directory = playlist_directory(state, media_id, &session)
+        .await
+        .ok_or(ApiError::NotFound)?;
     let path = directory.join("index.m3u8");
     let names = match tokio::fs::symlink_metadata(&path).await {
         Ok(meta)
@@ -96,11 +189,14 @@ pub async fn sha256_manifest(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         _ => return Err(ApiError::NotFound),
     };
-    let hashes = session_hashes(media_id, &session);
-    let manifest = tokio::task::spawn_blocking(move || hash_segments(&directory, &names, &hashes))
-        .await
-        .map_err(|e| ApiError::Internal(Box::new(e)))?
-        .ok_or(ApiError::NotFound)?;
+    let hashes = session_hashes(media_id, &session, &directory);
+    let replica = replica_directory(state, media_id, &session);
+    let manifest = tokio::task::spawn_blocking(move || {
+        hash_segments_with_replica(&directory, replica.as_deref(), &names, &hashes)
+    })
+    .await
+    .map_err(|e| ApiError::Internal(Box::new(e)))?
+    .ok_or(ApiError::NotFound)?;
     Ok(Some(
         (
             [
@@ -113,8 +209,18 @@ pub async fn sha256_manifest(
     ))
 }
 
+#[cfg(test)]
 fn hash_segments(
     directory: &std::path::Path,
+    names: &[String],
+    cache: &Mutex<HashMap<String, String>>,
+) -> Option<Vec<u8>> {
+    hash_segments_with_replica(directory, None, names, cache)
+}
+
+fn hash_segments_with_replica(
+    directory: &std::path::Path,
+    replica: Option<&std::path::Path>,
     names: &[String],
     cache: &Mutex<HashMap<String, String>>,
 ) -> Option<Vec<u8>> {
@@ -127,13 +233,20 @@ fn hash_segments(
         if hashes.contains_key(name) {
             continue;
         }
-        let path = directory.join(name);
-        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+        let Some((path, meta)) = std::iter::once(directory)
+            .chain(replica)
+            .find_map(|directory| {
+                let path = directory.join(name);
+                let meta = std::fs::symlink_metadata(&path).ok()?;
+                (meta.is_file()
+                    && !meta.file_type().is_symlink()
+                    && meta.len() > 0
+                    && meta.len() <= MAX_SEGMENT)
+                    .then_some((path, meta))
+            })
+        else {
             continue;
         };
-        if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > MAX_SEGMENT {
-            continue;
-        }
         let Ok(mut file) = std::fs::File::open(path) else {
             continue;
         };
@@ -153,6 +266,9 @@ fn hash_segments(
             }
             digest.update(&chunk[..size]);
             read_bytes += size as u64;
+            if read_bytes > MAX_SEGMENT {
+                break;
+            }
         }
     }
     let mut output = serde_json::Map::new();
@@ -203,22 +319,37 @@ pub async fn child(
     if !playlist && !valid_segment(&name) {
         return Err(ApiError::NotFound);
     }
-    let path = state
-        .config
-        .media_dir
-        .join("native-live")
-        .join(media_id.to_string())
-        .join(&session)
-        .join(&name);
-    let meta = tokio::fs::metadata(&path)
-        .await
-        .map_err(|_| ApiError::NotFound)?;
-    if !meta.is_file() || meta.len() > if playlist { MAX_PLAYLIST } else { MAX_SEGMENT } {
-        return Err(ApiError::NotFound);
+    let mut bytes = None;
+    for directory in [
+        primary_directory(&state, media_id, &session),
+        replica_directory(&state, media_id, &session),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let path = directory.join(&name);
+        let limit = if playlist { MAX_PLAYLIST } else { MAX_SEGMENT };
+        if !tokio::fs::symlink_metadata(&path).await.is_ok_and(|meta| {
+            meta.is_file()
+                && !meta.file_type().is_symlink()
+                && meta.len() > 0
+                && meta.len() <= limit
+        }) {
+            continue;
+        }
+        // Bound the read as well as metadata; no growing/replaced file can
+        // turn one HLS request into an unbounded allocation.
+        if let Ok(file) = tokio::fs::File::open(path).await {
+            let mut value = Vec::new();
+            if file.take(limit + 1).read_to_end(&mut value).await.is_ok()
+                && value.len() as u64 <= limit
+            {
+                bytes = Some(value);
+                break;
+            }
+        }
     }
-    let bytes = tokio::fs::read(path)
-        .await
-        .map_err(|_| ApiError::NotFound)?;
+    let bytes = bytes.ok_or(ApiError::NotFound)?;
     if playlist {
         let source = String::from_utf8(bytes).map_err(|_| ApiError::NotFound)?;
         let mut output = String::with_capacity(source.len() + 512);
@@ -264,7 +395,7 @@ pub(crate) fn valid_uuid(value: &str) -> bool {
         })
 }
 
-fn valid_segment(name: &str) -> bool {
+pub(crate) fn valid_segment(name: &str) -> bool {
     name.strip_prefix("segment")
         .and_then(|tail| tail.strip_suffix(".ts"))
         .is_some_and(|digits| {
@@ -275,6 +406,81 @@ fn valid_segment(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_and_future_replica_playlists_cannot_serve_live_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("index.m3u8");
+        assert!(!fresh_replica_playlist(dir.path()));
+        let file = std::fs::File::create(path).unwrap();
+        assert!(fresh_replica_playlist(dir.path()));
+        file.set_modified(std::time::SystemTime::now() - Duration::from_secs(31))
+            .unwrap();
+        assert!(!fresh_replica_playlist(dir.path()));
+        file.set_modified(std::time::SystemTime::now() + Duration::from_secs(31))
+            .unwrap();
+        assert!(!fresh_replica_playlist(dir.path()));
+    }
+
+    #[test]
+    fn integrity_manifest_uses_replica_for_missing_primary_segment() {
+        let source = tempfile::tempdir().unwrap();
+        let replica = tempfile::tempdir().unwrap();
+        std::fs::write(replica.path().join("segment000001.ts"), b"complete segment").unwrap();
+        let cache = Mutex::new(HashMap::new());
+        let manifest = hash_segments_with_replica(
+            source.path(),
+            Some(replica.path()),
+            &["segment000001.ts".into()],
+            &cache,
+        )
+        .unwrap();
+        let object: serde_json::Value = serde_json::from_slice(&manifest).unwrap();
+        assert_eq!(object["segment000001.ts"].as_str().unwrap().len(), 64);
+        assert_eq!(
+            manifest,
+            hash_segments(
+                replica.path(),
+                &["segment000001.ts".into()],
+                &Mutex::new(HashMap::new())
+            )
+            .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn progressive_startup_requires_an_atomic_playlist_and_complete_safe_segment() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        assert!(!ready_files(root).await);
+        std::fs::write(root.join("index.m3u8"), "#EXTM3U\n").unwrap();
+        assert!(!ready_files(root).await);
+        std::fs::write(
+            root.join("index.m3u8"),
+            "#EXTM3U\n#EXTINF:1,\nsegment000001.ts\n",
+        )
+        .unwrap();
+        assert!(!ready_files(root).await);
+        std::fs::write(root.join("segment000001.ts"), b"").unwrap();
+        assert!(!ready_files(root).await);
+        std::fs::write(root.join("segment000001.ts"), b"complete atomic segment").unwrap();
+        assert!(ready_files(root).await);
+        std::fs::write(root.join("index.m3u8"), "#EXTM3U\n../segment000001.ts\n").unwrap();
+        assert!(!ready_files(root).await);
+        std::fs::write(
+            root.join("index.m3u8"),
+            "not a playlist\nsegment000001.ts\n",
+        )
+        .unwrap();
+        assert!(!ready_files(root).await);
+        #[cfg(unix)]
+        {
+            std::fs::remove_file(root.join("index.m3u8")).unwrap();
+            std::os::unix::fs::symlink(root.join("segment000001.ts"), root.join("index.m3u8"))
+                .unwrap();
+            assert!(!ready_files(root).await);
+        }
+    }
 
     #[test]
     fn child_paths_reject_traversal() {

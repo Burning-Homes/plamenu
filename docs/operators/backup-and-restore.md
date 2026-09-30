@@ -162,6 +162,56 @@ all live-session/cache fault cases, remote storage or production disaster
 scenarios have been exercised. The separately documented live crash tests and
 the broader AP09 operations/release gates remain necessary.
 
+### Interrupted live recording rehearsal
+
+The extended native-live drill uses a uniquely owned disposable broadcaster,
+not the standing instance:
+
+```sh
+e2e/.venv/bin/pytest -q -s e2e/tests/test_video_live_backup_restore.py
+```
+
+It tests both the normal single disk and optional paired durable disks. A real
+encoder produces complete HLS segments and a fragmented recording. Only its
+owned server is crashed; its remaining writer is quiesced before PostgreSQL
+and the **entire primary media tree** are captured. With paired disks, capture
+the entire replica and both pairing markers too. Active HLS and complete MP4
+fragments have asynchronous checkpoints, not synchronous durability; do not
+omit primary scratch from an ordinary consistent backup. See
+[Native media storage](../VIDEO_STORAGE.md) for lag/failure boundaries.
+
+The paired fixture additionally verifies missing-primary-segment HTTP/integrity
+fallback and real narrow Chromium JS/no-JS playback. After quiescence it moves
+only its exact primary generation into protected evidence before archiving,
+forcing fresh-root recovery from the replica's committed recording prefix.
+This deliberate loss drill is not a recommendation to omit healthy primary
+recordings or mix unrelated backup generations.
+
+The drill removes only the fixture's original directories, restores into
+fresh directories and a fresh `template0` database, audits the original
+encrypted federation identities, and signs in with the previous credentials.
+Startup must mark orphaned on-air sessions interrupted, not expose phantom
+live playback. Old generation HLS paths and off-air tracker announcements
+must be refused. Original ingest credentials reconnect the same Video with
+a new recording generation. PeerTube-compatible swarm identity remains based
+on the stable Video UUID; it is not a claim that old cached segment bytes can
+be recalled. Current segment URLs and checksums retain their generation fence.
+
+Both the interrupted recording and the subsequent clean recording must become
+separate fully decodable audio/video replay publications, imported by the
+surviving real PeerTube subscriber with exact finite ranges. Paired durable
+replays must have identical copies, serve a range after removal of their exact
+fixture primary file, and remove both copies before acknowledging their storage
+charge. Replay reservations belong to the original broadcast ledger, so
+deletion checks use the exact owned key, not an assumed replay-media ledger ID.
+
+Protected archives, separately escrowed configuration, logs, replay samples,
+SHA-256 manifests and results are retained under
+`target/e2e/video-live-restore/`. Never publish these secret-bearing backups.
+Two logical fixture directories do not establish hardware failure-domain,
+multi-node, remote-offload or full production disaster certification. Refer to
+the AP09 operations record for the actual run's outcome and remaining gates.
+
 ## Retention
 
 Keep multiple recovery points and at least one off-host copy. A synchronized

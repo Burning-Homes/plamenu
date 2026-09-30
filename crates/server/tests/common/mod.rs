@@ -79,6 +79,8 @@ pub struct StubFederation {
     pub media: Mutex<HashMap<String, FetchedMedia>>,
     /// Every `fetch_media` URL requested, in order.
     pub media_fetches: Mutex<Vec<String>>,
+    /// Hold ordinary playlist/integrity fetches for in-flight revocation tests.
+    pub media_fetch_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
     /// Native source-import tests can hold a whole-file stream until it is
     /// cancelled, without replacing the production download/lease controller.
     pub media_download_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
@@ -434,7 +436,17 @@ impl FederationApi for StubFederation {
             .get(url)
             .cloned()
             .ok_or(FederationError::Status(404));
-        Box::pin(async move { result })
+        let gate = self.media_fetch_gate.lock().unwrap().clone();
+        Box::pin(async move {
+            if let Some(gate) = gate {
+                let permit = gate
+                    .acquire_owned()
+                    .await
+                    .map_err(|_| FederationError::Status(503))?;
+                permit.forget();
+            }
+            result
+        })
     }
 
     fn fetch_media_to_file<'a>(
@@ -637,6 +649,8 @@ pub fn test_config() -> Config {
         authorized_fetch: false,
         authorized_fetch_unsigned_profile: false,
         media_dir: std::env::temp_dir(),
+        media_mirror: None,
+        video_analytics: true,
         ffmpeg_path: "ffmpeg".to_owned(),
         ffprobe_path: "ffprobe".to_owned(),
         live_ingest_bind: "127.0.0.1:0".parse().unwrap(),

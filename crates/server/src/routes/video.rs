@@ -19,6 +19,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/api/v1/video_channels", get(channels).post(create_channel))
         .route(
+            "/api/v1/video_channels/{id}/analytics",
+            get(analytics).put(analytics_policy).delete(erase_analytics),
+        )
+        .route(
             "/api/v1/video_channels/{id}",
             get(channel).post(change_channel),
         )
@@ -56,6 +60,58 @@ pub fn router() -> Router<AppState> {
 struct DistributionInput {
     download_enabled: bool,
     embed_enabled: bool,
+}
+
+async fn analytics(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("read:media")?;
+    crate::video_analytics::access(&state, current.account.id, id).await?;
+    let policy = crate::video_analytics::policy(&state, id).await?;
+    let daily = crate::video_analytics::daily(&state, id).await?;
+    Ok(private_json(
+        json!({"policy":policy,"operator_enabled":state.config.video_analytics,
+        "measurement":"best_effort_origin_body_delivery_not_views", "limit":1000,
+        "possibly_truncated":daily.len()==1000, "daily":daily}),
+    ))
+}
+#[derive(Deserialize)]
+struct AnalyticsInput {
+    enabled: bool,
+    retention_days: i32,
+}
+async fn analytics_policy(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("write:media")?;
+    let input: AnalyticsInput = super::params::parse_body(&headers, &body)?;
+    crate::video_analytics::change(
+        &state,
+        current.account.id,
+        id,
+        input.enabled,
+        input.retention_days,
+        false,
+    )
+    .await?;
+    Ok(private_json(
+        json!({"enabled":input.enabled,"retention_days":input.retention_days}),
+    ))
+}
+async fn erase_analytics(
+    State(state): State<AppState>,
+    current: CurrentUser,
+    Path(id): Path<i64>,
+) -> Result<axum::response::Response, ApiError> {
+    current.require_scope("write:media")?;
+    crate::video_analytics::change(&state, current.account.id, id, false, 30, true).await?;
+    Ok(private_json(json!({"erased":true})))
 }
 async fn distribution(
     State(state): State<AppState>,

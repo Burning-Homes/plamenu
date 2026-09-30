@@ -115,6 +115,12 @@ database_url = ""
 # Local media storage and external media-tool binaries. Media processing and
 # retention behavior is configured live in the admin dashboard.
 # media_dir = "./media"
+# Optional paired native disks; leave absent for the normal installation.
+# See the native media storage guide before enabling on an existing instance.
+# [media_mirror]
+# directory = "/srv/plamenu-replica"
+# bandwidth_mib_per_second = 32
+# min_free_gib = 1
 # ffmpeg_path = "ffmpeg"
 # Native RTMP ingest uses this listener; loopback only by default. To allow
 # an external encoder, bind a reachable address and protect the plaintext
@@ -130,6 +136,9 @@ database_url = ""
 # ffprobe_path = "ffprobe"
 
 # Native Video uploads use the built-in background worker and local media store.
+# Opt-in channel delivery aggregates can be disabled server-wide. This is a
+# root-level setting, before any TOML section. No viewer identities are stored.
+# video_analytics = true
 # These limits need no companion service. The ordinary attachment uploader has
 # its own limits. A larger source limit increases the processing scratch budget.
 # [native_video]
@@ -276,6 +285,10 @@ pub struct Config {
     pub authorized_fetch: bool,
     pub authorized_fetch_unsigned_profile: bool,
     pub media_dir: PathBuf,
+    /// Optional second native disk; absent means the original single-disk install.
+    pub media_mirror: Option<MediaMirrorConfig>,
+    /// Operator kill switch. Channels still opt in individually; no tracking IDs.
+    pub video_analytics: bool,
     pub ffmpeg_path: String,
     pub ffprobe_path: String,
     /// RTMP publisher listener (loopback by default because RTMP is plaintext).
@@ -296,6 +309,22 @@ pub struct Config {
     /// Whether HTML CSPs advertise, and the router exposes, `/csp-report`.
     pub csp_reporting: bool,
     pub federation: FederationConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MediaMirrorConfig {
+    pub directory: PathBuf,
+    #[serde(default = "mirror_bandwidth")]
+    pub bandwidth_mib_per_second: u64,
+    #[serde(default = "mirror_free_floor")]
+    pub min_free_gib: u64,
+}
+const fn mirror_bandwidth() -> u64 {
+    32
+}
+const fn mirror_free_floor() -> u64 {
+    1
 }
 
 /// Work and lifetime limits for browser sign-up proof-of-work challenges.
@@ -485,6 +514,8 @@ impl std::fmt::Debug for Config {
                 &self.authorized_fetch_unsigned_profile,
             )
             .field("media_dir", &self.media_dir)
+            .field("media_mirror", &self.media_mirror)
+            .field("video_analytics", &self.video_analytics)
             .field("native_video", &self.native_video)
             .field("ffmpeg_path", &self.ffmpeg_path)
             .field("ffprobe_path", &self.ffprobe_path)
@@ -597,6 +628,8 @@ struct FileConfig {
     authorized_fetch: Option<bool>,
     authorized_fetch_unsigned: Option<AuthorizedFetchUnsigned>,
     media_dir: Option<PathBuf>,
+    media_mirror: Option<MediaMirrorConfig>,
+    video_analytics: Option<bool>,
     ffmpeg_path: Option<String>,
     ffprobe_path: Option<String>,
     live_ingest_bind: Option<SocketAddr>,
@@ -1013,7 +1046,22 @@ impl Config {
                 AuthorizedFetchUnsigned::Profile
             ),
             media_dir: file.media_dir.unwrap_or_else(|| DEFAULT_MEDIA_DIR.into()),
+            media_mirror: match file.media_mirror {
+                Some(mirror)
+                    if mirror.directory.as_os_str().is_empty()
+                        || mirror.bandwidth_mib_per_second == 0
+                        || mirror.bandwidth_mib_per_second > 1024
+                        || mirror.min_free_gib > 1024 * 1024 =>
+                {
+                    return Err(ConfigError::Invalid(
+                        "media_mirror",
+                        "requires a directory, 1–1024 MiB/s and a bounded free-space floor".into(),
+                    ));
+                }
+                mirror => mirror,
+            },
             ffmpeg_path: file.ffmpeg_path.unwrap_or_else(|| "ffmpeg".to_owned()),
+            video_analytics: file.video_analytics.unwrap_or(true),
             ffprobe_path: file.ffprobe_path.unwrap_or_else(|| "ffprobe".to_owned()),
             live_ingest_bind,
             live_rtmps,
@@ -1419,6 +1467,8 @@ mod tests {
         assert!(config.translation.is_none());
         assert_eq!(config.db_pool_size, DEFAULT_DB_POOL_SIZE);
         assert_eq!(config.native_video, NativeVideoConfig::default());
+        assert!(config.media_mirror.is_none());
+        assert!(config.video_analytics);
         assert_eq!(config.account_domain, "example.com");
         assert!(config.is_local_domain("EXAMPLE.COM"));
         assert!(config.federation.proxy_url.is_none());
@@ -1426,6 +1476,31 @@ mod tests {
         assert!(config.federation.i2p_proxy_url.is_none());
         assert!(!config.federation.trust_proxy_destination_filtering);
         assert!(config.federation.no_proxy.is_empty());
+    }
+
+    #[test]
+    fn optional_mirror_defaults_and_invalid_budgets() {
+        let file: FileConfig = toml::from_str(&format!(
+            "{}[media_mirror]\ndirectory = \"/disk/replica\"\n",
+            valid_minimal()
+        ))
+        .unwrap();
+        let mirror = Config::from_parsed(file).unwrap().media_mirror.unwrap();
+        assert_eq!(mirror.bandwidth_mib_per_second, 32);
+        assert_eq!(mirror.min_free_gib, 1);
+        for value in [
+            "directory = \"\"",
+            "directory = \"/disk\"\nbandwidth_mib_per_second = 0",
+            "directory = \"/disk\"\nbandwidth_mib_per_second = 1025",
+            "directory = \"/disk\"\nmin_free_gib = 18446744073709551615",
+        ] {
+            let file: FileConfig =
+                toml::from_str(&format!("{}[media_mirror]\n{value}\n", valid_minimal())).unwrap();
+            assert!(matches!(
+                Config::from_parsed(file),
+                Err(ConfigError::Invalid("media_mirror", _))
+            ));
+        }
     }
 
     #[test]

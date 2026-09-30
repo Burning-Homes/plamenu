@@ -8,6 +8,40 @@ PeerTube interoperability, first-party usability, accessibility, and performance
 Passing the original audit regression is one milestone, not completion of the
 broader video-platform work requested on 2026-09-22.
 
+### Latest operations slices — 2026-09-30
+
+Finite replica-backed no-JS rewind, two-broadcast/eight-decoder actual tracker
+TCP-loss recovery, and actual PeerTube warmed-cache authority/paired expiry now
+pass. Replica rewind fully decodes, has exact ranges and real 320px no-JS
+seeking; the eight native/PeerTube players remain decoding through a fifteen-
+second native tracker outage and all reconnect. Failed paired cache deletion
+retains charged private cleanup debt; refetch never reuses the retired key.
+No new mandatory installation component was introduced.
+
+The full M7 completion contract is explicit in the closure record. M7 is
+**not closed**: native offload, healthy-replica publisher continuity, federated
+redundancy, both-origin corrupted/stale-peer faults, cold/constrained long-film
+and browser-capture measurements, and wider fresh-root recovery still require
+implementation/evidence. These receipts are local workload results, not
+production capacity or independent hardware/AT certification.
+
+Earlier checkpoint slice:
+
+Active native HLS/complete-recording checkpoints and lost-primary-generation
+recovery now have actual paired-disk, PeerTube and 320px Chromium JS/no-JS decoder
+evidence. Final production regressions: **484 library + 62 integrations pass**;
+fresh single/paired recovery: **2 pass in 441.12 seconds**. The paired case
+recovers a missing primary recording from committed replica MP4 fragments and
+publishes independently decoded PeerTube replay episodes. No new installation
+component, second encoder or unbounded snapshot queue was added.
+
+This is asynchronous recovery, not guaranteed RPO or seamless publisher/disk
+failover. Offload/multi-node/federated
+redundancy, wider peer/browser concurrency and cache/failure gates keep M7 open.
+Evidence, original diagnostics and exact candidate identity are recorded in
+[`AP09-M6-M7-CLOSURE.md`](AP09-M6-M7-CLOSURE.md); operator controls and boundaries:
+[`VIDEO_STORAGE.md`](VIDEO_STORAGE.md).
+
 ## Reference baseline
 
 - Plamenu inspected at `f6b5998091b36ec35001b35ed01974511e906296`.
@@ -137,7 +171,7 @@ before becoming `verified`. Keep partial results and failures visible.
 | M4 | Playlists and library | Create/import/edit/delete; reorder; clip boundaries; ownership/visibility; duplicate and missing videos; PeerTube round-trip; keyboard/no-JS forms | verified 2026-09-29; see M4 sign-off below |
 | M5 | Native live | Authenticated ingest including browser camera/screen; waiting/on-air/interrupted/ended/replay states; stable session identities for future chat; scheduling, recurring streams, latency/DVR; PeerTube playback and updates in both directions | verified 2026-09-25 for this stated functional gate; see the M5 sign-off below. Cross-node storage, additional device/browser combinations, and broader fault matrices remain in M7/M9, not silently counted as done |
 | M6 | Creator/viewer experience | Discoverable video space; channels, subscriptions/search; drafts/scheduling and reminders; in-session capture-source switching; settings/imports; editing; embeds/downloads/history; desktop/mobile/browser evidence | verified 2026-09-29 for the original functional gate. Bounded 5,550-match catalogue, current-owner/anonymous authority, actual PeerTube subscriptions/search/blocking/scheduling/transfer/distribution, and all seven desktop/narrow/no-JS browser configurations pass. Detailed sign-off and retained failures are in the M6/M7 closure record. Sustained operations and independent real-device/AT release gates remain M7/M9 |
-| M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress: both-origin VOD/live P2P exchange, durable accessible opt-out/embeds, bounded VOD recovery, native VOD/upload backup/restore and canonical origin revocation/acknowledged cleanup are verified. Already-connected progressive viewers terminate on revocation across RTMP/RTMPS/HTTPS-FLV. Actual PeerTube report/handoff/suspension/recovery/Delete and seven browser projects pass for origin revocation. Worker/storage/redundancy, analytics, wider faults and sustained resource/concurrency gates remain. See M6/M7 closure checklist |
+| M7 | Operations and scale | Worker/storage options; redundancy; PeerTube-compatible P2P on by default with accessible opt-out; moderation/analytics; recovery/backup; concurrency and resource benchmarks | in progress under the entire-M7 completion contract: prior origin/analytics/backup/browser/resource receipts retained; paired checkpoints and replica-only finite no-JS rewind, two native broadcasts/eight native-PeerTube decoders through actual tracker TCP loss, and actual PeerTube warmed-cache suspension/Delete/expiry/paired-debt/refill are verified. Native offload, healthy-replica publisher continuity/guaranteed RPO, federated redundancy, both-origin corrupt/stale-peer faults, cold/constrained long-film and browser-capture performance, and fresh-root remote/offload/mirror recovery remain open. See M6/M7 closure checklist; no original gate is waived |
 | M8 | Ecosystem and beyond parity | Defined REST/embed/runner compatibility scope; chosen extensions; end-to-end tests per supported contract; no PeerTube plugin ABI in round one | pending |
 | M9 | Completion gate | All accepted inventory entries verified; current and prior PeerTube matrices; browser/a11y/performance gates; operator and user documentation | pending |
 
@@ -152,7 +186,27 @@ remaining gates and slice evidence are recorded in
 [`AP09-M6-M7-CLOSURE.md`](AP09-M6-M7-CLOSURE.md). Private opt-in history/resume
 is verified; durable account P2P opt-out, cookie-free VOD embeds, bounded VOD
 startup fallback and actual native VOD/upload backup/restore now have additional
-slice evidence there. Neither milestone is yet signed off. No push, merge or
+slice evidence there. Interrupted native-live whole-store recovery also passes
+fresh DB/root restore on single and paired durable disks, compatible reconnect,
+two decoded independent replay imports into PeerTube and acknowledged cleanup.
+The sustained mixed native workload passes predefined budgets with 32 live
+and 16 range clients for five minutes: one shared remux, 4,816 exact ranges,
+stable late RSS and attached-consumer revocation. Decoded browser/P2P scale,
+remote offload and wider redundancy/fault gates remain open.
+The native tracker admission/fault slice is verified: entire signals are
+validated before any relay; database/all-write/idle deadlines, 128 live sockets
+with reclamation, identity/swarm/frame/offer/rate isolation, fixture-only DB
+lock and moderation refusal pass. Actual PeerTube/native decoded peer exchange
+recovers with zero checksum errors. This does not close wider live/cache faults,
+full-network abuse or multi-peer browser scale. See the M7 record for evidence.
+Separate decoder budgets now pass all seven browser configurations: fourteen
+watch/server-only-embed lanes, maximum moving startup 2.077 seconds, short-film
+seek 258.6 ms, at least 78 frames/eight seconds and zero observed steady waits
+or drops. Each enhanced configuration records actual client signaling attempts
+with browser-injected closures, not a wire outage;
+no-JS uses external native-state measurements without enabling scripts. Cold/
+long-film/WAN, live latency and browser/P2P concurrency remain separate gates.
+M6 is signed off; M7 remains open. No push, merge or
 deployment is part of this goal.
 
 ## M1 sign-off — 2026-09-29

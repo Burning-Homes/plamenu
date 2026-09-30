@@ -1159,6 +1159,8 @@ mod tests {
             authorized_fetch: false,
             authorized_fetch_unsigned_profile: false,
             media_dir: std::env::temp_dir(),
+            media_mirror: None,
+            video_analytics: true,
             ffmpeg_path: "ffmpeg".to_owned(),
             ffprobe_path: "ffprobe".to_owned(),
             live_ingest_bind: "127.0.0.1:0".parse().unwrap(),

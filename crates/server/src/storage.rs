@@ -36,7 +36,60 @@ pub struct MediaRead {
     pub reader: Box<dyn MediaReader>,
 }
 
+/// A finite private HLS snapshot pinned for one rewind build. Dropping it
+/// releases only its owned hard links, not the live checkpoint's media.
+pub struct LiveRewindSource {
+    pub playlist: PathBuf,
+    pub(crate) directory: tempfile::TempDir,
+}
+impl LiveRewindSource {
+    #[must_use]
+    pub fn directory(&self) -> &std::path::Path {
+        self.directory.path()
+    }
+}
+
 pub trait MediaStore: Send + Sync {
+    /// Optional, generation-scoped live checkpoints. Not a flat media key and
+    /// never an authorization decision. Implementations must bound background
+    /// work; active publishers must not wait behind durable media writes.
+    fn has_live_checkpoints(&self) -> bool {
+        false
+    }
+    fn checkpoint_live(&self, _media: i64, _session: String) -> BoxFuture<'_, std::io::Result<()>> {
+        Box::pin(async { Err(std::io::ErrorKind::Unsupported.into()) })
+    }
+    fn live_replica_dir(&self, _media: i64, _session: &str) -> Option<PathBuf> {
+        None
+    }
+    fn live_rewind_source(
+        &self,
+        _media: i64,
+        _session: String,
+        _slice: i32,
+    ) -> BoxFuture<'_, std::io::Result<Option<LiveRewindSource>>> {
+        Box::pin(async { Ok(None) })
+    }
+    fn restore_live_recording(
+        &self,
+        _media: i64,
+        _session: String,
+    ) -> BoxFuture<'_, std::io::Result<bool>> {
+        Box::pin(async { Ok(false) })
+    }
+    fn delete_live_checkpoint(
+        &self,
+        _media: i64,
+        _session: String,
+    ) -> BoxFuture<'_, std::io::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn reconcile_live_checkpoints(
+        &self,
+        _retained: Vec<(i64, String)>,
+    ) -> BoxFuture<'_, std::io::Result<usize>> {
+        Box::pin(async { Ok(0) })
+    }
     fn put(&self, file_name: &str, bytes: Vec<u8>) -> BoxFuture<'_, std::io::Result<()>>;
     /// Moves an already-on-disk file into the store — the large-file
     /// counterpart of [`Self::put`]; the content is never buffered.

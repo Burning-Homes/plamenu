@@ -26,6 +26,24 @@ struct Inner {
 pub struct ProcessingPool(Arc<Inner>);
 
 impl ProcessingPool {
+    /// Finite remux/snapshot scratch shares the native job and byte ceiling.
+    /// No database claim is taken while waiting for this nonblocking permit.
+    #[must_use]
+    pub fn try_reserve_temporary(&self, bytes: u64) -> Option<TemporaryReservation> {
+        if bytes == 0 {
+            return None;
+        }
+        let mut usage = self.0.usage.lock_or_recover();
+        if usage.jobs >= self.0.max_jobs || bytes > self.0.max_bytes.saturating_sub(usage.bytes) {
+            return None;
+        }
+        usage.jobs += 1;
+        usage.bytes += bytes;
+        Some(TemporaryReservation {
+            pool: Arc::clone(&self.0),
+            bytes,
+        })
+    }
     #[must_use]
     pub fn new(max_jobs: usize, max_bytes: u64) -> Self {
         Self(Arc::new(Inner {
@@ -89,6 +107,18 @@ pub struct Reservation {
     pub(crate) limit: FileSizeLimit,
 }
 
+pub struct TemporaryReservation {
+    pool: Arc<Inner>,
+    bytes: u64,
+}
+impl Drop for TemporaryReservation {
+    fn drop(&mut self) {
+        let mut usage = self.pool.usage.lock_or_recover();
+        usage.jobs -= 1;
+        usage.bytes -= self.bytes;
+    }
+}
+
 impl Drop for Reservation {
     fn drop(&mut self) {
         let mut usage = self.pool.usage.lock_or_recover();
@@ -100,6 +130,19 @@ impl Drop for Reservation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn temporary_remux_and_encode_share_limits_and_release_on_drop() {
+        let pool = ProcessingPool::new(2, 400);
+        let encode = pool.try_reserve(limit(10), 10).unwrap();
+        assert!(pool.try_reserve_temporary(201).is_none());
+        assert!(pool.try_reserve_temporary(0).is_none());
+        let temporary = pool.try_reserve_temporary(200).unwrap();
+        assert_eq!(pool.usage(), (2, 400));
+        assert!(pool.try_reserve_temporary(1).is_none());
+        drop(temporary);
+        drop(encode);
+        assert_eq!(pool.usage(), (0, 0));
+    }
 
     fn limit(bytes: u64) -> FileSizeLimit {
         FileSizeLimit {
