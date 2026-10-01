@@ -11,13 +11,15 @@ const clients = [];
 const pages = [];
 const progress = { phases: [], status: 'running' };
 let peerAuth;
-const publicUrl = value => { const url = new URL(value); return `${url.origin}${url.pathname}`; };
+const publicUrl = value => { const url = new URL(value); return `${url.origin}${url.pathname.startsWith('/plugins/') ? '/plugins/[redacted]' : url.pathname}`; };
 function checkpoint(stage) {
   progress.stage = stage;
   progress.at = Date.now();
   writeFileSync(join(evidence, 'concurrent-live-progress.json'), JSON.stringify(progress, null, 2), { mode: 0o600 });
 }
-const segment = /\/media\/hls\/.*\/segment\d+\.ts(?:\?|$)/;
+// Native filenames, actual PeerTube filenames and canonical remote-live
+// proxy aliases all retain the MPEG-TS suffix.
+const segment = /\.ts(?:\?|$)/;
 const pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 async function control(action) {
   const response = await fetch(`${controlUrl}/${action}`, { method: 'POST', headers: { 'X-AP09-Control': process.env.AP09_PROXY_TOKEN } });
@@ -41,7 +43,9 @@ async function sample(client) {
     return { time: v.currentTime, paused: v.paused, ready: v.readyState,
       frames: v.getVideoPlaybackQuality().totalVideoFrames, dropped: v.getVideoPlaybackQuality().droppedVideoFrames,
       error: v.error?.code || null, validated: Number(v.dataset.p2pValidated || 0), latencyMs,
-      uploaded: Number(v.dataset.p2pUploaded || 0), integrityErrors: Number(v.dataset.p2pValidationErrors || 0) };
+      downloaded: Number(v.dataset.p2pDownloaded || 0), infohash: v.dataset.p2pInfohash || null, lastPeerError: v.dataset.p2pLastError || null,
+      integrityFailure: v.dataset.p2pIntegrityFailure || null,
+      uploaded: Number(v.dataset.p2pUploaded || 0), integrityErrors: Number(v.dataset.p2pValidationErrors || 0) + Number(v.dataset.hlsHttpValidationErrors || 0) };
   }, client.kind === 'native');
 }
 async function waitDecoded(client, timeout = 25000) {
@@ -54,14 +58,31 @@ async function waitDecoded(client, timeout = 25000) {
   throw new Error(`native decoder stalled (${client.kind}): ${JSON.stringify(await sample(client))}`);
 }
 async function open(kind, url, delayMs, broadcast) {
+  const setting=manifest[broadcast];
   const context = await browser.newContext({ ignoreHTTPSErrors: true,
     ...(kind === 'peertube' && peerAuth ? { storageState: peerAuth } : {}),
     viewport: { width: kind === 'native' ? 320 : 800, height: 800 } });
+  if(setting.trackerVia)await context.addInitScript(({original,via})=>{
+    const NativeSocket=WebSocket;
+    window.__ownedTrackerMappings=0;
+    window.WebSocket=class extends NativeSocket {
+      constructor(url,...args){
+        const value=new URL(String(url),location.href),source=new URL(original);
+        if(value.origin===source.origin&&value.pathname==='/tracker/socket'){
+          const mapped=new URL(via);mapped.search=value.search;url=mapped.href;window.__ownedTrackerMappings++;
+        }
+        super(url,...args);
+      }
+    };
+  },{original:setting.trackerOrigin,via:setting.trackerVia});
   const page = await context.newPage();
-  const diagnostic = { kind, broadcast, page, errors: [] };
+  const diagnostic = { kind, broadcast, page, errors: [], failedRequests: [] };
   pages.push(diagnostic);
   page.on('pageerror', error => diagnostic.errors.push(String(error)));
   page.on('response', response => { if (response.status() >= 400) diagnostic.errors.push(`${response.status()} ${publicUrl(response.url())}`); });
+  page.on('requestfailed', request => {
+    if(diagnostic.failedRequests.length < 256) diagnostic.failedRequests.push({url:publicUrl(request.url()),reason:request.failure()?.errorText});
+  });
   const sockets = [];
   page.on('websocket', ws => { const record = { url: publicUrl(ws.url()), opened: Date.now(), closed: null }; sockets.push(record); ws.on('close', () => { record.closed = Date.now(); }); });
   if (kind === 'peertube' && !peerAuth) {
@@ -93,9 +114,26 @@ async function open(kind, url, delayMs, broadcast) {
     if (await play.isVisible()) await play.click();
   }
   await video.evaluate(v => { v.muted = true; v.play().catch(() => {}); });
+  if(setting.qualityHeight){
+    if(setting.qualitySelectable === false){
+      // A single source rendition has no artificial quality menu. Require
+      // the actual decoded height below, just as for a selected VOD rung.
+    } else if(kind==='native'){
+      const quality=page.getByRole('combobox',{name:'Video quality',exact:true});await quality.waitFor({state:'visible'});
+      await quality.selectOption({label:`${setting.qualityHeight}p`});
+    }else{
+      await video.hover({force:true});await page.locator('.vjs-settings').click();
+      await page.locator('.vjs-main-menu .vjs-menu-item').filter({hasText:'Quality'}).click();
+      const menu=page.locator('.vjs-menu').filter({has:page.locator('.vjs-back-button').filter({hasText:'Quality'})});
+      await menu.locator('[role="menuitemradio"]',{hasText:`${setting.qualityHeight}p`}).click();
+    }
+    await page.waitForFunction(({selector,height})=>document.querySelector(selector)?.videoHeight===height,
+      {selector:kind==='native'?'video[data-hls]':'video.vjs-tech',height:setting.qualityHeight},{timeout:15000});
+  }
   const client = { kind, broadcast, context, page, video, sockets };
   clients.push(client);
   await waitDecoded(client);
+  if(setting.trackerVia&&!(await page.evaluate(()=>window.__ownedTrackerMappings)))throw new Error('owned endpoint mapping did not reach real PeerTube tracker');
   checkpoint(`decoded ${kind} broadcast ${broadcast}; ${clients.length} clients`);
   if (delayMs) await page.route(segment, async route => {
     await pause(delayMs);
@@ -122,7 +160,10 @@ async function phase(name, seconds) {
   if (deltas.some(state => state.presented < seconds * 10 || state.mediaSeconds < seconds / 2 || state.error || state.integrityErrors)) {
     throw new Error(`concurrent ${name} decode failed: ${JSON.stringify(deltas)}`);
   }
+  // sample() deliberately reads the pixel clock only in native players.
   const latency = observations.flatMap(states => states.map(state => state.latencyMs).filter(value => value !== null)).sort((a, b) => a - b);
+  progress.lastMeasuredPhase = { name, seconds, baseline, final, deltas, observations };
+  checkpoint(`measured ${name}`);
   if (latency.length < seconds * 2) throw new Error(`too few decoded clock samples for ${name}`);
   const p95 = latency[Math.floor(latency.length * .95)];
   if (p95 > 10000) throw new Error(`balanced decoded live latency over budget in ${name}: ${p95} ms`);
@@ -136,7 +177,13 @@ try {
     await open('peertube', item.remote, 1500, n);
     await open('peertube', item.remote, 1500, n);
   }
-  for (const [n, item] of manifest.entries()) await open('native', item.local, 4000, n);
+  for (const [n, item] of manifest.entries()) {
+    const receiver = await open('native', item.local, item.nativeWarmDelayMs ?? 4000, n);
+    if(item.warmPeerDvr) await receiver.video.evaluate(video => {
+      if(!video.seekable.length) throw new Error('source exposes no real rewind window');
+      video.currentTime = Math.max(video.seekable.start(0), video.currentTime - 4);
+    });
+  }
   const began = Date.now();
   let native;
   while (Date.now() - began < 45000) {
@@ -149,6 +196,10 @@ try {
     .some(state => state.validated > 0)) || !native.some(state => state.uploaded > 0)) throw new Error(`concurrent peer bytes not established on both broadcasts: ${JSON.stringify(native)}`);
   checkpoint('both broadcasts exchanged peer bytes; remove warm-up routing');
   for (const client of clients) await client.page.unrouteAll({ behavior: 'ignoreErrors' });
+  for (const client of clients) if(client.kind === 'native' && manifest[client.broadcast].warmPeerDvr) {
+    const live = client.page.getByRole('button', { name: 'Go live', exact: true });
+    if(await live.isVisible()) await live.click();
+  }
   // Already-running warm-up delays are at most four seconds. Let those
   // requests finish outside the measured undelayed phase; don't wait forever
   // on Playwright's routing handler bookkeeping with continuously playing HLS.
@@ -165,8 +216,11 @@ try {
   const recovery = await phase('tracker restoration', 30);
   progress.phases.push(recovery);
   const reconnected = await control('status');
-  if (reconnected.tracker_opened <= before.tracker_opened || !reconnected.active_trackers) throw new Error(`tracker failed to reconnect: ${JSON.stringify(reconnected)}`);
-  const result = { viewers: clients.length, broadcasts: manifest.length, warmingHttpDelayMs: [1500, 4000],
+  if (reconnected.tracker_opened < before.tracker_opened + clients.length || reconnected.active_trackers < clients.length) {
+    throw new Error(`not all viewers reconnected their tracker: ${JSON.stringify(reconnected)}`);
+  }
+  const result = { viewers: clients.length, broadcasts: manifest.length, warmingHttpDelayMs: [...new Set([1500, ...manifest.map(item => item.nativeWarmDelayMs ?? 4000)])],
+    trackerEndpointMapping:manifest.map(item=>item.trackerVia?{original:item.trackerOrigin,via:item.trackerVia}:null),
     steady, before, interrupted, outage, restored, recovery, reconnected,
     sockets: clients.map(client => ({ kind: client.kind, broadcast: client.broadcast, sockets: client.sockets })) };
   writeFileSync(join(evidence, 'concurrent-live-browser.json'), JSON.stringify(result, null, 2), { mode: 0o600 });
@@ -180,7 +234,7 @@ try {
   progress.pages = await Promise.all(pages.map(async (item, n) => {
     await item.page.screenshot({ path: join(evidence, `failed-client-${n}.png`), fullPage: true }).catch(() => {});
     return { kind: item.kind, broadcast: item.broadcast, url: item.page.url(),
-      title: await item.page.title().catch(() => null), errors: item.errors };
+      title: await item.page.title().catch(() => null), errors: item.errors, failedRequests: item.failedRequests };
   }));
   progress.clients = await Promise.all(clients.map(async client => ({ kind: client.kind, broadcast: client.broadcast,
     sample: await sample(client).catch(() => null), sockets: client.sockets })));

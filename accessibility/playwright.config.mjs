@@ -15,6 +15,7 @@ const mobile = {
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: './audio-setup.mjs',
   fullyParallel: false,
   forbidOnly: true,
   retries: process.env.CI ? 1 : 0,

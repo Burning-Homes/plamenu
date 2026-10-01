@@ -1,14 +1,18 @@
 //! Optional native disk replication of durable flat media keys.
-//! Live HLS windows and complete recording fragments have bounded, asynchronous
-//! checkpoints; they are not synchronous publisher failover or backups.
+//! Live uses independent muxer outputs with bounded durable acknowledgements
+//! on Linux, or bounded asynchronous checkpoints otherwise. Neither is backup.
+pub(crate) mod bandwidth;
 mod live;
 mod rewind;
 use crate::{
     federation::BoxFuture,
     storage::{LocalDiskStore, MediaRead, MediaStore, available_bytes},
 };
+pub(crate) use live::checkpoint_playlist_file;
+pub(crate) use live::replay_prefix;
 use std::{
     path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
 use tokio::{
@@ -24,7 +28,7 @@ pub struct MirroredDiskStore {
     primary_root: PathBuf,
     replica_root: PathBuf,
     writer: Mutex<()>,
-    bytes_per_second: u64,
+    bandwidth: Arc<bandwidth::Bandwidth>,
     min_free: u64,
     marker: String,
 }
@@ -105,7 +109,7 @@ impl MirroredDiskStore {
             primary_root: primary,
             replica_root: replica,
             writer: Mutex::new(()),
-            bytes_per_second,
+            bandwidth: bandwidth::Bandwidth::new(bytes_per_second),
             min_free,
             marker,
         })
@@ -150,14 +154,6 @@ impl MirroredDiskStore {
             .await?;
         Self::sync_root(self.primary_root.clone()).await
     }
-    async fn pace(&self, began: tokio::time::Instant, copied: u64) {
-        let elapsed = Duration::from_secs(copied / self.bytes_per_second)
-            + Duration::from_nanos(
-                (copied % self.bytes_per_second).saturating_mul(1_000_000_000)
-                    / self.bytes_per_second,
-            );
-        tokio::time::sleep_until(began + elapsed).await;
-    }
     fn admission(&self, bytes: u64) -> std::io::Result<()> {
         for root in [&self.primary_root, &self.replica_root] {
             self.check_root(root)?;
@@ -186,9 +182,10 @@ impl MirroredDiskStore {
         let temporary = staging.join(format!("{}.tmp", crate::media_processing::storage_stem(0)));
         let cleanup = TemporaryCopy(temporary.clone());
         let mut input = tokio::fs::File::open(source).await?;
+        let expected = input.metadata().await?.len();
         // Measure again after the primary write. Paired directories may share
         // a filesystem, and a staged replacement temporarily retains old data.
-        if available_bytes(to)? < self.min_free.saturating_add(input.metadata().await?.len()) {
+        if available_bytes(to)? < self.min_free.saturating_add(expected) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::StorageFull,
                 "mirror copy free-space floor",
@@ -199,7 +196,6 @@ impl MirroredDiskStore {
         #[cfg(unix)]
         options.mode(0o600);
         let mut output = options.open(&temporary).await?;
-        let began = tokio::time::Instant::now();
         let mut copied = 0_u64;
         let mut chunk = vec![0_u8; 64 * 1024];
         loop {
@@ -207,9 +203,12 @@ impl MirroredDiskStore {
             if count == 0 {
                 break;
             }
+            self.bandwidth.transfer(count as u64).await?;
             output.write_all(&chunk[..count]).await?;
             copied += u64::try_from(count).unwrap_or(u64::MAX);
-            self.pace(began, copied).await;
+        }
+        if copied != expected {
+            return Err(std::io::ErrorKind::UnexpectedEof.into());
         }
         output.sync_all().await?;
         drop(output);
@@ -315,6 +314,25 @@ impl Drop for TemporaryCopy {
     }
 }
 impl MediaStore for MirroredDiskStore {
+    fn live_replica_writer(
+        &self,
+        media: i64,
+        session: String,
+        reencode: bool,
+    ) -> BoxFuture<'_, std::io::Result<Option<crate::storage::LiveReplicaWriter>>> {
+        Box::pin(async move {
+            self.prepare_direct_writer(media, &session, reencode)
+                .await
+                .map(Some)
+        })
+    }
+    fn preferred_live_recording(
+        &self,
+        media: i64,
+        session: String,
+    ) -> BoxFuture<'_, std::io::Result<Option<PathBuf>>> {
+        Box::pin(async move { self.best_recording(media, &session).await })
+    }
     fn has_live_checkpoints(&self) -> bool {
         true
     }
@@ -425,7 +443,6 @@ impl MediaStore for MirroredDiskStore {
                     self.copy_between(&key, from, to).await?;
                 }
             }
-            let began = tokio::time::Instant::now();
             let count = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
             self.primary
                 .append_synced(&key, offset, bytes.clone())
@@ -436,8 +453,23 @@ impl MediaStore for MirroredDiskStore {
                     "mirror append free-space floor",
                 ));
             }
-            self.replica.append_synced(&key, offset, bytes).await?;
-            self.pace(began, count).await;
+            let path = Self::key_path(&self.replica_root, &key)?;
+            let mut options = tokio::fs::OpenOptions::new();
+            options.write(true).create(true).truncate(false);
+            #[cfg(unix)]
+            options.mode(0o600);
+            let mut output = options.open(path).await?;
+            if output.metadata().await?.len() < offset {
+                return Err(std::io::ErrorKind::UnexpectedEof.into());
+            }
+            output.set_len(offset).await?;
+            tokio::io::AsyncSeekExt::seek(&mut output, std::io::SeekFrom::Start(offset)).await?;
+            for chunk in bytes.chunks(64 * 1024) {
+                self.bandwidth.transfer(chunk.len() as u64).await?;
+                output.write_all(chunk).await?;
+            }
+            output.sync_all().await?;
+            Self::sync_root(self.replica_root.clone()).await?;
             Ok(())
         })
     }

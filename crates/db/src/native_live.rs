@@ -892,7 +892,7 @@ pub async fn prepare_recurring_replay(
             SELECT $1,vm.category,vm.licence,s.spoiler_text,s.sensitive,COALESCE(vm.licence_version_known,false)
             FROM statuses s LEFT JOIN video_metadata vm ON vm.media_id=$2 WHERE s.id=$3")
             .bind(media_id).bind(session.media_id).bind(session.status_id).execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO video_distribution(media_id,download_enabled,embed_enabled) SELECT $1,download_enabled,embed_enabled FROM video_distribution WHERE media_id=$2")
+        sqlx::query("INSERT INTO video_distribution(media_id,download_enabled,embed_enabled,mirror_allowed) SELECT $1,download_enabled,embed_enabled,mirror_allowed FROM video_distribution WHERE media_id=$2")
             .bind(media_id).bind(session.media_id).execute(&mut *tx).await?;
         sqlx::query("UPDATE native_live_sessions SET replay_media_id = $2 WHERE session_id = $1")
             .bind(&session.session_id)

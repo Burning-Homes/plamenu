@@ -62,6 +62,20 @@ pub async fn finalize(
         launcher,
         bytes: output_limit,
     });
+    #[cfg(target_os = "linux")]
+    let processed = {
+        let prefix = crate::storage_mirror::replay_prefix(recording)
+            .await
+            .map_err(|error| ApiError::Internal(Box::new(error)))?;
+        crate::media_transcode::process_native_video_prefix(
+            &state.config,
+            recording,
+            prefix,
+            &params,
+        )
+        .await?
+    };
+    #[cfg(not(target_os = "linux"))]
     let processed =
         crate::media_transcode::process_native_video_file(&state.config, recording, &params, 0.0)
             .await?;

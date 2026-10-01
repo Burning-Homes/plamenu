@@ -5,6 +5,7 @@ mod admin_accounts;
 mod admin_instance_policy;
 pub(crate) mod admin_metrics;
 mod admin_reports;
+mod admin_video_mirrors;
 pub(crate) mod announcements;
 pub(crate) mod api;
 mod apps;
@@ -795,6 +796,7 @@ fn admin_trends_routes() -> Router<AppState> {
 /// surface, split out of [`admin_routes`] to keep each builder readable.
 fn admin_instance_policy_routes() -> Router<AppState> {
     Router::new()
+        .merge(admin_video_mirrors::router())
         .route(
             "/api/v1/admin/domain_blocks",
             get(admin_instance_policy::domain_blocks_index)
@@ -1152,6 +1154,10 @@ pub fn router(state: AppState) -> Router {
         .layer(cors_any_origin().allow_methods([Method::GET]));
 
     let federation_object_routes = Router::new()
+        .route(
+            "/cachefiles/{id}",
+            get(crate::video_mirrors::http::document),
+        )
         .route("/users/{username}/outbox", get(actors::get_outbox))
         .route("/ap/accounts/{username}/outbox", get(actors::get_outbox))
         .route(
@@ -1316,6 +1322,10 @@ pub fn router(state: AppState) -> Router {
     // A properly configured Mastodon serves `/system/*` with `*` from nginx;
     // we do it here so the header travels with the response.
     let media_routes = Router::new()
+        .route(
+            "/media/mirrors/{id}/{name}",
+            get(crate::video_mirrors::http::asset),
+        )
         .route("/media/{file_name}", get(media::serve))
         .route("/media/{media_id}/download", get(media::download))
         .route("/media/{media_id}/captions.vtt", get(media::captions))

@@ -1587,6 +1587,47 @@ async fn assert_private_storyboard(f: &Fixture) {
     assert_eq!(charged, board.size_bytes);
 }
 
+#[cfg(target_os = "linux")]
+#[sqlx::test(migrations = "../db/migrations")]
+async fn finite_descriptor_replay_ignores_a_partial_tail_without_copying_or_truncating_source(
+    pool: PgPool,
+) {
+    let f = fixture(pool, false, false, false).await;
+    let path = f.state.config.media_dir.join("closed:source|safe.mp4");
+    let mut retained = f.original.clone();
+    retained.extend(b"\0\0\x10\0mdatpartial-uncommitted-tail");
+    tokio::fs::write(&path, &retained).await.unwrap();
+    let processed = plamenu::media_transcode::process_native_video_prefix(
+        &f.state.config,
+        &path,
+        f.original.len() as u64,
+        &plamenu::media_transcode::TranscodeParams::default(),
+    )
+    .await
+    .unwrap();
+    assert!((processed.duration.unwrap() - f.expected_duration).abs() < 0.1);
+    assert_eq!(tokio::fs::read(&path).await.unwrap(), retained);
+    assert!(
+        std::process::Command::new("ffmpeg")
+            .args(["-nostdin", "-v", "error", "-xerror", "-i"])
+            .arg(&processed.file_path)
+            .args(["-map", "0:v:0", "-f", "null", "-"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        plamenu::media_transcode::process_native_video_prefix(
+            &f.state.config,
+            &path,
+            retained.len() as u64 + 1,
+            &plamenu::media_transcode::TranscodeParams::default()
+        )
+        .await
+        .is_err()
+    );
+}
+
 #[sqlx::test(migrations = "../db/migrations")]
 async fn real_job_is_private_ready_and_preserves_original(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
@@ -1607,6 +1648,38 @@ async fn real_job_is_private_ready_and_preserves_original(pool: PgPool) {
         resources.usage(),
         (0, 0),
         "an empty queue releases admission too"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn unavailable_native_processor_falls_back_without_losing_source_or_publication_fence(
+    pool: PgPool,
+) {
+    let mut f = fixture(pool, false, false, false).await;
+    // Keep an owned listener bound but unserved: a finite remote attempt times
+    // out, then the installed native pipeline completes under the same claim.
+    let unavailable = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    Arc::make_mut(&mut f.state.config).video_offload = vec![plamenu::video_offload::Target {
+        url: format!("http://{}/", unavailable.local_addr().unwrap()),
+        token: "a".repeat(64).into(),
+    }];
+    let resources = plamenu::video_resources::ProcessingPool::new(1, 32 * 1024 * 1024);
+    assert!(
+        run_one(&f.state, reserve(&resources, 1024 * 1024))
+            .await
+            .unwrap()
+    );
+    assert_ready(&f).await;
+    assert_eq!(f.store.get(&f.source).await.unwrap(), f.original);
+    assert_eq!(resources.usage(), (0, 0));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM video_publications WHERE media_id=$1")
+            .bind(f.media_id)
+            .fetch_one(&f.state.pool)
+            .await
+            .unwrap(),
+        0,
+        "offload failure may never publish the private draft"
     );
 }
 

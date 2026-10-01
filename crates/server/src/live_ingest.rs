@@ -1,6 +1,7 @@
 //! Native RTMP ingest. A publish key authorizes exactly one fileless Video;
 //! media is remuxed once into a bounded sliding HLS window, never per viewer.
 //! Every session tees the same encoded packets into a replay MP4.
+mod outputs;
 
 use std::collections::{HashMap, HashSet};
 use std::io;
@@ -423,7 +424,7 @@ async fn pump(
     format: InputFormat,
     control: PumpControl,
 ) {
-    let replay = output.join("replay.mp4");
+    let mut replay = output.join("replay.mp4");
     // PeerTube-compatible latency modes. The list is a bounded sliding DVR
     // window, not an unbounded recording; replay.mp4 remains the archive.
     let segment_seconds = match session.playback.latency_mode {
@@ -436,50 +437,37 @@ async fn pump(
     } else {
         session.playback.dvr_window_seconds / segment_seconds
     };
-    let tee_output = format!(
-        "[f=hls:hls_time={segment_seconds}:hls_list_size={list_size}:hls_flags=delete_segments+omit_endlist+independent_segments+temp_file:hls_segment_filename=segment%06d.ts]index.m3u8|[f=mp4:movflags=+frag_keyframe+empty_moov+default_base_moof]replay.mp4"
-    );
-    let mut command = tokio::process::Command::new(&state.config.ffmpeg_path);
-    command.current_dir(&output);
-    command.args(["-hide_banner", "-loglevel", "error", "-fflags", "+genpts"]);
-    match format {
-        InputFormat::Flv | InputFormat::HttpFlv => {
-            command.args([
-                "-f", "flv", "-i", "pipe:0", "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy",
-            ]);
+    let replica = state
+        .media
+        .live_replica_writer(
+            session.media_id,
+            session.session_id.clone(),
+            matches!(format, InputFormat::BrowserWebm),
+        )
+        .await;
+    let mut replica = match replica {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, media = session.media_id, "independent live replica unavailable; retaining primary and checkpoint recovery");
+            None
         }
-        InputFormat::BrowserWebm => {
-            let gop = (segment_seconds * 30).to_string();
-            // FFmpeg's multi-megabyte default probe waits until a Firefox
-            // MediaRecorder stream ends: its WebM chunks are only ~80 KiB/s.
-            // WebM declares its tracks in the first header, so 256 KiB is
-            // enough for bounded, live startup without waiting for EOF.
-            // Canvas capture is variable-rate; WebM may advertise a 1/1000
-            // time base as 1000 fps. Emit a real 30 fps output for both HLS
-            // and replay rather than failing replay validation on metadata.
-            command.args(["-probesize", "262144", "-f", "matroska", "-i", "pipe:0", "-map", "0:v:0", "-map", "0:a:0?",
-                "-vf", "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
-                "-r", "30", "-fps_mode", "cfr", "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-                "-pix_fmt", "yuv420p", "-g", &gop, "-b:v", "2500k", "-maxrate", "2500k",
-                "-bufsize", "5000k", "-c:a", "aac", "-b:a", "128k"]);
-        }
-        InputFormat::BrowserMp4 => {
-            command.args([
-                "-f", "mp4", "-i", "pipe:0", "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
-            ]);
-        }
-    }
-    // Tee *after* the one required browser encode (or RTMP stream copy).
-    // Relative slave paths avoid interpreting an operator's media path as
-    // FFmpeg tee/muxer syntax. Fragmented MP4 commits each keyframe, leaving
-    // a decodable prefix for restart recovery without a second live encode.
-    command.args(["-flags", "+global_header", "-f", "tee", &tee_output]);
-    let child = command
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn();
+    };
+    let child = outputs::encoder(
+        &state.config,
+        &output,
+        format,
+        segment_seconds,
+        list_size,
+        replica.as_ref().map(|target| &target.directory_handle),
+    )
+    .and_then(|mut command| {
+        command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+    });
     let mut checkpoint = LiveCheckpointWorker::start(&state, &session);
     let mut remux_failed = false;
     let mut recording_limit_reached = false;
@@ -493,11 +481,23 @@ async fn pump(
             };
             if stdin.write_all(header).await.is_ok() {
                 let mut last_size_check = tokio::time::Instant::now();
+                let mut resource_check = tokio::time::interval(std::time::Duration::from_secs(1));
+                resource_check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 let mut credential_check = tokio::time::interval(std::time::Duration::from_secs(2));
                 credential_check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     let next = tokio::select! {
                         tag = rx.recv() => tag,
+                        _ = resource_check.tick() => {
+                            let (full, capped) = outputs::resource_state(&state.config, &output, replica.as_ref()).await;
+                            if full || capped {
+                                disk_floor_reached = full;
+                                recording_limit_reached = capped;
+                                control.stopped.store(true, Ordering::Release);
+                                break;
+                            }
+                            continue;
+                        }
                         _ = credential_check.tick() => {
                             match plamenu_db::native_live::ingest_key_current(&state.pool, &session).await {
                                 Ok(true) => continue,
@@ -519,27 +519,31 @@ async fn pump(
                         }
                     };
                     let Some(tag) = next else { break };
+                    if !matches!(format, InputFormat::BrowserWebm)
+                        && let Some(target) = &replica
+                        && let Err(error) = target
+                            .bandwidth
+                            .transfer((tag.len() as u64).saturating_mul(3).saturating_add(4096))
+                            .await
+                    {
+                        remux_failed = true;
+                        tracing::warn!(%error, media=session.media_id, "live publisher exceeds optional mirror byte budget");
+                        break;
+                    }
                     if stdin.write_all(&tag).await.is_err() {
                         remux_failed = true;
                         break;
                     }
                     if last_size_check.elapsed().as_secs() >= 1 {
                         last_size_check = tokio::time::Instant::now();
-                        let disk_floor = state.config.native_video.min_free_gib
-                            * crate::config::NativeVideoConfig::GIB
-                            + 8 * 1024 * 1024;
-                        if !matches!(crate::storage::available_bytes(&output), Ok(free) if free >= disk_floor)
-                        {
+                        let (full, capped) =
+                            outputs::resource_state(&state.config, &output, replica.as_ref()).await;
+                        if full {
                             disk_floor_reached = true;
                             control.stopped.store(true, Ordering::Release);
                             break;
                         }
-                        let cap = state.config.native_video.max_upload_bytes();
-                        let margin = (cap / 4).min(8 * 1024 * 1024);
-                        if tokio::fs::metadata(&replay)
-                            .await
-                            .is_ok_and(|meta| meta.len() >= cap.saturating_sub(margin))
-                        {
+                        if capped {
                             recording_limit_reached = true;
                             control.stopped.store(true, Ordering::Release);
                             break;
@@ -565,7 +569,17 @@ async fn pump(
         remux_failed = true;
         tracing::error!(%error, media = session.media_id, "cannot start native live remux");
     }
+    if let Some(target) = &mut replica {
+        drop(target.bandwidth_reservation.take());
+    }
     checkpoint.finish(&state, &session).await;
+    if let Ok(Some(best)) = state
+        .media
+        .preferred_live_recording(session.media_id, session.session_id.clone())
+        .await
+    {
+        replay = best;
+    }
     let reason = finish_reason(
         control.stopped.load(Ordering::Acquire),
         remux_failed,
@@ -595,7 +609,10 @@ async fn pump(
         && tokio::fs::metadata(&replay)
             .await
             .is_ok_and(|metadata| metadata.len() > 0);
-    let mut preserve_recording = false;
+    // A failed metadata read is not evidence that there are no fragments.
+    // Retain the closed generation for recovery rather than deleting it after
+    // both disks temporarily disappear and later come back inside the drain.
+    let mut preserve_recording = closed && tokio::fs::metadata(&replay).await.is_err();
     if closed
         && session.permanent
         && let Err(error) = crate::native_live::federate_state(&state, session.status_id).await
@@ -704,7 +721,13 @@ pub async fn recover_crashed_replay(
         return;
     }
     let output = session_dir(&state, &session);
-    let recording = output.join("replay.mp4");
+    let recording = state
+        .media
+        .preferred_live_recording(session.media_id, session.session_id.clone())
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| output.join("replay.mp4"));
     // Startup marks an orphaned on-air session interrupted. Give its owner the
     // full reconnect window before converting it. The 10-second margin lets
     // the durable expiry sweep commit and announce ended first.

@@ -217,6 +217,7 @@ async fn download_embed_flags_preserve_playback_and_use_current_private_authorit
             media_id: f.media,
             download_enabled: false,
             embed_enabled: false,
+            mirror_allowed: false,
         },
         true,
     )
@@ -289,6 +290,7 @@ async fn sharing_and_signed_update_rollback_together_and_revoked_editors_cannot_
         media_id: f.media,
         download_enabled: false,
         embed_enabled: false,
+        mirror_allowed: false,
     };
     assert!(
         service::save(&f.state, editor.id, disabled, true)
@@ -469,6 +471,7 @@ async fn initial_private_choices_survive_create_and_require_status_scope_after_p
         media_id: f.media,
         download_enabled: false,
         embed_enabled: false,
+        mirror_allowed: false,
     };
     service::save(&f.state, f.owner, disabled, false)
         .await

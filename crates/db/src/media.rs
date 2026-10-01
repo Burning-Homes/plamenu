@@ -131,6 +131,12 @@ impl Media {
 /// their journal and cleanup queue entries disappear. Queued deletion keys
 /// are revoked immediately, including while physical removal is failing.
 pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool, DbError> {
+    // Federation copies use a permanently private key namespace. Their only
+    // serving route checks the mirror lease/consent/source policy; unknown
+    // legacy flat keys must not expose these files before or after retirement.
+    if file_name.starts_with("mirror") {
+        return Ok(false);
+    }
     // The HTTP file route already denies spooled originals. Keep the shared
     // database gate fail-closed too, so future file-serving callers cannot
     // expose an untranscoded, unpublished source by its internal key.
@@ -183,6 +189,10 @@ pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool,
             LEFT JOIN accounts rc ON rc.id = rv.channel_id
             WHERE a.suspended_at IS NOT NULL OR c.suspended_at IS NOT NULL
               OR rc.suspended_at IS NOT NULL OR rc.deleted_at IS NOT NULL
+              OR (a.domain IS NOT NULL AND (NOT instance_domain_allowed(a.domain)
+                  OR instance_domain_rejects_media(a.domain)))
+              OR (rc.domain IS NOT NULL AND (NOT instance_domain_allowed(rc.domain)
+                  OR instance_domain_rejects_media(rc.domain)))
               OR (v.media_id IS NOT NULL AND NOT EXISTS (
                   SELECT 1 FROM public_native_videos p WHERE p.media_id = m.id))
               OR (s.object_type = 'Video' AND (s.deleted_at IS NOT NULL
@@ -201,7 +211,10 @@ pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool,
 /// Shared public gate for every media-id playback route, including aliases.
 /// Ordinary attachment visibility is unchanged; native drafts are private
 /// until their canonical video publication commits.
-pub async fn public_access_blocked(pool: &PgPool, media_id: i64) -> Result<bool, DbError> {
+pub async fn public_access_blocked<'e>(
+    executor: impl PgExecutor<'e>,
+    media_id: i64,
+) -> Result<bool, DbError> {
     let blocked = sqlx::query_scalar!(
         r#"
         SELECT EXISTS (
@@ -217,6 +230,10 @@ pub async fn public_access_blocked(pool: &PgPool, media_id: i64) -> Result<bool,
             WHERE m.id = $1 AND (a.suspended_at IS NOT NULL
                 OR c.suspended_at IS NOT NULL
                 OR rc.suspended_at IS NOT NULL OR rc.deleted_at IS NOT NULL
+                OR (a.domain IS NOT NULL AND (NOT instance_domain_allowed(a.domain)
+                    OR instance_domain_rejects_media(a.domain)))
+                OR (rc.domain IS NOT NULL AND (NOT instance_domain_allowed(rc.domain)
+                    OR instance_domain_rejects_media(rc.domain)))
                 OR (v.media_id IS NOT NULL AND NOT EXISTS (
                     SELECT 1 FROM public_native_videos p WHERE p.media_id = m.id))
                 OR (s.object_type = 'Video' AND (s.deleted_at IS NOT NULL
@@ -227,7 +244,7 @@ pub async fn public_access_blocked(pool: &PgPool, media_id: i64) -> Result<bool,
         "#,
         media_id,
     )
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await?;
     Ok(blocked)
 }
@@ -1440,7 +1457,10 @@ pub async fn hls_segment_record<'e, E: sqlx::PgExecutor<'e>>(
         r#"
         WITH recorded AS (INSERT INTO media_hls_segments
             (id, media_id, origin_url, range_start, range_len, cache_file, bytes)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        SELECT $1, $2, $3, $4, $5, $6, $7
+        WHERE EXISTS (SELECT 1 FROM media_attachments m JOIN accounts a ON a.id=m.account_id
+            WHERE m.id=$2 AND (a.domain IS NULL OR (instance_domain_allowed(a.domain)
+                AND NOT instance_domain_rejects_media(a.domain))))
         ON CONFLICT (origin_url, range_start, range_len) DO NOTHING
         RETURNING id), released AS (
             DELETE FROM media_cleanup_jobs WHERE file_name=$6
@@ -1559,6 +1579,29 @@ pub async fn hls_segments_evict_lru(pool: &PgPool, limit: i64) -> Result<Vec<Str
     .fetch_all(pool)
     .await?;
     Ok(files)
+}
+
+/// Domain moderation retires range-cache rows through the same atomic cleanup
+/// debt trigger as expiry/Delete. Physical failure must never refund them.
+/// Work is bounded per call; caller drains the batches without collecting all
+/// affected files in memory. No local upload or other domain is touched.
+pub async fn hls_segments_evict_domain(
+    pool: &PgPool,
+    domain: &str,
+    limit: i64,
+) -> Result<Vec<String>, DbError> {
+    Ok(sqlx::query_scalar::<_, String>(
+        "DELETE FROM media_hls_segments WHERE id IN (
+            SELECT seg.id FROM media_hls_segments seg
+            JOIN media_attachments m ON m.id=seg.media_id
+            JOIN accounts a ON a.id=m.account_id
+            WHERE m.remote_url IS NOT NULL AND a.domain=$1
+            ORDER BY seg.id LIMIT $2) RETURNING cache_file",
+    )
+    .bind(domain)
+    .bind(limit.clamp(1, 500))
+    .fetch_all(pool)
+    .await?)
 }
 
 /// Re-queues downloads for retention-evicted remote attachments (their files
@@ -2331,6 +2374,134 @@ mod tests {
             height: Some(10),
             ..NewLocalMedia::new(account_id, media_id, "x.jpg", "image/jpeg")
         }
+    }
+
+    #[sqlx::test]
+    async fn domain_block_fences_warm_ranges_and_late_cache_publication_with_charged_retirement(
+        pool: PgPool,
+    ) {
+        let (actor, post) = fixture(&pool).await;
+        sqlx::query("UPDATE accounts SET domain='video.example',uri='https://video.example/users/alice' WHERE id=$1")
+            .bind(actor).execute(&pool).await.unwrap();
+        create_remote(
+            &pool,
+            NewRemoteMedia {
+                account_id: actor,
+                status_id: post,
+                remote_url: "https://video.example/film.mp4",
+                content_type: "video/mp4",
+                download_on_demand: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let media = for_statuses(&pool, &[post]).await.unwrap()[&post][0].id;
+        assert!(
+            hls_segment_record(
+                &pool,
+                media,
+                "https://video.example/film.mp4",
+                0,
+                100,
+                "hls0123456789abcdef.mp4",
+                100
+            )
+            .await
+            .unwrap()
+        );
+        assert!(!public_access_blocked(&pool, media).await.unwrap());
+        assert!(
+            public_file_allowed(&pool, "hls0123456789abcdef.mp4")
+                .await
+                .unwrap()
+        );
+        let block = crate::instance_policy::create_domain_block(
+            &pool,
+            crate::instance_policy::NewDomainBlock {
+                domain: "video.example",
+                severity: "noop",
+                reject_media: true,
+                reject_reports: false,
+                private_comment: None,
+                public_comment: None,
+                obfuscate: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(public_access_blocked(&pool, media).await.unwrap());
+        assert!(
+            !public_file_allowed(&pool, "hls0123456789abcdef.mp4")
+                .await
+                .unwrap()
+        );
+        // A writer which finished fetching before the block must not publish
+        // another current cache row after the operator's policy has committed.
+        assert!(
+            !hls_segment_record(
+                &pool,
+                media,
+                "https://video.example/film.mp4",
+                100,
+                100,
+                "hlsfedcba9876543210.mp4",
+                100
+            )
+            .await
+            .unwrap()
+        );
+        assert!(
+            hls_segments_evict_domain(&pool, "other.example", 1)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            hls_segments_evict_domain(&pool, "video.example", 1)
+                .await
+                .unwrap(),
+            ["hls0123456789abcdef.mp4"]
+        );
+        assert!(
+            hls_segments_evict_domain(&pool, "video.example", 1)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            hls_segments_bytes(&pool).await.unwrap(),
+            100,
+            "retirement is not physical-delete acknowledgement"
+        );
+        crate::instance_policy::delete_domain_block(&pool, block.id)
+            .await
+            .unwrap();
+        assert!(!public_access_blocked(&pool, media).await.unwrap());
+        assert!(
+            !public_file_allowed(&pool, "hls0123456789abcdef.mp4")
+                .await
+                .unwrap(),
+            "retired key remains revoked after unblock"
+        );
+        assert!(
+            hls_segment_record(
+                &pool,
+                media,
+                "https://video.example/film.mp4",
+                0,
+                100,
+                "hlsaaaaaaaaaaaaaaaa.mp4",
+                100
+            )
+            .await
+            .unwrap()
+        );
+        assert_eq!(
+            hls_segments_bytes(&pool).await.unwrap(),
+            200,
+            "new copy plus still-unacknowledged retired copy"
+        );
     }
 
     #[sqlx::test]

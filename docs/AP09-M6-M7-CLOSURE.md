@@ -1,9 +1,9 @@
 # AP09 M6 / M7 closure work
 
-Goal: close both original milestones, with positive, failure, authorization,
-PeerTube and browser evidence. This checklist is a work plan, not a sign-off.
-The milestone and inventory acceptance gates remain unchanged. M6 is signed
-off below; M7 remains open until its original operations gates are verified.
+Both original milestones are verified: M6 on 2026-09-29 and M7 on 2026-10-01,
+with positive/failure, authorization, PeerTube and browser evidence below.
+The original gates and finite workload contract are unchanged. This is not
+full AP09 completion or an M9 hardware/WAN/human-AT release certification.
 
 ## M6 — Creator/viewer experience
 
@@ -28,41 +28,48 @@ off below; M7 remains open until its original operations gates are verified.
 
 ## M7 — Operations and scale
 
-- [ ] Worker/storage options and native baseline installation invariants.
-- [ ] Redundancy/mirroring authority, retention and bandwidth controls.
+- [x] Worker/storage options and native baseline installation invariants;
+      optional DB-less native offload, two workers, crash/expiry/cancellation
+      and actual PeerTube plus narrow JS/no-JS decoded output verification.
+- [x] Redundancy/mirroring authority, retention and bandwidth controls.
   - [x] Asynchronous native live HLS/complete-recording checkpoints, missing
         primary segment/integrity fallback and replica-only recording recovery
         into independently decoded PeerTube replay publications.
   - [x] Direct finite replica-backed rewind generation and shared bounded remux
         admission, with exact ranges/full decode and narrow no-JS seeking.
-  - [ ] Seamless publisher disk failover, multi-node serving and wider
-        federated failure domains.
-- [ ] Default-on PeerTube P2P, pre-contact opt-out, persistence, live/VOD/embed
+  - [x] Same-publisher primary EIO/ENOSPC and lost-replica continuity, both-root
+        full/EIO safe stop, retained-prefix recovery and current fresh-root drills.
+  - [x] Independent native/PeerTube-source copier serving, signed CacheFile/Undo,
+        source-offline first-party playback and fresh DB/root recovery. Stock
+        PeerTube bootstrap and simultaneous hard-range-error limits are below.
+- [x] Default-on PeerTube P2P, pre-contact opt-out, persistence, live/VOD/embed
       and fallback/fault/browser matrices; no address disclosure without notice.
   - [x] Native tracker whole-message signaling validation, canonical-check
         deadlines, bounded admission/queues and isolated fault/reclamation
         matrix, followed by actual unmodified PeerTube/native byte exchange.
-  - [ ] Wider live/device/cache-integrity and concurrent peer-delivery matrix.
-- [ ] Moderation/report/takedown propagation and privacy-preserving analytics.
+  - [x] Wider live/device/cache-integrity and concurrent peer-delivery matrix.
+- [x] Moderation/report/takedown propagation and privacy-preserving analytics.
   - [x] Canonical native origin refusal, acknowledged cleanup and attached-live
         revocation; real PeerTube and seven-project browser proof.
   - [x] Default-off private creator delivery analytics, owner/editor/privacy/
         retention/erasure/failure fences and no-JS controls.
-  - [ ] Wider remote-cache/abuse/fault propagation matrix.
-- [ ] Acknowledged storage lifecycle/GC; consistent backup and actual restore.
+  - [x] Actual forwarded PeerTube video Flag, warm domain-media block/restart,
+        suspension/signed end/Delete and acknowledged paired cleanup/debt.
+- [x] Acknowledged storage lifecycle/GC; consistent backup and actual restore.
   - [x] Native VOD and committed unfinished-upload fresh-storage recovery.
   - [x] Interrupted native live recording, reconnect and independent replays
         after fresh DB/root restore, on single and paired durable disks.
-  - [ ] Wider remote-cache/offload and production-disaster matrix.
-- [ ] Defined workload budgets and concurrency/resource/startup/seek/rebuffer/
+  - [x] Fresh DB/root remote-cache/mirror/offload recovery and failed disk/claim
+        cleanup within the named M7 workloads; no arbitrary hardware/WAN claim.
+- [x] Defined workload budgets and concurrency/resource/startup/seek/rebuffer/
       live-latency measurements; retained positive and failure evidence.
   - [x] Sustained mixed native origin resource/range/live-body workload.
   - [x] Local decoded native VOD startup/seek/steady playback and server-only
         embeds across all seven browser projects, with injected signaling failures
         in the six enhanced configurations.
-  - [ ] Larger/cold/WAN/device/live-latency, P2P-browser and multi-broadcast
+  - [x] Larger/cold/WAN/device/live-latency, P2P-browser and multi-broadcast
         concurrency measurements, optional offload and broader failure budgets.
-- [ ] Operator documentation, inventory updates and original-gate sign-off.
+- [x] Operator documentation, inventory updates and original-gate sign-off.
 
 No push, merge, deployment or PeerTube plugin ABI work is authorized here.
 
@@ -75,13 +82,13 @@ production capacity/hardware/assistive-technology certification.
 
 | Gate | Remaining implementation and required local evidence | State |
 | --- | --- | --- |
-| Storage/worker scale-out | Native optional authenticated offload, leased/fenced jobs, private sources, retry/cancellation, no extra mandatory installation; two independent worker processes and crash/expiry tests, actual PeerTube outputs | Open; architecture choice requested, other work proceeds |
-| Live resilience | Replica-backed finite rewind without whole recording copies; bounded shared remux resources; healthy-replica publisher continuity under primary I/O failure; lost-copy/full-floor/restoration/session fencing and decoded playback | In progress |
-| P2P concurrency/faults | At least eight concurrent decoded viewers across actual PeerTube/native players, both origins; positive verified/uploaded bytes, corrupted/stale peer data, actual owned tracker TCP interruption/restoration, opt-out/no-JS and native fallback | Open |
-| Remote cache/moderation | Current remote publication/owner policy before cached VOD/live/integrity/range assets; cache warm then suspension/Delete/block, retry/expiry/cleanup and restart; no private caching or failed early refund | Open |
-| Redundancy | Optional bounded, expiring, consented federation-compatible mirrors with actor/ownership/signature, quota/retention/bandwidth and withdrawal safeguards; two independent instances and actual PeerTube CacheFile interoperability | Open |
-| Performance | Predeclared budgets and retained decoded cold long-film seeks, constrained-network startup/waits, synthetic RTMP/browser-capture glass-to-glass latency, at least two simultaneous broadcasts and peer-viewer resource/origin-byte measurements | Open |
-| Recovery and sign-off | Consistent fresh DB/storage recovery of native plus warm remote cache/offload/mirror state, failed disk/claim cleanup and credential fences; retained original failures, current candidate identity, docs and original-row sign-off | Open |
+| Storage/worker scale-out | Native optional authenticated offload, leased/fenced jobs, private sources, retry/cancellation, no extra mandatory installation; two independent worker processes and crash/expiry tests, actual PeerTube outputs | Verified native single-writer/DB-less design, including orderly cancellation and fresh DB/root offload recovery |
+| Live resilience | Replica-backed finite rewind without whole recording copies; bounded shared remux resources; healthy-replica publisher continuity under primary I/O failure; lost-copy/full-floor/restoration/session fencing and decoded playback | Shared software byte admission, primary/replica EIO/ENOSPC, both-root safe stop, preserved-prefix replay and single/paired fresh-root recovery verified; no physical-disk-QoS or guaranteed-RPO claim |
+| P2P concurrency/faults | At least eight concurrent decoded viewers across actual PeerTube/native players, both origins; positive verified/uploaded bytes, corrupted/stale peer data, actual owned tracker TCP interruption/restoration, opt-out/no-JS and native fallback | Verified both-origin real RTC corruption/stale-byte rejection, no-JS/pre-contact persistent opt-out and eight concurrent decoders through actual tracker TCP loss/restoration, all eight reconnected; current supported browser/fallback matrix passes |
+| Remote cache/moderation | Current remote publication/owner policy before cached VOD/live/integrity/range assets; cache warm then suspension/Delete/block, retry/expiry/cleanup and restart; no private caching or failed early refund | Verified warm VOD/live suspension/signed end/Delete, actual forwarded Flag, domain-media block/restart, paired cleanup debt and fresh DB/roots; current checksum-supplementation repeat passes |
+| Redundancy | Optional bounded, expiring, consented federation-compatible mirrors with actor/ownership/signature, quota/retention/bandwidth and withdrawal safeguards; two independent instances and actual PeerTube CacheFile interoperability | Verified native/PeerTube-source copies, independent serving, signed CacheFile/Undo and fresh-root recovery; stock receiver limitations disclosed below |
+| Performance | Predeclared budgets and retained decoded cold long-film seeks, constrained-network startup/waits, synthetic RTMP/browser-capture glass-to-glass latency, at least two simultaneous broadcasts and peer-viewer resource/origin-byte measurements | Cold/constrained ten-minute film, camera/screen enhanced/basic latency, both-origin eight-viewer body savings and native two-broadcast latency/resources verified; both-origin native p95 6.1/8.7 seconds passes all three live phases under unchanged limits |
+| Recovery and sign-off | Consistent fresh DB/storage recovery of native plus warm remote cache/offload/mirror state, failed disk/claim cleanup and credential fences; retained original failures, current candidate identity, docs and original-row sign-off | All named restore workloads, current supported seven-project browser matrix, complete native regression, inventory and documentation verified; signed DCO checkpoint records this acceptance |
 
 The single-writer database/ID design remains in force unless explicitly changed.
 Native offload must not silently turn shared-database web clustering into a new
@@ -89,6 +96,496 @@ installation requirement. Real hardware/WAN/AT release observations remain M9;
 the named M7 workloads themselves must pass here before M7 can close.
 
 ## Verified slices
+
+### Verified final completion candidate — 2026-10-01
+
+All **1,200 unique workspace library cases** pass across the complete run and
+the focused correction of its one schema-contract mismatch: server 517,
+ActivityPub 170, database 442, federation 71. The original full-run failure is
+retained in `m7-final-workspace-libraries-20261001.log`; the unchanged remaining
+1,199 cases passed there. The corrected schema assertion passes separately in
+`m7-final-schema-contract-corrected-20261001.log`. Its exact allowlist now
+explicitly reviews immutable checksum and signed CacheFile wire documents;
+operational state stays in typed columns and all other unexpected JSON columns
+still fail. This is not represented as a second complete workspace run.
+
+All **68 changed-surface integrations** pass: proxy 24, live metadata 3,
+distribution 7, mirrors 6, real native worker 28. The partial-tail descriptor
+case independently decodes finite output while proving the source was neither
+copied nor truncated. **22 shipped-JS/wire units + 7 real tracker-proxy units**
+pass. Current strict workspace/all-target Clippy, formatting and online SQLx
+cache checks pass. Evidence is under
+`target/evidence/ap09-m7-completion-20260930/` (`m7-final-*` logs). Only the owned
+test DB was backed up/migrated to 0130; the standing DB/service was not deployed.
+
+The original seven execution-contract rows above are now signed off for these
+defined local workloads. Native/PeerTube copies, source-loss/fresh-root serving,
+policy/withdrawal/debt safeguards, native offload, disk resilience, capture,
+both-origin concurrent P2P faults and stated budgets all have real evidence.
+Stock PeerTube bootstrap/concurrent hard-range-error limits and the 256-known-
+URI foreign-actor bookkeeping bound are disclosed, not unlimited-capacity or
+universal third-party cold-failover claims. M8 compatibility/extensions and M9
+independent release evidence remain open; no plugin work, push or deployment.
+
+Current browser acceptance passes **44 applicable / 27 explicitly skipped /
+zero failed** across all seven projects, 71 collected cases in **6.5 minutes**:
+`target/evidence/ap09-m7-completion-20260930/m7-final-live-browser-audio-20261001.json`.
+This is not 71 passes. Chromium and Firefox exercise camera/screen recording,
+in-session switching, socket recovery, immediate device release, and bounded
+audio-init failure/retry; Chromium also verifies deliberate DVR/keyboard return
+live and fatal-player recovery. WebKit's tested capability/encoder-fallback and
+calendar controls pass; unsupported capture scenarios and project-specific
+journeys remain named skips. All five genuine no-JS authoring/calendar/rewind/
+replay journeys pass. These engine simulations are not physical Safari/Android
+or human assistive-technology certification.
+
+The preceding browser receipt is retained: **35 passes / 5 Firefox failures /
+25 skips**, `m7-final-live-browser-20261001.json`. Minimal standalone Firefox
+Web Audio probes hung even after trusted clicks and with autoplay restrictions
+removed; the headless image lacked an audio sink. A private test-only PulseAudio
+null sink fixes the environment without replacing recording/browser APIs or
+contacting host hardware. The client now separately bounds audio initialization
+to five seconds, releases devices on failure, announces a localized error and
+permits a real retry/external encoder. No production companion is introduced.
+The final browser-serving executable SHA-256 is
+`5fb689c84c8dc91af05fb83625c13e86ed825904093321ff56c3defc7dff1964`,
+the pinned-engine test image digest
+`sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58`.
+Its only production changes after the two-origin latency receipt below are the
+additive capture-audio deadline and localized field, not the RTMP/HLS/tracker
+paths. Complete native-library/changed-integration sign-off is recorded above;
+no gate is waived by this browser result.
+
+The current two-origin live matrix passes **2/2 in 621.96 s**:
+`target/e2e/ap09-m7-final-both-origin-live-20261001.xml`. Both run the same
+frozen executable SHA-256
+`4442adbe944f6952b4b8d693676532abe3cae274594b8f831e64680286884028`.
+Each has two broadcasts, eight real native/PeerTube decoders, **eight active →
+eight actual TCP interruptions → eight reconnected** (16 total opens), and
+120-second steady / 15-second outage / 30-second restoration phases. Native
+decoded pixel-clock p95 is **6.1 s for native origin / 8.7 s for PeerTube origin**
+in all three phases, with zero decoder/integrity errors. Peak native-service/
+direct-child RSS is **339,689,472 / 287,490,048 bytes**, mean CPU
+**0.0435 / 0.0348 cores**, maximum FFmpeg children **2 / 1**, within unchanged
+budgets. Measurement excludes PeerTube/test publishers/browsers/bridge; it is
+not a physical hardware/WAN capacity claim. Receipts:
+`video-live-concurrency/liveconcurrencybdbe0984-4jl032t4/` and
+`video-peertube-concurrency/ptconcurrency5d298413-jqbpnaoe/`.
+The tightened harness's all-eight reconnection predicate also passes when
+replayed against both retained control receipts; it does not claim a new run.
+The subsequent supported seven-project browser/full native sign-off is above.
+
+### Earlier completion attempts — retained failures and corrections
+
+The checksum-supplementation batch is **2 passes / 1 failure in 492.20 s**:
+`target/e2e/ap09-m7-current-hash-live-cache-20261001.xml`. Both actual
+warm-cache/abuse/domain-block/restart cases pass, including fresh DB/paired-root
+recovery (`video-remote-cache/remotecache9b8b7ab5-0lw15qn6/` and
+`remotecache0ac7f393-ndabtid2/`). The foreign live case now has eight continuing
+decoders, verified peer transfers and **zero integrity errors**, but one returned
+DVR receiver remains at **10.2-second p95**. This is a retained real native
+latency failure, not a passing run. Its full observations are under
+`video-peertube-concurrency/ptconcurrency5b6b0703-xomy5m7o/`.
+
+The current return-live path uses HLS's current synchronization target rather
+than clamping it to a stale loaded-buffer tail. Its configured edge delay is
+**four seconds**, with **five seconds** maximum, leaving headroom for a foreign
+origin's four-second segment publication; that is not a four-second
+glass-to-glass claim. Deliberate DVR still disables automatic edge recovery.
+The unchanged ten-second workload gate must pass in both origins' full measured
+phases. Reference behavior: [HLS 1.6.16 latency controller](https://github.com/video-dev/hls.js/blob/v1.6.16/src/controller/latency-controller.ts).
+
+Final native checks pass **517 library + 24 proxy + 7 distribution + 6 mirror
+integrations**, **3 database mirror tests**, strict workspace/all-target Clippy,
+formatting and online SQLx cache verification against the **owned test database
+only**, backed up before migration 0130. The mirror offer/Undo-before-Create
+matrix now also runs with one configured DB connection. Every generated optional
+TOML table preserves required root settings. Built documentation/link checks
+pass. Current browser and both-origin live reruns are not yet signed off.
+
+Latest foreign mirror receipt: **1 pass / 1 foreign-live failure in 314.55 s**,
+`target/e2e/ap09-m7-peertube-copy-stalled-outage-live-20261001.xml`.
+The actual PeerTube-origin copier acknowledges ten assets, independently
+decodes the complete graph, survives fresh DB/media-root recovery, refuses a
+wrong wrapping secret and serves cold enhanced/basic native players. The
+unmodified PeerTube player decodes three actual copy responses with the
+primary media body unavailable; startup/seek are **32/493 ms**. Native
+enhanced/basic startup is **567/71 ms**, seeking **61/59 ms**. Signed Undo
+removes PeerTube's advertisement; physical acknowledgements precede zero
+charge. Source:
+`target/e2e/video-federated-mirrors/federatedmirror2c3b1194-peertube-bc48ic9d/`,
+candidate SHA-256
+`0c382129c4c1af4f204f4a84a4371436631423c6cfb70c8896ea306259eb0f1b`.
+
+Stock PeerTube does not mirror its finite MP4 initialization request, so this
+drill permits only that bounded origin bootstrap (under 256 KiB), not media
+body requests. The injected primary read stalls for 500 ms before failing.
+Immediate hard errors exposed PeerTube's file-URL-keyed redundancy map race
+between concurrent ranges; those failures remain retained and are not claimed
+as universal stock-player failover. No receiving-player code, random choice,
+or fabricated media response is substituted. Plamenu's own restored copy
+serves with its source process stopped, without that bootstrap dependency.
+
+Foreign-origin live remains open. The diagnostic receipt
+`target/e2e/ap09-m7-live-checksum-diagnostic-20261001.xml` identifies missing
+new-segment hashes in PeerTube's delayed checksum document, not mismatched
+peer data. The native cache now derives missing entries solely from complete
+bytes fetched directly from the authorized origin, preserving supplied hashes
+and current-source/session/policy fences. Its regression and full eight-decoder
+tracker-loss verification must pass before the corresponding gate is signed.
+That candidate targeted five seconds with six seconds maximum latency;
+the later current correction and its remaining verification are recorded above.
+
+The subsequent nine-case receipt is **3 passes / 6 failures in 1345.01 s**:
+`target/e2e/ap09-m7-mirror-capture-peer-concurrency-bytes-20261001.xml`.
+Camera and screen capture, immediate device release and fully decoded
+independent replays pass. Native enhanced/basic p95 is **6.0/8.1 s** (camera)
+and **5.9/9.9 s** (screen); stock PeerTube is observed separately. Source:
+`target/e2e/video-capture-budget/capturebudgeta6a865f1-krv0u94f/`.
+
+Both seed-inclusive eight-viewer, 1-MiB/s/250-ms real-TCP comparisons pass.
+Native-source body emissions are **22,381,019 bytes off / 5,467,110 on**;
+PeerTube-source **25,328,890 off / 6,340,471 on**. All eight sharing viewers
+accepted peer segments, maintained real decoders and reported no page or
+integrity errors. Scope is **Plamenu HTTP media body emissions including the
+seed**, not foreign-upstream accounting. Mean native service CPU is
+**0.023/0.033 cores**, peak RSS **253,390,848/228,999,168 bytes**, below the
+predeclared three-core/768-MiB limits. Receipts are under
+`target/e2e/video-peer-bytes/peerbytes8ca22741-native-3wi5ewl2/` and
+`peerbytes700df179-peertube-f6_02bti/`; candidate SHA-256 is
+`1453aecbaf58aae60ed7a581ed6bd991d2ae1f78725046dc0bfd7079b4e2313b`.
+
+Six cases still failed. Both mirror copies reached ready (the native source
+authenticated Create), but the fixture incorrectly read the authorized-fetch
+CacheFile anonymously. Both malicious-wire cases changed and received actual
+RTC bytes, but the event counter missed upstream `peer-closed` with a
+`validation-failed` cause. Native-origin concurrency now passes its native
+latency/decoder phase, but only seven sockets opened: a cold seed abandoned
+sharing after an initial checksum 404. The foreign-origin fixture used mode 3,
+in which PeerTube itself disables peer delivery. The corrections retain all
+old failures and are being rerun, including a new fresh DB/root mirror restore
+and signed post-restore Undo. These partial results do not sign off the full
+concurrency, integrity, redundancy or recovery gates. The imported-native
+revisioned playlist and exact signed sibling-rendition regression passes
+**22/22** proxy integrations; traversal and arbitrary sibling requests remain
+refused before origin transport.
+
+The corrected **native-source mirror case now passes in full** on candidate
+`bbe1b69c325de53dec1c6356038d9015ac683ff60f0f3aae1146185d31c57c5e`.
+Eight assets acknowledge **968,345 bytes**, with a 4.068-second whole-job
+elapsed time under the 1-MiB/s ceiling. An independently restored database and
+media root retain all 11 stored files exactly, reject the wrong encryption
+secret and preserve the original signed CacheFile. The original root is gone
+and the source process is stopped during cold 320px playback. Enhanced/basic
+startup is **622/71 ms**, seeking to 12 seconds **60/64 ms**, with continuing
+decoders, no page errors, no enhanced-to-progressive fallback and no horizontal
+overflow. Actual signed Undo reaches the source after restore; all asset
+deletion acknowledgements precede zero charged bytes. Source:
+`target/e2e/video-federated-mirrors/federatedmirror7a5d6b7b-native-0aedhfe_/`.
+The concurrently running batch's PeerTube-origin mirror and four P2P/fault
+cases are not yet signed off by this native-source result.
+
+That batch completed **4 passes / 2 failures in 929.99 s**:
+`target/e2e/ap09-m7-six-failure-fixes-20261001.xml`. Both actual-origin
+malicious RTC corruption/stale-data cases pass checksum refusal and sustained
+decoded fallback, including real PeerTube cross-product recipient bytes and
+pre-contact persistent opt-out/genuine no-JS. Native corrupt recovery uses the
+explicitly disclosed standard player at 480p; the other fault recoveries remain
+240p. This is not falsely described as every fault preserving adaptive quality.
+Receipts: `target/e2e/video-peer-integrity/peerintegrity22788830-native-1ltgdgby/`
+and `peerintegrityb9fb5b13-peertube-1poymu8h/`.
+
+Native-origin concurrency now passes **eight active sockets → eight actual
+interruptions → eight reconnected sockets**, with real HTTP/RTC/decoders.
+The 120-second steady, 15-second outage and 30-second recovery phases measure
+**8.6-second p95**, under the unchanged ten-second native bound. Receipt:
+`target/e2e/video-live-concurrency/liveconcurrency034da214-tkh9sy5b/`.
+The whole-path body-emission comparison above includes shipped engine prefetch
+behavior; it does not isolate the causal savings of RTC alone.
+
+The foreign-source mirror attempt correctly withdrew when its canonical
+publication changed during still-running PeerTube transcoding. Its preparation
+now waits for owned jobs to finish. The foreign live fixture wrongly expected
+a 240p quality selector on a single-rendition live; the next run uses actually
+advertised quality and checks decoded height. Native edge recovery now uses
+six/eight **seconds**, not three/four segments, to preserve its budget on
+four-second foreign segments. Current-authority checks reuse the owned writer's
+transaction connection; a one-slot pool no longer deadlocks. **515 library +
+22 proxy + 7 distribution + 6 mirror integrations** and strict workspace/all-
+target Clippy pass. Remaining original gates are still open pending full
+foreign interoperability, multi-node failover and current browser sign-off.
+
+2026-10-01: the native federation copier is now wired into the same executable,
+with explicit operator API/source approvals, HTML creator consent, paced bounded
+downloads, complete graph acknowledgement, permanently private asset keys,
+current source/expiry/update fences and transactional signed Create/Undo.
+Three database lifecycle tests and five server tests pass, including source
+cascade retaining physical debt, replayed offers refusing resurrection, a held
+writer surviving caller cancellation, normal HLS/no-JS range reads from a copy,
+and private flat-key denial. A regression test first caught that flat-key leak;
+the failing receipt is retained. The library run passes 515 tests and the
+playback/distribution regressions pass 21 + 7 tests. These do **not** replace
+the required real two-instance/PeerTube, fresh-root and browser mirror gates;
+their dedicated drill is implemented and verification is pending.
+
+After the reboot, the corrected seven-case batch is confirmed complete:
+**2 passes / 5 failures in 747.32 s**. Both remote-cache cases passed, including
+the fresh-root signed Flag, warm-domain block, restart and paired cleanup.
+Camera native no-JS p95 improved to **8.1 s**, but screen p95 remained **11.3 s**;
+the whole capture case is therefore still a failure. The current shared basic
+remux joins two closed segments instead of three; fresh measurement is pending.
+Native-origin concurrency failed the **native-only** latency assertion at
+**10.5 s**; unlike the capture helper, this helper does not read foreign pixel
+clocks. This remains a real native failure, not a PeerTube buffer explanation.
+The next receipt also retains complete measured phases before assertions so
+an over-budget failure cannot discard its clock observations. The
+PeerTube-origin case failed before playback because the
+harness incorrectly assumed one Docker network. It now selects the unique
+network shared with the actual Caddy fixture. Malicious-wire verification now
+starts with a genuinely fresh receiver; a media-buffer miss was insufficient
+because the engine prefetches farther. The 65-case browser regression run was
+interrupted by reboot, not passed. All failed receipts remain retained.
+
+The missing mirror implementation has now begun: migration 0130, private quota
+reservations, generation-fenced jobs, retirement debt, explicit HTML/API creator
+permission and finite CacheFile vocabulary are implemented. **2 database
+reservation/reclaim tests, 2 CacheFile wire tests, 512 library tests and 10
+distribution/live-metadata integrations pass**. This is foundation evidence,
+not end-to-end mirroring: copy/serve/withdrawal, authenticated offer handling,
+actual PeerTube interoperability, mirror restore and browser/origin-byte gates
+still remain. The standing database was not migrated or deployed.
+
+The second five-case capture/integrity/cache batch is retained as **one pass
+and four failures**, not sign-off. Same-root remote-cache reporting, operator
+domain blocking, restart, paired deletion acknowledgement and re-fetch passed.
+The fresh-root report reached PeerTube but was correctly refused: disposable
+servers reused `plamenu2.local/actor` with different keys. The recovery drill
+now uses a private retained test-only `doomed.local` instance identity; it
+does not clear PeerTube's cache or replace a standing server's identity.
+
+Camera measurements were native enhanced **4.6 s**, native no-JS **11.2 s** and
+stock PeerTube **10.8 s** p95, with progressing decoders. Stop also failed its
+immediate capture-track-release check. The current candidate sends a complete
+shared MP4 fragment at its closed `mdat`, rather than waiting for the next
+`moof`, and releases capture tracks before waiting for network acknowledgement.
+These fixes still require fresh camera **and screen**, complete audio/video
+replay and browser regression receipts. The native **10-second** target stays
+unchanged. PeerTube 8.3's stock DEFAULT live mode retains five segments by
+design (`hls-options-builder.ts`); its latency is reported separately from the
+native target, without changing its player or mislabelling the advertised mode.
+The initial over-broad three-player latency assertion remains a recorded
+failure, not a retrospectively passing receipt.
+
+Both-origin malicious-wire cases also failed their initial checks. The revised
+drill must establish an actual accepted peer segment, then cold-seek outside
+the receiver's buffered ranges before mutating copied outbound RTC media
+bytes. HTTP completion now uses the same complete-segment checksum validator:
+an HTTP fallback can contain bytes already received from a peer. Real rejection
+counters and decoded HTTP recovery, not chunk counts alone, are required.
+The wider native/PeerTube eight-viewer tracker-loss runs remain unverified for
+this candidate. **M7 remains open**, including federated CacheFile mirroring
+and dedicated matched origin-byte measurements.
+
+### M7 shared live admission, paired loss/floors and current fresh-root recovery — 2026-09-30
+
+Seven real PeerTube disk/recovery cases pass in the **707.24-second eight-case
+batch**: primary ENOSPC/EIO, replica EIO, both-root ENOSPC/EIO, and single/paired
+fresh DB/media-root restore. The eighth case, browser camera latency, failed
+its declared no-JS p95 budget (**10.1 s versus 10 s**) and is retained as a
+failure; it is not included in these seven passes. All eight fixtures used
+candidate SHA-256
+`dc0c6efc6a3fac56b71daeb75debb40cceb1359e468776703e232921ffb5046d`.
+
+The software mirror byte schedule is shared across flat copies, checkpoint
+copies and copy-format live input. Bounded input charges/metadata reservations
+and a wall-clock re-encode share prevent one independent per-publisher timer
+from multiplying the configured admission rate. The schedule has a two-second
+grant horizon and owned reservations release at encoder exit. This is **not
+physical device QoS** or zero-burst certification; details are in the storage
+guide. Missing/replaced replica directory identity cannot count as a healthy
+floor. Checkpoints fsync newly acknowledged immutable segments, rather than
+re-fsyncing every old segment in a long DVR window on every tick.
+
+Actual replica EIO retains the same encoder/session and three progressing
+native enhanced/no-JS/PeerTube decoders, then publishes a fully decoded
+**57.469-second** independent replay. Both-root ENOSPC/EIO stop on-air
+authority in **1.014/1.014 seconds**, reap the encoder, refuse the old swarm/HLS
+and recover a **6.037-second** last closed prefix after repair/restart.
+An unreadable recording is preserved rather than classified as absent. The
+finite descriptor replay path excludes incomplete tails without a whole-file
+copy or source truncation; real native processing/full decode and oversized-
+prefix refusal pass integration verification.
+
+The configured static run passes **509 library + 58 native-video/live/worker
+integrations** and strict workspace/all-target Clippy. An initial static command
+omitted the disposable database URL: its database tests failed before executing,
+and that log remains separate from the correctly configured passing run.
+Protected evidence: `target/e2e/ap09-m7-capture-loss-restore-20260930-initial.xml`,
+`target/e2e/video-live-floor/`, `target/e2e/video-live-disk/`,
+`target/e2e/video-live-restore/` and the `live-budget-floor-*` logs under
+`target/evidence/ap09-m7-completion-20260930/`. Exact failed media, backups,
+escrow and the capture-budget failure remain private. No standing instance was
+refreshed. **M7 remains open** for the remaining named broad gates.
+
+### M7 real disk continuity, warm-cache restore and cold delivery — 2026-09-30
+
+The complete five-case batch passes **5/5 in 455.29 s** against actual PeerTube
+8.3.0. All fixture processes use candidate SHA-256
+`373baeaea05e40e35ffa5a31e4c4f67646173248f7d4bef3d7efb2d9d1a4a6e5`.
+**504 library + 54 native-video/worker integrations**, strict workspace/all-
+target Clippy, formatting and the owned FUSE/TCP guard units pass. No standing
+instance or schema was refreshed; no push/merge/staging deployment occurred.
+
+**Primary EIO and ENOSPC:** an owned unprivileged FUSE fixture returns the real
+errno from existing open writers (5/28), without filling the host filesystem.
+The same native ingest encoder/session keeps writing an independently durable
+replica. Actual enhanced/genuine no-JS 320px and PeerTube players sustain six
+seconds healthy, 24 seconds fault and eight seconds repaired. Initial eight-
+second decoder settling is recorded separately (including two initial no-JS
+drops); there are zero newly dropped frames or decoder/integrity errors in the
+measured phases. Finite replica rewind fully decodes audio/video during the
+fault. After repair the longest surviving recordings become independently
+decoded real PeerTube replays (**57.469 s ENOSPC / 56.470 s EIO**) with exact
+ranges. Special `:`/`|` replica paths do not enter the tee mini-language.
+
+Initial failures remain: absolute-startup drop counting, the genuine backwards
+timeline regression after repair (fixed by newest closed-segment selection),
+and seven repaired-phase drops during an overlapping compilation. The final
+decoder phases ran without concurrent builds; the fault/repair phases still
+require zero newly dropped frames, with initial settling retained separately.
+Long final-recording selection no longer compares two truncated per-tick box
+scan batches; >3000-fragment tests cover longer primary/replica and invalid
+offsets. Replica descriptors open before the marker disables the legacy copier.
+The narrow no-JS EIO screenshot was visually inspected. This does **not** close
+shared live bandwidth/RPO, lost-copy/full-floor or wider recovery gates.
+
+**Warm cache fresh-root recovery:** actual remote VOD caches and **76,676 bytes
+of failed paired-deletion charge** restore into a fresh database and two new
+media roots. Exact manifests/cache rows/debt and original federation identity
+survive; wrong-secret escrow is refused. Retired direct keys remain inaccessible,
+replacement bytes remain exact and replacement keys are not reused. Repair
+acknowledges actual deletion from both restored roots before refund. The
+restored consumer also passes real live warming, verified-channel suspension,
+signed live end and signed Video Delete. The same-root baseline passes alongside
+it. This is not federated CacheFile-mirror recovery or wider abuse certification.
+
+**Cold 600-second film:** the real source is **197,363,398 bytes**. Four fresh
+Chromium contexts actually seek to 570 s outside all pre-seek buffered ranges,
+with new distant HTTP ranges and newly presented frames. Local enhanced/no-JS
+starts are **372/181 ms**, seeks **314/267 ms**. A real shared **8-Mibit/s,
+80-ms-minimum-header-RTT** TCP profile yields starts **2989/1077 ms**, cold seeks
+**1681/1120 ms**. Each lane presents **180–181 frames in 12 s**, zero sampled
+waiting, no decoder/page/overflow error and no tracker contact. Emitted origin
+media body payload is separately counted, excluding headers/chunk framing and
+signaling; it is not P2P savings. The constrained no-JS screenshot was visually
+inspected. The predefined contract is in the scale guide; this is not arbitrary
+WAN loss, hardware audio/camera, all-browser cold delivery or browser-capture
+glass-to-glass certification.
+
+Protected evidence: `target/e2e/ap09-m7-io-restore-cold-20260930.xml`,
+`target/e2e/video-live-disk/liveio9acd9ed3-enospc-6ebn1irk/`,
+`target/e2e/video-live-disk/liveio87b0bc84-eio-c_5a2qh3/`,
+`target/e2e/video-remote-cache/remotecachecd3fe273-h65h42xu/` and
+`target/e2e/video-cold/coldfilm8013f4a7-5xdy6g2m/`. Exact backup/media/leaf-key
+escrow, failed primary recordings, acknowledged prefixes and failure receipts
+remain private. **M7 remains open**, with its original remaining gates intact.
+
+### M7 orderly offload cancellation and fresh-root recovery — 2026-09-30
+
+The worker recovery drill now passes after killing the owned origin during a
+real forced encoder run. The worker's orphan lease expires without a database
+timestamp rewrite. A consistent database/media backup restores into a **new
+database and media root**; wrong encryption escrow is refused and the correct
+escrow passes audit. Source bytes and reservations survive. The original claim
+expires naturally, generation **1 → 2** finishes through the native TLS worker
+without hidden local fallback, and actual PeerTube accepts the independently
+published replay with exact ranges and full audio/video `-xerror` decode.
+This recovery drill does not add a browser startup measurement.
+
+An ordinary confirmed HTML cancellation now signals the origin's active
+processing future and sends the processor's existing bounded DELETE, rather
+than waiting for orphan expiry. The measured retirement is **5.068 seconds**;
+the private encode never completes/publishes. Aborted futures and origin crashes
+retain the finite renewed-lease fallback. Authentication and publication fences
+are unchanged. An independent transport-progress timer closes stalled output
+readers as well as incomplete requests (15-second checks, 15–30-second idle
+bound), preventing a stalled authenticated connection from pinning completed
+worker admission for the four-hour whole-transfer deadline.
+
+Both strengthened offload cases pass in the four-case fault batch; its two
+initial live-disk failures are retained separately and are **not passes**.
+Candidate SHA-256 for both successful offload cases is
+`238a65424476e14d885f3a296965f7e742618c3f386f2d85be0f9dacba4e952d`.
+Each owned origin/worker/recovery process uses a frozen copy of the running
+executable, independent of later workspace builds. Protected evidence:
+`target/e2e/ap09-m7-real-io-offload-20260930-initial.xml`,
+`target/e2e/video-offload/offloadbf615e69-vu4dswsd/` and
+`target/e2e/video-offload-restore/offloadrestoree674197d-vqz_6hxm/`.
+Archives, key escrow, leaf TLS keys, sources and failures remain owner-only.
+Earlier fresh-root passes and the premature-private-completion failure that
+prompted orderly cancellation remain retained. Wider warm-cache/mirror restore,
+live resilience, P2P fault and performance gates still keep **M7 open**.
+
+### M7 native private encoding offload — 2026-09-30
+
+Optional `[[video_offload]]` targets now use the same installed executable's
+private `video-worker` mode. The default remains native local processing with
+no additional service. Workers start before origin database/ID initialization
+and need no origin encryption key or database credential. This preserves the
+existing single-writer design, rather than introducing multiwriter clustering.
+The architecture preference question received no answer; the existing
+invariant and optional native-worker design were retained and announced.
+
+Private token authentication, native TLS/system trust, connection/job/scratch
+admission, finite uploads, thirty-second renewed leases and a four-hour job
+lifetime are enforced. The origin independently validates output bytes,
+digests, codecs, dimensions, generated paths/playlists, posters/storyboards and
+HLS range hashes before its unchanged journal/claim/quota/publication fence.
+Invalid or unavailable processors fall back to the next target/native lane;
+original sources remain at the origin. Workers never publish or fetch source
+URLs. Cancellation/expiry and crash scavenging keep scratch private and owned.
+
+Two independent native processors (one real native TLS) pass actual PeerTube
+8.3 federation and decoded playback, plus 320px native enhanced/genuine no-JS
+playback, exact ranges and full FFmpeg audio/video `-xerror` decode. The initial
+complete drill passes in **181.09 seconds**, candidate SHA-256
+`d30dfba48f7042560d4474e7cf4dc061f7b9500876bf56d4ebbcbc64b4488639`.
+It kills worker A **while a real forced encoder runs**, verifies that child
+dies and the retained origin source is byte-identical, then completes the same
+draft through surviving TLS worker B. Restart scavenges abandoned owned
+scratch. Actual unrenewed lease expiry denies late renewal. Ordinary HTML
+confirmed cancellation stops renewal and retires worker B's encoder and
+reservation without any publication or public HLS. Positive cases explicitly
+refuse silent local fallback.
+
+Protected evidence: `target/e2e/ap09-m7-offload-20260930-browser.xml`,
+`target/e2e/video-offload/offloadae6cd0f3-gzpgeyg1/` and
+`target/evidence/ap09-m7-completion-20260930/offload-*.log` retain private
+configuration/fixture leaf keys, source and decoded films, worker/origin logs,
+screenshots and observations. The narrow no-JS screenshot was visually
+inspected. Initial failures (tools-only configuration requiring a secret,
+missing optional Python process library, thread-local child observation and
+incorrect fixture cleanup method) remain retained; production authentication
+and admission were not relaxed. Child observation now uses Linux procfs with
+start-tick identity and no new dependency. A strengthened final seek check
+requires readiness and completed seeking, not just `currentTime` assignment.
+
+The final strengthened drill passes in **157.56 seconds**, candidate SHA-256
+`dbe98a3d5a26876ffb01e5f1dac84b92186c0d688cd95d3005480011ceec3449`;
+its running origin and both workers use the same artifact. The six browser
+journeys have zero drops/errors/overflow, sampled starts **72–302 ms** and
+decoded seeks **59–65 ms**, within the predeclared 10-second/3-second bounds.
+These eight-second-film seeks may be buffered: they do **not** satisfy the
+separate cold long-film gate. Final evidence is
+`target/e2e/ap09-m7-offload-20260930-final.xml` and
+`target/e2e/video-offload/offload5a3449fd-edgdqgu9/`. A frozen verified executable
+is retained under `target/evidence/ap09-m7-completion-20260930/verified-offload/`.
+
+**500 library + 54 video integration tests** pass, including unavailable-worker
+native fallback with retained source/private-publication fences. Strict
+workspace/all-target Clippy passes. Wider original M7 failover, redundancy,
+both-origin faults, cold/capture performance and fresh-root recovery gates
+remain open; this worker sign-off does not close them.
 
 ### M7 replica rewind, concurrent live and remote-cache retirement — 2026-09-30
 

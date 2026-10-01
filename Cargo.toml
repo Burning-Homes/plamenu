@@ -162,6 +162,8 @@ tokio = { version = "1", features = [
     "time",
 ] }
 tokio-rustls = "0.26"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio", "service"] }
 # ReaderStream for range-serving stored media without buffering whole files.
 tokio-util = { version = "0.7", features = ["io"] }
 tower = { version = "0.5", features = ["util"] }

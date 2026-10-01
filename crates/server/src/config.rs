@@ -115,40 +115,17 @@ database_url = ""
 # Local media storage and external media-tool binaries. Media processing and
 # retention behavior is configured live in the admin dashboard.
 # media_dir = "./media"
-# Optional paired native disks; leave absent for the normal installation.
-# See the native media storage guide before enabling on an existing instance.
-# [media_mirror]
-# directory = "/srv/plamenu-replica"
-# bandwidth_mib_per_second = 32
-# min_free_gib = 1
 # ffmpeg_path = "ffmpeg"
 # Native RTMP ingest uses this listener; loopback only by default. To allow
 # an external encoder, bind a reachable address and protect the plaintext
 # RTMP hop (for example with a private network or TLS terminator).
 # live_ingest_bind = "127.0.0.1:1935"
-# Optional native RTMPS for remote encoders. Reuse your existing TLS
-# certificate and private key; Plamenu reloads them after renewal. No proxy
-# or companion media service is needed. Configure all three values together.
-# [live_rtmps]
-# bind = "0.0.0.0:1936"
-# cert = "/etc/letsencrypt/live/social.example.com/fullchain.pem"
-# key = "/etc/letsencrypt/live/social.example.com/privkey.pem"
 # ffprobe_path = "ffprobe"
 
 # Native Video uploads use the built-in background worker and local media store.
 # Opt-in channel delivery aggregates can be disabled server-wide. This is a
 # root-level setting, before any TOML section. No viewer identities are stored.
 # video_analytics = true
-# These limits need no companion service. The ordinary attachment uploader has
-# its own limits. A larger source limit increases the processing scratch budget.
-# [native_video]
-# max_upload_mib = 2048
-# per_account_gib = 50
-# global_gib = 1024
-# pending_gib = 8
-# unfinished_drafts = 32
-# jobs = 2
-# min_free_gib = 1
 
 # Reverse proxies whose X-Forwarded-For values are trusted. Bare IP addresses
 # are accepted and converted to host routes. Defaults to loopback only; behind
@@ -166,15 +143,7 @@ encryption_secret = ""
 encryption_secret_version = 1
 # encryption_previous_secrets = ["2:replace-with-an-independent-32-byte-random-secret"]
 
-# Proof-of-work protecting the browser sign-up form. Defaults follow the
-# official ALTCHA v2 PBKDF2 example: clients search counters 5,000–10,000 with
-# 5,000 PBKDF2 rounds per attempt, and each signed challenge expires in five
-# minutes. Lower values reduce sign-up latency but also reduce bot resistance.
-# [altcha]
-# cost = 5000
-# min_counter = 5000
-# max_counter = 10000
-# expires_seconds = 300
+
 
 # JSON release feed polled for software-update notices. Unset disables checks.
 # update_check_url = "https://example.com/plamenu-releases.json"
@@ -188,6 +157,57 @@ encryption_secret_version = 1
 # so this telemetry is disabled by default. Enable it only for deliberate,
 # limited debugging on an instance whose operators accept that collection.
 # csp_reporting = false
+
+# Optional paired native disks; leave absent for the normal installation.
+# See the native media storage guide before enabling on an existing instance.
+# [media_mirror]
+# directory = "/srv/plamenu-replica"
+# bandwidth_mib_per_second = 32
+# min_free_gib = 1
+# Optional native, consented federation copies. No companion process needed.
+# Exact source/mirror domains must additionally be approved by an operator.
+# [video_redundancy]
+# quota_gib = 2
+# max_mirror_mib = 512
+# bandwidth_mib_per_second = 8
+# retention_hours = 24
+
+# Optional native RTMPS for remote encoders. Reuse your existing TLS
+# certificate and private key; Plamenu reloads them after renewal. No proxy
+# or companion media service is needed. Configure all three values together.
+# [live_rtmps]
+# bind = "0.0.0.0:1936"
+# cert = "/etc/letsencrypt/live/social.example.com/fullchain.pem"
+# key = "/etc/letsencrypt/live/social.example.com/privkey.pem"
+
+# These limits need no companion service. The ordinary attachment uploader has
+# its own limits. A larger source limit increases the processing scratch budget.
+# [native_video]
+# max_upload_mib = 2048
+# per_account_gib = 50
+# global_gib = 1024
+# pending_gib = 8
+# unfinished_drafts = 32
+# jobs = 2
+# min_free_gib = 1
+
+# Optional private video encoding on another host running the same binary.
+# No worker is required for the normal native installation. Generate a private
+# worker file with `plamenu --config worker.toml config generate --video-worker`.
+# The origin alone keeps its database, source and publication authority.
+# [[video_offload]]
+# url = "https://processor.example/"
+# token = "replace-with-the-private-worker-generated-token"
+
+# Proof-of-work protecting the browser sign-up form. Defaults follow the
+# official ALTCHA v2 PBKDF2 example: clients search counters 5,000–10,000 with
+# 5,000 PBKDF2 rounds per attempt, and each signed challenge expires in five
+# minutes. Lower values reduce sign-up latency but also reduce bot resistance.
+# [altcha]
+# cost = 5000
+# min_counter = 5000
+# max_counter = 10000
+# expires_seconds = 300
 
 # Outgoing mail is disabled when this whole section is absent. If enabled,
 # server is required; the remaining settings have the defaults shown here.
@@ -287,6 +307,7 @@ pub struct Config {
     pub media_dir: PathBuf,
     /// Optional second native disk; absent means the original single-disk install.
     pub media_mirror: Option<MediaMirrorConfig>,
+    pub video_redundancy: Option<VideoRedundancyConfig>,
     /// Operator kill switch. Channels still opt in individually; no tracking IDs.
     pub video_analytics: bool,
     pub ffmpeg_path: String,
@@ -295,6 +316,8 @@ pub struct Config {
     pub live_ingest_bind: SocketAddr,
     pub live_rtmps: Option<LiveRtmpsConfig>,
     pub native_video: NativeVideoConfig,
+    /// Optional private processors; the origin alone owns DB/publication rights.
+    pub video_offload: Vec<crate::video_offload::Target>,
     pub smtp: Option<SmtpConfig>,
     pub trusted_proxies: Vec<String>,
     pub encryption_secret: Option<SecretString>,
@@ -320,6 +343,40 @@ pub struct MediaMirrorConfig {
     #[serde(default = "mirror_free_floor")]
     pub min_free_gib: u64,
 }
+
+/// Optional federation mirrors: no extra process or installation dependency.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct VideoRedundancyConfig {
+    pub quota_gib: u64,
+    pub max_mirror_mib: u64,
+    pub bandwidth_mib_per_second: u64,
+    pub retention_hours: u64,
+}
+impl Default for VideoRedundancyConfig {
+    fn default() -> Self {
+        Self {
+            quota_gib: 2,
+            max_mirror_mib: 512,
+            bandwidth_mib_per_second: 8,
+            retention_hours: 24,
+        }
+    }
+}
+impl VideoRedundancyConfig {
+    fn validate(self) -> Result<Self, ConfigError> {
+        if !(1..=1024).contains(&self.quota_gib)
+            || !(1..=4096).contains(&self.max_mirror_mib)
+            || !(1..=1024).contains(&self.bandwidth_mib_per_second)
+            || !(1..=168).contains(&self.retention_hours)
+            || self.max_mirror_mib > self.quota_gib * 1024
+            || self.max_mirror_mib.div_ceil(self.bandwidth_mib_per_second) > 540
+        {
+            return Err(ConfigError::Invalid("video_redundancy", "requires bounded positive quota, copy size, bandwidth and retention; each copy must fit its finite deadline".into()));
+        }
+        Ok(self)
+    }
+}
 const fn mirror_bandwidth() -> u64 {
     32
 }
@@ -344,7 +401,8 @@ pub struct LiveRtmpsConfig {
 }
 
 /// Native Video admission and worker budgets, independent of ordinary media.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct NativeVideoConfig {
     pub max_upload_mib: u64,
     pub per_account_gib: u64,
@@ -404,7 +462,7 @@ impl NativeVideoConfig {
         }
     }
 
-    fn validate(self) -> Result<Self, ConfigError> {
+    pub(crate) fn validate(self) -> Result<Self, ConfigError> {
         if !(1..=8192).contains(&self.max_upload_mib)
             || !(1..=65_536).contains(&self.per_account_gib)
             || !(1..=65_536).contains(&self.global_gib)
@@ -515,8 +573,10 @@ impl std::fmt::Debug for Config {
             )
             .field("media_dir", &self.media_dir)
             .field("media_mirror", &self.media_mirror)
+            .field("video_redundancy", &self.video_redundancy)
             .field("video_analytics", &self.video_analytics)
             .field("native_video", &self.native_video)
+            .field("video_offload", &self.video_offload)
             .field("ffmpeg_path", &self.ffmpeg_path)
             .field("ffprobe_path", &self.ffprobe_path)
             .field("live_ingest_bind", &self.live_ingest_bind)
@@ -616,7 +676,7 @@ pub enum Starttls {
     Never,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct FileConfig {
     domain: Option<String>,
@@ -629,12 +689,14 @@ struct FileConfig {
     authorized_fetch_unsigned: Option<AuthorizedFetchUnsigned>,
     media_dir: Option<PathBuf>,
     media_mirror: Option<MediaMirrorConfig>,
+    video_redundancy: Option<VideoRedundancyConfig>,
     video_analytics: Option<bool>,
     ffmpeg_path: Option<String>,
     ffprobe_path: Option<String>,
     live_ingest_bind: Option<SocketAddr>,
     live_rtmps: Option<LiveRtmpsConfigFile>,
     native_video: Option<FileNativeVideoConfig>,
+    video_offload: Option<Vec<crate::video_offload::Target>>,
     trusted_proxies: Option<Vec<String>>,
     encryption_secret: Option<String>,
     encryption_secret_version: Option<i32>,
@@ -871,6 +933,28 @@ enum FileDeepLPlan {
 }
 
 impl Config {
+    /// Media tools only; the processor entry point never initializes `AppState`,
+    /// opens this dummy DSN, acquires an ID lane, or runs application workers.
+    pub(crate) fn processor_tools(
+        media_dir: PathBuf,
+        ffmpeg: String,
+        ffprobe: String,
+        native: NativeVideoConfig,
+    ) -> Result<Self, ConfigError> {
+        let mut config = Self::from_parsed(FileConfig {
+            domain: Some("processor.invalid".into()),
+            database_url: Some("postgres://unused.invalid/processor".into()),
+            // This tools-only value is never persisted or used to decrypt
+            // origin data. Workers must not need an origin encryption key.
+            encryption_secret: Some(crate::auth::generate_secret()),
+            media_dir: Some(media_dir),
+            ffmpeg_path: Some(ffmpeg),
+            ffprobe_path: Some(ffprobe),
+            ..FileConfig::default()
+        })?;
+        config.native_video = native.validate()?;
+        Ok(config)
+    }
     /// Whether a handle domain identifies this instance. Split-domain peers
     /// commonly try the actor host (`domain`) when an actor was discovered by
     /// URL, so both it and the canonical `account_domain` are local aliases.
@@ -949,6 +1033,8 @@ impl Config {
             .transpose()?;
         let altcha = build_altcha_config(file.altcha)?;
         let native_video = file.native_video.unwrap_or_default().build()?;
+        let video_offload =
+            crate::video_offload::validate_targets(file.video_offload.unwrap_or_default())?;
         let bind = file.bind.unwrap_or_else(|| DEFAULT_BIND.parse().unwrap());
         let live_ingest_bind = file
             .live_ingest_bind
@@ -1061,11 +1147,16 @@ impl Config {
                 mirror => mirror,
             },
             ffmpeg_path: file.ffmpeg_path.unwrap_or_else(|| "ffmpeg".to_owned()),
+            video_redundancy: file
+                .video_redundancy
+                .map(VideoRedundancyConfig::validate)
+                .transpose()?,
             video_analytics: file.video_analytics.unwrap_or(true),
             ffprobe_path: file.ffprobe_path.unwrap_or_else(|| "ffprobe".to_owned()),
             live_ingest_bind,
             live_rtmps,
             native_video,
+            video_offload,
             smtp,
             trusted_proxies,
             encryption_secret,
@@ -1374,6 +1465,42 @@ fn proxy_cidr_is_broad(cidr: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn federation_mirror_limits_are_optional_bounded_and_deadline_compatible() {
+        assert!(VideoRedundancyConfig::default().validate().is_ok());
+        for value in [
+            VideoRedundancyConfig {
+                quota_gib: 0,
+                ..Default::default()
+            },
+            VideoRedundancyConfig {
+                max_mirror_mib: 4097,
+                ..Default::default()
+            },
+            VideoRedundancyConfig {
+                bandwidth_mib_per_second: 0,
+                ..Default::default()
+            },
+            VideoRedundancyConfig {
+                retention_hours: 169,
+                ..Default::default()
+            },
+            VideoRedundancyConfig {
+                quota_gib: 1,
+                max_mirror_mib: 1025,
+                ..Default::default()
+            },
+            VideoRedundancyConfig {
+                quota_gib: 4,
+                max_mirror_mib: 4096,
+                bandwidth_mib_per_second: 1,
+                ..Default::default()
+            },
+        ] {
+            assert!(value.validate().is_err());
+        }
+    }
+
     fn valid_minimal() -> &'static str {
         "domain = \"example.com\"\ndatabase_url = \"postgres://localhost/plamenu\"\n\
          encryption_secret = \"unit-test-encryption-secret-at-least-32-bytes\"\n"
@@ -1386,6 +1513,46 @@ mod tests {
             Config::from_parsed(file),
             Err(ConfigError::Missing("domain"))
         ));
+    }
+
+    #[test]
+    fn generated_optional_tables_do_not_capture_required_root_settings() {
+        for header in [
+            "[media_mirror]",
+            "[video_redundancy]",
+            "[live_rtmps]",
+            "[native_video]",
+            "[[video_offload]]",
+            "[altcha]",
+        ] {
+            let mut active = false;
+            let enabled = CONFIG_TEMPLATE
+                .lines()
+                .map(|line| {
+                    if line == format!("# {header}") {
+                        active = true;
+                        return header.to_owned();
+                    }
+                    if line.is_empty() || line.starts_with("# [") {
+                        active = false;
+                    }
+                    if active && line.starts_with("# ") && line.contains(" = ") {
+                        line[2..].to_owned()
+                    } else {
+                        line.to_owned()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let file: FileConfig =
+                toml::from_str(&enabled).unwrap_or_else(|error| panic!("{header}: {error}"));
+            assert_eq!(
+                file.encryption_secret.as_deref(),
+                Some(""),
+                "{header} must preserve root encryption settings"
+            );
+            assert_eq!(file.encryption_secret_version, Some(1), "{header}");
+        }
     }
 
     #[test]
@@ -1468,6 +1635,7 @@ mod tests {
         assert_eq!(config.db_pool_size, DEFAULT_DB_POOL_SIZE);
         assert_eq!(config.native_video, NativeVideoConfig::default());
         assert!(config.media_mirror.is_none());
+        assert!(config.video_offload.is_empty());
         assert!(config.video_analytics);
         assert_eq!(config.account_domain, "example.com");
         assert!(config.is_local_domain("EXAMPLE.COM"));

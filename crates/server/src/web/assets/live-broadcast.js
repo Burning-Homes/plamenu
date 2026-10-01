@@ -155,7 +155,15 @@
     mute.gain.value = 0;
     silence.connect(mute).connect(audioContext.destinationStream);
     silence.start();
-    await audioContext.resume();
+    let audioDeadline;
+    try {
+      await Promise.race([
+        audioContext.resume(),
+        new Promise((_, reject) => {
+          audioDeadline = setTimeout(() => reject(new Error(root.dataset.audioUnavailable)), 5000);
+        }),
+      ]);
+    } finally { clearTimeout(audioDeadline); }
     sourceAudio = audioInput(captured);
     sourceVideo = video;
     sourceStream = captured;
@@ -354,7 +362,9 @@
         recorder = null;
         releaseTracks();
         buttons(false);
+        stopButton.disabled = false;
         if (status.textContent.startsWith(root.dataset.onAir) ||
+            status.textContent === root.dataset.stopping ||
             status.textContent === root.dataset.switching ||
             status.textContent.startsWith(root.dataset.switchFailed)) {
           tell(acknowledged ? root.dataset.stopped : root.dataset.connectionError);
@@ -378,14 +388,23 @@
     if (stopping) return;
     stopping = true;
     stopButton.disabled = true;
-    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+      // Final buffered recorder data still flushes over sendChain. Hardware
+      // capture must not remain active while waiting for the server's ACK.
+      buttons(true, true);
+      releaseTracks();
+      if (status.textContent.startsWith(root.dataset.onAir) ||
+          status.textContent === root.dataset.switching ||
+          status.textContent.startsWith(root.dataset.switchFailed)) tell(root.dataset.stopping);
+    }
     else {
       if (socket) socket.close();
       socket = null;
       releaseTracks();
       buttons(false);
+      stopButton.disabled = false;
     }
-    stopButton.disabled = false;
   }
 
   camera.addEventListener('click', () => recorder ? switchSource('camera') : start('camera'));

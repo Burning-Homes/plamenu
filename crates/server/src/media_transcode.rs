@@ -219,7 +219,7 @@ pub async fn probe(config: &Config, path: &Path) -> Result<Probe, ApiError> {
     // `kill_on_drop` reaps the subprocess when the timeout (or a cancelled
     // caller) drops this future — a wedged ffprobe must not linger.
     let mut child = Command::new(&config.ffprobe_path)
-        .args(local_input_options())
+        .args(local_input_options_for(path))
         .args(["-i"])
         .arg(path)
         .args([
@@ -432,13 +432,61 @@ fn local_input_options() -> Vec<std::ffi::OsString> {
     ])
 }
 
+fn local_input_options_for(path: &Path) -> Vec<std::ffi::OsString> {
+    let mut options = local_input_options();
+    if trusted_prefix_input(path) {
+        options[1] = "file,subfile".into();
+    }
+    options
+}
+
+/// The only extra protocol input is our own held regular descriptor with a
+/// decimal finite end. No arbitrary pathname, foreign PID or URL is accepted.
+fn trusted_prefix_input(path: &Path) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let Some(raw) = path
+            .to_str()
+            .and_then(|raw| raw.strip_prefix("subfile,,start,0,end,"))
+        else {
+            return false;
+        };
+        let Some((end, descriptor)) = raw.split_once(",,:") else {
+            return false;
+        };
+        if end.is_empty() || !end.bytes().all(|value| value.is_ascii_digit()) {
+            return false;
+        }
+        let Ok(end) = end.parse::<u64>() else {
+            return false;
+        };
+        let base = format!("/proc/{}/fd/", std::process::id());
+        let Some(fd) = descriptor.strip_prefix(&base) else {
+            return false;
+        };
+        if fd.is_empty() || !fd.bytes().all(|value| value.is_ascii_digit()) {
+            return false;
+        }
+        std::fs::metadata(descriptor)
+            .is_ok_and(|metadata| metadata.is_file() && end > 0 && end <= metadata.len())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = path;
+        false
+    }
+}
+
 /// Input options reset after each `-i`; separated remote audio must receive the
 /// same boundary as video. Arguments and paths are generated internally.
 fn restrict_local_inputs(args: Vec<std::ffi::OsString>) -> Vec<std::ffi::OsString> {
     let mut bounded = Vec::with_capacity(args.len() + 4);
-    for arg in args {
+    let mut args = args.into_iter().peekable();
+    while let Some(arg) = args.next() {
         if arg == "-i" {
-            bounded.extend(local_input_options());
+            bounded.extend(args.peek().map_or_else(local_input_options, |path| {
+                local_input_options_for(Path::new(path))
+            }));
         }
         bounded.push(arg);
     }
@@ -1099,7 +1147,7 @@ async fn package_one_hls(
 /// Hash exactly the initialization and media byte ranges written by ffmpeg.
 /// Streaming each range in a small buffer prevents a long, high-bitrate video
 /// from growing the worker's memory footprint with its segments.
-fn native_segment_hashes(
+pub(crate) fn native_segment_hashes(
     path: &Path,
     playlist: &str,
     file_name: &str,
@@ -1474,6 +1522,39 @@ pub async fn process_native_video_file(
     process_av_file_mode(config, input, params, Some(poster_time_seconds)).await
 }
 
+/// Process a finite closed prefix through a held native descriptor. Every
+/// probe/encode reads that bounded view; source bytes are never copied or
+/// truncated. Only native replay finalization constructs this input.
+#[cfg(target_os = "linux")]
+pub async fn process_native_video_prefix(
+    config: &Config,
+    input: &Path,
+    bytes: u64,
+    params: &TranscodeParams,
+) -> Result<ProcessedAv, ApiError> {
+    use std::os::fd::AsRawFd;
+    let source = std::fs::File::open(input).map_err(|error| ApiError::Internal(Box::new(error)))?;
+    let metadata = source
+        .metadata()
+        .map_err(|error| ApiError::Internal(Box::new(error)))?;
+    if !metadata.is_file()
+        || bytes == 0
+        || bytes > metadata.len()
+        || metadata.len() > params.max_av_bytes as u64
+    {
+        return Err(unsupported());
+    }
+    let view = std::path::PathBuf::from(format!(
+        "subfile,,start,0,end,{bytes},,:/proc/{}/fd/{}",
+        std::process::id(),
+        source.as_raw_fd()
+    ));
+    let processed =
+        process_av_in_dir(config, &view, scratch_dir(config).await?, params, Some(0.0)).await;
+    drop(source);
+    processed
+}
+
 async fn process_av_file_mode(
     config: &Config,
     input: &Path,
@@ -1698,6 +1779,34 @@ mod tests {
         expected.extend(options);
         expected.extend(os_args(&["-i", "audio.m4a", "-c", "copy", "out.mp4"]));
         assert_eq!(args, expected);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn prefix_protocol_requires_our_held_regular_descriptor_and_finite_end() {
+        use std::os::fd::AsRawFd;
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), b"finite prefix").unwrap();
+        let valid = format!(
+            "subfile,,start,0,end,6,,:/proc/{}/fd/{}",
+            std::process::id(),
+            file.as_raw_fd()
+        );
+        assert!(trusted_prefix_input(Path::new(&valid)));
+        assert_eq!(
+            local_input_options_for(Path::new(&valid))[1],
+            "file,subfile"
+        );
+        for input in [
+            "subfile,,start,0,end,6,,:/etc/passwd".to_owned(),
+            valid.replace("end,6,", "end,0,"),
+            valid.replace("end,6,", "end,999999,"),
+            valid.replace("/fd/", "/fd/../"),
+            valid.replace("end,6,", "end,+6,"),
+        ] {
+            assert!(!trusted_prefix_input(Path::new(&input)));
+            assert_eq!(local_input_options_for(Path::new(&input))[1], "file");
+        }
     }
 
     fn video(width: i64, height: i64) -> Probe {

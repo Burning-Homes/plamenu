@@ -123,6 +123,7 @@ pub mod video_distribution;
 pub mod video_draft;
 pub mod video_history;
 pub mod video_metadata;
+pub mod video_mirrors;
 pub mod video_playlists;
 pub mod video_source_import;
 pub mod video_source_sync;
@@ -288,11 +289,21 @@ mod schema_contract_tests {
                 "lemmy_user_preferences".to_owned(),
                 "preferences".to_owned(),
             ),
+            // Immutable PeerTube checksum wire map; rendition identity,
+            // generation, dimensions and serving state remain typed columns.
+            (
+                "native_video_hls_renditions".to_owned(),
+                "segment_sha256".to_owned(),
+            ),
             (
                 "two_factor_challenges".to_owned(),
                 "webauthn_state".to_owned(),
             ),
             ("web_settings".to_owned(), "data".to_owned()),
+            // Preserve the exact advertised signed Create for CacheFile
+            // dereference/Undo after recovery, like delivery_jobs.activity.
+            // Mirror state, authority, quota and assets are normalized tables.
+            ("video_mirrors".to_owned(), "create_activity".to_owned()),
             ("webauthn_credentials".to_owned(), "credential".to_owned()),
             ("webxdc_updates".to_owned(), "raw_create".to_owned()),
             ("webxdc_updates".to_owned(), "webxdc_update".to_owned()),

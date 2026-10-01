@@ -196,9 +196,7 @@ async fn source(state: &AppState, media_id: i64) -> Result<Source, ApiError> {
         None => {
             // A one-byte Range probe obtains the total without starting a
             // body download. Dropping the returned stream cancels its body.
-            state
-                .federation
-                .fetch_media_range(&origin, 0, 1)
+            crate::video_mirrors::source::fetch_range(state, &origin, 0, 1)
                 .await
                 .map_err(|_| ApiError::NotFound)?
                 .total_len
@@ -318,12 +316,12 @@ async fn cached_origin_total(state: &AppState, origin: &str) -> Result<u64, ApiE
 }
 
 async fn probe_total(state: &AppState, origin: &str) -> Result<u64, ApiError> {
-    Ok(state
-        .federation
-        .fetch_media_range(origin, 0, 1)
-        .await
-        .map_err(|_| ApiError::NotFound)?
-        .total_len)
+    Ok(
+        crate::video_mirrors::source::fetch_range(state, origin, 0, 1)
+            .await
+            .map_err(|_| ApiError::NotFound)?
+            .total_len,
+    )
 }
 
 fn hls_media_playlist_url(origin: &str) -> Option<String> {
@@ -347,9 +345,7 @@ async fn muxed_virtual_layout(
         return Ok(cached);
     }
     let playlist_url = hls_media_playlist_url(origin).ok_or(ApiError::NotFound)?;
-    let playlist = state
-        .federation
-        .fetch_media(&playlist_url)
+    let playlist = crate::video_mirrors::source::fetch_metadata(state, &playlist_url)
         .await
         .map_err(|_| ApiError::NotFound)?;
     let playlist = virtual_mp4::parse_media_playlist(
@@ -448,9 +444,7 @@ async fn collect_range(
     start: u64,
     len: u64,
 ) -> Result<Vec<u8>, ApiError> {
-    let mut fetched = state
-        .federation
-        .fetch_media_range(origin, start, len)
+    let mut fetched = crate::video_mirrors::source::fetch_range(state, origin, start, len)
         .await
         .map_err(|_| ApiError::NotFound)?;
     let mut result = Vec::with_capacity(
@@ -481,8 +475,8 @@ async fn virtual_layout(
     let video_playlist_url = hls_media_playlist_url(video_origin).ok_or(ApiError::NotFound)?;
     let audio_playlist_url = hls_media_playlist_url(audio_origin).ok_or(ApiError::NotFound)?;
     let (video_playlist, audio_playlist) = tokio::join!(
-        state.federation.fetch_media(&video_playlist_url),
-        state.federation.fetch_media(&audio_playlist_url),
+        crate::video_mirrors::source::fetch_metadata(state, &video_playlist_url),
+        crate::video_mirrors::source::fetch_metadata(state, &audio_playlist_url),
     );
     let video_playlist = video_playlist.map_err(|_| ApiError::NotFound)?;
     let audio_playlist = audio_playlist.map_err(|_| ApiError::NotFound)?;
@@ -1080,11 +1074,10 @@ async fn stream_one_block(
         .tempfile_in(&scratch_root)?;
     let tmp_path = tmp.path().to_path_buf();
     let mut output = tokio::fs::File::create(&tmp_path).await?;
-    let mut fetched = state
-        .federation
-        .fetch_media_range(origin, block_start, block_len)
-        .await
-        .map_err(std::io::Error::other)?;
+    let mut fetched =
+        crate::video_mirrors::source::fetch_range(state, origin, block_start, block_len)
+            .await
+            .map_err(std::io::Error::other)?;
     if fetched.total_len < block_start + block_len {
         return Err(std::io::Error::other(
             "origin range is shorter than declared media",

@@ -96,6 +96,36 @@ python3 scripts/run-accessibility-tests.py video-playback-budget.spec.mjs
 
 ## Native tracker limits and fault recovery
 
+### Cold ten-minute film and constrained TCP delivery
+
+`AP09_COLD_VERIFY=1 e2e/.venv/bin/pytest -v e2e/tests/test_video_cold_delivery.py`
+publishes an actual 600-second 640×360/15 fps H.264/AAC moving film with
+2.5-Mbit/s padded video, accepted by real PeerTube. Four fresh Chromium contexts
+test enhanced and genuinely scripts-disabled server-only embeds, first local,
+then through the owned canonical HTTPS backend's real TCP fixture:
+
+- Shared downstream wire pacing: **1,048,576 bytes/s (8 Mibit/s)**. Each request
+  and response header adds **40 ms**, an 80-ms minimum header round trip, not
+  a simulation of arbitrary Internet packet loss/congestion.
+- Moving presented startup **≤10 s**, seek to **570 s ≤10 s**. The actual
+  browser's pre-seek buffered ranges must not contain the target. The seek must
+  make a new real media request and present three newly decoded frames at the
+  advancing target; assigning `currentTime` alone never passes.
+- **12 s** steady playback, **≥120 presented frames**, sampled total/longest
+  waiting **≤2 s**, maximum external sampling gap **≤250 ms**, no media/page
+  error or 320px overflow. Native frame/ready/seek snapshots work without page
+  callbacks; application scripts remain disabled in that lane.
+- Explicit `p2p=0` embeds must not contact any tracker. These measurements are
+  origin delivery, not a claim of P2P savings or all-browser/WAN certification.
+
+The bridge separately counts successful `/media/` response **body payload**:
+request/response headers, HTTP chunk framing and WebSocket signaling are not
+body bytes. Split-chunk parser, shared pacing and real tracker-loss/reconnect
+guard tests retain coverage. The measured bytes are emitted origin payload,
+not independently verified network receipt; three moving frames establish
+decoding separately. Owned source/decoder snapshots/ranges/screenshots and
+frozen executable identity remain private under `target/e2e/video-cold/`.
+
 ### Concurrent decoded live / actual tracker transport loss
 
 `AP09_CONCURRENCY_VERIFY=1 e2e/.venv/bin/pytest -v

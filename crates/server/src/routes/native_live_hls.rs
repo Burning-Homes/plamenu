@@ -45,7 +45,10 @@ fn replica_directory(state: &AppState, media_id: i64, session: &str) -> Option<P
 }
 
 fn fresh_replica_playlist(path: &std::path::Path) -> bool {
-    std::fs::symlink_metadata(path.join("index.m3u8")).is_ok_and(|meta| {
+    let Some(name) = crate::storage_mirror::checkpoint_playlist_file(path) else {
+        return false;
+    };
+    std::fs::symlink_metadata(path.join(name)).is_ok_and(|meta| {
         meta.is_file()
             && !meta.file_type().is_symlink()
             && meta
@@ -54,18 +57,57 @@ fn fresh_replica_playlist(path: &std::path::Path) -> bool {
     })
 }
 
-async fn playlist_directory(state: &AppState, media_id: i64, session: &str) -> Option<PathBuf> {
-    if let Some(path) = primary_directory(state, media_id, session)
-        && ready_files(&path).await
+pub(super) async fn playlist_directory(
+    state: &AppState,
+    media_id: i64,
+    session: &str,
+) -> Option<PathBuf> {
+    let mut selected = None;
+    let mut highest = 0;
+    for path in [
+        primary_directory(state, media_id, session),
+        replica_directory(state, media_id, session),
+    ]
+    .into_iter()
+    .flatten()
     {
-        return Some(path);
+        if !ready_files(&path).await {
+            continue;
+        }
+        let Some(name) = crate::storage_mirror::checkpoint_playlist_file(&path) else {
+            continue;
+        };
+        let Ok(source) = tokio::fs::read_to_string(path.join(name)).await else {
+            continue;
+        };
+        let sequence = source
+            .lines()
+            .find_map(|line| {
+                line.strip_prefix("#EXT-X-MEDIA-SEQUENCE:")?
+                    .parse::<u64>()
+                    .ok()
+            })
+            .unwrap_or(0);
+        // A DVR list does not roll its MEDIA-SEQUENCE until it fills. A
+        // repaired, disabled primary can therefore still say sequence zero
+        // while its surviving replica has dozens more closed segments.
+        let edge = source
+            .lines()
+            .filter(|line| valid_segment(line))
+            .filter_map(|line| {
+                line.strip_prefix("segment")?
+                    .strip_suffix(".ts")?
+                    .parse::<u64>()
+                    .ok()
+            })
+            .max()
+            .unwrap_or(sequence);
+        if selected.is_none() || edge > highest {
+            highest = edge;
+            selected = Some(path);
+        }
     }
-    if let Some(path) = replica_directory(state, media_id, session)
-        && ready_files(&path).await
-    {
-        return Some(path);
-    }
-    None
+    selected
 }
 
 /// A native encoder marks on-air before committing its first HLS segment.
@@ -76,7 +118,10 @@ pub(super) async fn ready(state: &AppState, media_id: i64, session: &str) -> boo
 }
 
 async fn ready_files(root: &std::path::Path) -> bool {
-    let path = root.join("index.m3u8");
+    let Some(name) = crate::storage_mirror::checkpoint_playlist_file(root) else {
+        return false;
+    };
+    let path = root.join(name);
     let Ok(meta) = tokio::fs::symlink_metadata(&path).await else {
         return false;
     };
@@ -161,7 +206,9 @@ pub async fn sha256_manifest(
     let directory = playlist_directory(state, media_id, &session)
         .await
         .ok_or(ApiError::NotFound)?;
-    let path = directory.join("index.m3u8");
+    let path = directory.join(
+        crate::storage_mirror::checkpoint_playlist_file(&directory).ok_or(ApiError::NotFound)?,
+    );
     let names = match tokio::fs::symlink_metadata(&path).await {
         Ok(meta)
             if meta.is_file() && !meta.file_type().is_symlink() && meta.len() <= MAX_PLAYLIST =>
@@ -320,14 +367,23 @@ pub async fn child(
         return Err(ApiError::NotFound);
     }
     let mut bytes = None;
+    let current_directory = playlist_directory(&state, media_id, &session).await;
     for directory in [
+        current_directory,
         primary_directory(&state, media_id, &session),
         replica_directory(&state, media_id, &session),
     ]
     .into_iter()
     .flatten()
     {
-        let path = directory.join(&name);
+        let path = directory.join(if playlist {
+            let Some(file) = crate::storage_mirror::checkpoint_playlist_file(&directory) else {
+                continue;
+            };
+            file
+        } else {
+            &name
+        });
         let limit = if playlist { MAX_PLAYLIST } else { MAX_SEGMENT };
         if !tokio::fs::symlink_metadata(&path).await.is_ok_and(|meta| {
             meta.is_file()

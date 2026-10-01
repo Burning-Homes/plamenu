@@ -62,6 +62,9 @@ tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-util = { workspace = true }
 http-body-util = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+reqwest = { workspace = true, features = ["stream"] }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -82,9 +85,6 @@ criterion = { workspace = true }
 ml-dsa = { workspace = true }
 # The RFC 9421 inbox tests hand-sign requests with an actor's Ed25519 key.
 ed25519-dalek = { workspace = true }
-# The delivery failure-attribution tests need a real transport error;
-# `reqwest::Error` has no public constructor.
-reqwest = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tower = { workspace = true }
 # aes-gcm, hkdf, p256, and zip are already normal dependencies (used by the

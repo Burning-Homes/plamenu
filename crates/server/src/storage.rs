@@ -42,6 +42,16 @@ pub struct LiveRewindSource {
     pub playlist: PathBuf,
     pub(crate) directory: tempfile::TempDir,
 }
+
+/// A second owned write target for one exact live generation. It grants no
+/// HTTP permission; the caller keeps its directory handle for the pump only.
+pub struct LiveReplicaWriter {
+    pub directory: PathBuf,
+    pub directory_handle: std::fs::File,
+    pub min_free_bytes: u64,
+    pub(crate) bandwidth: std::sync::Arc<crate::storage_mirror::bandwidth::Bandwidth>,
+    pub(crate) bandwidth_reservation: Option<crate::storage_mirror::bandwidth::Reservation>,
+}
 impl LiveRewindSource {
     #[must_use]
     pub fn directory(&self) -> &std::path::Path {
@@ -50,6 +60,21 @@ impl LiveRewindSource {
 }
 
 pub trait MediaStore: Send + Sync {
+    fn live_replica_writer(
+        &self,
+        _media: i64,
+        _session: String,
+        _reencode: bool,
+    ) -> BoxFuture<'_, std::io::Result<Option<LiveReplicaWriter>>> {
+        Box::pin(async { Ok(None) })
+    }
+    fn preferred_live_recording(
+        &self,
+        _media: i64,
+        _session: String,
+    ) -> BoxFuture<'_, std::io::Result<Option<PathBuf>>> {
+        Box::pin(async { Ok(None) })
+    }
     /// Optional, generation-scoped live checkpoints. Not a flat media key and
     /// never an authorization decision. Implementations must bound background
     /// work; active publishers must not wait behind durable media writes.

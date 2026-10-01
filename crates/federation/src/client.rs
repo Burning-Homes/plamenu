@@ -1156,7 +1156,7 @@ impl FederationClient {
         dest: &std::path::Path,
         max_bytes: u64,
     ) -> Result<FetchedMediaFile, FederationError> {
-        self.fetch_media_to_file_inner(raw_url, dest, max_bytes, AV_FETCH_TIMEOUT)
+        self.fetch_media_to_file_inner(raw_url, dest, max_bytes, AV_FETCH_TIMEOUT, None)
             .await
     }
 
@@ -1169,8 +1169,32 @@ impl FederationClient {
         dest: &std::path::Path,
         max_bytes: u64,
     ) -> Result<FetchedMediaFile, FederationError> {
-        self.fetch_media_to_file_inner(raw_url, dest, max_bytes, Duration::from_secs(3600))
+        self.fetch_media_to_file_inner(raw_url, dest, max_bytes, Duration::from_secs(3600), None)
             .await
+    }
+
+    /// One leased mirror writer uses this paced stream. Every redirect/DNS,
+    /// byte ceiling and no-progress guard remains the ordinary media guard.
+    pub async fn fetch_mirror_to_file(
+        &self,
+        raw_url: &str,
+        dest: &std::path::Path,
+        max_bytes: u64,
+        bytes_per_second: u64,
+    ) -> Result<FetchedMediaFile, FederationError> {
+        if bytes_per_second == 0 {
+            return Err(FederationError::InvalidUrl(
+                "Mirror bandwidth must be positive".into(),
+            ));
+        }
+        self.fetch_media_to_file_inner(
+            raw_url,
+            dest,
+            max_bytes,
+            Duration::from_secs(600),
+            Some(bytes_per_second),
+        )
+        .await
     }
 
     async fn fetch_media_to_file_inner(
@@ -1179,6 +1203,7 @@ impl FederationClient {
         dest: &std::path::Path,
         max_bytes: u64,
         timeout: Duration,
+        bytes_per_second: Option<u64>,
     ) -> Result<FetchedMediaFile, FederationError> {
         use tokio::io::AsyncWriteExt;
 
@@ -1212,6 +1237,7 @@ impl FederationClient {
                 .to_owned();
             let mut file = tokio::fs::File::create(dest).await?;
             let mut written: u64 = 0;
+            let started = tokio::time::Instant::now();
             let mut response = response;
             loop {
                 let chunk = tokio::time::timeout(AV_CHUNK_TIMEOUT, response.chunk())
@@ -1222,7 +1248,22 @@ impl FederationClient {
                 if written > max_bytes {
                     return Err(FederationError::TooLarge(url.to_string()));
                 }
-                file.write_all(&chunk).await?;
+                if let Some(rate) = bytes_per_second {
+                    let previous = written - chunk.len() as u64;
+                    let mut admitted = previous;
+                    for portion in chunk.chunks(64 * 1024) {
+                        admitted += portion.len() as u64;
+                        let nanos = u32::try_from(
+                            u128::from(admitted % rate) * 1_000_000_000 / u128::from(rate),
+                        )
+                        .unwrap_or(999_999_999);
+                        let delay = Duration::new(admitted / rate, nanos);
+                        tokio::time::sleep_until(started + delay).await;
+                        file.write_all(portion).await?;
+                    }
+                } else {
+                    file.write_all(&chunk).await?;
+                }
             }
             file.flush().await?;
             return Ok(FetchedMediaFile {

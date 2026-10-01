@@ -272,7 +272,7 @@ pub async fn pending_count(pool: &PgPool) -> Result<u64, DbError> {
 /// reconciliation delete a live file, so this is the single source of truth for
 /// "a key the product still needs".
 pub async fn referenced_keys(pool: &PgPool) -> Result<Vec<String>, DbError> {
-    let keys = sqlx::query_scalar!(
+    let mut keys = sqlx::query_scalar!(
         r#"
         SELECT key AS "key!" FROM (
             SELECT file_name AS key FROM media_attachments WHERE file_name IS NOT NULL
@@ -293,6 +293,11 @@ pub async fn referenced_keys(pool: &PgPool) -> Result<Vec<String>, DbError> {
     )
     .fetch_all(pool)
     .await?;
+    // A private mirror copy is still a product reference, including its
+    // pre-write journal while an owned finalizer holds the cleanup-row lock.
+    keys.extend(sqlx::query_scalar::<_, String>(
+        "SELECT file_name FROM video_mirror_assets UNION SELECT file_name FROM media_cleanup_jobs WHERE mirror_bytes>0",
+    ).fetch_all(pool).await?);
     Ok(keys)
 }
 

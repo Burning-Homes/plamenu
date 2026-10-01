@@ -482,6 +482,23 @@ impl FederationApi for StubFederation {
         })
     }
 
+    fn fetch_mirror_to_file<'a>(
+        &'a self,
+        url: &'a str,
+        dest: &'a std::path::Path,
+        max_bytes: u64,
+        bytes_per_second: u64,
+    ) -> BoxFuture<'a, Result<FetchedMediaFile, FederationError>> {
+        Box::pin(async move {
+            if bytes_per_second == 0 {
+                return Err(FederationError::Status(400));
+            }
+            // This fixture exercises production graph/storage/authority work;
+            // real HTTP pacing is covered separately by the client tests.
+            self.fetch_media_to_file(url, dest, max_bytes).await
+        })
+    }
+
     fn fetch_range_to_file<'a>(
         &'a self,
         url: &'a str,
@@ -650,12 +667,14 @@ pub fn test_config() -> Config {
         authorized_fetch_unsigned_profile: false,
         media_dir: std::env::temp_dir(),
         media_mirror: None,
+        video_redundancy: None,
         video_analytics: true,
         ffmpeg_path: "ffmpeg".to_owned(),
         ffprobe_path: "ffprobe".to_owned(),
         live_ingest_bind: "127.0.0.1:0".parse().unwrap(),
         live_rtmps: None,
         native_video: plamenu::config::NativeVideoConfig::default(),
+        video_offload: Vec::new(),
         smtp: None,
         trusted_proxies: vec!["127.0.0.0/8".to_owned(), "::1/128".to_owned()],
         encryption_secret: Some("test-encryption-secret-at-least-32-bytes".into()),

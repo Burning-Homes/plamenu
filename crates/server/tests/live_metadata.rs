@@ -180,6 +180,7 @@ async fn recurring_replay_snapshots_terms_and_keeps_warnings_across_retries_and_
         media_id: live_media,
         download_enabled: false,
         embed_enabled: false,
+        mirror_allowed: false,
     };
     plamenu_db::video_distribution::upsert(&pool, distribution)
         .await

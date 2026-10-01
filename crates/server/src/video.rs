@@ -648,10 +648,21 @@ pub async fn follower_inboxes(
     conn: &mut plamenu_db::PgConnection,
     status_id: i64,
 ) -> Result<Vec<String>, ApiError> {
+    // An accepted CacheFile is explicit replication interest, not a social
+    // follow. Its approved actor must receive source edits/consent revocation
+    // and Delete without adding an operator account's social subscription.
+    let mut inboxes:Vec<String>=sqlx::query_scalar("SELECT DISTINCT CASE WHEN a.shared_inbox_url<>'' THEN a.shared_inbox_url ELSE a.inbox_url END
+        FROM remote_video_mirrors r JOIN media_attachments m ON m.id=r.media_id JOIN accounts a ON a.id=r.actor_id
+        JOIN video_mirror_approvals p ON p.domain=a.domain AND p.allow_mirror
+        WHERE m.status_id=$1 AND r.withdrawn_at IS NULL AND r.expires_at>clock_timestamp() AND a.suspended_at IS NULL")
+        .bind(status_id).fetch_all(&mut *conn).await.map_err(plamenu_db::DbError::from)?;
     let Some(publication) = video::publications(&mut *conn, &[status_id]).await?.pop() else {
-        return Ok(Vec::new());
+        return Ok(inboxes);
     };
-    Ok(plamenu_db::follow::follower_inboxes(conn, publication.channel_id).await?)
+    inboxes.extend(plamenu_db::follow::follower_inboxes(conn, publication.channel_id).await?);
+    inboxes.sort();
+    inboxes.dedup();
+    Ok(inboxes)
 }
 
 /// `PeerTube` authorizes Video deletion by the current channel owner. Preserve

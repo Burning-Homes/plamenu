@@ -19,6 +19,11 @@ full matrix against an isolated disposable Plamenu and PostgreSQL fixture:
 
 The default runner uses the digest-pinned official Playwright image so all
 three engines have the same reviewed runtime on different developer hosts.
+The test image additionally contains the distro encoder and PulseAudio. Its
+private null sink lets headless Firefox run real Web Audio/MediaRecorder without
+a physical sound card; it discards output and does not contact a host sound
+server. The sink is enabled only in the test container and ends with that run.
+It is not a Plamenu installation or production-service dependency.
 The browsers share a disposable TLS proxy's network namespace: canonical
 `https://localhost` URLs, including absolute media and caption URLs, resolve
 to that fixture without request rewriting. The native server binds only to

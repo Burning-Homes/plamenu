@@ -14,9 +14,130 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 const MAX_PLAYLIST: u64 = 256 * 1024;
 const MAX_SEGMENT: u64 = 64 * 1024 * 1024;
 const RECORDING_OFFSET: &str = ".plamenu-recording-offset";
+const DIRECT_WRITER: &str = ".plamenu-direct-live";
+const DIRECT_MARKER: &[u8] = b"plamenu-native-direct-live-v1\n";
+const DIRECT_PLAYLIST: &str = "index.durable.m3u8";
 pub(crate) const CHECKPOINT_TIMEOUT: Duration = Duration::from_secs(20);
 
 impl MirroredDiskStore {
+    pub(super) async fn prepare_direct_writer(
+        &self,
+        media: i64,
+        session: &str,
+        reencode: bool,
+    ) -> io::Result<crate::storage::LiveReplicaWriter> {
+        #[cfg(not(target_os = "linux"))]
+        return Err(io::ErrorKind::Unsupported.into());
+        #[cfg(target_os = "linux")]
+        {
+            let _guard = self.writer.lock().await;
+            self.admission(8 * 1024 * 1024)?;
+            let directory = self.checked_live_dir(&self.replica_root, media, session, true)?;
+            // Open before the marker disables the legacy copier. The pump
+            // cannot silently lose its second writer between these steps.
+            let directory_handle = std::fs::File::open(&directory)?;
+            let reservation = Some(self.bandwidth.reserve_live(reencode)?);
+            // Persist before dispatch: checkpoint workers must never append or
+            // truncate a recording which the encoder writes independently.
+            self.live_atomic(&directory, DIRECT_WRITER, DIRECT_MARKER)
+                .await?;
+            Ok(crate::storage::LiveReplicaWriter {
+                directory,
+                directory_handle,
+                min_free_bytes: self.min_free,
+                bandwidth: self.bandwidth.clone(),
+                bandwidth_reservation: reservation,
+            })
+        }
+    }
+
+    async fn direct_recording_checkpoint(&self, directory: &Path) -> io::Result<()> {
+        let recording = Self::key_path(directory, "replay.mp4")?;
+        let mut input = match tokio::fs::File::open(&recording).await {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        let offset = committed_offset(directory).await?;
+        let end = fragment_end(&mut input, offset).await?;
+        if end > offset {
+            input.sync_all().await?;
+            Self::sync_root(directory.to_path_buf()).await?;
+            self.live_atomic(directory, RECORDING_OFFSET, end.to_string().as_bytes())
+                .await?;
+        }
+        let playlist = read_playlist(directory).await?;
+        let names = playlist_names(&playlist)?;
+        let already_synced = match read_playlist_file(directory, DIRECT_PLAYLIST).await {
+            Ok(previous) => playlist_names(&previous)?,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => HashSet::new(),
+            Err(error) => return Err(error),
+        };
+        for name in names {
+            let path = Self::key_path(directory, &name)?;
+            let file = tokio::fs::File::open(path).await?;
+            let metadata = file.metadata().await?;
+            if metadata.len() == 0 || metadata.len() > MAX_SEGMENT {
+                return Err(invalid("invalid direct live segment"));
+            }
+            // Monotonic closed segment names are immutable. Their earlier
+            // durable playlist already acknowledged fsync; do not fsync an
+            // entire thirty-minute window again on every two-second tick.
+            if !already_synced.contains(&name) {
+                file.sync_all().await?;
+            }
+        }
+        self.live_atomic(directory, DIRECT_PLAYLIST, &playlist)
+            .await?;
+        Ok(())
+    }
+
+    pub(super) async fn best_recording(
+        &self,
+        media: i64,
+        session: &str,
+    ) -> io::Result<Option<PathBuf>> {
+        let mut best = None;
+        let mut longest = 0;
+        for root in [&self.primary_root, &self.replica_root] {
+            let Ok(directory) = self.checked_live_dir(root, media, session, false) else {
+                continue;
+            };
+            let Ok(path) = Self::key_path(&directory, "replay.mp4") else {
+                continue;
+            };
+            let Ok(mut file) = tokio::fs::File::open(&path).await else {
+                continue;
+            };
+            let end = if root == &self.replica_root {
+                // This generation's private marker acknowledges a scanned,
+                // fsynced prefix. Do not rescan a long recording from zero
+                // with the per-tick 4096-box limit and compare a stale prefix.
+                let Ok(offset) = committed_offset(&directory).await else {
+                    continue;
+                };
+                let Ok(metadata) = file.metadata().await else {
+                    continue;
+                };
+                if offset > metadata.len() {
+                    continue;
+                }
+                offset
+            } else {
+                let Ok(Ok(end)) =
+                    tokio::time::timeout(Duration::from_secs(5), recording_end(&mut file)).await
+                else {
+                    continue;
+                };
+                end
+            };
+            if end > longest {
+                longest = end;
+                best = Some(path);
+            }
+        }
+        Ok(best)
+    }
     pub(super) fn checked_live_dir(
         &self,
         root: &Path,
@@ -78,7 +199,6 @@ impl MirroredDiskStore {
         #[cfg(unix)]
         options.mode(0o600);
         let mut output = options.open(&temporary).await?;
-        let began = tokio::time::Instant::now();
         let mut copied = 0;
         let mut chunk = vec![0; 64 * 1024];
         loop {
@@ -86,9 +206,9 @@ impl MirroredDiskStore {
             if n == 0 {
                 break;
             }
+            self.bandwidth.transfer(n as u64).await?;
             output.write_all(&chunk[..n]).await?;
             copied += n as u64;
-            self.pace(began, copied).await;
         }
         if copied != bytes {
             return Err(io::ErrorKind::UnexpectedEof.into());
@@ -109,7 +229,14 @@ impl MirroredDiskStore {
         {
             return Err(invalid("checkpoint metadata is not regular"));
         }
-        self.admission(bytes.len() as u64)?;
+        // Metadata belongs to the checked replica generation. A failed
+        // primary must not prevent that surviving copy acknowledging fsync.
+        self.check_root(&self.replica_root)?;
+        if crate::storage::available_bytes(&self.replica_root)?
+            < self.min_free.saturating_add(bytes.len() as u64)
+        {
+            return Err(io::ErrorKind::StorageFull.into());
+        }
         let temporary = directory.join(format!(
             ".plamenu-live-{}.tmp",
             crate::media_processing::storage_stem(0)
@@ -130,6 +257,26 @@ impl MirroredDiskStore {
     }
 
     pub(super) async fn live_checkpoint(&self, media: i64, session: &str) -> io::Result<()> {
+        // Direct writers do not share mutable recording/index files with the
+        // old copier and do not queue behind durable flat-key copies.
+        if let Ok(directory) = self.checked_live_dir(&self.replica_root, media, session, false) {
+            let marker = directory.join(DIRECT_WRITER);
+            if let Ok(metadata) = tokio::fs::symlink_metadata(&marker).await {
+                if !metadata.is_file()
+                    || metadata.file_type().is_symlink()
+                    || metadata.len() != DIRECT_MARKER.len() as u64
+                    || tokio::fs::read(marker).await? != DIRECT_MARKER
+                {
+                    return Err(invalid("invalid direct live ownership marker"));
+                }
+                return tokio::time::timeout(
+                    CHECKPOINT_TIMEOUT,
+                    self.direct_recording_checkpoint(&directory),
+                )
+                .await
+                .map_err(|_| io::Error::from(io::ErrorKind::TimedOut))?;
+            }
+        }
         let _guard = self
             .writer
             .try_lock()
@@ -256,16 +403,15 @@ impl MirroredDiskStore {
         input.seek(io::SeekFrom::Start(offset)).await?;
         let mut input = input.take(end - offset);
         let mut chunk = vec![0; 64 * 1024];
-        let began = tokio::time::Instant::now();
         let mut copied = 0;
         loop {
             let n = input.read(&mut chunk).await?;
             if n == 0 {
                 break;
             }
+            self.bandwidth.transfer(n as u64).await?;
             output.write_all(&chunk[..n]).await?;
             copied += n as u64;
-            self.pace(began, copied).await;
         }
         if copied != end - offset {
             return Err(io::ErrorKind::UnexpectedEof.into());
@@ -299,8 +445,32 @@ impl MirroredDiskStore {
     }
 }
 
+/// Direct encoders own their raw playlist; the second disk serves only its
+/// separately fsynced snapshot. Legacy asynchronous checkpoints stay valid.
+pub(crate) fn checkpoint_playlist_file(directory: &Path) -> Option<&'static str> {
+    match std::fs::symlink_metadata(directory.join(DIRECT_WRITER)) {
+        Ok(metadata)
+            if metadata.is_file()
+                && !metadata.file_type().is_symlink()
+                && metadata.len() == DIRECT_MARKER.len() as u64
+                && std::fs::read(directory.join(DIRECT_WRITER))
+                    .ok()?
+                    .as_slice()
+                    == DIRECT_MARKER =>
+        {
+            Some(DIRECT_PLAYLIST)
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Some("index.m3u8"),
+        Ok(_) | Err(_) => None,
+    }
+}
+
 pub(super) async fn read_playlist(directory: &Path) -> io::Result<Vec<u8>> {
-    let path = MirroredDiskStore::key_path(directory, "index.m3u8")?;
+    read_playlist_file(directory, "index.m3u8").await
+}
+
+async fn read_playlist_file(directory: &Path, name: &str) -> io::Result<Vec<u8>> {
+    let path = MirroredDiskStore::key_path(directory, name)?;
     let mut file = tokio::fs::File::open(path).await?.take(MAX_PLAYLIST + 1);
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).await?;
@@ -347,6 +517,41 @@ async fn committed_offset(directory: &Path) -> io::Result<u64> {
         .await?
         .parse()
         .map_err(|_| invalid("recording checkpoint offset"))
+}
+
+/// Final selection may cover many checkpoint batches, but reads only headers
+/// and has both a finite box budget and an outer deadline. The incremental
+/// checkpoint scanner still does at most 4096 boxes per tick.
+async fn recording_end(file: &mut tokio::fs::File) -> io::Result<u64> {
+    let mut offset = 0;
+    for _ in 0..256 {
+        let end = fragment_end(file, offset).await?;
+        if end == offset {
+            return Ok(end);
+        }
+        offset = end;
+    }
+    Err(invalid("recording exceeds bounded header scan"))
+}
+
+/// A closed native replay can have a partial tail after disk failure. Return
+/// only complete fragments (and, on a replica, its acknowledged prefix),
+/// without truncating or copying the retained recording.
+pub(crate) async fn replay_prefix(path: &Path) -> io::Result<u64> {
+    let mut file = tokio::fs::File::open(path).await?;
+    let end = tokio::time::timeout(Duration::from_secs(5), recording_end(&mut file))
+        .await
+        .map_err(|_| io::Error::from(io::ErrorKind::TimedOut))??;
+    let directory = path.parent().ok_or_else(|| invalid("recording parent"))?;
+    let end = match tokio::fs::symlink_metadata(directory.join(RECORDING_OFFSET)).await {
+        Ok(_) => end.min(committed_offset(directory).await?),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => end,
+        Err(error) => return Err(error),
+    };
+    if end == 0 {
+        return Err(invalid("recording has no complete fragment"));
+    }
+    Ok(end)
 }
 
 /// Scan headers only, never payloads. Commit init + complete moof/mdat pairs;
@@ -445,6 +650,142 @@ mod tests {
     }
     fn playlist(names: &[&str]) -> Vec<u8> {
         format!("#EXTM3U\n#EXT-X-VERSION:3\n{}\n", names.join("\n")).into_bytes()
+    }
+    #[tokio::test]
+    async fn direct_checkpoint_never_copies_or_truncates_and_does_not_wait_for_flat_writer() {
+        let (_temp, store, source, destination) = fixture();
+        store
+            .prepare_direct_writer(42, SESSION, false)
+            .await
+            .unwrap();
+        let complete = movie();
+        let next = [mp4_box(b"moof", b"next"), mp4_box(b"mdat", b"second media")].concat();
+        let committed = [complete.clone(), next.clone()].concat();
+        let recording = [committed.clone(), next[..next.len() - 2].to_vec()].concat();
+        tokio::fs::write(source.join("replay.mp4"), complete)
+            .await
+            .unwrap();
+        tokio::fs::write(destination.join("replay.mp4"), &recording)
+            .await
+            .unwrap();
+        let manifest = playlist(&["segment000000.ts"]);
+        tokio::fs::write(destination.join("index.m3u8"), &manifest)
+            .await
+            .unwrap();
+        tokio::fs::write(destination.join("segment000000.ts"), b"closed test segment")
+            .await
+            .unwrap();
+        let _busy = store.writer.lock().await;
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            store.checkpoint_live(42, SESSION.into()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            tokio::fs::read(destination.join("replay.mp4"))
+                .await
+                .unwrap(),
+            recording
+        );
+        assert_eq!(
+            committed_offset(&destination).await.unwrap(),
+            committed.len() as u64
+        );
+        assert_eq!(
+            tokio::fs::read(destination.join(DIRECT_PLAYLIST))
+                .await
+                .unwrap(),
+            manifest
+        );
+        assert_eq!(
+            checkpoint_playlist_file(&destination),
+            Some(DIRECT_PLAYLIST)
+        );
+        assert_eq!(
+            store.best_recording(42, SESSION).await.unwrap(),
+            Some(destination.join("replay.mp4"))
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_direct_marker_fails_closed_without_running_the_old_recording_copier() {
+        let (_temp, store, source, destination) = fixture();
+        tokio::fs::write(source.join("replay.mp4"), movie())
+            .await
+            .unwrap();
+        tokio::fs::write(destination.join("replay.mp4"), b"preserve encoder's file")
+            .await
+            .unwrap();
+        tokio::fs::write(destination.join(DIRECT_WRITER), b"foreign")
+            .await
+            .unwrap();
+        assert!(store.checkpoint_live(42, SESSION.into()).await.is_err());
+        assert!(checkpoint_playlist_file(&destination).is_none());
+        assert_eq!(
+            tokio::fs::read(destination.join("replay.mp4"))
+                .await
+                .unwrap(),
+            b"preserve encoder's file"
+        );
+    }
+    #[tokio::test]
+    async fn long_recording_selection_does_not_compare_two_truncated_scan_batches() {
+        let (_temp, store, source, destination) = fixture();
+        let mut bytes = movie();
+        let fragment = [mp4_box(b"moof", b"next"), mp4_box(b"mdat", b"media")].concat();
+        for _ in 0..3000 {
+            bytes.extend(&fragment);
+        }
+        tokio::fs::write(source.join("replay.mp4"), &bytes)
+            .await
+            .unwrap();
+        bytes.extend(&fragment);
+        tokio::fs::write(destination.join("replay.mp4"), &bytes)
+            .await
+            .unwrap();
+        tokio::fs::write(destination.join(RECORDING_OFFSET), bytes.len().to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            store.best_recording(42, SESSION).await.unwrap(),
+            Some(destination.join("replay.mp4"))
+        );
+        bytes.extend(&fragment);
+        tokio::fs::write(source.join("replay.mp4"), &bytes)
+            .await
+            .unwrap();
+        assert_eq!(
+            store.best_recording(42, SESSION).await.unwrap(),
+            Some(source.join("replay.mp4"))
+        );
+        tokio::fs::write(
+            destination.join(RECORDING_OFFSET),
+            (bytes.len() + 1).to_string(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            store.best_recording(42, SESSION).await.unwrap(),
+            Some(source.join("replay.mp4"))
+        );
+    }
+    #[tokio::test]
+    async fn replay_prefix_preserves_partial_tail_and_never_exceeds_replica_acknowledgement() {
+        let (_temp, _store, source, _) = fixture();
+        let complete = movie();
+        let mut bytes = complete.clone();
+        bytes.extend(mp4_box(b"moof", b"next"));
+        bytes.extend(mp4_box(b"mdat", b"incomplete")[..10].to_vec());
+        let path = source.join("replay.mp4");
+        tokio::fs::write(&path, &bytes).await.unwrap();
+        assert_eq!(replay_prefix(&path).await.unwrap(), complete.len() as u64);
+        assert_eq!(tokio::fs::read(&path).await.unwrap(), bytes);
+        tokio::fs::write(source.join(RECORDING_OFFSET), "0")
+            .await
+            .unwrap();
+        assert!(replay_prefix(&path).await.is_err());
     }
     #[tokio::test]
     async fn fragment_boundary_excludes_partial_tail_and_recovers_retry() {

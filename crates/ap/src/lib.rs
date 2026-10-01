@@ -7,6 +7,7 @@
 pub mod acct;
 pub mod activity;
 pub mod actor;
+pub mod cache_file;
 pub mod collection;
 pub mod emoji;
 pub mod featured;

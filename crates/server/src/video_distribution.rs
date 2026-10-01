@@ -120,6 +120,8 @@ pub fn enrich(object: &mut Value, policy: db::Policy) {
     // The choice is retained for recordings, but a waiting/on-air live stream
     // still has no finite downloadable file in PeerTube's Video contract.
     object["downloadEnabled"] = json!(policy.download_enabled && object["isLiveBroadcast"] != true);
+    object[format!("{}mirrorAllowed", plamenu_ap::PLAMENU_NS)] =
+        json!(policy.mirror_allowed && object["isLiveBroadcast"] != true);
 }
 
 #[cfg(test)]
@@ -138,5 +140,20 @@ mod tests {
             plamenu_db::video_distribution::Policy::default_for(1),
         );
         assert_eq!(live["downloadEnabled"], true);
+    }
+
+    #[test]
+    fn mirrors_require_explicit_creator_consent_and_never_offer_live_recording_bytes() {
+        let permission = format!("{}mirrorAllowed", plamenu_ap::PLAMENU_NS);
+        let mut video = serde_json::json!({"isLiveBroadcast":false});
+        let mut policy = plamenu_db::video_distribution::Policy::default_for(1);
+        super::enrich(&mut video, policy);
+        assert_eq!(video[&permission], false);
+        policy.mirror_allowed = true;
+        super::enrich(&mut video, policy);
+        assert_eq!(video[&permission], true);
+        video["isLiveBroadcast"] = serde_json::json!(true);
+        super::enrich(&mut video, policy);
+        assert_eq!(video[&permission], false);
     }
 }

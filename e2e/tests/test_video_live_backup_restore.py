@@ -28,6 +28,7 @@ import websockets
 from plamenu_e2e import config, ephemeral, peertube, unique
 from plamenu_e2e.steps import step, wait_for
 from tests.test_video_backup_restore import _csrf, _digest, _manifest, _stop_process
+from tests.test_video_offload import _freeze
 
 
 async def _announce(domain, infohash):
@@ -61,7 +62,7 @@ def _stop_encoder(publisher):
 @pytest.mark.parametrize("paired", [False, True], ids=["single-disk", "paired-disks"])
 @pytest.mark.federation(direction="outbound", peer="peertube",
     one_way_reason="a surviving PeerTube subscription imports independently recovered native replay episodes")
-def test_interrupted_live_recording_restores_into_fresh_database_and_storage(paired):
+def test_interrupted_live_recording_restores_into_fresh_database_and_storage(paired, monkeypatch):
     with socket.socket() as guard:
         assert guard.connect_ex(("127.0.0.1", 8422)) != 0, "disposable fixture port is occupied"
     label = unique("liverestore").replace("-", "_")
@@ -84,6 +85,7 @@ def test_interrupted_live_recording_restores_into_fresh_database_and_storage(pai
     try:
         with step("start a real recurring native encoder with a surviving PeerTube follower"):
             source.start()
+            _freeze(source, evidence, monkeypatch)
             _stop_process(source)
             with socket.socket() as allocator:
                 allocator.bind(("127.0.0.1", 0))

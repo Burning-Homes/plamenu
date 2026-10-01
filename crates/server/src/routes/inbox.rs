@@ -78,6 +78,9 @@ macro_rules! dispatch_authenticated_activity {
             if webxdc_handled {
                 break 'dispatch Ok(StatusCode::ACCEPTED);
             }
+            if Box::pin(crate::video_mirrors::incoming::handle(state,sender,activity)).await? {
+                break 'dispatch Ok(StatusCode::ACCEPTED);
+            }
 
             match activity.kind.as_str() {
                 "Follow" => handle_follow(state, sender, activity, raw).await?,

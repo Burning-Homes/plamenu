@@ -31,12 +31,14 @@ def _port():
         return allocator.getsockname()[1]
 
 
-def _clock_publisher(server, key):
+def _clock_publisher(server, key, *, size="320x180"):
     # Thirty-two ten-pixel luminance cells encode wall-clock deciseconds in
     # decoded pixels. Keys stay private, never in logs, evidence or assertions.
-    pattern = (r"testsrc2=size=320x180:rate=15,geq="
-        r"lum=if(lt(Y\,12)\,if(eq(bitand(floor(time(0)*10)\,pow(2\,floor(X/10)))\,0)\,16\,235)\,lum(X\,Y)):"
-        r"cb=if(lt(Y\,12)\,128\,cb(X\,Y)):cr=if(lt(Y\,12)\,128\,cr(X\,Y))")
+    assert size in ("320x180", "640x360"), "finite predeclared pixel-clock sources"
+    multiplier = 2 if size == "640x360" else 1
+    pattern = (f"testsrc2=size={size}:rate=15,geq="
+        rf"lum=if(lt(Y\,{12*multiplier})\,if(eq(bitand(floor(time(0)*10)\,pow(2\,floor(X/{10*multiplier})))\,0)\,16\,235)\,lum(X\,Y)):"
+        rf"cb=if(lt(Y\,{12*multiplier})\,128\,cb(X\,Y)):cr=if(lt(Y\,{12*multiplier})\,128\,cr(X\,Y))")
     return subprocess.Popen(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-re",
         "-f", "lavfi", "-i", pattern, "-f", "lavfi", "-i", "sine=frequency=440",
         "-c:v", "libx264", "-threads", "2", "-preset", "veryfast", "-tune", "zerolatency",
@@ -48,7 +50,7 @@ def _clock_publisher(server, key):
 @pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
 @pytest.mark.federation(direction="outbound", peer="peertube",
     one_way_reason="actual PeerTube viewers decode concurrent native broadcasts during tracker loss")
-def test_two_broadcasts_eight_decoders_survive_real_tracker_tcp_loss():
+def test_two_broadcasts_eight_decoders_survive_real_tracker_tcp_loss(monkeypatch):
     with socket.socket() as guard:
         assert guard.connect_ex(("127.0.0.1", 8422)) != 0, "disposable fixture port is occupied"
     label = unique("liveconcurrency").replace("-", "_")
@@ -73,6 +75,8 @@ def test_two_broadcasts_eight_decoders_survive_real_tracker_tcp_loss():
     try:
         with step("start only owned native server and real tracker fault bridge"):
             source.start()
+            from tests.test_video_offload import _freeze
+            _freeze(source, evidence, monkeypatch)
             _stop_process(source)
             upstream, rtmp_port = _port(), _port()
             source._config_path.write_text(source._config_path.read_text().replace(

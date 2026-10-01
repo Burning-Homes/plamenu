@@ -60,6 +60,8 @@ pub fn router() -> Router<AppState> {
 struct DistributionInput {
     download_enabled: bool,
     embed_enabled: bool,
+    #[serde(default)]
+    mirror_allowed: bool,
 }
 
 async fn analytics(
@@ -121,7 +123,7 @@ async fn distribution(
     current.require_scope("read:media")?;
     let (policy, _) = crate::video_distribution::owned(&state, current.account.id, id).await?;
     Ok(private_json(
-        json!({"download_enabled":policy.download_enabled,"embed_enabled":policy.embed_enabled}),
+        json!({"download_enabled":policy.download_enabled,"embed_enabled":policy.embed_enabled,"mirror_allowed":policy.mirror_allowed}),
     ))
 }
 async fn save_distribution(
@@ -140,12 +142,13 @@ async fn save_distribution(
             media_id: id,
             download_enabled: input.download_enabled,
             embed_enabled: input.embed_enabled,
+            mirror_allowed: input.mirror_allowed,
         },
         current.require_scope("write:statuses").is_ok(),
     )
     .await?;
     Ok(private_json(
-        json!({"download_enabled":input.download_enabled,"embed_enabled":input.embed_enabled}),
+        json!({"download_enabled":input.download_enabled,"embed_enabled":input.embed_enabled,"mirror_allowed":input.mirror_allowed}),
     ))
 }
 

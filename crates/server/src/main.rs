@@ -42,6 +42,8 @@ enum Command {
     Config(ConfigCommand),
     /// Run the HTTP server (includes the delivery worker).
     Serve,
+    /// Optional private native video processor; no database or federation services.
+    VideoWorker,
     /// Manage local accounts.
     #[command(subcommand)]
     Account(AccountCommand),
@@ -85,6 +87,9 @@ enum ConfigCommand {
         /// Replace an existing file instead of preserving it.
         #[arg(long)]
         force: bool,
+        /// Generate a private standalone native-worker file with a fresh token.
+        #[arg(long)]
+        video_worker: bool,
     },
 }
 
@@ -429,10 +434,21 @@ async fn run(cli: Cli) -> Result<(), AnyError> {
         .add_directive("rtmp_rs=warn".parse().expect("static tracing directive"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
 
-    if let Command::Config(ConfigCommand::Generate { force }) = &cli.command {
-        Config::generate(&cli.config, *force)?;
+    if let Command::Config(ConfigCommand::Generate {
+        force,
+        video_worker,
+    }) = &cli.command
+    {
+        if *video_worker {
+            plamenu::video_processor::generate(&cli.config, *force)?;
+        } else {
+            Config::generate(&cli.config, *force)?;
+        }
         println!("generated {}", cli.config.display());
         return Ok(());
+    }
+    if matches!(&cli.command, Command::VideoWorker) {
+        return plamenu::video_processor::serve(&cli.config).await;
     }
     let config = Config::from_file(&cli.config)?;
     // Acquire before startup migrations/key backfills, and monitor through
@@ -576,6 +592,7 @@ async fn dispatch(command: Command, state: AppState) -> Result<(), AnyError> {
     match command {
         Command::Config(_) => unreachable!("config generation is handled before app startup"),
         Command::MediaExec { .. } => unreachable!("encoder exec is handled before runtime startup"),
+        Command::VideoWorker => unreachable!("processor is handled before database startup"),
         Command::Serve => serve(state).await,
         Command::Account(AccountCommand::Add {
             username,
@@ -936,6 +953,11 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
         }
     }
     supervisors.extend([
+        supervise(
+            "video mirrors",
+            state.clone(),
+            plamenu::video_mirrors::worker::spawn,
+        ),
         supervise("media", state.clone(), plamenu::media_worker::spawn),
         supervise("media A/V", state.clone(), plamenu::media_worker::spawn_av),
         supervise(

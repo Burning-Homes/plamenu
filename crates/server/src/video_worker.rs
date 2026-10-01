@@ -133,29 +133,15 @@ async fn process(
     params.file_size_limit = Some(reservation.limit.clone());
     params.max_av_bytes = usize::try_from(reservation.source_ceiling).unwrap_or(usize::MAX);
     let stem = crate::media_processing::storage_stem(claim.media_id);
-    let encode = async {
-        let processed = crate::media_worker::process_stored_native_video(
-            state,
-            &claim.source_file,
-            &params,
-            claim.poster_time_seconds,
-        )
-        .await?;
-        if processed.content_type != "video/mp4" || processed.small.is_none() {
-            return Err(ApiError::Unprocessable("Choose a video file".into()));
-        }
-        let hls =
-            crate::media_transcode::package_native_hls(&state.config, &processed, &stem, &params)
-                .await?;
-        let storyboard = crate::media_transcode::package_native_storyboard(
-            &state.config,
-            &processed,
-            &stem,
-            &params,
-        )
-        .await?;
-        Ok::<_, ApiError>((processed, hls, storyboard))
-    };
+    let cancellation = tokio_util::sync::CancellationToken::new();
+    let encode = crate::video_offload::encode(
+        state,
+        &claim.source_file,
+        &params,
+        claim.poster_time_seconds,
+        &stem,
+        &cancellation,
+    );
     tokio::pin!(encode);
     let mut renew = tokio::time::interval(RENEW_EVERY);
     renew.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -163,7 +149,14 @@ async fn process(
         tokio::select! {
             result = &mut encode => break result?,
             _ = renew.tick() => {
-                if !video_draft::renew(&state.pool, claim).await? { return Err(lost_claim()); }
+                if !video_draft::renew(&state.pool, claim).await? {
+                    cancellation.cancel();
+                    // Give the one admitted remote attempt a finite orderly
+                    // DELETE window. Server crash/aborted futures still use the
+                    // remote lease; no unbounded async-Drop queue is introduced.
+                    let _ = tokio::time::timeout(Duration::from_secs(3), &mut encode).await;
+                    return Err(lost_claim());
+                }
             }
         }
     };

@@ -3,7 +3,7 @@
 use super::{MirroredDiskStore, invalid, live::read_playlist};
 use crate::{routes::native_live_hls::valid_segment, storage::LiveRewindSource};
 use std::{collections::HashSet, fmt::Write as _, io, time::Duration};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const MAX_INPUT_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_SEGMENTS: usize = 2000;
@@ -27,7 +27,9 @@ impl MirroredDiskStore {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error),
         };
-        let meta = tokio::fs::symlink_metadata(source.join("index.m3u8")).await?;
+        let playlist_file = super::checkpoint_playlist_file(&source)
+            .ok_or_else(|| invalid("invalid checkpoint playlist ownership"))?;
+        let meta = tokio::fs::symlink_metadata(source.join(playlist_file)).await?;
         if !meta
             .modified()?
             .elapsed()
@@ -35,7 +37,17 @@ impl MirroredDiskStore {
         {
             return Ok(None);
         }
-        let segments = parse_window(&read_playlist(&source).await?)?;
+        let segments = if playlist_file == "index.m3u8" {
+            parse_window(&read_playlist(&source).await?)?
+        } else {
+            let file = tokio::fs::File::open(source.join(playlist_file)).await?;
+            let mut bytes = Vec::new();
+            file.take(256 * 1024 + 1).read_to_end(&mut bytes).await?;
+            if bytes.len() > 256 * 1024 {
+                return Err(invalid("checkpoint playlist too large"));
+            }
+            parse_window(&bytes)?
+        };
         let selected = select_slice(&segments, slice);
         if selected.is_empty() {
             return Ok(None);

@@ -242,6 +242,11 @@ test('browser camera and screen publish through one stable broadcast', async ({ 
       return data.ok() && (await data.body())[0] === 0x47;
     }, { timeout: 60_000 }).toBe(true);
     await publisher.getByRole('button', { name: 'Stop broadcasting' }).click();
+    // Capture ends synchronously; network acknowledgement/replay finalization
+    // must not keep the camera or microphone open after the creator stops.
+    expect(await page.evaluate(() => window.__liveCaptureStreams.every(
+      stream => stream.getTracks().every(track => track.readyState === 'ended'),
+    ))).toBe(true);
     await expect(publisher.getByRole('status')).toContainText('Broadcast stopped.');
     await expect.poll(() => liveState(page, id), { timeout: 30_000 }).toBe('waiting');
   }
@@ -485,6 +490,32 @@ test('browser capture failures and stalled startup recover without leaking devic
   expect(axe.violations).toEqual([]);
 });
 
+test('unavailable browser audio releases capture and permits a real retry', async ({ page }) => {
+  test.skip(!['chromium-desktop', 'chromium-mobile', 'firefox-desktop', 'firefox-mobile'].includes(test.info().project.name));
+  const id = await createLive(page, true);
+  await installSyntheticCapture(page);
+  await page.reload();
+  const publisher = page.locator('[data-live-browser]');
+  await page.evaluate(() => {
+    window.__nativeAudioContext = window.AudioContext;
+    window.AudioContext = class extends window.__nativeAudioContext {
+      resume() { return new Promise(() => {}); }
+    };
+  });
+  await publisher.getByRole('button', { name: 'Use camera and microphone' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(publisher.getByRole('status')).toContainText('audio system did not start', { timeout: 10_000 });
+  await expect(publisher.getByRole('button', { name: 'Use camera and microphone' })).toBeEnabled();
+  expect(await page.evaluate(() => window.__liveCaptureStreams.every(stream => stream.getTracks().every(track => track.readyState === 'ended')))).toBe(true);
+  expect(await liveState(page, id)).toBe('waiting');
+  await page.evaluate(() => { window.AudioContext = window.__nativeAudioContext; });
+  await publisher.getByRole('button', { name: 'Use camera and microphone' }).click();
+  await expect(publisher.getByRole('status')).toContainText('Broadcasting now');
+  await expect.poll(() => liveState(page, id)).toBe('live');
+  await publisher.getByRole('button', { name: 'Stop broadcasting' }).click();
+  await expect(publisher.getByRole('status')).toContainText('Broadcast stopped.');
+});
+
 test('live DVR rewinds and returns to the live edge accessibly', async ({ page }) => {
   test.skip(!['chromium-desktop', 'chromium-mobile'].includes(test.info().project.name));
   test.setTimeout(150_000);
@@ -508,6 +539,9 @@ test('live DVR rewinds and returns to the live edge accessibly', async ({ page }
     });
     const goLive = viewer.getByRole('button', { name: 'Go live' });
     await expect(goLive).toBeVisible();
+    // Live-edge stall recovery must not undo a deliberate DVR rewind.
+    await viewer.waitForTimeout(3500);
+    expect(await video.evaluate(element => element.seekable.end(0) - element.currentTime)).toBeGreaterThan(10);
     const violations = (await new AxeBuilder({ page: viewer }).include('figure.media--video').analyze()).violations;
     expect(violations).toEqual([]);
     await goLive.focus();

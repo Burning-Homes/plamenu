@@ -4,5 +4,5 @@ FROM mcr.microsoft.com/playwright@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891
 # Only Ubuntu's signed repositories are needed; the base image's unrelated
 # NodeSource repository must not gate installing this distro encoder.
 RUN apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Acquire::Retries=1 -o Acquire::http::Timeout=30 update \
-    && apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Acquire::Retries=1 -o Acquire::http::Timeout=30 install -y --no-install-recommends ffmpeg \
+    && apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Acquire::Retries=1 -o Acquire::http::Timeout=30 install -y --no-install-recommends ffmpeg pulseaudio \
     && rm -rf /var/lib/apt/lists/*

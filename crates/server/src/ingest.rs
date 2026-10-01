@@ -3643,6 +3643,29 @@ async fn store_remote_media_sidecars(
 ) -> Result<(), ApiError> {
     store_remote_captions(state, status_id, object).await?;
     store_remote_video_alternatives(state, status_id, object).await?;
+    if object_type_in(object, &["Video"]) {
+        let primary = object_primary_media(object, MediaCaps::load(state).await?);
+        let items = media::for_statuses_read_only(&state.pool, &[status_id]).await?;
+        for item in items.get(&status_id).into_iter().flatten().filter(|item| {
+            primary
+                .as_ref()
+                .is_some_and(|primary| item.remote_url.as_deref() == Some(primary.url))
+        }) {
+            plamenu_db::video_distribution::upsert(
+                &state.pool,
+                plamenu_db::video_distribution::Policy {
+                    media_id: item.id,
+                    download_enabled: object["downloadEnabled"].as_bool().unwrap_or(true),
+                    embed_enabled: object["embedEnabled"].as_bool().unwrap_or(true),
+                    mirror_allowed: !is_live
+                        && object[format!("{}mirrorAllowed", plamenu_ap::PLAMENU_NS)]
+                            .as_bool()
+                            .unwrap_or(false),
+                },
+            )
+            .await?;
+        }
+    }
     store_remote_chapters(state, status_id, object).await?;
     if is_live {
         store_remote_live_schedules(state, status_id, object).await?;

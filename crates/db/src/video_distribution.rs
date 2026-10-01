@@ -7,6 +7,7 @@ pub struct Policy {
     pub media_id: i64,
     pub download_enabled: bool,
     pub embed_enabled: bool,
+    pub mirror_allowed: bool,
 }
 impl Policy {
     #[must_use]
@@ -15,6 +16,7 @@ impl Policy {
             media_id,
             download_enabled: true,
             embed_enabled: true,
+            mirror_allowed: false,
         }
     }
 }
@@ -36,8 +38,8 @@ pub async fn for_media<'e, E: PgExecutor<'e>>(
     )
 }
 pub async fn upsert<'e, E: PgExecutor<'e>>(executor: E, policy: Policy) -> Result<(), DbError> {
-    sqlx::query("INSERT INTO video_distribution(media_id,download_enabled,embed_enabled) VALUES($1,$2,$3) ON CONFLICT(media_id) DO UPDATE SET download_enabled=EXCLUDED.download_enabled,embed_enabled=EXCLUDED.embed_enabled")
-        .bind(policy.media_id).bind(policy.download_enabled).bind(policy.embed_enabled).execute(executor).await?;
+    sqlx::query("INSERT INTO video_distribution(media_id,download_enabled,embed_enabled,mirror_allowed) VALUES($1,$2,$3,$4) ON CONFLICT(media_id) DO UPDATE SET download_enabled=EXCLUDED.download_enabled,embed_enabled=EXCLUDED.embed_enabled,mirror_allowed=EXCLUDED.mirror_allowed")
+        .bind(policy.media_id).bind(policy.download_enabled).bind(policy.embed_enabled).bind(policy.mirror_allowed).execute(executor).await?;
     Ok(())
 }
 pub async fn embed_allowed<'e, E: PgExecutor<'e>>(

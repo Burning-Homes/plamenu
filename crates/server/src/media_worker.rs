@@ -1782,6 +1782,19 @@ async fn delete_files(state: &AppState, files: &[String]) {
 pub async fn purge_domain_media(state: &AppState, domain: &str) {
     const BATCH: i64 = 500;
     loop {
+        match media::hls_segments_evict_domain(&state.pool, domain, BATCH).await {
+            Ok(files) if files.is_empty() => break,
+            // DELETE atomically queued charged cleanup debt. The ordinary
+            // worker acknowledges deletion from both roots before refund;
+            // don't replace it with an unchecked best-effort store delete.
+            Ok(_) => {}
+            Err(error) => {
+                tracing::error!(%error, domain, "domain range-cache purge failed");
+                return;
+            }
+        }
+    }
+    loop {
         match media::evict_cached_for_domain(&state.pool, domain, BATCH).await {
             Ok(cleared) if cleared.is_empty() => break,
             Ok(cleared) => delete_cleared(state, &cleared).await,

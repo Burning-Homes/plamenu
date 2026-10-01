@@ -624,6 +624,7 @@ fn browser_publisher(locale: Locale, user: &WebUser, id: i64) -> Markup {
             data-start-timeout=(locale.text("videos-live-browser-start-timeout"))
             data-permission-denied=(locale.text("videos-live-browser-permission-denied"))
             data-device-unavailable=(locale.text("videos-live-browser-device-unavailable"))
+            data-audio-unavailable=(locale.text("videos-live-browser-audio-unavailable"))
             data-device-busy=(locale.text("videos-live-browser-device-busy"))
             data-capture-cancelled=(locale.text("videos-live-browser-capture-cancelled"))
             data-requesting=(locale.text("videos-live-browser-requesting"))
@@ -638,6 +639,7 @@ fn browser_publisher(locale: Locale, user: &WebUser, id: i64) -> Markup {
             data-live-camera-label=(locale.text("videos-live-browser-camera-live"))
             data-live-screen-label=(locale.text("videos-live-browser-screen-live"))
             data-stopped=(locale.text("videos-live-browser-stopped"))
+            data-stopping=(locale.text("videos-live-browser-stopping"))
             data-camera-unknown=(locale.text("videos-live-browser-unknown-camera"))
             data-mic-unknown=(locale.text("videos-live-browser-unknown-mic")) {
             h2 { (locale.text("videos-live-browser-title")) }

@@ -235,6 +235,16 @@ pub trait FederationApi: Send + Sync {
     ) -> BoxFuture<'a, Result<FetchedMediaFile, FederationError>> {
         self.fetch_media_to_file(url, dest, max_bytes)
     }
+    fn fetch_mirror_to_file<'a>(
+        &'a self,
+        url: &'a str,
+        dest: &'a std::path::Path,
+        max_bytes: u64,
+        bytes_per_second: u64,
+    ) -> BoxFuture<'a, Result<FetchedMediaFile, FederationError>> {
+        let _ = (url, dest, max_bytes, bytes_per_second);
+        Box::pin(async { Err(FederationError::Status(501)) })
+    }
     /// Fetches one byte range of a remote file, streamed to `dest` (the caching
     /// HLS reverse-proxy's segment fetch). See
     /// [`FederationClient::fetch_range_to_file`]. Defaulted so test doubles that
@@ -726,6 +736,22 @@ impl FederationApi for HttpFederation {
         len: u64,
     ) -> BoxFuture<'a, Result<u64, FederationError>> {
         Box::pin(self.guarded(url, self.client.fetch_range_to_file(url, dest, start, len)))
+    }
+
+    fn fetch_mirror_to_file<'a>(
+        &'a self,
+        url: &'a str,
+        dest: &'a std::path::Path,
+        max_bytes: u64,
+        bytes_per_second: u64,
+    ) -> BoxFuture<'a, Result<FetchedMediaFile, FederationError>> {
+        Box::pin(
+            self.guarded(
+                url,
+                self.client
+                    .fetch_mirror_to_file(url, dest, max_bytes, bytes_per_second),
+            ),
+        )
     }
 
     fn fetch_media_range<'a>(

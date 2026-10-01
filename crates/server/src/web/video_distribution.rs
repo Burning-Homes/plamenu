@@ -43,6 +43,8 @@ pub async fn page(
                     input type="hidden" name="csrf" value=(user.csrf);
                     label.settings-field__choice{input type="checkbox" name="download_enabled" value="yes" checked[policy.download_enabled];span{(locale.text("video-sharing-download"))}}
                     label.settings-field__choice{input type="checkbox" name="embed_enabled" value="yes" checked[policy.embed_enabled];span{(locale.text("video-sharing-embed"))}}
+                    label.settings-field__choice{input type="checkbox" name="mirror_allowed" value="yes" aria-describedby="mirror-permission-hint" checked[policy.mirror_allowed];span{(locale.text("video-sharing-mirror"))}}
+                    p.settings-field__hint id="mirror-permission-hint"{(locale.text("video-sharing-mirror-hint"))}
                     button type="submit"{(locale.text("video-sharing-save"))}
                 }
             }
@@ -70,6 +72,7 @@ pub async fn save(
                 media_id: id,
                 download_enabled: field(&pairs, "download_enabled") == Some("yes"),
                 embed_enabled: field(&pairs, "embed_enabled") == Some("yes"),
+                mirror_allowed: field(&pairs, "mirror_allowed") == Some("yes"),
             },
             user.current.require_scope("write:statuses").is_ok(),
         )

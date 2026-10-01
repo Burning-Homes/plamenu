@@ -425,6 +425,8 @@ def main():
                     "--env",
                     "HOME=/tmp",
                     "--env",
+                    "A11Y_NULL_AUDIO=1",
+                    "--env",
                     "A11Y_VIDEO_FIXTURE=/tmp/native-video.mp4",
                     "--env",
                     "A11Y_AUDIO_FIXTURE=/tmp/native-audio.m4a",

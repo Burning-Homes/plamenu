@@ -4062,9 +4062,9 @@
   // A published Video supplies its checksum manifest. Read
   // that *before* constructing a peer engine (which could contact a tracker).
   // Without a bounded, usable manifest, regular HTTP HLS remains available.
-  async function peerHashes(url, live = false) {
+  async function peerHashes(url, live = false, requestTimeoutMs = 2500) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2500);
+    const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
     try {
       const response = await fetch(url, { signal: controller.signal, mode: "cors",
         cache: live ? "no-store" : "default" });
@@ -4094,7 +4094,7 @@
     }
   }
 
-  function peerSegmentValidator(hashes, checksumUrl, live) {
+  function peerSegmentValidator(hashes, checksumUrl, live, diagnostic = null) {
     let currentHashes = hashes;
     let refreshPending = null;
     return async (url, byteRange, data) => {
@@ -4130,14 +4130,83 @@
           if (updated) currentHashes = updated;
           expected = expectedHash();
         }
-        if (typeof expected !== "string" || !/^[a-f0-9]{64}$/.test(expected)) return false;
+        if (typeof expected !== "string" || !/^[a-f0-9]{64}$/.test(expected)) {
+          diagnostic?.({kind:'hash-unavailable',filename:filename.slice(0,128)});
+          return false;
+        }
         const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
         const actual = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+        if(actual !== expected) diagnostic?.({kind:'digest-mismatch',filename:filename.slice(0,128),expected,actual,bytes:data.byteLength});
         return actual === expected;
       } catch (_err) {
         return false;
       }
     };
+  }
+
+  // The supported peer-storage interface keeps late async completion after
+  // player destruction harmless and makes browser memory an explicit budget.
+  // It does not change the PeerTube wire protocol or checksum validators.
+  function peerMemoryStorage(limitMiB) {
+    const cache = new Map();
+    const limit = Math.max(1, Math.min(128, limitMiB)) * 1024 * 1024;
+    let used = 0, closed = false, changed = null, position = 0, windowSeconds = 4;
+    const key = (stream, id) => JSON.stringify([stream, id]);
+    const remove = (entryKey, affected) => {
+      const entry = cache.get(entryKey);
+      if (!entry) return;
+      cache.delete(entryKey);
+      used -= entry.data.byteLength;
+      affected.add(entry.stream);
+    };
+    const notify = affected => {
+      if (!closed && changed) for (const stream of affected) changed(stream);
+    };
+    return {
+      async initialize(_core, main) { windowSeconds = Math.max(4, main?.highDemandTimeWindow || 4); },
+      onPlaybackUpdated(time) { if (!closed && Number.isFinite(time)) position = time; },
+      onSegmentRequested() {},
+      setSegmentChangeCallback(callback) { if (!closed) changed = callback; },
+      clear(live, incoming = 0) {
+        if (closed) return;
+        const affected = new Set();
+        if (live) for (const [entryKey, entry] of cache) {
+          if (entry.end < position - windowSeconds) remove(entryKey, affected);
+        }
+        for (const entryKey of cache.keys()) {
+          if (used + incoming <= limit && cache.size < 4096) break;
+          remove(entryKey, affected);
+        }
+        notify(affected);
+      },
+      async storeSegment(_swarm, stream, id, data, start, end, _type, live) {
+        if (closed || !data?.byteLength || data.byteLength > limit) return;
+        const entryKey = key(stream, id);
+        const affected = new Set();
+        remove(entryKey, affected);
+        this.clear(live, data.byteLength);
+        if (closed) return;
+        cache.set(entryKey, { stream, id, data, start, end });
+        used += data.byteLength;
+        affected.add(stream);
+        notify(affected);
+      },
+      async getSegmentData(_swarm, stream, id) {
+        if (closed) return undefined;
+        return cache.get(key(stream, id))?.data;
+      },
+      hasSegment(_swarm, stream, id) { return !closed && cache.has(key(stream, id)); },
+      getStoredSegmentIds(_swarm, stream) {
+        return closed ? [] : Array.from(cache.values()).filter(entry => entry.stream === stream).map(entry => entry.id);
+      },
+      getUsage() { return { totalCapacity: limit / (1024 * 1024), usedCapacity: used / (1024 * 1024) }; },
+      destroy() { closed = true; changed = null; cache.clear(); used = 0; },
+    };
+  }
+
+  function liveSegmentTimeout(seconds) {
+    return Number.isFinite(seconds) && seconds > 0
+      ? Math.min(10000, Math.max(3000, Math.ceil(seconds * 1500))) : 3000;
   }
 
   async function peerOptions(video, live) {
@@ -4149,8 +4218,19 @@
     try { trackers = JSON.parse(video.dataset.p2pTrackers || "[]"); }
     catch (_err) { return null; }
     if (!uuid || !swarmId || !checksumUrl || !Array.isArray(trackers) || !trackers.length) return null;
-    const hashes = await peerHashes(checksumUrl, live);
+    const startupDeadline = Date.now() + 5000;
+    let hashes = await peerHashes(checksumUrl, live);
+    // On-air is announced before the encoder commits its first complete
+    // segment. A cold viewer must not permanently lose sharing to that brief
+    // 404. Keep this startup retry finite and recheck opt-out before each fetch.
+    for (let attempt = 0; live && !hashes && attempt < 5 && Date.now() < startupDeadline - 500; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      if (!peerSharingEnabled()) return null;
+      hashes = await peerHashes(checksumUrl, true, Math.min(2500, startupDeadline - Date.now()));
+    }
     if (!hashes) return null;
+    const validateSegment = peerSegmentValidator(hashes, checksumUrl, live,
+      failure => { video.dataset.p2pIntegrityFailure = JSON.stringify(failure); });
     return {
       core: {
         announceTrackers: trackers,
@@ -4161,14 +4241,18 @@
           const resolution = Math.min(height, width);
           return `pt-${peerProtocolVersion}-${uuid}-${streamType}-default-${Number.isFinite(resolution) ? resolution : "default"}`;
         },
-        validateP2PSegment: peerSegmentValidator(hashes, checksumUrl, live),
+        validateP2PSegment: validateSegment,
+        // HTTP may finish a transfer that already contains peer-supplied
+        // bytes. Validate the complete result at both completion boundaries.
+        validateHTTPSegment: validateSegment,
+        customSegmentStorageFactory: () => peerMemoryStorage(navigator.deviceMemory && navigator.deviceMemory <= 2 ? 32 : 64),
         isP2PUploadDisabled: navigator.connection?.type === "cellular" || !!navigator.connection?.saveData,
         highDemandTimeWindow: live ? 4 : 15,
         // Adaptive VOD startup can request an unseeded quality over HTTP.
         // The library's 3s no-byte default repeatedly cancels a slow origin
         // while switching levels, even when other peer bytes were verified.
         // Keep live's short recovery, but allow bounded 10s VOD HTTP startup.
-        ...(live ? {} : { segmentMemoryStorageLimit: 1024, httpNotReceivingBytesTimeoutMs: 10000 }),
+        ...(live ? {} : { httpNotReceivingBytesTimeoutMs: 10000 }),
       },
       onHlsJsCreated: (hls) => {
         video.dataset.p2pActive = "true";
@@ -4191,8 +4275,15 @@
           }
         });
         hls.p2pEngine.addEventListener("onSegmentError", ({ error }) => {
-          if (error?.type === "p2p-segment-validation-failed") {
+          // Bounded local diagnostics; no peer IDs, addresses or URLs.
+          video.dataset.p2pLastError = String(error?.type || "unknown").slice(0, 64);
+          // A completed RTC transfer reports checksum refusal by closing the
+          // peer; resumed transfers use the direct validation error instead.
+          if (error?.type === "p2p-segment-validation-failed" ||
+              (error?.type === "peer-closed" && error.cause?.type === "validation-failed")) {
             video.dataset.p2pValidationErrors = String(Number(video.dataset.p2pValidationErrors || 0) + 1);
+          } else if (error?.type === "http-segment-validation-failed") {
+            video.dataset.hlsHttpValidationErrors = String(Number(video.dataset.hlsHttpValidationErrors || 0) + 1);
           }
         });
         hls.p2pEngine.addEventListener("onChunkUploaded", (bytes) => {
@@ -4201,6 +4292,14 @@
       },
     };
   }
+  function liveSeekTarget(video, hls) {
+    const sync = hls?.liveSyncPosition;
+    // The loaded seekable tail can still belong to a delayed/DVR transfer.
+    // Ask HLS for its current target, not that stale buffer's last timestamp.
+    if (Number.isFinite(sync)) return sync;
+    return video.seekable.length ? video.seekable.end(video.seekable.length - 1) : null;
+  }
+
   function loadHls(cb) {
     if (window.Hls) return cb(window.Hls);
     if (hlsLoading) return hlsLoading.push(cb);
@@ -4300,6 +4399,19 @@
     const progressive = video.getAttribute("src") || video.getAttribute("data-src");
     let hlsPlayer = null;
     const liveVideo = video.dataset.live === 'live';
+    let rewoundLive = false;
+    let lastLiveTime = 0;
+    // Live-edge playback must recover after a slow transfer instead of
+    // retaining that delay forever. Deliberate DVR rewinds remain unbounded
+    // by this edge-recovery rule and are never fast-forwarded behind the user.
+    video.addEventListener('timeupdate', () => { lastLiveTime = video.currentTime; });
+    video.addEventListener('seeking', () => {
+      if (!liveVideo || !hlsPlayer) return;
+      const sync = hlsPlayer.liveSyncPosition;
+      if (Number.isFinite(sync) && video.currentTime >= sync - 1) rewoundLive = false;
+      else if (video.currentTime < lastLiveTime - .5) rewoundLive = true;
+      hlsPlayer.config.liveMaxLatencyDuration = rewoundLive ? Infinity : 5;
+    });
     let vodPending = false;
     let vodTimer = null;
     let vodFallback = false;
@@ -4438,18 +4550,20 @@
     }
     if (goLive) {
       const liveEdge = () => {
-        if (!video.seekable.length) return null;
-        const end = video.seekable.end(video.seekable.length - 1);
-        const sync = hlsPlayer?.liveSyncPosition;
-        return Number.isFinite(sync) ? Math.min(end, sync) : end;
+        return liveSeekTarget(video, hlsPlayer);
       };
       const updateGoLive = () => {
         const edge = liveEdge();
-        goLive.hidden = edge === null || edge - video.currentTime < 4;
+        goLive.hidden = !rewoundLive && (edge === null || edge - video.currentTime < 4);
       };
       goLive.addEventListener("click", () => {
+        rewoundLive = false;
+        if (hlsPlayer) hlsPlayer.config.liveMaxLatencyDuration = 5;
         const edge = liveEdge();
-        if (edge !== null) video.currentTime = edge;
+        if (edge !== null) {
+          lastLiveTime = edge;
+          video.currentTime = edge;
+        }
         if (video.paused) video.play().catch(() => {});
         updateGoLive();
       });
@@ -4511,7 +4625,14 @@
               ? {
                   capLevelToPlayerSize: true,
                   lowLatencyMode: true,
-                  liveSyncDurationCount: 3,
+                  // Use seconds, not segment counts: compatible origins may
+                  // publish four-second segments instead of our two seconds.
+                  liveSyncDuration: 4,
+                  liveMaxLatencyDuration: 5,
+                  // A recovered stall must not permanently add another
+                  // segment to the live-edge target. Explicit DVR rewinds
+                  // use the separate unbounded-latency intent above.
+                  liveSyncOnStallIncrease: 0,
                   // The origin deletes segments as the window slides; a
                   // player that keeps retrying a gone segment never
                   // recovers, so let it jump the gap instead.
@@ -4545,6 +4666,11 @@
               });
             }
             if (live) {
+              hls.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
+                hls.p2pEngine?.applyDynamicConfig({ core: {
+                  httpNotReceivingBytesTimeoutMs: liveSegmentTimeout(Number(data?.details?.targetduration)),
+                } });
+              });
               // A live playlist can hiccup — a segment rolls out of the
               // window mid-fetch — and that is worth resuming from. A
               // broadcast that has *ended* looks the same at first and never

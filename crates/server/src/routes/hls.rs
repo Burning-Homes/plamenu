@@ -165,6 +165,18 @@ impl Drop for SegGuard {
 const HLS_FAIL_COOLDOWN: Duration = Duration::from_secs(30);
 
 async fn hls_suppressed(state: &AppState, kind: &str, media_id: i64) -> Result<bool, ApiError> {
+    // An already acknowledged mirror doesn't contact the failed origin and
+    // doesn't consume/reset its persistent failure budget.
+    if state.config.video_redundancy.is_some()
+        && let Some(item) = media::find_by_ids(&state.pool, &[media_id])
+            .await?
+            .into_iter()
+            .next()
+        && let Some(master) = item.hls_master_url
+        && crate::video_mirrors::source::available(state, media_id, &master).await?
+    {
+        return Ok(false);
+    }
     Ok(
         media_fetch_failure::is_cooling_down(&state.pool, kind, media_id, HLS_FAIL_COOLDOWN)
             .await?,
@@ -172,6 +184,17 @@ async fn hls_suppressed(state: &AppState, kind: &str, media_id: i64) -> Result<b
 }
 
 async fn note_hls_result(state: &AppState, kind: &str, media_id: i64, success: bool) {
+    if state.config.video_redundancy.is_some()
+        && let Ok(items) = media::find_by_ids(&state.pool, &[media_id]).await
+        && let Some(master) = items
+            .first()
+            .and_then(|item| item.hls_master_url.as_deref())
+        && crate::video_mirrors::source::available(state, media_id, master)
+            .await
+            .unwrap_or(false)
+    {
+        return;
+    }
     let result = if success {
         media_fetch_failure::clear(&state.pool, kind, media_id).await
     } else {
@@ -335,13 +358,25 @@ pub async fn sha256_manifest(
     let bytes = if let Some(cached) = checksum_cache_get(&peers.sha256_url, lane.live) {
         cached
     } else {
-        let fetched = state
-            .federation
-            .fetch_media_limited(&peers.sha256_url, 2 * 1024 * 1024)
-            .await
-            .map_err(|_| ApiError::NotFound)?;
-        checksum_cache_put(&peers.sha256_url, &fetched.bytes, lane.live);
-        fetched.bytes
+        let bytes = if let Some(bytes) = crate::video_mirrors::source::metadata(
+            &state,
+            media_id,
+            &peers.sha256_url,
+            2 * 1024 * 1024,
+        )
+        .await?
+        {
+            bytes
+        } else {
+            state
+                .federation
+                .fetch_media_limited(&peers.sha256_url, 2 * 1024 * 1024)
+                .await
+                .map_err(|_| ApiError::NotFound)?
+                .bytes
+        };
+        checksum_cache_put(&peers.sha256_url, &bytes, lane.live);
+        bytes
     };
     ensure_current(&state, media_id, &lane).await?;
     let current = remote_hls_peers::for_media(&state.pool, &[media_id])
@@ -351,6 +386,18 @@ pub async fn sha256_manifest(
     if current.sha256_url != peers.sha256_url || current.video_uuid != peers.video_uuid {
         return Err(ApiError::NotFound);
     }
+    let bytes = if lane.live {
+        let mut manifest: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_slice(&bytes).map_err(|_| ApiError::NotFound)?;
+        // PeerTube may publish a closed segment before publishing its SHA.
+        // Never derive trust from RTC bytes or replace an authoritative hash.
+        for (name, hash) in super::hls_live::checksums(media_id, &dir_prefix(&lane.master_url)) {
+            manifest.entry(name).or_insert(hash);
+        }
+        serde_json::to_vec(&manifest).map_err(|e| ApiError::Internal(Box::new(e)))?
+    } else {
+        bytes
+    };
     Ok((
         [
             (header::CONTENT_TYPE, "application/json"),
@@ -418,7 +465,7 @@ pub async fn segment(
 ) -> Result<Response, ApiError> {
     let lane = lane(&state, media_id).await?;
     ensure_on_air(&lane)?;
-    let origin = decode_child(&q.u, &dir_prefix(&lane.master_url)).ok_or(ApiError::NotFound)?;
+    let origin = decode_rendition(&state, media_id, &q.u, &lane.master_url).await?;
     if hls_suppressed(&state, "hls-segment", media_id).await? {
         return Err(ApiError::NotFound);
     }
@@ -431,7 +478,7 @@ pub async fn segment(
         (Some(start), Some(len)) if len > 0 && len <= MAX_SEGMENT_BYTES => {
             serve_segment(&state, media_id, &origin, start, len, &headers).await
         }
-        (None, None) if lane.live => serve_live_segment(&state, media_id, &origin).await,
+        (None, None) if lane.live => serve_live_segment(&state, media_id, &origin, &headers).await,
         _ => Err(ApiError::NotFound),
     };
     ensure_current(&state, media_id, &lane).await?;
@@ -450,6 +497,7 @@ pub async fn segment(
 pub async fn live_child(
     State(state): State<AppState>,
     Path((media_id, name)): Path<(i64, String)>,
+    headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let lane = lane(&state, media_id).await?;
     ensure_on_air(&lane)?;
@@ -473,7 +521,7 @@ pub async fn live_child(
     let result = if is_m3u8(&origin) {
         serve_playlist(&state, media_id, &origin, true).await
     } else {
-        serve_live_segment(&state, media_id, &origin).await
+        serve_live_segment(&state, media_id, &origin, &headers).await
     };
     ensure_current(&state, media_id, &lane).await?;
     note_hls_result(&state, kind, media_id, result.is_ok()).await;
@@ -556,18 +604,37 @@ async fn serve_playlist(
             return Ok(playlist_response(memoized, live));
         }
     }
-    let fetched = state
-        .federation
-        .fetch_media(url)
-        .await
-        .map_err(|_| ApiError::NotFound)?;
-    let body = String::from_utf8_lossy(&fetched.bytes);
+    let bytes = if !live
+        && let Some(bytes) = crate::video_mirrors::source::metadata(
+            state,
+            media_id,
+            url,
+            crate::video_mirrors::manifest::MAX_PLAYLIST_BYTES as u64,
+        )
+        .await?
+    {
+        bytes
+    } else {
+        state
+            .federation
+            .fetch_media_limited(
+                url,
+                crate::video_mirrors::manifest::MAX_PLAYLIST_BYTES as u64,
+            )
+            .await
+            .map_err(|_| ApiError::NotFound)?
+            .bytes
+    };
+    let body = std::str::from_utf8(&bytes).map_err(|_| ApiError::NotFound)?;
+    if !body.trim_start_matches('\u{feff}').starts_with("#EXTM3U") {
+        return Err(ApiError::NotFound);
+    }
     // ffmpeg restarts every broadcast's media sequence at zero while a
     // permanent live keeps its master URL *and* its segment filenames, so a
     // sequence that went backwards is the one reliable signal that cached
     // bytes now belong to a stream nobody is watching any more.
     if live
-        && let Some(sequence) = hls_live::media_sequence(&body)
+        && let Some(sequence) = hls_live::media_sequence(body)
         && hls_live::sequence_restarted(media_id, url, sequence)
     {
         tracing::debug!(
@@ -577,7 +644,7 @@ async fn serve_playlist(
         );
         hls_live::purge_media(media_id);
     }
-    let rewritten = rewrite_playlist(&body, url, media_id, live);
+    let rewritten = rewrite_playlist(body, url, media_id, live);
     playlist_memo_put(media_id, url, &rewritten);
     Ok(playlist_response(rewritten, live))
 }
@@ -769,10 +836,11 @@ async fn serve_live_segment(
     state: &AppState,
     media_id: i64,
     origin: &str,
+    headers: &HeaderMap,
 ) -> Result<Response, ApiError> {
     let content_type = hls_live::segment_content_type(origin);
     if let Some(hit) = hls_live::get(origin) {
-        return Ok(live_segment_response(&hit, content_type));
+        return Ok(live_segment_response(&hit, content_type, headers));
     }
     if hls_disabled(state).await? {
         return Err(ApiError::NotFound);
@@ -787,7 +855,7 @@ async fn serve_live_segment(
         for _ in 0..50 {
             tokio::time::sleep(Duration::from_millis(100)).await;
             if let Some(hit) = hls_live::get(origin) {
-                return Ok(live_segment_response(&hit, content_type));
+                return Ok(live_segment_response(&hit, content_type, headers));
             }
             if !SegGuard::running(&key) {
                 break; // the winner finished (or died) without publishing
@@ -795,7 +863,7 @@ async fn serve_live_segment(
         }
     }
     if let Some(hit) = hls_live::get(origin) {
-        return Ok(live_segment_response(&hit, content_type));
+        return Ok(live_segment_response(&hit, content_type, headers));
     }
 
     let fetched = state
@@ -810,21 +878,45 @@ async fn serve_live_segment(
     // Oversized segments are still served, just never remembered — `put`
     // refuses them so one broken origin cannot evict every other broadcast.
     hls_live::put(media_id, origin, std::sync::Arc::clone(&bytes));
-    Ok(live_segment_response(&bytes, content_type))
+    Ok(live_segment_response(&bytes, content_type, headers))
 }
 
-fn live_segment_response(bytes: &[u8], content_type: &'static str) -> Response {
-    (
-        [
-            (header::CONTENT_TYPE, content_type),
-            // A live segment's bytes never change once written, so a client
-            // that did re-request one may reuse it; the *playlist* is what
-            // must never be cached.
-            (header::CACHE_CONTROL, SEGMENT_CACHE),
-        ],
-        bytes.to_vec(),
-    )
-        .into_response()
+fn live_segment_response(
+    bytes: &[u8],
+    content_type: &'static str,
+    headers: &HeaderMap,
+) -> Response {
+    let total = bytes.len() as u64;
+    let common = [
+        (header::CONTENT_TYPE, content_type),
+        (header::CACHE_CONTROL, SEGMENT_CACHE),
+        (header::ACCEPT_RANGES, "bytes"),
+    ];
+    // A peer transfer can resume through HTTP at any byte offset. Returning
+    // the whole TS instead of the requested tail wastes/discards peer bytes
+    // and can poison a mixed transfer. Cache the complete immutable segment
+    // once, but serve exactly the requested range on both live aliases.
+    match super::media::parse_range(headers.get(header::RANGE), total) {
+        super::media::ByteRange::Full => (common, bytes.to_vec()).into_response(),
+        super::media::ByteRange::Partial(start, end) => (
+            axum::http::StatusCode::PARTIAL_CONTENT,
+            common,
+            [(
+                header::CONTENT_RANGE,
+                format!("bytes {start}-{end}/{total}"),
+            )],
+            bytes[usize::try_from(start).expect("range bounded by the in-memory segment")
+                ..=usize::try_from(end).expect("range bounded by the in-memory segment")]
+                .to_vec(),
+        )
+            .into_response(),
+        super::media::ByteRange::Unsatisfiable => (
+            axum::http::StatusCode::RANGE_NOT_SATISFIABLE,
+            common,
+            [(header::CONTENT_RANGE, format!("bytes */{total}"))],
+        )
+            .into_response(),
+    }
 }
 
 /// Fetches one segment's byte range from the origin into the store, coalescing
@@ -876,14 +968,21 @@ async fn fetch_and_cache_segment(
         .tempfile_in(&scratch_root)
         .map_err(|e| ApiError::Internal(Box::new(e)))?;
     let tmp_path = tmp.path().to_path_buf();
-    let written = state
-        .federation
-        .fetch_range_to_file(origin, &tmp_path, start, len)
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, origin, start, len, "HLS segment origin fetch failed");
-            ApiError::NotFound
-        })?;
+    let written = if let Some(written) =
+        crate::video_mirrors::source::range_to_file(state, media_id, origin, &tmp_path, start, len)
+            .await?
+    {
+        written
+    } else {
+        state
+            .federation
+            .fetch_range_to_file(origin, &tmp_path, start, len)
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, origin, start, len, "HLS segment origin fetch failed");
+                ApiError::NotFound
+            })?
+    };
 
     // A retired key must never be recreated while its cleanup is in flight.
     // The database still coalesces by origin/range, not by this private nonce.
@@ -977,10 +1076,9 @@ async fn lane_reload(state: &AppState, media_id: i64) -> Result<Lane, ApiError> 
 /// The directory URL of a playlist — its master's siblings (media playlists,
 /// segments, init) all live here. The SSRF fence for proxied child URLs.
 fn dir_prefix(url: &str) -> String {
-    match url.rfind('/') {
-        Some(i) => url[..=i].to_owned(),
-        None => url.to_owned(),
-    }
+    url::Url::parse(url)
+        .and_then(|url| url.join("."))
+        .map_or_else(|_| String::new(), |url| url.to_string())
 }
 
 /// Decodes a proxied child URL and enforces it stays under the video's own HLS
@@ -988,8 +1086,43 @@ fn dir_prefix(url: &str) -> String {
 /// playlist's directory, never an arbitrary URL (SSRF/open-proxy fence).
 fn decode_child(b64: &str, prefix: &str) -> Option<String> {
     let bytes = B64.decode(b64).ok()?;
-    let url = String::from_utf8(bytes).ok()?;
-    (plamenu_federation::is_federation_url(&url) && url.starts_with(prefix)).then_some(url)
+    let raw = String::from_utf8(bytes).ok()?;
+    let url = url::Url::parse(&raw).ok()?.to_string();
+    (!prefix.is_empty() && plamenu_federation::is_federation_url(&url) && url.starts_with(prefix))
+        .then_some(url)
+}
+
+/// Native publishers keep their fMP4 renditions outside the playlist directory.
+/// Permit only exact, current signed rendition URLs on the master's origin;
+/// sharing a hostname is not permission to proxy arbitrary sibling files.
+async fn decode_rendition(
+    state: &AppState,
+    media_id: i64,
+    encoded: &str,
+    master: &str,
+) -> Result<String, ApiError> {
+    if let Some(url) = decode_child(encoded, &dir_prefix(master)) {
+        return Ok(url);
+    }
+    let raw = String::from_utf8(B64.decode(encoded).map_err(|_| ApiError::NotFound)?)
+        .map_err(|_| ApiError::NotFound)?;
+    let child = url::Url::parse(&raw).map_err(|_| ApiError::NotFound)?;
+    let master = url::Url::parse(master).map_err(|_| ApiError::NotFound)?;
+    if !plamenu_federation::is_federation_url(child.as_str())
+        || child.origin() != master.origin()
+        || child.as_str() != raw
+    {
+        return Err(ApiError::NotFound);
+    }
+    let known = media::renditions_for(&state.pool, &[media_id])
+        .await?
+        .remove(&media_id)
+        .unwrap_or_default();
+    if known.iter().any(|rendition| rendition.origin_url == raw) {
+        Ok(raw)
+    } else {
+        Err(ApiError::NotFound)
+    }
 }
 
 fn pl_url(media_id: i64, abs: &str) -> String {
@@ -1071,7 +1204,10 @@ fn attr(attrs: &str, name: &str) -> Option<String> {
 
 /// Whether an HLS URI names a (nested) playlist rather than a media segment.
 fn is_m3u8(url: &str) -> bool {
-    url.rsplit('.')
+    url.split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .rsplit('.')
         .next()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("m3u8"))
 }

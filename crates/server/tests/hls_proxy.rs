@@ -156,6 +156,73 @@ struct SplitHlsFixture {
     audio_playlist: Vec<u8>,
 }
 
+#[sqlx::test(migrations = "../db/migrations")]
+async fn signed_native_rendition_outside_playlist_directory_and_revision_query_are_supported(
+    pool: PgPool,
+) {
+    let account = create_local_account(&pool, "nativeconsumer", "Native consumer").await;
+    let media = hls_media_row(&pool, account.id).await;
+    let master = "https://remote.example/media/hls/123/master.m3u8?rev=2";
+    let child = "https://remote.example/media/hls/123/native/240/index.m3u8?rev=2";
+    let file = "https://remote.example/media/owned-native.draft.hls240.m4s";
+    sqlx::query("UPDATE media_attachments SET hls_master_url=$2 WHERE id=$1")
+        .bind(media)
+        .bind(master)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO media_renditions(id,media_id,height,origin_url,is_audio) VALUES($1,$2,240,$3,false)")
+        .bind(id::next()).bind(media).bind(file).execute(&pool).await.unwrap();
+    let stub = Arc::new(StubFederation::default());
+    for (url,bytes) in [
+        (master,format!("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\n{child}\n").into_bytes()),
+        (child,format!("#EXTM3U\n#EXT-X-MAP:URI=\"{file}\",BYTERANGE=\"4@0\"\n#EXTINF:2,\n#EXT-X-BYTERANGE:8@4\n{file}\n#EXT-X-ENDLIST\n").into_bytes()),
+        (file,(0..12).collect()),
+    ] {
+        stub.media.lock().unwrap().insert(url.into(),plamenu_federation::FetchedMedia {final_url:url.into(),content_type:"application/vnd.apple.mpegurl".into(),bytes});
+    }
+    let app = test_app_with(pool, stub.clone());
+    let (code, body) = get(&app, &format!("/media/hls/{media}/master.m3u8")).await;
+    assert_eq!(code, StatusCode::OK);
+    let text = String::from_utf8(body).unwrap();
+    let rewritten = text
+        .lines()
+        .find(|line| !line.starts_with('#') && !line.is_empty())
+        .unwrap();
+    assert!(
+        rewritten.contains("/pl?"),
+        "a revision query does not turn a playlist into a segment"
+    );
+    let (code, body) = get(&app, rewritten).await;
+    assert_eq!(code, StatusCode::OK);
+    let text = String::from_utf8(body).unwrap();
+    let segment = text
+        .lines()
+        .find(|line| !line.starts_with('#') && !line.is_empty())
+        .unwrap();
+    let (code, body) = get(&app, segment).await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(body, vec![4, 5, 6, 7, 8, 9, 10, 11]);
+    let before = stub.range_fetches.lock().unwrap().len();
+    for forbidden in [
+        "https://remote.example/media/unannounced.m4s",
+        "https://remote.example/media/hls/123/../../../private.m4s",
+        "https://remote.example/media/hls/123/%2e%2e/%2e%2e/private.m4s",
+    ] {
+        let (code, _) = get(
+            &app,
+            &format!("/media/hls/{media}/seg?u={}&s=0&l=4", B64.encode(forbidden)),
+        )
+        .await;
+        assert_eq!(code, StatusCode::NOT_FOUND);
+    }
+    assert_eq!(
+        stub.range_fetches.lock().unwrap().len(),
+        before,
+        "unknown siblings and normalized traversal never reach the transport"
+    );
+}
+
 struct MuxedHlsFixture {
     media: Vec<u8>,
     playlist: Vec<u8>,
@@ -1460,6 +1527,136 @@ async fn media_json_carries_the_hls_extension_for_hls_video(pool: PgPool) {
 /// and off air there is nothing to play. Handing one a gateway URL that 404s
 /// would render as a broken player; a null `url` with a preview is Mastodon's
 /// own shape for "no bytes yet", and clients already show the poster for it.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn live_missing_hashes_require_complete_current_origin_bytes(pool: PgPool) {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+
+    let account = create_local_account(&pool, "livehash", "Live hash").await;
+    let mid = hls_media_row(&pool, account.id).await;
+    let master = format!("https://remote.example/{mid}/master.m3u8");
+    let origin = format!("https://remote.example/{mid}/closed.ts");
+    let known = format!("https://remote.example/{mid}/known.ts");
+    let sha_url = format!("https://remote.example/{mid}/sha256.json");
+    sqlx::query("UPDATE media_attachments SET live_state='live', hls_master_url=$2 WHERE id=$1")
+        .bind(mid)
+        .bind(master)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let hints = plamenu_db::remote_hls_peers::RemoteHlsPeers {
+        video_uuid: "00000000-0000-4000-8000-000000000003".into(),
+        trackers: vec!["wss://remote.example/tracker/socket".into()],
+        sha256_url: sha_url.clone(),
+    };
+    plamenu_db::remote_hls_peers::replace(&pool, mid, Some(&hints))
+        .await
+        .unwrap();
+    let stub = StubFederation::with_actors([]);
+    let data = vec![7; 188];
+    stub.serve_media(&origin, "video/mp2t", data.clone());
+    stub.serve_media(&known, "video/mp2t", data.clone());
+    stub.serve_media(
+        &sha_url,
+        "application/json",
+        br#"{"known.ts":"authoritative"}"#.to_vec(),
+    );
+    let app = test_app_with(pool.clone(), stub);
+    let uri = format!("/media/hls/{mid}/sha256.json");
+    let before: serde_json::Value = serde_json::from_slice(&get(&app, &uri).await.1).unwrap();
+    assert!(
+        before.get("closed.ts").is_none(),
+        "no digest before an origin fetch"
+    );
+    for source in [&origin, &known] {
+        let response = request(
+            &app,
+            "GET",
+            &format!("/media/hls/{mid}/seg?u={}", B64.encode(source)),
+            Some("bytes=7-"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    }
+    let after: serde_json::Value = serde_json::from_slice(&get(&app, &uri).await.1).unwrap();
+    let expected: String =
+        Sha256::digest(&data)
+            .iter()
+            .fold(String::with_capacity(64), |mut output, byte| {
+                write!(&mut output, "{byte:02x}").unwrap();
+                output
+            });
+    assert_eq!(after["closed.ts"], expected);
+    assert_eq!(
+        after["known.ts"], "authoritative",
+        "never replace an origin hash"
+    );
+    plamenu_db::account::suspend(&pool, account.id, "local")
+        .await
+        .unwrap();
+    assert_eq!(get(&app, &uri).await.0, StatusCode::NOT_FOUND);
+    sqlx::query("UPDATE accounts SET suspended_at=NULL WHERE id=$1")
+        .bind(account.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE media_attachments SET live_state='ended' WHERE id=$1")
+        .bind(mid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(get(&app, &uri).await.0, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn live_peer_transfer_resumes_with_exact_cached_http_tail_on_both_aliases(pool: PgPool) {
+    let account = create_local_account(&pool, "livebytes", "Live bytes").await;
+    let mid = hls_media_row(&pool, account.id).await;
+    sqlx::query("UPDATE media_attachments SET live_state='live' WHERE id=$1")
+        .bind(mid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let origin = url::Url::parse(MASTER)
+        .unwrap()
+        .join(&format!("resume-{mid}.ts"))
+        .unwrap()
+        .to_string();
+    let data: Vec<u8> = (0..20).collect();
+    let stub = StubFederation::with_actors([]);
+    stub.serve_media(&origin, "video/mp2t", data.clone());
+    let app = test_app_with(pool, stub.clone());
+    let encoded = B64.encode(&origin);
+    for uri in [
+        format!("/media/hls/{mid}/seg?u={encoded}"),
+        format!("/media/hls/{mid}/live/{encoded}.ts"),
+    ] {
+        let tail = request(&app, "GET", &uri, Some("bytes=7-")).await;
+        assert_eq!(tail.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(tail.headers()[header::CONTENT_RANGE], "bytes 7-19/20");
+        assert_eq!(
+            tail.into_body().collect().await.unwrap().to_bytes(),
+            &data[7..]
+        );
+        let short = request(&app, "GET", &uri, Some("bytes=4-7")).await;
+        assert_eq!(short.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(
+            short.into_body().collect().await.unwrap().to_bytes(),
+            &data[4..8]
+        );
+        assert_eq!(
+            request(&app, "GET", &uri, Some("bytes=20-")).await.status(),
+            StatusCode::RANGE_NOT_SATISFIABLE
+        );
+        assert_eq!(get(&app, &uri).await, (StatusCode::OK, data.clone()));
+    }
+    assert_eq!(
+        stub.media_fetches.lock().unwrap().len(),
+        1,
+        "all exact tails reuse one complete origin fetch"
+    );
+}
+
 #[sqlx::test(migrations = "../db/migrations")]
 async fn a_live_attachment_is_playable_only_while_it_is_on_air(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice").await;

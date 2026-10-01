@@ -63,7 +63,15 @@ pub async fn clip(
     {
         return Err(ApiError::NotFound);
     }
-    let primary = super::native_live_hls::primary_directory(&state, media_id, &live.session_id);
+    let preferred =
+        super::native_live_hls::playlist_directory(&state, media_id, &live.session_id).await;
+    let floor = state.config.native_video.min_free_gib * crate::config::NativeVideoConfig::GIB
+        + MAX_CLIP_BYTES;
+    let primary = super::native_live_hls::primary_directory(&state, media_id, &live.session_id)
+        .filter(|path| {
+            preferred.as_ref() == Some(path)
+                && matches!(crate::storage::available_bytes(path), Ok(free) if free >= floor)
+        });
     let session_dir = primary
         .clone()
         .or_else(|| state.media.live_replica_dir(media_id, &live.session_id))

@@ -269,9 +269,12 @@ fn spawn_session(state: &AppState, media_id: i64, native_session: Option<String>
             "-protocol_whitelist",
             "http,tcp",
             // A DVR playlist starts minutes in the past; progressive clients
-            // have no seek control, so always join three segments from live.
+            // have no seek control. Join two closed segments from live:
+            // three leaves too little room for the browser's own buffering
+            // inside the native glass-to-glass target. No partial segment is
+            // exposed, and every viewer still shares one copy-only remux.
             "-live_start_index",
-            "-3",
+            "-2",
             "-i",
             &input,
             // Remux only. A live broadcast is already H.264/AAC in the shape
@@ -405,10 +408,7 @@ async fn pump(
 ) {
     let mut buffer: Vec<u8> = Vec::with_capacity(PIPE_CHUNK * 2);
     let mut chunk = vec![0_u8; PIPE_CHUNK];
-    // Everything before the first `moof` is the initialization section.
-    let mut init: Option<Vec<u8>> = Some(Vec::new());
-    // The fragment being assembled: one `moof` and everything up to the next.
-    let mut fragment: Vec<u8> = Vec::new();
+    let mut assembler = FragmentAssembler::default();
 
     loop {
         let read = match stdout.read(&mut chunk).await {
@@ -430,19 +430,9 @@ async fn pump(
                 break; // incomplete; wait for more bytes
             }
             let boxed: Vec<u8> = buffer.drain(..len).collect();
-            if &kind == b"moof" {
-                // A new fragment starts: publish the previous one, and close
-                // the initialization section the first time around.
-                if let Some(section) = init.take() {
-                    let _ = init_tx.send(Some(Arc::new(section)));
-                } else if !fragment.is_empty() {
-                    let _ = fragments.send(Arc::new(std::mem::take(&mut fragment)));
-                }
-                fragment = boxed;
-            } else if let Some(section) = init.as_mut() {
-                section.extend_from_slice(&boxed);
-            } else {
-                fragment.extend_from_slice(&boxed);
+            if !assembler.push(kind, boxed, &init_tx, &fragments) {
+                tracing::warn!(media = media_id, "live remux exceeded its fragment bound");
+                return;
             }
         }
         if buffer.len() > MAX_BOX_BYTES {
@@ -450,12 +440,57 @@ async fn pump(
             return;
         }
     }
-    // End of stream: flush whatever was complete, then let every viewer's
-    // receiver close so their responses end cleanly.
-    if !fragment.is_empty() {
-        let _ = fragments.send(Arc::new(fragment));
-    }
+    // Only complete moof+mdat pairs have been sent. Never flush a partial
+    // fragment on EOF, or wait for a future moof to send a closed one.
     tracing::debug!(media = media_id, "live remux ended");
+}
+
+/// `FFmpeg`'s owned muxer emits one mdat per moof. A closed mdat is the
+/// publication boundary, not the next fragment's header (one segment later).
+struct FragmentAssembler {
+    init: Option<Vec<u8>>,
+    fragment: Vec<u8>,
+}
+
+impl Default for FragmentAssembler {
+    fn default() -> Self {
+        Self {
+            init: Some(Vec::new()),
+            fragment: Vec::new(),
+        }
+    }
+}
+
+impl FragmentAssembler {
+    fn push(
+        &mut self,
+        kind: [u8; 4],
+        boxed: Vec<u8>,
+        init_tx: &watch::Sender<Option<Arc<Vec<u8>>>>,
+        fragments: &broadcast::Sender<Arc<Vec<u8>>>,
+    ) -> bool {
+        if &kind == b"moof" {
+            if let Some(section) = self.init.take() {
+                let _ = init_tx.send(Some(Arc::new(section)));
+            }
+            // A previous moof without its complete mdat is not publishable.
+            self.fragment = boxed;
+        } else if let Some(section) = self.init.as_mut() {
+            if section.len().saturating_add(boxed.len()) > MAX_BOX_BYTES {
+                return false;
+            }
+            section.extend_from_slice(&boxed);
+        } else if !self.fragment.is_empty() {
+            if self.fragment.len().saturating_add(boxed.len()) > MAX_BOX_BYTES {
+                return false;
+            }
+            self.fragment.extend_from_slice(&boxed);
+            if &kind == b"mdat" {
+                let _ = fragments.send(Arc::new(std::mem::take(&mut self.fragment)));
+            }
+        }
+        true
+    }
 }
 
 /// The type and total length of the box at the front of `buffer`, once its
@@ -562,6 +597,42 @@ mod tests {
     use super::*;
     use futures_util::StreamExt;
     use std::net::SocketAddr;
+
+    #[test]
+    fn complete_fragment_is_sent_without_waiting_for_the_next_moof() {
+        let (init_tx, init) = watch::channel(None);
+        let (tx, mut rx) = broadcast::channel(16);
+        let mut assembler = FragmentAssembler::default();
+        assert!(assembler.push(*b"ftyp", vec![1], &init_tx, &tx));
+        assert!(assembler.push(*b"moov", vec![2], &init_tx, &tx));
+        assert!(assembler.push(*b"moof", vec![3], &init_tx, &tx));
+        assert_eq!(init.borrow().as_deref().unwrap().as_slice(), &[1, 2]);
+        assert!(rx.try_recv().is_err());
+        assert!(assembler.push(*b"mdat", vec![4, 5], &init_tx, &tx));
+        assert_eq!(rx.try_recv().unwrap().as_slice(), &[3, 4, 5]);
+        assert!(assembler.push(*b"moof", vec![6], &init_tx, &tx));
+        assert!(assembler.push(*b"moof", vec![7], &init_tx, &tx));
+        assert!(rx.try_recv().is_err());
+        assert!(assembler.push(*b"mdat", vec![8], &init_tx, &tx));
+        assert_eq!(rx.try_recv().unwrap().as_slice(), &[7, 8]);
+        assert!(assembler.push(*b"moof", vec![9], &init_tx, &tx));
+        drop(assembler);
+        assert!(rx.try_recv().is_err(), "incomplete EOF must not publish");
+    }
+
+    #[test]
+    fn complete_box_reader_waits_for_partial_mdat_and_bounds_aggregate_fragment() {
+        let mut bytes = 12_u32.to_be_bytes().to_vec();
+        bytes.extend_from_slice(b"mdat");
+        bytes.push(1);
+        assert_eq!(next_box(&bytes), Some((*b"mdat", 12)));
+        assert!(bytes.len() < next_box(&bytes).unwrap().1);
+        let (init_tx, _) = watch::channel(None);
+        let (tx, _) = broadcast::channel(16);
+        let mut assembler = FragmentAssembler::default();
+        assert!(assembler.push(*b"moof", vec![0; MAX_BOX_BYTES], &init_tx, &tx));
+        assert!(!assembler.push(*b"mdat", vec![1], &init_tx, &tx));
+    }
 
     #[tokio::test]
     async fn stale_session_exit_cannot_remove_its_replacement() {

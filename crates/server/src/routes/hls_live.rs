@@ -17,7 +17,9 @@
 //! sequence restarts — the signal that a permanent live began a new session and
 //! is about to reuse the segment names of the last one.
 
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::Write as _;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -46,6 +48,7 @@ struct Entry {
     media_id: i64,
     bytes: Arc<Vec<u8>>,
     stored_at: Instant,
+    sha256: String,
 }
 
 #[derive(Default)]
@@ -111,6 +114,15 @@ pub fn put(media_id: i64, url: &str, bytes: Arc<Vec<u8>>) {
     {
         return;
     }
+    // Only complete, directly origin-fetched segments enter this cache. Hash
+    // outside the lock, once, not on every viewer's checksum request.
+    let sha256 = Sha256::digest(bytes.as_slice()).iter().fold(
+        String::with_capacity(64),
+        |mut output, byte| {
+            write!(&mut output, "{byte:02x}").expect("writing to a String cannot fail");
+            output
+        },
+    );
     let mut cache = CACHE.lock_or_recover();
     let expired: Vec<_> = cache
         .entries
@@ -129,6 +141,7 @@ pub fn put(media_id: i64, url: &str, bytes: Arc<Vec<u8>>) {
             media_id,
             bytes,
             stored_at: Instant::now(),
+            sha256,
         },
     );
     cache.order.push_back(url.to_owned());
@@ -138,6 +151,40 @@ pub fn put(media_id: i64, url: &str, bytes: Arc<Vec<u8>>) {
         .or_default()
         .insert(url.to_owned());
     cache.evict_to_fit();
+}
+
+/// Supplement a live origin's delayed checksum publication with complete
+/// origin-fetched bytes. Scope to the current media and canonical directory;
+/// ambiguous basenames must never pick an arbitrary rendition's digest.
+pub fn checksums(media_id: i64, prefix: &str) -> serde_json::Map<String, serde_json::Value> {
+    let cache = CACHE.lock_or_recover();
+    let mut hashes = serde_json::Map::new();
+    for (source, entry) in &cache.entries {
+        if entry.media_id != media_id
+            || entry.stored_at.elapsed() >= ENTRY_TTL
+            || !source.starts_with(prefix)
+        {
+            continue;
+        }
+        let Ok(source) = url::Url::parse(source) else {
+            continue;
+        };
+        let Some(name) = source.path_segments().and_then(Iterator::last) else {
+            continue;
+        };
+        let digest = serde_json::Value::String(entry.sha256.clone());
+        match hashes.entry(name.to_owned()) {
+            serde_json::map::Entry::Vacant(slot) => {
+                slot.insert(digest);
+            }
+            serde_json::map::Entry::Occupied(mut slot) if slot.get() != &digest => {
+                slot.insert(serde_json::Value::Null);
+            }
+            serde_json::map::Entry::Occupied(_) => {}
+        }
+    }
+    hashes.retain(|_, value| !value.is_null());
+    hashes
 }
 
 /// Drops every cached segment of one broadcast — called when its media
@@ -227,6 +274,32 @@ mod tests {
         purge_media(1);
         assert!(get("https://p/1/0-000000.ts").is_none());
         assert!(get("https://p/2/0-000000.ts").is_some());
+    }
+
+    #[test]
+    fn checksum_supplements_are_scoped_fresh_and_unambiguous() {
+        let _test = reset();
+        let prefix = "https://p/live/";
+        put(1, "https://p/live/fresh.ts", Arc::new(vec![1]));
+        put(2, "https://p/live/foreign.ts", Arc::new(vec![1]));
+        put(1, "https://p/other/other.ts", Arc::new(vec![1]));
+        put(1, "https://p/live/a/same.ts", Arc::new(vec![1]));
+        put(1, "https://p/live/b/same.ts", Arc::new(vec![2]));
+        put(1, "https://p/live/expired.ts", Arc::new(vec![1]));
+        CACHE
+            .lock_or_recover()
+            .entries
+            .get_mut("https://p/live/expired.ts")
+            .unwrap()
+            .stored_at = Instant::now().checked_sub(ENTRY_TTL).unwrap();
+        let hashes = checksums(1, prefix);
+        assert_eq!(hashes.len(), 1);
+        assert_eq!(
+            hashes["fresh.ts"],
+            "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a"
+        );
+        purge_media(1);
+        assert!(checksums(1, prefix).is_empty());
     }
 
     #[test]
