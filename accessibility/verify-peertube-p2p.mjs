@@ -97,6 +97,7 @@ try {
     .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze()).violations;
   if (violations.length) throw new Error(`peer choice accessibility violations: ${violations.map(v => v.id).join(', ')}`);
   await off.reload();
+  await openVideoSettings(off);
   await control.waitFor({ state: 'visible' });
   if (await control.isChecked()) throw new Error('pre-play opt-out did not persist in this browser');
   await offContext.close();

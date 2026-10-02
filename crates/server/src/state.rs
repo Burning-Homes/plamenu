@@ -372,6 +372,8 @@ pub struct AppState {
     pub pool: PgPool,
     pub config: Arc<Config>,
     pub federation: Arc<dyn FederationApi>,
+    /// Process-local serialization of remote Create/Update storage and sidecars.
+    pub remote_status_writes: Arc<crate::ingest::RemoteStatusWriteLocks>,
     pub media: Arc<dyn MediaStore>,
     /// Native Video jobs share these slots and conservative scratch limits.
     pub video_resources: crate::video_resources::ProcessingPool,
@@ -406,6 +408,8 @@ pub struct AppState {
     /// flood of signed self-`Update`s can't grow the detached-task population
     /// without bound.
     pub remote_refresh: Arc<crate::remote::RemoteRefreshCoordinator>,
+    /// Bounded asynchronous reconciliation of remote profile presentation text.
+    pub actor_reconciliation: Arc<crate::actor_reconciliation::Coordinator>,
     /// Coalesces the best-effort durable hydration intents spawned by
     /// third-party profile-timeline reads. Keeping this admission synchronous
     /// lets the compatible read path return without adding database round
@@ -477,6 +481,7 @@ impl AppState {
             pool,
             config: Arc::new(config),
             federation,
+            remote_status_writes: Arc::new(crate::ingest::RemoteStatusWriteLocks::default()),
             media,
             video_resources,
             remote_cache_resources: crate::video_resources::ProcessingPool::new(
@@ -494,6 +499,7 @@ impl AppState {
             altcha,
             translation_cache: Arc::new(TranslationCache::default()),
             remote_refresh: Arc::new(crate::remote::RemoteRefreshCoordinator::default()),
+            actor_reconciliation: Arc::new(crate::actor_reconciliation::Coordinator::default()),
             remote_history_intent: Arc::new(crate::remote_history::IntentCoordinator::default()),
             web_app_id_cache: Arc::new(tokio::sync::OnceCell::new()),
             shutdown: tokio_util::sync::CancellationToken::new(),

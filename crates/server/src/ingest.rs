@@ -3,7 +3,9 @@
 //! stored identically no matter how it reached us.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex, PoisonError, Weak};
+
+use sha2::{Digest, Sha256};
 
 use plamenu_ap::activity::{id_of, one_or_many, visibility_from_addressing};
 use plamenu_ap::urls;
@@ -28,6 +30,80 @@ pub enum RemoteIngestContext {
     Delivery,
     ExplicitResolution,
     History,
+}
+
+/// Single-process serialization of canonical remote object writes. A key is
+/// admitted before its first storage write, after ancestor backfill; recursive
+/// quotes resolve already-inserted rows before considering another ingest.
+/// No database connection is held while waiting or while doing network work.
+#[derive(Default)]
+pub struct RemoteStatusWriteLocks {
+    entries: Mutex<HashMap<[u8; 32], Weak<tokio::sync::Mutex<()>>>>,
+}
+
+const MAX_REMOTE_STATUS_WRITE_LOCKS: usize = 1024;
+
+impl RemoteStatusWriteLocks {
+    /// Read-only admission observation for deterministic integration tests.
+    /// Counts existing active/queued owners without allocating or retaining one.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn admitted_writer_count(&self, uri: &str) -> usize {
+        let key: [u8; 32] = Sha256::digest(uri.as_bytes()).into();
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&key)
+            .map_or(0, Weak::strong_count)
+    }
+
+    /// Acquires the canonical object's write guard. Call only after author
+    /// admission and ancestor resolution; saturation is a retryable error.
+    pub async fn lock(&self, uri: &str) -> Result<tokio::sync::OwnedMutexGuard<()>, ApiError> {
+        let key: [u8; 32] = Sha256::digest(uri.as_bytes()).into();
+        let lock = {
+            let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(lock) = entries.get(&key).and_then(Weak::upgrade) {
+                lock
+            } else {
+                if entries.len() >= MAX_REMOTE_STATUS_WRITE_LOCKS {
+                    entries.retain(|_, lock| lock.strong_count() != 0);
+                }
+                if entries.len() >= MAX_REMOTE_STATUS_WRITE_LOCKS {
+                    // Never wait for registry capacity while holding another
+                    // object's guard: nested quote ingest must remain retryable.
+                    return Err(ApiError::ServiceUnavailable(
+                        "remote object writes are busy; retry later".into(),
+                    ));
+                }
+                let lock = Arc::new(tokio::sync::Mutex::new(()));
+                entries.insert(key, Arc::downgrade(&lock));
+                lock
+            }
+        };
+        // Both queued and active writers own the Arc. Cancelling either drops
+        // that ownership; only expired Weak slots are reclaimed, so an old
+        // waiter and a new caller can never acquire different locks for a URI.
+        Ok(lock.lock_owned().await)
+    }
+}
+
+/// Known URI ownership admission precedes alternate Create handling (votes)
+/// and ancestor discovery as well as canonical storage.
+pub(crate) async fn ensure_known_remote_object_author(
+    state: &AppState,
+    author: &Account,
+    object_uri: &str,
+) -> Result<(), ApiError> {
+    if status::find_by_uri(&state.pool, object_uri)
+        .await?
+        .is_some_and(|stored| stored.account_id != author.id)
+    {
+        return Err(ApiError::Forbidden(
+            "remote object belongs to another author".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Canonical row plus ownership of one-shot live-delivery effects. Inbox
@@ -259,7 +335,6 @@ pub async fn refresh_remote_status(
     if author.id != existing.account_id {
         return Ok(None);
     }
-    crate::polls::refresh_remote_poll(state, existing, &object).await?;
     let updated = update_remote_note(state, &author, existing, &object).await?;
     Ok(Some(updated))
 }
@@ -1840,6 +1915,10 @@ async fn ingest_remote_note_with_quote_depth(
     context: RemoteIngestContext,
     fetch_account_id: Option<i64>,
 ) -> Result<RemoteIngestResult, ApiError> {
+    // A verified signer cannot make discovery allocate ancestors for a URI
+    // already owned by another author. Storage rechecks under its gate too.
+    let object_uri = id_of(object).ok_or_else(|| ApiError::BadRequest("note has no id".into()))?;
+    ensure_known_remote_object_author(state, author, object_uri).await?;
     let in_reply_to_id = match object.get("inReplyTo").and_then(id_of) {
         Some(parent_uri) if context.is_history() => resolve_status_ref(state, parent_uri)
             .await?
@@ -1933,6 +2012,102 @@ fn context_refs_of(object: &Value, domain: &str) -> (Option<String>, Option<Stri
     (context, history)
 }
 
+/// Reuses edited canonical storage without the stale discovery/Create payload.
+/// The caller retains the object's write guard across this boxed boundary.
+/// Keeping the promotion future separate prevents its sidecar/notification
+/// frames from inflating every first-ingest future, including origin-fetched Pages.
+async fn promote_edited_remote_status(
+    state: &AppState,
+    author: &Account,
+    stored: status::Status,
+    object_uri: &str,
+    context: RemoteIngestContext,
+) -> Result<RemoteIngestResult, ApiError> {
+    // A late orphan may have arrived after this parent's cold ingest. Tree
+    // repair uses only current canonical ancestry and audience ceilings.
+    {
+        let mut conn = state
+            .pool
+            .acquire()
+            .await
+            .map_err(plamenu_db::DbError::from)?;
+        let adopted = status::adopt_orphan_replies(&mut conn, stored.id, object_uri).await?;
+        if !adopted.is_empty() {
+            clamp_adopted_audience(&mut conn, &stored, &adopted).await?;
+        }
+    }
+    if context != RemoteIngestContext::Delivery {
+        // A cold/explicit fetch can have begun before a live Create and
+        // newer Update. Discovery is not an edit: keep canonical rows.
+        return Ok(RemoteIngestResult {
+            status: stored,
+            delivery_effects: false,
+            mention_notify: Vec::new(),
+            quote_notify: None,
+        });
+    }
+    // A cold object may already have a newer canonical edit before its
+    // first live Create arrives. Promote the current rows and notification
+    // reasons, without touching reply edges or importing stale sidecars.
+    let previous =
+        status::claim_delivery_side_effects_with_previous(&state.pool, stored.id).await?;
+    let delivery_effects = previous.is_some();
+    if previous.as_deref() == Some("history") {
+        crate::remote_history::record_promotion();
+    }
+    // Idempotent even after a failed promotion: only deferred current media
+    // are queued. Never resurrect attachments from the stale Create.
+    media::promote_for_status(&state.pool, stored.id).await?;
+    let mut mention_notify = Vec::new();
+    let mut quote_notify = None;
+    if delivery_effects {
+        {
+            let mut conn = state
+                .pool
+                .acquire()
+                .await
+                .map_err(plamenu_db::DbError::from)?;
+            crate::conversations::record_direct_status(state, &mut conn, author, &stored).await?;
+        }
+        mention_notify = mention::for_statuses(&state.pool, &[stored.id], true)
+            .await?
+            .remove(&stored.id)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|account| account.has_local_account_on(&state.config.domain))
+            .map(|account| account.id)
+            .collect();
+        quote_notify = plamenu_db::quote::find_by_status_uri(&state.pool, object_uri)
+            .await?
+            .filter(|quote| quote.account_id == stored.account_id && quote.state == "accepted")
+            .and_then(|quote| quote.quoted_account_id);
+        tag::record_uses(&state.pool, stored.id, OffsetDateTime::now_utc().date()).await?;
+        if matches!(stored.visibility.as_str(), "public" | "unlisted" | "local")
+            && let Some(domain) = author.domain.as_deref()
+        {
+            let codes = crate::emoji::shortcodes_of(&[&stored.content, &stored.spoiler_text]);
+            let emoji = plamenu_db::custom_emoji::lookup(&state.pool, &codes, Some(domain)).await?;
+            let ids: Vec<i64> = emoji.iter().map(|emoji| emoji.id).collect();
+            let origins: Vec<i64> =
+                plamenu_db::custom_emoji::find_managed_by_ids(&state.pool, &ids)
+                    .await?
+                    .into_iter()
+                    .map(|emoji| emoji.origin_id)
+                    .collect();
+            plamenu_db::custom_emoji::record_post_usage(&state.pool, author.id, &origins).await?;
+        }
+        if crate::link_preview::may_carry_link(&stored) {
+            plamenu_db::preview_card::enqueue_crawl(&state.pool, stored.id).await?;
+        }
+    }
+    Ok(RemoteIngestResult {
+        status: stored,
+        delivery_effects,
+        mention_notify,
+        quote_notify,
+    })
+}
+
 #[allow(
     clippy::similar_names,
     clippy::too_many_lines,
@@ -1947,6 +2122,23 @@ async fn store_remote_note(
     context: RemoteIngestContext,
 ) -> Result<RemoteIngestResult, ApiError> {
     let object_uri = id_of(object).ok_or_else(|| ApiError::BadRequest("note has no id".into()))?;
+    ensure_known_remote_object_author(state, author, object_uri).await?;
+    let _write_guard = state.remote_status_writes.lock(object_uri).await?;
+    let current = status::find_by_uri(&state.pool, object_uri).await?;
+    if current
+        .as_ref()
+        .is_some_and(|stored| stored.account_id != author.id)
+    {
+        return Err(ApiError::Forbidden(
+            "remote object belongs to another author".into(),
+        ));
+    }
+    if let Some(stored) = current.filter(|stored| stored.edited_at.is_some()) {
+        return Box::pin(promote_edited_remote_status(
+            state, author, stored, object_uri, context,
+        ))
+        .await;
+    }
     // Remote HTML is attacker-controlled: sanitize before it is stored. The
     // quote `RE:` fallback is dropped first — Plamenu renders quotes natively,
     // and sanitizing would strip its marker `class` and leave a stray `RE:`
@@ -2047,6 +2239,8 @@ async fn store_remote_note(
             false,
         )
     };
+    // An unedited failed first Create still runs idempotent enrichment on a
+    // retry. The delivery marker owns one-shot effects, not completion.
     store_remote_attachments(state, &stored, object, context.is_history()).await?;
     crate::video_metadata::ingest(state, stored.id, object).await?;
     // Cold history is not in discovery and must not add one actor fetch per
@@ -2361,11 +2555,7 @@ pub async fn update_remote_note(
     .await
 }
 
-#[allow(
-    clippy::similar_names,
-    clippy::too_many_lines,
-    reason = "content/context are distinct terms in a linear edit reconciliation pass"
-)]
+/// Status-returning compatibility wrapper for explicit and history callers.
 pub async fn update_remote_note_in_context(
     state: &AppState,
     author: &Account,
@@ -2373,6 +2563,109 @@ pub async fn update_remote_note_in_context(
     object: &Value,
     context: RemoteIngestContext,
 ) -> Result<status::Status, ApiError> {
+    Box::pin(update_remote_note_with_publication(
+        state, author, existing, object, context, None,
+    ))
+    .await
+}
+
+/// The verified inbox publishes only an actual edit accepted while holding the
+/// object gate. Comparing against its pre-lock snapshot would misclassify a
+/// queued stale Update returned as the newer canonical row.
+pub(crate) async fn update_remote_note_and_publish(
+    state: &AppState,
+    author: &Account,
+    existing: &status::Status,
+    object: &Value,
+    raw_activity: &Value,
+) -> Result<status::Status, ApiError> {
+    Box::pin(update_remote_note_with_publication(
+        state,
+        author,
+        existing,
+        object,
+        RemoteIngestContext::Delivery,
+        Some(raw_activity),
+    ))
+    .await
+}
+
+#[allow(
+    clippy::similar_names,
+    clippy::too_many_lines,
+    reason = "content/context are distinct terms in a linear edit reconciliation pass"
+)]
+async fn update_remote_note_with_publication(
+    state: &AppState,
+    author: &Account,
+    existing: &status::Status,
+    object: &Value,
+    context: RemoteIngestContext,
+    publish_activity: Option<&Value>,
+) -> Result<status::Status, ApiError> {
+    if existing.account_id != author.id {
+        return Err(ApiError::Forbidden(
+            "remote object belongs to another author".into(),
+        ));
+    }
+    let object_uri = existing.uri.as_deref().ok_or(ApiError::NotFound)?;
+    if id_of(object) != Some(object_uri) {
+        return Err(ApiError::BadRequest(
+            "remote object identity changed".into(),
+        ));
+    }
+    let _write_guard = state.remote_status_writes.lock(object_uri).await?;
+    let current = status::find_by_uri(&state.pool, object_uri)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if current.account_id != author.id {
+        return Err(ApiError::Forbidden(
+            "remote object belongs to another author".into(),
+        ));
+    }
+    let existing = &current;
+    let incoming_updated = object
+        .get("updated")
+        .and_then(Value::as_str)
+        .and_then(|value| OffsetDateTime::parse(value, &Rfc3339).ok());
+    if context == RemoteIngestContext::Delivery
+        && existing.edited_at.is_some()
+        && object_type_in(object, &["Question"])
+        && object.get("updated").is_none()
+    {
+        // Counter-only Updates may omit updated even after a real body edit.
+        // Keep canonical options/body/history; only compatible poll tallies
+        // and expiry are refreshed while holding the same object write guard.
+        if let Some(parsed) = crate::polls::parse_question(object)
+            && let Some(poll) = plamenu_db::poll::find_by_status(&state.pool, existing.id).await?
+            && parsed.options == poll.options
+            && parsed.multiple == poll.multiple
+        {
+            plamenu_db::poll::apply_remote_update(
+                &state.pool,
+                poll.id,
+                plamenu_db::poll::RemotePollUpdate {
+                    options: &poll.options,
+                    cached_tallies: &parsed.tallies,
+                    multiple: poll.multiple,
+                    voters_count: parsed.voters_count,
+                    expires_at: parsed.expires_at,
+                },
+            )
+            .await?;
+        }
+        return Ok(existing.clone());
+    }
+    if let Some(stored_edited_at) = existing.edited_at
+        && incoming_updated.is_none_or(|updated| {
+            updated < stored_edited_at || (context.is_history() && updated == stored_edited_at)
+        })
+    {
+        return Ok(existing.clone());
+    }
+    // Poll tallies are canonical sidecars too: refresh only after the same
+    // author/timestamp checks and while holding the object write guard.
+    crate::polls::refresh_remote_poll(state, existing, object).await?;
     let content_with_images = remote_status_content_with_images(object, &state.config.domain);
     let content = rewrite_remote_inline_images(state, existing.id, &content_with_images).await?;
     let external_url = attachment_link_target(object);
@@ -2382,13 +2675,6 @@ pub async fn update_remote_note_in_context(
         .and_then(Value::as_str)
         .and_then(|s| OffsetDateTime::parse(s, &Rfc3339).ok())
         .unwrap_or_else(OffsetDateTime::now_utc);
-    if context.is_history()
-        && existing
-            .edited_at
-            .is_some_and(|stored_at| edited_at <= stored_at)
-    {
-        return Ok(existing.clone());
-    }
     let delivery_effects = context == RemoteIngestContext::Delivery;
     let mut promote_media = false;
     if delivery_effects {
@@ -2618,6 +2904,10 @@ pub async fn update_remote_note_in_context(
     }
     if delivery_effects {
         crate::actions::notify_status_edited(state, &updated).await?;
+    }
+    if let Some(raw_activity) = publish_activity {
+        crate::streaming::status_edited(state, updated.id).await;
+        crate::groups::reannounce_to_groups(state, &updated, raw_activity).await?;
     }
     tracing::info!(author = %author.username, status = updated.id, "remote status edited");
     Ok(updated)
@@ -3963,6 +4253,56 @@ async fn store_inline_image_attachments(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn object_write_lock_capacity_is_retryable_and_cancelled_waiters_do_not_split_a_key() {
+        let registry = Arc::new(RemoteStatusWriteLocks::default());
+        let owner = registry.lock("https://remote.example/held").await.unwrap();
+        let waiting_registry = registry.clone();
+        let waiter =
+            tokio::spawn(async move { waiting_registry.lock("https://remote.example/held").await });
+        tokio::task::yield_now().await;
+        waiter.abort();
+        assert!(waiter.await.unwrap_err().is_cancelled());
+        let mut owners = vec![owner];
+        for number in 1..MAX_REMOTE_STATUS_WRITE_LOCKS {
+            owners.push(
+                registry
+                    .lock(&format!("https://remote.example/{number}"))
+                    .await
+                    .unwrap(),
+            );
+        }
+        assert!(matches!(
+            registry
+                .lock("https://remote.example/nested-at-capacity")
+                .await,
+            Err(ApiError::ServiceUnavailable(_))
+        ));
+        assert_eq!(
+            registry.entries.lock().unwrap().len(),
+            MAX_REMOTE_STATUS_WRITE_LOCKS
+        );
+        // A same-key caller must still join its original lock even at capacity.
+        let mut same_key = Box::pin(registry.lock("https://remote.example/held"));
+        assert!(
+            std::future::poll_fn(|context| std::task::Poll::Ready(
+                same_key.as_mut().poll(context).is_pending()
+            ))
+            .await
+        );
+        drop(same_key);
+        drop(owners);
+        // Dropped active and cancelled queued owners release the Arc; stale
+        // Weak entries are reclaimed without evicting an active/queued key.
+        let recovered = registry
+            .lock("https://remote.example/recovered")
+            .await
+            .unwrap();
+        assert_eq!(registry.entries.lock().unwrap().len(), 1);
+        drop(recovered);
+        let _reclaimed = registry.lock("https://remote.example/held").await.unwrap();
+    }
 
     #[test]
     fn peertube_video_channel_requires_one_explicit_group() {

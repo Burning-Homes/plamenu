@@ -51,6 +51,9 @@ pub struct StubFederation {
     /// Optional validators for `fetch_activitypub`; a matching request `ETag`
     /// returns a bodyless 304-shaped result.
     pub activitypub_etags: Mutex<HashMap<String, String>>,
+    /// A URI-scoped barrier for remote chapters during an initial Create.
+    pub remote_media_fetch_gate: Mutex<Option<(String, Arc<tokio::sync::Semaphore>)>>,
+    pub remote_media_fetch_started: Mutex<Option<Arc<tokio::sync::Notify>>>,
     pub conditional_fetches: Mutex<Vec<(String, Option<String>)>>,
     /// `WebFinger` candidates keyed by `acct` string. A single acct can hold
     /// several (a Lemmy-style Person + Group under one handle).
@@ -99,6 +102,8 @@ pub struct StubFederation {
     /// opens it — a "slow origin" gate for proving the remote-refresh fan-out
     /// stays bounded while outbound object fetches hang.
     pub object_fetch_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
+    /// Captures then holds actor responses, for reconciliation ordering tests.
+    pub activitypub_fetch_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
     /// When set, `fetch_object_following` answers with a budget suppression
     /// while the budget-ignoring probe still serves the object map — models a
     /// suppressed target for federation-debug tests.
@@ -260,6 +265,17 @@ impl StubFederation {
     /// [`open_object_fetches`](Self::open_object_fetches) releases it. Lets a
     /// slow-origin test hold outbound object fetches open while it floods signed
     /// `Update`s, then assert the refresh fan-out stayed bounded.
+    pub fn gate_activitypub_fetches(&self) {
+        *self.activitypub_fetch_gate.lock().unwrap() =
+            Some(Arc::new(tokio::sync::Semaphore::new(0)));
+    }
+
+    pub fn open_activitypub_fetches(&self) {
+        if let Some(gate) = self.activitypub_fetch_gate.lock().unwrap().as_ref() {
+            gate.add_permits(tokio::sync::Semaphore::MAX_PERMITS);
+        }
+    }
+
     pub fn gate_object_fetches(&self) {
         *self.object_fetch_gate.lock().unwrap() = Some(Arc::new(tokio::sync::Semaphore::new(0)));
     }
@@ -373,7 +389,28 @@ impl FederationApi for StubFederation {
         } else {
             Err(FederationError::Status(404))
         };
-        Box::pin(async move { result })
+        let gate = self.activitypub_fetch_gate.lock().unwrap().clone();
+        let media_gate = self
+            .remote_media_fetch_gate
+            .lock()
+            .unwrap()
+            .clone()
+            .filter(|(target, _)| target == uri)
+            .map(|(_, gate)| gate);
+        let media_started = self.remote_media_fetch_started.lock().unwrap().clone();
+        Box::pin(async move {
+            if let Some(gate) = gate {
+                let _ = gate.acquire().await;
+            }
+            if let Some(gate) = media_gate {
+                if let Some(started) = media_started {
+                    started.notify_one();
+                }
+                let permit = gate.acquire().await.unwrap();
+                permit.forget();
+            }
+            result
+        })
     }
 
     fn fetch_object_following<'a>(
@@ -1147,4 +1184,20 @@ impl RemoteUser {
         RequestSigner::from_pkcs8_pem(&self.keys.private_pem, self.actor.public_key.id.clone())
             .unwrap()
     }
+}
+
+/// Waits for observed gate admission, rather than inferring queued ownership
+/// from elapsed time while another async DB or signature await might be slow.
+pub async fn wait_remote_status_writers(
+    state: &plamenu::state::AppState,
+    uri: &str,
+    expected: usize,
+) {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while state.remote_status_writes.admitted_writer_count(uri) < expected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("expected object writers did not reach the shared gate");
 }

@@ -2213,6 +2213,46 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn activitypub_same_origin_redirect_guard_never_requests_blocked_or_foreign_destination()
+    {
+        let client = FederationClient::new("actor-presentation-guard-test", false).unwrap();
+        let origin = Url::parse("https://peer.example/users/bob").unwrap();
+        for destination in [
+            "https://blocked.example/users/bob",
+            "https://foreign.example/users/bob",
+            "https://peer.example/redirected-actor",
+        ] {
+            let mut requests = Vec::new();
+            // Same-origin policy is allowed initially, then blocked after
+            // the origin's first response. A mutable policy callback must
+            // prevent even a same-origin second signed request.
+            let now_blocked = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let result = client
+                .fetch_activitypub_with(
+                    origin.as_str(),
+                    |next| {
+                        let same_origin = Url::parse(next).unwrap().origin() == origin.origin();
+                        let permitted = !now_blocked.load(std::sync::atomic::Ordering::SeqCst);
+                        std::future::ready(Ok(same_origin && permitted))
+                    },
+                    |url| {
+                        requests.push(url.to_string());
+                        now_blocked.store(true, std::sync::atomic::Ordering::SeqCst);
+                        let response = http::Response::builder()
+                            .status(302)
+                            .header("location", destination)
+                            .body(Vec::<u8>::new())
+                            .unwrap();
+                        std::future::ready(Ok(response.into()))
+                    },
+                )
+                .await;
+            assert!(result.is_err());
+            assert_eq!(requests, vec![origin.to_string()]);
+        }
+    }
+
     /// The exact strings on the wire are an interop contract: strict peers
     /// (Mitra among them) reject fetches whose Accept lacks the profiled
     /// `ld+json` form, and Mastodon rejects responses without an AP content

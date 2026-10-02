@@ -19,6 +19,30 @@ See [signing-key operations](../FEDERATION_KEY_OPERATIONS.md) for rotation and
 recovery, [queues](../QUEUES.md) for retry behavior, and
 [Tor/I2P transport](../TOR_TRANSPORT.md) for optional proxy routing.
 
+## Remote profile presentation
+
+After accepting an authenticated self actor Update, Plamenu applies the validated
+inline actor and asynchronously checks that actor's current origin for its name
+and biography. This is a cache policy for stale queued presentation, including
+peers that publish an older name alongside a newer biography. ActivityPub does
+not require this additional fetch. The origin response supplies presentation
+text only; it does not replace handles, actor IDs, keys, inboxes, avatars or
+account policy.
+
+The signed fetch stays on the persisted actor's exact origin, with the usual
+SSRF and domain-policy checks repeated at redirects. Actor and declared key
+controller claims must match that identity. The fetched response is trusted
+through its origin transport; it is not an independently signed actor proof.
+Only sanitized name and biography are eligible for the conditional write. Any
+intervening account write, suspension, deletion, block, invalid response or
+fetch failure leaves the validated inline presentation in place.
+
+Background work coalesces later Updates per actor, permits at most 256 active
+actors, spaces origin reads by at least one second, and limits each pass to
+30 seconds. It does not delay the inbox response. Continuous account changes
+or admission saturation can suppress an optional correction; convergence is
+not guaranteed under sustained concurrent writes.
+
 ## Identity proofs
 
 [FEP-c390](https://w3id.org/fep/c390) statements are published in actor

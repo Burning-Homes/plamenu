@@ -2751,6 +2751,43 @@ pub async fn count_known_domains(pool: &PgPool) -> Result<u64, DbError> {
     Ok(u64::try_from(count).unwrap_or(0))
 }
 
+/// MVCC row version for an existing runnable remote actor. It is compared
+/// atomically at the presentation-only write, so a fetch begun before a newer
+/// inline Update cannot overwrite that Update. No account is inserted here.
+pub async fn remote_profile_revision(
+    pool: &PgPool,
+    account_id: i64,
+    uri: &str,
+) -> Result<Option<String>, DbError> {
+    Ok(sqlx::query_scalar::<_, String>(
+        "SELECT xmin::text FROM accounts WHERE id = $1 AND uri = $2 AND domain IS NOT NULL AND NOT portable AND suspended_at IS NULL AND deleted_at IS NULL",
+    ).bind(account_id).bind(uri).fetch_optional(pool).await?)
+}
+
+/// Applies sanitized authoritative name/bio only if the exact account row
+/// has not changed since the origin fetch began. Identity, keys, avatar URLs,
+/// policy fields and suspension state are never changed by this helper.
+pub async fn reconcile_remote_profile_text(
+    pool: &PgPool,
+    account_id: i64,
+    uri: &str,
+    revision: &str,
+    display_name: &str,
+    note: &str,
+) -> Result<bool, DbError> {
+    let mut tx = pool.begin().await?;
+    // Coordinate with local suspension, whose helper takes this same lock.
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(account_id)
+        .execute(&mut *tx)
+        .await?;
+    let result = sqlx::query(
+        "UPDATE accounts SET display_name = $4, note = $5, updated_at = now() WHERE id = $1 AND uri = $2 AND domain IS NOT NULL AND NOT portable AND xmin::text = $3 AND suspended_at IS NULL AND deleted_at IS NULL",
+    ).bind(account_id).bind(uri).bind(revision).bind(display_name).bind(note).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(result.rows_affected() == 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

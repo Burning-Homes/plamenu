@@ -2104,3 +2104,239 @@ async fn owner_transfer_flips_affiliations_and_announces(pool: PgPool) {
         "the affiliations refresh is announced too"
     );
 }
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn edited_cold_group_submission_announces_only_canonical_uri_once(pool: PgPool) {
+    let carl = RemoteUser::new("remote.example", "carl");
+    let stub = StubFederation::with_actors([carl.actor.clone()]);
+    let state = test_state_with(pool.clone(), stub.clone());
+    let app = build_router(state.clone());
+    let (_, group_id) = seeded_group_with_member(&pool, &carl, &stub, &state, &app).await;
+    let author = account::find_by_uri(&pool, &carl.actor.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let (uri, create) = submission(&carl, 81, Some("Cold original trail"), None);
+    let cold = plamenu::ingest::ingest_remote_note_in_context(
+        &state,
+        &author,
+        &create["object"],
+        plamenu::ingest::RemoteIngestContext::History,
+    )
+    .await
+    .unwrap();
+    let mut newer = create["object"].clone();
+    newer["content"] = json!("<p>newer canonical trail</p>");
+    newer["name"] = json!("Canonical trail title");
+    newer["updated"] = json!("2026-07-12T10:00:00Z");
+    let edited = plamenu::ingest::update_remote_note_in_context(
+        &state,
+        &author,
+        &cold,
+        &newer,
+        plamenu::ingest::RemoteIngestContext::History,
+    )
+    .await
+    .unwrap();
+    assert!(edited.edited_at.is_some());
+    assert!(mention::exists(&pool, cold.id, group_id).await.unwrap());
+    assert!(
+        status::find_reblog_by(&pool, group_id, cold.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let deliveries_before = stub.deliveries().len();
+    for _ in 0..2 {
+        assert_eq!(
+            post_signed(app.clone(), "/users/hiking/inbox", &create, &carl.signer()).await,
+            StatusCode::ACCEPTED
+        );
+    }
+    let stored = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+    assert_eq!(stored.content, edited.content);
+    assert_eq!(stored.title, edited.title);
+    assert_eq!(stored.edited_at, edited.edited_at);
+    assert!(
+        status::find_reblog_by(&pool, group_id, cold.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    job::make_all_due(&pool).await.unwrap();
+    assert_eq!(
+        delivery::run_due(&state).await,
+        1,
+        "one URI announcement, no stale wrapper"
+    );
+    let deliveries = stub.deliveries();
+    assert_eq!(deliveries.len(), deliveries_before + 1);
+    let announce = &deliveries.last().unwrap().activity;
+    assert_eq!(announce["type"], "Announce");
+    assert_eq!(announce["actor"], HIKING_URI);
+    assert_eq!(announce["object"], uri);
+    assert!(!announce.to_string().contains("Cold original trail"));
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn edited_cold_group_comment_announces_uri_without_boost_or_stale_wrapper(pool: PgPool) {
+    let carl = RemoteUser::new("remote.example", "carl");
+    let stub = StubFederation::with_actors([carl.actor.clone()]);
+    let state = test_state_with(pool.clone(), stub.clone());
+    let app = build_router(state.clone());
+    let (_, group_id) = seeded_group_with_member(&pool, &carl, &stub, &state, &app).await;
+    let (root_uri, root_create) = submission(&carl, 82, Some("Live parent"), None);
+    assert_eq!(
+        post_signed(
+            app.clone(),
+            "/users/hiking/inbox",
+            &root_create,
+            &carl.signer()
+        )
+        .await,
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(delivery::run_due(&state).await, 2);
+    let author = account::find_by_uri(&pool, &carl.actor.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let (uri, create) = submission(&carl, 83, None, Some(&root_uri));
+    let cold = plamenu::ingest::ingest_remote_note_in_context(
+        &state,
+        &author,
+        &create["object"],
+        plamenu::ingest::RemoteIngestContext::History,
+    )
+    .await
+    .unwrap();
+    let mut newer = create["object"].clone();
+    newer["content"] = json!("<p>canonical edited comment</p>");
+    newer["updated"] = json!("2026-07-12T10:00:00Z");
+    let edited = plamenu::ingest::update_remote_note_in_context(
+        &state,
+        &author,
+        &cold,
+        &newer,
+        plamenu::ingest::RemoteIngestContext::History,
+    )
+    .await
+    .unwrap();
+    for _ in 0..2 {
+        assert_eq!(
+            post_signed(app.clone(), "/users/hiking/inbox", &create, &carl.signer()).await,
+            StatusCode::ACCEPTED
+        );
+    }
+    let stored = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+    assert_eq!(stored.content, edited.content);
+    assert_eq!(stored.in_reply_to_id, edited.in_reply_to_id);
+    assert!(stored.in_reply_to_id.is_some());
+    assert!(
+        status::find_reblog_by(&pool, group_id, cold.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    job::make_all_due(&pool).await.unwrap();
+    assert_eq!(delivery::run_due(&state).await, 1);
+    let announce = stub.deliveries().pop().unwrap().activity;
+    assert_eq!(announce["type"], "Announce");
+    assert_eq!(announce["object"], uri);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn queued_stale_signed_group_update_cannot_publish_or_reannounce_older_payload(pool: PgPool) {
+    let carl = RemoteUser::new("remote.example", "carl");
+    let stub = StubFederation::with_actors([carl.actor.clone()]);
+    let state = test_state_with(pool.clone(), stub.clone());
+    let app = build_router(state.clone());
+    seeded_group_with_member(&pool, &carl, &stub, &state, &app).await;
+    let (uri, mut create) = submission(&carl, 84, Some("Original video"), None);
+    create["object"]["type"] = json!("Video");
+    create["object"]["url"] = json!([{"type":"Link","mediaType":"video/mp4","href":"https://remote.example/group-race.mp4","height":240,"size":1000}]);
+    assert_eq!(
+        post_signed(app.clone(), "/users/hiking/inbox", &create, &carl.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(delivery::run_due(&state).await, 2);
+    let original = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+    let mut listener = plamenu_db::streaming::listener(&pool).await.unwrap();
+    let chapters_uri = "https://remote.example/group-race/chapters";
+    stub.objects.lock().unwrap().insert(
+        chapters_uri.to_owned(),
+        json!({"id":chapters_uri,"hasPart":[{"name":"canonical chapter","startOffset":0}]}),
+    );
+    let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+    let started = std::sync::Arc::new(tokio::sync::Notify::new());
+    *stub.remote_media_fetch_gate.lock().unwrap() = Some((chapters_uri.to_owned(), gate.clone()));
+    *stub.remote_media_fetch_started.lock().unwrap() = Some(started.clone());
+    let mut newer_object = create["object"].clone();
+    newer_object["content"] = json!("<p>canonical v3 group video</p>");
+    newer_object["updated"] = json!("2026-07-12T12:00:00Z");
+    newer_object["hasParts"] = json!(chapters_uri);
+    let newer = json!({"@context":"https://www.w3.org/ns/activitystreams","type":"Update","id":"https://remote.example/activities/group-v3","actor":carl.actor.id,"object":newer_object});
+    let newer_app = app.clone();
+    let newer_signer = carl.signer();
+    let winning = tokio::spawn(async move {
+        post_signed(newer_app, "/users/hiking/inbox", &newer, &newer_signer).await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), started.notified())
+        .await
+        .unwrap();
+    let mut stale_object = create["object"].clone();
+    stale_object["content"] = json!("<p>stale v2 group video</p>");
+    stale_object["updated"] = json!("2026-07-12T11:00:00Z");
+    let stale = json!({"@context":"https://www.w3.org/ns/activitystreams","type":"Update","id":"https://remote.example/activities/group-v2","actor":carl.actor.id,"object":stale_object});
+    let stale_signer = carl.signer();
+    let waiting = tokio::spawn(async move {
+        post_signed(app, "/users/hiking/inbox", &stale, &stale_signer).await
+    });
+    common::wait_remote_status_writers(&state, &uri, 2).await;
+    assert!(
+        !waiting.is_finished(),
+        "stale request reached the held object gate"
+    );
+    let held = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+    assert_eq!(held.edited_at, original.edited_at);
+    *stub.remote_media_fetch_gate.lock().unwrap() = None;
+    gate.add_permits(1);
+    assert_eq!(winning.await.unwrap(), StatusCode::ACCEPTED);
+    assert_eq!(waiting.await.unwrap(), StatusCode::ACCEPTED);
+    let canonical = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+    assert_eq!(canonical.content, "<p>canonical v3 group video</p>");
+    job::make_all_due(&pool).await.unwrap();
+    assert_eq!(
+        delivery::run_due(&state).await,
+        1,
+        "only accepted v3 Update is reannounced"
+    );
+    let announcement = stub.deliveries().pop().unwrap().activity;
+    assert_eq!(
+        announcement["object"]["id"],
+        "https://remote.example/activities/group-v3"
+    );
+    assert_eq!(
+        announcement["object"]["object"]["content"],
+        "<p>canonical v3 group video</p>"
+    );
+    let mut edit_events = 0;
+    loop {
+        let Ok(notification) =
+            tokio::time::timeout(std::time::Duration::from_millis(250), listener.recv()).await
+        else {
+            break;
+        };
+        let notification = notification.unwrap();
+        let event: plamenu_db::streaming::Event =
+            serde_json::from_str(notification.payload()).unwrap();
+        if matches!(event,plamenu_db::streaming::Event::StatusEdit {status_id} if status_id == canonical.id)
+        {
+            edit_events += 1;
+        }
+    }
+    assert_eq!(
+        edit_events, 1,
+        "rejected waiter must not emit another canonical status edit event"
+    );
+}

@@ -19,7 +19,7 @@ use crate::AppState;
 use crate::error::ApiError;
 use crate::ingest::{
     fetch_remote_status_value, is_ingestible_note, resolve_status_ref, signed_fetch_recipient,
-    update_remote_note,
+    update_remote_note_and_publish,
 };
 use crate::remote::{host_of, refresh_remote_actor};
 
@@ -3239,6 +3239,51 @@ async fn remove_boost_row(
     Ok(true)
 }
 
+/// Admits an inline/fetched note Create and consumes poll votes under the
+/// same ownership gate. The gate drops before ordinary status ingestion.
+async fn admit_remote_note_create(
+    state: &AppState,
+    sender: &Account,
+    object: &Value,
+) -> Result<bool, ApiError> {
+    let Some(object_uri) = id_of(object) else {
+        return Ok(false);
+    };
+    // Inline objects have the same origin requirement as IRI-valued Creates;
+    // otherwise a valid signer could reserve another server's unseen URI.
+    let Some(sender_uri) = sender.uri.as_deref() else {
+        return Ok(false);
+    };
+    if !matches!((host_of(object_uri), host_of(sender_uri)), (Some(object_host), Some(sender_host)) if object_host == sender_host)
+    {
+        tracing::debug!(
+            uri = object_uri,
+            actor = sender_uri,
+            "ignoring Create whose inline object is hosted by another origin"
+        );
+        return Ok(false);
+    }
+    // The note must belong to the (verified) sender of the activity.
+    if !attributed_to_ids(object).any(|author| Some(author) == sender.uri.as_deref()) {
+        tracing::debug!(uri = object_uri, "ignoring Create for a foreign object");
+        return Ok(false);
+    }
+    // A vote-shaped Create can mutate its target poll without status storage.
+    // Admit its URI before allocation and recheck under the same object gate
+    // through that mutation. Release before a non-vote falls through to ingest.
+    if object.get("name").and_then(Value::as_str).is_some()
+        && object.get("inReplyTo").and_then(id_of).is_some()
+    {
+        crate::ingest::ensure_known_remote_object_author(state, sender, object_uri).await?;
+        let _vote_guard = state.remote_status_writes.lock(object_uri).await?;
+        crate::ingest::ensure_known_remote_object_author(state, sender, object_uri).await?;
+        return crate::polls::handle_inbound_vote(state, sender, object)
+            .await
+            .map(|consumed| !consumed);
+    }
+    Ok(true)
+}
+
 async fn handle_create(
     state: &AppState,
     sender: &Account,
@@ -3288,16 +3333,7 @@ async fn handle_create(
     if !crate::ingest::is_ingestible_note(object) {
         return Ok(());
     }
-    let Some(object_uri) = id_of(object) else {
-        return Ok(());
-    };
-    // The note must belong to the (verified) sender of the activity.
-    if !attributed_to_ids(object).any(|author| Some(author) == sender.uri.as_deref()) {
-        tracing::debug!(uri = object_uri, "ignoring Create for a foreign object");
-        return Ok(());
-    }
-    // A reply naming an option of one of our polls is a vote, not a post.
-    if crate::polls::handle_inbound_vote(state, sender, object).await? {
+    if !admit_remote_note_create(state, sender, object).await? {
         return Ok(());
     }
     let crate::ingest::RemoteIngestResult {
@@ -3392,22 +3428,17 @@ async fn handle_update(
                 .get("updated")
                 .and_then(Value::as_str)
                 .and_then(|s| time::OffsetDateTime::parse(s, &Rfc3339).ok());
+            let unstamped_question = crate::ingest::object_type_in(object, &["Question"])
+                && object.get("updated").is_none();
             if let Some(stored_edited_at) = existing.edited_at
+                && !unstamped_question
                 && incoming_updated.is_none_or(|updated| updated < stored_edited_at)
             {
                 return Ok(());
             }
-            // Poll tallies refresh even when nothing else changed — vote
-            // updates arrive as Update(Question) with identical content.
-            crate::polls::refresh_remote_poll(state, &existing, object).await?;
-            let updated = update_remote_note(state, sender, &existing, object).await?;
-            // A no-change Update (e.g. quote-stamp redistribution) is not
-            // an edit and must not stream one — nor re-announce it to any
-            // group the submission belongs to.
-            if updated.edited_at != existing.edited_at {
-                crate::streaming::status_edited(state, updated.id).await;
-                crate::groups::reannounce_to_groups(state, &updated, raw).await?;
-            }
+            // Update storage refreshes poll tallies inside the shared object
+            // write guard, after reloading and checking the current revision.
+            update_remote_note_and_publish(state, sender, &existing, object, raw).await?;
         }
         Some("Person" | "Service" | "Application" | "Group" | "Organization") => {
             if id_of(object) != sender.uri.as_deref() {
@@ -3422,6 +3453,7 @@ async fn handle_update(
                 return Ok(());
             }
             let stored = refresh_remote_actor(state, &actor).await?;
+            crate::actor_reconciliation::schedule(state, &stored);
             crate::remote::spawn_featured_tags_sync(state, &stored, actor.featured_tags_uri());
             crate::remote::spawn_outbox_stats_sync(state, &stored, actor.outbox_url());
             crate::remote::spawn_group_moderators_sync(state, &stored, &actor);

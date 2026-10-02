@@ -575,6 +575,43 @@ pub async fn announce_submission(
     Ok(())
 }
 
+/// Publishes the canonical URI of an edited cold submission. Its first live
+/// Create carries an older author payload, which cannot authenticate the newer
+/// stored snapshot. A URI Announce preserves author identity without forwarding
+/// that stale body or fabricating an author-signed replacement.
+async fn announce_canonical_submission(
+    state: &AppState,
+    group_account: &Account,
+    stored: &Status,
+) -> Result<(), ApiError> {
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(plamenu_db::DbError::from)?;
+    let boost = if stored.in_reply_to_id.is_none() {
+        Some(status::create_local_reblog_conn(&mut tx, group_account.id, stored.id).await?)
+    } else {
+        None
+    };
+    let author = account::find_by_id(&mut *tx, stored.account_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let announce = activity::announce(
+        &state.config.domain,
+        &group_account.username,
+        boost.as_ref().map_or_else(id::next, |row| row.id),
+        &crate::entities::status_uri_for_account(&state.config.domain, stored, &author),
+        &crate::actions::published_of(boost.as_ref().unwrap_or(stored))?,
+    );
+    crate::actions::fan_out_conn(state, &mut tx, group_account, &announce, &[]).await?;
+    tx.commit().await.map_err(plamenu_db::DbError::from)?;
+    if let Some(boost) = boost {
+        crate::streaming::status_created(state, boost.id).await;
+    }
+    Ok(())
+}
+
 /// Group publication shares the authoring transaction and returns a stream id.
 pub async fn announce_submission_conn(
     state: &AppState,
@@ -820,6 +857,22 @@ pub async fn process_inbound_submission(
     stored: &Status,
     raw_activity: &Value,
 ) -> Result<(), ApiError> {
+    // The ingest guard has ended before this callback. An Update may have won
+    // since then; publish its canonical URI rather than an older Create body.
+    let _write_guard = if let Some(uri) = stored.uri.as_deref() {
+        Some(state.remote_status_writes.lock(uri).await?)
+    } else {
+        None
+    };
+    let current = status::find_by_id(&state.pool, stored.id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if current.account_id != sender.id {
+        return Err(ApiError::Forbidden(
+            "remote object belongs to another author".into(),
+        ));
+    }
+    let stored = &current;
     for g in group::groups_of_status(&state.pool, stored.id).await? {
         if !may_submit(state, &g, sender.id, stored.in_reply_to_id.is_none()).await? {
             mention::detach(&state.pool, stored.id, g.account_id).await?;
@@ -849,7 +902,11 @@ pub async fn process_inbound_submission(
         let Some(group_account) = account::find_by_id(&state.pool, g.account_id).await? else {
             continue;
         };
-        announce_submission(state, &group_account, stored, raw_activity).await?;
+        if stored.edited_at.is_some() {
+            announce_canonical_submission(state, &group_account, stored).await?;
+        } else {
+            announce_submission(state, &group_account, stored, raw_activity).await?;
+        }
     }
     Ok(())
 }
