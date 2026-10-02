@@ -1598,6 +1598,32 @@ pub async fn thread_root(pool: &PgPool, status_id: i64) -> Result<i64, DbError> 
     Ok(root.unwrap_or(status_id))
 }
 
+/// The exact row selected by [`thread_root`], in the same round-trip as
+/// its bounded walk. Preserve stubs and the input-id fallback when no
+/// NULL-parent root is reachable. Callers still scope community attribution
+/// and thread locks independently; this row confers no viewing permission.
+pub async fn thread_root_status(pool: &PgPool, status_id: i64) -> Result<Option<Status>, DbError> {
+    Ok(sqlx::query_as(
+        "WITH RECURSIVE chain(id, in_reply_to_id, depth) AS (
+            SELECT id, in_reply_to_id, 0 FROM statuses WHERE id = $1
+            -- STUBKEEP: root traversal and its selected row retain deleted stubs
+            UNION ALL
+            SELECT s.id, s.in_reply_to_id, chain.depth + 1
+            FROM statuses s JOIN chain ON s.id = chain.in_reply_to_id
+            WHERE chain.depth < 40
+         )
+         SELECT id, uri, account_id, content, created_at, updated_at, visibility,
+                in_reply_to_id, reblog_of_id, edited_at, spoiler_text, sensitive,
+                language, url, quote_approval_policy, application_id, title, object_type, external_url
+         FROM statuses -- STUBKEEP: selected root rows retain deleted stubs
+         WHERE id = COALESCE((SELECT id FROM chain WHERE in_reply_to_id IS NULL
+                              ORDER BY depth DESC LIMIT 1), $1)",
+    )
+    .bind(status_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
 /// Fetches statuses by a set of ids. Missing ids are simply absent from the
 /// result; ordering is unspecified (callers reorder as needed).
 pub async fn find_by_ids<'e, E: sqlx::PgExecutor<'e>>(
@@ -5804,6 +5830,74 @@ mod tests {
         assert!(!last_at.contains_key(&carol));
 
         assert!(count_by_account_batch(&pool, &[]).await.unwrap().is_empty());
+    }
+
+    #[sqlx::test]
+    async fn thread_root_status_preserves_stubs_depth_and_cycle_fallback(pool: PgPool) {
+        let author = local_account(&pool, "author").await;
+        let root = create_local(&pool, NewLocalStatus::new(author, "root", "public", None))
+            .await
+            .unwrap();
+        let mut ids = vec![root.id];
+        for _ in 0..41 {
+            let child = create_local(
+                &pool,
+                NewLocalStatus::new(author, "child", "public", ids.last().copied()),
+            )
+            .await
+            .unwrap();
+            ids.push(child.id);
+        }
+        sqlx::query("UPDATE statuses SET deleted_at=now(),content='' WHERE id=$1")
+            .bind(root.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        for id in [ids[0], ids[1], ids[40], ids[41], 999_999] {
+            let selected = thread_root(&pool, id).await.unwrap();
+            let separate = find_by_id(&pool, selected).await.unwrap();
+            let combined = thread_root_status(&pool, id).await.unwrap();
+            assert_eq!(
+                combined.as_ref().map(|s| s.id),
+                separate.as_ref().map(|s| s.id)
+            );
+            assert_eq!(
+                combined.as_ref().map(|s| &s.content),
+                separate.as_ref().map(|s| &s.content)
+            );
+            assert_eq!(
+                combined.as_ref().map(|s| s.account_id),
+                separate.as_ref().map(|s| s.account_id)
+            );
+        }
+        assert_eq!(
+            thread_root_status(&pool, ids[40])
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            root.id
+        );
+        assert_eq!(
+            thread_root_status(&pool, ids[41])
+                .await
+                .unwrap()
+                .unwrap()
+                .id,
+            ids[41]
+        );
+        // A legal self-FK cycle has no NULL-parent root; both forms select
+        // the input row after the same bounded traversal.
+        sqlx::query("UPDATE statuses SET in_reply_to_id=$1 WHERE id=$1")
+            .bind(root.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(thread_root(&pool, ids[1]).await.unwrap(), ids[1]);
+        assert_eq!(
+            thread_root_status(&pool, ids[1]).await.unwrap().unwrap().id,
+            ids[1]
+        );
     }
 
     #[sqlx::test]

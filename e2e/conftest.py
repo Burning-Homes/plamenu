@@ -262,17 +262,17 @@ def funkwhale_fiona() -> funkwhale.FunkwhaleApi:
     return funkwhale.fiona()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def plamenu2(db) -> ephemeral.Instance:
-    """A second Plamenu instance (https://plamenu2.local), started for the
-    session from this very tree and torn down after it.
+    """A second Plamenu instance (https://plamenu2.local), started for this
+    module and stopped before another module owns its guarded fixture port.
 
     Every other peer is foreign software that implements part of what this
     server emits; this one implements all of it, so the Plamenu-to-Plamenu
     tests are the only ones that can hold both halves of a dialect to
     account at once.
 
-    The peer is a fresh install each session (new database, new keys), so the
+    The peer is a fresh install each module (new database, new keys), so the
     dev instance is first made to forget the previous one — otherwise its
     abandoned fetch budget and cached keys would greet the new server."""
     db.forget_host(ephemeral.PEER_DOMAIN)

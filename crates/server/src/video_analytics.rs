@@ -290,7 +290,7 @@ pub async fn daily(state: &AppState, channel: i64) -> Result<Vec<Daily>, ApiErro
         JOIN video_publications v ON v.media_id=d.media_id AND v.channel_id=d.channel_id
         JOIN statuses s ON s.id=v.status_id AND s.deleted_at IS NULL
         WHERE d.channel_id=$1 AND d.day >= (now() AT TIME ZONE 'UTC')::date-(p.retention_days-1)
-        ORDER BY d.day DESC,d.media_id DESC,d.lane LIMIT 1000",
+        ORDER BY d.day DESC,d.media_id DESC,d.lane LIMIT 1000\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
     )
     .bind(channel)
     .fetch_all(&state.pool)
@@ -422,7 +422,7 @@ pub async fn flush(state: &AppState) -> Result<(), DbError> {
           WHERE v.media_id=d.media_id AND v.channel_id=d.channel_id AND s.deleted_at IS NULL))
         LIMIT 4096 FOR UPDATE OF d SKIP LOCKED)
         DELETE FROM video_delivery_daily d USING expired e
-        WHERE (d.channel_id,d.media_id,d.day,d.lane)=(e.channel_id,e.media_id,e.day,e.lane)")
+        WHERE (d.channel_id,d.media_id,d.day,d.lane)=(e.channel_id,e.media_id,e.day,e.lane)\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos")
         .bind(state.config.video_analytics).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(())

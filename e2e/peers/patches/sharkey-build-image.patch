@@ -1,0 +1,10 @@
+diff --git a/Dockerfile b/Dockerfile
+index e6e6099..dbde3e3 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -3 +3 @@
+-ARG NODE_VERSION=22.11.0-alpine3.20
++ARG NODE_VERSION=22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
+@@ -10,0 +11,2 @@ ENV COREPACK_DEFAULT_TO_LATEST=0
++# canvas 3.1.0 omits cstdint includes required by current Alpine GCC.
++ENV CXXFLAGS="-include cstdint"

@@ -190,14 +190,11 @@ async fn manage_inner(
         .unwrap_or_default();
     let locale = user.locale;
     let body = html! {
-        section.column {
+        section.column.video-form {
             h1 { (locale.text("videos-chapters-published")) }
             h2 { (publication.title) }
             @if let Some(message) = error { p.settings__error role="alert" { (message) } }
-            nav aria-label=(locale.text("videos-chapters-published")) {
-                a href=(format!("/web/statuses/{}", publication.status_id)) { (locale.text("videos-caption-watch")) }
-                " · " a href="/videos" { (locale.text("videos-title")) }
-            }
+            (super::video_workspace::video_navigation(id,publication.status_id,locale))
             @if let Some(file) = media.file_name.as_deref() {
                 video.video-publish__preview controls preload="metadata" aria-label=(publication.title) {
                     source src=(format!("/media/{file}")) type=(media.content_type);

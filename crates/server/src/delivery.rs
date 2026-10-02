@@ -260,31 +260,29 @@ impl BatchCache {
         if let Some(material) = cache.get(&cache_key) {
             return Ok(material.clone());
         }
-        let rsa = crate::key_store::account_signing_key(state, account_id, "rsa")
-            .await
-            .map_err(DeliveryFailure::local)?;
+        let (rsa, ed25519) =
+            crate::key_store::account_signing_pair(state, account_id, emit_integrity_proofs)
+                .await
+                .map_err(DeliveryFailure::local)?;
         let private_key_pem = Zeroizing::new(
             rsa.private
                 .expose_str()
                 .map_err(DeliveryFailure::local)?
                 .to_owned(),
         );
-        let ed25519 = if emit_integrity_proofs {
-            let key = crate::key_store::account_signing_key(state, account_id, "ed25519")
-                .await
-                .map_err(DeliveryFailure::local)?;
-            Some((
-                Zeroizing::new(
-                    key.private
-                        .expose_str()
-                        .map_err(DeliveryFailure::local)?
-                        .to_owned(),
-                ),
-                key.record.key_uri,
-            ))
-        } else {
-            None
-        };
+        let ed25519 = ed25519
+            .map(|key| {
+                Ok::<_, DeliveryFailure>((
+                    Zeroizing::new(
+                        key.private
+                            .expose_str()
+                            .map_err(DeliveryFailure::local)?
+                            .to_owned(),
+                    ),
+                    key.record.key_uri,
+                ))
+            })
+            .transpose()?;
         let material = Arc::new(CachedSigningKeys {
             private_key_pem,
             key_id: rsa.record.key_uri,

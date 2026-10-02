@@ -88,7 +88,7 @@ pub async fn lock_publication(
     media: i64,
     actor: i64,
 ) -> Result<bool, DbError> {
-    let row: Option<(i64,i64)> = sqlx::query_as("SELECT v.channel_id,s.account_id FROM video_publications v JOIN statuses s ON s.id=v.status_id WHERE v.media_id=$1 AND s.deleted_at IS NULL")
+    let row: Option<(i64,i64)> = sqlx::query_as("SELECT v.channel_id,s.account_id FROM video_publications v JOIN statuses s ON s.id=v.status_id WHERE v.media_id=$1 AND s.deleted_at IS NULL\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos")
         .bind(media).fetch_optional(&mut *conn).await?;
     let Some((channel, author)) = row else {
         return Ok(false);
@@ -105,7 +105,7 @@ pub async fn publication_author(
     status: i64,
     actor: i64,
 ) -> Result<Option<i64>, DbError> {
-    let row: Option<(i64,i64)> = sqlx::query_as("SELECT v.channel_id,s.account_id FROM video_publications v JOIN statuses s ON s.id=v.status_id WHERE v.status_id=$1 AND s.deleted_at IS NULL")
+    let row: Option<(i64,i64)> = sqlx::query_as("SELECT v.channel_id,s.account_id FROM video_publications v JOIN statuses s ON s.id=v.status_id WHERE v.status_id=$1 AND s.deleted_at IS NULL\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos")
         .bind(status).fetch_optional(pool).await?;
     let Some((channel, author)) = row else {
         return Ok(None);

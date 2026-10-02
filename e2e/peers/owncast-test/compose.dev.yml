@@ -8,8 +8,8 @@ services:
       context: ../owncast-source
       dockerfile: Dockerfile
       args:
-        VERSION: 0.3.0-dev
-        GIT_COMMIT: b0de2e462058b34aa3fa2e68e1939ff416b69de5
+        VERSION: 0.3.0
+        GIT_COMMIT: 4b09a1b11693977400fb6f6cb06a7b9891bdca6d
         NAME: plamenu-e2e
     restart: unless-stopped
     environment:

@@ -1,6 +1,7 @@
 // JS enhancement of the native, no-JS-capable draft caption form.
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
+import { openDetailsFor, chooseVideoLanguage } from './session.mjs';
 
 const [reviewUrl, screenshotPath] = process.argv.slice(2);
 if (!reviewUrl || !process.env.PLAMENU_E2E_USER || !process.env.PLAMENU_E2E_PASSWORD) {
@@ -21,8 +22,9 @@ try {
   ]);
   await page.goto(reviewUrl);
   const form = page.locator('form[data-caption-upload]');
+  await openDetailsFor(form);
   await form.waitFor({ state: 'visible' });
-  await form.getByLabel('Caption language').fill('fr');
+  await chooseVideoLanguage(form, 'fr');
   const file = form.getByLabel('Captions (WebVTT)');
   const status = form.locator('[data-caption-status]');
   await file.setInputFiles({ name: 'wrong.vtt', mimeType: 'text/vtt', buffer: Buffer.from('Not WebVTT') });
@@ -42,6 +44,8 @@ try {
   const preview = await status.textContent();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
+  await openDetailsFor(form);
+  await form.waitFor({ state: 'visible' });
   const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
   const mobileAudit = await new AxeBuilder({ page }).include('#caption-languages').analyze();
   const mobileSevere = mobileAudit.violations.filter(item => ['critical', 'serious'].includes(item.impact));

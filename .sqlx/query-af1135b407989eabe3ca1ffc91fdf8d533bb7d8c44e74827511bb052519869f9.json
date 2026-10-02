@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT b.media_id, b.status_id, b.owner_account_id, b.channel_id,\n                  b.broadcast_uuid, b.state, b.permanent, b.scheduled_at, b.scheduled_starts,\n                  b.reconnect_deadline, b.key_generation,\n                  b.dvr_window_seconds, b.latency_mode\n           FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id\n           WHERE b.status_id = $1 AND b.owner_account_id = $2\n             AND s.account_id = $2 AND s.uri IS NULL",
+  "query": "SELECT b.media_id, b.status_id, b.owner_account_id, b.channel_id,\n                  b.broadcast_uuid, b.state, b.permanent, b.scheduled_at, b.scheduled_starts,\n                  b.reconnect_deadline, b.key_generation,\n                  b.dvr_window_seconds, b.latency_mode\n           FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id\n           WHERE b.status_id = $1 AND b.owner_account_id = $2\n             AND s.account_id = $2 AND s.uri IS NULL\n-- STUBKEEP: publication_author has already rejected deleted publications before this owner-only lookup\n",
   "describe": {
     "columns": [
       {
@@ -169,5 +169,5 @@
       false
     ]
   },
-  "hash": "d402e4d4e59144fb291748bf5f9c3bd64a5cf70e8135ff8d0b97a30fc359b391"
+  "hash": "af1135b407989eabe3ca1ffc91fdf8d533bb7d8c44e74827511bb052519869f9"
 }

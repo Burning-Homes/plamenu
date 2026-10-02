@@ -142,7 +142,7 @@ async fn show_inner(
         phase
     };
     let body = html! {
-        section.column.video-draft data-video-draft=(id) data-video-scheduled[scheduled] data-phase=(phase)
+        section.column.video-draft.video-form data-video-draft=(id) data-video-scheduled[scheduled] data-phase=(phase)
             data-phase-receiving=(locale.text("videos-draft-receiving"))
             data-phase-importing=(locale.text(if edit.is_some(){"video-edit-copying"}else{"videos-draft-importing"}))
             data-phase-import-failed=(locale.text("videos-draft-import-failed"))
@@ -160,7 +160,7 @@ async fn show_inner(
             @if scheduled {
                 p { (locale.text("videos-draft-scheduled")) " " a href="/settings/scheduled" { (locale.text("compose-scheduled-posts")) } }
             }
-            p role="status" aria-live="polite" { (locale.text(&if phase=="importing" && edit.is_some(){"video-edit-copying".into()}else{format!("videos-draft-{phase}")})) }
+            p.video-form__panel role="status" aria-live="polite" { (locale.text(&if phase=="importing" && edit.is_some(){"video-edit-copying".into()}else{format!("videos-draft-{phase}")})) }
             @if phase == "receiving" {
                 p { (locale.text("videos-draft-receiving-help")) }
                 @if draft.source_fingerprint.is_some() {
@@ -191,13 +191,18 @@ async fn show_inner(
                 a href=(format!("/videos/drafts/{id}")) { (locale.text("videos-draft-refresh")) }
                 a data-video-review hidden[!ready || scheduled] href=(format!("/videos/drafts/{id}/review")) { (locale.text("videos-review")) }
                 @if let Some(target)=edit.as_ref().and_then(|e|e.target_media_id){a href=(format!("/videos/{target}/edit?candidate={id}")) {(locale.text("video-edit-return"))}}
+                @if matches!(phase,"expired" | "unavailable") {
+                    a href="/videos/upload" {(locale.text("studio-upload"))}
+                }
                 a href="/videos" { (locale.text("videos-title")) }
             }
             form.settings-form data-video-retry hidden[!matches!(phase, "failed" | "import-failed") || scheduled] method="post" action=(format!("/web/videos/drafts/{id}")) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     button type="submit" name="op" value="retry" { (locale.text("videos-draft-retry")) }
             }
-            @if !scheduled { form.settings-form method="post" action=(format!("/web/videos/drafts/{id}")) {
+            @if !scheduled { details.video-form__section {
+                summary {(locale.text("videos-draft-cancel"))}
+                form.settings-form method="post" action=(format!("/web/videos/drafts/{id}")) {
                 input type="hidden" name="csrf" value=(user.csrf);
                 p id="draft-cancel-help" { (locale.text("videos-draft-cancel-help")) }
                 label.settings-field {
@@ -207,7 +212,7 @@ async fn show_inner(
                     }
                 }
                 button.settings-button--danger type="submit" name="op" value="cancel" { (locale.text("videos-draft-cancel")) }
-            } }
+            } } }
         }
     };
     Ok((
@@ -605,7 +610,7 @@ async fn action_inner(
         }
         Some("cancel") if field(&pairs, "confirm") == Some("yes") => {
             if video_draft::cancel(&state.pool, id, user.current.account.id).await? {
-                Ok(redirect_to("/videos"))
+                Ok(redirect_to("/videos?view=drafts"))
             } else {
                 show_inner(state, user, id, true).await
             }

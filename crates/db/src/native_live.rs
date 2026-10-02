@@ -126,7 +126,7 @@ pub async fn recent_owned(pool: &PgPool, owner: i64) -> Result<Vec<LiveSummary>,
         "SELECT b.status_id AS \"status_id!\", COALESCE(s.title, '') AS \"title!\",
                 b.state, b.scheduled_at
          FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id
-         WHERE b.owner_account_id = $1 ORDER BY b.created_at DESC LIMIT 20",
+         WHERE b.owner_account_id = $1 ORDER BY b.created_at DESC LIMIT 20\n-- STUBKEEP: owner-scoped broadcast management retains historical identities; public playback has a separate gate",
         owner,
     )
     .fetch_all(pool)
@@ -300,7 +300,7 @@ pub async fn calendar_broadcast(
          JOIN accounts owner ON owner.id = s.account_id
          WHERE b.status_id = $1 AND s.visibility IN ('public', 'unlisted')
            AND s.deleted_at IS NULL AND a.domain IS NULL AND a.suspended_at IS NULL
-           AND owner.suspended_at IS NULL",
+           AND owner.suspended_at IS NULL\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
         status_id,
     )
     .fetch_optional(pool)
@@ -329,7 +329,7 @@ pub async fn channel_calendar_broadcasts(
            AND s.deleted_at IS NULL AND a.domain IS NULL AND a.suspended_at IS NULL
            AND owner.suspended_at IS NULL
            AND future.start_at > now()
-         ORDER BY future.start_at, b.status_id LIMIT 200",
+         ORDER BY future.start_at, b.status_id LIMIT 200\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
         channel_id,
     )
     .fetch_all(pool)
@@ -502,7 +502,7 @@ pub async fn claim_owned(
                 b.dvr_window_seconds, b.latency_mode
          FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id
          WHERE b.status_id = $1 AND b.owner_account_id = $2
-           AND s.uri IS NULL AND b.state <> 'ended' FOR UPDATE OF b",
+           AND s.uri IS NULL AND b.state <> 'ended' FOR UPDATE OF b\n-- STUBKEEP: activation locks and rechecks canonical publication authority before accepting an encoder",
         status_id,
         owner_account_id,
     )
@@ -1005,7 +1005,7 @@ pub async fn recurring_replay_publication(
          JOIN media_attachments m ON m.id = ls.replay_media_id
          LEFT JOIN video_metadata vm ON vm.media_id=m.id
          WHERE ls.session_id = $1 AND ls.media_id = $2 AND b.permanent
-           AND ls.ended_at IS NOT NULL AND m.status_id IS NULL",
+           AND ls.ended_at IS NOT NULL AND m.status_id IS NULL\n-- STUBKEEP: replay staging reads source metadata; publication transaction independently rechecks canonical authority",
     )
     .bind(&session.session_id)
     .bind(session.media_id)
@@ -1062,7 +1062,7 @@ pub async fn published_replays_by_status(
          JOIN public_native_videos v ON v.status_id = s.id AND v.media_id = m.id
          WHERE b.status_id = $1 AND b.permanent
            AND s.visibility IN ('public', 'unlisted')
-         ORDER BY ls.generation DESC LIMIT 30",
+         ORDER BY ls.generation DESC LIMIT 30\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
     )
     .bind(status_id)
     .fetch_all(pool)
@@ -1380,7 +1380,9 @@ pub async fn owned_by_status(
                   b.dvr_window_seconds, b.latency_mode
            FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id
            WHERE b.status_id = $1 AND b.owner_account_id = $2
-             AND s.account_id = $2 AND s.uri IS NULL"#,
+             AND s.account_id = $2 AND s.uri IS NULL
+-- STUBKEEP: publication_author has already rejected deleted publications before this owner-only lookup
+"#,
         status_id,
         owner,
     )

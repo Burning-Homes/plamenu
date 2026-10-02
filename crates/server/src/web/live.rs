@@ -91,8 +91,24 @@ fn playback_controls(locale: Locale, selected: native_live::PlaybackOptions) -> 
                 }
             }
         }
-        p.settings-field__hint { (locale.text("videos-live-playback-hint")) }
+        p.settings-field__hint {(locale.text("videos-live-playback-hint"))}
     }
+}
+
+fn playback_summary(locale: Locale, selected: native_live::PlaybackOptions) -> Markup {
+    let rewind = match selected.dvr_window_seconds / 60 {
+        5 => "videos-live-dvr-5",
+        10 => "videos-live-dvr-10",
+        15 => "videos-live-dvr-15",
+        30 => "videos-live-dvr-30",
+        _ => "videos-live-dvr-off",
+    };
+    let latency = match selected.latency_mode {
+        3 => "videos-live-latency-low",
+        2 => "videos-live-latency-resilient",
+        _ => "videos-live-latency-balanced",
+    };
+    html! {span.video-form__summary-value {(locale.text(rewind)) " · " (locale.text(latency))}}
 }
 
 fn schedule_form(user: &WebUser, id: i64, starts: &[time::OffsetDateTime]) -> Markup {
@@ -127,6 +143,10 @@ fn schedule_form(user: &WebUser, id: i64, starts: &[time::OffsetDateTime]) -> Ma
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one HTML authoring template with independent native disclosure sections"
+)]
 async fn creation_form(
     state: &AppState,
     user: &WebUser,
@@ -142,39 +162,37 @@ async fn creation_form(
     let channels = account::find_by_ids(&state.pool, &ids).await?;
     let locale = user.locale;
     let value = |key| field(pairs, key).unwrap_or_default();
+    let playback = playback_fields(pairs).unwrap_or(native_live::PlaybackOptions {
+        dvr_window_seconds: 600,
+        latency_mode: 1,
+    });
     let body = html! {
-        section.column {
+        section.column.video-form {
             h1 { (locale.text("videos-live-title")) }
-            p { (locale.text("videos-live-intro")) }
+            (super::video_workspace::navigation("/videos",locale))
+            p.video-form__intro { (locale.text("studio-live-intro")) }
+            p.settings-field__hint {(locale.text("studio-required"))}
             @if let Some(error)=error {p.settings__error role="alert" {(error)}}
             @if channels.is_empty() {
-                p { a href="/videos" { (locale.text("videos-new-channel")) } }
+                p { a href="/videos/channels/new" { (locale.text("videos-new-channel")) } }
             } @else {
                 form.settings-form method="post" action="/web/videos/live" data-live-schedules
                     data-added=(locale.text("videos-live-schedule-added"))
                     data-duplicate=(locale.text("videos-live-schedule-duplicate")) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     fieldset.settings-form__group {
-                        legend { (locale.text("videos-details")) }
+                        legend { (locale.text("studio-live-details")) }
                         label.settings-field {
-                            span.settings-field__label { (locale.text("videos-channel")) }
-                            select name="channel" required {
+                            span.settings-field__label { (locale.text("videos-channel"))  span.video-form__required aria-hidden="true" {" *"} }
+                            select name="channel" aria-label=(locale.text("videos-channel")) required {
                                 @for channel in &channels {
                                     option value=(channel.id) selected[value("channel")==channel.id.to_string()] { (channel.display_name) }
                                 }
                             }
                         }
                         label.settings-field {
-                            span.settings-field__label { (locale.text("videos-name")) }
-                            input name="title" minlength="3" maxlength="120" required value=(value("title"));
-                        }
-                        div.settings-field {
-                            label.settings-field__label for="live-description" { (locale.text("videos-description")) }
-                            textarea id="live-description" name="description" rows="5" maxlength="10000" { (value("description")) }
-                        }
-                        label.settings-field {
-                            span.settings-field__label { (locale.text("videos-language")) }
-                            input name="language" placeholder="en" maxlength="35" value=(value("language"));
+                            span.settings-field__label { (locale.text("videos-name"))  span.video-form__required aria-hidden="true" {" *"} }
+                            input name="title" aria-label=(locale.text("videos-name")) minlength="3" maxlength="120" required value=(value("title"));
                         }
                         label.settings-field {
                             span.settings-field__label { (locale.text("videos-visibility")) }
@@ -183,38 +201,66 @@ async fn creation_form(
                                 option value="unlisted" selected[value("visibility")=="unlisted"] { (locale.text("videos-unlisted")) }
                             }
                         }
-                        (super::video_metadata::fields(value("category"), value("licence"), locale))
-                        label.settings-field {
-                            span.settings-field__label { (locale.text("compose-content-warning")) }
-                            input name="spoiler_text" maxlength="500" value=(value("spoiler_text"));
-                        }
-                        label.settings-field__choice {
-                            input type="checkbox" name="sensitive" value="true" checked[value("sensitive")=="true"];
-                            span.settings-field__label { (locale.text("compose-sensitive")) }
-                        }
-                        label.settings-field__choice {
-                            input type="checkbox" name="permanent" value="yes" checked[value("permanent")=="yes"];
-                            span.settings-field__label { (locale.text("videos-live-permanent")) }
-                        }
-                        (playback_controls(locale, playback_fields(pairs).unwrap_or(native_live::PlaybackOptions {
-                            dvr_window_seconds: 600,
-                            latency_mode: 1,
-                        })))
-                        label.settings-field {
-                            span.settings-field__label { (locale.text("videos-live-planned-start")) }
-                            input type="datetime-local" name="scheduled_at" value=(value("scheduled_at"));
-                        }
-                        div.settings-field {
-                            label.settings-field__label for="live-additional-starts" { (locale.text("videos-live-additional-starts")) }
-                            textarea id="live-additional-starts" name="scheduled_starts" rows="4" { (value("scheduled_starts")) }
-                        }
-                        p.settings-field__hint { (locale.text("videos-live-additional-starts-hint")) }
-                        (schedule_picker(locale))
-                        p.settings-field__hint {
-                            (locale.text("videos-live-schedule-hint")) " " (user.clock.name())
+                        details.video-form__section open[error.is_some()] {
+                            summary {(locale.text("studio-live-content"))}
+                            div.video-form__section-body {
+                                div.settings-field {
+                                    label.settings-field__label for="live-description" { (locale.text("videos-description")) }
+                                    textarea id="live-description" name="description" rows="3" maxlength="10000" { (value("description")) }
+                                }
+                                (super::video_workspace::language_field("videos-language", value("language"), false, "live", locale))
+                                (super::video_metadata::fields(value("category"), value("licence"), locale))
+                                label.settings-field {
+                                    span.settings-field__label { (locale.text("compose-content-warning")) }
+                                    input name="spoiler_text" maxlength="500" value=(value("spoiler_text"));
+                                }
+                                label.settings-field__choice {
+                                    input type="checkbox" name="sensitive" value="true" checked[value("sensitive")=="true"];
+                                    span.settings-field__label { (locale.text("compose-sensitive")) }
+                                }
+                            }
                         }
                     }
-                    button type="submit" { (locale.text("videos-live-create")) }
+                    details.video-form__section.video-form__panel open[error.is_some()] {
+                        summary {(locale.text("videos-live-playback-settings")) (playback_summary(locale,playback))}
+                        div.video-form__section-body {
+                            (playback_controls(locale, playback))
+                        }
+                    }
+                    details.video-form__section.video-form__panel open[error.is_some() || !value("scheduled_at").is_empty() || value("permanent")=="yes"] {
+                        summary {(locale.text("studio-live-schedule"))}
+                        div.video-form__section-body {
+                            p.settings-field__hint {(locale.text("studio-live-schedule-intro")) " " (user.clock.name())}
+                            label.settings-field {
+                                span.settings-field__label { (locale.text("videos-live-planned-start")) }
+                                input type="datetime-local" name="scheduled_at" value=(value("scheduled_at"));
+                            }
+                            div.video-field__heading {
+                                label.settings-field__choice {
+                                    input type="checkbox" name="permanent" value="yes" checked[value("permanent")=="yes"];
+                                    span.settings-field__label { (locale.text("studio-live-reusable")) }
+                                }
+                                (super::video_workspace::help(locale,"studio-live-reusable",&html! {p {(locale.text("videos-live-intro"))}}))
+                            }
+                            details.video-form__section open[!value("scheduled_starts").is_empty()] {
+                                summary {(locale.text("videos-live-additional-starts"))}
+                                div.video-form__section-body {
+                                    (schedule_picker(locale))
+                                    div.settings-field {
+                                        div.video-field__heading {
+                                            label.settings-field__label for="live-additional-starts" { (locale.text("videos-live-additional-starts")) }
+                                            (super::video_workspace::help(locale,"videos-live-additional-starts",&html! {p {(locale.text("videos-live-additional-starts-hint"))}}))
+                                        }
+                                        textarea id="live-additional-starts" name="scheduled_starts" rows="3" { (value("scheduled_starts")) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    div.settings-form__actions {
+                        button type="submit" { (locale.text("videos-live-create")) }
+                        a href="/videos" {(locale.text("studio-cancel"))}
+                    }
                 }
             }
         }
@@ -521,6 +567,40 @@ async fn update_playback_inner(
     Ok(redirect_to(&format!("/videos/live/{id}")))
 }
 
+fn calendar_settings(locale: Locale, calendar_url: &str) -> Markup {
+    html! {
+                    section.video-form__section-body aria-labelledby="live-calendar-heading" {
+                    h3 id="live-calendar-heading" { (locale.text("videos-live-calendar-heading")) }
+                    p { (locale.text("videos-live-calendar-hint")) }
+                    label for="live-calendar-url" { (locale.text("videos-live-calendar-broadcast")) }
+                    input id="live-calendar-url" type="url" readonly value=(calendar_url);
+                    p { a href=(calendar_url) {
+                        (locale.text("videos-live-calendar-broadcast"))
+                    } }
+                    p { a href=(format!("{calendar_url}?reminder=15")) {
+                        (locale.text("videos-live-calendar-reminder"))
+                    } }
+                }
+    }
+}
+
+fn encoder_settings(user: &WebUser, id: i64) -> Markup {
+    let locale = user.locale;
+    html! {
+            details.video-form__section.video-form__panel {
+                summary {(locale.text("studio-live-encoder"))}
+                div.video-form__section-body {
+                p { (locale.text("videos-live-key-hidden")) }
+            form.settings-form method="post" action=(format!("/web/videos/live/{id}/rotate-key")) {
+                input type="hidden" name="csrf" value=(user.csrf);
+                p.settings-field__hint id="live-rotate-warning" { (locale.text("videos-live-rotate-warning")) }
+                button type="submit" aria-describedby="live-rotate-warning" { (locale.text("videos-live-rotate")) }
+            }
+                }
+            }
+    }
+}
+
 async fn manage_inner(state: &AppState, user: &WebUser, id: i64) -> Result<Response, ApiError> {
     let broadcast = native_live::owned_by_status(&state.pool, id, user.current.account.id)
         .await?
@@ -545,10 +625,18 @@ async fn manage_inner(state: &AppState, user: &WebUser, id: i64) -> Result<Respo
         state.config.domain
     );
     let body = html! {
-        section.column {
-            h1 { (locale.text("videos-live-manage")) }
-            h2 { (status.title.unwrap_or_default()) }
-            p role="status" { (locale.text(state_label)) }
+        section.column.video-form {
+            header.video-workspace__header {
+                h1 { (status.title.unwrap_or_default()) }
+                p role="status" { (locale.text(state_label)) }
+            }
+            nav.video-workspace__nav aria-label=(locale.text("videos-live-manage")) {
+                a href="/videos?view=live" {(locale.text("studio-live"))}
+                a href=(format!("/web/statuses/{id}")) {(locale.text("videos-preview"))}
+            }
+            @if broadcast.state != "ended" {
+                (browser_publisher(locale, user, id))
+            }
             @if replay_ready {
                 p { a href=(format!("/web/statuses/{id}")) { (locale.text("videos-live-watch-replay")) } }
             } @else if broadcast.state == "ended" && !broadcast.permanent {
@@ -573,21 +661,22 @@ async fn manage_inner(state: &AppState, user: &WebUser, id: i64) -> Result<Respo
             @if broadcast.state == "interrupted" {
                 p { (locale.text("videos-live-reconnect-help")) }
             }
-            p { (locale.text("videos-live-key-hidden")) }
             @if broadcast.state == "waiting" {
-                (schedule_form(user, id, &broadcast.scheduled_starts))
-                section aria-labelledby="live-calendar-heading" {
-                    h3 id="live-calendar-heading" { (locale.text("videos-live-calendar-heading")) }
-                    p { (locale.text("videos-live-calendar-hint")) }
-                    label for="live-calendar-url" { (locale.text("videos-live-calendar-broadcast")) }
-                    input id="live-calendar-url" type="url" readonly value=(&calendar_url);
-                    p { a href=(&calendar_url) {
-                        (locale.text("videos-live-calendar-broadcast"))
-                    } }
-                    p { a href=(format!("{calendar_url}?reminder=15")) {
-                        (locale.text("videos-live-calendar-reminder"))
-                    } }
+                details.video-form__section.video-form__panel {
+                    summary {(locale.text("studio-live-schedule"))}
+                    div.video-form__section-body {
+                        (schedule_form(user, id, &broadcast.scheduled_starts))
+                    }
                 }
+                details.video-form__section.video-form__panel {
+                    summary {(locale.text("videos-live-calendar-heading"))}
+                    (calendar_settings(locale,&calendar_url))
+                }
+                details.video-form__section.video-form__panel {
+                    summary {(locale.text("videos-live-playback-settings")) (playback_summary(locale,native_live::PlaybackOptions {
+                        dvr_window_seconds: broadcast.dvr_window_seconds, latency_mode: broadcast.latency_mode,
+                    }))}
+                    div.video-form__section-body {
                 form.settings-form method="post" action=(format!("/web/videos/live/{id}/playback")) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     fieldset.settings-form__group {
@@ -600,15 +689,9 @@ async fn manage_inner(state: &AppState, user: &WebUser, id: i64) -> Result<Respo
                     button type="submit" { (locale.text("videos-live-save-playback")) }
                 }
             }
-            form.settings-form method="post" action=(format!("/web/videos/live/{id}/rotate-key")) {
-                input type="hidden" name="csrf" value=(user.csrf);
-                p.settings-field__hint id="live-rotate-warning" { (locale.text("videos-live-rotate-warning")) }
-                button type="submit" aria-describedby="live-rotate-warning" { (locale.text("videos-live-rotate")) }
-            }
-            @if broadcast.state != "ended" {
-                (browser_publisher(locale, user, id))
-            }
-            p { a href=(format!("/web/statuses/{id}")) { (locale.text("videos-preview")) } }
+                    }
+                }
+            (encoder_settings(user,id))
         }
     };
     Ok(layout::shell(&locale.text("videos-live-manage"), Some(user), &body).into_response())
@@ -644,11 +727,14 @@ fn browser_publisher(locale: Locale, user: &WebUser, id: i64) -> Markup {
             data-mic-unknown=(locale.text("videos-live-browser-unknown-mic")) {
             h2 { (locale.text("videos-live-browser-title")) }
             p { (locale.text("videos-live-browser-intro")) }
-            (browser_capture_controls(locale))
             div.live-browser-publisher__actions {
                 button type="button" data-live-camera { (locale.text("videos-live-browser-camera")) }
                 button type="button" data-live-screen { (locale.text("videos-live-browser-screen")) }
                 button type="button" data-live-stop hidden { (locale.text("videos-live-browser-stop")) }
+            }
+            details.video-form__section {
+                summary {(locale.text("videos-live-browser-devices"))}
+                (browser_capture_controls(locale))
             }
             p role="status" aria-live="polite" data-live-status {}
             video autoplay muted playsinline hidden data-live-preview
@@ -662,6 +748,7 @@ fn browser_capture_controls(locale: Locale) -> Markup {
     html! {
         fieldset.live-browser-publisher__devices hidden data-live-devices {
             legend { (locale.text("videos-live-browser-devices")) }
+            p.settings-field__hint {(locale.text("videos-live-browser-device-hint"))}
             label {
                 span { (locale.text("videos-live-browser-camera-device")) }
                 select data-live-camera-device {
@@ -678,7 +765,7 @@ fn browser_capture_controls(locale: Locale) -> Markup {
                 input type="checkbox" checked data-live-screen-audio;
                 (locale.text("videos-live-browser-screen-audio"))
             }
-            p.settings-field__hint { (locale.text("videos-live-browser-device-hint")) }
+
         }
     }
 }

@@ -70,7 +70,11 @@ class Api:
         url = self.base_url + path
         if any(
             self.base_url.startswith(f"https://{domain}")
-            for domain in (config.PLAMENU_DOMAIN, config.PLAMENU2_DOMAIN, "doomed.local")
+            for domain in (
+                config.PLAMENU_DOMAIN,
+                config.PLAMENU2_DOMAIN,
+                "doomed.local",
+            )
         ):
             r = apsign.signed_ap_get(url)
         else:

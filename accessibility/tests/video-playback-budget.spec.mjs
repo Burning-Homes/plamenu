@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { signIn } from '../session.mjs';
+import { signIn, openVideoOptions, createVideoChannel ,videoChannelForm} from '../session.mjs';
 
 let directory, movie;
 test.beforeAll(() => {
@@ -19,14 +19,14 @@ test.afterAll(() => { if (directory) rmSync(directory, { recursive: true }); });
 
 async function publish(page, noScript) {
   await signIn(page);
-  await page.goto('/videos');
+  await page.goto('/videos/upload');await openVideoOptions(page);
   const name = `budget_${randomUUID().replaceAll('-', '').slice(0, 18)}`;
-  const channel = page.locator('form[action="/web/video-channels"]');
+  const channel = await videoChannelForm(page);
   if (!await channel.isVisible()) await channel.locator('..').locator(':scope > summary').press('Enter');
   await channel.getByLabel('Channel address').fill(name);
   await channel.getByLabel('Channel name').fill(name);
-  await channel.getByRole('button', { name: 'Create a video channel', exact: true }).press('Enter');
-  await page.waitForURL(url => url.pathname === '/videos');
+  await createVideoChannel(page, channel.getByRole('button', { name: 'Create a video channel', exact: true }));
+  await page.waitForURL(url => url.pathname === '/videos/upload');await openVideoOptions(page);
   const upload = page.locator('form[action="/web/videos"]');
   await upload.getByRole('combobox', { name: 'Channel', exact: true }).selectOption({ label: name });
   await upload.getByLabel('Video title', { exact: true }).fill(`Decoded budget ${name}`);

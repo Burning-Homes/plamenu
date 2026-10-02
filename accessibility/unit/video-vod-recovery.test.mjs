@@ -23,7 +23,7 @@ function fixture({live=false,paused=false,buffered=true,frames=0}={}){
   const document={hidden:false,activeElement:null,createElement:tag=>({tag,children:[],
     setAttribute(name,value){this[name]=value;},appendChild(child){this.children.push(child);}})};
   const api=runInNewContext(`let hlsPlayer=engine;${code};({watchVodStart,standardVideo,started(){adaptiveStarted=true;}})`,{
-    video,document,progressive:'https://local.test/media/film.mp4',engine:{destroy(){destroyed++;}},
+    video,document,choice:sharing,progressive:'https://local.test/media/film.mp4',engine:{destroy(){destroyed++;}},
     reloadExternalTracks(){},performance:{now:()=>now},
     setTimeout(fn){const task=++id;timers.set(task,fn);return task;},
     clearTimeout(task){timers.delete(task);}});

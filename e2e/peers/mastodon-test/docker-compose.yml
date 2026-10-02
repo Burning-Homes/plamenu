@@ -20,7 +20,7 @@ x-mastodon-common: &mastodon-common
 
 services:
   db:
-    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    image: postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     restart: unless-stopped
     networks: [internal]
     environment:
@@ -36,7 +36,7 @@ services:
       retries: 20
 
   redis:
-    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     restart: unless-stopped
     networks: [internal]
     volumes:
@@ -48,7 +48,7 @@ services:
       retries: 20
 
   caddy:
-    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    image: caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
     restart: unless-stopped
     networks: [internal]
     ports:

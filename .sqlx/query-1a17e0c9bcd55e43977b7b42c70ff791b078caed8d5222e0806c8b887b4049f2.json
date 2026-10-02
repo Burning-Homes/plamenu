@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT b.status_id AS \"status_id!\", COALESCE(s.title, '') AS \"title!\",\n                b.state, b.scheduled_at\n         FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id\n         WHERE b.owner_account_id = $1 ORDER BY b.created_at DESC LIMIT 20",
+  "query": "SELECT b.status_id AS \"status_id!\", COALESCE(s.title, '') AS \"title!\",\n                b.state, b.scheduled_at\n         FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id\n         WHERE b.owner_account_id = $1 ORDER BY b.created_at DESC LIMIT 20\n-- STUBKEEP: owner-scoped broadcast management retains historical identities; public playback has a separate gate",
   "describe": {
     "columns": [
       {
@@ -55,5 +55,5 @@
       true
     ]
   },
-  "hash": "6a7a6d4b0bb6b1584a4819b5ac14e1290a0d52e163c3256622b30d694198014f"
+  "hash": "1a17e0c9bcd55e43977b7b42c70ff791b078caed8d5222e0806c8b887b4049f2"
 }

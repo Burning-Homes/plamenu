@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { randomUUID } from 'node:crypto';
-import { signIn } from '../session.mjs';
+import { signIn, openVideoOptions, createVideoChannel ,videoChannelForm,openDetailsFor,chooseVideoLanguage} from '../session.mjs';
 
 async function scan(page, noScript) {
   const reflow = await page.evaluate(() => ({ width:innerWidth, content:document.documentElement.scrollWidth,
@@ -20,18 +20,18 @@ async function journey(page, info) {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await signIn(page);
-  await page.goto('/videos');
+  await page.goto('/videos/upload');await openVideoOptions(page);
   const name = `alt_${randomUUID().replaceAll('-','').slice(0,20)}`;
-  const channel = page.locator('form[action="/web/video-channels"]');
+  const channel = await videoChannelForm(page);
   if (!await channel.isVisible()) await channel.locator('..').locator(':scope > summary').press('Enter');
   await channel.getByLabel('Channel address').fill(name);
   await channel.getByLabel('Channel name').fill(`Alternatives ${name}`);
-  await channel.getByRole('button', { name:'Create a video channel' }).press('Enter');
-  await page.waitForURL(url=>url.pathname==='/videos');
+  await createVideoChannel(page, channel.getByRole('button', { name:'Create a video channel' }));
+  await page.waitForURL(url=>url.pathname === '/videos/upload');await openVideoOptions(page);
   const upload = page.locator('form[action="/web/videos"]');
   await upload.getByRole('combobox', { name:'Channel', exact:true }).selectOption({ label:`Alternatives ${name}` });
   await upload.getByLabel('Video title').fill(`Accessible film ${name}`);
-  await upload.getByLabel('Language code (for example, en)', { exact:true }).fill('en');
+  await chooseVideoLanguage(upload,'en');
   await upload.getByLabel('Visual description').fill('A changing colour pattern.');
   await upload.getByLabel('Transcript', { exact:true }).fill('An audible tone accompanies a changing pattern.');
   await upload.getByRole('combobox', { name:'Access to important visuals' }).selectOption('audio_description');
@@ -51,6 +51,7 @@ async function journey(page, info) {
   await expect(review).toBeVisible({timeout:60_000});
   await review.press('Enter');
   const chapterForm = page.locator('form[data-chapter-editor]');
+  await openDetailsFor(chapterForm);
   await chapterForm.locator('textarea').fill('0:00 Opening pattern\n0:01 Closing pattern');
   await chapterForm.getByRole('button', { name:'Save chapters' }).press('Enter');
   await page.locator('form[action="/web/videos"]').getByRole('button', { name:'Publish video', exact:true }).press('Enter');
@@ -60,9 +61,30 @@ async function journey(page, info) {
   await page.locator('summary').filter({hasText:/^Audio and visual alternatives$/}).press('Enter');
   await expect(page.locator('.media__alternatives').getByText('This video includes audio description', {exact:true})).toBeVisible();
   await page.goto(`/videos/${mediaId}/captions`);
+  if (!noScript) {
+    const form=page.locator('form[data-caption-upload]');
+    await form.getByLabel('Captions (WebVTT)').setInputFiles(caption('A valid caption with missing language'));
+    await form.getByRole('button',{name:'Add or replace captions'}).press('Enter');
+    await expect(form.locator('[data-combo-validation]')).toBeVisible();
+    await expect(form.locator('[data-combo-trigger]')).toBeFocused();
+    await expect(form.locator('select[name="language"]')).toHaveValue('');
+    await page.screenshot({path:info.outputPath('caption-required-picker.png'),fullPage:false});
+  }
+  if (noScript) {
+    const form=page.locator('form[data-caption-upload]');
+    await chooseVideoLanguage(form,'fr');
+    await form.getByLabel('Captions (WebVTT)').setInputFiles({name:'oversized.vtt',mimeType:'text/vtt',buffer:Buffer.alloc(270000,65)});
+    const rejected=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname===`/web/videos/${mediaId}/captions`);
+    await form.getByRole('button',{name:'Add or replace captions'}).press('Enter');
+    expect((await rejected).status()).toBe(422);
+    await expect(page.getByRole('alert')).toContainText('256 KiB');
+    await expect(form.locator('select[name="language"]')).toHaveValue('fr');
+    await expect(form.locator('select[name="language"] option:checked')).toContainText('French');
+    await page.screenshot({path:info.outputPath('caption-nojs-error-retains-french.png'),fullPage:true});
+  }
   async function french(text) {
     const form = page.locator('form[data-caption-upload]');
-    await form.getByLabel('Caption language').fill('fr');
+    await chooseVideoLanguage(form,'fr');
     await form.getByLabel('Captions (WebVTT)').setInputFiles(caption(text));
     await form.getByRole('button', {name:'Add or replace captions'}).press('Enter');
     await expect(page.locator('video track[srclang="fr"]')).toHaveCount(1);
@@ -73,7 +95,7 @@ async function journey(page, info) {
   const track = await page.locator('video track[srclang="fr"]').getAttribute('src');
   expect(track).not.toBe(oldTrack);
   expect((await page.request.get(oldTrack)).status()).toBe(404);
-  await page.getByRole('button', {name:'Remove captions en', exact:true}).press('Enter');
+  await page.locator('form[action$="/captions/en/remove"] button').press('Enter');
   await expect(page.locator('video track[srclang="en"]')).toHaveCount(0);
   await page.goto(watch);
   const player = page.locator('video').first();
@@ -122,9 +144,11 @@ async function journey(page, info) {
   await page.screenshot({path:info.outputPath('alternatives-forced-colours.png'),fullPage:true});
   await page.goto(`/videos/${mediaId}/chapters`);
   await page.locator('form[data-chapter-editor] textarea').fill('');
+  const removedChapters=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname===`/web/videos/${mediaId}/chapters`);
   await page.getByRole('button',{name:'Save chapters'}).press('Enter');
+  expect((await removedChapters).status()).toBe(303);
   await page.goto(`/videos/${mediaId}/captions`);
-  await page.getByRole('button',{name:'Remove captions fr',exact:true}).press('Enter');
+  await page.locator('form[action$="/captions/fr/remove"] button').press('Enter');
   await expect(page.locator('video track[srclang="fr"]')).toHaveCount(0);
   expect((await page.request.get(track)).status()).toBe(404);
   expect((await page.request.get(`/videos/${mediaId}/transcript/fr`)).status()).toBe(404);

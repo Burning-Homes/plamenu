@@ -10,7 +10,7 @@ case "$MODE" in
   install|restore) ;;
   *) echo "usage: $0 [install|restore]" >&2; exit 2 ;;
 esac
-for tool in docker git sha256sum diff; do
+for tool in docker git sha256sum diff python3 ip; do
   command -v "$tool" >/dev/null 2>&1 || { echo "$tool is required" >&2; exit 1; }
 done
 if docker info >/dev/null 2>&1; then
@@ -22,7 +22,7 @@ elif sg docker -c 'docker info' >/dev/null 2>&1; then
     sg docker -c "$quoted"
   }
 else
-  docker_run() { sudo docker "$@"; }
+  docker_run() { sudo env DRILL_SUBNET="${DRILL_SUBNET:-}" DRILL_ENDPOINT="${DRILL_ENDPOINT:-}" docker "$@"; }
 fi
 
 WORK=$(mktemp -d)
@@ -34,6 +34,7 @@ NETWORK="${SOURCE_PROJECT}-federation"
 CLIENT="${SOURCE_PROJECT}-client"
 CLIENT_VOLUME="${SOURCE_PROJECT}-client"
 ACTIVE_PROJECT=$SOURCE_PROJECT
+SOURCE_SUBNET='' PEER_SUBNET='' RESTORE_SUBNET='' GATEWAY_SUBNET='' FEDERATION_SUBNET=''
 COMPOSE_FILE="$WORK/compose.yml"
 GATEWAY_FILE="$WORK/gateway.yml"
 REVISION=$(git -C "$ROOT" rev-parse HEAD)
@@ -51,7 +52,10 @@ ALPINE=alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33
 compose() {
   local endpoint=source
   [[ "$ACTIVE_PROJECT" == "$PEER_PROJECT" ]] && endpoint=peer
-  DRILL_ENDPOINT=$endpoint docker_run compose --project-name "$ACTIVE_PROJECT" --file "$COMPOSE_FILE" "$@"
+  local subnet=$SOURCE_SUBNET
+  [[ "$ACTIVE_PROJECT" == "$PEER_PROJECT" ]] && subnet=$PEER_SUBNET
+  [[ "$ACTIVE_PROJECT" == "$RESTORE_PROJECT" ]] && subnet=$RESTORE_SUBNET
+  DRILL_SUBNET=$subnet DRILL_ENDPOINT=$endpoint docker_run compose --project-name "$ACTIVE_PROJECT" --file "$COMPOSE_FILE" "$@"
 }
 gateway() { docker_run compose --project-name "$GATEWAY_PROJECT" --file "$GATEWAY_FILE" "$@"; }
 peer() { ACTIVE_PROJECT=$PEER_PROJECT compose "$@"; }
@@ -77,6 +81,24 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+# Read-only inventory: retain existing networks and choose separate private
+# subnets for this fixture even when a large peer fleet exhausted default IPAM.
+mapfile -t drill_network_ids < <(docker_run network ls --quiet)
+if [[ ${#drill_network_ids[@]} -gt 0 ]]; then
+  docker_run network inspect "${drill_network_ids[@]}" >"$WORK/networks.json"
+else
+  echo '[]' >"$WORK/networks.json"
+fi
+ip -j route show table all >"$WORK/routes.json"
+python3 "$ROOT/scripts/deployment-drill-network.py" "$WORK/networks.json" "$WORK/routes.json" >"$WORK/subnets.txt"
+mapfile -t drill_subnets <"$WORK/subnets.txt"
+[[ ${#drill_subnets[@]} == 5 ]] || { echo "drill subnet allocation failed" >&2; exit 1; }
+SOURCE_SUBNET=${drill_subnets[0]}
+PEER_SUBNET=${drill_subnets[1]}
+RESTORE_SUBNET=${drill_subnets[2]}
+GATEWAY_SUBNET=${drill_subnets[3]}
+FEDERATION_SUBNET=${drill_subnets[4]}
 
 for endpoint in source peer; do
   domain=restore-drill.test
@@ -120,6 +142,8 @@ services:
         aliases: [restore-drill.test, peer.restore-drill.test]
 networks:
   default:
+    ipam:
+      config: [{subnet: "$GATEWAY_SUBNET"}]
   federation:
     external: true
     name: $NETWORK
@@ -167,6 +191,8 @@ services:
 networks:
   default:
     internal: true
+    ipam:
+      config: [{subnet: "\${DRILL_SUBNET}"}]
   federation:
     external: true
     name: $NETWORK
@@ -202,7 +228,7 @@ done
 gateway pull
 compose pull db
 
-docker_run network create --internal "$NETWORK" >/dev/null
+docker_run network create --internal --subnet "$FEDERATION_SUBNET" "$NETWORK" >/dev/null
 docker_run run --detach --name "$CLIENT" --network "$NETWORK" \
   --memory=256m --cpus=0.5 -v "$CLIENT_VOLUME:/drill" "$PYTHON" sleep infinity >/dev/null
 docker_run cp "$WORK/Caddyfile" "$CLIENT:/drill/Caddyfile"

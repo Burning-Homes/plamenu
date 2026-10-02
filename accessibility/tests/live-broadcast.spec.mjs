@@ -2,7 +2,7 @@ import { expect, request, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { spawn, spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
-import { signIn } from '../session.mjs';
+import { signIn, openVideoOptions, createVideoChannel ,videoChannelForm,openDetailsFor} from '../session.mjs';
 
 const createdLives = new WeakMap();
 
@@ -34,23 +34,27 @@ async function createLive(page, permanent, returnCredentials = false, visibility
   await page.goto('/videos/live/new');
   let form = page.locator('form[action="/web/videos/live"]');
   if (!await form.isVisible()) {
-    await page.goto('/videos');
-    const channelForm = page.locator('form[action="/web/video-channels"]');
+    await page.goto('/videos/upload');await openVideoOptions(page);
+    const channelForm = await videoChannelForm(page);
     if (!await channelForm.isVisible()) {
       await page.locator('summary').filter({ hasText: 'Create a video channel' }).click();
     }
     await channelForm.getByLabel('Channel address').fill(name);
     await channelForm.getByLabel('Channel name').fill(`Live ${name}`);
-    await channelForm.getByRole('button', { name: 'Create a video channel' }).click();
-    await page.waitForURL(url => url.pathname === '/videos');
+    await createVideoChannel(page, channelForm.getByRole('button', { name: 'Create a video channel' }));
+    await page.waitForURL(url => url.pathname === '/videos/upload');await openVideoOptions(page);
     await page.goto('/videos/live/new');
     form = page.locator('form[action="/web/videos/live"]');
   }
   await expect(form.getByRole('combobox', { name: 'Channel' })).toBeVisible();
   await form.getByLabel('Video title').fill(`Browser live ${name}`);
+  await openDetailsFor(form.getByLabel('Description', { exact: true }));
   await form.getByLabel('Description', { exact: true }).fill('A browser-authored live test.');
   await form.getByRole('combobox', { name: 'Visibility' }).selectOption(visibility);
-  if (permanent) await form.getByRole('checkbox', {name:'Keep this broadcast reusable after the encoder disconnects',exact:true}).check();
+  if (permanent) {
+    await openDetailsFor(form.getByLabel('Reuse this broadcast for future sessions',{exact:true}));
+    await form.getByRole('checkbox', {name:'Reuse this broadcast for future sessions',exact:true}).check();
+  }
   await form.getByRole('button', { name: 'Create waiting broadcast' }).click();
   await expect(page.getByRole('heading', { name: 'Manage live broadcast' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Stream key' })).toHaveValue(/[A-Za-z0-9_-]{43}/);
@@ -71,7 +75,9 @@ async function createLive(page, permanent, returnCredentials = false, visibility
   const id = href.split('/').pop();
   createdLives.set(page, id);
   await page.goto(href);
+  await openDetailsFor(page.locator('form[action$="/rotate-key"]'));
   await expect(page.getByText('The stream key is hidden after creation')).toBeVisible();
+  await page.locator('summary').filter({hasText:/^External encoder and stream key$/}).press('Enter');
   return returnCredentials ? { id, key, server } : id;
 }
 
@@ -84,6 +90,12 @@ async function liveMedia(page, id) {
   expect(response.ok()).toBeTruthy();
   const status = await response.json();
   return status.media_attachments[0];
+}
+
+// Runtime capability decides these publisher journeys, not an engine-name allowlist.
+async function requireBrowserPublisher(page) {
+  const recorder = await page.evaluate(() => typeof MediaRecorder === 'function');
+  test.skip(!recorder, 'This browser runtime has no MediaRecorder. External encoder ingest, native replay, and player controls remain covered.');
 }
 
 async function installSyntheticCapture(page) {
@@ -157,6 +169,13 @@ test('browser capture choices or encoder fallback are accessible across engines'
     await expect(publisher.locator('[data-live-devices]')).toBeHidden();
     return;
   }
+  if (test.info().project.use.viewport?.width===320) {
+    for (const control of ['[data-live-camera]','[data-live-screen]']) {
+      const bounds=await publisher.locator(control).boundingBox();
+      expect(bounds.y+bounds.height).toBeLessThanOrEqual(736);
+    }
+  }
+  await publisher.locator('summary').filter({hasText:/^Capture devices$/}).press('Enter');
   await expect(publisher.getByRole('group', { name: 'Capture devices' })).toBeVisible();
   const cameraChoice = publisher.getByRole('combobox', { name: 'Camera' });
   const microphoneChoice = publisher.getByRole('combobox', { name: 'Microphone' });
@@ -177,7 +196,7 @@ test('browser capture choices or encoder fallback are accessible across engines'
 });
 
 test('browser camera and screen publish through one stable broadcast', async ({ page }) => {
-  test.skip(!['chromium-desktop', 'chromium-mobile', 'firefox-desktop', 'firefox-mobile'].includes(test.info().project.name));
+  await requireBrowserPublisher(page);
   test.setTimeout(240_000);
   const id = await createLive(page, true);
   await installSyntheticCapture(page);
@@ -193,6 +212,7 @@ test('browser camera and screen publish through one stable broadcast', async ({ 
   await page.reload();
   const publisher = page.locator('[data-live-browser]');
   await expect(publisher).toBeVisible();
+  await publisher.locator('summary').filter({hasText:/^Capture devices$/}).press('Enter');
   await expect(publisher.getByRole('group', { name: 'Capture devices' })).toBeVisible();
   await expect(publisher.getByRole('combobox', { name: 'Camera' })).toContainText('Studio camera');
   await publisher.getByRole('combobox', { name: 'Camera' }).selectOption('cam-studio');
@@ -206,7 +226,8 @@ test('browser camera and screen publish through one stable broadcast', async ({ 
   expect(darkViolations).toEqual([]);
   for (const button of ['Use camera and microphone', 'Share screen']) {
     if (button === 'Share screen') {
-      await publisher.getByRole('checkbox', { name: /Request screen audio/ }).uncheck();
+      await openDetailsFor(publisher.getByLabel(/Request screen audio/));
+  await publisher.getByRole('checkbox', { name: /Request screen audio/ }).uncheck();
     }
     await publisher.getByRole('button', { name: button }).click();
     await expect(publisher.getByRole('status')).toContainText('Broadcasting now', { timeout: 30_000 });
@@ -274,7 +295,7 @@ test('browser camera and screen publish through one stable broadcast', async ({ 
 });
 
 test('browser switches camera and screen inside one uninterrupted live session', async ({ page }) => {
-  test.skip(!['chromium-desktop', 'chromium-mobile', 'firefox-desktop', 'firefox-mobile'].includes(test.info().project.name));
+  await requireBrowserPublisher(page);
   test.setTimeout(180_000);
   const id = await createLive(page, true);
   await installSyntheticCapture(page);
@@ -305,6 +326,7 @@ test('browser switches camera and screen inside one uninterrupted live session',
   await expect(publisher.getByRole('button', { name: 'Switch to screen' })).toBeEnabled();
   await expect(publisher.getByRole('button', { name: 'Camera and microphone (live)' })).toBeDisabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await openDetailsFor(publisher.getByLabel(/Request screen audio/));
   await publisher.getByRole('checkbox', { name: /Request screen audio/ }).uncheck();
   await publisher.getByRole('button', { name: 'Switch to screen' }).click();
   await expect(publisher.getByRole('status')).toContainText('Broadcasting now');
@@ -390,7 +412,7 @@ test('browser switches camera and screen inside one uninterrupted live session',
 });
 
 test('browser publisher can recover after an unexpected socket close', async ({ page }) => {
-  test.skip(test.info().project.name !== 'chromium-desktop');
+  await requireBrowserPublisher(page);
   test.setTimeout(120_000);
   const id = await createLive(page, true);
   await installSyntheticCapture(page);
@@ -421,7 +443,7 @@ test('browser publisher can recover after an unexpected socket close', async ({ 
 });
 
 test('browser capture failures and stalled startup recover without leaking devices', async ({ page }) => {
-  test.skip(!['chromium-desktop', 'firefox-desktop'].includes(test.info().project.name));
+  await requireBrowserPublisher(page);
   test.setTimeout(120_000);
   const id = await createLive(page, true);
   await installSyntheticCapture(page);
@@ -491,7 +513,7 @@ test('browser capture failures and stalled startup recover without leaking devic
 });
 
 test('unavailable browser audio releases capture and permits a real retry', async ({ page }) => {
-  test.skip(!['chromium-desktop', 'chromium-mobile', 'firefox-desktop', 'firefox-mobile'].includes(test.info().project.name));
+  await requireBrowserPublisher(page);
   const id = await createLive(page, true);
   await installSyntheticCapture(page);
   await page.reload();
@@ -517,7 +539,7 @@ test('unavailable browser audio releases capture and permits a real retry', asyn
 });
 
 test('live DVR rewinds and returns to the live edge accessibly', async ({ page }) => {
-  test.skip(!['chromium-desktop', 'chromium-mobile'].includes(test.info().project.name));
+  await requireBrowserPublisher(page);
   test.setTimeout(150_000);
   const id = await createLive(page, true);
   await installSyntheticCapture(page);
@@ -557,7 +579,7 @@ test('live DVR rewinds and returns to the live edge accessibly', async ({ page }
 });
 
 test('fatal live HLS failure offers accessible basic and refresh paths', async ({ page }) => {
-  test.skip(!['chromium-desktop', 'chromium-mobile'].includes(test.info().project.name));
+  await requireBrowserPublisher(page);
   test.setTimeout(240_000);
   const id = await createLive(page, true);
   await installSyntheticCapture(page);
@@ -632,7 +654,7 @@ test('fatal live HLS failure offers accessible basic and refresh paths', async (
 });
 
 test('one-shot browser broadcast becomes a playable replay', async ({ page }) => {
-  test.skip(!['chromium-desktop', 'chromium-mobile'].includes(test.info().project.name));
+  await requireBrowserPublisher(page);
   test.setTimeout(180_000);
   const id = await createLive(page, false);
   await installSyntheticCapture(page);
@@ -677,13 +699,16 @@ test('@no-js live authoring retains external encoder routes', async ({ page }) =
   const id = await createLive(page, false);
   await expect(page.locator('[data-live-browser]')).toBeHidden();
   const playback = page.locator(`form[action="/web/videos/live/${id}/playback"]`);
+  await openDetailsFor(playback);
   await expect(playback.getByRole('combobox', { name: 'Rewind window' })).toHaveValue('10');
   await playback.getByRole('combobox', { name: 'Rewind window' }).selectOption('5');
   await playback.getByRole('combobox', { name: 'Playback latency' }).selectOption('low');
   await playback.getByRole('button', { name: 'Save playback settings' }).click();
+  await openDetailsFor(playback);
   await expect(playback.getByRole('combobox', { name: 'Rewind window' })).toHaveValue('5');
   expect((await liveMedia(page, id)).live).toMatchObject({ dvr_window_seconds: 300, latency_mode: 3 });
   const schedule = page.locator(`form[action="/web/videos/live/${id}/schedule"]`);
+  await openDetailsFor(schedule);
   const planned = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
   const second = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString().slice(0, 16);
   const third = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString().slice(0, 16);
@@ -695,6 +720,7 @@ test('@no-js live authoring retains external encoder routes', async ({ page }) =
   expect((await liveMedia(page, id)).live.schedules).toHaveLength(3);
   const live = (await liveMedia(page, id)).live;
   expect(live.calendar_url).toContain(`/videos/live/${id}/calendar.ics`);
+  await openDetailsFor(page.getByLabel('Broadcast calendar URL',{exact:true}));
   await expect(page.getByRole('textbox', { name: 'Broadcast calendar URL' })).toHaveValue(live.calendar_url);
   const anonymous = await request.newContext({ ignoreHTTPSErrors: true });
   const calendar = await anonymous.get(live.calendar_url);
@@ -729,6 +755,7 @@ test('@no-js live authoring retains external encoder routes', async ({ page }) =
   });
   expect(duplicate.status()).toBe(422);
   expect((await liveMedia(page, id)).live.schedules).toHaveLength(3);
+  await openDetailsFor(schedule);
   await schedule.getByLabel('Planned start (optional)').fill('');
   await schedule.getByLabel('More planned starts (optional)').fill('');
   await schedule.getByRole('button', { name: 'Save planned start' }).click();
@@ -739,8 +766,10 @@ test('@no-js live authoring retains external encoder routes', async ({ page }) =
   });
   expect(invalid.status()).toBe(422);
   expect((await liveMedia(page, id)).live.scheduled_at).toBeUndefined();
+  await openDetailsFor(page.locator('form[action$="/rotate-key"]'));
   await expect(page.getByRole('button', { name: 'Rotate stream key' })).toBeVisible();
   await page.goto('/videos/live/new');
+  await openDetailsFor(page.getByText('Each reusable broadcast session publishes a separate replay Video', { exact: false }));
   await expect(page.getByText('Each reusable broadcast session publishes a separate replay Video', { exact: false })).toBeVisible();
   expect(await liveState(page, id)).toBe('waiting');
 });
@@ -749,6 +778,7 @@ async function publicLiveCalendar(page, noScript) {
   await page.setViewportSize({width:320,height:800});
   const id = await createLive(page, false, false, 'public');
   const schedule = page.locator(`form[action="/web/videos/live/${id}/schedule"]`);
+  await openDetailsFor(schedule);
   const planned = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16);
   await schedule.getByLabel('Planned start (optional)').fill(planned);
   await schedule.getByRole('button', { name: 'Save planned start' }).click();
@@ -787,6 +817,7 @@ test('live schedule picker adds a date accessibly before publishing', async ({ p
   await page.setViewportSize({ width: 320, height: 800 });
   const id = await createLive(page, true);
   const schedule = page.locator(`form[action="/web/videos/live/${id}/schedule"]`);
+  await openDetailsFor(schedule);
   const planned = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 16);
   await expect(schedule.getByLabel('Pick another planned date and time')).toBeVisible();
   await schedule.getByLabel('Pick another planned date and time').fill(planned);

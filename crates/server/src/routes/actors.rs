@@ -66,7 +66,7 @@ pub async fn get_actor(
     let actor = if !state.authorized_fetch().await || account.suspended() {
         local_actor(&state, &account).await?
     } else if crate::signed_fetch::request_is_signed(&headers) {
-        crate::signed_fetch::verified_get_sender(&state, &uri, &headers).await?;
+        crate::signed_fetch::verify_get_request(&state, &uri, &headers).await?;
         local_actor(&state, &account).await?
     } else if state.authorized_fetch_unsigned_profile().await {
         local_actor(&state, &account).await?
@@ -333,23 +333,8 @@ pub async fn get_outbox(
     }
 
     let viewer = signed_page_requester(&state, &uri, &headers).await;
-    let blocked = match &viewer {
-        Some(viewer) => {
-            plamenu_db::block::exists(&state.pool, account.id, viewer.id).await?
-                || match viewer
-                    .domain
-                    .as_deref()
-                    .filter(|_| !viewer.is_portable_on(&state.config.domain))
-                {
-                    Some(domain) => {
-                        plamenu_db::account_domain_block::exists(&state.pool, account.id, domain)
-                            .await?
-                    }
-                    None => false,
-                }
-        }
-        None => false,
-    };
+    let blocked =
+        outbox_requester_blocked(&state, &account, viewer.as_ref(), &uri, &headers).await?;
 
     let max_id = query.max_id.as_deref().and_then(|raw| raw.parse().ok());
     let min_id = query.min_id.as_deref().and_then(|raw| raw.parse().ok());
@@ -399,6 +384,40 @@ pub async fn get_outbox(
         Json(document),
     )
         .into_response())
+}
+
+/// Keep origin-only domain policy separate from Account audience identity.
+async fn outbox_requester_blocked(
+    state: &AppState,
+    account: &Account,
+    viewer: Option<&Account>,
+    uri: &Uri,
+    headers: &HeaderMap,
+) -> Result<bool, ApiError> {
+    Ok(match viewer {
+        Some(viewer) => {
+            plamenu_db::block::exists(&state.pool, account.id, viewer.id).await?
+                || match viewer
+                    .domain
+                    .as_deref()
+                    .filter(|_| !viewer.is_portable_on(&state.config.domain))
+                {
+                    Some(domain) => {
+                        plamenu_db::account_domain_block::exists(&state.pool, account.id, domain)
+                            .await?
+                    }
+                    None => false,
+                }
+        }
+        None => match crate::signed_fetch::verified_internal_fetch_domain(state, uri, headers)
+            .await?
+        {
+            Some(domain) => {
+                plamenu_db::account_domain_block::exists(&state.pool, account.id, &domain).await?
+            }
+            None => false,
+        },
+    })
 }
 
 /// Channel pages use a signed path cursor, not a query that some peers omit

@@ -3,6 +3,90 @@
 Status: implementation started; product architecture agreed. AP09 is confirmed;
 the implementation and parity requirements below are not complete.
 
+### Creator workspace usability redesign — 2026-10-01
+
+The creator index is now a Video studio, not an upload form underneath several
+unbounded/link-heavy lists. Upload, live creation and channel creation precede
+the content. Published/Drafts/Live views have title search and 20-item keyset
+pages. A published title opens one management overview; caption/chapter/poster/
+editing links are no longer repeated in every library row. Channels are also
+paged, with creation first and invitations retained.
+
+Upload (`/videos/upload`) and channel creation (`/videos/channels/new`) are
+dedicated pages. Optional description/poster/publication fields use a native
+disclosure on upload; review expands them by default. Multipart metadata still
+precedes the file bytes, preserving bounded/quota-reserved no-JS uploads. Draft
+review no longer fetches/render unrelated creator libraries. Cancellation
+returns to Drafts. Playlist/source creation precedes existing lists; sources
+group their actions and collapse schedule/check detail. Empty authoring pages
+link directly to channel creation. Existing social/settings pages with their
+own bounded navigation were inspected, not blindly redesigned.
+
+Server/static verification: **292/292** (280 web regressions, four catalogue/
+workspace tests, eight distribution/scope tests), strict library Clippy,
+formatting and diff checks. Earlier full-web failures were stale checks for
+the pre-audio resume label and a CSS selector matching a nested embed override,
+not the intended base badge rule; final full regression passes after correcting
+the assertions. The first browser attempt retained **38 passes / 4 failures**
+in playlist disclosure setup on Firefox/WebKit. Setup now checks the native
+`open` attribute rather than engine-dependent descendant visibility.
+
+Browser verification covers **56 distinct journeys** across all seven
+desktop/narrow/no-JS projects: the final matrix had **54 passes / 2 WebKit-mobile
+test timing failures**, followed by **2/2 passes** on the focused rerun after
+waiting for committed POST responses before cross-context reads and same-URL
+form reuse. No sleep/retry or weakened assertion was substituted for those
+barriers. All seven new studio journeys pass creation reachability, real
+50-item cursor traversal, management navigation, duplicate-name value retention,
+native disclosures, 320px reflow and Axe. Other journeys exercise actual
+upload/encoding/review/publication, scheduling, draft recovery, channel
+roles/handoff, playlist clips, decoded history/resume, downloads and embeds.
+Initial/final/rerun reports (`video-workspace-browser.json`,
+`video-workspace-browser-final.json`, `video-workspace-webkit-rerun.json`), failed
+traces and screenshots are retained under
+`target/evidence/ap09-manual-review-20261001/`. The runner wrapper received
+SIGTERM during the final matrix; the same browser container continued to its
+report, without a duplicate run. Its disposable services were cleaned up and
+its generated fixtures archived after completion. The paused scheduled-source
+fixture is layout/authorization data only and never fetches its example URL.
+
+Chrome has the redesigned studio/upload/channel-creation/management/playlist/
+source pages open against the standing local review instance. Its frozen binary
+SHA-256 is `2f050ff6fd02e99bbaa064cb67d8ba12c0c0a3c40a1aae13733e7380e3fe4b77`;
+the previous binaries, real media, DB backup and existing review tabs are retained.
+No full federation/performance rerun, M8/M9 closure, commit, push, merge or
+staging deployment is claimed by this usability slice.
+
+### Manual usability follow-up — 2026-10-01
+
+At the user's request, viewer download, P2P and embed controls now live in
+**… → Video settings**, rather than beneath each publication. JavaScript opens
+one native modal without cloning players or resetting playback; no-JS opens
+an authorized HTML page with download, one manually selectable embed code and
+a scoped/CSRF-protected account P2P form. The single code defaults to `p2p=1`
+and follows the selected peer-sharing preference. Embed consumers still retain
+their own explicit opt-out. Quoted-media panels are scoped to their own post.
+
+Verification: **8/8** download/authority integrations, **4/4** shipped P2P
+preference units, strict library Clippy, formatting and **14/14** browser
+journeys across all seven desktop/narrow/no-JS projects. Journeys cover modal
+focus boundaries, Escape/focus return, 320px overflow/axe, clipboard refusal
+and successful copy, download ranges, independently decoded copied iframes,
+account preference persistence and retained player-control ownership. The
+first browser attempt retained **12 passes / 2 Chromium focus-boundary failures**;
+explicit keyboard wrapping corrected those failures without weakening the test.
+Receipts and failed traces are retained under
+`target/evidence/ap09-manual-review-20261001/`, with final report
+`video-settings-browser-fixed.json`. Chrome additionally shows the native
+modal and an anonymous real PeerTube-origin settings modal before peer module
+loading; an anonymous native embed exposes no CSRF token.
+
+The requested local manual-review instance was backed up before schema
+128→130, then updated to the current AP09 build. The UI follow-up binary is
+SHA-256 `5e045afbd4308036b6bf93d3aae88ba69c6eaa76345f5ce730f0fbbe05d43468`.
+No push, merge or staging deployment. This UI follow-up does not close M8/M9
+or claim a rerun of the full federation/performance matrix.
+
 ### M7 verified — 2026-10-01
 
 The original seven M7 workloads, final native regression and documentation
@@ -684,11 +768,12 @@ unwatched remote videos do not trigger whole-file downloads.
   file publishing and live creation. URL/torrent import is disabled in this
   fixture, which is configuration, not evidence of missing PeerTube features.
 - Started the existing two-test PeerTube baseline against the running local
-  instances, without fail-fast:
+  instances, without fail-fast (`PEER_WORKSPACE` names the compatible peer
+  checkout used for this historical run):
 
   ```sh
   cd e2e
-  PLAMENU_PEER_ROOT=/home/v/Projects/activitypub-dev uv run pytest \
+  PLAMENU_PEER_ROOT="$PEER_WORKSPACE" uv run pytest \
     tests/test_peertube_federation.py -q --maxfail=0 \
     --junitxml=../target/e2e/ap09-baseline.xml
   ```

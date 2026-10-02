@@ -146,9 +146,14 @@ async fn native_draft_html_review_and_cancel_are_private_and_require_confirmatio
     assert!(page.body.contains("Ready to review"));
     assert!(page.body.contains("Refresh status"));
     assert!(page.body.contains("type=\"checkbox\" name=\"confirm\""));
-    assert!(get(&app, "/videos", Some(&owner)).await.body.contains(&uri));
     assert!(
-        !get(&app, "/videos", Some(&stranger))
+        get(&app, "/videos?view=drafts", Some(&owner))
+            .await
+            .body
+            .contains(&uri)
+    );
+    assert!(
+        !get(&app, "/videos?view=drafts", Some(&stranger))
             .await
             .body
             .contains(&uri)
@@ -193,7 +198,7 @@ async fn native_draft_html_review_and_cancel_are_private_and_require_confirmatio
     )
     .await;
     assert_eq!(cancelled.status, StatusCode::SEE_OTHER);
-    assert_eq!(cancelled.location.as_deref(), Some("/videos"));
+    assert_eq!(cancelled.location.as_deref(), Some("/videos?view=drafts"));
     assert_eq!(
         get(&app, &uri, Some(&owner)).await.status,
         StatusCode::NOT_FOUND
@@ -2365,7 +2370,8 @@ async fn stylesheet_is_served(pool: PgPool) {
 
     let media_badges = resp
         .body
-        .split_once(".media__badges {")
+        // Select the base rule, not the earlier nested embed override.
+        .split_once("\n.media__badges {")
         .and_then(|(_, css)| css.split_once('}'))
         .map(|(rule, _)| rule)
         .expect("stylesheet contains the media badge rule");
@@ -5643,7 +5649,7 @@ async fn resumable_video_offsets_survive_retry_and_never_expose_original(pool: P
     );
     let page = get(&app, &format!("/videos/drafts/{id}"), Some(&owner)).await;
     assert!(page.body.contains("data-video-resume"));
-    assert!(page.body.contains("Select the same video file"));
+    assert!(page.body.contains("Select the same video or audio file"));
     let patch = |offset: i64, csrf: &str, bytes: &'static [u8]| {
         Request::builder()
             .method("PATCH")

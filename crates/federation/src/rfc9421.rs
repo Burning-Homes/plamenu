@@ -928,4 +928,52 @@ mod tests {
             Err(SignatureError::Malformed("missing created parameter"))
         ));
     }
+
+    // PROPOSAL ONLY: insert inside crates/federation/src/rfc9421.rs tests module.
+    // No tests/builds have been run. Uses that module's existing imports/helpers.
+    #[test]
+    fn bodyless_rsa_get_rejects_incompatible_algorithm_even_with_valid_rsa_proof() {
+        let pair = generate_keypair().unwrap();
+        let signer = RequestSigner::from_pkcs8_pem(
+            &pair.private_pem,
+            "https://fetch.example/internal/fetch#main-key".into(),
+        )
+        .unwrap();
+        let now = SystemTime::now();
+        let created = now.duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let target = "https://plamenu.test/users/alice";
+        for (algorithm, accepted) in [
+            ("rsa-v1_5-sha256", true),
+            ("ed25519", false),
+            ("rsa-pss-sha512", false),
+        ] {
+            let params = format!(
+                "(\"@method\" \"@target-uri\");created={created};keyid=\"{}\";alg=\"{algorithm}\"",
+                signer.key_id(),
+            );
+            let base = format!(
+                "\"@method\": GET\n\"@target-uri\": {target}\n\"@signature-params\": {params}",
+            );
+            // Sign each complete base correctly with RSA, including the label.
+            // A rejection therefore tests algorithm enforcement, not tampering.
+            let signature = BASE64.encode(signer.sign_bytes(base.as_bytes()));
+            let headers = header_map(&[
+                ("host", "plamenu.test"),
+                ("signature-input", &format!("sig1={params}")),
+                ("signature", &format!("sig1=:{signature}:")),
+            ]);
+            let prepared = PreparedRfc9421::from_request(
+                &RequestFacts {
+                    method: "GET",
+                    target_uri: target,
+                    path_and_query: "/users/alice",
+                    headers: &headers,
+                },
+                None,
+                now,
+            )
+            .unwrap();
+            assert_eq!(prepared.verify_rsa_pem(&pair.public_pem).is_ok(), accepted);
+        }
+    }
 }

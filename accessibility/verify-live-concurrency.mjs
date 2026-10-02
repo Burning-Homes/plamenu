@@ -2,6 +2,8 @@
 // owned bridge. Media and WebRTC stay real; only warm-up HTTP delay is injected
 // explicitly to establish peer exchange before the undelayed steady phase.
 import { chromium } from 'playwright';
+import { installPeerTubeWelcomeHandler } from './peertube-session.mjs';
+import {openVideoSettings,closeVideoSettings} from './video-settings.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const [manifestPath, controlUrl, evidence] = process.argv.slice(2);
@@ -40,7 +42,13 @@ async function sample(client) {
       const elapsed = (now - ticks + 2 ** 32) % (2 ** 32);
       if (elapsed <= 300) latencyMs = elapsed * 100;
     }
-    return { time: v.currentTime, paused: v.paused, ready: v.readyState,
+    return { sampledAtMs: performance.now(), playbackRate: v.playbackRate, seeking: v.seeking,
+    bufferedRanges: [...Array(v.buffered.length)].map((_, n) => [v.buffered.start(n), v.buffered.end(n)]),
+    seekableRanges: [...Array(v.seekable.length)].map((_, n) => [v.seekable.start(n), v.seekable.end(n)]),
+    visibilityClass: document.visibilityState === 'visible' ? 'visible' : 'hidden',
+    sourceClass: !v.currentSrc ? 'empty' : v.currentSrc.startsWith('blob:') ? 'blob-media-source' : 'resource-source',
+    profile: window.__ownedVideoProfiles?.get(v)?.() || null,
+    time: v.currentTime, paused: v.paused, ready: v.readyState,
       frames: v.getVideoPlaybackQuality().totalVideoFrames, dropped: v.getVideoPlaybackQuality().droppedVideoFrames,
       error: v.error?.code || null, validated: Number(v.dataset.p2pValidated || 0), latencyMs,
       downloaded: Number(v.dataset.p2pDownloaded || 0), infohash: v.dataset.p2pInfohash || null, lastPeerError: v.dataset.p2pLastError || null,
@@ -62,6 +70,7 @@ async function open(kind, url, delayMs, broadcast) {
   const context = await browser.newContext({ ignoreHTTPSErrors: true,
     ...(kind === 'peertube' && peerAuth ? { storageState: peerAuth } : {}),
     viewport: { width: kind === 'native' ? 320 : 800, height: 800 } });
+  await context.addInitScript(()=>{window.__ownedVideoProfile=true;});
   if(setting.trackerVia)await context.addInitScript(({original,via})=>{
     const NativeSocket=WebSocket;
     window.__ownedTrackerMappings=0;
@@ -76,6 +85,7 @@ async function open(kind, url, delayMs, broadcast) {
     };
   },{original:setting.trackerOrigin,via:setting.trackerVia});
   const page = await context.newPage();
+  if (kind === 'peertube') await installPeerTubeWelcomeHandler(page);
   const diagnostic = { kind, broadcast, page, errors: [], failedRequests: [] };
   pages.push(diagnostic);
   page.on('pageerror', error => diagnostic.errors.push(String(error)));
@@ -102,10 +112,12 @@ async function open(kind, url, delayMs, broadcast) {
     await consent.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
     if (await consent.isVisible()) await consent.click();
   } else {
+    await openVideoSettings(page);
     const choice = page.locator('.media__p2p-toggle');
     await choice.waitFor({ state: 'visible' });
     if (!await choice.isChecked()) throw new Error('live sharing did not default on');
     if (!await page.getByText(/network address/).isVisible()) throw new Error('sharing disclosure missing');
+    await closeVideoSettings(page);
   }
   const video = page.locator(kind === 'native' ? 'video[data-hls]' : 'video.vjs-tech');
   await video.waitFor({ state: 'attached' });
@@ -157,13 +169,14 @@ async function phase(name, seconds) {
     frames: state.frames - baseline[n].frames, presented: state.frames - baseline[n].frames - state.dropped + baseline[n].dropped, mediaSeconds: state.time - baseline[n].time,
     dropped: state.dropped - baseline[n].dropped, error: state.error, validated: state.validated,
     uploaded: state.uploaded, integrityErrors: state.integrityErrors }));
+  // Preserve the complete numeric phase even when its unchanged gate fails.
+  progress.lastMeasuredPhase = { name, seconds, baseline, final, deltas, observations };
+  checkpoint(`measured ${name}`);
   if (deltas.some(state => state.presented < seconds * 10 || state.mediaSeconds < seconds / 2 || state.error || state.integrityErrors)) {
     throw new Error(`concurrent ${name} decode failed: ${JSON.stringify(deltas)}`);
   }
   // sample() deliberately reads the pixel clock only in native players.
   const latency = observations.flatMap(states => states.map(state => state.latencyMs).filter(value => value !== null)).sort((a, b) => a - b);
-  progress.lastMeasuredPhase = { name, seconds, baseline, final, deltas, observations };
-  checkpoint(`measured ${name}`);
   if (latency.length < seconds * 2) throw new Error(`too few decoded clock samples for ${name}`);
   const p95 = latency[Math.floor(latency.length * .95)];
   if (p95 > 10000) throw new Error(`balanced decoded live latency over budget in ${name}: ${p95} ms`);

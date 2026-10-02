@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 import requests
 from plamenu_e2e import config, peertube, unique
-from plamenu_e2e.steps import step, wait_for
-
+from plamenu_e2e.api import ApiError
+from plamenu_e2e.steps import log, step, wait_for
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("PLAMENU_CRASH_DRILL") != "1",
@@ -26,7 +26,12 @@ pytestmark = pytest.mark.skipif(
 
 def _ready():
     try:
-        return requests.get(f"{config.PLAMENU_URL}/ready", verify=False, timeout=2).status_code == 200
+        return (
+            requests.get(
+                f"{config.PLAMENU_URL}/ready", verify=False, timeout=2
+            ).status_code
+            == 200
+        )
     except requests.RequestException:
         return False
 
@@ -36,7 +41,9 @@ def _exact_local_server(pid: int):
     cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
     args = [part.decode() for part in cmdline if part]
     assert args[0].endswith("/plamenu") and args[-3:] == [
-        "--config", config.PLAMENU_CONFIG, "serve"
+        "--config",
+        config.PLAMENU_CONFIG,
+        "serve",
     ], args
     assert Path(f"/proc/{pid}/cwd").resolve() == root
     binary = Path(config.PLAMENU_BINARY or "").resolve()
@@ -45,6 +52,21 @@ def _exact_local_server(pid: int):
     assert (invoked if invoked.is_absolute() else root / invoked).resolve() == binary
     assert Path(f"/proc/{pid}/exe").resolve() == binary
     return binary
+
+
+def _restart_candidate(binary: Path):
+    replacement = subprocess.Popen(
+        [str(binary), "--config", config.PLAMENU_CONFIG, "serve"],
+        cwd=config.PLAMENU_DIR,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    # Both opt-in drills run in one session. The next drill must verify and
+    # kill the exact replacement, rather than reuse the first dead PID.
+    _exact_local_server(replacement.pid)
+    os.environ["PLAMENU_SERVER_PID"] = str(replacement.pid)
+    return replacement
 
 
 def test_native_live_survives_server_crash(plamenu_api, plamenu_user, db):
@@ -67,7 +89,8 @@ def test_native_live_survives_server_crash(plamenu_api, plamenu_user, db):
             login = browser.post(
                 f"{config.PLAMENU_URL}/login",
                 data={"email": plamenu_user.email, "password": plamenu_user.password},
-                allow_redirects=False, timeout=30,
+                allow_redirects=False,
+                timeout=30,
             )
             assert login.status_code == 303
             page = browser.get(f"{config.PLAMENU_URL}/videos/live/new", timeout=30)
@@ -75,13 +98,17 @@ def test_native_live_survives_server_crash(plamenu_api, plamenu_user, db):
             created = browser.post(
                 f"{config.PLAMENU_URL}/web/videos/live",
                 data={
-                    "csrf": csrf, "channel": channel["id"],
-                    "title": f"Crash drill {name}", "description": "Disposable restart drill.",
-                    "visibility": "public", "permanent": "yes",
-                }, timeout=30,
+                    "csrf": csrf,
+                    "channel": channel["id"],
+                    "title": f"Crash drill {name}",
+                    "description": "Disposable restart drill.",
+                    "visibility": "public",
+                    "permanent": "yes",
+                },
+                timeout=30,
             )
             assert created.status_code == 200
-            status_id = re.search(r'/videos/live/(\d+)', created.text).group(1)
+            status_id = re.search(r"/videos/live/(\d+)", created.text).group(1)
             fields = re.findall(
                 r'<input type="text" readonly value="([^"]+)"', created.text
             )
@@ -91,17 +118,43 @@ def test_native_live_survives_server_crash(plamenu_api, plamenu_user, db):
             def start_encoder():
                 return subprocess.Popen(
                     [
-                        "ffmpeg", "-hide_banner", "-loglevel", "error", "-re",
-                        "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=15",
-                        "-f", "lavfi", "-i", "sine=frequency=440",
-                        "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-                        "-g", "30", "-pix_fmt", "yuv420p", "-c:a", "aac",
-                        "-f", "flv", f"{server}/{key}",
-                    ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                        "ffmpeg",
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-re",
+                        "-f",
+                        "lavfi",
+                        "-i",
+                        "testsrc2=size=320x180:rate=15",
+                        "-f",
+                        "lavfi",
+                        "-i",
+                        "sine=frequency=440",
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "veryfast",
+                        "-tune",
+                        "zerolatency",
+                        "-g",
+                        "30",
+                        "-pix_fmt",
+                        "yuv420p",
+                        "-c:a",
+                        "aac",
+                        "-f",
+                        "flv",
+                        f"{server}/{key}",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
                 )
 
             def state(expected):
-                media = plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]
+                media = plamenu_api.get(f"/api/v1/statuses/{status_id}")[
+                    "media_attachments"
+                ][0]
                 return media if media["live"]["state"] == expected else None
 
             publisher = start_encoder()
@@ -112,97 +165,126 @@ def test_native_live_survives_server_crash(plamenu_api, plamenu_user, db):
                 (media_id,),
             ).fetchone()[0]
             media_dir = Path(config.PLAMENU_CONFIG).read_text()
-            configured = re.search(r'^media_dir\s*=\s*"([^"]+)"', media_dir, re.MULTILINE)
+            configured = re.search(
+                r'^media_dir\s*=\s*"([^"]+)"', media_dir, re.MULTILINE
+            )
             assert configured, "the disposable media directory must be explicit"
-            recording = Path(configured.group(1)) / "native-live" / str(media_id) / first_session / "replay.mp4"
-            wait_for(lambda: recording.exists() and recording.stat().st_size > 100_000,
-                     desc="recurring crash recording has committed a fragment")
+            recording = (
+                Path(configured.group(1))
+                / "native-live"
+                / str(media_id)
+                / first_session
+                / "replay.mp4"
+            )
+            wait_for(
+                lambda: recording.exists() and recording.stat().st_size > 100_000,
+                desc="recurring crash recording has committed a fragment",
+            )
 
         with step("SIGKILL only the verified local server and restart the candidate"):
             assert _exact_local_server(pid) == binary
             os.kill(pid, signal.SIGKILL)
             killed = True
             time.sleep(1)
-            replacement = subprocess.Popen(
-                [str(binary), "--config", config.PLAMENU_CONFIG, "serve"],
-                cwd=config.PLAMENU_DIR,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
+            replacement = _restart_candidate(binary)
+            wait_for(
+                lambda: _ready() and replacement.poll() is None,
+                desc="replacement ready",
             )
-            wait_for(lambda: _ready() and replacement.poll() is None, desc="replacement ready")
             publisher.communicate(timeout=15)
             publisher = None
 
         with step("startup recovery announces interruption and revokes old playback"):
-            interrupted = wait_for(lambda: state("interrupted"), desc="recovered interrupted state")
+            interrupted = wait_for(
+                lambda: state("interrupted"), desc="recovered interrupted state"
+            )
             assert interrupted["url"] is None and interrupted.get("hls") is None
             assert db.conn.execute(
                 "SELECT ended_at IS NOT NULL FROM native_live_sessions WHERE session_id = %s",
                 (first_session,),
             ).fetchone()[0]
-            assert requests.get(
-                f"{config.PLAMENU_URL}/media/hls/{media_id}/master.m3u8",
-                verify=False, timeout=20,
-            ).status_code == 404
+            assert (
+                requests.get(
+                    f"{config.PLAMENU_URL}/media/hls/{media_id}/master.m3u8",
+                    verify=False,
+                    timeout=20,
+                ).status_code
+                == 404
+            )
 
         with step("the same key and Video reconnect after process replacement"):
             publisher = start_encoder()
             wait_for(lambda: state("live"), desc="post-crash live session")
             generations = db.conn.execute(
                 "SELECT generation, ended_at IS NOT NULL FROM native_live_sessions "
-                "WHERE media_id = %s ORDER BY generation", (media_id,),
+                "WHERE media_id = %s ORDER BY generation",
+                (media_id,),
             ).fetchall()
             assert generations == [(1, True), (2, False)]
             publisher.terminate()
             publisher.communicate(timeout=15)
             publisher = None
-            wait_for(lambda: state("waiting"), desc="recurring stream waiting after stop")
+            wait_for(
+                lambda: state("waiting"), desc="recurring stream waiting after stop"
+            )
 
-        with step("both the crashed and cleanly stopped sessions become separate replay Videos"):
+        with step(
+            "both the crashed and cleanly stopped sessions become separate replay Videos"
+        ):
+
             def published_sessions():
                 rows = db.conn.execute(
                     "SELECT ls.generation, ls.replay_media_id, m.status_id "
                     "FROM native_live_sessions ls "
                     "LEFT JOIN media_attachments m ON m.id = ls.replay_media_id "
-                    "WHERE ls.media_id = %s ORDER BY ls.generation", (media_id,),
+                    "WHERE ls.media_id = %s ORDER BY ls.generation",
+                    (media_id,),
                 ).fetchall()
                 return rows if len(rows) == 2 and all(row[2] for row in rows) else None
 
-            replays = wait_for(published_sessions, desc="recovered recurring replay posts", timeout=240)
+            replays = wait_for(
+                published_sessions, desc="recovered recurring replay posts", timeout=240
+            )
             assert [row[0] for row in replays] == [1, 2]
             assert len({row[1] for row in replays}) == 2
             replay_status_ids = [row[2] for row in replays]
             for _, replay_media_id, replay_status_id in replays:
-                item = plamenu_api.get(f"/api/v1/statuses/{replay_status_id}")["media_attachments"][0]
+                item = plamenu_api.get(f"/api/v1/statuses/{replay_status_id}")[
+                    "media_attachments"
+                ][0]
                 assert int(item["id"]) == replay_media_id
                 assert item["meta"]["original"]["duration"] > 0
-                assert requests.get(item["url"], headers={"Range": "bytes=0-63"},
-                                    verify=False, timeout=20).status_code == 206
+                assert (
+                    requests.get(
+                        item["url"],
+                        headers={"Range": "bytes=0-63"},
+                        verify=False,
+                        timeout=20,
+                    ).status_code
+                    == 206
+                )
             assert int(state("waiting")["id"]) == media_id
-            wait_for(lambda: not recording.exists(), desc="crashed recurring scratch cleaned")
+            wait_for(
+                lambda: not recording.exists(), desc="crashed recurring scratch cleaned"
+            )
     finally:
         if publisher is not None:
             if publisher.poll() is None:
                 publisher.kill()
             publisher.communicate(timeout=15)
         if killed and (replacement is None or replacement.poll() is not None):
-            subprocess.Popen(
-                [str(binary), "--config", config.PLAMENU_CONFIG, "serve"],
-                cwd=config.PLAMENU_DIR, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, start_new_session=True,
-            )
+            _restart_candidate(binary)
         for replay_status_id in replay_status_ids:
             if _ready():
                 try:
                     plamenu_api.delete(f"/api/v1/statuses/{replay_status_id}")
-                except Exception:
-                    pass
+                except (ApiError, requests.RequestException):
+                    log("Disposable cleanup request failed")
         if status_id is not None and _ready():
             try:
                 plamenu_api.delete(f"/api/v1/statuses/{status_id}")
-            except Exception:
-                pass
+            except (ApiError, requests.RequestException):
+                log("Disposable cleanup request failed")
 
 
 def test_one_shot_replay_survives_server_crash(plamenu_api, plamenu_user, db):
@@ -224,43 +306,80 @@ def test_one_shot_replay_survives_server_crash(plamenu_api, plamenu_user, db):
     subscribed = False
     try:
         with step("create a one-shot Video followed by PeerTube and record fragments"):
-            pt.post("/api/v1/users/me/subscriptions", uri=f"{name}@{config.PLAMENU_DOMAIN}")
+            pt.post(
+                "/api/v1/users/me/subscriptions", uri=f"{name}@{config.PLAMENU_DOMAIN}"
+            )
             subscribed = True
             login = browser.post(
                 f"{config.PLAMENU_URL}/login",
                 data={"email": plamenu_user.email, "password": plamenu_user.password},
-                allow_redirects=False, timeout=30,
+                allow_redirects=False,
+                timeout=30,
             )
             assert login.status_code == 303
             form = browser.get(f"{config.PLAMENU_URL}/videos/live/new", timeout=30)
             csrf = re.search(r'name="csrf" value="([^"]+)"', form.text).group(1)
             created = browser.post(
                 f"{config.PLAMENU_URL}/web/videos/live",
-                data={"csrf": csrf, "channel": channel["id"],
-                      "title": f"Recovered replay {name}",
-                      "description": "A recording that survives a server crash.",
-                      "visibility": "public"},
+                data={
+                    "csrf": csrf,
+                    "channel": channel["id"],
+                    "title": f"Recovered replay {name}",
+                    "description": "A recording that survives a server crash.",
+                    "visibility": "public",
+                },
                 timeout=30,
             )
             assert created.status_code == 200, created.text[:500]
-            status_id = re.search(r'/videos/live/(\d+)', created.text).group(1)
-            fields = re.findall(r'<input type="text" readonly value="([^"]+)"', created.text)
+            status_id = re.search(r"/videos/live/(\d+)", created.text).group(1)
+            fields = re.findall(
+                r'<input type="text" readonly value="([^"]+)"', created.text
+            )
             server, key = fields[0], fields[-2]
             publisher = subprocess.Popen(
-                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-re",
-                 "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=15",
-                 "-f", "lavfi", "-i", "sine=frequency=440",
-                 "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-                 "-g", "30", "-pix_fmt", "yuv420p", "-c:a", "aac",
-                 "-f", "flv", f"{server}/{key}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-re",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc2=size=320x180:rate=15",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-tune",
+                    "zerolatency",
+                    "-g",
+                    "30",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "aac",
+                    "-f",
+                    "flv",
+                    f"{server}/{key}",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
             )
 
             def attachment():
-                return plamenu_api.get(f"/api/v1/statuses/{status_id}")["media_attachments"][0]
+                return plamenu_api.get(f"/api/v1/statuses/{status_id}")[
+                    "media_attachments"
+                ][0]
 
             live = wait_for(
-                lambda: item if (item := attachment())["live"]["state"] == "live" else None,
+                lambda: (
+                    item if (item := attachment())["live"]["state"] == "live" else None
+                ),
                 desc="one-shot on air",
             )
             media_id = int(live["id"])
@@ -269,34 +388,58 @@ def test_one_shot_replay_survives_server_crash(plamenu_api, plamenu_user, db):
                 (media_id,),
             ).fetchone()[0]
             uuid = db.conn.execute(
-                "SELECT uuid FROM video_publications WHERE status_id = %s", (int(status_id),),
+                "SELECT uuid FROM video_publications WHERE status_id = %s",
+                (int(status_id),),
             ).fetchone()[0]
-            recording = config.PLAMENU_DIR / "media" / "native-live" / str(media_id) / session_id / "replay.mp4"
+            recording = (
+                config.PLAMENU_DIR
+                / "media"
+                / "native-live"
+                / str(media_id)
+                / session_id
+                / "replay.mp4"
+            )
             # The configured media directory may not be under the source tree.
             media_dir = Path(config.PLAMENU_CONFIG).read_text()
-            configured = re.search(r'^media_dir\s*=\s*"([^"]+)"', media_dir, re.MULTILINE)
+            configured = re.search(
+                r'^media_dir\s*=\s*"([^"]+)"', media_dir, re.MULTILINE
+            )
             if configured:
-                recording = Path(configured.group(1)) / "native-live" / str(media_id) / session_id / "replay.mp4"
-            wait_for(lambda: recording.exists() and recording.stat().st_size > 100_000,
-                     desc="fragmented MP4 has committed video packets")
+                recording = (
+                    Path(configured.group(1))
+                    / "native-live"
+                    / str(media_id)
+                    / session_id
+                    / "replay.mp4"
+                )
+            wait_for(
+                lambda: recording.exists() and recording.stat().st_size > 100_000,
+                desc="fragmented MP4 has committed video packets",
+            )
 
         with step("kill the exact local server while the encoder is publishing"):
             assert _exact_local_server(pid) == binary
             os.kill(pid, signal.SIGKILL)
             killed = True
             time.sleep(1)
-            replacement = subprocess.Popen(
-                [str(binary), "--config", config.PLAMENU_CONFIG, "serve"],
-                cwd=config.PLAMENU_DIR, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, start_new_session=True,
+            replacement = _restart_candidate(binary)
+            wait_for(
+                lambda: _ready() and replacement.poll() is None,
+                desc="replacement ready",
             )
-            wait_for(lambda: _ready() and replacement.poll() is None, desc="replacement ready")
             publisher.communicate(timeout=15)
             publisher = None
 
-        with step("restart retains the recording while revoking interrupted live playback"):
+        with step(
+            "restart retains the recording while revoking interrupted live playback"
+        ):
             interrupted = wait_for(
-                lambda: item if (item := attachment()).get("live", {}).get("state") == "interrupted" else None,
+                lambda: (
+                    item
+                    if (item := attachment()).get("live", {}).get("state")
+                    == "interrupted"
+                    else None
+                ),
                 desc="recovered interruption",
             )
             assert interrupted["url"] is None and interrupted.get("hls") is None
@@ -308,29 +451,58 @@ def test_one_shot_replay_survives_server_crash(plamenu_api, plamenu_user, db):
 
         with step("the expired one-shot becomes one playable federated VOD"):
             replay = wait_for(
-                lambda: item if "live" not in (item := attachment())
-                and (item.get("url") or "").endswith(".mp4") else None,
-                desc="crash recording finalized as VOD", timeout=180,
+                lambda: (
+                    item
+                    if "live" not in (item := attachment())
+                    and (item.get("url") or "").endswith(".mp4")
+                    else None
+                ),
+                desc="crash recording finalized as VOD",
+                timeout=180,
             )
             assert replay["meta"]["original"]["duration"] > 0
-            assert requests.get(replay["url"], headers={"Range": "bytes=0-63"},
-                                verify=False, timeout=20).status_code == 206
-            assert db.conn.execute(
-                "SELECT replay_media_id FROM native_live_sessions WHERE session_id = %s",
-                (session_id,),
-            ).fetchone()[0] == media_id
+            assert (
+                requests.get(
+                    replay["url"],
+                    headers={"Range": "bytes=0-63"},
+                    verify=False,
+                    timeout=20,
+                ).status_code
+                == 206
+            )
+            assert (
+                db.conn.execute(
+                    "SELECT replay_media_id FROM native_live_sessions WHERE session_id = %s",
+                    (session_id,),
+                ).fetchone()[0]
+                == media_id
+            )
+
             def remote_replay():
                 try:
                     video = pt.video(uuid)
                 except peertube.PeertubeError:
                     return None
-                return video if video["state"]["id"] == 1 and not video["isLive"] \
-                    and video["files"] else None
+                return (
+                    video
+                    if video["state"]["id"] == 1
+                    and not video["isLive"]
+                    and video["files"]
+                    else None
+                )
 
-            remote = wait_for(remote_replay, desc="PeerTube imports recovered recording", timeout=90)
-            assert requests.get(remote["files"][0]["fileUrl"],
-                                headers={"Range": "bytes=0-63"},
-                                verify=False, timeout=30).status_code == 206
+            remote = wait_for(
+                remote_replay, desc="PeerTube imports recovered recording", timeout=90
+            )
+            assert (
+                requests.get(
+                    remote["files"][0]["fileUrl"],
+                    headers={"Range": "bytes=0-63"},
+                    verify=False,
+                    timeout=30,
+                ).status_code
+                == 206
+            )
             wait_for(lambda: not recording.exists(), desc="recovered scratch cleaned")
     finally:
         if publisher is not None:
@@ -338,18 +510,16 @@ def test_one_shot_replay_survives_server_crash(plamenu_api, plamenu_user, db):
                 publisher.kill()
             publisher.communicate(timeout=15)
         if killed and (replacement is None or replacement.poll() is not None):
-            subprocess.Popen(
-                [str(binary), "--config", config.PLAMENU_CONFIG, "serve"],
-                cwd=config.PLAMENU_DIR, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, start_new_session=True,
-            )
+            _restart_candidate(binary)
         if status_id is not None and _ready():
             try:
                 plamenu_api.delete(f"/api/v1/statuses/{status_id}")
-            except Exception:
-                pass
+            except (ApiError, requests.RequestException):
+                log("Disposable cleanup request failed")
         if subscribed and _ready():
             try:
-                pt.delete(f"/api/v1/users/me/subscriptions/{name}@{config.PLAMENU_DOMAIN}")
-            except Exception:
-                pass
+                pt.delete(
+                    f"/api/v1/users/me/subscriptions/{name}@{config.PLAMENU_DOMAIN}"
+                )
+            except (peertube.PeertubeError, requests.RequestException):
+                log("Disposable cleanup request failed")

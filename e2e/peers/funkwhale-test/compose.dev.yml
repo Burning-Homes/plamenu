@@ -28,7 +28,7 @@ x-api-volumes: &api-volumes
 
 services:
   postgres:
-    image: postgres:15-alpine@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
+    image: postgres:15.19-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
     restart: unless-stopped
     environment:
       POSTGRES_DB: funkwhale
@@ -46,7 +46,7 @@ services:
         aliases: [funkwhale-db]
 
   redis:
-    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     restart: unless-stopped
     volumes:
       - redis:/data
@@ -60,7 +60,7 @@ services:
         aliases: [funkwhale-redis]
 
   api:
-    image: funkwhale/api:2.0.8@sha256:0269dc550e14dfbf573d60b517b6d4121b7a274b65cdb45876e329337abc3290
+    image: funkwhale/api:2.0.11@sha256:bd85728850d3e20694fd438fb5a748d882ec25f48721a0882f8027d0113d0583
     restart: unless-stopped
     command: gunicorn
     environment: *funkwhale-env
@@ -86,7 +86,7 @@ services:
       shared:
 
   celeryworker:
-    image: funkwhale/api:2.0.8@sha256:0269dc550e14dfbf573d60b517b6d4121b7a274b65cdb45876e329337abc3290
+    image: funkwhale/api:2.0.11@sha256:bd85728850d3e20694fd438fb5a748d882ec25f48721a0882f8027d0113d0583
     restart: unless-stopped
     command: ["celery", "--app=funkwhale_api.taskapp", "worker", "--loglevel=INFO", "--concurrency=2"]
     environment:
@@ -103,7 +103,7 @@ services:
       - shared
 
   celerybeat:
-    image: funkwhale/api:2.0.8@sha256:0269dc550e14dfbf573d60b517b6d4121b7a274b65cdb45876e329337abc3290
+    image: funkwhale/api:2.0.11@sha256:bd85728850d3e20694fd438fb5a748d882ec25f48721a0882f8027d0113d0583
     restart: unless-stopped
     command: ["celery", "--app=funkwhale_api.taskapp", "beat", "--loglevel=INFO"]
     environment: *funkwhale-env
@@ -118,7 +118,7 @@ services:
       - shared
 
   front:
-    image: funkwhale/front:2.0.8@sha256:33aa0b8add131704b817bef3b334dae005e4a3334832d97fc5e49a358de5ee06
+    image: funkwhale/front:2.0.11@sha256:126ddab45c71f760cafb5b48b57085f7875b8b0ce8fdc334ad68aa0d5b0049fa
     restart: unless-stopped
     environment:
       FUNKWHALE_API_HOST: funkwhale-api

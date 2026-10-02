@@ -67,13 +67,14 @@ async fn render(
     .await?;
     let l = user.locale;
     let body = html! {
-        section.column.video-edit {
+        section.column.video-edit.video-form {
             h1 {(l.text("video-edit-title"))}
             h2 {(current.title)}
             @if let Some(error)=error {p.settings__error role="alert" {(error)}}
             p {(l.text("video-edit-hint"))}
-            p {a href=(format!("/web/statuses/{}",current.status_id)) {(l.text("videos-caption-watch"))}}
-            h3 {(l.text("video-edit-source-title"))}
+            (super::video_workspace::video_navigation(id,current.status_id,l))
+            details.video-form__section.video-form__panel {
+            summary {(l.text("video-edit-source-title"))}
             p id="video-edit-source-hint" {(l.text("video-edit-source-hint"))}
             form.settings-form method="post" action=(format!("/web/videos/{id}/prepare-edit")) {
                 input type="hidden" name="csrf" value=(user.csrf);
@@ -81,7 +82,8 @@ async fn render(
                 input type="hidden" name="operation" value="reprocess";
                 button type="submit" aria-describedby="video-edit-source-hint" {(l.text("video-edit-reprocess"))}
             }
-            details {
+            }
+            details.video-form__section.video-form__panel {
                 summary {(l.text("video-edit-trim"))}
                 p id="video-edit-trim-hint" {(l.text("video-edit-trim-hint"))}
                 form.settings-form method="post" action=(format!("/web/videos/{id}/prepare-edit")) {
@@ -97,10 +99,13 @@ async fn render(
                     button type="submit" {(l.text("video-edit-prepare-trim"))}
                 }
             }
+            details.video-form__section.video-form__panel {
+                summary {(l.text("studio-replace-film"))}
             ol {
-                li {a href="/videos" {(l.text("video-edit-upload"))} " · " a href="/videos/import" {(l.text("video-import-title"))}}
+                li {a href="/videos/upload" {(l.text("video-edit-upload"))} " · " a href="/videos/import" {(l.text("video-import-title"))}}
                 li {(l.text("video-edit-prepare"))}
                 li {(l.text("video-edit-apply-hint"))}
+            }
             }
             @if candidates.is_empty() {p {(l.text("video-edit-empty"))}}
             @else {

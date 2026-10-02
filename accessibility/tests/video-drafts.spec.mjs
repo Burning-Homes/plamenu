@@ -7,7 +7,7 @@ import { signIn } from '../session.mjs';
 async function recovery(page, info, noScript) {
   const project = info.project.name;
   await signIn(page);
-  await page.goto('/videos');
+  await page.goto('/videos?view=drafts');
   await page.getByRole('link', { name: `Draft ${project} ready`, exact: true }).click();
   const readyUrl = page.url();
   await expect(page.getByRole('status')).toHaveText('Ready to review');
@@ -31,6 +31,7 @@ async function recovery(page, info, noScript) {
   await checkLayout(page, noScript);
   await page.screenshot({ path: info.outputPath('draft-review.png'), fullPage: true });
   await page.goto(readyUrl);
+  await page.locator('summary').filter({hasText:/^Cancel and delete draft$/}).press('Enter');
   const confirm = page.getByRole('checkbox', { name: 'I want to delete this draft and its files', exact: true });
   const cancel = page.getByRole('button', { name: 'Cancel and delete draft', exact: true });
   await expect(page.locator('[data-draft-expiry] time[datetime][data-absolute]')).toBeVisible();
@@ -58,6 +59,7 @@ async function recovery(page, info, noScript) {
   await expect(page.getByRole('button', { name: 'Retry processing', exact: true })).toHaveCount(0);
   await page.getByRole('link', { name: 'Refresh status', exact: true }).press('Enter');
   await expect(page.getByRole('status')).toHaveText(/^(Waiting for processing|Processing your video|Ready to review)$/);
+  await page.locator('summary').filter({hasText:/^Cancel and delete draft$/}).press('Enter');
   await page.getByRole('checkbox', { name: 'I want to delete this draft and its files', exact: true }).press('Space');
   await page.getByRole('button', { name: 'Cancel and delete draft', exact: true }).press('Enter');
   await page.waitForURL(url => url.pathname === '/videos');

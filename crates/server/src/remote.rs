@@ -59,6 +59,15 @@ fn image_description(value: &Value) -> &str {
 /// shadow the real owner here — that would misattribute the signer and
 /// silently drop the owner's deliveries as unproven forwards.
 pub async fn find_cached_signer(pool: &PgPool, key_id: &str) -> Result<Option<Account>, DbError> {
+    let key = actor_key::usable_by_uri(pool, key_id).await?;
+    cached_account_for_key(pool, key_id, key.as_ref()).await
+}
+
+async fn cached_account_for_key(
+    pool: &PgPool,
+    key_id: &str,
+    key: Option<&actor_key::ActorKey>,
+) -> Result<Option<Account>, DbError> {
     let same_origin = |account: &Account| {
         account
             .uri
@@ -66,7 +75,7 @@ pub async fn find_cached_signer(pool: &PgPool, key_id: &str) -> Result<Option<Ac
             .and_then(host_of)
             .is_some_and(|host| Some(host) == host_of(key_id))
     };
-    if let Some(key) = actor_key::usable_by_uri(pool, key_id).await?
+    if let Some(key) = key
         && let Some(account_id) = key.account_id
         && let Some(account) = account::find_by_id(pool, account_id).await?
         && same_origin(&account)
@@ -94,7 +103,37 @@ pub async fn prepared_matches_account(
     prepared: &plamenu_federation::PreparedRequestAuth,
     account: &Account,
 ) -> Result<Result<(), plamenu_federation::SignatureError>, DbError> {
-    if let Some(key) = actor_key::usable_by_uri(pool, prepared.key_id()).await?
+    let key = actor_key::usable_by_uri(pool, prepared.key_id()).await?;
+    prepared_matches_loaded_key(pool, prepared, account, key.as_ref()).await
+}
+
+/// Reuse only this request's current usable-key row for resolution and
+/// verification. Missing/stale keys retain the normal guarded refresh path.
+pub async fn find_verified_cached_signer(
+    pool: &PgPool,
+    prepared: &plamenu_federation::PreparedRequestAuth,
+) -> Result<Option<Account>, DbError> {
+    let key = actor_key::usable_by_uri(pool, prepared.key_id()).await?;
+    let Some(account) = cached_account_for_key(pool, prepared.key_id(), key.as_ref()).await? else {
+        return Ok(None);
+    };
+    if prepared_matches_loaded_key(pool, prepared, &account, key.as_ref())
+        .await?
+        .is_ok()
+    {
+        Ok(Some(account))
+    } else {
+        Ok(None)
+    }
+}
+
+async fn prepared_matches_loaded_key(
+    pool: &PgPool,
+    prepared: &plamenu_federation::PreparedRequestAuth,
+    account: &Account,
+    key: Option<&actor_key::ActorKey>,
+) -> Result<Result<(), plamenu_federation::SignatureError>, DbError> {
+    if let Some(key) = key
         && key.account_id == Some(account.id)
         && key.controller_uri == account.uri.as_deref().unwrap_or_default()
     {

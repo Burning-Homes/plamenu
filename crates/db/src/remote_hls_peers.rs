@@ -8,7 +8,7 @@ use sqlx::PgPool;
 
 use crate::DbError;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct RemoteHlsPeers {
     pub video_uuid: String,
     pub trackers: Vec<String>,

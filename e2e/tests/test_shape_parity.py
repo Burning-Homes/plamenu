@@ -26,7 +26,20 @@ from plamenu_e2e.steps import log, step, wait_for
 # `downvotes_count`, `downvoted` — Lemmy-style scoring Mastodon lacks — plus
 # `group_locked`, the moderator thread lock). They're intentional
 # extensions clients ignore, so parity checks tolerate them rather than flag.
-PLEROMA_EXT = {
+# The account video-channel marker is an intentional additive API extension.
+ACCOUNT_EXT = {"video_channel"}
+
+# Documented accessibility alternatives extend MediaAttachment. Keep the
+# Mastodon fields strict and check the extension defaults on this plain PNG.
+MEDIA_EXT = {
+    "transcript",
+    "decorative",
+    "audio_described",
+    "visuals_conveyed_in_audio",
+    "caption_url",
+}
+
+PLEROMA_EXT = ACCOUNT_EXT | {
     "pleroma",
     "emoji_reactions",
     "title",
@@ -91,7 +104,7 @@ def test_accounts_shapes_match_mastodon(alice, plamenu_api, plamenu_user):
             # Deliberate Plamenu extension: Mastodon keeps the
             # show-posting-app toggle web-UI-only; Plamenu surfaces it in
             # `source` so third-party clients can offer it too (8cf6c84).
-            allow_extra={"show_application"},
+            allow_extra=ACCOUNT_EXT | {"show_application"},
         )
         log("CredentialAccount shape identical")
 
@@ -102,13 +115,19 @@ def test_accounts_shapes_match_mastodon(alice, plamenu_api, plamenu_user):
             "accounts/{id} (local)",
             alice.get(f"/api/v1/accounts/{m_id}"),
             plamenu_api.get(f"/api/v1/accounts/{p_id}"),
+            allow_extra=ACCOUNT_EXT,
         )
         log("local Account shape identical")
 
     with step("accounts/{id} — a remote account (each views the other side)"):
         remote_on_masto = alice.resolve_account(plamenu_user.acct)
         remote_on_plamenu = plamenu_api.resolve_account(config.ALICE)
-        assert_same_shape("accounts/{id} (remote)", remote_on_masto, remote_on_plamenu)
+        assert_same_shape(
+            "accounts/{id} (remote)",
+            remote_on_masto,
+            remote_on_plamenu,
+            allow_extra=ACCOUNT_EXT,
+        )
         log("remote Account shape identical")
 
     with step("accounts/relationships"):
@@ -166,10 +185,16 @@ def test_statuses_shapes_match_mastodon(alice, plamenu_api, plamenu_user):
         p_media = plamenu_api.upload_media(
             _png(), filename="x.png", mime="image/png", description="d"
         )
-        assert_same_shape("media_attachment", m_media, p_media)
+        assert_same_shape("media_attachment", m_media, p_media, allow_extra=MEDIA_EXT)
+        assert p_media["transcript"] is None
+        assert p_media["caption_url"] is None
+        for flag in ("decorative", "audio_described", "visuals_conveyed_in_audio"):
+            assert p_media[flag] is False
         m_s = alice.post_with_media("with media", [m_media["id"]])
         p_s = plamenu_api.post_with_media("with media", [p_media["id"]])
-        assert_same_shape("status+media", m_s, p_s, allow_extra=PLEROMA_EXT)
+        assert_same_shape("status+media", m_s, p_s, allow_extra=PLEROMA_EXT | MEDIA_EXT)
+        for field in MEDIA_EXT:
+            assert p_s["media_attachments"][0][field] == p_media[field]
         log("MediaAttachment + Status.media_attachments[] shapes identical")
 
 

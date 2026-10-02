@@ -45,7 +45,7 @@ pub async fn entity(
         .iter()
         .filter_map(|e| e.status_id)
         .collect::<Vec<_>>();
-    let live_ids:Vec<i64>=sqlx::query_scalar("SELECT id FROM statuses WHERE id=ANY($1) AND deleted_at IS NULL AND reblog_of_id IS NULL AND object_type='Video'").bind(&ids).fetch_all(&state.pool).await.map_err(plamenu_db::DbError::from)?;
+    let live_ids:Vec<i64>=sqlx::query_scalar("SELECT id FROM statuses WHERE id=ANY($1) AND deleted_at IS NULL AND reblog_of_id IS NULL AND object_type='Video'\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos").bind(&ids).fetch_all(&state.pool).await.map_err(plamenu_db::DbError::from)?;
     let stored = plamenu_db::status::find_by_ids(&state.pool, &live_ids).await?;
     let stored = crate::entities::filter_viewable(&state.pool, &stored, viewer)
         .await?

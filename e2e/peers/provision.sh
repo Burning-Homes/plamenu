@@ -75,19 +75,22 @@ ensure_submodules "$ROOT/lemmy-source"
 
 apply_once() {
   local checkout=$1 patch=$2
-  if git -C "$checkout" apply --reverse --check "$patch" >/dev/null 2>&1; then
+  if git -C "$checkout" apply --unidiff-zero --reverse --check "$patch" >/dev/null 2>&1; then
     return 0
   fi
   [[ "$CHECK" == false ]] || {
     echo "required patch is not applied: $patch" >&2
     return 1
   }
-  git -C "$checkout" apply --check "$patch"
-  git -C "$checkout" apply "$patch"
+  git -C "$checkout" apply --unidiff-zero --check "$patch"
+  git -C "$checkout" apply --unidiff-zero "$patch"
 }
 
 apply_once "$ROOT/lemmy-source" "$ROOT/patches/lemmy-native-roots.patch"
+apply_once "$ROOT/lemmy-source" "$ROOT/patches/lemmy-build-jobs.patch"
 apply_once "$ROOT/pleroma-source" "$ROOT/patches/pleroma-dockerfile.patch"
+apply_once "$ROOT/owncast-source" "$ROOT/patches/owncast-build-images.patch"
+apply_once "$ROOT/sharkey-source" "$ROOT/patches/sharkey-build-image.patch"
 
 if [[ "$CHECK" == true ]]; then
   echo "PASS pinned federation peer sources and patches"

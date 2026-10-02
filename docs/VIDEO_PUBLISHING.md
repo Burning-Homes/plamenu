@@ -1,6 +1,11 @@
 # Native Video publishing and playback
 
-Open `/videos`, choose a channel, and upload a video or audio source. Upload,
+Open `/videos` (Video studio) and choose **Upload a video**. The dedicated
+`/videos/upload` form lets you choose a channel and upload a video or audio source.
+Title and channel stay visible; **Description, poster and publishing
+options** expands the optional metadata without hiding the file picker beneath
+it. Review expands these fields by default so publication details are visible
+before confirmation. The native disclosure needs no JavaScript. Upload,
 processing, review and publication are separate steps: a failed validation or
 encoder does not discard the original. The ordinary HTML multipart form works
 without JavaScript. With scripts, the same publisher adds bounded resumable
@@ -15,14 +20,20 @@ describes quotas and temporary-space reservations.
 
 ## Draft recovery and scheduled publication
 
-Your Videos page lists private drafts separately from publications. Open a
+The studio has **Published**, **Drafts**, and **Live broadcasts** views, title
+search, and cursor-paged lists of at most 20 items. Upload, live creation and
+channel creation stay before the library, regardless of its size. Choose a
+published title to open its management overview rather than a list of repeated
+caption/chapter/metadata links. All navigation and paging work without scripts.
+
+Select **Drafts** to list private drafts separately from publications. Open a
 draft for its current processing state and expiry, then **Review your video**
 when ready. **Refresh status** works without scripts; enhanced pages update
 status while visible. A failed encoder retains its original for **Retry
 processing**. **Cancel and delete draft** requires the explicit confirmation.
 Unpublished drafts expire seven days after creation; retry does not extend this.
 
-For interrupted resumable uploads, return to Videos in the same enhanced
+For interrupted resumable uploads, return to **Upload a video** in the same enhanced
 browser and select the same file to resume its acknowledged offset. A different
 file is refused. Without JavaScript, cancel the interrupted private draft and
 start a new ordinary multipart upload. No preview or draft URL grants public
@@ -36,10 +47,10 @@ commits publication. Failure keeps it for retry rather than producing duplicate
 posts. Cancellation releases the reservation; the original draft's expiry still
 applies. Scheduling needs no browser left open or external scheduler.
 
-Videos also offers [Import a video](VIDEO_IMPORTS.md): a guarded, one-time copy
+The studio's **More** menu offers [Import a video](VIDEO_IMPORTS.md): a guarded, one-time copy
 of a public file or recorded ActivityPub/PeerTube Video into the same private
 review pipeline. It never automatically publishes or synchronizes the source.
-For periodic private copies, use Videos → Scheduled video sources and review
+For periodic private copies, use Video studio → Scheduled sources and review
 each imported draft separately; see the same import guide.
 
 For a recorded native-pipeline film, [replace, reprocess or trim its published footage](VIDEO_EDITING.md)
@@ -52,7 +63,7 @@ accessible alternatives for the selected footage.
 ## Downloads and embeds
 
 Open **Downloads and embeds** from a ready draft's review before editing its
-final publication fields, or from your published Videos list/post editing
+final publication fields, or from your published video's management overview/post editing
 links. The ordinary checkbox form works without scripts. Download offers and
 first-party framing default to enabled; you can change either independently.
 Choices survive scheduling and media replacement. Reusable live recordings

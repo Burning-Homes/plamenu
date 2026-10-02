@@ -210,12 +210,16 @@ async fn process(
     }
     // The delivering server (the signature's key host) must be federable too;
     // for a direct delivery this is the actor's own domain again.
-    if !crate::instance_policy::can_federate_url(
-        &state.pool,
-        &state.config.domain,
-        prepared.key_id(),
-    )
-    .await?
+    let actor_domain = crate::instance_policy::domain_from_url(&actor_id);
+    let signer_domain = crate::instance_policy::domain_from_url(prepared.key_id());
+    let same_domain = matches!((&actor_domain, &signer_domain), (Some(actor), Some(signer)) if actor.eq_ignore_ascii_case(signer));
+    if !same_domain
+        && !crate::instance_policy::can_federate_url(
+            &state.pool,
+            &state.config.domain,
+            prepared.key_id(),
+        )
+        .await?
     {
         tracing::info!(key = %prepared.key_id(), "ignoring delivery signed by blocked or non-allowed domain");
         return Ok(StatusCode::ACCEPTED);
@@ -2010,11 +2014,7 @@ pub(crate) async fn verified_signer(
 ) -> Result<Account, ApiError> {
     let key_id = prepared.key_id();
 
-    if let Some(cached) = crate::remote::find_cached_signer(&state.pool, key_id).await?
-        && crate::remote::prepared_matches_account(&state.pool, prepared, &cached)
-            .await?
-            .is_ok()
-    {
+    if let Some(cached) = crate::remote::find_verified_cached_signer(&state.pool, prepared).await? {
         return Ok(cached);
     }
     // Cache miss or stale key. Direct deliveries dominate, so the claimed

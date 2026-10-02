@@ -3,6 +3,8 @@
 // bytes over Plamenu's in-process tracker. The receiving Plamenu player must
 // report checksum-validated playback, not just an attempted WebRTC transfer.
 import { chromium } from 'playwright';
+import {openVideoSettings,closeVideoSettings} from './video-settings.mjs';
+import { installPeerTubeWelcomeHandler } from './peertube-session.mjs';
 
 const [localUrl, peerTubeUrl, expectedPixel] = process.argv.slice(2);
 if (!localUrl || !peerTubeUrl) throw new Error('expected local watch URL and PeerTube watch URL');
@@ -113,9 +115,11 @@ try {
   watch(off);
   await off.goto(localUrl);
   const choice = off.locator('.media__p2p-toggle');
+  await openVideoSettings(off);
   await choice.waitFor({ state: 'visible' });
   if (!await choice.isChecked()) throw new Error('local-origin peer delivery did not default on');
   await choice.uncheck();
+  await closeVideoSettings(off);
   await start(off, 'video[data-hls]');
   if (sockets.length || await off.locator('video[data-p2p-active]').count()) {
     throw new Error('local-origin pre-play opt-out still contacted the tracker');
@@ -157,6 +161,7 @@ try {
   // while the normal fallback remains available if signaling fails.
   const peerContext = await browser.newContext({ ignoreHTTPSErrors: true });
   const peer = await peerContext.newPage();
+  await installPeerTubeWelcomeHandler(peer);
   await instrument(peer);
   watch(peer);
   if (process.env.PEERTUBE_E2E_USER && process.env.PEERTUBE_E2E_PASSWORD) {

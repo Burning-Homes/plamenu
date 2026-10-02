@@ -12,18 +12,60 @@ const report = { phases: [], status: 'running' };
 const reportPath = join(evidence, 'disk-browser.json');
 function save(stage) { report.stage = stage; writeFileSync(reportPath, JSON.stringify(report, null, 2), { mode: 0o600 }); }
 async function sample(client) {
-  return client.video.evaluate(v => ({ time: v.currentTime, ready: v.readyState,
+  return client.video.evaluate(v => ({ sampledAtMs: performance.now(),
+    playbackRate: v.playbackRate, seeking: v.seeking,
+    bufferedRanges: [...Array(v.buffered.length)].map((_, n) => [v.buffered.start(n), v.buffered.end(n)]),
+    seekableRanges: [...Array(v.seekable.length)].map((_, n) => [v.seekable.start(n), v.seekable.end(n)]),
+    visibilityClass: document.visibilityState === 'visible' ? 'visible' : 'hidden',
+    sourceClass: !v.currentSrc ? 'empty' : v.currentSrc.startsWith('blob:') ? 'blob-media-source' : 'resource-source',
+    time: v.currentTime, ready: v.readyState,
     frames: v.getVideoPlaybackQuality().totalVideoFrames, dropped: v.getVideoPlaybackQuality().droppedVideoFrames,
     error: v.error?.code || null, paused: v.paused, validated: Number(v.dataset.p2pValidated || 0),
     integrityErrors: Number(v.dataset.p2pValidationErrors || 0) }));
 }
+// These cheap snapshots describe this Node observer only, not Chromium,
+// the origin, the publisher, or host-wide resource pressure.
+function observerResources() {
+  const usage = process.resourceUsage();
+  return { userCpuMicroseconds: usage.userCPUTime, systemCpuMicroseconds: usage.systemCPUTime,
+    maxRssKiB: usage.maxRSS, voluntaryContextSwitches: usage.voluntaryContextSwitches,
+    involuntaryContextSwitches: usage.involuntaryContextSwitches };
+}
+async function timedSample(client, phaseStart) {
+  const began = performance.now();
+  const state = await sample(client);
+  return { state, startMs: began - phaseStart, elapsedMs: performance.now() - began };
+}
 async function phase(name, seconds) {
-  const initial = await Promise.all(clients.map(sample));
+  const began = performance.now();
+  const resourcesBefore = observerResources();
+  const initialBatch = await Promise.all(clients.map(client => timedSample(client, began)));
+  const initial = initialBatch.map(item => item.state);
+  const waitBegan = performance.now();
   await pause(seconds * 1000);
-  const final = await Promise.all(clients.map(sample));
+  const waitElapsedMs = performance.now() - waitBegan;
+  const finalBatch = await Promise.all(clients.map(client => timedSample(client, began)));
+  const final = finalBatch.map(item => item.state);
+  const phaseElapsedMs = performance.now() - began;
+  const resourcesAfter = observerResources();
   for (let index = 0; index < clients.length; index++) {
     const after = final[index], before = initial[index];
     if (after.frames < before.frames + seconds * 5 || after.time < before.time + seconds * 0.5 || after.error || after.dropped !== before.dropped || after.integrityErrors) {
+      // Preserve every player's actual measurements before the existing
+      // failure exits; never reset counters or change the original budgets.
+      report.failedPhase = { name, seconds, failedClientIndex: index,
+        phaseElapsedMs, waitElapsedMs, observerResources: { before: resourcesBefore, after: resourcesAfter },
+        clients: clients.map((client, player) => ({ kind: client.kind,
+          before: initial[player], after: final[player],
+          initialSample: { startMs: initialBatch[player].startMs, elapsedMs: initialBatch[player].elapsedMs },
+          finalSample: { startMs: finalBatch[player].startMs, elapsedMs: finalBatch[player].elapsedMs },
+          sampleIntervalMs: finalBatch[player].startMs - initialBatch[player].startMs,
+          frameDelta: final[player].frames - initial[player].frames,
+          presentedFrameDelta: (final[player].frames - final[player].dropped) -
+            (initial[player].frames - initial[player].dropped),
+          droppedFrameDelta: final[player].dropped - initial[player].dropped,
+          playbackDeltaSeconds: final[player].time - initial[player].time })) };
+      save('failed');
       throw new Error(`decode did not sustain ${name}/${clients[index].kind}: ${JSON.stringify({ before, after })}`);
     }
   }

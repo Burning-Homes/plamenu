@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT m.caption_vtt\n        FROM media_attachments m\n        JOIN statuses s ON s.id = m.status_id\n        JOIN accounts a ON a.id = m.account_id\n        LEFT JOIN video_publications v ON v.media_id = m.id AND v.status_id = s.id\n        WHERE m.id = $1 AND a.suspended_at IS NULL\n          AND s.deleted_at IS NULL AND s.visibility IN ('public', 'unlisted')\n          AND (v.media_id IS NULL OR EXISTS (\n              SELECT 1 FROM public_native_videos p WHERE p.media_id = m.id))\n          AND NOT EXISTS (SELECT 1 FROM remote_video_channels rv\n              JOIN accounts rc ON rc.id = rv.channel_id\n              WHERE rv.status_id = s.id AND (rc.suspended_at IS NOT NULL OR rc.deleted_at IS NOT NULL))\n        -- STUBFILTER: exclude deleted statuses directly or through public_native_videos\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "caption_vtt",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "caption_vtt"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "4f926ac6316cee9a1b2dbce3964cdf07b9ac8dd6b7a9d074b0f3bb7a83864454"
+}

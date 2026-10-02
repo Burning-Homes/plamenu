@@ -824,11 +824,13 @@ lemmy_relax_settings() {
     WITH site_settings AS (
       UPDATE local_site SET
         federation_enabled = true,
+        federation_signed_fetch = true,
         community_creation_admin_only = false,
         private_instance = false,
         registration_mode = 'Open',
         require_email_verification = false
       WHERE federation_enabled IS DISTINCT FROM true
+         OR federation_signed_fetch IS DISTINCT FROM true
          OR community_creation_admin_only IS DISTINCT FROM false
          OR private_instance IS DISTINCT FROM false
          OR registration_mode IS DISTINCT FROM 'Open'::registration_mode_enum

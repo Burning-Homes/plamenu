@@ -315,7 +315,7 @@ pub async fn change(
                     .iter()
                     .filter_map(|e| e.status_id)
                     .collect::<Vec<_>>();
-                sqlx::query("SELECT id FROM statuses WHERE id=ANY($1) ORDER BY id FOR SHARE")
+                sqlx::query("SELECT id FROM statuses WHERE id=ANY($1) ORDER BY id FOR SHARE\n-- STUBKEEP: lock all candidate identities before validate_entries rechecks deletion and audience")
                     .bind(&ids)
                     .fetch_all(&mut *tx)
                     .await
@@ -340,7 +340,7 @@ pub async fn change(
             let video = add.ok_or(ApiError::NotFound)?;
             // Lock the publication row: a concurrent audience edit or deletion
             // cannot race this transaction's public-collection validation.
-            sqlx::query("SELECT id FROM statuses WHERE id=$1 FOR SHARE")
+            sqlx::query("SELECT id FROM statuses WHERE id=$1 FOR SHARE\n-- STUBKEEP: lock canonical identity before explicit is_deleted and audience checks")
                 .bind(video.id)
                 .fetch_one(&mut *tx)
                 .await
@@ -496,7 +496,7 @@ async fn validate_entries(
         .filter_map(|e| e.status_id)
         .collect::<Vec<_>>();
     let live: Vec<i64> =
-        sqlx::query_scalar("SELECT id FROM statuses WHERE id=ANY($1) AND deleted_at IS NULL")
+        sqlx::query_scalar("SELECT id FROM statuses WHERE id=ANY($1) AND deleted_at IS NULL\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos")
             .bind(&ids)
             .fetch_all(&state.pool)
             .await

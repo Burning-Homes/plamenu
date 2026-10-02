@@ -1,7 +1,8 @@
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import {randomUUID} from 'node:crypto';
-import {signIn} from '../session.mjs';
+import {signIn,openVideoOptions,createVideoChannel,videoChannelForm} from '../session.mjs';
+import {openVideoSettings,closeVideoSettings} from '../video-settings.mjs';
 
 // This command runs against the harness's disposable developer account. A
 // failed project must not leave preferences enabled for the next browser.
@@ -62,14 +63,14 @@ async function journey(page,noScript){
   await check(page,noScript);
   await page.getByRole('link',{name:'Watch history',exact:true}).click();
   await expect(page.getByText('No saved videos on this page.',{exact:true})).toBeVisible();
-  await page.goto('/videos');
-  const channel=page.locator('form[action="/web/video-channels"]');
+  await page.goto('/videos/upload');await openVideoOptions(page);
+  const channel=await videoChannelForm(page);
   if(!await channel.isVisible()) await channel.locator('..').locator(':scope > summary').click();
   const name=`hist_${randomUUID().replaceAll('-','').slice(0,20)}`;
   await channel.getByLabel('Channel address').fill(name);
   await channel.getByLabel('Channel name').fill(`Watch ${name}`);
-  await channel.getByRole('button',{name:'Create a video channel',exact:true}).press('Enter');
-  await page.waitForURL(url=>url.pathname==='/videos');
+  await createVideoChannel(page, channel.getByRole('button',{name:'Create a video channel',exact:true}));
+  await page.waitForURL(url=>url.pathname === '/videos/upload');await openVideoOptions(page);
   const upload=page.locator('form[action="/web/videos"]');
   const title=`Watch history film ${name}`;
   await upload.getByRole('combobox',{name:'Channel',exact:true}).selectOption({label:`Watch ${name}`});
@@ -236,6 +237,7 @@ async function journey(page,noScript){
   await expect(page.locator('form[data-video-history]')).toHaveCount(0);
   if(!noScript){
     const toggle=page.locator('.media__p2p-toggle');
+    await openVideoSettings(page);
     await expect(toggle).toBeChecked();
     await page.route('**/web/videos/p2p',route=>route.fulfill({status:503,body:'Temporary preference outage'}));
     await toggle.uncheck();
@@ -257,8 +259,10 @@ async function journey(page,noScript){
     // A server-only VOD remains playable after an actual HLS HTTP failure.
     // The recovery is bounded and visible, not a black native-control tile.
     await page.goto(permalink);
+    await openVideoSettings(page);
     await page.locator('.media__p2p-toggle').uncheck();
     await expect(page.locator('.media__p2p-status')).toHaveText('Peer-sharing preference saved for your account.');
+    await closeVideoSettings(page);
     await page.route('**/media/hls/**',route=>route.fulfill({status:503,body:'Temporary HLS outage'}));
     const failed=page.locator('figure.media--video video').first();
     await failed.evaluate(v=>{v.muted=true;v.play().catch(()=>{});});

@@ -1,6 +1,8 @@
 # Video playlists
 
-Open **Videos → Video playlists** (`/videos/playlists`). The public library
+Open **Video studio → Playlists** (`/videos/playlists?mine=true`), or the public
+library at `/videos/playlists`. The **Create playlist** disclosure is above
+the list and also contains playlist import; it works without scripts. The public library
 lists public playlists; **My playlists** includes private and unlisted channel
 collections you can manage. You need a video channel to create a playlist.
 The normal native installation already contains everything required.

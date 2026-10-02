@@ -137,6 +137,126 @@ async fn form(f: &Fixture, path: String, raw: &str, body: String) -> StatusCode 
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn video_settings_fallback_is_authorized_single_code_and_scope_safe(pool: PgPool) {
+    let f = fixture(pool, false).await;
+    let posted = publish(&f).await;
+    let path = format!("/web/statuses/{}/video-settings", posted.id);
+    let response = get(&f, path.clone()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["cache-control"], "private, no-store");
+    let body = String::from_utf8(
+        response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(body.contains("Video settings"));
+    assert!(body.contains("Download playable video (MP4)"));
+    assert_eq!(body.matches("data-video-embed-code").count(), 1);
+    assert!(body.contains("?p2p=1"));
+    assert!(!body.contains("Server-only embed code"));
+    plamenu_db::video_history::update_preferences(&f.state.pool, f.owner, Some(true), None)
+        .await
+        .unwrap();
+    let (raw, csrf) = token(&f, "read write:accounts").await;
+    assert_eq!(
+        form(&f, path.clone(), &raw, format!("csrf={csrf}")).await,
+        StatusCode::SEE_OTHER
+    );
+    assert!(
+        !plamenu_db::video_history::preferences(&f.state.pool, f.owner)
+            .await
+            .unwrap()
+            .p2p_enabled
+    );
+    assert!(
+        plamenu_db::video_history::preferences(&f.state.pool, f.owner)
+            .await
+            .unwrap()
+            .history_enabled
+    );
+    assert_eq!(
+        form(
+            &f,
+            path.clone(),
+            &raw,
+            format!("csrf={csrf}&enabled=invalid")
+        )
+        .await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let response = plamenu::build_router(f.state.clone())
+        .oneshot(
+            Request::builder()
+                .uri(&path)
+                .header("Cookie", format!("__Host-plamenu_session={raw}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let html = String::from_utf8(
+        response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(html.contains("?p2p=0"));
+    assert_eq!(
+        form(&f, path.clone(), &raw, "csrf=invalid&enabled=true".into()).await,
+        StatusCode::FORBIDDEN
+    );
+    let (readonly, csrf) = token(&f, "read").await;
+    assert_eq!(
+        form(
+            &f,
+            path.clone(),
+            &readonly,
+            format!("csrf={csrf}&enabled=true")
+        )
+        .await,
+        StatusCode::FORBIDDEN
+    );
+    assert!(
+        !plamenu_db::video_history::preferences(&f.state.pool, f.owner)
+            .await
+            .unwrap()
+            .p2p_enabled
+    );
+    sqlx::query("UPDATE statuses SET visibility='private' WHERE id=$1")
+        .bind(posted.id)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(get(&f, path).await.status(), StatusCode::NOT_FOUND);
+    sqlx::query("UPDATE statuses SET visibility='public' WHERE id=$1")
+        .bind(posted.id)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET suspended_at=now() WHERE id=$1")
+        .bind(f.owner)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        get(&f, format!("/web/statuses/{}/video-settings", posted.id))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn download_embed_flags_preserve_playback_and_use_current_private_authority(pool: PgPool) {
     let f = fixture(pool, false).await;
     let posted = publish(&f).await;

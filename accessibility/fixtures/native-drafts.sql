@@ -35,4 +35,8 @@ INSERT INTO video_storage_reservations (file_name, account_id, media_id, reserve
 SELECT id || suffix, owner, id, size
 FROM draft_fixture CROSS JOIN (VALUES ('.orig', :source_bytes), ('.draft.mp4', :source_bytes),
     ('.draft.small.avif', :poster_bytes), ('.draft.poster.jpg', 1048576)) files(suffix, size);
+-- Paused authoring-layout fixture only: never discovers or fetches this URL.
+INSERT INTO video_source_syncs(id,account_id,channel_id,source_url,interval_minutes,enabled)
+SELECT 8995,id,8999,'https://peer.example/video-channels/a-long-source-address-for-responsive-layout-verification',360,false
+FROM accounts WHERE username='developer' AND domain IS NULL;
 COMMIT;

@@ -5,6 +5,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
+import { installPeerTubeWelcomeHandler } from './peertube-session.mjs';
 
 const watchUrl = process.argv[2];
 const audioOnly = process.argv[3] === 'audio-only';
@@ -35,6 +36,7 @@ for (const [engineName, engine] of [['chromium', chromium], ['firefox', firefox]
       try {
         console.error(`PeerTube watch check: ${engineName} ${name}`);
         const page = await context.newPage();
+        await installPeerTubeWelcomeHandler(page);
         const errors = [];
         const mediaRequests = [];
         const badResponses = [];
@@ -146,12 +148,14 @@ for (const [engineName, engine] of [['chromium', chromium], ['firefox', firefox]
         const progress = page.locator('.vjs-progress-holder');
         const box = await progress.boundingBox();
         assert(box && box.width > 20, 'PeerTube seek bar unavailable');
-        await progress.hover({position:{x:box.width * 0.55,y:box.height / 2},force:true});
-        await page.waitForFunction(() => {
-          const sprite = document.querySelector('.vjs-storyboard-sprite-placeholder');
-          return sprite && getComputedStyle(sprite).backgroundImage.includes('url(')
-            && sprite.getBoundingClientRect().height > 20;
-        }, undefined, {timeout:15_000});
+        if (!audioOnly) {
+          await progress.hover({position:{x:box.width * 0.55,y:box.height / 2},force:true});
+          await page.waitForFunction(() => {
+            const sprite = document.querySelector('.vjs-storyboard-sprite-placeholder');
+            return sprite && getComputedStyle(sprite).backgroundImage.includes('url(')
+              && sprite.getBoundingClientRect().height > 20;
+          }, undefined, {timeout:15_000});
+        }
         await progress.click({ position: { x: box.width * 0.55, y: box.height / 2 } });
         await page.waitForFunction(() => document.querySelector('video.vjs-tech')?.currentTime > 1.5,
           undefined, { timeout: 15_000 });

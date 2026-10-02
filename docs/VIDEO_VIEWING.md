@@ -28,7 +28,8 @@ can load another page ahead as you browse; the ordinary link remains available.
 ## Peer-assisted delivery and server-only playback
 
 Eligible HLS videos and live streams use PeerTube-compatible peer delivery by
-default. The visible **Share video with other viewers** choice explains that
+default. Open the post's **… → Video settings** before playback. Its
+**Share video with other viewers** choice explains that
 the tracker and participating viewers can learn your network address. Turn it
 off before playback to avoid tracker/swarm contact. No-JS playback is always
 server-only; unavailable peer delivery falls back to ordinary HTTP delivery.
@@ -65,12 +66,21 @@ current publication/audience and account/channel authority on every request;
 their responses are private and not stored by caches. A private or deleted
 publication never becomes downloadable or embeddable by signing in.
 
-Open **Embed this video** beneath an eligible native Video. Its labelled,
-read-only text fields can be selected and copied without JavaScript. Enhanced
-**Copy embed code** buttons report success, and focus/select the field for manual
-copying if clipboard permission is unavailable. The standard code retains the
-player's peer-sharing notice and choice; **Server-only embed code** forces
-`?p2p=0` without changing your account preference. Neither code contains credentials.
+Open **… → Video settings** on an eligible native Video. Download, peer-sharing
+and embedding controls live together here, not below every player. JavaScript
+opens a keyboard-accessible modal; Escape or its close button returns focus to
+the menu. Without JavaScript the same link opens an ordinary HTML page, where
+signed-in viewers can also save their peer-sharing preference without changing
+history settings. Playback without scripts remains server-only.
+
+There is one labelled, read-only **Embed this video** field, initially using
+`?p2p=1`. The modal's peer-sharing choice updates that same code to `?p2p=0`
+when disabled; it never overrides the embedded viewer's explicit opt-out.
+The text can be selected and copied without JavaScript. The enhanced
+**Copy embed code** button reports success, or focuses/selects the field for
+manual copying if clipboard permission is unavailable. The code contains no
+credentials. Embedded players retain their own overflow entry for changing
+peer sharing before playback.
 
 Public native attachment entities expose a `video_distribution` extension with
 `download_enabled`, `embed_enabled`, and eligible `download_url`/`embed_url`.

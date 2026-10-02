@@ -36,8 +36,8 @@ pub async fn gate(State(state): State<AppState>, request: Request, next: Next) -
     if !plamenu_ap::accepts_activity_json(accept) {
         return next.run(request).await;
     }
-    match verified_get_sender(&state, request.uri(), request.headers()).await {
-        Ok(_) => next.run(request).await,
+    match verify_get_request(&state, request.uri(), request.headers()).await {
+        Ok(()) => next.run(request).await,
         Err(err) => err.into_response(),
     }
 }
@@ -57,7 +57,7 @@ pub(crate) async fn enforce(
     if !state.authorized_fetch().await {
         return Ok(());
     }
-    verified_get_sender(state, uri, headers).await.map(|_| ())
+    verify_get_request(state, uri, headers).await
 }
 
 /// Whether an inbound request carries an HTTP signature of either dialect —
@@ -68,18 +68,47 @@ pub(crate) fn request_is_signed(headers: &HeaderMap) -> bool {
     headers.contains_key("signature-input") || headers.contains_key("signature")
 }
 
-/// Verifies the signature on a GET and resolves the signing actor,
-/// dereferencing the keyId when the key is unknown or stale (key rotation).
-pub(crate) async fn verified_get_sender(
+/// A GET-only authentication document, never a delivery actor or account.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InternalFetchSignerDocument {
+    id: String,
+    #[serde(rename = "type")]
+    kind: String,
+    preferred_username: String,
+    public_key: plamenu_ap::actor::PublicKey,
+    #[serde(default, rename = "inbox")]
+    _inbox: Option<String>,
+    #[serde(default, rename = "outbox")]
+    _outbox: Option<String>,
+}
+
+fn internal_fetch_actor_uri(key_id: &str) -> Result<Option<&str>, ApiError> {
+    let actor_uri = key_id.split('#').next().unwrap_or(key_id);
+    let Ok(parsed) = url::Url::parse(actor_uri) else {
+        return Ok(None);
+    };
+    if parsed.path() != "/internal/fetch" {
+        return Ok(None);
+    }
+    if parsed.query().is_some() || !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(ApiError::Unauthorized(
+            "invalid internal fetch signer URI".into(),
+        ));
+    }
+    Ok(Some(actor_uri))
+}
+
+fn prepare_get_request(
     state: &AppState,
     uri: &Uri,
     headers: &HeaderMap,
-) -> Result<Account, ApiError> {
+) -> Result<PreparedRequestAuth, ApiError> {
     let path_and_query = uri
         .path_and_query()
         .map_or_else(|| uri.path(), |pq| pq.as_str());
     let target_uri = format!("https://{}{path_and_query}", state.config.domain);
-    let prepared = PreparedRequestAuth::from_get_request(
+    PreparedRequestAuth::from_get_request(
         &RequestFacts {
             method: "GET",
             target_uri: &target_uri,
@@ -88,13 +117,144 @@ pub(crate) async fn verified_get_sender(
         },
         SystemTime::now(),
     )
-    .map_err(|e| ApiError::Unauthorized(e.to_string()))?;
-    let key_id = prepared.key_id();
+    .map_err(|error| ApiError::Unauthorized(error.to_string()))
+}
 
-    if let Some(cached) = crate::remote::find_cached_signer(&state.pool, key_id).await?
-        && crate::remote::prepared_matches_account(&state.pool, &prepared, &cached)
-            .await?
-            .is_ok()
+/// A fetch-only signer has an authenticated origin for origin-based policy,
+/// but no Account id for follower, block or private conversation membership.
+pub(crate) async fn verified_internal_fetch_domain(
+    state: &AppState,
+    uri: &Uri,
+    headers: &HeaderMap,
+) -> Result<Option<String>, ApiError> {
+    if !request_is_signed(headers) {
+        return Ok(None);
+    }
+    // Classify the Cavage key before date/crypto validation: a recognized
+    // fetch-only principal must fail closed if revalidation subsequently fails.
+    // Non-dedicated callers retain the existing anonymous fallback behavior.
+    let key_id = if headers.contains_key("signature-input") {
+        // RFC 9421 parsing includes freshness checks; propagate any failure
+        // rather than discard a potentially dedicated authenticated origin.
+        let prepared = prepare_get_request(state, uri, headers)?;
+        prepared.key_id().to_owned()
+    } else {
+        let Some(signature) = headers
+            .get("signature")
+            .and_then(|value| value.to_str().ok())
+        else {
+            return Ok(None);
+        };
+        let Ok(params) = plamenu_federation::signature::parse_signature_header(signature) else {
+            return Ok(None);
+        };
+        params.key_id
+    };
+    let Some(actor_uri) = internal_fetch_actor_uri(&key_id)? else {
+        return Ok(None);
+    };
+    verify_get_request(state, uri, headers).await?;
+    crate::instance_policy::domain_from_url(actor_uri)
+        .map(Some)
+        .ok_or_else(|| ApiError::Unauthorized("invalid internal fetch signer origin".into()))
+}
+
+/// Authenticate public AP GETs without assigning audience membership to a
+/// fetch-only principal. Dedicated fetch actors never enter the account cache.
+pub(crate) async fn verify_get_request(
+    state: &AppState,
+    uri: &Uri,
+    headers: &HeaderMap,
+) -> Result<(), ApiError> {
+    let prepared = prepare_get_request(state, uri, headers)?;
+    let Some(actor_uri) = internal_fetch_actor_uri(prepared.key_id())? else {
+        return verified_get_sender(state, uri, headers).await.map(|_| ());
+    };
+    let signer_origin = url::Url::parse(actor_uri)
+        .map_err(|_| ApiError::Unauthorized("invalid internal fetch signer URI".into()))?;
+    let local_url = url::Url::parse(&format!("https://{}/", state.config.domain))
+        .map_err(|_| ApiError::Unauthorized("invalid local signer origin".into()))?;
+    if !plamenu_federation::is_federation_url(actor_uri)
+        || signer_origin.host_str() == local_url.host_str()
+    {
+        return Err(ApiError::Unauthorized(
+            "invalid internal fetch signer URI".into(),
+        ));
+    }
+    if !crate::instance_policy::can_federate_url(&state.pool, &state.config.domain, actor_uri)
+        .await?
+    {
+        return Err(ApiError::Forbidden("This domain is blocked".into()));
+    }
+    if let Some(previous) = plamenu_db::account::find_by_uri(&state.pool, actor_uri).await?
+        && previous.suspended()
+    {
+        return Err(ApiError::Forbidden("This account is suspended".into()));
+    }
+    // Cavage's general verifier historically ignores the algorithm label.
+    // Restrict only this new GET-only branch to supported RSA conventions.
+    if !prepared.is_rfc9421() {
+        let signature = headers
+            .get("signature")
+            .and_then(|value| value.to_str().ok())
+            .ok_or_else(|| ApiError::Unauthorized("missing signature".into()))?;
+        let params = plamenu_federation::signature::parse_signature_header(signature)
+            .map_err(|error| ApiError::Unauthorized(error.to_string()))?;
+        if !matches!(
+            params.algorithm.as_deref(),
+            None | Some("rsa-sha256" | "hs2019")
+        ) {
+            return Err(ApiError::Unauthorized(
+                "unsupported internal fetch signature algorithm".into(),
+            ));
+        }
+    }
+    let object = state
+        .federation
+        .fetch_object(actor_uri)
+        .await
+        .map_err(|error| ApiError::Unauthorized(format!("cannot dereference signer: {error}")))?;
+    let document: InternalFetchSignerDocument = serde_json::from_value(object)
+        .map_err(|error| ApiError::Unauthorized(format!("cannot dereference signer: {error}")))?;
+    // The same guarded fetch preserves SSRF, redirects, size/content limits
+    // and exact object id. Never synthesize an inbox or persist this document.
+    if document.id != actor_uri
+        || document.kind != "Application"
+        || document.preferred_username != "internal.fetch"
+        || document.public_key.owner != document.id
+        || document.public_key.id != prepared.key_id()
+        || document.public_key.id.split('#').next() != Some(actor_uri)
+        || prepared.wants_ed25519()
+    {
+        return Err(ApiError::Unauthorized(
+            "invalid internal fetch signer document".into(),
+        ));
+    }
+    // Fetch the current key each time: rotations refetch the same guarded URI,
+    // stale keys cannot gain audience identity through account/key caches.
+    prepared
+        .verify_rsa_pem(&document.public_key.public_key_pem)
+        .map_err(|error| ApiError::Unauthorized(error.to_string()))
+}
+
+/// Verifies the signature on a GET and resolves the signing actor,
+/// dereferencing the keyId when the key is unknown or stale (key rotation).
+pub(crate) async fn verified_get_sender(
+    state: &AppState,
+    uri: &Uri,
+    headers: &HeaderMap,
+) -> Result<Account, ApiError> {
+    let prepared = prepare_get_request(state, uri, headers)?;
+    let key_id = prepared.key_id();
+    // Audience-sensitive callers require a real delivery/account identity.
+    // Refuse fetch-only principals before consulting any persisted account.
+    if internal_fetch_actor_uri(key_id)?.is_some() {
+        return Err(ApiError::Unauthorized(
+            "fetch-only signer has no account identity".into(),
+        ));
+    }
+
+    if let Some(cached) = crate::remote::find_verified_cached_signer(&state.pool, &prepared).await?
     {
         if !crate::instance_policy::account_visible(&state.pool, &state.config.domain, &cached)
             .await?

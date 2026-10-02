@@ -97,7 +97,7 @@ async fn source(conn: &mut PgConnection, media: i64, actor: i64) -> Result<Retai
         m.audio_described,m.visuals_conveyed_in_audio
         FROM video_drafts d JOIN media_attachments m ON m.id=d.media_id JOIN statuses s ON s.id=m.status_id
         WHERE m.id=$1 AND d.state='ready' AND m.processing='complete' AND m.live_state IS NULL AND d.source_bytes>0
-        FOR UPDATE OF d")
+        FOR UPDATE OF d\n-- STUBKEEP: lock_owned_publication on this connection has rejected and locked nondeleted publication")
         .bind(media).fetch_optional(conn).await.map_err(plamenu_db::DbError::from)?.ok_or(ApiError::NotFound)
 }
 fn current(source: &Retained, revision: i64) -> Result<(), ApiError> {

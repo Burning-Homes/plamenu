@@ -66,6 +66,7 @@ mod video_metadata;
 mod video_playlists;
 mod video_sources;
 mod video_upload;
+mod video_workspace;
 mod videos;
 mod view;
 pub(crate) mod webauthn;
@@ -437,7 +438,10 @@ pub fn router() -> Router<AppState> {
         .route("/web/lists", post(lists::create_action))
         .route("/groups", get(groups::index))
         .route("/groups/new", get(groups::new_page))
-        .route("/videos", get(videos::index))
+        .route("/videos", get(video_workspace::library))
+        .route("/videos/upload", get(videos::index))
+        .route("/videos/channels/new", get(videos::new_channel))
+        .route("/videos/{id}/manage", get(video_workspace::manage))
         .route("/videos/explore", get(video_explore::page))
         .route("/videos/{id}/captions", get(video_captions::manage))
         .route("/videos/{id}/chapters", get(video_chapters::manage))
@@ -708,6 +712,10 @@ pub fn router() -> Router<AppState> {
         .route("/web/accounts/switch", post(session::switch_account))
         .route("/web/statuses/{id}", get(pages::status_redirect))
         .route("/web/statuses/{id}/embed", get(pages::status_embed))
+        .route(
+            "/web/statuses/{id}/video-settings",
+            get(pages::video_settings).post(pages::save_video_settings),
+        )
         .route("/web/statuses/{id}/favourite", post(actions::favourite))
         .route("/web/statuses/{id}/unfavourite", post(actions::unfavourite))
         // Group-post vote cluster; upvote == favourite underneath.

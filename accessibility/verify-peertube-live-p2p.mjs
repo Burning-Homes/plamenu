@@ -1,6 +1,8 @@
 // PeerTube-origin live P2P through the two unmodified first-party players.
 // Plamenu checks every received peer segment against PeerTube's rolling SHA.
 import { chromium } from 'playwright';
+import { installPeerTubeWelcomeHandler } from './peertube-session.mjs';
+import {openVideoSettings,closeVideoSettings} from './video-settings.mjs';
 
 const [localUrl, peerTubeUrl, expectedHashesJson] = process.argv.slice(2);
 if (!localUrl || !peerTubeUrl || !expectedHashesJson) {
@@ -47,6 +49,7 @@ async function play(page, selector) {
 
 async function peerTubePage(context) {
   const page = await context.newPage();
+  await installPeerTubeWelcomeHandler(page);
   observe(page);
   if (process.env.PEERTUBE_E2E_USER && process.env.PEERTUBE_E2E_PASSWORD) {
     await page.goto(new URL('/login', peerTubeUrl).href);
@@ -83,9 +86,11 @@ try {
   observe(off);
   await off.goto(localUrl);
   const toggle = off.locator('.media__p2p-toggle');
+  await openVideoSettings(off);
   await toggle.waitFor({ state: 'visible' });
   if (!await toggle.isChecked()) throw new Error('remote-live peer delivery did not default on');
   await toggle.uncheck();
+  await closeVideoSettings(off);
   await play(off, 'video[data-hls]');
   if (sockets.length || await off.locator('video[data-p2p-active]').count()) {
     throw new Error('remote-live pre-play opt-out contacted a tracker');

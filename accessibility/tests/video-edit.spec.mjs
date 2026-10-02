@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import {randomUUID} from 'node:crypto';
-import {signIn} from '../session.mjs';
+import {signIn,openVideoOptions,createVideoChannel,videoChannelForm,chooseVideoLanguage} from '../session.mjs';
 
 async function check(page,noScript){
   await page.setViewportSize({width:320,height:800});
@@ -12,11 +12,11 @@ async function check(page,noScript){
   }
 }
 async function ready(page,channel,file,title,noScript){
-  await page.goto('/videos');
+  await page.goto('/videos/upload');await openVideoOptions(page);
   const form=page.locator('form[action="/web/videos"]');
   await form.getByRole('combobox',{name:'Channel',exact:true}).selectOption({label:channel});
   await form.getByLabel('Video title',{exact:true}).fill(title);
-  await form.getByLabel('Language code',{exact:false}).fill('en');
+  await chooseVideoLanguage(form,'en');
   await form.getByLabel('Visual description',{exact:true}).fill(`Visual alternative for ${title}`);
   await form.getByLabel('Transcript',{exact:true}).fill(`Spoken alternative for ${title}`);
   await form.getByLabel('Video or audio file',{exact:true}).setInputFiles(file);
@@ -45,8 +45,8 @@ async function decoded(video){
 async function journey(page,info,noScript){
   test.setTimeout(240000);
   await signIn(page);
-  await page.goto('/videos');
-  const form=page.locator('form[action="/web/video-channels"]');
+  await page.goto('/videos/upload');await openVideoOptions(page);
+  const form=await videoChannelForm(page);
   if(!await form.isVisible())await form.locator('..').locator(':scope > summary').press('Enter');
   const name=`edit_${randomUUID().replaceAll('-','').slice(0,20)}`;
   const channel=`Edit ${name}`;
@@ -99,6 +99,19 @@ async function journey(page,info,noScript){
   await check(page,noScript);
   await page.screenshot({path:info.outputPath('replacement-published-320px.png'),fullPage:true});
   expect((await page.request.get(`/videos/drafts/${candidate}/review`)).status()).toBe(404);
+  // Follow actual management links and return without losing the publication.
+  await page.goto(`/videos/${original}/manage`);
+  for (const name of ['Manage category and licence','Manage captions','Video chapters','Downloads and embeds','Edit the published film']) {
+    await page.locator('.video-workspace__tools').getByRole('link',{name,exact:false}).press('Enter');
+    const back=name==='Downloads and embeds'
+      ? page.getByRole('link',{name:'Return to your video',exact:true})
+      : page.locator('.video-workspace__nav').getByRole('link',{name:'Manage video',exact:true});
+    await expect(back).toBeVisible();
+    await check(page,noScript);
+    await back.press('Enter');
+    await expect(page).toHaveURL(url=>url.pathname===`/videos/${original}/manage`);
+  }
+
 }
 test('published-film replacement is private, decoded, confirmed and identity-preserving',async({page},info)=>journey(page,info,false));
 test('published-film replacement is private, decoded, confirmed and identity-preserving @no-js',async({page},info)=>journey(page,info,true));

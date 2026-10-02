@@ -19,8 +19,6 @@ from plamenu_e2e import config, pleroma, redeliver, unique
 from plamenu_e2e.steps import log, step, wait_for
 from websockets.sync.client import connect
 
-BOB_ACTOR = f"{config.PLEROMA_URL}/users/{pleroma.BOB_NICK}"
-
 
 def _open_stream(token: str):
     """A websocket on Plamenu's `user` stream (TLS trust is not under test)."""
@@ -52,8 +50,17 @@ def _events_until_update_containing(ws, text: str, *, timeout: float = 90.0) -> 
         seen.append(message)
 
 
-def _bob_key() -> str:
-    return redeliver.pleroma_private_key_pem(pleroma.BOB_NICK)
+def _bob_signer() -> tuple[str, str, str]:
+    # The nickname URL is an alias on current Akkoma. Sign and attribute each
+    # replay with the actual actor ID and key ID advertised by the peer.
+    actor = redeliver.fetch_ap(f"{config.PLEROMA_URL}/users/{pleroma.BOB_NICK}")
+    public_key = actor["publicKey"]
+    assert public_key["owner"] == actor["id"], "Bob's key controller must be Bob"
+    return (
+        actor["id"],
+        public_key["id"],
+        redeliver.pleroma_private_key_pem(pleroma.BOB_NICK),
+    )
 
 
 def _notification_ids(api) -> list:
@@ -109,7 +116,7 @@ def test_replayed_backlog_is_ignored(
         )
 
     before = _notification_ids(plamenu_api)
-    key = _bob_key()
+    actor_uri, key_id, key = _bob_signer()
     token = plamenu_api.http.headers["Authorization"].removeprefix("Bearer ")
     sentinel = unique("sentinel")
 
@@ -117,34 +124,37 @@ def test_replayed_backlog_is_ignored(
         with step("replay the whole backlog, signed as the real bob"):
             note = redeliver.fetch_ap(note_uri)
             replays = [
-                redeliver.create_envelope(note, actor_uri=BOB_ACTOR),
+                redeliver.create_envelope(note, actor_uri=actor_uri),
                 {
                     "@context": redeliver.AS2_CONTEXT,
-                    "id": f"{BOB_ACTOR}#replays/like",
+                    "id": f"{actor_uri}#replays/like",
                     "type": "Like",
-                    "actor": BOB_ACTOR,
+                    "actor": actor_uri,
                     "object": bait["uri"],
                 },
                 {
                     "@context": redeliver.AS2_CONTEXT,
-                    "id": f"{BOB_ACTOR}#replays/announce",
+                    "id": f"{actor_uri}#replays/announce",
                     "type": "Announce",
-                    "actor": BOB_ACTOR,
+                    "actor": actor_uri,
                     "to": [redeliver.PUBLIC],
                     "object": bait["uri"],
                 },
                 {
                     "@context": redeliver.AS2_CONTEXT,
-                    "id": f"{BOB_ACTOR}#replays/react",
+                    "id": f"{actor_uri}#replays/react",
                     "type": "EmojiReact",
-                    "actor": BOB_ACTOR,
+                    "actor": actor_uri,
                     "content": "🔥",
                     "object": bait["uri"],
                 },
             ]
             for activity in replays:
                 code = redeliver.deliver(
-                    activity, actor_uri=BOB_ACTOR, private_key_pem=key
+                    activity,
+                    actor_uri=actor_uri,
+                    private_key_pem=key,
+                    key_id=key_id,
                 )
                 assert code == 202, f"inbox answered {code} for {activity['type']}"
 
@@ -232,12 +242,13 @@ def test_dedup_never_eats_edits(
     v2_note = redeliver.fetch_ap(note_uri)
     assert v2_note.get("updated"), "Pleroma should stamp `updated` on the edit"
 
-    key = _bob_key()
+    actor_uri, key_id, key = _bob_signer()
     with step("replaying the original Create must not roll v2 back"):
         code = redeliver.deliver(
-            redeliver.create_envelope(v1_note, actor_uri=BOB_ACTOR),
-            actor_uri=BOB_ACTOR,
+            redeliver.create_envelope(v1_note, actor_uri=actor_uri),
+            actor_uri=actor_uri,
             private_key_pem=key,
+            key_id=key_id,
         )
         assert code == 202
         assert plamenu_api.home_status_containing(f"v2 {marker}"), (
@@ -253,9 +264,10 @@ def test_dedup_never_eats_edits(
 
     with step("replaying the stale v2 Update must not roll v3 back"):
         code = redeliver.deliver(
-            redeliver.update_envelope(v2_note, actor_uri=BOB_ACTOR),
-            actor_uri=BOB_ACTOR,
+            redeliver.update_envelope(v2_note, actor_uri=actor_uri),
+            actor_uri=actor_uri,
             private_key_pem=key,
+            key_id=key_id,
         )
         assert code == 202
         assert plamenu_api.home_status_containing(f"v3 {marker}"), (

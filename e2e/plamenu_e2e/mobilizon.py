@@ -417,6 +417,18 @@ class MobilizonApi:
                  } }"""
         )["relayFollowers"]["elements"]
 
+    @staticmethod
+    def relay_follower_address(follower: dict) -> str:
+        """Address the exact pending follower, avoiding instance-actor lookup."""
+        actor = follower.get("actor") or {}
+        username = actor.get("preferredUsername")
+        domain = actor.get("domain")
+        if not isinstance(username, str) or not username.strip():
+            raise ValueError("Relay follower has no preferredUsername")
+        if not isinstance(domain, str) or not domain.strip():
+            raise ValueError("Relay follower has no domain")
+        return f"{username}@{domain}"
+
     def relay_followings(self) -> list[dict]:
         return self.gql(
             """{ relayFollowings(limit: 100) {

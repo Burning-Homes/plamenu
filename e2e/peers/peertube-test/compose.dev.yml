@@ -21,7 +21,7 @@ name: peertube-test
 
 services:
   db:
-    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     restart: unless-stopped
     # Disposable data: trade durability for speed.
     command: postgres -c fsync=off -c full_page_writes=off
@@ -47,7 +47,7 @@ services:
       retries: 20
 
   redis:
-    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    image: redis:8.10.2-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
     restart: unless-stopped
     networks:
       ptn:
@@ -66,7 +66,7 @@ services:
     # froze at 7.3.0 and `docker compose pull` became a no-op. An explicit
     # version keeps the peer honest about what it is and makes the drift
     # visible when it is time to bump. Matches ../peertube-source.
-    image: chocobozzz/peertube:v8.3.0@sha256:0bee710d0ac8da3fbc01383e0322d51d90072ee121eb56d8a4218d174d970be7
+    image: chocobozzz/peertube:v8.3.1@sha256:2b42e944a2e840e251afd6660ee91dd42e04698a69d5a082dd5053420edc4033
     restart: unless-stopped
     networks:
       ptn: {}

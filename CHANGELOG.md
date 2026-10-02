@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add a searchable, paged video workspace with dedicated upload and channel
+  creation, video management, and accessible player settings. Simplify video
+  and live authoring with optional sections, readable language choices,
+  contextual help, retained validation choices, and narrow-screen layouts.
 - Add reusable personal and instance Webxdc app libraries, immutable version
   selection, moderator promotion and publication, a public digest-bearing
   catalog, and opt-in guarded imports from xdcget-compatible sources.

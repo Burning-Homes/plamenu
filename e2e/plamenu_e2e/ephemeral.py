@@ -27,8 +27,8 @@ import time
 from pathlib import Path
 
 import psycopg
-from psycopg import sql
 import requests
+from psycopg import sql
 
 from . import config, plamenu, unique
 from .api import Api
@@ -85,16 +85,26 @@ class Instance:
         # A fresh database every start: a previous run left accounts, follows
         # and (for doomed) a half-destroyed instance behind on purpose.
         with psycopg.connect(config.DB_DSN, autocommit=True) as conn:
-            conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(self.db_name)))
+            conn.execute(
+                sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(
+                    sql.Identifier(self.db_name)
+                )
+            )
             # Some developer harnesses seed template1. A disposable instance
             # must not inherit unrelated accounts, migrations or private data.
-            conn.execute(sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(sql.Identifier(self.db_name)))
+            conn.execute(
+                sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(
+                    sql.Identifier(self.db_name)
+                )
+            )
         # Use the real media filesystem, not /tmp (often a small RAM-backed
         # mount). Maximum-size video tests must exercise disk admission rather
         # than silently queue forever behind a tmpfs free-space fence.
         instances = config.PLAMENU_DIR / "target/e2e/instances"
         instances.mkdir(parents=True, exist_ok=True)
-        self._dir = tempfile.TemporaryDirectory(prefix=f"plamenu-{self.db_name}-", dir=instances)
+        self._dir = tempfile.TemporaryDirectory(
+            prefix=f"plamenu-{self.db_name}-", dir=instances
+        )
         self._config_path.write_text(
             f'domain = "{self.domain}"\n'
             f'database_url = "{self.dsn}"\n'

@@ -83,20 +83,31 @@ def test_peertube_p2p_swarm_and_preplay_optout(plamenu_api: Api):
     try:
         with step("PeerTube publishes a fresh checksum-backed HLS video"):
             with tempfile.TemporaryDirectory() as directory:
-                sample = peertube.make_sample_mp4(Path(directory) / "p2p.mp4", seconds=20)
+                sample = peertube.make_sample_mp4(
+                    Path(directory) / "p2p.mp4", seconds=20
+                )
                 created = pt.upload_video(sample, unique("peer-swarm"))
             pt.wait_for_hls(created["uuid"])
             # PeerTube announces the first HLS rendition before finishing the
             # second; the master URL can be replaced mid-transcode. Wait for
             # the local 144p/240p ladder before importing its final AP object.
             video = wait_for(
-                lambda: (detail if len(detail["streamingPlaylists"][0]["files"]) >= 2 else None)
-                if (detail := pt.video(created["uuid"])).get("streamingPlaylists") else None,
+                lambda: (
+                    (
+                        detail
+                        if len(detail["streamingPlaylists"][0]["files"]) >= 2
+                        else None
+                    )
+                    if (detail := pt.video(created["uuid"])).get("streamingPlaylists")
+                    else None
+                ),
                 desc="PeerTube's two HLS renditions finish",
             )
             ap = pt.fetch_ap(video["uuid"])
             playlist = next(
-                link for link in ap["url"] if link.get("mediaType") == "application/x-mpegURL"
+                link
+                for link in ap["url"]
+                if link.get("mediaType") == "application/x-mpegURL"
             )
             infohashes = [
                 tag["name"] for tag in playlist["tag"] if tag.get("type") == "Infohash"
@@ -111,11 +122,16 @@ def test_peertube_p2p_swarm_and_preplay_optout(plamenu_api: Api):
             attachment = status["media_attachments"][0]
             peers = attachment.get("hls", {}).get("p2p")
             assert peers and peers["video_uuid"] == video["uuid"], attachment
-            assert peers["sha256_url"].startswith("https://plamenu.local/media/hls/"), peers
+            assert peers["sha256_url"].startswith("https://plamenu.local/media/hls/"), (
+                peers
+            )
             checksums = _get(peers["sha256_url"])
-            assert checksums.status_code == 200 and checksums.json(), checksums.status_code
+            assert checksums.status_code == 200 and checksums.json(), (
+                checksums.status_code
+            )
             assert peers["trackers"] and all(
-                tracker.startswith("wss://peertube.local") for tracker in peers["trackers"]
+                tracker.startswith("wss://peertube.local")
+                for tracker in peers["trackers"]
             ), peers
 
         with step("two browser viewers join the PeerTube swarm; opt-out avoids it"):
@@ -134,6 +150,7 @@ def test_peertube_p2p_swarm_and_preplay_optout(plamenu_api: Api):
                 capture_output=True,
                 text=True,
                 timeout=180,
+                check=False,
             )
             assert browser.returncode == 0, browser.stdout + browser.stderr
             log(browser.stdout.strip())
@@ -218,8 +235,14 @@ def test_peertube_history_revalidation_preserves_the_cached_collection(
         pt.delete(f"/api/v1/users/{created['id']}")
 
 
-@pytest.mark.federation(direction="inbound", peer="peertube")
-def test_peertube_video_uses_its_verified_channel_library(plamenu_api: Api, plamenu_user, db: Db):
+@pytest.mark.federation(
+    direction="inbound",
+    peer="peertube",
+    one_way_reason="Inbound verified channel-library refinement of the paired Video lifecycle; outbound channel publication is covered by the core native-video exchange.",
+)
+def test_peertube_video_uses_its_verified_channel_library(
+    plamenu_api: Api, plamenu_user, db: Db
+):
     pt = peertube.root()
     created = None
     channel_account_id = None
@@ -229,18 +252,21 @@ def test_peertube_video_uses_its_verified_channel_library(plamenu_api: Api, plam
     browser.verify = False
     title = unique("channel-library")
     try:
-        with step("PeerTube publishes a Video attributed to its owner and Group channel"):
+        with step(
+            "PeerTube publishes a Video attributed to its owner and Group channel"
+        ):
             with tempfile.TemporaryDirectory() as directory:
                 sample = peertube.make_sample_mp4(Path(directory) / "channel.mp4")
                 created = pt.upload_video(sample, title)
             pt.wait_for_hls(created["uuid"])
             ap = pt.fetch_ap(created["uuid"])
             channel_uri = next(
-                item["id"] for item in ap["attributedTo"]
-                if item["type"] == "Group"
+                item["id"] for item in ap["attributedTo"] if item["type"] == "Group"
             )
 
-        with step("the imported Video keeps the uploader as author but uses the Group library"):
+        with step(
+            "the imported Video keeps the uploader as author but uses the Group library"
+        ):
             status = wait_for(
                 lambda: plamenu_api.resolve_status(pt.ap_id(created["uuid"])),
                 desc="fresh PeerTube channel Video imports",
@@ -260,50 +286,81 @@ def test_peertube_video_uses_its_verified_channel_library(plamenu_api: Api, plam
             channel_account_id = str(row[1])
 
         with step("the server-rendered channel library links the imported Video"):
+
             def library_with_video():
                 library = _get(f"https://plamenu.local/videos/explore?channel={row[1]}")
                 assert library.status_code == 200, library.status_code
                 return library.text if title in library.text else None
 
-            html = wait_for(library_with_video, desc="PeerTube Video appears in channel library")
-            assert f"/{status['id']}\"" in html, html[:500]
+            html = wait_for(
+                library_with_video, desc="PeerTube Video appears in channel library"
+            )
+            assert f'/{status["id"]}"' in html, html[:500]
 
-        with step("a follow of the PeerTube Group is accepted for channel subscriptions"):
+        with step(
+            "a follow of the PeerTube Group is accepted for channel subscriptions"
+        ):
             plamenu_api.follow(channel_account_id)
             followed = True
             wait_for(
                 lambda: plamenu_api.relationship(channel_account_id)["following"],
                 desc="PeerTube channel accepts the follow",
             )
-        with step("authenticated search, channel library and subscriptions retain verified attribution"):
-            login = browser.post(config.PLAMENU_URL + "/login", data={
-                "email": plamenu_user.email, "password": plamenu_user.password,
-            }, allow_redirects=False, timeout=30)
+        with step(
+            "authenticated search, channel library and subscriptions retain verified attribution"
+        ):
+            login = browser.post(
+                config.PLAMENU_URL + "/login",
+                data={
+                    "email": plamenu_user.email,
+                    "password": plamenu_user.password,
+                },
+                allow_redirects=False,
+                timeout=30,
+            )
             assert login.status_code == 303
-            for params in ({"q": title}, {"q": title, "channel": channel_account_id},
-                           {"q": title, "following": "1"}):
-                response = browser.get(config.PLAMENU_URL + "/videos/explore", params=params, timeout=30)
+            for params in (
+                {"q": title},
+                {"q": title, "channel": channel_account_id},
+                {"q": title, "following": "1"},
+            ):
+                response = browser.get(
+                    config.PLAMENU_URL + "/videos/explore", params=params, timeout=30
+                )
                 assert response.status_code == 200 and title in response.text
-                assert '<video' not in response.text, "catalogue must stay poster-only"
-                assert f'channel={channel_account_id}' in response.text
-        with step("blocking a real remote channel removes its videos without leaking its library"):
+                assert "<video" not in response.text, "catalogue must stay poster-only"
+                assert f"channel={channel_account_id}" in response.text
+        with step(
+            "blocking a real remote channel removes its videos without leaking its library"
+        ):
             plamenu_api.block(channel_account_id)
             blocked = True
             for params in ({"q": title}, {"q": title, "following": "1"}):
-                response = browser.get(config.PLAMENU_URL + "/videos/explore", params=params, timeout=30)
+                response = browser.get(
+                    config.PLAMENU_URL + "/videos/explore", params=params, timeout=30
+                )
                 assert response.status_code == 200
                 # Search terms remain in the form/navigation even on an empty
                 # result page. Check rendered cards, not that echoed query.
-                cards = re.findall(r'<article\b[^>]*class="[^"]*\bvideo-explore__card\b.*?</article>',
-                                   response.text, re.DOTALL)
+                cards = re.findall(
+                    r'<article\b[^>]*class="[^"]*\bvideo-explore__card\b.*?</article>',
+                    response.text,
+                    re.DOTALL,
+                )
                 assert not cards, "blocked channel must have no matching video cards"
-            hidden = browser.get(config.PLAMENU_URL + "/videos/explore",
-                                 params={"channel": channel_account_id}, timeout=30)
+            hidden = browser.get(
+                config.PLAMENU_URL + "/videos/explore",
+                params={"channel": channel_account_id},
+                timeout=30,
+            )
             assert hidden.status_code == 404 and title not in hidden.text
             plamenu_api.unblock(channel_account_id)
             blocked = False
-            visible = browser.get(config.PLAMENU_URL + "/videos/explore",
-                                  params={"channel": channel_account_id, "q": title}, timeout=30)
+            visible = browser.get(
+                config.PLAMENU_URL + "/videos/explore",
+                params={"channel": channel_account_id, "q": title},
+                timeout=30,
+            )
             assert visible.status_code == 200 and title in visible.text
     finally:
         if blocked:
@@ -315,16 +372,24 @@ def test_peertube_video_uses_its_verified_channel_library(plamenu_api: Api, plam
         browser.close()
 
 
-@pytest.mark.federation(direction="inbound", peer="peertube")
+@pytest.mark.federation(
+    direction="inbound",
+    peer="peertube",
+    one_way_reason="Local upgrade backfill for previously ingested PeerTube rows has no outbound wire operation; the core Video lifecycle covers outbound publication.",
+)
 def test_existing_peertube_video_channel_is_backfilled_automatically(
     plamenu_api: Api, db: Db
 ):
     pt = peertube.root()
     created = None
     try:
-        with step("import a PeerTube Video and simulate its pre-attribution database state"):
+        with step(
+            "import a PeerTube Video and simulate its pre-attribution database state"
+        ):
             with tempfile.TemporaryDirectory() as directory:
-                sample = peertube.make_sample_mp4(Path(directory) / "legacy-channel.mp4")
+                sample = peertube.make_sample_mp4(
+                    Path(directory) / "legacy-channel.mp4"
+                )
                 created = pt.upload_video(sample, unique("legacy-channel"))
             pt.wait_for_hls(created["uuid"])
             status = wait_for(
@@ -333,13 +398,21 @@ def test_existing_peertube_video_channel_is_backfilled_automatically(
             )
             status_id = int(status["id"])
             channel_uri = next(
-                item["id"] for item in pt.fetch_ap(created["uuid"])["attributedTo"]
+                item["id"]
+                for item in pt.fetch_ap(created["uuid"])["attributedTo"]
                 if item["type"] == "Group"
             )
-            db.conn.execute("DELETE FROM remote_video_channels WHERE status_id = %s", (status_id,))
-            db.conn.execute("DELETE FROM remote_video_channel_checks WHERE status_id = %s", (status_id,))
+            db.conn.execute(
+                "DELETE FROM remote_video_channels WHERE status_id = %s", (status_id,)
+            )
+            db.conn.execute(
+                "DELETE FROM remote_video_channel_checks WHERE status_id = %s",
+                (status_id,),
+            )
 
-        with step("the in-process worker refetches and verifies the old Video without an operator command"):
+        with step(
+            "the in-process worker refetches and verifies the old Video without an operator command"
+        ):
             row = wait_for(
                 lambda: db.conn.execute(
                     "SELECT a.uri, c.checked_at, c.retry_at "
@@ -573,9 +646,7 @@ def test_peertube_video_federates_and_plays_through_the_hls_proxy(
 
 
 @pytest.mark.federation(
-    direction="inbound",
-    peer="peertube",
-    one_way_reason="Native Video publication exists, but native live ingest and broadcast lifecycle are still in progress under AP09; there is not yet an outbound live counterpart.",
+    direction="inbound", peer="peertube", reverse_of="test_native_live_hls_and_peertube"
 )
 def test_peertube_live_federates_and_plays_in_every_client(
     plamenu_api: Api, db: Db, request
@@ -606,8 +677,10 @@ def test_peertube_live_federates_and_plays_in_every_client(
 
     with step("PeerTube announces a live that has not started"):
         live_name = f"Plamenu e2e live {time.time_ns()}"
-        dates = [(datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
-                 for hours in (2, 4)]
+        dates = [
+            (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+            for hours in (2, 4)
+        ]
         video = pt.create_live(live_name, latency_mode=2, schedules=dates)
         # An announced live counts against the per-user live limit until it is
         # deleted, so a run that failed midway must not poison the next one.
@@ -664,24 +737,40 @@ def test_peertube_live_federates_and_plays_in_every_client(
         screenshot = config.PLAMENU_DIR / "target/e2e/remote-live-schedules-320.png"
         screenshot.parent.mkdir(parents=True, exist_ok=True)
         visual = subprocess.run(
-            ["node", str(config.PLAMENU_DIR / "accessibility/verify-live-schedules.mjs"),
-             f"https://plamenu.local/web/statuses/{status['id']}", str(screenshot)],
-            cwd=config.PLAMENU_DIR, capture_output=True, text=True, timeout=90, check=False,
+            [
+                "node",
+                str(config.PLAMENU_DIR / "accessibility/verify-live-schedules.mjs"),
+                f"https://plamenu.local/web/statuses/{status['id']}",
+                str(screenshot),
+            ],
+            cwd=config.PLAMENU_DIR,
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
         )
         assert visual.returncode == 0, visual.stderr[-1200:]
 
     with step("PeerTube reschedules and then clears its live announcement"):
         pt.put(f"/api/v1/videos/live/{video['id']}", schedules=[{"startAt": dates[1]}])
+
         def one_schedule():
             item = plamenu_api.get_status(status["id"])["media_attachments"][0]["live"]
             return item if len(item.get("schedules", [])) == 1 else None
 
-        changed = wait_for(one_schedule, desc="the changed PeerTube schedule to federate")
+        changed = wait_for(
+            one_schedule, desc="the changed PeerTube schedule to federate"
+        )
         assert changed["scheduled_at"].startswith(dates[1][:16])
         assert plamenu_api.get_status(status["id"])["edited_at"] is None
         pt.put(f"/api/v1/videos/live/{video['id']}", schedules=[])
         wait_for(
-            lambda: "schedules" not in plamenu_api.get_status(status["id"])["media_attachments"][0]["live"],
+            lambda: (
+                "schedules"
+                not in plamenu_api.get_status(status["id"])["media_attachments"][0][
+                    "live"
+                ]
+            ),
             desc="the cleared PeerTube schedule to federate",
         )
 

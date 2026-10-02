@@ -33,39 +33,92 @@ def _assert_storyboard_image(peer, origin, width, height, media_id):
     # processImage/sharp. Verify raster dimensions and similarity, not a
     # byte-identity contract that PeerTube does not offer for these images.
     with tempfile.TemporaryDirectory() as temp:
-        paths = [Path(temp)/"peer.jpg",Path(temp)/"origin.jpg"]
-        for path, contents in zip(paths,[peer,origin]):
+        paths = [Path(temp) / "peer.jpg", Path(temp) / "origin.jpg"]
+        for path, contents in zip(paths, [peer, origin]):
             path.write_bytes(contents)
-            dimensions = subprocess.check_output(["ffprobe","-v","error","-select_streams","v:0",
-                "-show_entries","stream=width,height","-of","csv=p=0",str(path)],timeout=30).decode().strip()
-            assert dimensions == f"{width},{height}",dimensions
-        result = subprocess.run(["ffmpeg","-nostdin","-i",str(paths[0]),"-i",str(paths[1]),
-            "-filter_complex","[0:v]format=gbrp,boxblur=2:1[a];[1:v]format=gbrp,boxblur=2:1[b];[a][b]psnr","-f","null","-"],
-            capture_output=True,text=True,check=True,timeout=30)
+            dimensions = (
+                subprocess.check_output(
+                    [
+                        "ffprobe",
+                        "-v",
+                        "error",
+                        "-select_streams",
+                        "v:0",
+                        "-show_entries",
+                        "stream=width,height",
+                        "-of",
+                        "csv=p=0",
+                        str(path),
+                    ],
+                    timeout=30,
+                )
+                .decode()
+                .strip()
+            )
+            assert dimensions == f"{width},{height}", dimensions
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-i",
+                str(paths[0]),
+                "-i",
+                str(paths[1]),
+                "-filter_complex",
+                "[0:v]format=gbrp,boxblur=2:1[a];[1:v]format=gbrp,boxblur=2:1[b];[a][b]psnr",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        )
         # Compare low-frequency RGB structure, not JPEG chroma block edges:
         # PeerTube re-subsamples and recompresses at JPEG-85. A fixed 5x5
         # low-pass and >=35 dB (~4.5/255 RMS) still reject missing/reordered
         # tiles or different content. Geometry is independently exact above.
-        score = re.search(r"average:(inf|[0-9.]+)",result.stderr)
+        score = re.search(r"average:(inf|[0-9.]+)", result.stderr)
         if not score or float(score[1]) < 35:
-            evidence = config.PLAMENU_DIR / f"target/e2e/ap09-m2-20260929/storyboard-{media_id}"
-            evidence.mkdir(parents=True,exist_ok=True)
+            evidence = (
+                config.PLAMENU_DIR
+                / f"target/e2e/ap09-m2-20260929/storyboard-{media_id}"
+            )
+            evidence.mkdir(parents=True, exist_ok=True)
             for path in paths:
-                (evidence/path.name).write_bytes(path.read_bytes())
-            (evidence/"comparison.txt").write_text(result.stderr)
-        assert score and float(score[1]) >= 35,result.stderr[-1000:]
+                (evidence / path.name).write_bytes(path.read_bytes())
+            (evidence / "comparison.txt").write_text(result.stderr)
+        assert score and float(score[1]) >= 35, result.stderr[-1000:]
 
 
 def test_storyboard_raster_comparison_rejects_changed_content(tmp_path):
     images = []
     for colour in ("red", "blue"):
         path = tmp_path / f"{colour}.jpg"
-        subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i",
-            f"color=c={colour}:size=160x90", "-frames:v", "1", str(path)], check=True, timeout=30)
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                f"color=c={colour}:size=160x90",
+                "-frames:v",
+                "1",
+                str(path),
+            ],
+            check=True,
+            timeout=30,
+        )
         images.append(path.read_bytes())
     _assert_storyboard_image(images[0], images[0], 160, 90, "same-content-control")
     with pytest.raises(AssertionError, match="PSNR"):
-        _assert_storyboard_image(images[1], images[0], 160, 90, "changed-content-control")
+        _assert_storyboard_image(
+            images[1], images[0], 160, 90, "changed-content-control"
+        )
 
 
 @pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
@@ -92,15 +145,24 @@ def test_scheduled_native_video_is_delivered_once_when_due(plamenu_api: Api, db:
         with tempfile.TemporaryDirectory() as temp:
             sample = peertube.make_sample_mp4(Path(temp) / "scheduled.mp4", seconds=5)
             media = plamenu_api.upload_media(
-                sample.read_bytes(), filename="scheduled.mp4", mime="video/mp4",
+                sample.read_bytes(),
+                filename="scheduled.mp4",
+                mime="video/mp4",
                 description="Moving test pattern",
             )
         when = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
         queued = plamenu_api.post(
-            "/api/v1/videos", channel_id=channel["id"], media_id=media["id"],
-            title=title, description="Published later from Plamenu.",
-            language="en", scheduled_at=when, category=13, licence=2,
-            spoiler_text="Flashing imagery", sensitive=True,
+            "/api/v1/videos",
+            channel_id=channel["id"],
+            media_id=media["id"],
+            title=title,
+            description="Published later from Plamenu.",
+            language="en",
+            scheduled_at=when,
+            category=13,
+            licence=2,
+            spoiler_text="Flashing imagery",
+            sensitive=True,
         )
         scheduled_id = queued["id"]
         assert queued["params"]["post_kind"] == "video", queued
@@ -108,22 +170,34 @@ def test_scheduled_native_video_is_delivered_once_when_due(plamenu_api: Api, db:
         assert queued["params"]["spoiler_text"] == "Flashing imagery"
         assert queued["params"]["sensitive"] is True
         assert queued["media_attachments"][0]["video_metadata"]["licence"]["id"] == 2
-        assert db._value("SELECT status_id FROM media_attachments WHERE id = %s", media["id"]) is None
+        assert (
+            db._value(
+                "SELECT status_id FROM media_attachments WHERE id = %s", media["id"]
+            )
+            is None
+        )
         before = pt.get("/api/v1/users/me/subscriptions/videos", count=100)["data"]
         assert all(video["name"] != title for video in before)
         db.conn.execute(
             "UPDATE scheduled_statuses SET scheduled_at = now() - interval '1 minute' "
-            "WHERE id = %s", (scheduled_id,),
+            "WHERE id = %s",
+            (scheduled_id,),
         )
+
         def posted():
             return db._value(
                 "SELECT status_id FROM media_attachments WHERE id = %s", media["id"]
             )
+
         published_id = wait_for(posted, desc="scheduled Video publishes once")
         scheduled_id = None
+
         def imported():
-            videos = pt.get("/api/v1/users/me/subscriptions/videos", count=100, nsfw="both")["data"]
+            videos = pt.get(
+                "/api/v1/users/me/subscriptions/videos", count=100, nsfw="both"
+            )["data"]
             return next((video for video in videos if video["name"] == title), None)
+
         remote = wait_for(imported, desc="PeerTube receives scheduled Video")
         detail = pt.video(remote["uuid"])
         assert detail["channel"]["name"] == name
@@ -132,9 +206,13 @@ def test_scheduled_native_video_is_delivered_once_when_due(plamenu_api: Api, db:
         assert detail["licence"]["id"] == 2
         assert detail["nsfw"] is True
         assert detail["nsfwSummary"] == "Flashing imagery"
-        assert db._value(
-            "SELECT count(*) FROM video_publications WHERE media_id = %s", media["id"]
-        ) == 1
+        assert (
+            db._value(
+                "SELECT count(*) FROM video_publications WHERE media_id = %s",
+                media["id"],
+            )
+            == 1
+        )
     finally:
         if scheduled_id is not None:
             plamenu_api._request("DELETE", f"/api/v1/scheduled_statuses/{scheduled_id}")
@@ -163,7 +241,8 @@ def test_no_js_video_review_can_schedule_reschedule_and_cancel(
         login = browser.post(
             f"{config.PLAMENU_URL}/login",
             data={"email": plamenu_user.email, "password": plamenu_user.password},
-            allow_redirects=False, timeout=30,
+            allow_redirects=False,
+            timeout=30,
         )
         assert login.status_code == 303
         compose = browser.get(f"{config.PLAMENU_URL}/videos", timeout=30)
@@ -188,10 +267,12 @@ def test_no_js_video_review_can_schedule_reschedule_and_cancel(
                     ("alt", (None, "Moving colour pattern")),
                     ("op", (None, "review")),
                 ],
-                allow_redirects=False, timeout=60,
+                allow_redirects=False,
+                timeout=60,
             )
         assert upload.status_code == 303, upload.text[:500]
         media_id = upload.headers["Location"].rsplit("/", 1)[1]
+
         def ready():
             response = browser.get(
                 f"{config.PLAMENU_URL}/videos/drafts/{media_id}/status", timeout=30
@@ -199,6 +280,7 @@ def test_no_js_video_review_can_schedule_reschedule_and_cancel(
             response.raise_for_status()
             assert response.json()["phase"] != "failed"
             return response.json()["phase"] == "ready"
+
         wait_for(ready, desc="no-JS video draft processing")
         review = browser.get(
             f"{config.PLAMENU_URL}/videos/drafts/{media_id}/review", timeout=30
@@ -228,7 +310,8 @@ def test_no_js_video_review_can_schedule_reschedule_and_cancel(
                 ("scheduled_at", (None, local)),
                 ("op", (None, "schedule")),
             ],
-            allow_redirects=False, timeout=30,
+            allow_redirects=False,
+            timeout=30,
         )
         assert scheduled.status_code == 303, scheduled.text[:500]
         assert scheduled.headers["Location"].startswith("/settings/scheduled")
@@ -238,7 +321,9 @@ def test_no_js_video_review_can_schedule_reschedule_and_cancel(
         assert row["params"]["spoiler_text"] == "Flashing imagery"
         assert row["params"]["sensitive"] is True
         assert row["media_attachments"][0]["video_metadata"]["category"]["id"] == 13
-        expiry = db._value("SELECT expires_at FROM video_drafts WHERE media_id = %s", media_id)
+        expiry = db._value(
+            "SELECT expires_at FROM video_drafts WHERE media_id = %s", media_id
+        )
         assert expiry > when + timedelta(days=6)
         draft_page = browser.get(
             f"{config.PLAMENU_URL}/videos/drafts/{media_id}", timeout=30
@@ -248,13 +333,18 @@ def test_no_js_video_review_can_schedule_reschedule_and_cancel(
         refused = browser.post(
             f"{config.PLAMENU_URL}/web/videos/drafts/{media_id}",
             data={"csrf": _csrf(draft_page.text), "op": "cancel", "confirm": "yes"},
-            allow_redirects=False, timeout=30,
+            allow_redirects=False,
+            timeout=30,
         )
         assert refused.status_code == 409
-        assert browser.get(
-            f"{config.PLAMENU_URL}/videos/drafts/{media_id}/review",
-            allow_redirects=False, timeout=30,
-        ).status_code == 303
+        assert (
+            browser.get(
+                f"{config.PLAMENU_URL}/videos/drafts/{media_id}/review",
+                allow_redirects=False,
+                timeout=30,
+            ).status_code
+            == 303
+        )
         queue_page = browser.get(f"{config.PLAMENU_URL}/settings/scheduled", timeout=30)
         queue_page.raise_for_status()
         assert title in queue_page.text
@@ -265,16 +355,20 @@ def test_no_js_video_review_can_schedule_reschedule_and_cancel(
                 "csrf": _csrf(queue_page.text),
                 "scheduled_at": moved.strftime("%Y-%m-%dT%H:%M"),
             },
-            allow_redirects=False, timeout=30,
+            allow_redirects=False,
+            timeout=30,
         )
         assert rescheduled.status_code == 303, rescheduled.text[:500]
-        expiry = db._value("SELECT expires_at FROM video_drafts WHERE media_id = %s", media_id)
+        expiry = db._value(
+            "SELECT expires_at FROM video_drafts WHERE media_id = %s", media_id
+        )
         assert expiry > moved + timedelta(days=6)
         queue_page = browser.get(f"{config.PLAMENU_URL}/settings/scheduled", timeout=30)
         cancelled = browser.post(
             f"{config.PLAMENU_URL}/web/settings/scheduled/{scheduled_id}/cancel",
             data={"csrf": _csrf(queue_page.text)},
-            allow_redirects=False, timeout=30,
+            allow_redirects=False,
+            timeout=30,
         )
         assert cancelled.status_code == 303, cancelled.text[:500]
         scheduled_id = None
@@ -282,7 +376,9 @@ def test_no_js_video_review_can_schedule_reschedule_and_cancel(
             "SELECT scheduled_status_id FROM media_attachments WHERE id = %s", media_id
         )
         assert released is None
-        expiry = db._value("SELECT expires_at FROM video_drafts WHERE media_id = %s", media_id)
+        expiry = db._value(
+            "SELECT expires_at FROM video_drafts WHERE media_id = %s", media_id
+        )
         assert expiry < datetime.now(timezone.utc) + timedelta(days=8)
     finally:
         if scheduled_id is not None:
@@ -294,8 +390,13 @@ def test_no_js_video_review_can_schedule_reschedule_and_cancel(
             if draft_page.status_code == 200:
                 browser.post(
                     f"{config.PLAMENU_URL}/web/videos/drafts/{media_id}",
-                    data={"csrf": _csrf(draft_page.text), "op": "cancel", "confirm": "yes"},
-                    allow_redirects=False, timeout=30,
+                    data={
+                        "csrf": _csrf(draft_page.text),
+                        "op": "cancel",
+                        "confirm": "yes",
+                    },
+                    allow_redirects=False,
+                    timeout=30,
                 )
 
 
@@ -341,9 +442,13 @@ def test_native_video_channel_publication_update_and_delete(
                 channel_id=channel["id"],
                 media_id=media["id"],
                 title=f"Native video {name}",
-                description="Published from Plamenu. " * 40 + "*literal asterisks* #astronomy",
+                description="Published from Plamenu. " * 40
+                + "*literal asterisks* #astronomy",
                 language="en",
-                category=13, licence=2, spoiler_text="Flashing imagery", sensitive=True,
+                category=13,
+                licence=2,
+                spoiler_text="Flashing imagery",
+                sensitive=True,
             )
             assert published["object_type"] == "Video", published
             assert published["media_attachments"][0]["type"] == "video"
@@ -432,35 +537,55 @@ def test_native_video_channel_publication_update_and_delete(
 
         with step("invalid API edits and CSRF-less HTML edits cannot change metadata"):
             endpoint = f"{config.PLAMENU_URL}/api/v1/videos/{media['id']}/metadata"
-            for invalid in ({"category": 19}, {"licence": "2junk"}, {"spoiler_text": "wrong endpoint"}):
+            for invalid in (
+                {"category": 19},
+                {"licence": "2junk"},
+                {"spoiler_text": "wrong endpoint"},
+            ):
                 rejected = plamenu_api.http.put(endpoint, json=invalid, timeout=30)
                 assert rejected.status_code == 422, rejected.text[:500]
             browser = requests.Session()
             browser.verify = False
-            login = browser.post(f"{config.PLAMENU_URL}/login",
-                                 data={"email": plamenu_user.email, "password": plamenu_user.password},
-                                 allow_redirects=False, timeout=30)
+            login = browser.post(
+                f"{config.PLAMENU_URL}/login",
+                data={"email": plamenu_user.email, "password": plamenu_user.password},
+                allow_redirects=False,
+                timeout=30,
+            )
             assert login.status_code == 303
-            manager = browser.get(f"{config.PLAMENU_URL}/videos/{media['id']}/metadata", timeout=30)
+            manager = browser.get(
+                f"{config.PLAMENU_URL}/videos/{media['id']}/metadata", timeout=30
+            )
             manager.raise_for_status()
             assert manager.headers["Cache-Control"] == "private, no-store"
             assert "Cookie" in manager.headers["Vary"]
-            rejected = browser.post(f"{config.PLAMENU_URL}/web/videos/{media['id']}/metadata",
-                                    data={"category": "15", "licence": "9"}, timeout=30)
+            rejected = browser.post(
+                f"{config.PLAMENU_URL}/web/videos/{media['id']}/metadata",
+                data={"category": "15", "licence": "9"},
+                timeout=30,
+            )
             assert rejected.status_code == 403
             assert rejected.headers["Cache-Control"] == "private, no-store"
-            current = plamenu_api.get_status(published["id"])["media_attachments"][0]["video_metadata"]
+            current = plamenu_api.get_status(published["id"])["media_attachments"][0][
+                "video_metadata"
+            ]
             assert current["category"]["id"] == 13 and current["licence"]["id"] == 2
             browser.close()
 
         with step("a metadata-only signed Update reaches a channel-only subscriber"):
-            plamenu_api.put(f"/api/v1/videos/{media['id']}/metadata", category=15, licence=9)
-            wait_for(lambda: pt.video(remote["uuid"])["licence"]["id"] == 9,
-                     desc="PeerTube receives category/licence Update")
+            plamenu_api.put(
+                f"/api/v1/videos/{media['id']}/metadata", category=15, licence=9
+            )
+            wait_for(
+                lambda: pt.video(remote["uuid"])["licence"]["id"] == 9,
+                desc="PeerTube receives category/licence Update",
+            )
             assert pt.video(remote["uuid"])["category"]["id"] == 15
             assert pt.video(remote["uuid"])["nsfw"] is True
 
-        with step("an owner edit reaches a channel-only subscriber and retains metadata"):
+        with step(
+            "an owner edit reaches a channel-only subscriber and retains metadata"
+        ):
             plamenu_api._request(
                 "PUT",
                 f"/api/v1/statuses/{published['id']}",
@@ -474,10 +599,16 @@ def test_native_video_channel_publication_update_and_delete(
             assert pt.video(remote["uuid"])["category"]["id"] == 15
             assert pt.video(remote["uuid"])["licence"]["id"] == 9
 
-        with step("unspecified metadata clears rather than retaining stale reuse rights"):
-            plamenu_api.put(f"/api/v1/videos/{media['id']}/metadata", category=0, licence=0)
-            wait_for(lambda: pt.video(remote["uuid"])["licence"]["id"] == 0,
-                     desc="PeerTube clears category/licence")
+        with step(
+            "unspecified metadata clears rather than retaining stale reuse rights"
+        ):
+            plamenu_api.put(
+                f"/api/v1/videos/{media['id']}/metadata", category=0, licence=0
+            )
+            wait_for(
+                lambda: pt.video(remote["uuid"])["licence"]["id"] == 0,
+                desc="PeerTube clears category/licence",
+            )
             assert pt.video(remote["uuid"])["category"]["id"] == 0
 
         with step("deletion removes the remote video"):
@@ -508,7 +639,15 @@ def test_native_video_channel_publication_update_and_delete(
     one_way_reason="same-direction refinement of the native-video publication test: this case uses the first-party durable draft uploader",
 )
 @pytest.mark.parametrize(
-    "upload_mode", ["multipart", "resumable", "audio-only", "audio-resumable", "poster-frame", "custom-poster"]
+    "upload_mode",
+    [
+        "multipart",
+        "resumable",
+        "audio-only",
+        "audio-resumable",
+        "poster-frame",
+        "custom-poster",
+    ],
 )
 def test_first_party_draft_upload_reaches_peertube(
     plamenu_api: Api, plamenu_user, upload_mode
@@ -554,10 +693,10 @@ def test_first_party_draft_upload_reaches_peertube(
                     visual_description = "Moving colour test pattern"
                     sample = peertube.make_sample_mp4(
                         Path(temp) / "draft.mp4",
-                            # More than the two initial concurrent HTTP
-                            # segments leaves a meaningful peer-prefetch
-                            # window after WebRTC discovery.
-                            seconds=30 if upload_mode == "multipart" else 5,
+                        # More than the two initial concurrent HTTP
+                        # segments leaves a meaningful peer-prefetch
+                        # window after WebRTC discovery.
+                        seconds=30 if upload_mode == "multipart" else 5,
                         size="640x480",
                     )
                 contents = sample.read_bytes()
@@ -568,7 +707,10 @@ def test_first_party_draft_upload_reaches_peertube(
                     ("description", (None, "A film created with the draft uploader.")),
                     ("language", (None, "en")),
                     ("visibility", (None, "public")),
-                    ("poster_time", (None, "3" if upload_mode == "poster-frame" else "0")),
+                    (
+                        "poster_time",
+                        (None, "3" if upload_mode == "poster-frame" else "0"),
+                    ),
                 ]
                 if upload_mode not in ("resumable", "audio-resumable"):
                     uploaded = browser.post(
@@ -688,13 +830,18 @@ def test_first_party_draft_upload_reaches_peertube(
                         files=[
                             ("csrf", (None, _csrf(review.text))),
                             ("poster_alt", (None, "A solid blue square.")),
-                            ("poster_file", ("custom.png", poster.read_bytes(), "image/png")),
+                            (
+                                "poster_file",
+                                ("custom.png", poster.read_bytes(), "image/png"),
+                            ),
                         ],
                         allow_redirects=False,
                         timeout=60,
                     )
                 assert replaced.status_code == 303, replaced.text[:500]
-                review = browser.get(f"{config.PLAMENU_URL}{draft_url}/review", timeout=30)
+                review = browser.get(
+                    f"{config.PLAMENU_URL}{draft_url}/review", timeout=30
+                )
                 review.raise_for_status()
                 assert "Custom poster" in review.text
                 assert "A solid blue square." in review.text
@@ -730,14 +877,16 @@ def test_first_party_draft_upload_reaches_peertube(
             assert status["media_attachments"][0]["type"] == "video", status
             if upload_mode == "multipart":
                 peer = status["media_attachments"][0]["hls"]["p2p"]
-                assert peer["trackers"] == [f"wss://{config.PLAMENU_DOMAIN}/tracker/socket"]
+                assert peer["trackers"] == [
+                    f"wss://{config.PLAMENU_DOMAIN}/tracker/socket"
+                ]
                 assert peer["sha256_url"].endswith(f"/media/hls/{media_id}/sha256.json")
             if upload_mode == "custom-poster":
-                assert status["media_attachments"][0]["poster_description"] == "A solid blue square."
-            assert (
-                status["media_attachments"][0]["description"]
-                == visual_description
-            )
+                assert (
+                    status["media_attachments"][0]["poster_description"]
+                    == "A solid blue square."
+                )
+            assert status["media_attachments"][0]["description"] == visual_description
             assert (
                 browser.get(
                     f"{config.PLAMENU_URL}/media/{media_id}.orig", timeout=30
@@ -758,7 +907,9 @@ def test_first_party_draft_upload_reaches_peertube(
             remote = wait_for(delivered, desc="PeerTube imports draft-originated Video")
             detail = pt.video(remote["uuid"])
             board = status["media_attachments"][0]["storyboard"]
-            peer_boards = pt.get(f"/api/v1/videos/{remote['uuid']}/storyboards")["storyboards"]
+            peer_boards = pt.get(f"/api/v1/videos/{remote['uuid']}/storyboards")[
+                "storyboards"
+            ]
             assert len(peer_boards) == 1, peer_boards
             peer_board = peer_boards[0]
             assert peer_board["spriteWidth"] == 160 and peer_board["spriteHeight"] == 90
@@ -770,7 +921,13 @@ def test_first_party_draft_upload_reaches_peertube(
             assert image.headers["Content-Type"].startswith("image/jpeg")
             original_board = requests.get(board["url"], verify=False, timeout=30)
             original_board.raise_for_status()
-            _assert_storyboard_image(image.content,original_board.content,board["columns"]*160,board["rows"]*90,media_id)
+            _assert_storyboard_image(
+                image.content,
+                original_board.content,
+                board["columns"] * 160,
+                board["rows"] * 90,
+                media_id,
+            )
             if upload_mode in ("poster-frame", "custom-poster"):
                 thumbnail_url = urljoin(pt.base_url, detail["thumbnailPath"])
                 thumbnail = pt.http.get(thumbnail_url, timeout=30)
@@ -806,11 +963,18 @@ def test_first_party_draft_upload_reaches_peertube(
             assert detail["streamingPlaylists"], detail
             hls = detail["streamingPlaylists"][0]
             if upload_mode == "multipart":
-                assert f"wss://{config.PLAMENU_DOMAIN}/tracker/socket" in detail["trackerUrls"], detail
-                checksum = requests.get(hls["segmentsSha256Url"], verify=False, timeout=30)
+                assert (
+                    f"wss://{config.PLAMENU_DOMAIN}/tracker/socket"
+                    in detail["trackerUrls"]
+                ), detail
+                checksum = requests.get(
+                    hls["segmentsSha256Url"], verify=False, timeout=30
+                )
                 checksum.raise_for_status()
                 assert checksum.json(), "PeerTube received an empty integrity manifest"
-                with step("the two first-party players exchange verified local-origin segments"):
+                with step(
+                    "the two first-party players exchange verified local-origin segments"
+                ):
                     subprocess.run(
                         [
                             "node",
@@ -832,10 +996,16 @@ def test_first_party_draft_upload_reaches_peertube(
             assert sorted(f["height"] for f in hls["files"]) == expected_heights, hls
             master = requests.get(hls["playlistUrl"], verify=False, timeout=30)
             master.raise_for_status()
-            assert ("RESOLUTION=640x360" if audio_only else "RESOLUTION=640x480") in master.text
+            assert (
+                "RESOLUTION=640x360" if audio_only else "RESOLUTION=640x480"
+            ) in master.text
             if not audio_only:
                 assert "RESOLUTION=480x360" in master.text
-            variant_paths = [line for line in master.text.splitlines() if line.startswith("/media/hls/")]
+            variant_paths = [
+                line
+                for line in master.text.splitlines()
+                if line.startswith("/media/hls/")
+            ]
             assert len(variant_paths) == len(expected_heights), master.text
             for path in variant_paths:
                 variant = requests.get(
@@ -848,7 +1018,9 @@ def test_first_party_draft_upload_reaches_peertube(
                 assert variant.headers["Access-Control-Allow-Origin"] == "*"
                 assert "#EXT-X-BYTERANGE:" in variant.text
                 segment_path = next(
-                    line for line in variant.text.splitlines() if line.startswith("/media/")
+                    line
+                    for line in variant.text.splitlines()
+                    if line.startswith("/media/")
                 )
                 segment = requests.get(
                     urljoin(master.url, segment_path),
@@ -866,7 +1038,18 @@ def test_first_party_draft_upload_reaches_peertube(
                 lower = Path(temp) / "lower.mp4"
                 lower.write_bytes(low_bytes.content)
                 subprocess.run(
-                    ["ffmpeg", "-v", "error", "-i", str(lower), "-t", "1", "-f", "null", "-"],
+                    [
+                        "ffmpeg",
+                        "-v",
+                        "error",
+                        "-i",
+                        str(lower),
+                        "-t",
+                        "1",
+                        "-f",
+                        "null",
+                        "-",
+                    ],
                     check=True,
                     timeout=30,
                 )
@@ -906,7 +1089,11 @@ def test_first_party_draft_upload_reaches_peertube(
                     / "peertube-watch.mjs"
                 )
                 result = subprocess.run(
-                    ["node", str(browser_check), f"{pt.base_url}/w/{remote['shortUUID']}"]
+                    [
+                        "node",
+                        str(browser_check),
+                        f"{pt.base_url}/w/{remote['shortUUID']}",
+                    ]
                     + (["audio-only"] if audio_only else []),
                     capture_output=True,
                     text=True,
@@ -916,39 +1103,89 @@ def test_first_party_draft_upload_reaches_peertube(
                         "PEERTUBE_E2E_USER": peertube.ROOT_USER,
                         "PEERTUBE_E2E_PASSWORD": peertube.ROOT_PASS,
                     },
+                    check=False,
                 )
                 assert result.returncode == 0, result.stderr
                 print(result.stdout, flush=True)
         if upload_mode == "custom-poster":
-            with step("a published poster-only signed Update reaches PeerTube without changing video assets"):
-                metadata = browser.get(f"{config.PLAMENU_URL}/videos/{media_id}/metadata", timeout=30)
+            with step(
+                "a published poster-only signed Update reaches PeerTube without changing video assets"
+            ):
+                metadata = browser.get(
+                    f"{config.PLAMENU_URL}/videos/{media_id}/metadata", timeout=30
+                )
                 metadata.raise_for_status()
                 before_thumbnails = {item["fileUrl"] for item in detail["thumbnails"]}
                 with tempfile.TemporaryDirectory() as temp:
                     red = peertube.make_solid_poster(Path(temp) / "red.png", "red")
-                    rejected = browser.post(f"{config.PLAMENU_URL}/web/videos/{media_id}/poster",
-                        files=[("poster_alt", (None,"A red square")), ("poster_file",("red.png",red.read_bytes(),"image/png"))], timeout=30)
+                    rejected = browser.post(
+                        f"{config.PLAMENU_URL}/web/videos/{media_id}/poster",
+                        files=[
+                            ("poster_alt", (None, "A red square")),
+                            ("poster_file", ("red.png", red.read_bytes(), "image/png")),
+                        ],
+                        timeout=30,
+                    )
                     assert rejected.status_code == 403
-                    saved = browser.post(f"{config.PLAMENU_URL}/web/videos/{media_id}/poster",
-                        files=[("csrf",(None,_csrf(metadata.text))), ("poster_alt",(None,"A red square after publication")),
-                               ("poster_file",("red.png",red.read_bytes(),"image/png"))], allow_redirects=False, timeout=60)
+                    saved = browser.post(
+                        f"{config.PLAMENU_URL}/web/videos/{media_id}/poster",
+                        files=[
+                            ("csrf", (None, _csrf(metadata.text))),
+                            ("poster_alt", (None, "A red square after publication")),
+                            ("poster_file", ("red.png", red.read_bytes(), "image/png")),
+                        ],
+                        allow_redirects=False,
+                        timeout=60,
+                    )
                     assert saved.status_code == 303, saved.text[:500]
+
                 def revised():
                     value = pt.video(remote["uuid"])
-                    return value if {item["fileUrl"] for item in value["thumbnails"]} != before_thumbnails else None
-                changed = wait_for(revised, desc="PeerTube receives immutable replacement poster")
+                    return (
+                        value
+                        if {item["fileUrl"] for item in value["thumbnails"]}
+                        != before_thumbnails
+                        else None
+                    )
+
+                changed = wait_for(
+                    revised, desc="PeerTube receives immutable replacement poster"
+                )
                 assert changed["files"] == detail["files"]
-                current = plamenu_api.get(f"/api/v1/statuses/{published_id}")["media_attachments"][0]
+                current = plamenu_api.get(f"/api/v1/statuses/{published_id}")[
+                    "media_attachments"
+                ][0]
                 assert current["poster_description"] == "A red square after publication"
                 assert current["storyboard"] == board
                 assert current["url"] == status["media_attachments"][0]["url"]
-                image = requests.get(urljoin(pt.base_url, changed["thumbnailPath"]), verify=False, timeout=30)
+                image = requests.get(
+                    urljoin(pt.base_url, changed["thumbnailPath"]),
+                    verify=False,
+                    timeout=30,
+                )
                 image.raise_for_status()
                 with tempfile.TemporaryDirectory() as temp:
                     path = Path(temp) / "received-red.jpg"
                     path.write_bytes(image.content)
-                    pixel = subprocess.check_output(["ffmpeg","-v","error","-i",str(path),"-vf","scale=1:1",
-                        "-pix_fmt","rgb24","-frames:v","1","-f","rawvideo","-"], timeout=30)
+                    pixel = subprocess.check_output(
+                        [
+                            "ffmpeg",
+                            "-v",
+                            "error",
+                            "-i",
+                            str(path),
+                            "-vf",
+                            "scale=1:1",
+                            "-pix_fmt",
+                            "rgb24",
+                            "-frames:v",
+                            "1",
+                            "-f",
+                            "rawvideo",
+                            "-",
+                        ],
+                        timeout=30,
+                    )
                     assert pixel[0] > pixel[2] + 100, pixel
     finally:
         if published_id is not None:

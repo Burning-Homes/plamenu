@@ -317,11 +317,14 @@ fn session_matches(note_at: OffsetDateTime, connected_at: OffsetDateTime) -> boo
     (note_at - connected_at).abs() <= NOTE_SESSION_WINDOW
 }
 
+fn is_live_preview(attachment: &Value) -> bool {
+    attachment.get("type").and_then(Value::as_str) == Some("Image")
+        && attachment.get("name").and_then(Value::as_str) == Some("Live stream preview")
+}
+
 fn preview_url(object: &Value, homepage_url: &str) -> Option<String> {
     for attachment in one_or_many(object.get("attachment")) {
-        if attachment.get("type").and_then(Value::as_str) != Some("Image")
-            || attachment.get("name").and_then(Value::as_str) != Some("Live stream preview")
-        {
+        if !is_live_preview(attachment) {
             continue;
         }
         let Some(url) = attachment.get("url").and_then(|value| {
@@ -354,6 +357,15 @@ pub async fn maybe_store_live_note(
     stored: &status::Status,
     object: &Value,
 ) -> Result<bool, ApiError> {
+    // Only this explicitly named preview can become an Owncast live player.
+    // Ordinary Notes need no stream-source lookup; positive candidates still
+    // require the stored verified origin and same-origin preview below.
+    if !one_or_many(object.get("attachment"))
+        .iter()
+        .any(is_live_preview)
+    {
+        return Ok(false);
+    }
     let Some(source) =
         remote_stream_source::find_by_account(&state.pool, stored.account_id).await?
     else {

@@ -888,3 +888,307 @@ async fn html_and_api_require_current_authority_csrf_confirmation_and_both_write
         .body(Body::from(serde_json::json!({"candidate_media_id":next.to_string(),"revision":1,"confirm":true}).to_string())).unwrap()).await.unwrap();
     assert_eq!(applied.status(), StatusCode::OK);
 }
+
+async fn rendered_attachment(
+    f: &Fixture,
+    status: &plamenu_db::status::Status,
+    media_id: i64,
+) -> serde_json::Value {
+    let entity =
+        plamenu::entities::render_status(&f.state.pool, common::TEST_DOMAIN, status, Some(f.owner))
+            .await
+            .unwrap();
+    let expected_id = media_id.to_string();
+    entity["media_attachments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"].as_str() == Some(expected_id.as_str()))
+        .unwrap()
+        .clone()
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+#[allow(
+    clippy::too_many_lines,
+    reason = "populated extension equivalence and readiness/visibility transitions share one publication"
+)]
+async fn batched_extensions_match_populated_native_sidecars_and_preserve_fences(pool: PgPool) {
+    use plamenu_db::{
+        video_captions, video_chapters, video_distribution, video_metadata, video_storyboards,
+    };
+    use serde_json::json;
+    let f = fixture(pool).await;
+    let media_id = ready(&f, f.owner).await;
+    let status = publish(&f, media_id).await;
+    sqlx::query("UPDATE video_drafts SET poster_alt='A blue pattern' WHERE media_id=$1")
+        .bind(media_id)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE media_attachments SET caption_vtt='WEBVTT legacy English' WHERE id=$1")
+        .bind(media_id)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE native_video_hls_renditions SET p2p_infohash=$2 WHERE media_id=$1")
+        .bind(media_id)
+        .bind("b".repeat(20))
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    // Insert out of display order, retaining the existing modern English row.
+    for language in ["fr", "de"] {
+        sqlx::query("INSERT INTO video_captions(media_id,language,vtt_body,automatically_generated) VALUES($1,$2,'WEBVTT translated',true)").bind(media_id).bind(language).execute(&f.state.pool).await.unwrap();
+    }
+    for (start, title) in [(12, "Late"), (3, "Early")] {
+        sqlx::query("INSERT INTO video_chapters(media_id,start_seconds,title) VALUES($1,$2,$3)")
+            .bind(media_id)
+            .bind(start)
+            .bind(title)
+            .execute(&f.state.pool)
+            .await
+            .unwrap();
+    }
+    let metadata = video_metadata::Metadata {
+        media_id,
+        category: Some(2),
+        licence: Some(1),
+        licence_version_known: true,
+        ..Default::default()
+    };
+    video_metadata::upsert(&f.state.pool, &metadata)
+        .await
+        .unwrap();
+    video_distribution::upsert(
+        &f.state.pool,
+        video_distribution::Policy {
+            media_id,
+            download_enabled: false,
+            embed_enabled: true,
+            mirror_allowed: false,
+        },
+    )
+    .await
+    .unwrap();
+
+    let row = media::find_by_ids(&f.state.pool, &[media_id])
+        .await
+        .unwrap()
+        .remove(0);
+    let ladders = media::renditions_for(&f.state.pool, &[media_id])
+        .await
+        .unwrap();
+    let original_base = plamenu::entities::media_json_hls(
+        common::TEST_DOMAIN,
+        &row,
+        false,
+        ladders.get(&media_id).map(Vec::as_slice),
+    );
+    let original_captions = video_captions::for_media(&f.state.pool, &[media_id])
+        .await
+        .unwrap();
+    let original_chapters = video_chapters::for_media(&f.state.pool, &[media_id])
+        .await
+        .unwrap();
+    let original_board = video_storyboards::for_media(&f.state.pool, &[media_id])
+        .await
+        .unwrap();
+    let original_peers =
+        plamenu_db::native_video_hls::public_peer_uuids(&f.state.pool, &[media_id])
+            .await
+            .unwrap();
+    let original_offer = video_distribution::offers(&f.state.pool, &[media_id])
+        .await
+        .unwrap();
+    let rendered = rendered_attachment(&f, &status, media_id).await;
+    assert_eq!(
+        rendered["hls"]["renditions"],
+        original_base["hls"]["renditions"]
+    );
+    assert_eq!(rendered["poster_description"], "A blue pattern");
+    assert_eq!(
+        rendered["video_metadata"],
+        plamenu::video_metadata::entity(&metadata)
+    );
+    let languages: Vec<_> = rendered["captions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|track| track["language"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        languages,
+        original_captions[&media_id]
+            .iter()
+            .map(|track| track.language.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(languages, ["de", "en", "fr"]);
+    assert!(
+        original_captions[&media_id]
+            .iter()
+            .all(|track| !track.legacy)
+    );
+    for (actual, expected) in rendered["captions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(&original_captions[&media_id])
+    {
+        assert_eq!(
+            actual["automatically_generated"],
+            expected.automatically_generated
+        );
+    }
+    assert_eq!(
+        rendered["chapters"],
+        json!(
+            original_chapters[&media_id]
+                .iter()
+                .map(|chapter| json!({"start_seconds":chapter.start_seconds,"title":chapter.title}))
+                .collect::<Vec<_>>()
+        )
+    );
+    let board = &original_board[&media_id];
+    assert_eq!(
+        rendered["storyboard"],
+        json!({"url":format!("https://{}/media/{}",common::TEST_DOMAIN,board.file_name),"tile_width":160,"tile_height":90,"columns":board.columns,"rows":board.rows,"tile_count":board.tile_count,"interval_seconds":board.interval_seconds})
+    );
+    let (uuid, revision) = &original_peers[&media_id];
+    assert_eq!(rendered["hls"]["p2p"]["video_uuid"], *uuid);
+    assert_eq!(rendered["content_revision"], *revision);
+    assert_eq!(
+        rendered["video_distribution"]["download_enabled"],
+        original_offer[&media_id].download_enabled
+    );
+    assert_eq!(
+        rendered["video_distribution"]["embed_enabled"],
+        original_offer[&media_id].embed_enabled
+    );
+    assert!(rendered["video_distribution"]["download_url"].is_null());
+
+    sqlx::query("UPDATE video_drafts SET generation=2 WHERE media_id=$1")
+        .bind(media_id)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    let stale = rendered_attachment(&f, &status, media_id).await;
+    assert!(stale.get("storyboard").is_none());
+    assert!(stale["hls"].get("p2p").is_none());
+    assert!(!stale["chapters"].as_array().unwrap().is_empty());
+    sqlx::query("UPDATE video_drafts SET generation=1 WHERE media_id=$1")
+        .bind(media_id)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE statuses SET visibility='private' WHERE id=$1")
+        .bind(status.id)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    let private_status = plamenu_db::status::find_by_id(&f.state.pool, status.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let private = rendered_attachment(&f, &private_status, media_id).await;
+    assert!(private.get("video_distribution").is_none());
+    assert!(private["hls"].get("p2p").is_none());
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn batched_extensions_match_remote_ladder_peer_hints_and_legacy_captions(pool: PgPool) {
+    use plamenu_db::remote_hls_peers::{self, RemoteHlsPeers};
+    let f = fixture(pool).await;
+    let local_media = ready(&f, f.owner).await;
+    let status = publish(&f, local_media).await;
+    media::create_remote(
+        &f.state.pool,
+        media::NewRemoteMedia {
+            account_id: f.owner,
+            status_id: status.id,
+            remote_url: "https://video.example/master.m3u8",
+            content_type: "video/mp4",
+            download_on_demand: true,
+            hls_master_url: Some("https://video.example/master.m3u8"),
+            renditions: vec![
+                media::NewRendition {
+                    height: 0,
+                    width: None,
+                    frame_rate: None,
+                    size_bytes: Some(20),
+                    origin_url: "https://video.example/audio.mp4",
+                    is_audio: true,
+                },
+                media::NewRendition {
+                    height: 360,
+                    width: Some(640),
+                    frame_rate: Some(24),
+                    size_bytes: Some(200),
+                    origin_url: "https://video.example/360.mp4",
+                    is_audio: false,
+                },
+                media::NewRendition {
+                    height: 720,
+                    width: Some(1280),
+                    frame_rate: Some(30),
+                    size_bytes: Some(400),
+                    origin_url: "https://video.example/720.mp4",
+                    is_audio: false,
+                },
+            ],
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let rows = media::for_statuses_read_only(&f.state.pool, &[status.id])
+        .await
+        .unwrap();
+    let remote = rows[&status.id]
+        .iter()
+        .find(|item| item.remote_url.is_some())
+        .unwrap();
+    sqlx::query("UPDATE media_attachments SET caption_vtt='WEBVTT legacy French' WHERE id=$1")
+        .bind(remote.id)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    let peers = RemoteHlsPeers {
+        video_uuid: "00000000-0000-4000-8000-000000000001".into(),
+        trackers: vec!["wss://video.example/tracker".into()],
+        sha256_url: "https://video.example/sha256.json".into(),
+    };
+    remote_hls_peers::replace(&f.state.pool, remote.id, Some(&peers))
+        .await
+        .unwrap();
+    let ladders = media::renditions_for(&f.state.pool, &[remote.id])
+        .await
+        .unwrap();
+    let original_base = plamenu::entities::media_json_hls(
+        common::TEST_DOMAIN,
+        remote,
+        false,
+        ladders.get(&remote.id).map(Vec::as_slice),
+    );
+    let rendered = rendered_attachment(&f, &status, remote.id).await;
+    assert_eq!(
+        rendered["hls"]["renditions"],
+        original_base["hls"]["renditions"]
+    );
+    assert_eq!(rendered["hls"]["renditions"][0]["height"], 720);
+    assert_eq!(rendered["hls"]["renditions"][2]["audio_only"], true);
+    assert_eq!(rendered["hls"]["p2p"]["video_uuid"], peers.video_uuid);
+    assert_eq!(
+        rendered["hls"]["p2p"]["trackers"],
+        serde_json::json!(peers.trackers)
+    );
+    assert_eq!(rendered["captions"][0]["language"], "en");
+    assert_eq!(rendered["captions"].as_array().unwrap().len(), 1);
+    assert!(
+        rendered["captions"][0]["url"]
+            .as_str()
+            .unwrap()
+            .contains("/captions.vtt?v=")
+    );
+}

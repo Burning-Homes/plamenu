@@ -583,7 +583,7 @@ pub async fn download(
             WHERE v.media_id=$1 AND COALESCE(p.download_enabled,true)
                 AND s.deleted_at IS NULL AND s.visibility IN ('public','unlisted')
                 AND a.suspended_at IS NULL AND o.suspended_at IS NULL
-                AND m.processing='complete' AND m.content_type='video/mp4' AND m.file_name IS NOT NULL")
+                AND m.processing='complete' AND m.content_type='video/mp4' AND m.file_name IS NOT NULL\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos")
             .bind(id).fetch_optional(&state.pool).await.map_err(plamenu_db::DbError::from)?;
         let file=file.ok_or(ApiError::NotFound)?;
         if !media::public_file_allowed(&state.pool,&file).await?{return Err(ApiError::NotFound);}

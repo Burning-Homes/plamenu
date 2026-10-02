@@ -10,6 +10,47 @@ nav-favourites = Избранное
 nav-lists = Списки
 nav-groups = Группы
 videos-title = Видео
+studio-title = Видеостудия
+studio-options = Описание и настройки публикации
+studio-source-details = Расписание и сведения о проверках
+studio-intro = Загружайте, публикуйте и управляйте своими видео.
+studio-navigation = Разделы видеостудии
+studio-create = Создать
+studio-library = Мои видео
+studio-channels = Каналы
+studio-playlists = Плейлисты
+studio-sources = Источники по расписанию
+studio-upload = Загрузить видео
+studio-more = Ещё
+studio-content = Фильтр видеотеки
+studio-published = Опубликованные
+studio-drafts = Черновики
+studio-live = Трансляции
+studio-search = Поиск своих видео
+studio-search-submit = Найти
+studio-empty = Здесь пока нет видео. Выберите другой фильтр или загрузите первое видео.
+studio-older = Показать более ранние
+studio-view = Открыть публикацию
+studio-manage = Управление видео
+studio-details-hint = Название, описание и сведения о публикации
+studio-poster-hint = Категория, лицензия и постер
+studio-captions-hint = Добавление, замена и удаление языков субтитров
+studio-chapters-hint = Разделы на временной шкале
+studio-sharing-hint = Скачивание, встраивание и разрешение зеркалирования
+studio-edit-hint = Замена, обрезка или обработка видео
+studio-state-public = Публичное
+studio-state-unlisted = По ссылке
+studio-state-private = Приватное
+studio-state-ready = Готов к проверке
+studio-state-receiving = Загружается
+studio-state-queued = В очереди
+studio-state-processing = Обрабатывается
+studio-state-failed = Нужно внимание
+studio-state-expired = Истёк срок
+studio-state-waiting = Ожидание
+studio-state-live = В эфире
+studio-state-interrupted = Прервано
+studio-state-ended = Завершено
 video-analytics-title = Статистика доставки
 video-analytics-hint = Необязательные суточные итоги для ваших общедоступных видео и трансляций. Личности зрителей, IP-адреса, cookies и идентификаторы устройств не записываются. Это байты тела ответов сервера и запросы, а не просмотры, уникальные зрители, время просмотра, подтверждённая передача по сети или обмен между зрителями. Сбор начинается только после включения.
 video-analytics-limit-hint = Итоги обновляются примерно каждые 30 секунд и могут быть неполными: отключения, перегрузка, сбои базы данных и перезапуски приводят к недоучёту. Показано до 1000 последних записей по видео, дню и способу доставки. Отключение сбора удаляет сохранённые итоги; удаление итогов также отменяет счётчики уже открытых ответов.
@@ -29,6 +70,10 @@ video-analytics-lane-live = Потоковая трансляция и пере�
 video-analytics-requests = Ответы с переданными данными
 video-analytics-bytes = Переданные байты тела ответа
 video-sharing-title = Скачивание и встраивание
+video-settings-title = Настройки видео
+video-settings-close = Закрыть настройки видео
+video-settings-back = Вернуться к публикации
+video-settings-no-js-peer = Для обмена видео между зрителями нужен JavaScript. Без JavaScript видео воспроизводится только с сервера.
 videos-explore-filtered-page = На этой странице нет доступных видео. Продолжите просмотр, чтобы найти более ранние результаты.
 video-sharing-hint = Выберите настройки перед публикацией или планированием либо измените опубликованное видео. Эти параметры управляют предложением скачивания и встраиванием в наш клиент, но не воспроизведением и сохранением уже общедоступных данных. Уже сохранённые копии нельзя отозвать. Субтитры, описания и обычное воспроизведение остаются доступны.
 video-sharing-download = Предлагать скачивание видео для воспроизведения
@@ -89,7 +134,7 @@ video-import-rights = У меня есть разрешение на копир�
 video-import-submit = Импортировать в приватный черновик
 videos-draft-importing = Скачивание источника в приватный черновик. Можно покинуть страницу; обновите её, чтобы проверить ход работы.
 videos-draft-import-failed = Не удалось скачать источник. Ничего не опубликовано. Проверьте, что источник публичный и укладывается в лимит загрузки, затем повторите или отмените.
-videos-intro = Публикуйте видео на своём канале. Загрузите и проверьте его перед публикацией.
+videos-intro = Загрузите приватный черновик, затем проверьте и опубликуйте его.
 videos-explore-title = Обзор видео
 videos-explore-channel-title = Видео: { $name }
 videos-explore-all = Все видео
@@ -131,9 +176,9 @@ videos-live-dvr-10 = 10 минут
 videos-live-dvr-15 = 15 минут
 videos-live-dvr-30 = 30 минут
 videos-live-latency = Задержка воспроизведения
-videos-live-latency-low = Малая задержка (сегменты по 1 секунде)
-videos-live-latency-balanced = Сбалансировано (сегменты по 2 секунды)
-videos-live-latency-resilient = Более устойчивая (сегменты по 4 секунды)
+videos-live-latency-low = Малая задержка
+videos-live-latency-balanced = Сбалансированная
+videos-live-latency-resilient = Плавнее при нестабильном соединении
 videos-live-playback-hint = Зрители могут перемотать эфир назад и вернуться к прямому эфиру. Короткие сегменты уменьшают задержку, но увеличивают число запросов; интервал ключевых кадров внешнего кодировщика может ограничить фактическую длительность сегмента. Настройки можно менять до подключения кодировщика.
 videos-live-playback-settings = Настройки воспроизведения
 videos-live-save-playback = Сохранить настройки воспроизведения
@@ -216,7 +261,7 @@ videos-category = Категория
 videos-licence = Лицензия
 videos-unspecified = Не указано
 videos-all-rights-reserved = Все права защищены
-videos-licence-hint = Выбирайте лицензию только если можете предоставить эти права. Неуказанная лицензия не даёт разрешения на повторное использование видео.
+videos-licence-hint = Выберите условия использования вашего видео. Укажите лицензию, права по которой вы можете предоставить, или оставьте её неуказанной, чтобы сохранить действующие права.
 videos-licence-learn = Узнать о лицензиях
 videos-metadata-manage = Изменить категорию и лицензию
 videos-metadata-save = Сохранить сведения о видео
@@ -243,7 +288,7 @@ videos-category-18 = Еда
 videos-channel = Канал
 videos-name = Название видео
 videos-description = Описание
-videos-language = Код языка (например, ru)
+videos-language = Язык видео
 videos-visibility = Видимость
 videos-public = Публичное
 videos-unlisted = По ссылке
@@ -2296,3 +2341,41 @@ video-history-revision-failed = Позиция не сохранена. Возм
 videos-seek-previews = Предпросмотр при перемотке
 videos-seek-previews-hint = Приблизительные изображения ключевых кадров. Выберите время для перемотки; без JavaScript видео откроется на выбранной отметке. Предпросмотр не заменяет визуальное описание или расшифровку.
 videos-replace-published-poster-hint = Загрузите новый постер для опубликованного видео. Фильм, субтитры и предпросмотр при перемотке не изменятся. Если сохранить постер не удастся, предыдущий останется. Максимальный размер файла: 8 МиБ.
+
+studio-help = Справка
+
+studio-cancel = Отмена
+
+studio-accessibility = Описания и субтитры
+
+studio-upload-limit = Максимальный размер файла:
+
+studio-live-intro = Настройте трансляцию, затем начните эфир с камеры, экрана или через кодировщик.
+
+studio-live-details = Сведения о трансляции
+
+studio-live-content = Описание и настройки содержимого
+
+studio-live-schedule = Расписание и повторные эфиры
+
+studio-live-schedule-intro = Объявите время, затем начните трансляцию самостоятельно. Часовой пояс:
+
+studio-live-reusable = Использовать эту трансляцию для следующих эфиров
+
+studio-required = Обязательные поля отмечены *.
+
+studio-view-channel = Смотреть
+
+studio-live-encoder = Внешний кодировщик и ключ трансляции
+
+studio-replace-film = Заменить фильм
+studio-import-intro = Скопируйте видео в личный черновик и проверьте перед публикацией.
+
+studio-language-choose = Выберите язык
+
+studio-delete-video = Удалить видео
+studio-delete-video-hint = Удаляет опубликованное видео и его пост. Это отдельное действие от изменения постера.
+studio-delete-video-confirm = Удалить это видео и его опубликованный пост?
+studio-collaborators-empty = Соавторов пока нет.
+
+studio-preview-video = Просмотр видео и субтитров

@@ -302,6 +302,7 @@ def root() -> PeertubeApi:
             pass
     token = mint_token()
     TOKEN_FILE.write_text(f"{token}\n")
+    TOKEN_FILE.chmod(0o600)
     return PeertubeApi(config.PEERTUBE_URL, token=token)
 
 
@@ -398,9 +399,18 @@ def make_solid_poster(path, colour: str = "blue") -> Path:
     path = Path(path)
     subprocess.run(
         [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi",
-            "-i", f"color=c={colour}:size=96x96", "-frames:v", "1",
-            "-y", str(path),
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c={colour}:size=96x96",
+            "-frames:v",
+            "1",
+            "-y",
+            str(path),
         ],
         check=True,
     )

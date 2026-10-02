@@ -40,6 +40,13 @@ a parity percentage from the number of rows: some represent much larger work.
 
 ## Accessibility and viewer experience
 
+Creator-workspace follow-up (2026-10-01): publishing is now a focused task reached
+from a bounded, searchable studio, with primary actions first and one management
+overview per video. Channels, playlists and scheduled sources use the same
+creation-before-library approach. Native disclosures preserve no-JS controls;
+review exposes publication fields by default. See the dated progress entry for
+verification receipts; this does not close the broader UX04/M9 human-AT gates.
+
 | ID | Required capability | State |
 | --- | --- | --- |
 | A11Y01 | Upload/edit/remove multiple caption languages, native WebVTT tracks | M3 functional gate verified 2026-09-29: draft/published add, replace, remove, revision revocation, active native cues and retained languages pass seven browser projects and real PeerTube in both directions. Human AT release evidence remains M9. |

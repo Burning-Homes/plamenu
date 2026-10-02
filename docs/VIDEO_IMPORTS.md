@@ -38,7 +38,9 @@ below. Published-video replacement and trimming are separate, reviewed
 
 ## Scheduled channel and playlist sources
 
-Open Videos → Scheduled video sources. Select your destination channel, enter
+Open Video studio → Scheduled sources. The **Add scheduled source** disclosure
+comes before existing sources; each source keeps its schedule/check details
+collapsed and groups its pause/check/remove actions. Select your destination channel, enter
 a public ActivityPub channel actor or Playlist URL, choose a check interval and
 explicitly authorize periodic retrieval. PeerTube public channels and playlists
 are supported. The server performs discovery and copying itself; no external

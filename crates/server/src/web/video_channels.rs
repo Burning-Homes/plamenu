@@ -7,7 +7,7 @@ use super::{
 use crate::{AppState, error::ApiError};
 use axum::{
     body::Bytes,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -24,30 +24,54 @@ fn private(mut response: Response) -> Response {
     response
 }
 
-pub async fn index(State(state): State<AppState>, user: WebUser) -> Result<Response, ApiError> {
+#[derive(Default, serde::Deserialize)]
+pub struct ChannelQuery {
+    before: Option<i64>,
+}
+pub async fn index(
+    State(state): State<AppState>,
+    user: WebUser,
+    Query(query): Query<ChannelQuery>,
+) -> Result<Response, ApiError> {
     let mut ids = access::available(&state.pool, user.current.account.id)
         .await?
         .into_iter()
         .map(|c| c.account_id)
         .collect::<Vec<_>>();
+    let roles = access::roles(&state.pool, user.current.account.id).await?;
     let invitations = access::invitations(&state.pool, user.current.account.id).await?;
     ids.extend(&invitations);
     ids.sort_unstable();
     ids.dedup();
-    let accounts = account::find_by_ids(&state.pool, &ids).await?;
+    ids.reverse();
+    ids.retain(|id| query.before.is_none_or(|before| *id < before));
+    let more = ids.len() > 20;
+    ids.truncate(20);
+    let mut accounts = account::find_by_ids(&state.pool, &ids).await?;
+    accounts.sort_unstable_by_key(|account| std::cmp::Reverse(account.id));
     let locale = user.locale;
     let body = html! {
-        section.column {
+        section.column.video-workspace {
             h1 { (locale.text("video-channel-manage")) }
-            p { a href="/videos" { (locale.text("videos-title")) } }
-            ul {
+            nav.video-workspace__actions {a.video-workspace__primary href="/videos/channels/new" {(locale.text("videos-new-channel"))}}
+            (super::video_workspace::navigation("/videos/channels",locale))
+            ul.video-workspace__library.video-channel-list {
                 @for channel in &accounts {
-                    li { a href=(format!("/videos/channels/{}",channel.id)) { (channel.display_name) " (@" (channel.username) ")" }
-                        @if invitations.contains(&channel.id) { " — " (locale.text("video-channel-invitation")) }
+                    li.video-workspace__row {
+                        img.video-channel__avatar src=(crate::entities::avatar_url(&state.config.domain,channel,false).unwrap_or_else(||"/static/missing.png".into())) alt="" width="48" height="48" loading="lazy";
+                        div.video-workspace__item {
+                            a.video-workspace__title href=(format!("/videos/channels/{}",channel.id)) {(channel.display_name)}
+                            p.video-workspace__meta {"@" (channel.username) " · "
+                                @if invitations.contains(&channel.id) {(locale.text("video-channel-invitation"))}
+                                @else if let Some(role)=roles.get(&channel.id) {(locale.text(&format!("video-channel-role-{role}")))}
+                            }
+                        }
+                        a.video-channel__view href=(format!("/videos/explore?channel={}",channel.id)) aria-label=(format!("{}: {}",locale.text("studio-view-channel"),channel.display_name)) {(locale.text("studio-view-channel"))}
                     }
                 }
             }
             @if accounts.is_empty() { p { (locale.text("video-channel-empty")) } }
+            @if more && let Some(last)=ids.last(){a.pager__more href=(format!("/videos/channels?before={last}")) {(locale.text("studio-older"))}}
         }
     };
     Ok(private(
@@ -105,7 +129,7 @@ async fn render(
     let locale = user.locale;
     let target = format!("/web/video-channels/{id}");
     let body = html! {
-        section.column.video-channel {
+        section.column.video-channel.video-form {
             h1 { (locale.text("video-channel-manage")) " — " (channel.display_name) }
             p { a href="/videos/channels" { (locale.text("video-channel-manage")) } " · "
                 a href=(format!("/videos/explore?channel={id}")) { (locale.text("videos-explore-browse")) }
@@ -142,22 +166,32 @@ async fn render(
                 }
             }
             @if matches!(role.as_deref(),Some("owner"|"editor")) {
-                h2 { (locale.text("video-channel-profile")) }
                 form.settings-form method="post" action=(&target) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     input type="hidden" name="operation" value="profile";
+                    fieldset.settings-form__group {
+                    legend {(locale.text("video-channel-profile"))}
                     label.settings-field { span.settings-field__label { (locale.text("videos-channel-name")) }
                         input name="display_name" value=(channel.display_name) maxlength="120" required;
                     }
                     label.settings-field { span.settings-field__label { (locale.text("videos-description")) }
                         textarea name="description" rows="5" maxlength="1000" { (channel.note_source) }
                     }
-                    button type="submit" { (locale.text("video-channel-save")) }
+                    div.settings-form__actions {
+                        button type="submit" { (locale.text("video-channel-save")) }
+                        a href="/videos/channels" {(locale.text("studio-cancel"))}
+                    }
+                    }
                 }
             }
             @if role.as_deref()==Some("owner") {
-                h2 { (locale.text("video-channel-collaborators")) }
-                p { (locale.text("video-channel-roles-hint")) }
+                div.video-form__heading {
+                    h2 { (locale.text("video-channel-collaborators")) }
+                    (super::video_workspace::help(locale,"video-channel-collaborators",&html! {p {(locale.text("video-channel-roles-hint"))}}))
+                }
+                @if grants.is_empty() {
+                    p.settings-field__hint {(locale.text("studio-collaborators-empty"))}
+                } @else {
                 ul {
                     @for grant in &grants {
                         @if let Some(person)=people.iter().find(|a|a.id==grant.account_id) {
@@ -172,6 +206,7 @@ async fn render(
                             }
                         }
                     }
+                }
                 }
                 form.settings-form method="post" action=(&target) {
                     input type="hidden" name="csrf" value=(user.csrf);

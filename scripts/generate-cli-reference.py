@@ -4,11 +4,10 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
-
+from pathlib import Path
 
 SUBCOMMAND = re.compile(r"^  ([a-z][a-z0-9-]*)(?:\s{2,}|$)")
 
@@ -19,8 +18,7 @@ def help_for(binary: Path, path: tuple[str, ...]) -> str:
     completed = subprocess.run(
         [str(binary), *path, "--help"],
         check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         env=environment,
     )

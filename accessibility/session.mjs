@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 // Each worker signs in through the real browser form once. Reuse only its
 // session cookie in fresh test contexts: public-page tests remain signed out,
@@ -6,8 +7,40 @@ import { expect, test } from '@playwright/test';
 // to accommodate an expanding matrix of tests against one fixture account.
 const sessions = new Map();
 
+// Exercise the same native disclosure a keyboard/no-JS author uses. Read the
+// open state rather than descendant visibility (which differs across engines).
+export async function openVideoOptions(page) {
+  const options = page.locator('[data-video-options]');
+  if (await options.count() && await options.getAttribute('open') === null) {
+    await options.locator(':scope > summary').press('Enter');
+  }
+  const descriptions = page.locator('details').filter({ has: page.locator('summary', { hasText: 'Descriptions and captions' }) });
+  if (await descriptions.count() && await descriptions.getAttribute('open') === null) {
+    await descriptions.locator(':scope > summary').press('Enter');
+  }
+}
+
+export async function createVideoChannel(page, button) {
+  const posted=page.waitForResponse(response=>response.request().method()==='POST'
+    && new URL(response.url()).pathname==='/web/video-channels');
+  await button.press('Enter');
+  expect((await posted).status()).toBe(303);
+  // A redirect to the current upload URL is not a navigation barrier. Reopen
+  // only after commit so subsequent fields cannot target the outgoing form.
+  await page.goto('/videos/upload');
+  await openVideoOptions(page);
+}
+
 export async function signIn(page) {
-  const key = test.info().project.name;
+  const info = test.info();
+  // The isolated runner gives each engine its own creator account. Seeded
+  // private-draft/catalogue journeys keep their original fixture owner.
+  const seeded = /\/(representative|video-drafts|video-catalogue|video-workspace)\.spec\.mjs$/.test(info.file);
+  const prefix = process.env.A11Y_CREATOR_PREFIX;
+  const username = prefix && !seeded
+    ? prefix + info.project.name.replaceAll('-', '_')
+    : process.env.A11Y_USERNAME || 'developer';
+  const key = `${info.project.name}:${username}`;
   const cached = sessions.get(key);
   if (cached) {
     await page.context().addCookies(cached);
@@ -15,7 +48,7 @@ export async function signIn(page) {
     await expect(page).toHaveURL(url => url.pathname === '/');
   } else {
     await page.goto('/login');
-    await page.locator('input[name="identifier"]').fill(process.env.A11Y_USERNAME || 'developer');
+    await page.locator('input[name="identifier"]').fill(username);
     await page.locator('input[name="password"]').fill(process.env.A11Y_PASSWORD || 'plamenu-development-only');
     await Promise.all([
       page.waitForURL(url => url.pathname === '/'),
@@ -26,4 +59,53 @@ export async function signIn(page) {
     sessions.set(key, cookies);
   }
   await expect(page.locator('a.compose-btn[href="/compose"]').first()).toBeAttached();
+}
+
+// Standalone creation is also reachable when an account already has channels.
+export async function videoChannelForm(page) {
+  const form=page.locator('form[action="/web/video-channels"]');
+  if (!await form.count()) {
+    await page.getByRole('link',{name:'Create a video channel',exact:true}).first().press('Enter');
+    await expect(page).toHaveURL(url=>url.pathname==='/videos/channels/new');
+  }
+  await openDetailsFor(form);
+  return form;
+}
+
+// Source journeys also work in isolation, before another test has created a channel.
+export async function ensureVideoFormChannel(page, form) {
+  if (await form.count()) return;
+  const returnUrl = page.url();
+  await page.getByRole('link', { name: 'Create a video channel', exact: true }).first().press('Enter');
+  const channel = await videoChannelForm(page);
+  const name = `source_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
+  await channel.getByLabel('Channel address (letters, numbers and underscores)', { exact: true }).fill(name);
+  await channel.getByLabel('Channel name', { exact: true }).fill('Source browser fixture');
+  await createVideoChannel(page, channel.getByRole('button', { name: 'Create a video channel', exact: true }));
+  await page.goto(returnUrl);
+  await expect(form).toBeVisible();
+}
+
+export async function openDetailsFor(control) {
+  // The locator must resolve inside collapsed details (role queries need includeHidden).
+  await expect(control).toBeAttached();
+  const ancestors=await control.locator('xpath=ancestor::details').all();
+  for (const details of ancestors) {
+    if (await details.getAttribute('open')===null) await details.locator(':scope > summary').press('Enter');
+  }
+}
+
+// Operate the existing human-readable picker; the native select remains the no-JS path.
+export async function chooseVideoLanguage(form, value) {
+  const select=form.locator('select[name="language"]');
+  await openDetailsFor(select);
+  if (await select.isVisible()) {
+    await select.selectOption(value);
+  } else {
+    const combo=select.locator('xpath=ancestor::*[@data-compose-combo]');
+    await combo.locator('[data-combo-trigger]').press('Enter');
+    await combo.locator('[data-combo-search]').fill(value);
+    await combo.locator(`[role="option"][data-value="${value}"]`).click();
+  }
+  await expect(select).toHaveValue(value);
 }

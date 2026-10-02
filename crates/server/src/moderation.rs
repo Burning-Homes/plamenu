@@ -763,7 +763,7 @@ async fn delete_channel_publications_conn(
         .fetch_all(&mut *conn)
         .await
         .map_err(plamenu_db::DbError::from)?;
-    let rows:Vec<(i64,i64)>=sqlx::query_as("SELECT s.id,s.account_id FROM video_publications v JOIN statuses s ON s.id=v.status_id WHERE (v.channel_id=$1 OR s.account_id=$2) AND s.deleted_at IS NULL ORDER BY s.id")
+    let rows:Vec<(i64,i64)>=sqlx::query_as("SELECT s.id,s.account_id FROM video_publications v JOIN statuses s ON s.id=v.status_id WHERE (v.channel_id=$1 OR s.account_id=$2) AND s.deleted_at IS NULL ORDER BY s.id\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos")
         .bind(channel).bind(author).fetch_all(&mut *conn).await.map_err(plamenu_db::DbError::from)?;
     for (id, account_id) in rows {
         let Some(stored) = plamenu_db::status::find_by_id(&mut *conn, id).await? else {

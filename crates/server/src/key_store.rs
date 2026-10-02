@@ -493,23 +493,56 @@ pub async fn ensure_instance(
     Ok(())
 }
 
-pub async fn account_signing_key(
+fn decrypt_account_signing_key(
     state: &crate::AppState,
     account_id: i64,
     algorithm: &str,
+    records: &mut Vec<ActorKey>,
 ) -> Result<DecryptedActorKey, KeyStoreError> {
-    let record = actor_key::usable_for_account(&state.pool, account_id)
-        .await?
-        .into_iter()
-        .find(|key| key.algorithm == algorithm && key.encrypted_private_key.is_some())
+    let position = records
+        .iter()
+        .position(|key| key.algorithm == algorithm && key.encrypted_private_key.is_some())
         .ok_or_else(|| {
             KeyStoreError::MissingPrivate(format!("account {account_id} {algorithm}"))
         })?;
+    let record = records.remove(position);
     let keyring = state
         .federation_keyring
         .as_deref()
         .ok_or(KeyEncryptionError::MissingConfiguration)?;
     decrypt_record(keyring, record)
+}
+
+pub async fn account_signing_key(
+    state: &crate::AppState,
+    account_id: i64,
+    algorithm: &str,
+) -> Result<DecryptedActorKey, KeyStoreError> {
+    let mut records = actor_key::usable_for_account(&state.pool, account_id).await?;
+    decrypt_account_signing_key(state, account_id, algorithm, &mut records)
+}
+
+/// Select both requested algorithms from the same current usable-key snapshot.
+/// Validation and decryption stay at this boundary; delivery caches the result
+/// only within its existing claimed batch.
+pub async fn account_signing_pair(
+    state: &crate::AppState,
+    account_id: i64,
+    include_ed25519: bool,
+) -> Result<(DecryptedActorKey, Option<DecryptedActorKey>), KeyStoreError> {
+    let mut records = actor_key::usable_for_account(&state.pool, account_id).await?;
+    let rsa = decrypt_account_signing_key(state, account_id, "rsa", &mut records)?;
+    let ed25519 = if include_ed25519 {
+        Some(decrypt_account_signing_key(
+            state,
+            account_id,
+            "ed25519",
+            &mut records,
+        )?)
+    } else {
+        None
+    };
+    Ok((rsa, ed25519))
 }
 
 pub async fn instance_signing_key(

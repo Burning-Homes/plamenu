@@ -60,12 +60,15 @@ async fn render(
     .await?;
     let locale = user.locale;
     let body = html! {
-        section.column {
-            h1 { (locale.text("video-import-title")) }
-            p { (locale.text("video-import-hint")) }
+        section.column.video-form {
+            div.video-form__heading {
+                h1 { (locale.text("video-import-title")) }
+            }
+            p.video-form__intro { (locale.text("video-import-hint")) }
+            (super::video_workspace::navigation("/videos",locale))
             @if let Some(error) = error { p.settings__error role="alert" { (error) } }
             @if channels.is_empty() {
-                p { a href="/videos" { (locale.text("videos-new-channel")) } }
+                p { a href="/videos/channels/new" { (locale.text("videos-new-channel")) } }
             } @else {
                 form.settings-form method="post" action="/web/videos/import" {
                     input type="hidden" name="csrf" value=(user.csrf);
@@ -87,25 +90,28 @@ async fn render(
                     label.settings-field { span.settings-field__label { (locale.text("videos-name")) }
                         input name="title" minlength="3" maxlength="120" required value=(draft.title);
                     }
-                    label.settings-field { span.settings-field__label { (locale.text("videos-description")) }
-                        textarea name="description" maxlength="10000" rows="4" { (draft.description) }
-                    }
-                    label.settings-field { span.settings-field__label { (locale.text("videos-language")) }
-                        input name="language" maxlength="35" value=(draft.language);
-                    }
                     label.settings-field { span.settings-field__label { (locale.text("compose-visibility")) }
                         select name="visibility" {
                             option value="public" selected[draft.visibility == "public"] { (locale.text("visibility-public")) }
                             option value="unlisted" selected[draft.visibility == "unlisted"] { (locale.text("visibility-unlisted")) }
                         }
                     }
+                    details.video-form__section.video-form__panel open[error.is_some()] {
+                        summary {(locale.text("studio-options"))}
+                        div.video-form__section-body {
+                    label.settings-field { span.settings-field__label { (locale.text("videos-description")) }
+                        textarea name="description" aria-label=(locale.text("videos-description")) maxlength="10000" rows="4" { (draft.description) }
+                    }
+                    (super::video_workspace::language_field("videos-language", &draft.language, false, "import", locale))
                     label.settings-field { span.settings-field__label { (locale.text("videos-alt")) }
-                        textarea name="alt" maxlength="1500" rows="3" { (draft.alt) }
+                        textarea name="alt" aria-label=(locale.text("videos-alt")) maxlength="1500" rows="3" { (draft.alt) }
                     }
                     label.settings-field { span.settings-field__label { (locale.text("videos-transcript")) }
-                        textarea name="transcript" maxlength="50000" rows="4" { (draft.transcript) }
+                        textarea name="transcript" aria-label=(locale.text("videos-transcript")) maxlength="50000" rows="4" { (draft.transcript) }
                     }
                     (super::video_metadata::fields(&draft.category, &draft.licence, locale))
+                        }
+                    }
                     label.settings-field { span.settings-field__label {
                         input type="checkbox" name="confirm" value="yes" required;
                         " " (locale.text("video-import-rights"))

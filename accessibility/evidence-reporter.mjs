@@ -34,6 +34,9 @@ export default class EvidenceReporter {
       title: test.titlePath().slice(1).join(' > '),
       status,
       duration_ms: result.duration,
+      ...(status === 'skipped' ? { skip_reasons: test.annotations
+        .filter(annotation => annotation.type === 'skip')
+        .map(annotation => annotation.description || 'No reason provided') } : {}),
     });
   }
 

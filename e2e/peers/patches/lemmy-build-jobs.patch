@@ -1,0 +1,12 @@
+diff --git a/docker/Dockerfile b/docker/Dockerfile
+index 81f0538..6f6ae97 100644
+--- a/docker/Dockerfile
++++ b/docker/Dockerfile
+@@ -4,0 +5 @@ ARG CARGO_BUILD_FEATURES=default
++ARG CARGO_BUILD_JOBS=2
+@@ -23,0 +25,2 @@ ARG RUSTFLAGS
++ARG CARGO_BUILD_JOBS
++ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS}
+@@ -51,0 +55,2 @@ ARG RUSTFLAGS
++ARG CARGO_BUILD_JOBS
++ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS}

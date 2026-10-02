@@ -30,7 +30,7 @@ pub async fn page(State(state): State<AppState>, user: WebUser, Path(id): Path<i
         let daily = service::daily(&state, id).await?;
         let locale = user.locale;
         let body = html! {
-            section.column.video-analytics {
+            section.column.video-analytics.video-form {
                 h1 { (locale.text("video-analytics-title")) }
                 p { a href=(format!("/videos/channels/{id}")) { (locale.text("video-channel-manage")) } }
                 p { (locale.text("video-analytics-hint")) }
@@ -52,7 +52,7 @@ pub async fn page(State(state): State<AppState>, user: WebUser, Path(id): Path<i
                             input type="checkbox" name="confirm_erase" value="yes";
                             span { (locale.text("video-analytics-confirm")) }
                         }
-                        button type="submit" name="operation" value="erase" formnovalidate { (locale.text("video-analytics-erase")) }
+                        button.settings-button--danger type="submit" name="operation" value="erase" formnovalidate { (locale.text("video-analytics-erase")) }
                     }
                 }
                 @if daily.is_empty() { p { (locale.text("video-analytics-empty")) } }

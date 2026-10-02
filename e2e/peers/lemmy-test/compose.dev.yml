@@ -17,7 +17,7 @@ name: lemmy-test
 
 services:
   db:
-    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    image: postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     restart: unless-stopped
     # Disposable data: trade durability for speed.
     command: postgres -c fsync=off -c full_page_writes=off
@@ -42,7 +42,7 @@ services:
       retries: 20
 
   pictrs:
-    image: asonix/pictrs:0.5@sha256:7c1cada5566fe729c2bd3c2e2c246d3ac031d95268edeed6670a70861d905e83
+    image: asonix/pictrs:0.5.24@sha256:7c1cada5566fe729c2bd3c2e2c246d3ac031d95268edeed6670a70861d905e83
     restart: unless-stopped
     networks:
       lmy:
@@ -58,7 +58,10 @@ services:
       dockerfile: docker/Dockerfile
       args:
         RUST_RELEASE_MODE: release
-    image: lemmy-test:0.19.19
+        CARGO_BUILD_JOBS: "2"
+        AMD_BUILDER_IMAGE: rust:1.81@sha256:7b7f7ae5e49819e708369d49925360bde2af4f1962842e75a14af17342f08262
+        AMD_RUNNER_IMAGE: debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+    image: lemmy-test:0.19.20
     restart: unless-stopped
     networks:
       lmy: {}
@@ -91,7 +94,7 @@ services:
       retries: 60
 
   lemmy-ui:
-    image: dessalines/lemmy-ui:0.19.19@sha256:03e8a064c4d9dd8e8df2c3520998ac9ba90fd7a71af34af7315b2a8c9c6f86a5
+    image: dessalines/lemmy-ui:0.19.20@sha256:ee4c620d8e933ab0266b8aaf0e78247455ab70a90eeb86f1548b7e2aa87c9d40
     restart: unless-stopped
     init: true
     networks:

@@ -23,7 +23,7 @@ pub async fn editable(state: &AppState, media: i64, actor: i64) -> Result<Editab
         m.video_content_revision AS revision FROM media_attachments m
         JOIN statuses s ON s.id=m.status_id JOIN video_drafts d ON d.media_id=m.id
         WHERE m.id=$1 AND m.processing='complete' AND d.state='ready'
-          AND m.live_state IS NULL AND s.deleted_at IS NULL",
+          AND m.live_state IS NULL AND s.deleted_at IS NULL\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
     )
     .bind(media)
     .fetch_optional(&state.pool)
@@ -145,7 +145,7 @@ async fn adopt(
         .ok_or(ApiError::NotFound)?;
     // Serialize social deletion/edit and content application. Authority's
     // channel/account locks precede these fences; ids order paired media locks.
-    sqlx::query("SELECT id FROM statuses WHERE id=$1 FOR UPDATE")
+    sqlx::query("SELECT id FROM statuses WHERE id=$1 FOR UPDATE\n-- STUBKEEP: serialize deletion against content replacement after lock_owned_publication rejects tombstones")
         .bind(publication.status_id)
         .fetch_one(&mut *tx)
         .await

@@ -50,7 +50,7 @@ pub async fn settings(State(state): State<AppState>, user: WebUser) -> Result<Re
     let prefs = db::preferences(&state.pool, user.current.account.id).await?;
     let enabled = prefs.history_enabled;
     let l = user.locale;
-    let body = html! {section.column.video-viewer-settings {
+    let body = html! {section.column.video-viewer-settings.video-form {
         h1 {(l.text("video-viewer-settings"))}
         nav.video-explore__links {a href="/videos/explore" {(l.text("videos-explore-browse"))} a href="/videos/history" {(l.text("video-history-title"))}}
         p {(l.text("video-history-privacy"))}
@@ -119,7 +119,7 @@ pub async fn page(
     let (at, id) = query.cursor()?;
     let (entries, cursor) = service::list(&state, user.current.account.id, at, id).await?;
     let l = user.locale;
-    let body = html! {section.column.video-history {
+    let body = html! {section.column.video-history.video-form {
         h1 {(l.text("video-history-title"))}
         nav.video-explore__links {a href="/videos/explore" {(l.text("videos-explore-browse"))} a href="/videos/settings" {(l.text("video-viewer-settings"))}}
         p {(l.text("video-history-privacy"))}

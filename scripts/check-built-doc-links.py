@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
+import sys
 from html.parser import HTMLParser
 from pathlib import Path
-import sys
 from urllib.parse import unquote, urlsplit
 
 
@@ -15,17 +15,13 @@ class PageParser(HTMLParser):
         self.ids: set[str] = set()
         self.references: list[str] = []
 
-    def handle_starttag(
-        self, tag: str, attrs: list[tuple[str, str | None]]
-    ) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = dict(attrs)
         if identifier := attributes.get("id"):
             self.ids.add(identifier)
         if tag in {"a", "link"} and (reference := attributes.get("href")):
             self.references.append(reference)
-        if tag in {"img", "script", "source"} and (
-            reference := attributes.get("src")
-        ):
+        if tag in {"img", "script", "source"} and (reference := attributes.get("src")):
             self.references.append(reference)
 
 
@@ -64,7 +60,9 @@ def main() -> int:
             try:
                 target.relative_to(root)
             except ValueError:
-                failures.append(f"{source.relative_to(root)}: escapes site: {reference}")
+                failures.append(
+                    f"{source.relative_to(root)}: escapes site: {reference}"
+                )
                 continue
 
             if not target.exists():

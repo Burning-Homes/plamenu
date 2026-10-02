@@ -9,7 +9,7 @@ import uuid
 
 import pytest
 from plamenu_e2e import config, mitra, unique
-from plamenu_e2e.api import Api
+from plamenu_e2e.api import Api, ApiError
 from plamenu_e2e.media import cached_attachment, make_png
 from plamenu_e2e.steps import step, wait_for
 
@@ -153,55 +153,60 @@ def test_plamenu_post_edit_delete_reach_mitra(mitra_erin, plamenu_api, marker):
 
 
 @pytest.mark.federation(direction="both")
-def test_plamenu_quote_of_mitra_post(
+def test_foreign_quote_consent_and_mitra_quote_ingestion(
     mitra_erin, alice, plamenu_user, plamenu_api, marker
 ):
+    """Missing advertised consent denies new quotes; real Mitra quotes ingest.
+
+    Stable Mitra publishes legacy quote/quoteUrl links without advertising
+    interactionPolicy.canQuote or implementing the consent handshake. Both
+    Mastodon and Plamenu must respect that absence rather than manufacture
+    permission. Keep the reverse real-peer quote lifecycle below independent
+    of the outbound consent checks.
+    """
     _follow_erin(plamenu_api)
     _erin_follows(mitra_erin, plamenu_user.acct)
 
     origin = mitra_erin.post_status(f"quote target {marker}")
+    assert origin["uri"].startswith(f"{config.MITRA_URL}/")
+    wire = mitra_erin.ap_get(origin["uri"].removeprefix(config.MITRA_URL))
+    assert wire["id"] == origin["uri"]
+    assert marker in wire["content"]
+    policy = wire.get("interactionPolicy")
+    assert policy is None or (isinstance(policy, dict) and "canQuote" not in policy), (
+        "Real origin now advertises quote consent; qualify its actual handshake"
+    )
 
     mastodon_target = wait_for(
         lambda: alice.resolve_status(origin["uri"]),
         desc="Mastodon to resolve Mitra's quote target",
     )
-    mastodon_quote = alice.post_status(
-        f"Mastodon quoting Mitra {marker}",
-        quoted_status_id=mastodon_target["id"],
-    )
-    wait_for(
-        lambda: alice.quote_state(mastodon_quote["id"]) == "accepted",
-        desc="Mitra to authorize Mastodon's quote",
-    )
+    assert mastodon_target["uri"] == origin["uri"]
+    assert alice.get_status(mastodon_target["id"])["uri"] == origin["uri"]
+    with pytest.raises(ApiError, match=r"^POST /api/v1/statuses -> 404:"):
+        alice.post_status(
+            f"Mastodon quoting Mitra {marker}",
+            quoted_status_id=mastodon_target["id"],
+        )
+    # The reference's quote validator maps denied quotes and absent records
+    # to the same 404. Prove this target remains readable after the rejection.
+    assert alice.get_status(mastodon_target["id"])["uri"] == origin["uri"]
 
     target = wait_for(
-        lambda: plamenu_api.home_status_containing(marker),
+        lambda: next(
+            (s for s in plamenu_api.home_timeline() if s["uri"] == origin["uri"]),
+            None,
+        ),
         desc="Mitra quote target to reach Plamenu",
     )
-    quote = plamenu_api.post_status(
-        f"quoting Mitra {marker}", quoted_status_id=target["id"]
+    with pytest.raises(ApiError, match=r"^POST /api/v1/statuses -> 422:") as denied:
+        plamenu_api.post_status(
+            f"quoting Mitra {marker}", quoted_status_id=target["id"]
+        )
+    assert "Validation failed: Quoting is not allowed for this post" in str(
+        denied.value
     )
-    wait_for(
-        lambda: plamenu_api.quote_state(quote["id"]) == "accepted",
-        desc="Mitra to authorize the quote",
-    )
-    local = plamenu_api.get_status(quote["id"])
-    assert local["quote"]["quoted_status"]["uri"] == origin["uri"]
-
-    remote = wait_for(
-        lambda: mitra.known_status(mitra_erin, quote["uri"]),
-        desc="Mitra to ingest the quote",
-    )
-    assert remote["quote"]["quoted_status"]["uri"] == origin["uri"]
-
-    mastodon_copy = wait_for(
-        lambda: alice.resolve_status(quote["uri"]),
-        desc="Mastodon to ingest a quote of the Mitra post",
-    )
-    wait_for(
-        lambda: alice.quote_state(mastodon_copy["id"]) == "accepted",
-        desc="Mastodon to verify Mitra's static authorization",
-    )
+    assert plamenu_api.get_status(target["id"])["uri"] == origin["uri"]
 
     reverse_marker = f"{marker}-mitra-quote"
     mitra_erin.post_status(

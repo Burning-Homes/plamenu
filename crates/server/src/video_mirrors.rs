@@ -154,7 +154,7 @@ pub async fn request(
             "Media source domain has not been approved for mirrors".into(),
         ));
     }
-    let updated: OffsetDateTime = sqlx::query_scalar("SELECT updated_at FROM statuses WHERE id=$1")
+    let updated: OffsetDateTime = sqlx::query_scalar("SELECT updated_at FROM statuses WHERE id=$1\n-- STUBKEEP: mirror snapshot timestamp after the canonical media gate rejects deleted Video sources")
         .bind(status_id)
         .fetch_one(&state.pool)
         .await
@@ -222,7 +222,7 @@ pub(crate) async fn authorized_conn(
           AND EXISTS(SELECT 1 FROM video_mirror_approvals WHERE domain=$7 AND allow_source)
           AND ($7=$8 OR instance_domain_allowed($7))
           AND NOT instance_domain_rejects_media($7)
-          AND ($9 OR COALESCE(d.mirror_allowed,false)))",
+          AND ($9 OR COALESCE(d.mirror_allowed,false)))\n-- STUBKEEP: public_access_blocked on this connection already rejects deleted Video sources before snapshot validation",
     )
     .bind(item.media_id)
     .bind(item.status_id)

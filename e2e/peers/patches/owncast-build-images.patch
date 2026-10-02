@@ -1,0 +1,10 @@
+diff --git a/Dockerfile b/Dockerfile
+index 3ee6ba8..0282ff8 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -8 +8 @@
+-FROM golang:alpine AS build
++FROM golang:1.27-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS build
+@@ -25 +25 @@ RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -ldflags "-extldflag
+-FROM alpine:3.24.0
++FROM alpine:3.24.0@sha256:a2d49ea686c2adfe3c992e47dc3b5e7fa6e6b5055609400dc2acaeb241c829f4

@@ -200,7 +200,8 @@ pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool,
               OR (d.media_id IS NOT NULL AND v.media_id IS NULL)
               OR (ls.replay_media_id IS NOT NULL AND v.media_id IS NULL)
         ) AS "allowed!"
-        "#,
+        -- STUBKEEP: media denial inspects tombstones to revoke native Video bytes; ordinary attachment policy remains shared
+"#,
         file_name,
     )
     .fetch_one(pool)
@@ -241,7 +242,8 @@ pub async fn public_access_blocked<'e>(
                 OR (d.media_id IS NOT NULL AND v.media_id IS NULL)
                 OR (ls.replay_media_id IS NOT NULL AND v.media_id IS NULL))
         ) AS "blocked!"
-        "#,
+        -- STUBKEEP: media denial must see tombstones to revoke public Video playback
+"#,
         media_id,
     )
     .fetch_one(executor)
@@ -933,7 +935,7 @@ pub struct NewRendition<'a> {
 }
 
 /// A stored HLS rendition (read side): the ladder for a media attachment.
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow, serde::Deserialize)]
 pub struct MediaRendition {
     pub media_id: i64,
     pub height: i32,
@@ -2089,7 +2091,8 @@ pub async fn public_caption_vtt(pool: &PgPool, media_id: i64) -> Result<Option<S
           AND NOT EXISTS (SELECT 1 FROM remote_video_channels rv
               JOIN accounts rc ON rc.id = rv.channel_id
               WHERE rv.status_id = s.id AND (rc.suspended_at IS NOT NULL OR rc.deleted_at IS NOT NULL))
-        "#,
+        -- STUBFILTER: exclude deleted statuses directly or through public_native_videos
+"#,
         media_id,
     )
     .fetch_optional(pool)

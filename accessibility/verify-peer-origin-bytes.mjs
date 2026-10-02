@@ -35,6 +35,7 @@ async function until(predicate, deadlineMs, description) {
 }
 async function open(sharing) {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 320, height: 800 } });
+  await context.addInitScript(()=>{window.__ownedVideoProfile=true;});
   contexts.push(context);
   // Explicit browser opt-out is set BEFORE app initialization/tracker contact.
   if (!sharing) await context.addInitScript(() => localStorage.setItem('plamenu:p2p-enabled', 'false'));
@@ -46,8 +47,21 @@ async function open(sharing) {
   const video = page.locator('video[data-hls]').first();
   await video.evaluate(v => { v.muted = true; v.play().catch(() => {}); });
   const quality = page.getByRole('combobox', { name: 'Video quality', exact: true });
-  await quality.waitFor({ state: 'visible' });
-  await quality.selectOption({ label: '240p' });
+  try {
+    await quality.waitFor({ state: 'visible' });
+    await quality.selectOption({ label: '240p' });
+  } catch(error) {
+    result.missingQualitySnapshot=await video.evaluate(v=>({sampledAtMs: performance.now(), playbackRate: v.playbackRate, seeking: v.seeking,
+    bufferedRanges: [...Array(v.buffered.length)].map((_, n) => [v.buffered.start(n), v.buffered.end(n)]),
+    seekableRanges: [...Array(v.seekable.length)].map((_, n) => [v.seekable.start(n), v.seekable.end(n)]),
+    visibilityClass: document.visibilityState === 'visible' ? 'visible' : 'hidden',
+    sourceClass: !v.currentSrc ? 'empty' : v.currentSrc.startsWith('blob:') ? 'blob-media-source' : 'resource-source',
+    profile: window.__ownedVideoProfiles?.get(v)?.() || null,
+    time:v.currentTime,ready:v.readyState,error:v.error?.code||null,
+      presented:v.getVideoPlaybackQuality().totalVideoFrames-v.getVideoPlaybackQuality().droppedVideoFrames}));
+    save();
+    throw error;
+  }
   await until(async () => { const s = await sample(video); return s.height === 240 && s.presented >= 8 && s.time > .2 && !s.error; }, budgets.startupMs, 'matched viewer did not decode 240p');
   if (!sharing && sockets.length) throw new Error('pre-contact opt-out contacted tracker');
   return { context, page, video, errors, sockets, startupMs: Date.now() - began };

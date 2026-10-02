@@ -1407,6 +1407,54 @@ pub async fn web_preferences(
     })
 }
 
+/// Request-local browser preferences, including the exact authenticated
+/// account's durable network-sharing choice. A failed combined read defaults
+/// to configured opt-out; a successfully absent video preference row retains
+/// the existing unconfigured opt-in default.
+#[derive(Debug, sqlx::FromRow)]
+pub struct WebPreferences {
+    pub locale: Option<String>,
+    pub time_zone: Option<String>,
+    pub allow_direct_remote_media: bool,
+    pub p2p_enabled: bool,
+    pub p2p_configured: bool,
+}
+
+impl Default for WebPreferences {
+    fn default() -> Self {
+        Self {
+            locale: None,
+            time_zone: None,
+            allow_direct_remote_media: false,
+            p2p_enabled: false,
+            p2p_configured: true,
+        }
+    }
+}
+
+/// Both identities come from the already authenticated session. Anchor the
+/// query on its parameters so a concurrently removed users row cannot erase
+/// an existing account-level network-sharing opt-out.
+pub async fn web_preferences_with_video(
+    pool: &PgPool,
+    user_id: i64,
+    account_id: i64,
+) -> Result<WebPreferences, DbError> {
+    Ok(sqlx::query_as(
+        "SELECT u.locale, u.time_zone,
+                COALESCE(u.reading_allow_direct_remote_media, false) AS allow_direct_remote_media,
+                COALESCE(v.p2p_enabled, true) AS p2p_enabled,
+                COALESCE(v.p2p_configured, false) AS p2p_configured
+         FROM (SELECT $1::bigint AS user_id, $2::bigint AS account_id) requested
+         LEFT JOIN users u ON u.id = requested.user_id
+         LEFT JOIN video_viewer_preferences v ON v.account_id = requested.account_id",
+    )
+    .bind(user_id)
+    .bind(account_id)
+    .fetch_one(pool)
+    .await?)
+}
+
 /// Stores the owner's interface locale; `None` (or an empty string) clears it
 /// so the next sign-in re-seeds from `Accept-Language`. Returns whether the
 /// user existed.
@@ -1792,6 +1840,90 @@ mod tests {
         .await
         .unwrap()
         .id
+    }
+
+    #[sqlx::test]
+    async fn web_preferences_preserve_account_opt_out_and_absence_defaults(pool: PgPool) {
+        let owner = local_account(&pool).await;
+        let user = create(&pool, owner, None, "unused").await.unwrap();
+        let initial = web_preferences_with_video(&pool, user.id, owner)
+            .await
+            .unwrap();
+        assert!(initial.p2p_enabled);
+        assert!(!initial.p2p_configured);
+        let ordinary_initial = web_preferences(&pool, user.id).await.unwrap();
+        assert_eq!(initial.allow_direct_remote_media, ordinary_initial.2);
+        assert!(
+            initial.allow_direct_remote_media,
+            "release defaults enable direct remote media"
+        );
+        sqlx::query("UPDATE users SET reading_allow_direct_remote_media=false WHERE id=$1")
+            .bind(user.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let opted_out = web_preferences_with_video(&pool, user.id, owner)
+            .await
+            .unwrap();
+        assert!(
+            !opted_out.allow_direct_remote_media,
+            "stored opt-out is preserved"
+        );
+        sqlx::query("UPDATE users SET locale='de', time_zone='Europe/Berlin', reading_allow_direct_remote_media=true WHERE id=$1")
+            .bind(user.id).execute(&pool).await.unwrap();
+        crate::video_history::update_preferences(&pool, owner, Some(true), Some(false))
+            .await
+            .unwrap();
+        let combined = web_preferences_with_video(&pool, user.id, owner)
+            .await
+            .unwrap();
+        let ordinary = web_preferences(&pool, user.id).await.unwrap();
+        let video = crate::video_history::preferences(&pool, owner)
+            .await
+            .unwrap();
+        assert_eq!(combined.locale, ordinary.0);
+        assert_eq!(combined.time_zone, ordinary.1);
+        assert_eq!(combined.allow_direct_remote_media, ordinary.2);
+        assert_eq!(combined.p2p_enabled, video.p2p_enabled);
+        assert_eq!(combined.p2p_configured, video.p2p_configured);
+        // Authentication has already resolved both identities. Losing only
+        // the user row must preserve the account's stored sharing opt-out.
+        let missing_user = web_preferences_with_video(&pool, 0, owner).await.unwrap();
+        assert!(missing_user.locale.is_none());
+        assert!(missing_user.time_zone.is_none());
+        assert!(!missing_user.allow_direct_remote_media);
+        assert!(!missing_user.p2p_enabled && missing_user.p2p_configured);
+        let other = account::create_local(
+            &pool,
+            NewLocalAccount {
+                username: "other",
+                display_name: "",
+                note: "",
+                public_key_pem: "pub",
+            },
+        )
+        .await
+        .unwrap()
+        .id;
+        crate::video_history::update_preferences(&pool, other, None, Some(true))
+            .await
+            .unwrap();
+        let owner_again = web_preferences_with_video(&pool, user.id, owner)
+            .await
+            .unwrap();
+        assert!(!owner_again.p2p_enabled && owner_again.p2p_configured);
+        // Simulate an unavailable preference read in this isolated test DB.
+        // The real session fallback must preserve opt-out even though the
+        // user's locale/CSP row itself remains readable.
+        sqlx::query("ALTER TABLE video_viewer_preferences RENAME TO unavailable_video_preferences")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let fallback = web_preferences_with_video(&pool, user.id, owner)
+            .await
+            .unwrap_or_default();
+        assert!(!fallback.p2p_enabled && fallback.p2p_configured);
+        assert!(!fallback.allow_direct_remote_media);
     }
 
     #[sqlx::test]

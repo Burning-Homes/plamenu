@@ -857,18 +857,22 @@ pub(crate) async fn preview_media_json(
             .position(|id| *id == item.id)
             .unwrap_or(usize::MAX)
     });
-    let ladders = plamenu_db::media::renditions_for(pool, media_ids).await?;
     let poster_ids: Vec<i64> = media
         .iter()
         .filter(|item| item.kind_or_derived() == "video")
         .map(|item| item.id)
         .collect();
-    let poster_alts = video_poster_alts(pool, &poster_ids).await?;
-    let captions = plamenu_db::video_captions::for_media(pool, media_ids).await?;
-    let storyboards = plamenu_db::video_storyboards::for_media(pool, media_ids).await?;
-    let chapters = plamenu_db::video_chapters::for_media(pool, media_ids).await?;
-    let video_metadata = plamenu_db::video_metadata::for_media(pool, &poster_ids).await?;
-    let distribution = plamenu_db::video_distribution::offers(pool, &poster_ids).await?;
+    let selected_ids: Vec<_> = media.iter().map(|item| item.id).collect();
+    let MediaExtensions {
+        ladders,
+        poster_alts,
+        captions,
+        storyboards,
+        chapters,
+        metadata: video_metadata,
+        distribution,
+        ..
+    } = media_extensions(pool, &selected_ids, &poster_ids, &[]).await?;
     Ok(media
         .iter()
         .map(|item| {
@@ -895,21 +899,158 @@ pub(crate) async fn preview_media_json(
         .collect())
 }
 
-async fn video_poster_alts(pool: &PgPool, ids: &[i64]) -> Result<HashMap<i64, String>, ApiError> {
-    if ids.is_empty() {
-        return Ok(HashMap::new());
+/// Load optional attachment extensions in one round trip. Each UNION branch
+/// preserves its existing visibility/readiness rules; it cannot multiply rows
+/// when an attachment has several captions, chapters or HLS renditions.
+#[derive(Default)]
+struct MediaExtensions {
+    ladders: HashMap<i64, Vec<MediaRendition>>,
+    poster_alts: HashMap<i64, String>,
+    remote_peers: HashMap<i64, plamenu_db::remote_hls_peers::RemoteHlsPeers>,
+    captions: HashMap<i64, Vec<plamenu_db::video_captions::Caption>>,
+    storyboards: HashMap<i64, plamenu_db::video_storyboards::Storyboard>,
+    chapters: HashMap<i64, Vec<plamenu_db::video_chapters::Chapter>>,
+    metadata: HashMap<i64, plamenu_db::video_metadata::Metadata>,
+    native_peers: HashMap<i64, (String, i64)>,
+    distribution: HashMap<i64, plamenu_db::video_distribution::Offer>,
+    native_revisions: HashMap<i64, i64>,
+}
+
+impl MediaExtensions {
+    fn insert(&mut self, extension: &str, id: i64, data: Value) -> Result<(), ApiError> {
+        match extension {
+            "rendition" => {
+                self.ladders
+                    .entry(id)
+                    .or_default()
+                    .push(media_extension_value(data)?);
+            }
+            "poster" => {
+                self.poster_alts.insert(id, media_extension_value(data)?);
+            }
+            "remote-peer" => {
+                self.remote_peers.insert(id, media_extension_value(data)?);
+            }
+            "caption" => {
+                self.captions
+                    .entry(id)
+                    .or_default()
+                    .push(media_extension_value(data)?);
+            }
+            "storyboard" => {
+                self.storyboards.insert(id, media_extension_value(data)?);
+            }
+            "chapter" => {
+                self.chapters
+                    .entry(id)
+                    .or_default()
+                    .push(media_extension_value(data)?);
+            }
+            "metadata" => {
+                self.metadata.insert(id, media_extension_value(data)?);
+            }
+            "native-peer" => {
+                self.native_peers.insert(id, media_extension_value(data)?);
+            }
+            "distribution" => {
+                self.distribution.insert(id, media_extension_value(data)?);
+            }
+            "native-revision" => {
+                self.native_revisions
+                    .insert(id, media_extension_value(data)?);
+            }
+            _ => unreachable!("fixed media extension query returned an unknown branch"),
+        }
+        Ok(())
     }
-    Ok(sqlx::query!(
-        "SELECT media_id, poster_alt AS \"poster_alt!\" FROM video_drafts
-         WHERE media_id = ANY($1) AND poster_alt IS NOT NULL",
-        ids,
+}
+
+fn media_extension_value<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, ApiError> {
+    serde_json::from_value(value).map_err(|error| {
+        plamenu_db::DbError::Protocol(format!("invalid stored media extension: {error}")).into()
+    })
+}
+
+async fn media_extensions(
+    pool: &PgPool,
+    media_ids: &[i64],
+    poster_ids: &[i64],
+    native_ids: &[i64],
+) -> Result<MediaExtensions, ApiError> {
+    let mut result = MediaExtensions::default();
+    if media_ids.is_empty() {
+        return Ok(result);
+    }
+    let rows = sqlx::query_as::<_, (String, i64, Value)>(
+        "SELECT extension,media_id,data FROM (
+         SELECT 'rendition'::text AS extension,r.media_id,to_jsonb(r) AS data FROM (
+             SELECT media_id,height,width,frame_rate,size_bytes,origin_url,is_audio
+             FROM media_renditions WHERE media_id=ANY($1)
+             UNION ALL
+             SELECT media_id,height,width,NULL::integer AS frame_rate,size_bytes,
+                    file_name AS origin_url,false AS is_audio
+             FROM native_video_hls_renditions WHERE media_id=ANY($1)
+         ) r
+         UNION ALL
+         SELECT 'poster', media_id, to_jsonb(poster_alt)
+         FROM video_drafts WHERE media_id=ANY($2) AND poster_alt IS NOT NULL
+         UNION ALL
+         SELECT 'remote-peer', media_id, to_jsonb(p) FROM remote_hls_peers p WHERE media_id=ANY($1)
+         UNION ALL
+         SELECT 'caption', c.media_id, to_jsonb(c) FROM (
+             SELECT c.media_id,c.language,c.vtt_body,c.remote_url,c.automatically_generated,false AS legacy
+             FROM video_captions c WHERE c.media_id=ANY($1)
+             UNION ALL
+             SELECT m.id AS media_id,COALESCE(s.language,d.language,'und') AS language,
+                    m.caption_vtt AS vtt_body,NULL::text AS remote_url,false AS automatically_generated,true AS legacy
+             FROM media_attachments m LEFT JOIN statuses s ON s.id=m.status_id
+             LEFT JOIN video_drafts d ON d.media_id=m.id
+             WHERE m.id=ANY($1) AND m.caption_vtt IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM video_captions c WHERE c.media_id=m.id
+                   AND lower(c.language)=lower(COALESCE(s.language,d.language,'und')))
+         ) c
+         UNION ALL
+         SELECT 'storyboard', b.media_id, to_jsonb(b) FROM video_storyboards b
+         JOIN video_drafts d ON d.media_id=b.media_id AND d.generation=b.generation AND d.state='ready'
+         WHERE b.media_id=ANY($1)
+         UNION ALL
+         SELECT 'chapter', media_id, to_jsonb(c) FROM video_chapters c WHERE media_id=ANY($1)
+         UNION ALL
+         SELECT 'metadata', media_id, to_jsonb(m) FROM video_metadata m WHERE media_id=ANY($2)
+         UNION ALL
+         SELECT 'native-peer', r.media_id, jsonb_build_array(v.uuid,m.video_content_revision)
+         FROM native_video_hls_renditions r
+         JOIN media_attachments m ON m.id=r.media_id AND m.processing='complete'
+         JOIN video_drafts d ON d.media_id=m.id AND d.generation=r.generation AND d.state='ready'
+         JOIN public_native_videos v ON v.media_id=m.id AND v.status_id=m.status_id
+         WHERE r.media_id=ANY($1)
+         GROUP BY r.media_id,v.uuid,m.video_content_revision
+         HAVING bool_and(r.segment_sha256<>'{}'::jsonb AND r.p2p_infohash IS NOT NULL)
+         UNION ALL
+         SELECT 'distribution', v.media_id, jsonb_build_object('media_id',v.media_id,'status_id',v.status_id,
+             'download_enabled',COALESCE(p.download_enabled,true),'embed_enabled',COALESCE(p.embed_enabled,true))
+         FROM video_publications v LEFT JOIN video_distribution p ON p.media_id=v.media_id
+         JOIN statuses s ON s.id=v.status_id
+         WHERE v.media_id=ANY($1) AND s.deleted_at IS NULL AND s.visibility IN ('public','unlisted')
+         UNION ALL
+         SELECT 'native-revision', m.id, to_jsonb(m.video_content_revision)
+         FROM media_attachments m JOIN video_publications v ON v.media_id=m.id
+         WHERE m.id=ANY($3) AND m.live_state IS NULL
+         ) extensions ORDER BY extension,media_id,data->>'language',(data->>'start_seconds')::integer,
+             (data->>'is_audio')::boolean ASC,(data->>'height')::integer DESC,(data->>'width')::integer DESC\n\
+         -- STUBKEEP: attachment extensions are bound to already-selected media; callers enforce status/draft visibility\n\
+         -- STUBFILTER: distribution excludes deleted statuses; native peers use public_native_videos",
     )
+    .bind(media_ids)
+    .bind(poster_ids)
+    .bind(native_ids)
     .fetch_all(pool)
     .await
-    .map_err(plamenu_db::DbError::from)?
-    .into_iter()
-    .map(|row| (row.media_id, row.poster_alt))
-    .collect())
+    .map_err(plamenu_db::DbError::from)?;
+    for (extension, id, data) in rows {
+        result.insert(&extension, id, data)?;
+    }
+    Ok(result)
 }
 
 fn storyboard_entity(board: &plamenu_db::video_storyboards::Storyboard, domain: &str) -> Value {
@@ -3455,7 +3596,6 @@ async fn media_maps(
         .filter(|item| item.kind_or_derived() == "video")
         .map(|item| item.id)
         .collect();
-    let poster_alts = video_poster_alts(pool, &poster_ids).await?;
     let local_live_ids: Vec<i64> = per_status
         .values()
         .flatten()
@@ -3473,13 +3613,6 @@ async fn media_maps(
         .collect();
     let remote_schedules =
         plamenu_db::remote_live_schedules::for_media(pool, &remote_live_ids).await?;
-    let remote_peers = plamenu_db::remote_hls_peers::for_media(pool, &media_ids).await?;
-    let captions = plamenu_db::video_captions::for_media(pool, &media_ids).await?;
-    let storyboards = plamenu_db::video_storyboards::for_media(pool, &media_ids).await?;
-    let chapters = plamenu_db::video_chapters::for_media(pool, &media_ids).await?;
-    let video_metadata = plamenu_db::video_metadata::for_media(pool, &poster_ids).await?;
-    let native_peers = plamenu_db::native_video_hls::public_peer_uuids(pool, &media_ids).await?;
-    let distribution = plamenu_db::video_distribution::offers(pool, &media_ids).await?;
     // Content revisions are useful even when an older native generation has
     // no P2P integrity metadata. Do not tie history/cache fencing to P2P support.
     let native_ids = per_status
@@ -3490,20 +3623,19 @@ async fn media_maps(
         })
         .map(|m| m.id)
         .collect::<Vec<_>>();
-    let native_revisions: HashMap<i64, i64> = if native_ids.is_empty() {
-        HashMap::new()
-    } else {
-        sqlx::query_as::<_,(i64,i64)>("SELECT m.id,m.video_content_revision FROM media_attachments m
-            JOIN video_publications v ON v.media_id=m.id WHERE m.id=ANY($1) AND m.live_state IS NULL")
-            .bind(&native_ids).fetch_all(pool).await.map_err(plamenu_db::DbError::from)?.into_iter().collect()
-    };
+    let MediaExtensions {
+        ladders,
+        poster_alts,
+        remote_peers,
+        captions,
+        storyboards,
+        chapters,
+        metadata: video_metadata,
+        native_peers,
+        distribution,
+        native_revisions,
+    } = media_extensions(pool, &media_ids, &poster_ids, &native_ids).await?;
     let now = time::OffsetDateTime::now_utc();
-    // Skip the round-trip entirely on the common attachment-less batch.
-    let ladders = if media_ids.is_empty() {
-        HashMap::new()
-    } else {
-        media::renditions_for(pool, &media_ids).await?
-    };
     for (status_id, files) in per_status {
         descriptions.insert(
             status_id,

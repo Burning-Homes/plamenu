@@ -1131,6 +1131,23 @@
       const labelSlot = combo.querySelector("[data-combo-label]");
       if (!select || !trigger || !pop || !list) return;
 
+      if (select.required) {
+        const validation = combo.querySelector("[data-combo-validation]");
+        select.addEventListener("invalid", (event) => {
+          event.preventDefault();
+          if (validation) {
+            validation.textContent = combo.dataset.requiredLabel;
+            validation.hidden = false;
+          }
+          trigger.setAttribute("aria-invalid", "true");
+          trigger.focus();
+        });
+        select.addEventListener("change", () => {
+          trigger.removeAttribute("aria-invalid");
+          if (validation) validation.hidden = true;
+        });
+      }
+
       const entries = [...select.options].map((option) => ({
         value: option.value,
         label: option.textContent,
@@ -4396,8 +4413,39 @@
     const hlsUrl = video.getAttribute("data-hls");
     if (!hlsUrl) return;
     const goLive = video.closest("figure")?.querySelector(".media__go-live");
+    // Keep the original control/listeners when its panel moves into a dialog.
+    const choice = video.closest("figure")?.querySelector(".media__p2p-toggle");
     const progressive = video.getAttribute("src") || video.getAttribute("data-src");
     let hlsPlayer = null;
+    // Opt-in numeric E2E observations; no engine control or URI export.
+    const profiling = window.__ownedVideoProfile === true;
+    let profileLevelCount = null;
+    let profileSourceKind = 'not-started';
+    let profileFallbackReason = 'none';
+    let profileTargetDuration = null;
+    const profileEvents = [];
+    const profileIssue = (kind, fatal = false) => {
+      if (!profiling) return;
+      if (profileEvents.length >= 128) profileEvents.shift();
+      profileEvents.push({ kind, fatal, atMs: performance.now(),
+        time: video.currentTime, ready: video.readyState });
+    };
+    if (profiling) {
+      window.__ownedVideoProfiles ??= new WeakMap();
+      window.__ownedVideoProfiles.set(video, () => ({
+        hlsLevelCount: hlsPlayer?.levels?.length ?? profileLevelCount,
+        playerFinalSourceKind: profileSourceKind,
+        fallbackReason: profileFallbackReason,
+        targetDurationSeconds: profileTargetDuration,
+        hlsCurrentLevel: hlsPlayer?.currentLevel ?? null,
+        hlsLiveSyncPositionSeconds: hlsPlayer?.liveSyncPosition ?? null,
+        hlsLiveEdgeSeconds: hlsPlayer?.latestLevelDetails?.edge ?? null,
+        events: profileEvents.slice(),
+      }));
+      for (const kind of ['waiting', 'stalled', 'seeking', 'seeked', 'playing', 'pause', 'ratechange', 'error']) {
+        video.addEventListener(kind, () => profileIssue(kind));
+      }
+    }
     const liveVideo = video.dataset.live === 'live';
     let rewoundLive = false;
     let lastLiveTime = 0;
@@ -4417,9 +4465,14 @@
     let vodFallback = false;
     let adaptiveStarted = false;
     const clearVodWatch = () => { clearTimeout(vodTimer); vodTimer = null; };
-    const standardVideo = () => {
+    const standardVideo = (reason = 'unclassified') => {
       if (liveVideo || !progressive || vodFallback) return;
       vodFallback = true;
+      if (profiling) {
+        profileLevelCount = hlsPlayer?.levels?.length ?? profileLevelCount;
+        profileSourceKind = 'standard-progressive';
+        profileFallbackReason = reason;
+      }
       const resume = Number.isFinite(video.currentTime) ? video.currentTime : 0;
       const playing = vodPending || !video.paused;
       vodPending = false;
@@ -4432,7 +4485,7 @@
       const quality = figure?.querySelector('.video-quality');
       if (quality === document.activeElement) video.focus();
       quality?.remove();
-      const sharing = figure?.querySelector('.media__p2p-toggle');
+      const sharing = choice;
       if (sharing) { sharing.checked = false; sharing.disabled = true; }
       if (figure) {
         const notice = document.createElement('p');
@@ -4473,7 +4526,7 @@
         // A populated buffer with no decoded frames is a decoder stall, not
         // a slow origin. Otherwise permit the measured slow-peer HTTP startup.
         if (elapsed >= 15000 || (bufferedSince !== null && performance.now()-bufferedSince >= 5000)) {
-          standardVideo();
+          standardVideo(elapsed >= 15000 ? 'startup-deadline' : 'buffered-without-decoded-frames');
           return;
         }
         vodTimer = setTimeout(tick,250);
@@ -4482,7 +4535,7 @@
     };
     video.addEventListener('play',watchVodStart);
     video.addEventListener('pause',() => { if (!vodPending) clearVodWatch(); });
-    video.addEventListener('error',() => { if (adaptiveStarted) standardVideo(); });
+    video.addEventListener('error',() => { if (adaptiveStarted) standardVideo('video-element-error'); });
     const showLiveFailure = () => {
       const figure = video.closest("figure");
       if (!figure || figure.querySelector(".media__live-recovery")) return;
@@ -4514,7 +4567,6 @@
         message.scrollIntoView({ block: "center" });
       }
     };
-    const choice = video.closest("figure")?.querySelector(".media__p2p-toggle");
     if (choice && window.RTCPeerConnection && window.crypto?.subtle) {
       choice.checked = peerSharingEnabled();
       choice.closest(".media__p2p").hidden = false;
@@ -4534,8 +4586,9 @@
         }
         document.querySelectorAll(".media__p2p-toggle").forEach((other) => {
           other.checked = other.disabled ? false : choice.checked;
-          other.closest('figure')?.querySelector('video')?.dispatchEvent(new Event('plamenu:p2p-choice'));
         });
+        document.querySelectorAll('video[data-hls]').forEach(other => other.dispatchEvent(new Event('plamenu:p2p-choice')));
+        updateVideoEmbedChoices();
       });
       // Notify every mounted player, not just the one whose checkbox changed.
       // Listener ownership stays on the video so removed timeline cards can
@@ -4608,6 +4661,7 @@
         // HLS, no MSE) play directly, skipping the hls.js download.
         if (!window.MediaSource && native) {
           vodPending = false;
+          if (profiling) profileSourceKind = 'native-hls';
           video.src = hlsUrl;
           reloadExternalTracks();
           video.play().catch(() => {});
@@ -4652,17 +4706,30 @@
                 hls = new Hls(hlsConfig);
               }
             hlsPlayer = hls;
+            if (profiling) {
+              profileSourceKind = 'adaptive-hls';
+              hls.on(Hls.Events.ERROR, (_event, data) => {
+                const kind = data?.type === Hls.ErrorTypes.NETWORK_ERROR ? 'hls-network-error'
+                  : data?.type === Hls.ErrorTypes.MEDIA_ERROR ? 'hls-media-error' : 'hls-other-error';
+                profileIssue(kind, !!data?.fatal);
+              });
+              hls.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
+                profileTargetDuration = Number.isFinite(data?.details?.targetduration) ? data.details.targetduration : null;
+              });
+            }
             hls.loadSource(hlsUrl);
             hls.attachMedia(video);
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
               vodPending = false;
+              if (profiling) profileLevelCount = hls.levels.length;
               buildQualityMenu(video, hls, Hls);
               reloadExternalTracks();
               video.play().catch(() => {});
             });
             if (!live) {
               hls.on(Hls.Events.ERROR, (_event,data) => {
-                if (data?.fatal) standardVideo();
+                if (data?.fatal) standardVideo(data.type === Hls.ErrorTypes.NETWORK_ERROR
+                  ? 'fatal-hls-network' : data.type === Hls.ErrorTypes.MEDIA_ERROR ? 'fatal-hls-media' : 'fatal-hls-other');
               });
             }
             if (live) {
@@ -4727,12 +4794,14 @@
             }).catch(() => startHls(null, null));
           } else if (native) {
             vodPending = false;
+            if (profiling) profileSourceKind = 'native-hls';
             video.src = hlsUrl; // native HLS (Safari/iOS)
             reloadExternalTracks();
             video.play().catch(() => {});
           } else if (progressive) {
-            if (!liveVideo) standardVideo();
+            if (!liveVideo) standardVideo('adaptive-player-unavailable');
             else {
+              if (profiling) profileSourceKind = 'live-progressive-remux';
               video.src = progressive; // last-resort live remux playback
               reloadExternalTracks();
               video.play().catch(() => {});
@@ -5955,6 +6024,90 @@
     });
   }
 
+  function updateVideoEmbedChoices() {
+    document.querySelectorAll('[data-video-settings-panel]').forEach(panel => {
+      const choice = panel.querySelector('.media__p2p-toggle');
+      const code = panel.querySelector('[data-video-embed-code] textarea');
+      if (choice && code) code.value = code.value.replace(/p2p=[01]/, `p2p=${choice.checked ? 1 : 0}`);
+    });
+  }
+
+  let videoSettingsDialog = null;
+  function bindVideoSettings(root) {
+    root.querySelectorAll('[data-video-settings-open]').forEach(link => {
+      if (link.dataset.settingsBound) return;
+      link.dataset.settingsBound = '1';
+      if (window.HTMLDialogElement?.prototype.showModal) link.setAttribute('aria-haspopup', 'dialog');
+      link.addEventListener('click', event => {
+        // Modified clicks and browsers without native dialogs retain the link.
+        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button) return;
+        if (!window.HTMLDialogElement?.prototype.showModal) return;
+        const owner = link.closest('.status') || link.closest('.status-embed');
+        const panels = Array.from(owner?.querySelectorAll('[data-video-settings-panel]') || [])
+          .filter(panel => panel.closest('[data-video-owner]')?.dataset.videoOwner === link.dataset.videoSettingsStatus);
+        if (!panels.length) return;
+        event.preventDefault();
+        videoSettingsDialog?.close();
+        const dialog = document.createElement('dialog');
+        dialog.className = 'video-settings-dialog';
+        dialog.setAttribute('aria-label', link.dataset.videoSettingsTitle);
+        const header = document.createElement('header');
+        const title = document.createElement('h2');
+        title.textContent = link.dataset.videoSettingsTitle;
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'video-settings-dialog__close';
+        close.setAttribute('aria-label', link.dataset.videoSettingsClose);
+        close.textContent = '×';
+        close.addEventListener('click', () => dialog.close());
+        header.append(title, close);
+        dialog.append(header);
+        const menu = link.closest('details');
+        const restoreFocus = menu?.querySelector('summary') || link;
+        const origins = panels.map(panel => {
+          const marker = document.createComment('video settings');
+          panel.before(marker);
+          panel.hidden = false;
+          dialog.append(panel);
+          return {panel, marker};
+        });
+        if (menu) menu.open = false;
+        dialog.addEventListener('close', () => {
+          origins.forEach(({panel, marker}) => {
+            panel.hidden = true;
+            if (marker.parentNode) marker.replaceWith(panel);
+          });
+          dialog.remove();
+          if (videoSettingsDialog === dialog) videoSettingsDialog = null;
+          if (restoreFocus.isConnected) restoreFocus.focus();
+        }, {once:true});
+        dialog.addEventListener('click', e => {
+          const box = dialog.getBoundingClientRect();
+          if (e.target === dialog && (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom)) dialog.close();
+        });
+        dialog.addEventListener('keydown', e => {
+          if (e.key !== 'Tab') return;
+          // Native inertness protects the page, but Chromium can move from
+          // the first control into browser chrome on Shift+Tab. Keep both
+          // keyboard boundaries inside this modal, using visible controls.
+          const controls = Array.from(dialog.querySelectorAll('a[href],button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]'))
+            .filter(control => control.getClientRects().length);
+          const first = controls[0], last = controls.at(-1);
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault(); last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault(); first.focus();
+          }
+        });
+        document.body.append(dialog);
+        videoSettingsDialog = dialog;
+        updateVideoEmbedChoices();
+        dialog.showModal();
+        close.focus();
+      });
+    });
+  }
+
   function bindVideoSources(root) {
     root.querySelectorAll('[data-video-source-sync][data-source-pending="true"]').forEach(panel => {
       if (panel.dataset.sourceBound) return;
@@ -6097,6 +6250,7 @@
     bindVideoDraft(root);
     bindVideoSources(root);
     bindVideoEmbedCodes(root);
+    bindVideoSettings(root);
     bindFileLimits(root);
     bindLibraryFilters(root);
     bindWebxdcCreate(root);
@@ -6144,4 +6298,56 @@
     watchPager(document);
     setInterval(() => refreshTimes(document), 60000);
   });
+// Native details provide the no-script path. Keep optional explanations local,
+// dismissible and keyboard reachable; validation opens hidden form sections.
+document.addEventListener("invalid", (event) => {
+  let section = event.target.closest("details");
+  while (section) { section.open = true; section = section.parentElement.closest("details"); }
+}, true);
+document.querySelectorAll("[data-video-help]").forEach((help) => {
+  const summary = help.querySelector("summary");
+  const body = help.querySelector(".video-help__body");
+  help.addEventListener("toggle", () => {
+    if (help.open) placePopup(summary, body);
+  });
+  help.addEventListener("pointerenter", (event) => {
+    if (event.pointerType === "mouse" && !help.open) { help.open = true; help.dataset.hoverOpen = "true"; }
+  });
+  const pointerInside = (event, element) => {
+    const rect = element.getBoundingClientRect();
+    return event.clientX >= rect.left && event.clientX <= rect.right
+      && event.clientY >= rect.top && event.clientY <= rect.bottom;
+  };
+  const dismissHover = () => {
+    if (help.dataset.hoverOpen && !help.contains(document.activeElement)) {
+      help.open = false; delete help.dataset.hoverOpen;
+    }
+  };
+  help.addEventListener("pointerleave", (event) => {
+    // Plain explanation text passes clicks to the field below it. Keep a
+    // hover preview open while the pointer is visually inside that text box.
+    if (!pointerInside(event, body)) dismissHover();
+  });
+  document.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "mouse" && help.dataset.hoverOpen
+      && !pointerInside(event, summary) && !pointerInside(event, body)) dismissHover();
+  });
+  summary.addEventListener("click", (event) => {
+    if (help.dataset.hoverOpen) { event.preventDefault(); delete help.dataset.hoverOpen; }
+  });
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  document.querySelectorAll("[data-video-help][open]").forEach((help) => {
+    const focused = help.contains(document.activeElement);
+    help.open = false; delete help.dataset.hoverOpen;
+    if (focused) { event.preventDefault(); help.querySelector("summary").focus(); }
+  });
+});
+document.addEventListener("click", (event) => {
+  document.querySelectorAll("[data-video-help][open]").forEach((help) => {
+    if (!help.contains(event.target)) { help.open = false; delete help.dataset.hoverOpen; }
+  });
+});
+
 })();

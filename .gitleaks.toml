@@ -85,3 +85,34 @@ regexes = [
   '''^Vx3Qm8Kd1Zp6Rt9Bw4Nf7Hs2Lc5Ay0Ju$''',
   '''^e5Kq2mYwGx7pRt4vZa9Nc3Bd8Hj6Lf0SsUu1Wi5Oy2Pl7Rk4Tn9Xb3Ce6Mg0Qz8Av1Dh5Jr$''',
 ]
+
+[[rules.allowlists]]
+description = "Reviewed historical cache filename in the orphan-cache authority integration test"
+condition = "AND"
+paths = ['''(^|/)crates/server/tests/hls_proxy\.rs$''']
+regexTarget = "secret"
+regexes = ['''^prog0123456789abcdef\.mp4$''']
+
+[[rules.allowlists]]
+description = "Reviewed historical capability label in the federation parity table"
+condition = "AND"
+paths = ['''(^|/)docs/MASTODON_4_7_FEDERATION_PARITY_SCOPE\.md$''']
+regexTarget = "secret"
+regexes = ['''^expiry/revocation$''']
+
+[[rules.allowlists]]
+description = "Reviewed historical capability label in the federation parity table"
+condition = "AND"
+paths = ['''(^|/)docs/MASTODON_4_7_FEDERATION_PARITY_SCOPE\.md$''']
+regexTarget = "secret"
+regexes = ['''^signature/proof$''']
+
+[[rules]]
+id = "curl-auth-header"
+
+[[rules.allowlists]]
+description = "Literal ACCESS_TOKEN placeholder in the public authentication example"
+condition = "AND"
+paths = ['''(^|/)docs/api/authentication\.md$''']
+regexTarget = "secret"
+regexes = ['''^ACCESS_TOKEN$''']

@@ -3668,6 +3668,112 @@ pub struct EmbedQuery {
     p2p: Option<u8>,
 }
 
+/// HTML fallback for the enhanced player's overflow-menu dialog. It applies
+/// ordinary post visibility, not embed authority or a cookie-based bypass.
+pub async fn video_settings(
+    State(state): State<AppState>,
+    MaybeWebUser(session): MaybeWebUser,
+    request_locale: Locale,
+    Path(status_id): Path<i64>,
+) -> Result<Response, ApiError> {
+    let viewer = session.as_ref().map(|u| u.current.account.id);
+    let focus = status::find_by_id(&state.pool, status_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if focus.reblog_of_id.is_some() || !can_view(&state.pool, &focus, viewer).await? {
+        return Err(ApiError::NotFound);
+    }
+    let entity = render_status(&state.pool, &state.config.domain, &focus, viewer).await?;
+    let post = view::Status(&entity);
+    if !view::has_video_settings(&post) {
+        return Err(ApiError::NotFound);
+    }
+    let locale = session.as_ref().map_or(request_locale, |u| u.locale);
+    let body = html! {
+        section.column.video-settings-page {
+            h1 { (locale.text("video-settings-title")) }
+            p { a href=(post.permalink_anchored()) { (locale.text("video-settings-back")) } }
+            @if post.media().iter().any(|item| item["hls"]["p2p"].is_object()) {
+                @if let Some(user) = &session {
+                    form.settings-form method="post" action=(format!("/web/statuses/{status_id}/video-settings")) {
+                        input type="hidden" name="csrf" value=(user.csrf);
+                        label.settings-toggle {
+                            input type="checkbox" name="enabled" value="true" checked[user.p2p_enabled];
+                            span { (locale.text("status-p2p-enabled")) }
+                        }
+                        p.settings-field__hint { (locale.text("status-p2p-explanation")) " " (locale.text("video-p2p-settings-hint")) }
+                        button type="submit" { (locale.text("video-history-save-settings")) }
+                    }
+                } @else {
+                    p { (locale.text("video-settings-no-js-peer")) }
+                }
+            }
+            @for item in post.media().iter().filter(|item| item["type"] == "video") {
+                (view::video_distribution_controls(item, locale, session.as_ref().is_none_or(|u| u.p2p_enabled)))
+            }
+        }
+    };
+    Ok(super::video_history::private(
+        layout::shell(
+            &locale.text("video-settings-title"),
+            session.as_ref(),
+            &body,
+        )
+        .into_response(),
+    ))
+}
+
+pub async fn save_video_settings(
+    State(state): State<AppState>,
+    user: WebUser,
+    Path(status_id): Path<i64>,
+    body: axum::body::Bytes,
+) -> Result<Response, ApiError> {
+    user.current.require_scope("write:accounts")?;
+    let pairs = super::settings::form_pairs(&body).map_err(ApiError::BadRequest)?;
+    if !user.csrf_ok(super::settings::field(&pairs, "csrf").unwrap_or_default()) {
+        return Ok(super::session::csrf_rejection());
+    }
+    let focus = status::find_by_id(&state.pool, status_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if focus.reblog_of_id.is_some()
+        || !can_view(&state.pool, &focus, Some(user.current.account.id)).await?
+    {
+        return Err(ApiError::NotFound);
+    }
+    let entity = render_status(
+        &state.pool,
+        &state.config.domain,
+        &focus,
+        Some(user.current.account.id),
+    )
+    .await?;
+    if !view::has_video_settings(&view::Status(&entity)) {
+        return Err(ApiError::NotFound);
+    }
+    let enabled = match super::settings::field(&pairs, "enabled") {
+        None => false,
+        Some("true") => true,
+        _ => {
+            return Err(ApiError::Unprocessable(
+                "Choose whether peer sharing is enabled".into(),
+            ));
+        }
+    };
+    plamenu_db::video_history::update_preferences(
+        &state.pool,
+        user.current.account.id,
+        None,
+        Some(enabled),
+    )
+    .await?;
+    Ok(super::video_history::private(
+        axum::response::Redirect::to(&format!("/web/statuses/{status_id}/video-settings"))
+            .into_response(),
+    ))
+}
+
 /// Public read-only content always authorizes anonymously. A session can apply
 /// only its network-sharing preference, never make private content embeddable.
 pub async fn status_embed(
@@ -3720,6 +3826,12 @@ async fn status_embed_inner(
     let body = html! {
         div.status-embed {
             (view::status_preview(&view::Status(&entity), &ctx))
+            @if view::has_video_settings(&view::Status(&entity)) {
+                details.status__menu data-status-menu {
+                    summary.action title=(request_locale.text("status-more-options")) { (view::icon("more")) }
+                    div.status__menu-pop { (view::video_settings_link(&view::Status(&entity), request_locale)) }
+                }
+            }
             p.embed__original { a href=(permalink) target="_blank" rel="noopener noreferrer" {
                 (request_locale.text("status-embed-open-original"))
             } }
@@ -3781,10 +3893,10 @@ async fn focus_mod_group(
 /// the thread locked and the web page stays consistent with the reply gate.
 async fn focus_thread_locked(state: &AppState, focus: &Status) -> Result<bool, ApiError> {
     use plamenu_db::group;
-    let root = status::thread_root(&state.pool, focus.id).await?;
-    let Some(root_status) = status::find_by_id(&state.pool, root).await? else {
+    let Some(root_status) = status::thread_root_status(&state.pool, focus.id).await? else {
         return Ok(false);
     };
+    let root = root_status.id;
     let community_ids: Vec<i64> = crate::groups::communities_of_status(state, &root_status)
         .await?
         .iter()

@@ -2,7 +2,8 @@ import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import {randomUUID} from 'node:crypto';
 import {createServer} from 'node:http';
-import {signIn} from '../session.mjs';
+import {signIn,openVideoOptions,createVideoChannel,videoChannelForm} from '../session.mjs';
+import {openVideoSettings,closeVideoSettings} from '../video-settings.mjs';
 
 async function check(page,noScript){
   await page.setViewportSize({width:320,height:800});
@@ -23,14 +24,14 @@ async function decoded(video){
   await video.evaluate(v=>v.pause());
 }
 async function journey(page,info,noScript){
-  test.setTimeout(240000);await signIn(page);await page.goto('/videos');
-  const form=page.locator('form[action="/web/video-channels"]');
+  test.setTimeout(240000);await signIn(page);await page.goto('/videos/upload');await openVideoOptions(page);
+  const form=await videoChannelForm(page);
   if(!await form.isVisible())await form.locator('..').locator(':scope > summary').press('Enter');
   const name=`sharing_${randomUUID().replaceAll('-','').slice(0,18)}`;
   await form.getByLabel('Channel address').fill(name);
   await form.getByLabel('Channel name').fill(name);
   await submit(page,form.getByRole('button',{name:'Create a video channel',exact:true}),'/web/video-channels');
-  await page.goto('/videos');
+  await page.goto('/videos/upload');await openVideoOptions(page);
   const upload=page.locator('form[action="/web/videos"]');
   await upload.getByRole('combobox',{name:'Channel',exact:true}).selectOption({label:name});
   await upload.getByLabel('Video title',{exact:true}).fill(`Sharing ${name}`);
@@ -73,15 +74,34 @@ async function journey(page,info,noScript){
   await page.goto(`/videos/${id}/sharing`);await download.press('Space');await embed.press('Space');
   await submit(page,page.getByRole('button',{name:'Save sharing choices',exact:true}),`/web/videos/${id}/sharing`);
   await page.goto(permalink);
+  await expect(page.locator('.media__settings')).toBeHidden();
+  const settings=await openVideoSettings(page,noScript);
   const link=page.getByRole('link',{name:'Download playable video (MP4)',exact:true});
   const response=await page.request.get(await link.getAttribute('href'));
   expect(response.status()).toBe(200);expect(response.headers()['content-disposition']).toContain('attachment;');
   expect(response.headers()['cache-control']).toBe('private, no-store');
   const ranged=await page.request.get(await link.getAttribute('href'),{headers:{Range:'bytes=0-31'}});
   expect(ranged.status()).toBe(206);expect((await ranged.body()).length).toBe(32);
-  await page.getByText('Embed this video',{exact:true}).press('Enter');
-  const code=page.getByRole('textbox',{name:'Server-only embed code',exact:true});
-  expect(await code.inputValue()).toContain('?p2p=0');await code.focus();
+  const code=settings.getByRole('textbox',{name:'Embed this video',exact:true});
+  await expect(code).toHaveCount(1);
+  expect(await code.inputValue()).toContain('?p2p=1');
+  if(!noScript){
+    const sharing=settings.getByRole('checkbox',{name:'Share video with other viewers',exact:true});
+    await expect(sharing).toBeVisible();
+    await sharing.uncheck();
+    expect(await code.inputValue()).toContain('?p2p=0');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.video-settings-dialog')).toHaveCount(0);
+    await expect(page.locator('[data-status-menu] > summary').last()).toBeFocused();
+    await openVideoSettings(page);
+    await expect(sharing).not.toBeChecked();
+    await expect(code).toHaveCount(1);
+    // Native modal focus must stay inside it, including backwards traversal.
+    await settings.getByRole('button',{name:'Close video settings',exact:true}).focus();
+    await page.keyboard.press('Shift+Tab');
+    expect(await page.evaluate(()=>!!document.activeElement.closest('.video-settings-dialog'))).toBe(true);
+  }
+  await code.focus();
   await code.press('ControlOrMeta+A');
   if(noScript){await expect(page.locator('[data-video-embed-copy]:visible')).toHaveCount(0);}
   else{
@@ -97,6 +117,7 @@ async function journey(page,info,noScript){
   }
   await check(page,noScript);await page.screenshot({path:info.outputPath('sharing-viewer-320px.png'),fullPage:true});
   const embedCode=await code.inputValue();
+  if(!noScript)await closeVideoSettings(page);
   // A genuine separate local origin avoids both inheriting Plamenu's
   // frame-src restriction and a synthetic public origin's local-network gate.
   // No application CSP or browser protection is relaxed.

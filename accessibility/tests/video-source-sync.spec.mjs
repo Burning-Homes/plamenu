@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import {signIn} from '../session.mjs';
+import {signIn,openDetailsFor,ensureVideoFormChannel} from '../session.mjs';
 const source=process.env.A11Y_SOURCE_SYNC_URL;
 async function audit(page,noScript){
   await page.setViewportSize({width:320,height:800});
@@ -13,8 +13,10 @@ async function audit(page,noScript){
 async function journey(page,info,noScript){
   test.setTimeout(240000);expect(source,'Set A11Y_SOURCE_SYNC_URL to the disposable public PeerTube channel/playlist').toBeTruthy();
   await signIn(page);await page.goto('/videos');
-  await page.getByRole('link',{name:'Scheduled video sources',exact:true}).press('Enter');
+  await page.getByRole('link',{name:'Scheduled sources',exact:true}).press('Enter');
   let form=page.locator('form[action="/web/videos/sources"]');
+  await ensureVideoFormChannel(page,form);
+  if(await page.locator('#source-create').getAttribute('open')===null)await page.locator('#source-create > summary').press('Enter');
   await form.getByLabel('ActivityPub channel or playlist URL',{exact:true}).fill('https://user:secret@example.org/source');
   await form.getByRole('combobox',{name:'Check interval',exact:true}).selectOption('15');
   const rights=form.getByRole('checkbox',{name:'I authorize periodic retrieval and have permission to copy these videos. I will review each draft before publishing it.',exact:true});
@@ -59,13 +61,17 @@ async function journey(page,info,noScript){
       await expect.poll(()=>video.evaluate(v=>v.videoWidth)).toBeGreaterThan(0);
       await video.evaluate(v=>v.pause());await audit(page,noScript);
       await page.screenshot({path:info.outputPath('sync-private-review-320px.png'),fullPage:true});
-      await page.goto(href);await page.getByRole('checkbox',{name:'I want to delete this draft and its files',exact:true}).press('Space');
+      await page.goto(href);
+      const deleteConfirmation=page.getByRole('checkbox',{name:'I want to delete this draft and its files',exact:true,includeHidden:true});
+      await openDetailsFor(deleteConfirmation);await expect(deleteConfirmation).toBeVisible();
+      await deleteConfirmation.press('Space');
       await page.getByRole('button',{name:'Cancel and delete draft',exact:true}).press('Enter');
     }
     await page.goto('/videos/sources');await page.getByRole('button',{name:'Pause discovery',exact:true}).press('Enter');
     const sourceSection=page.locator(`[aria-labelledby="source-title-${id}"]`);
-    await sourceSection.locator('summary').press('Enter');
-    await sourceSection.getByRole('checkbox',{name:'Stop this source and forget its import history',exact:true}).press('Space');
+    const removeConfirmation=sourceSection.getByRole('checkbox',{name:'Stop this source and forget its import history',exact:true,includeHidden:true});
+    await openDetailsFor(removeConfirmation);await expect(removeConfirmation).toBeVisible();
+    await removeConfirmation.press('Space');
     await sourceSection.getByRole('button',{name:'Remove source',exact:true}).press('Enter');
     await expect(page.getByText(source,{exact:true})).toHaveCount(0);await audit(page,noScript);
     await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce',forcedColors:'active'});await audit(page,noScript);

@@ -10,7 +10,7 @@ pub const MAX_CHAPTERS: usize = 100;
 pub const MAX_TITLE_CHARS: usize = 200;
 pub const MAX_START_SECONDS: i32 = 604_800;
 
-#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow, serde::Deserialize)]
 pub struct Chapter {
     pub media_id: i64,
     pub start_seconds: i32,

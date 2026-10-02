@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run the browser accessibility matrix against an isolated Plamenu fixture."""
 
-import ipaddress
 import hashlib
+import ipaddress
 import os
 import secrets
 import shutil
@@ -304,7 +304,15 @@ def main():
                 "--password",
                 "plamenu-development-only",
             )
-            for username in ("channel_editor",):
+            # Each engine creates real channels under its own finite quota;
+            # persisted private draft/catalogue fixtures keep their seed owner.
+            creator_projects = (
+                "chromium-desktop", "chromium-mobile", "firefox-desktop",
+                "firefox-mobile", "webkit-desktop", "webkit-mobile",
+                "chromium-no-javascript",
+            )
+            creator_users = tuple("a11y_" + project.replace("-", "_") for project in creator_projects)
+            for username in ("channel_editor", *creator_users):
                 run("cargo", "run", "--locked", "-q", "--", "--config", config,
                     "account", "add", username, "--email", f"{username}@localhost",
                     "--password", "plamenu-development-only")
@@ -369,6 +377,7 @@ def main():
             environment = os.environ | {
                 "A11Y_BASE_URL": base_url,
                 "A11Y_USERNAME": "developer",
+                "A11Y_CREATOR_PREFIX": "a11y_",
                 "A11Y_PASSWORD": "plamenu-development-only",
                 "A11Y_CANONICAL_ORIGIN": "https://localhost",
                 "A11Y_REPORT_PATH": os.environ.get(
@@ -453,6 +462,7 @@ def main():
                         for name in (
                             "A11Y_BASE_URL",
                             "A11Y_USERNAME",
+                            "A11Y_CREATOR_PREFIX",
                             "A11Y_PASSWORD",
                             "A11Y_CANONICAL_ORIGIN",
                             "A11Y_REPORT_PATH",

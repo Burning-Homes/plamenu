@@ -3,6 +3,7 @@
 // PeerTube Video object, an output screenshot and the PeerTube watch URL.
 // The second Plamenu browser and then PeerTube's own player join the swarm.
 import { chromium } from 'playwright';
+import {openVideoSettings,closeVideoSettings} from './video-settings.mjs';
 import AxeBuilder from '@axe-core/playwright';
 
 const [url, infohashesJson, screenshot, peerTubeUrl] = process.argv.slice(2);
@@ -77,8 +78,10 @@ try {
   off.on('websocket', socket => trackerSockets.push(socket.url()));
   await off.goto(url);
   const control = off.locator('.media__p2p-toggle');
+  await openVideoSettings(off);
   await control.waitFor({ state: 'visible' });
   await control.uncheck();
+  await closeVideoSettings(off);
   await startVideo(off);
   if (trackerSockets.some(socket => socket.includes('/tracker/'))) {
     throw new Error(`opted-out viewer contacted a tracker: ${trackerSockets}`);
@@ -151,7 +154,9 @@ try {
   console.log(JSON.stringify({ infohash: hash, trackerSockets,
     first: await first.locator('video[data-hls]').evaluate(v => ({ peers: v.dataset.p2pPeers, downloaded: v.dataset.p2pDownloaded, uploaded: v.dataset.p2pUploaded })),
     second: await second.locator('video[data-hls]').evaluate(v => ({ peers: v.dataset.p2pPeers, downloaded: v.dataset.p2pDownloaded, validated: v.dataset.p2pValidated, uploaded: v.dataset.p2pUploaded })) }));
+  await openVideoSettings(second);
   await second.locator('.media__p2p-toggle').uncheck();
+  await closeVideoSettings(second);
   for (let attempt = 0; attempt < 40 && !secondTrackerClosed; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 250));
   }

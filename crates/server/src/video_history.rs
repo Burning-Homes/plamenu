@@ -4,7 +4,7 @@ use plamenu_db::{media, status, video_history as db};
 use serde_json::Value;
 
 async fn visible_ids(state: &AppState, viewer: i64, ids: &[i64]) -> Result<Vec<i64>, ApiError> {
-    Ok(sqlx::query_scalar("SELECT DISTINCT s.id FROM statuses s JOIN media_attachments m ON m.status_id=s.id LEFT JOIN video_publications v ON v.status_id=s.id AND v.media_id=m.id LEFT JOIN remote_video_channels r ON r.status_id=s.id LEFT JOIN video_channels c ON c.account_id=v.channel_id WHERE s.id=ANY($1) AND s.deleted_at IS NULL AND s.object_type='Video' AND NOT account_hidden($2,s.account_id) AND NOT account_hidden($2,COALESCE(v.channel_id,r.channel_id,s.account_id)) AND NOT account_hidden($2,COALESCE(c.owner_account_id,m.account_id))")
+    Ok(sqlx::query_scalar("SELECT DISTINCT s.id FROM statuses s JOIN media_attachments m ON m.status_id=s.id LEFT JOIN video_publications v ON v.status_id=s.id AND v.media_id=m.id LEFT JOIN remote_video_channels r ON r.status_id=s.id LEFT JOIN video_channels c ON c.account_id=v.channel_id WHERE s.id=ANY($1) AND s.deleted_at IS NULL AND s.object_type='Video' AND NOT account_hidden($2,s.account_id) AND NOT account_hidden($2,COALESCE(v.channel_id,r.channel_id,s.account_id)) AND NOT account_hidden($2,COALESCE(c.owner_account_id,m.account_id))\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos")
         .bind(ids).bind(viewer).fetch_all(&state.pool).await.map_err(plamenu_db::DbError::from)?)
 }
 

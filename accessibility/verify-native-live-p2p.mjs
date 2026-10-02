@@ -1,6 +1,7 @@
 // A real on-air Plamenu stream shared with PeerTube's unmodified player.
 // Require checked segment bytes in both directions; HTTP remains a fallback.
 import { chromium } from 'playwright';
+import {openVideoSettings,closeVideoSettings} from './video-settings.mjs';
 
 const [localUrl, peerTubeUrl] = process.argv.slice(2);
 if (!localUrl || !peerTubeUrl) throw new Error('expected local and PeerTube watch URLs');
@@ -46,9 +47,11 @@ try {
   observe(off);
   await off.goto(localUrl);
   const toggle = off.locator('.media__p2p-toggle');
+  await openVideoSettings(off);
   await toggle.waitFor({ state: 'visible' });
   if (!await toggle.isChecked()) throw new Error('peer delivery did not default on');
   await toggle.uncheck();
+  await closeVideoSettings(off);
   await play(off, 'video[data-hls]');
   if (sockets.length || await off.locator('video[data-p2p-active]').count()) {
     throw new Error('pre-play opt-out contacted the tracker');

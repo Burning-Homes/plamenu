@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT b.media_id, b.status_id, b.owner_account_id, b.permanent,\n                b.dvr_window_seconds, b.latency_mode\n         FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id\n         WHERE b.status_id = $1 AND b.owner_account_id = $2\n           AND s.uri IS NULL AND b.state <> 'ended' FOR UPDATE OF b",
+  "query": "SELECT b.media_id, b.status_id, b.owner_account_id, b.permanent,\n                b.dvr_window_seconds, b.latency_mode\n         FROM native_live_broadcasts b JOIN statuses s ON s.id = b.status_id\n         WHERE b.status_id = $1 AND b.owner_account_id = $2\n           AND s.uri IS NULL AND b.state <> 'ended' FOR UPDATE OF b\n-- STUBKEEP: activation locks and rechecks canonical publication authority before accepting an encoder",
   "describe": {
     "columns": [
       {
@@ -85,5 +85,5 @@
       false
     ]
   },
-  "hash": "3112f4e5f63fe8bec90115651eb9f41d469451350c4f5c8f8c3a7f16bfca6e3b"
+  "hash": "f0ffe3c760a1c8effbfcebedfdc78329f5889c6c4a5f3940a2ddf167e1a98c6b"
 }

@@ -81,6 +81,10 @@ PEER_BY_PREFIX = {
 # merely happens to use a remote actor as a prop. Kept small and commented so it
 # cannot become a loophole. Bare function names (unique across the suite).
 LOCAL_EXCEPTIONS = {
+    # plamenu2 is an isolated local server for upload/encoder/storage limits;
+    # neither case publishes or exchanges ActivityPub data with another peer.
+    "test_default_maximum_decodable_hour_survives_upload_and_processing",
+    "test_concurrent_real_uploads_use_two_bounded_worker_slots_and_two_uploaders",
     # redraft source text is a local API concern; alice is only the audience.
     "test_delete_returns_source_text_for_redraft",
     # local full-text/hashtag search over a locally-authored post.

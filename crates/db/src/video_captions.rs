@@ -6,7 +6,7 @@ use sqlx::{FromRow, PgConnection, PgExecutor, PgPool};
 
 use crate::DbError;
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, FromRow, serde::Deserialize)]
 pub struct Caption {
     pub media_id: i64,
     pub language: String,
@@ -52,7 +52,7 @@ pub async fn for_media<'e, E: PgExecutor<'e>>(
          WHERE m.id = ANY($1) AND m.caption_vtt IS NOT NULL
            AND NOT EXISTS (SELECT 1 FROM video_captions c WHERE c.media_id = m.id
                            AND lower(c.language) = lower(COALESCE(s.language, d.language, 'und')))
-         ORDER BY media_id, language",
+         ORDER BY media_id, language\n-- STUBKEEP: batch caption metadata is bound to already-selected media; callers enforce status/draft visibility",
     )
     .bind(media_ids)
     .fetch_all(executor)
@@ -118,7 +118,7 @@ pub async fn public_source(
                SELECT 1 FROM public_native_videos p WHERE p.media_id = m.id))
            AND NOT EXISTS (SELECT 1 FROM remote_video_channels rv
                JOIN accounts rc ON rc.id = rv.channel_id
-               WHERE rv.status_id = s.id AND (rc.suspended_at IS NOT NULL OR rc.deleted_at IS NOT NULL))",
+               WHERE rv.status_id = s.id AND (rc.suspended_at IS NOT NULL OR rc.deleted_at IS NOT NULL))\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
     )
     .bind(media_id)
     .bind(language)
@@ -294,7 +294,7 @@ pub async fn recent_owned_publications(
                 WHERE g.channel_id=ch.account_id AND g.account_id=$1 AND g.accepted
                   AND (g.role='editor' OR s.account_id=$1)))
            AND s.deleted_at IS NULL AND s.visibility IN ('public', 'unlisted')
-         ORDER BY s.created_at DESC LIMIT 30",
+         ORDER BY s.created_at DESC LIMIT 30\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
     )
     .bind(owner)
     .fetch_all(pool)
@@ -331,7 +331,7 @@ pub async fn lock_owned_publication(
          JOIN media_attachments m ON m.id = v.media_id
          WHERE v.media_id = $1 AND s.deleted_at IS NULL
            AND s.visibility IN ('public', 'unlisted')
-         FOR UPDATE OF m, s",
+         FOR UPDATE OF m, s\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
     )
     .bind(media_id)
     .fetch_optional(conn)
@@ -351,7 +351,7 @@ pub async fn upsert_published(
                          AND lower(COALESCE(s.language, 'und')) <> lower($2)
                        THEN 1 ELSE 0 END
          FROM media_attachments m JOIN statuses s ON s.id = m.status_id
-         WHERE m.id = $1",
+         WHERE m.id = $1\n-- STUBKEEP: caller holds lock_owned_publication on this connection, including its nondeleted status lock",
     )
     .bind(media_id)
     .bind(language)

@@ -3,7 +3,7 @@ use crate::DbError;
 use sqlx::{FromRow, PgConnection, PgExecutor};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, FromRow, serde::Deserialize)]
 pub struct Storyboard {
     pub media_id: i64,
     pub generation: i64,
@@ -19,6 +19,9 @@ pub async fn for_media<'e, E: PgExecutor<'e>>(
     executor: E,
     ids: &[i64],
 ) -> Result<HashMap<i64, Storyboard>, DbError> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
     let rows = sqlx::query_as::<_, Storyboard>("SELECT b.* FROM video_storyboards b
         JOIN video_drafts d ON d.media_id=b.media_id AND d.generation=b.generation AND d.state='ready'
         WHERE b.media_id=ANY($1)").bind(ids).fetch_all(executor).await?;

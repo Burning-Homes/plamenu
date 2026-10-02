@@ -451,7 +451,9 @@ async fn oembed_serves_public_local_statuses(pool: PgPool) {
     assert_eq!(body["author_name"], "alice");
     assert_eq!(body["provider_name"], TEST_DOMAIN);
     assert_eq!(body["width"], 400);
-    assert_eq!(body["height"], Value::Null);
+    assert_eq!(body["height"], 600);
+    assert!(body["html"].as_str().unwrap().contains("<iframe"));
+    assert!(body["html"].as_str().unwrap().contains("height=\"600\""));
     assert!(body["html"].as_str().unwrap().contains(&url));
 
     // The AP id form resolves too, and maxwidth/maxheight are honored.

@@ -233,13 +233,13 @@ pub async fn resolve_or_fetch_status_for_account(
         return Ok(None);
     };
     Ok(Some(
-        ingest_remote_note_in_context_for_account(
+        Box::pin(ingest_remote_note_in_context_for_account(
             state,
             &author,
             &object,
             RemoteIngestContext::ExplicitResolution,
             fetch_account_id,
-        )
+        ))
         .await?,
     ))
 }
@@ -1845,9 +1845,17 @@ async fn ingest_remote_note_with_quote_depth(
             .await?
             .map(|parent| parent.id),
         Some(parent_uri) => {
-            resolve_thread_parent(state, parent_uri, quote_depth, context, fetch_account_id)
-                .await?
-                .map(|parent| parent.id)
+            // Ancestor backfill nests another storage future. Heap-allocate
+            // this boundary so first-use sanitizers retain stack headroom.
+            Box::pin(resolve_thread_parent(
+                state,
+                parent_uri,
+                quote_depth,
+                context,
+                fetch_account_id,
+            ))
+            .await?
+            .map(|parent| parent.id)
         }
         None => None,
     };

@@ -24,7 +24,7 @@ async fn cookie(state: &plamenu::AppState, account: i64) -> String {
     let user = plamenu_db::user::set_credentials(
         &state.pool,
         account,
-        Some("viewer@example.test"),
+        Some(&format!("viewer-{account}@example.test")),
         "unused",
     )
     .await
@@ -54,6 +54,100 @@ async fn page(state: &plamenu::AppState, path: &str, cookie: Option<&str>) -> (S
     let status = response.status();
     let body = response.into_body().collect().await.unwrap().to_bytes();
     (status, String::from_utf8(body.to_vec()).unwrap())
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn creator_workspace_is_bounded_searchable_and_separate_from_authoring(pool: PgPool) {
+    let owner = common::create_local_account(&pool, "creator", "Creator").await;
+    let stranger = common::create_local_account(&pool, "stranger", "Stranger").await;
+    let state = common::test_state_with(pool.clone(), common::StubFederation::with_actors([]));
+    let channel = plamenu::video::create_channel(&state, &owner, "studio", "Studio")
+        .await
+        .unwrap();
+    let ids = films(&pool, owner.id, channel.id, 45, "Searchable film").await;
+    let raw = cookie(&state, owner.id).await;
+    let other = cookie(&state, stranger.id).await;
+    let (status, first) = page(&state, "/videos?q=Searchable", Some(&raw)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(first.matches("class=\"video-workspace__row\"").count(), 20);
+    assert!(
+        first.find("href=\"/videos/upload\"").unwrap()
+            < first.find("video-workspace__row").unwrap()
+    );
+    assert!(
+        first.find("href=\"/videos/channels/new\"").unwrap()
+            < first.find("video-workspace__row").unwrap()
+    );
+    assert!(!first.contains("Manage captions") && !first.contains("Recent video drafts"));
+    let mut sorted = ids.clone();
+    sorted.sort_unstable_by(|a, b| b.cmp(a));
+    for (offset, count) in [(20, 20), (40, 5)] {
+        let (_, html) = page(
+            &state,
+            &format!(
+                "/videos?view=published&q=Searchable&before={}",
+                sorted[offset - 1]
+            ),
+            Some(&raw),
+        )
+        .await;
+        assert_eq!(
+            html.matches("class=\"video-workspace__row\"").count(),
+            count
+        );
+        for id in sorted.iter().take(offset) {
+            assert!(!html.contains(&format!("/web/statuses/{id}\"")));
+        }
+        assert_eq!(html.contains("Show older items"), offset == 20);
+    }
+    let (_, empty) = page(&state, "/videos?q=no-match", Some(&raw)).await;
+    assert_eq!(empty.matches("class=\"video-workspace__row\"").count(), 0);
+    let (_, other_library) = page(&state, "/videos", Some(&other)).await;
+    assert!(!other_library.contains("Searchable film"));
+    let media: i64 =
+        sqlx::query_scalar("SELECT media_id FROM video_publications WHERE status_id=$1")
+            .bind(ids[0])
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let path = format!("/videos/{media}/manage");
+    assert_eq!(
+        page(&state, &path, Some(&other)).await.0,
+        StatusCode::NOT_FOUND
+    );
+    let (_, manage) = page(&state, &path, Some(&raw)).await;
+    for surface in ["captions", "chapters", "sharing", "metadata"] {
+        assert!(manage.contains(&format!("/videos/{media}/{surface}")));
+    }
+    let (_, upload) = page(&state, "/videos/upload", Some(&raw)).await;
+    assert!(upload.contains("name=\"file\"") && upload.contains("action=\"/web/videos\""));
+    assert!(!upload.contains("Searchable film"));
+    // Native streaming multipart must retain metadata-before-bytes ordering.
+    assert!(upload.find("name=\"channel\"").unwrap() < upload.find("name=\"file\"").unwrap());
+    assert!(upload.find("name=\"poster_time\"").unwrap() < upload.find("name=\"file\"").unwrap());
+    let (_, create) = page(&state, "/videos/channels/new", Some(&raw)).await;
+    assert!(create.contains("name=\"username\"") && create.contains("value=\"/videos/channels\""));
+    for invalid in ["/videos?before=0", "/videos?view=unknown"] {
+        assert_eq!(
+            page(&state, invalid, Some(&raw)).await.0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    sqlx::query("UPDATE accounts SET suspended_at=now() WHERE id=$1")
+        .bind(channel.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        !page(&state, "/videos", Some(&raw))
+            .await
+            .1
+            .contains("Searchable film")
+    );
+    assert_eq!(
+        page(&state, &path, Some(&raw)).await.0,
+        StatusCode::NOT_FOUND
+    );
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

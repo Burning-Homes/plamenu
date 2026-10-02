@@ -10,6 +10,47 @@ nav-favourites = Favourites
 nav-lists = Lists
 nav-groups = Groups
 videos-title = Videos
+studio-title = Video studio
+studio-options = Description and publishing settings
+studio-source-details = Schedule and check details
+studio-intro = Upload, publish and manage your videos.
+studio-navigation = Video studio sections
+studio-create = Create
+studio-library = Video library
+studio-channels = Channels
+studio-playlists = Playlists
+studio-sources = Scheduled sources
+studio-upload = Upload a video
+studio-more = More
+studio-content = Video library filter
+studio-published = Published
+studio-drafts = Drafts
+studio-live = Live broadcasts
+studio-search = Search your videos
+studio-search-submit = Search
+studio-empty = No videos match this view. Choose another filter or upload your first video.
+studio-older = Show older items
+studio-view = View publication
+studio-manage = Manage video
+studio-details-hint = Title, description and publication details
+studio-poster-hint = Category, licence and poster image
+studio-captions-hint = Add, replace or remove caption languages
+studio-chapters-hint = Organize the video timeline
+studio-sharing-hint = Downloads, embeds and mirror permission
+studio-edit-hint = Replace, trim or reprocess the film
+studio-state-public = Public
+studio-state-unlisted = Unlisted
+studio-state-private = Private
+studio-state-ready = Ready to review
+studio-state-receiving = Uploading
+studio-state-queued = Queued
+studio-state-processing = Processing
+studio-state-failed = Needs attention
+studio-state-expired = Expired
+studio-state-waiting = Waiting
+studio-state-live = On air
+studio-state-interrupted = Interrupted
+studio-state-ended = Ended
 video-analytics-title = Delivery analytics
 video-analytics-hint = Optional daily totals for your public native videos and broadcasts. No viewer identities, IP addresses, cookies or device identifiers are recorded. These are origin body bytes and requests, not views, unique people, watched time, confirmed network delivery or peer-to-peer traffic. Collection starts only after you enable it.
 video-analytics-limit-hint = Totals update about every 30 seconds and are best effort: disconnects, overload, database failures and restarts can undercount. Up to 1,000 recent video/day/delivery entries are shown. Disabling collection deletes retained totals; erasing totals also invalidates already-open delivery counters.
@@ -29,6 +70,10 @@ video-analytics-lane-live = Progressive live and rewind responses
 video-analytics-requests = Responses emitting data
 video-analytics-bytes = Emitted body bytes
 video-sharing-title = Downloads and embeds
+video-settings-title = Video settings
+video-settings-close = Close video settings
+video-settings-back = Return to the post
+video-settings-no-js-peer = Peer-assisted playback requires JavaScript. Without JavaScript, playback uses the server only.
 videos-explore-filtered-page = No visible videos on this page. Continue browsing for older matches.
 video-sharing-hint = Choose before publishing or scheduling, or change a published video. These options control explicit download offers and first-party embedding, not playback or the ability to save already-public bytes. Previously saved or embedded copies cannot be recalled. Captions, descriptions and ordinary playback remain available.
 video-sharing-download = Offer a playable video download
@@ -89,7 +134,7 @@ video-import-rights = I have permission to copy and publish this video, and will
 video-import-submit = Import into a private draft
 videos-draft-importing = Downloading the source into a private draft. You can leave this page; refresh to check progress.
 videos-draft-import-failed = The source could not be downloaded. Nothing was published. Check that it is public and within the upload limit, then retry or cancel.
-videos-intro = Publish a video from your own channel. Upload and review it before sharing.
+videos-intro = Upload a private draft, then review and publish it.
 videos-explore-title = Explore videos
 videos-explore-channel-title = Videos by { $name }
 videos-explore-all = All videos
@@ -133,9 +178,9 @@ videos-live-dvr-10 = 10 minutes
 videos-live-dvr-15 = 15 minutes
 videos-live-dvr-30 = 30 minutes
 videos-live-latency = Playback latency
-videos-live-latency-low = Low latency (1-second segments)
-videos-live-latency-balanced = Balanced (2-second segments)
-videos-live-latency-resilient = More resilient (4-second segments)
+videos-live-latency-low = Low delay
+videos-live-latency-balanced = Balanced
+videos-live-latency-resilient = Smoother on unstable connections
 videos-live-playback-hint = Viewers can rewind while live, then return to the live edge. Shorter segments reduce delay but increase request overhead; an external encoder's keyframe interval can limit the actual segment duration. Settings can change while waiting, before the encoder connects.
 videos-live-playback-settings = Playback settings
 videos-live-save-playback = Save playback settings
@@ -219,7 +264,7 @@ videos-category = Category
 videos-licence = Licence
 videos-unspecified = Unspecified
 videos-all-rights-reserved = All rights reserved
-videos-licence-hint = Choose a licence only if you can grant those rights. Unspecified does not grant permission to reuse this video.
+videos-licence-hint = Choose how people may reuse your video. Select a licence whose rights you can grant; leave it unspecified to keep the current rights.
 videos-licence-learn = Learn about licences
 videos-metadata-manage = Manage category and licence
 videos-metadata-save = Save video metadata
@@ -246,7 +291,7 @@ videos-category-18 = Food
 videos-channel = Channel
 videos-name = Video title
 videos-description = Description
-videos-language = Language code (for example, en)
+videos-language = Video language
 videos-visibility = Visibility
 videos-public = Public
 videos-unlisted = Unlisted
@@ -2274,3 +2319,41 @@ video-edit-effect = This adopts the draft's film, poster, descriptions, captions
 video-edit-confirm = I reviewed the replacement and want to apply it to this post
 video-edit-apply = Apply the reviewed replacement
 video-history-revision-failed = The position was not saved. The film may have been replaced, or watch history was turned off. Open the current film and check your video viewing settings before trying again.
+
+studio-help = Help
+
+studio-cancel = Cancel
+
+studio-accessibility = Descriptions and captions
+
+studio-upload-limit = Maximum file size:
+
+studio-live-intro = Set up your broadcast, then go live with your camera, screen or an encoder.
+
+studio-live-details = Broadcast details
+
+studio-live-content = Description and content settings
+
+studio-live-schedule = Schedule and reuse
+
+studio-live-schedule-intro = Announce a planned time, then start the broadcast yourself. Time zone:
+
+studio-live-reusable = Reuse this broadcast for future sessions
+
+studio-required = Required fields are marked *.
+
+studio-view-channel = View
+
+studio-live-encoder = External encoder and stream key
+
+studio-replace-film = Replace the film
+studio-import-intro = Copy a video into a private draft, then review it before publishing.
+
+studio-language-choose = Choose a language
+
+studio-delete-video = Delete video
+studio-delete-video-hint = Deletes this published video and its post. This is separate from changing its poster.
+studio-delete-video-confirm = Delete this video and its published post?
+studio-collaborators-empty = No collaborators yet.
+
+studio-preview-video = Preview video and captions

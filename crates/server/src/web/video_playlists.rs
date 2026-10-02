@@ -95,20 +95,19 @@ async fn render_index(
         &channels.iter().map(|c| c.account_id).collect::<Vec<_>>(),
     )
     .await?;
-    let body = html! {section.column.video-playlists {
+    let body = html! {section.column.video-playlists.video-workspace {
         h1 {(locale.text("playlist-title"))}
+        @if user.is_some(){(super::video_workspace::navigation("/videos/playlists?mine=true",locale))}
         nav.video-explore__links aria-label=(locale.text("playlist-navigation")) {
             a href="/videos/explore" {(locale.text("videos-explore-browse"))}
             a href="/videos/playlists" {(locale.text("playlist-public-library"))}
             @if user.is_some(){a href="/videos/playlists?mine=true" {(locale.text("playlist-my-library"))}}
         }
         @if let Some(error)=error {p.settings__error role="alert" {(error)}}
-        ul.video-playlists__library {@for p in &rows {li {a href=(format!("/videos/playlists/{}",p.id)) {(p.name)} " — " (locale.text(&format!("playlist-{}",p.visibility)))}}}
-        @if rows.is_empty(){p {(locale.text("playlist-empty"))}}
-        @if more && let Some(last)=rows.last(){a href=(format!("/videos/playlists?mine={}&max_id={}",q.mine.unwrap_or(false),last.id)) {(locale.text("playlist-older"))}}
+        @if user.is_some(){details.video-workspace__create open[error.is_some() || rows.is_empty()] {
+            summary {(locale.text("playlist-create"))}
         @if let Some(user)=user {
-            h2 {(locale.text("playlist-create"))}
-            @if accounts.is_empty(){p {a href="/videos" {(locale.text("videos-create-channel"))}}}
+            @if accounts.is_empty(){p {a href="/videos/channels/new" {(locale.text("videos-create-channel"))}}}
             @else {form.settings-form method="post" action="/web/video-playlists" {
                 input type="hidden" name="csrf" value=(user.csrf);
                 label.settings-field {span.settings-field__label {(locale.text("playlist-channel"))} select name="channel_id" required {@for a in &accounts {option value=(a.id) {(a.display_name)}}}}
@@ -122,6 +121,10 @@ async fn render_index(
                 button type="submit" {(locale.text("playlist-import"))}
             }
         }
+        }}
+        ul.video-playlists__library.video-workspace__library {@for p in &rows {li.video-workspace__row {a.video-workspace__title href=(format!("/videos/playlists/{}",p.id)) {(p.name)} " — " (locale.text(&format!("playlist-{}",p.visibility)))}}}
+        @if rows.is_empty(){p {(locale.text("playlist-empty"))}}
+        @if more && let Some(last)=rows.last(){a href=(format!("/videos/playlists?mine={}&max_id={}",q.mine.unwrap_or(false),last.id)) {(locale.text("playlist-older"))}}
     }};
     Ok(private(
         layout::shell(&locale.text("playlist-title"), user, &body).into_response(),

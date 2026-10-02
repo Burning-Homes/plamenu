@@ -9,7 +9,7 @@
 # Assembles a prod release in-image (self-contained, nothing bind-mounted);
 # Akkoma's release runtime provider reads our config at boot from
 # $AKKOMA_CONFIG_PATH.
-FROM hexpm/elixir:1.15.4-erlang-26.0.2-alpine-3.18.2
+FROM hexpm/elixir:1.15.4-erlang-26.0.2-alpine-3.18.2@sha256:0d46cc4b018251ec88e5fec5fb13fc30455612ac22cfe6041d6b9264109143fb
 
 ENV MIX_ENV=prod
 # epmd on loopback only — single-node box.
@@ -30,7 +30,8 @@ USER akkoma
 WORKDIR /opt/akkoma
 
 # Pin the exact source revision used by the interoperability matrix.
-ARG AKKOMA_REF=4ceb81aa7f86af7b093d3d683940933e96e5dfcb
+# Akkoma stable v3.20.1 (2026-09-27).
+ARG AKKOMA_REF=98dd958886a8b0ef65d5bd827aba3789f1dc5116
 RUN git init /opt/akkoma \
     && git -C /opt/akkoma remote add origin https://akkoma.dev/AkkomaGang/akkoma.git \
     && git -C /opt/akkoma fetch --depth 1 origin ${AKKOMA_REF} \

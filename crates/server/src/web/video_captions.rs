@@ -30,7 +30,7 @@ fn private(result: Result<Response, ApiError>) -> Response {
 }
 
 pub async fn manage(State(state): State<AppState>, Path(id): Path<i64>, user: WebUser) -> Response {
-    private(manage_inner(&state, &user, id, None).await)
+    private(manage_inner(&state, &user, id, None, "").await)
 }
 
 async fn manage_inner(
@@ -38,6 +38,7 @@ async fn manage_inner(
     user: &WebUser,
     id: i64,
     error: Option<&str>,
+    selected_language: &str,
 ) -> Result<Response, ApiError> {
     let publication = video_captions::owned_publication(&state.pool, id, user.current.account.id)
         .await?
@@ -52,26 +53,24 @@ async fn manage_inner(
         .remove(&id)
         .unwrap_or_default();
     let locale = user.locale;
-    let watch_url = format!("/web/statuses/{}", publication.status_id);
     let body = html! {
-        section.column.video-captions id="caption-languages" {
+        section.column.video-captions.video-form id="caption-languages" {
             h1 { (locale.text("videos-caption-published-title")) }
             h2 { (publication.title) }
             @if let Some(message) = error { p.settings__error role="alert" { (message) } }
             p.settings-field__hint { (locale.text("videos-caption-published-hint")) }
-            nav aria-label=(locale.text("videos-caption-published-title")) {
-                a href=(watch_url) { (locale.text("videos-caption-watch")) }
-                " · "
-                a href="/videos" { (locale.text("videos-title")) }
-            }
+            (super::video_workspace::video_navigation(id,publication.status_id,locale))
             @if let Some(file) = media.file_name.as_deref() {
+                details.video-form__section {
+                    summary {(locale.text("studio-preview-video"))}
                 video.video-publish__preview controls preload="metadata" aria-label=(publication.title) {
                     source src=(format!("/media/{file}")) type=(media.content_type);
                     @for (index, track) in tracks.iter().enumerate() {
                         track kind="captions"
                             src=(crate::video::caption_public_url(&state.config.domain, id, track))
-                            srclang=(track.language) label=(track.language) default[index == 0];
+                            srclang=(track.language) label=(super::view::language_label(&track.language)) default[index == 0];
                     }
+                }
                 }
             }
             @if tracks.is_empty() {
@@ -80,7 +79,7 @@ async fn manage_inner(
                 ul {
                     @for track in &tracks {
                         li {
-                            (track.language) " — "
+                            (super::view::language_label(&track.language)) " — "
                             a href=(crate::video::caption_public_url(&state.config.domain, id, track)) {
                                 (locale.text("videos-caption-open"))
                             }
@@ -88,7 +87,7 @@ async fn manage_inner(
                                 action=(format!("/web/videos/{id}/captions/{}/remove", track.language)) {
                                 input type="hidden" name="csrf" value=(user.csrf);
                                 button.video-captions__remove type="submit"
-                                    aria-label=(format!("{} {}", locale.text("videos-caption-remove"), track.language)) {
+                                    aria-label=(format!("{} {}", locale.text("videos-caption-remove"), super::view::language_label(&track.language))) {
                                     (locale.text("videos-caption-remove"))
                                 }
                             }
@@ -102,11 +101,7 @@ async fn manage_inner(
                 data-caption-too-large=(locale.text("videos-caption-too-large"))
                 method="post" action=(format!("/web/videos/{id}/captions")) enctype="multipart/form-data" {
                 input type="hidden" name="csrf" value=(user.csrf);
-                label.settings-field {
-                    span.settings-field__label { (locale.text("videos-caption-language")) }
-                    input name="language" required maxlength="35"
-                        pattern="[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*" placeholder="en";
-                }
+                (super::video_workspace::language_field("videos-caption-language", selected_language, true, "captions", locale))
                 label.settings-field {
                     span.settings-field__label { (locale.text("videos-captions")) }
                     input type="file" name="caption" accept=".vtt,text/vtt" required;
@@ -137,13 +132,26 @@ pub async fn add(
     user: WebUser,
     multipart: Multipart,
 ) -> Response {
-    let result = add_inner(&state, &user, id, multipart).await;
+    let mut language = String::new();
+    let result = add_inner(&state, &user, id, multipart, &mut language).await;
+    let selected = if video_captions::valid_language(&language) {
+        language.as_str()
+    } else {
+        ""
+    };
     let result = match result {
         Err(ApiError::Unprocessable(message)) => {
-            manage_inner(&state, &user, id, Some(&message)).await
+            manage_inner(&state, &user, id, Some(&message), selected).await
         }
         Err(ApiError::PayloadTooLarge) => {
-            manage_inner(&state, &user, id, Some("Captions must be at most 256 KiB")).await
+            manage_inner(
+                &state,
+                &user,
+                id,
+                Some("Captions must be at most 256 KiB"),
+                selected,
+            )
+            .await
         }
         other => other,
     };
@@ -155,6 +163,7 @@ async fn add_inner(
     user: &WebUser,
     id: i64,
     mut multipart: Multipart,
+    language: &mut String,
 ) -> Result<Response, ApiError> {
     user.current.require_scope("write:media")?;
     user.current.require_scope("write:statuses")?;
@@ -162,7 +171,6 @@ async fn add_inner(
         .await?
         .ok_or(ApiError::NotFound)?;
     let mut csrf = String::new();
-    let mut language = String::new();
     let mut body = None;
     while let Some(part) = multipart
         .next_field()
@@ -172,7 +180,7 @@ async fn add_inner(
         match part.name().unwrap_or_default() {
             "csrf" => csrf = part.text().await.map_err(|_| ApiError::PayloadTooLarge)?,
             "language" => {
-                language = part
+                *language = part
                     .text()
                     .await
                     .map_err(|_| ApiError::PayloadTooLarge)?
@@ -191,14 +199,14 @@ async fn add_inner(
     if !user.csrf_ok(&csrf) {
         return Ok(csrf_rejection());
     }
-    if !video_captions::valid_language(&language) {
+    if !video_captions::valid_language(language.as_str()) {
         return Err(ApiError::Unprocessable(
             "Choose a valid caption language".into(),
         ));
     }
     let body = super::actions::parse_caption_vtt(body.as_deref().unwrap_or_default())?
         .ok_or_else(|| ApiError::Unprocessable("Choose a WebVTT caption file".into()))?;
-    mutate(state, user, id, &language, Some(&body)).await?;
+    mutate(state, user, id, language.as_str(), Some(&body)).await?;
     Ok(redirect_to(&format!(
         "/videos/{id}/captions#caption-languages"
     )))

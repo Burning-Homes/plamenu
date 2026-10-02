@@ -287,7 +287,7 @@ mod tests {
         // Each test request uses the same operator fixture; the refusal above
         // left its source rows intact but did not reserve any mirror capacity.
         let (operator, status, media): (i64,i64,i64) = sqlx::query_as(
-            "SELECT a.id,s.id,m.id FROM accounts a JOIN statuses s ON s.account_id=a.id JOIN media_attachments m ON m.account_id=a.id LIMIT 1"
+            "SELECT a.id,s.id,m.id FROM accounts a JOIN statuses s ON s.account_id=a.id JOIN media_attachments m ON m.account_id=a.id LIMIT 1\n-- STUBKEEP: synthetic mirror test fixture selects identities only, without public rendering"
         ).fetch_one(&pool).await.unwrap();
         let item = enqueue(
             &pool,

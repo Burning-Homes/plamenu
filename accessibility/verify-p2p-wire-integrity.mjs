@@ -1,6 +1,8 @@
 // Both real origin products: malicious native seed, untouched native receiver,
 // actual PeerTube exchange, explicit opt-out and genuine no-JS playback.
 import {chromium} from 'playwright';
+import { installPeerTubeWelcomeHandler } from './peertube-session.mjs';
+import {openVideoSettings,closeVideoSettings} from './video-settings.mjs';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {installPeerWireFault} from './p2p-wire-fault.mjs';
@@ -26,6 +28,7 @@ async function until(predicate,seconds,message){const end=Date.now()+seconds*100
 async function open(kind,{fault=false,delay=0,off=false,noJS=false,deferDecode=false}={}){
   const context=await browser.newContext({ignoreHTTPSErrors:true,javaScriptEnabled:!noJS,
     viewport:{width:kind==='peertube'?800:320,height:800}});contexts.push(context);
+  if(!noJS)await context.addInitScript(()=>{window.__ownedVideoProfile=true;});
   if(fault)await context.addInitScript(installPeerWireFault);
   const page=await context.newPage(),sockets=[],errors=[],responses=[];
   page.on('pageerror',error=>errors.push(String(error)));
@@ -33,6 +36,7 @@ async function open(kind,{fault=false,delay=0,off=false,noJS=false,deferDecode=f
   page.on('response',response=>{if(response.status()<300&&response.url().includes('/media/'))
     responses.push({url:safe(response.url()),range:response.request().headers().range||null,status:response.status()});});
   if(kind==='peertube'){
+    await installPeerTubeWelcomeHandler(page);
     await page.goto(new URL('/login',manifest.remote).href);
     await page.locator('#username').fill(process.env.PEERTUBE_E2E_USER);
     await page.locator('#password').fill(process.env.PEERTUBE_E2E_PASSWORD);
@@ -51,17 +55,33 @@ async function open(kind,{fault=false,delay=0,off=false,noJS=false,deferDecode=f
     if(await consent.isVisible())await consent.click();
   } else if(noJS){if(await page.locator('.media__p2p-toggle').isVisible())throw new Error('no-JS inert peer choice');}
   else {
+    await openVideoSettings(page);
     const choice=page.locator('.media__p2p-toggle');await choice.waitFor({state:'visible'});
     if(!await choice.isChecked())throw new Error('sharing did not default on');
-    if(off){await choice.uncheck();await page.reload();if(await choice.isChecked())throw new Error('opt-out not persistent');}
+    if(off){await choice.uncheck();await closeVideoSettings(page);await page.reload();if(await choice.isChecked())throw new Error('opt-out not persistent');}
+    else await closeVideoSettings(page);
   }
   const video=page.locator(kind==='peertube'?'video.vjs-tech':'video[data-hls]').first();await video.waitFor({state:'attached'});
   if(kind==='peertube'&&await page.locator('.vjs-big-play-button').isVisible())await page.locator('.vjs-big-play-button').click();
   await video.evaluate(v=>{v.muted=true;v.loop=true;v.play().catch(()=>{});});
   if(!noJS){
     if(kind==='native'){
-      const quality=page.getByRole('combobox',{name:'Video quality',exact:true});await quality.waitFor({state:'visible'});
-      await quality.selectOption({label:'240p'});
+      const quality=page.getByRole('combobox',{name:'Video quality',exact:true});
+      try {
+        await quality.waitFor({state:'visible'});
+        await quality.selectOption({label:'240p'});
+      } catch(error) {
+        result.missingQualitySnapshot=await video.evaluate(v=>({sampledAtMs: performance.now(), playbackRate: v.playbackRate, seeking: v.seeking,
+    bufferedRanges: [...Array(v.buffered.length)].map((_, n) => [v.buffered.start(n), v.buffered.end(n)]),
+    seekableRanges: [...Array(v.seekable.length)].map((_, n) => [v.seekable.start(n), v.seekable.end(n)]),
+    visibilityClass: document.visibilityState === 'visible' ? 'visible' : 'hidden',
+    sourceClass: !v.currentSrc ? 'empty' : v.currentSrc.startsWith('blob:') ? 'blob-media-source' : 'resource-source',
+    profile: window.__ownedVideoProfiles?.get(v)?.() || null,
+    time:v.currentTime,ready:v.readyState,error:v.error?.code||null,
+          presented:v.getVideoPlaybackQuality().totalVideoFrames-v.getVideoPlaybackQuality().droppedVideoFrames}));
+        save('quality-control-unavailable');
+        throw error;
+      }
     }else{
       await video.hover({force:true});await page.locator('.vjs-settings').click();
       await page.locator('.vjs-main-menu .vjs-menu-item').filter({hasText:'Quality'}).click();

@@ -2,7 +2,7 @@ name: hubzilla-test
 
 services:
   db:
-    image: mariadb:11.4@sha256:4f1d8d202fcf7bcb3902f63af09f9c1a050c2922a89652f22abaec0d4f015e83
+    image: mariadb:11.4.13@sha256:70cc072b29b4a89ae07abb2d4da2c64678a7f2dfe092751bb51c87d67dc1338b
     restart: unless-stopped
     environment:
       MARIADB_DATABASE: hubzilla
@@ -25,7 +25,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: hubzilla-test:11.4
+    image: hubzilla-test:11.4.1
     restart: unless-stopped
     entrypoint: ["/opt/hubzilla-test/entrypoint.sh"]
     depends_on:
@@ -52,7 +52,7 @@ services:
         aliases: [hubzilla-web]
 
   cron:
-    image: hubzilla-test:11.4
+    image: hubzilla-test:11.4.1
     restart: unless-stopped
     entrypoint: ["/bin/sh", "-c"]
     command:

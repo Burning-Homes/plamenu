@@ -3,7 +3,7 @@ use crate::DbError;
 use sqlx::{PgConnection, PgExecutor};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, sqlx::FromRow)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, sqlx::FromRow, serde::Deserialize)]
 pub struct Metadata {
     pub media_id: i64,
     pub category: Option<i32>,

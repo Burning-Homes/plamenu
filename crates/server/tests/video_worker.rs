@@ -2247,6 +2247,12 @@ async fn reconciliation_recovers_a_charge_even_when_the_file_is_already_missing(
 /// Exercise the real upgrade, not a current-schema fixture with its ledger
 /// removed. Payloads here test accounting only; codec tests above use real AVIF.
 async fn legacy_storage_fixture(pool: &PgPool) -> (AppState, i64, i64) {
+    // The developer runner seeds template1. A real pre-ledger upgrade
+    // must start at schema 88 rather than inherit the current migrations.
+    sqlx::raw_sql("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+        .execute(pool)
+        .await
+        .unwrap();
     sqlx::migrate!("../db/migrations")
         .run_to(88, pool)
         .await

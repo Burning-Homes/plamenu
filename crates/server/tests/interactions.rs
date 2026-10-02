@@ -2334,7 +2334,15 @@ async fn inbound_content_is_sanitized_and_attachments_stored(pool: PgPool) {
         .unwrap()
         .unwrap();
     assert!(!stored.content.contains("script"), "{}", stored.content);
-    assert!(!stored.content.contains("img"), "{}", stored.content);
+    // Retained inline images must use a stored same-origin attachment, never
+    // the remote origin or sender-controlled executable attributes.
+    assert!(stored.content.contains("class=\"status__inline-image\""));
+    assert!(
+        !stored.content.contains("evil.example"),
+        "{}",
+        stored.content
+    );
+    assert!(!stored.content.contains("onerror"), "{}", stored.content);
     assert!(
         !stored.content.contains("javascript:"),
         "{}",
@@ -2342,7 +2350,7 @@ async fn inbound_content_is_sanitized_and_attachments_stored(pool: PgPool) {
     );
     assert!(stored.content.contains("<p>safe</p>"));
 
-    // The https attachment was kept; the http one dropped.
+    // The HTTPS attachment and safe inline image were kept; HTTP was dropped.
     let (_, shown) = api(
         app(),
         "GET",
@@ -2352,15 +2360,34 @@ async fn inbound_content_is_sanitized_and_attachments_stored(pool: PgPool) {
     )
     .await;
     let attachments = shown["media_attachments"].as_array().unwrap();
-    assert_eq!(attachments.len(), 1);
-    // Both url and remote_url are proxied through the instance, never the origin.
-    for key in ["url", "remote_url"] {
-        let url = attachments[0][key].as_str().unwrap();
-        assert!(
-            url.starts_with("https://plamenu.test/media/proxy/attachment/"),
-            "{key} = {url}"
+    assert_eq!(attachments.len(), 2);
+    assert!(attachments.iter().any(|attachment| {
+        // The signed-in viewer's proxy may permit a direct fallback (?d=1).
+        // Stored inline HTML always uses the privacy-preserving proxy URL.
+        let id = attachment["id"].as_str().unwrap();
+        let stored_url = plamenu::entities::media_proxy_url(
+            TEST_DOMAIN,
+            "attachment",
+            id.parse().unwrap(),
+            false,
+            false,
         );
-        assert!(!url.contains("remote.example"), "{key} leaks origin: {url}");
+        stored.content.contains(&format!("src=\"{stored_url}\""))
+            && stored.content.contains(&format!("data-media-id=\"{id}\""))
+    }));
+    // Both url and remote_url are proxied through the instance, never the origin.
+    for attachment in attachments {
+        for key in ["url", "remote_url"] {
+            let url = attachment[key].as_str().unwrap();
+            assert!(
+                url.starts_with("https://plamenu.test/media/proxy/attachment/"),
+                "{key} = {url}"
+            );
+            assert!(
+                !url.contains("remote.example") && !url.contains("evil.example"),
+                "{key} leaks origin: {url}"
+            );
+        }
     }
     assert_eq!(attachments[0]["description"], "a remote cat");
 }

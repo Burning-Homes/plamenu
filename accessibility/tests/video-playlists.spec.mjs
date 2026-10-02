@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { randomUUID } from 'node:crypto';
-import { signIn } from '../session.mjs';
+import { signIn, openVideoOptions, createVideoChannel ,videoChannelForm} from '../session.mjs';
 
 async function scan(page, noScript) {
   const widths = await page.evaluate(() => [innerWidth, document.documentElement.scrollWidth]);
@@ -17,15 +17,15 @@ async function journey(page, info) {
   test.setTimeout(180_000);
   const noScript = info.project.use.javaScriptEnabled === false;
   await signIn(page);
-  await page.goto('/videos');
+  await page.goto('/videos/upload');await openVideoOptions(page);
   const project = info.project.name.split('-').map(word=>word[0]).join('');
   const channelName = `clips_${Date.now().toString(36)}_${project}_${randomUUID().slice(0,6)}`;
-  const channel = page.locator('form[action="/web/video-channels"]');
+  const channel = await videoChannelForm(page);
   if (!await channel.isVisible()) await channel.locator('..').locator(':scope > summary').click();
   await channel.getByLabel('Channel address').fill(channelName);
   await channel.getByLabel('Channel name').fill(`Clip films ${channelName}`);
-  await channel.getByRole('button', { name: 'Create a video channel' }).press('Enter');
-  await page.waitForURL(url => url.pathname === '/videos');
+  await createVideoChannel(page, channel.getByRole('button', { name: 'Create a video channel' }));
+  await page.waitForURL(url => url.pathname === '/videos/upload');await openVideoOptions(page);
   let upload = page.locator('form[action="/web/videos"]');
   await upload.getByRole('combobox', { name: 'Channel', exact: true }).selectOption({ label: `Clip films ${channelName}` });
   const title = `A clip film ${channelName}`;
@@ -51,6 +51,7 @@ async function journey(page, info) {
   await page.goto('/videos/explore');
   await page.getByRole('link', { name: 'Video playlists', exact: true }).first().click();
   const create = page.locator('form[action="/web/video-playlists"]');
+  if (await page.locator('.video-workspace__create').getAttribute('open') === null) await page.locator('.video-workspace__create > summary').press('Enter');
   await create.getByRole('combobox', { name: 'Video channel' }).selectOption({ label: `Clip films ${channelName}` });
   await create.getByLabel('Playlist title').fill(`Clip selection ${channelName}`);
   await create.getByRole('textbox', { name: 'Playlist description' }).fill('Two accessible occurrences of one film.');

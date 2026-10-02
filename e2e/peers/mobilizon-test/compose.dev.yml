@@ -33,7 +33,7 @@ services:
     # (20180109150000_prerequites.exs) does CREATE EXTENSION postgis, and
     # POSTGRES_USER=mobilizon becoming the cluster superuser is what lets it
     # (plus pg_trgm/unaccent, which the image entrypoint creates).
-    image: postgis/postgis:16-3.4-alpine@sha256:681931a625df344215e9b8998bf34daf146b6a395ceacee4439eb9c85869239f
+    image: postgis/postgis:16-3.5-alpine@sha256:47e961a569fd52ff31f0fe205ed91eeab17d9f5fff6722e6d7ea6b588748b293
     restart: unless-stopped
     # Disposable data: trade durability for speed.
     command: postgres -c fsync=off -c full_page_writes=off

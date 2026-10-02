@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import {randomUUID} from 'node:crypto';
-import {signIn} from '../session.mjs';
+import {signIn,openVideoOptions,createVideoChannel,videoChannelForm,chooseVideoLanguage} from '../session.mjs';
 
 async function check(page,noScript){
   await page.setViewportSize({width:320,height:800});
@@ -45,18 +45,18 @@ async function apply(page,permalink){
   await confirm.press('Space');await button.press('Enter');await page.waitForURL(permalink);
 }
 async function journey(page,info,noScript){
-  test.setTimeout(300000);await signIn(page);await page.goto('/videos');
-  const channelForm=page.locator('form[action="/web/video-channels"]');
+  test.setTimeout(300000);await signIn(page);await page.goto('/videos/upload');await openVideoOptions(page);
+  const channelForm=await videoChannelForm(page);
   if(!await channelForm.isVisible())await channelForm.locator('..').locator(':scope > summary').press('Enter');
   const name=`source_${randomUUID().replaceAll('-','').slice(0,20)}`;
   const channel=`Source ${name}`;
   await channelForm.getByLabel('Channel address').fill(name);await channelForm.getByLabel('Channel name').fill(channel);
   const [created]=await Promise.all([page.waitForResponse(r=>new URL(r.url()).pathname==='/web/video-channels'&&r.request().method()==='POST'),channelForm.getByRole('button',{name:'Create a video channel',exact:true}).press('Enter')]);
-  expect(created.status()).toBe(303);await page.goto('/videos');
+  expect(created.status()).toBe(303);await page.goto('/videos/upload');await openVideoOptions(page);
   const upload=page.locator('form[action="/web/videos"]');
   await upload.getByRole('combobox',{name:'Channel',exact:true}).selectOption({label:channel});
   await upload.getByLabel('Video title',{exact:true}).fill(`Film ${name}`);
-  await upload.getByLabel('Language code',{exact:false}).fill('en');
+  await chooseVideoLanguage(upload,'en');
   await upload.getByLabel('Visual description',{exact:true}).fill('Moving test pattern');
   await upload.getByLabel('Transcript',{exact:true}).fill('Steady tone');
   await upload.getByLabel('Captions (WebVTT)',{exact:true}).setInputFiles({name:'source.vtt',mimeType:'text/vtt',buffer:Buffer.from('WEBVTT\n\n00:00:00.000 --> 00:00:03.000\n[Steady tone]\n')});
@@ -67,6 +67,7 @@ async function journey(page,info,noScript){
   await page.waitForURL(url=>/\/@[^/]+\/\d+/.test(url.pathname));const permalink=page.url();
   await decoded(page.locator('video').first(),3);
   await page.goto(`/videos/${original}/edit`);await check(page,noScript);
+  await page.locator('summary').filter({hasText:/^Edit the retained source$/}).press('Enter');
   await page.getByRole('button',{name:'Prepare reprocessed video',exact:true}).press('Enter');
   const reprocessed=await ready(page,noScript);
   await expect(page.getByText('This is a private edit candidate, not a new post.',{exact:false})).toBeVisible();

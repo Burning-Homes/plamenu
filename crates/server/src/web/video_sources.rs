@@ -52,47 +52,18 @@ async fn render(
     let locale = user.locale;
     let value = |key| field(pairs, key).unwrap_or_default();
     let body = html! {
-        section.column data-video-source-sync data-source-pending=(sources.iter().any(|s|s.enabled&&(s.lease_until.is_some()||s.last_result=="pending")))
+        section.column.video-workspace data-video-source-sync data-source-pending=(sources.iter().any(|s|s.enabled&&(s.lease_until.is_some()||s.last_result=="pending")))
             data-source-refresh-failed=(locale.text("video-sources-refresh-failed")) {
             h1{(locale.text("video-sources-title"))}
+            (super::video_workspace::navigation("/videos/sources",locale))
             p{(locale.text("video-sources-hint"))}
-            p{a href="/videos"{(locale.text("video-sources-review"))} " · " a href="/videos/sources"{(locale.text("video-sources-refresh"))}}
+            p{a href="/videos?view=drafts"{(locale.text("video-sources-review"))} " · " a href="/videos/sources"{(locale.text("video-sources-refresh"))}}
             p role="status" aria-live="polite" data-source-refresh-error hidden {}
             @if let Some(error)=error{p.settings__error role="alert"{(error)}}
-            @for source in &sources{
-                section.settings-form__group aria-labelledby=(format!("source-title-{}",source.id)){
-                    h2 id=(format!("source-title-{}",source.id)){(locale.text("video-sources-source")) " " (source.id)}
-                    p.video-source-url{(source.source_url)}
-                    @if let Some(channel) = destinations.iter().find(|channel| channel.id == source.channel_id) {
-                        p{(locale.text("videos-channel")) ": " (channel.display_name)}
-                    }
-                    p role="status" aria-live="polite" data-source-state=(source.id){
-                        (if source.enabled{locale.text("video-sources-active")}else{locale.text("video-sources-paused")}) " — "
-                        (locale.text(&format!("video-sources-result-{}",source.last_result)))
-                    }
-                    @if let Some(checked)=source.last_checked_at{p{(locale.text("video-sources-last")) " " (user.clock.element_absolute(checked))}}
-                    @if source.enabled{p{(locale.text("video-sources-next")) " " (user.clock.element_absolute(source.next_check_at))}}
-                    p{(locale.text("video-sources-interval")) ": " (source.interval_minutes) " " (locale.text("video-sources-minutes"))}
-                    form method="post" action=(format!("/web/videos/sources/{}/{}",source.id,if source.enabled{"pause"}else{"resume"})){
-                        input type="hidden" name="csrf" value=(user.csrf);
-                        button type="submit"{(if source.enabled{locale.text("video-sources-pause")}else{locale.text("video-sources-resume")})}
-                    }
-                    @if source.enabled{form method="post" action=(format!("/web/videos/sources/{}/check",source.id)){
-                        input type="hidden" name="csrf" value=(user.csrf);
-                        button type="submit"{(locale.text("video-sources-check"))}
-                    }}
-                    details{
-                        summary{(locale.text("video-sources-remove"))}
-                        p{(locale.text("video-sources-remove-hint"))}
-                        form.settings-form method="post" action=(format!("/web/videos/sources/{}/remove",source.id)){
-                            input type="hidden" name="csrf" value=(user.csrf);
-                            label.settings-field__choice{input type="checkbox" name="confirm" value="yes" required;span{(locale.text("video-sources-remove-confirm"))}}
-                            button type="submit"{(locale.text("video-sources-remove"))}
-                        }
-                    }
-                }
-            }
-            @if sources.len()<usize::try_from(db::MAX_SOURCES).unwrap_or(5) && !channels.is_empty(){
+            details.video-workspace__create id="source-create" open[error.is_some() || sources.is_empty()] {
+                summary {(locale.text("video-sources-add"))}
+            @if channels.is_empty(){p {a href="/videos/channels/new" {(locale.text("videos-new-channel"))}}}
+            @else if sources.len()<usize::try_from(db::MAX_SOURCES).unwrap_or(5){
                 form.settings-form method="post" action="/web/videos/sources"{
                     input type="hidden" name="csrf" value=(user.csrf);
                     label.settings-field{span.settings-field__label{(locale.text("videos-channel"))}
@@ -110,6 +81,44 @@ async fn render(
                     button type="submit"{(locale.text("video-sources-add"))}
                 }
             }@else{p{(locale.text("video-sources-limit"))}}
+            }
+            @for source in &sources{
+                section.video-workspace__source aria-labelledby=(format!("source-title-{}",source.id)){
+                    h2 id=(format!("source-title-{}",source.id)){(locale.text("video-sources-source")) " " (source.id)}
+                    p.video-source-url{(source.source_url)}
+                    @if let Some(channel) = destinations.iter().find(|channel| channel.id == source.channel_id) {
+                        p{(locale.text("videos-channel")) ": " (channel.display_name)}
+                    }
+                    p role="status" aria-live="polite" data-source-state=(source.id){
+                        (if source.enabled{locale.text("video-sources-active")}else{locale.text("video-sources-paused")}) " — "
+                        (locale.text(&format!("video-sources-result-{}",source.last_result)))
+                    }
+                    details {summary {(locale.text("studio-source-details"))}
+                    @if let Some(checked)=source.last_checked_at{p{(locale.text("video-sources-last")) " " (user.clock.element_absolute(checked))}}
+                    @if source.enabled{p{(locale.text("video-sources-next")) " " (user.clock.element_absolute(source.next_check_at))}}
+                    p{(locale.text("video-sources-interval")) ": " (source.interval_minutes) " " (locale.text("video-sources-minutes"))}
+                    }
+                    div.video-workspace__source-actions {
+                    form method="post" action=(format!("/web/videos/sources/{}/{}",source.id,if source.enabled{"pause"}else{"resume"})){
+                        input type="hidden" name="csrf" value=(user.csrf);
+                        button type="submit"{(if source.enabled{locale.text("video-sources-pause")}else{locale.text("video-sources-resume")})}
+                    }
+                    @if source.enabled{form method="post" action=(format!("/web/videos/sources/{}/check",source.id)){
+                        input type="hidden" name="csrf" value=(user.csrf);
+                        button type="submit"{(locale.text("video-sources-check"))}
+                    }}
+                    details{
+                        summary{(locale.text("video-sources-remove"))}
+                        p{(locale.text("video-sources-remove-hint"))}
+                        form.settings-form method="post" action=(format!("/web/videos/sources/{}/remove",source.id)){
+                            input type="hidden" name="csrf" value=(user.csrf);
+                            label.settings-field__choice{input type="checkbox" name="confirm" value="yes" required;span{(locale.text("video-sources-remove-confirm"))}}
+                            button type="submit"{(locale.text("video-sources-remove"))}
+                        }
+                    }
+                    }
+                }
+            }
         }
     };
     Ok((

@@ -138,7 +138,9 @@ async fn catalogue_window(
         SELECT v.id AS "status_id?", v.channel_id AS "channel_id?",
             scan.scan_before AS "scan_before?",scan.scanned AS "scanned!"
         FROM scan LEFT JOIN visible v ON true
-        ORDER BY v.id DESC NULLS LAST LIMIT $5"#,
+        ORDER BY v.id DESC NULLS LAST LIMIT $5
+-- STUBFILTER: exclude deleted statuses directly or through public_native_videos
+"#,
             before,
             query,
             viewer,
@@ -267,7 +269,9 @@ async fn channel_window(
         SELECT v.id AS "status_id?", v.channel_id AS "channel_id?",
             scan.scan_before AS "scan_before?",scan.scanned AS "scanned!"
         FROM scan LEFT JOIN visible v ON true
-        ORDER BY v.id DESC NULLS LAST LIMIT $5"#,
+        ORDER BY v.id DESC NULLS LAST LIMIT $5
+-- STUBFILTER: exclude deleted statuses directly or through public_native_videos
+"#,
             channel_id,
             before,
             query,
@@ -342,7 +346,9 @@ pub async fn claim_remote_channel_backfill(
         )
         SELECT c.id AS "status_id!", c.uri AS "uri!", c.account_id AS "account_id!",
                claimed.attempts AS "attempts!"
-        FROM candidates c JOIN claimed ON claimed.status_id = c.id"#,
+        FROM candidates c JOIN claimed ON claimed.status_id = c.id
+-- STUBFILTER: exclude deleted statuses directly or through public_native_videos
+"#,
     )
     .fetch_optional(pool)
     .await?)

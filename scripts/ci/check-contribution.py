@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: N999 -- executable CLI names use hyphens; these are not importable modules.
 """Fail closed on missing diff history; check seed version and DCO trailers."""
 
 import json

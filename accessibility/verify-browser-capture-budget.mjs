@@ -22,7 +22,13 @@ async function sample(video){return video.evaluate(v=>{
     const now=Math.floor(Date.now()/100)%(2**32),elapsed=(now-ticks+2**32)%(2**32);
     if(elapsed<=300)latencyMs=elapsed*100;
   }
-  return{time:v.currentTime,ready:v.readyState,paused:v.paused,error:v.error?.code||null,
+  return{sampledAtMs: performance.now(), playbackRate: v.playbackRate, seeking: v.seeking,
+    bufferedRanges: [...Array(v.buffered.length)].map((_, n) => [v.buffered.start(n), v.buffered.end(n)]),
+    seekableRanges: [...Array(v.seekable.length)].map((_, n) => [v.seekable.start(n), v.seekable.end(n)]),
+    visibilityClass: document.visibilityState === 'visible' ? 'visible' : 'hidden',
+    sourceClass: !v.currentSrc ? 'empty' : v.currentSrc.startsWith('blob:') ? 'blob-media-source' : 'resource-source',
+    profile: window.__ownedVideoProfiles?.get(v)?.() || null,
+    time:v.currentTime,ready:v.readyState,paused:v.paused,error:v.error?.code||null,
     presented:v.getVideoPlaybackQuality().totalVideoFrames-v.getVideoPlaybackQuality().droppedVideoFrames,
     dropped:v.getVideoPlaybackQuality().droppedVideoFrames,latencyMs};
 });}
@@ -77,6 +83,7 @@ try{
       const peer=player==='peertube';
       const context=await browser.newContext({ignoreHTTPSErrors:true,javaScriptEnabled:player!=='native-no-js',
         viewport:{width:peer?800:320,height:800},...(peer&&peerAuth?{storageState:peerAuth}:{})});
+      if(player!=='native-no-js')await context.addInitScript(()=>{window.__ownedVideoProfile=true;});
       contexts.push(context);const page=await context.newPage(),errors=[];
       page.on('pageerror',error=>errors.push(String(error)));
       if(peer&&!peerAuth){await page.goto(new URL('/login',remote.url).href);

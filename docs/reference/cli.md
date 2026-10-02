@@ -15,6 +15,7 @@ Usage: plamenu [OPTIONS] <COMMAND>
 Commands:
   config         Create Plamenu configuration
   serve          Run the HTTP server (includes the delivery worker)
+  video-worker   Optional private native video processor; no database or federation services
   account        Manage local accounts
   group          Manage local groups
   post           Post a status as a local account (enqueued for follower delivery)
@@ -62,6 +63,7 @@ Usage: plamenu config generate [OPTIONS]
 Options:
       --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
       --force            Replace an existing file instead of preserving it
+      --video-worker     Generate a private standalone native-worker file with a fresh token
   -h, --help             Print help
 ```
 
@@ -72,6 +74,19 @@ $ plamenu serve --help
 Run the HTTP server (includes the delivery worker)
 
 Usage: plamenu serve [OPTIONS]
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+### `plamenu video-worker`
+
+```text
+$ plamenu video-worker --help
+Optional private native video processor; no database or federation services
+
+Usage: plamenu video-worker [OPTIONS]
 
 Options:
       --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
@@ -774,9 +789,23 @@ Maintenance tasks for stored media
 Usage: plamenu media [OPTIONS] <COMMAND>
 
 Commands:
+  expire-caches   Run the configured cache-retention pass now; failed physical removals remain revoked and charged until the normal cleanup worker acknowledges
   backfill-sizes  Fill in missing stored byte sizes for media, avatars, headers and emoji (backing the admin storage metrics). Stats each file on the media store; skips any whose file is missing
   reconcile       Find stored files no database row references — orphans left by deletions that ran before the durable cleanup queue existed — and (with `--delete`) schedule them for removal. Reports counts only by default. Run during low upload activity: a brand-new upload whose row is not yet inserted would otherwise look orphaned
   help            Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+#### `plamenu media expire-caches`
+
+```text
+$ plamenu media expire-caches --help
+Run the configured cache-retention pass now; failed physical removals remain revoked and charged until the normal cleanup worker acknowledges
+
+Usage: plamenu media expire-caches [OPTIONS]
 
 Options:
       --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]

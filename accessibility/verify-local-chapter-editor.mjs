@@ -1,6 +1,7 @@
 // Native chapter editor: no-JS form, live preview, time picker and reflow.
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
+import { openDetailsFor } from './session.mjs';
 
 const [url, screenshotPath] = process.argv.slice(2);
 if (!url || !process.env.PLAMENU_E2E_USER || !process.env.PLAMENU_E2E_PASSWORD) {
@@ -21,6 +22,7 @@ try {
   ]);
   await page.goto(url);
   const form = page.locator('form[data-chapter-editor]');
+  await openDetailsFor(form);
   await form.waitFor({ state: 'visible' });
   const textarea = form.locator('textarea[name="chapters"]');
   await textarea.fill('bad chapter line');
@@ -39,6 +41,8 @@ try {
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
+  await openDetailsFor(form);
+  await form.waitFor({ state: 'visible' });
   const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
   const mobileAudit = await new AxeBuilder({ page }).include('#chapter-editor').analyze();
   const mobileSevere = mobileAudit.violations.filter(item => ['critical', 'serious'].includes(item.impact));

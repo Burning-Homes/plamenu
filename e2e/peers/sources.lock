@@ -1,11 +1,21 @@
 # destination|repository|commit
-discourse-source|https://github.com/discourse/discourse.git|28b3afbe4f74b0894f0a0caa9d4ca7767b396ad3
-discourse-source/plugins/discourse-activity-pub|https://github.com/discourse/discourse-activity-pub.git|dc484ccb3ec5a452210a7b867854fd5f160a09c1
-hubzilla-source|https://framagit.org/hubzilla/core.git|2759ba248dcd7eba752fb69cbd13e8ed6986acd8
-hubzilla-addons-source|https://framagit.org/hubzilla/addons.git|a32d9f47de87af5f10aec55843f1264200238ca5
-lemmy-source|https://github.com/LemmyNet/lemmy.git|d4b5330a2c23e251aa6d7aa75c0addd33ea2c825
-mitra-source|https://codeberg.org/silverpill/mitra.git|3132e595c67d93aeef9940d6d105c7a453ca929d
-owncast-source|https://github.com/owncast/owncast.git|b0de2e462058b34aa3fa2e68e1939ff416b69de5
-peertube-source|https://github.com/Chocobozzz/PeerTube.git|81bf3179bbdddbd6bfb431aeac4320e8f7c87c03
-pleroma-source|https://git.pleroma.social/pleroma/pleroma.git|b0ae451942b892e0983b4e3f63aa55e3d9341a84
-sharkey-source|https://activitypub.software/TransFem-org/Sharkey.git|e60bbcd34bfb243fca93a9a1defd85e9ccb536d5
+# discourse-source: stable v2026.9.0; verified 2026-10-01
+discourse-source|https://github.com/discourse/discourse.git|343b20f97ef5f6bd70826ee0e993ba348b210fd5
+# ActivityPub dependency has no upstream tags/releases; immutable latest compatible candidate, runtime verification required.
+discourse-source/plugins/discourse-activity-pub|https://github.com/discourse/discourse-activity-pub.git|7d2ef6f1be31a63dbbba33a8167b801c70fe280d
+# hubzilla-source: stable 11.4.1; verified 2026-10-01
+hubzilla-source|https://framagit.org/hubzilla/core.git|0928f8b9b82289ffb2533b09bd3c5d23b04badad
+# hubzilla-addons-source: stable 11.4.1; verified 2026-10-01
+hubzilla-addons-source|https://framagit.org/hubzilla/addons.git|d8d774098c61af126df4d29564555033b6749a23
+# lemmy-source: stable 0.19.20; verified 2026-10-01
+lemmy-source|https://github.com/LemmyNet/lemmy.git|e9d49b7b49f4751b924263fdebfc1af2a387eda9
+# mitra-source: stable v5.10.0; verified 2026-10-01
+mitra-source|https://codeberg.org/silverpill/mitra.git|17340ef09d4a902f301acdcfde094f5778d72f35
+# owncast-source: stable v0.3.0; verified 2026-10-01
+owncast-source|https://github.com/owncast/owncast.git|4b09a1b11693977400fb6f6cb06a7b9891bdca6d
+# peertube-source: stable v8.3.1; verified 2026-10-01
+peertube-source|https://github.com/Chocobozzz/PeerTube.git|3324876a0b0f846f8b6632470b3d9d53ef74b8b7
+# pleroma-source: stable v2.10.2; verified 2026-10-01
+pleroma-source|https://git.pleroma.social/pleroma/pleroma.git|cd8816eccec355b5ff1533dc75fc86e9927baf2b
+# sharkey-source: stable 2025.4.7; verified 2026-10-01
+sharkey-source|https://activitypub.software/TransFem-org/Sharkey.git|a5d61c9394bb7a9c61d5ff19d17966b2d55f7b1f

@@ -139,11 +139,11 @@ class DocsTests(unittest.TestCase):
             patch.object(docs.urllib.request, "build_opener", return_value=opener),
             patch.object(docs.time, "sleep"),
             patch.object(docs.time, "monotonic", side_effect=[0, 0, 2, 2]),
-        ):
-            with self.assertRaisesRegex(
+            self.assertRaisesRegex(
                 ReleaseError, "Docs pushed; hosted verification timed out"
-            ):
-                docs.verify_site("https://docs.example/", record, timeout=1)
+            ),
+        ):
+            docs.verify_site("https://docs.example/", record, timeout=1)
         self.assertTrue(requests)
         self.assertNotIn("Authorization", requests[0].headers)
 

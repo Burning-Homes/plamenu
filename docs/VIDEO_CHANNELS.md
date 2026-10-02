@@ -1,6 +1,10 @@
 # Video channels and collaboration
 
-Open **Videos → Manage video channels** (`/videos/channels`). These workflows
+Open Video studio → **Create a video channel** for the dedicated creation form
+(`/videos/channels/new`). **Channels** (`/videos/channels`) lists your channels
+and invitations in 20-item pages. Each name opens its management page; long
+libraries do not bury creation or repeat profile/collaboration controls per row.
+These workflows
 use ordinary HTML forms and work with JavaScript disabled. A channel has a
 stable address and its own subscribers; it is not a discussion community.
 

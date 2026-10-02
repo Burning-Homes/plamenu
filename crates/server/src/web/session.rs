@@ -463,11 +463,11 @@ pub fn preview_redirect(session: &Option<WebUser>, enabled: bool) -> Option<Resp
 async fn resolve(parts: &mut Parts, state: &AppState) -> Option<WebUser> {
     let raw = cookie_value(&parts.headers, COOKIE_NAME)?.to_owned();
     let current = user_for_token(state, &raw).await.ok()?;
-    let (preferred_locale, stored_zone, allow_direct_media) =
-        user::web_preferences(&state.pool, current.user.id)
+    let preferences =
+        user::web_preferences_with_video(&state.pool, current.user.id, current.account.id)
             .await
-            .unwrap_or((None, None, false));
-    if allow_direct_media
+            .unwrap_or_default();
+    if preferences.allow_direct_remote_media
         && let Some(security) = parts.extensions.get::<crate::RequestSecurityContext>()
     {
         security.allow_direct_remote_media();
@@ -476,8 +476,8 @@ async fn resolve(parts: &mut Parts, state: &AppState) -> Option<WebUser> {
         .headers
         .get(header::ACCEPT_LANGUAGE)
         .and_then(|value| value.to_str().ok());
-    let locale = Locale::negotiate(preferred_locale.as_deref(), accepted);
-    let clock = ViewerClock::of(stored_zone.as_deref(), locale);
+    let locale = Locale::negotiate(preferences.locale.as_deref(), accepted);
+    let clock = ViewerClock::of(preferences.time_zone.as_deref(), locale);
     // A privileged moderation role grants the admin link — the same test the
     // dashboard extractor applies, so the link never leads to a 403. A role
     // granting only `invite_users` doesn't count as staff.
@@ -505,11 +505,6 @@ async fn resolve(parts: &mut Parts, state: &AppState) -> Option<WebUser> {
         plamenu_db::web_setting::notification_preferences(&state.pool, current.user.id)
             .await
             .unwrap_or_default();
-    let preferences = plamenu_db::video_history::preferences(&state.pool, current.account.id).await;
-    let (p2p_enabled, p2p_configured) = match preferences {
-        Ok(p) => (p.p2p_enabled, p.p2p_configured),
-        Err(_) => (false, true),
-    };
     Some(WebUser {
         current,
         csrf: csrf_token(&raw),
@@ -523,8 +518,8 @@ async fn resolve(parts: &mut Parts, state: &AppState) -> Option<WebUser> {
         live_notifications: notification_preferences.live_updates,
         notification_sound: notification_preferences.sound,
         notification_volume: notification_preferences.volume,
-        p2p_enabled,
-        p2p_configured,
+        p2p_enabled: preferences.p2p_enabled,
+        p2p_configured: preferences.p2p_configured,
     })
 }
 

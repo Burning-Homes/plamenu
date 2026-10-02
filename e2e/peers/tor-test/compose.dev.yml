@@ -8,7 +8,7 @@ name: tor-test
 
 services:
   tor:
-    image: alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    image: alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
     restart: unless-stopped
     command: >
       sh -c "apk add --no-cache tor &&
@@ -32,7 +32,7 @@ services:
       retries: 90
 
   db:
-    image: postgres:15-alpine@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
+    image: postgres:15.19-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
     restart: unless-stopped
     environment:
       POSTGRES_USER: mitra

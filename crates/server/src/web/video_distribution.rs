@@ -31,10 +31,10 @@ pub async fn page(
     let result=async{
         user.current.require_scope("read:media")?;
         let (policy,publication)=crate::video_distribution::owned(&state,user.current.account.id,id).await?;
-        let back=publication.map_or_else(||format!("/videos/drafts/{id}/review"),|p|format!("/web/statuses/{}",p.status_id));
+        let back=publication.map_or_else(||format!("/videos/drafts/{id}/review"),|_|format!("/videos/{id}/manage"));
         let locale=user.locale;
         let body=html!{
-            section.column.video-sharing{
+            section.column.video-sharing.video-form{
                 h1{(locale.text("video-sharing-title"))}
                 p{(locale.text("video-sharing-hint"))}
                 @if query.get("saved").is_some_and(|s|s=="1"){p.settings__saved role="status"{(locale.text("video-sharing-saved"))}}

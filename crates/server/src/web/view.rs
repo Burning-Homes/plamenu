@@ -2032,7 +2032,15 @@ fn primary_language(tag: &str) -> &str {
 /// A language code's display label ("Deutsch (German)"), falling back to the
 /// raw code outside the inventory.
 pub fn language_label(code: &str) -> String {
-    languages::find(code).map_or_else(|| code.to_owned(), Language::label)
+    languages::find(code).map_or_else(
+        || {
+            languages::find(primary_language(code)).map_or_else(
+                || code.to_owned(),
+                |language| format!("{} ({code})", language.label()),
+            )
+        },
+        Language::label,
+    )
 }
 
 /// The venue line of an event: the `Place` name followed by whatever of the
@@ -2732,7 +2740,12 @@ fn blur_gated_gallery(status: &Status, ctx: &Ctx, blur: &[String]) -> Markup {
 }
 
 fn media_gallery(status: &Status, ctx: &Ctx) -> Markup {
-    media_markup(&gallery_media(status), ctx, status.rendered_language())
+    media_markup(
+        &gallery_media(status),
+        ctx,
+        status.rendered_language(),
+        Some(status.id()),
+    )
 }
 
 /// Media placed in the Article body remains in the API attachment array for
@@ -2757,17 +2770,17 @@ fn gallery_media(status: &Status) -> Vec<Value> {
 /// the account-level player of an already-running stream discovered by its
 /// homepage; all player/HLS/live rendering stays identical to timeline media.
 pub(crate) fn standalone_media(media: &[Value], ctx: &Ctx) -> Markup {
-    media_markup(media, ctx, None)
+    media_markup(media, ctx, None, None)
 }
 
 #[allow(clippy::too_many_lines)] // one exhaustive media-kind renderer keeps shared semantics aligned
-fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
+fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>, owner: Option<&str>) -> Markup {
     if media.is_empty() {
         return html! {};
     }
     let count = media.len().min(4);
     html! {
-        div.status__media data-count=(count) {
+        div.status__media data-count=(count) data-video-owner=[owner] {
             @for (index, item) in media.iter().enumerate() {
                 @let url = item.get("url").and_then(Value::as_str).unwrap_or_default();
                 // The preview/thumbnail keeps the timeline light; the full file
@@ -2930,6 +2943,7 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                         }
                                     }
                                 }
+                                div.media__settings hidden data-video-settings-panel {
                                 @if p2p.is_some() {
                                     div.media__p2p hidden
                                         data-p2p-csrf=[ctx.csrf]
@@ -2943,6 +2957,8 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                         small { (ctx.locale.text("status-p2p-explanation")) }
                                         span.media__p2p-status role="status" {}
                                     }
+                                }
+                                (video_distribution_controls(item,ctx.locale,true))
                                 }
                                 (media_chapters(item, url, ctx.locale))
                                 @if live_state == Some("live") {
@@ -2994,7 +3010,6 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>) -> Markup {
                                 (media_seek_previews(item, url, ctx.locale))
                                 (media_history(item, url, ctx))
                                 (video_metadata_details(item, ctx.locale))
-                                (video_distribution_controls(item,ctx.locale))
                             },
                         }
                     },
@@ -3272,21 +3287,46 @@ fn media_caption_transcripts(item: &Value, locale: Locale) -> Markup {
     }
 }
 
-fn video_distribution_controls(item: &Value, locale: Locale) -> Markup {
+pub(super) fn video_distribution_controls(
+    item: &Value,
+    locale: Locale,
+    p2p_enabled: bool,
+) -> Markup {
     let distribution = &item["video_distribution"];
     html! {
         @if let Some(download)=distribution["download_url"].as_str(){p{a href=(download) download{(locale.text("video-sharing-download-link"))}}}
         @if let Some(embed)=distribution["embed_url"].as_str(){
-            details.media__embed{
-                summary{(locale.text("video-sharing-embed-code"))}
-                @for (url,key) in [(embed.to_owned(),"video-sharing-standard-code"),(format!("{embed}?p2p=0"),"video-sharing-server-code")]{
+            section.media__embed{
+                    @let url = format!("{embed}?p2p={}", u8::from(p2p_enabled));
                     @let code=html! { iframe src=(url) title=(locale.text("status-embed-title")) width="300" height="360" loading="lazy" referrerpolicy="no-referrer" allow="fullscreen" allowfullscreen {} }.into_string();
                     div.settings-field data-video-embed-code data-copied=(locale.text("video-sharing-copied")) data-copy-failed=(locale.text("video-sharing-copy-failed")){
-                        label.settings-field{span.settings-field__label{(locale.text(key))}textarea readonly rows="4" aria-label=(locale.text(key)){(code)}}
+                        label.settings-field{span.settings-field__label{(locale.text("video-sharing-embed-code"))}textarea readonly rows="4" aria-label=(locale.text("video-sharing-embed-code")){(code)}}
                         button type="button" data-video-embed-copy hidden{(locale.text("video-sharing-copy"))}
                         p role="status" aria-live="polite" data-video-embed-result hidden{}
                     }
-                }
+            }
+        }
+    }
+}
+
+pub(super) fn has_video_settings(status: &Status) -> bool {
+    status.media().iter().any(|item| {
+        item["type"] == "video"
+            && (item["hls"]["p2p"].is_object()
+                || item["video_distribution"]["download_url"].is_string()
+                || item["video_distribution"]["embed_url"].is_string())
+    })
+}
+
+pub(super) fn video_settings_link(status: &Status, locale: Locale) -> Markup {
+    html! {
+        @if has_video_settings(status) {
+            a.status__menu-item href=(format!("/web/statuses/{}/video-settings", status.id()))
+                data-video-settings-open
+                data-video-settings-status=(status.id())
+                data-video-settings-title=(locale.text("video-settings-title"))
+                data-video-settings-close=(locale.text("video-settings-close")) {
+                (locale.text("video-settings-title"))
             }
         }
     }
@@ -3630,6 +3670,7 @@ fn overflow_menu(status: &Status, ctx: &Ctx) -> Markup {
         details.status__menu data-status-menu {
             summary.action title=(ctx.locale.text("status-more-options")) { (icon("more")) }
             div.status__menu-pop {
+                (video_settings_link(status, ctx.locale))
                 @if !url.is_empty() {
                     button.status__menu-item.status__menu-item--js type="button"
                         data-copy-link=(url) { (ctx.locale.text("status-copy-link")) }
@@ -4352,7 +4393,7 @@ fn language_options(options: &[&'static Language], selected: &str) -> Markup {
         @if missing {
             @match languages::find(selected) {
                 Some(language) => option value=(selected) selected { (language.label()) },
-                None => option value=(selected) selected { (selected) },
+                None => option value=(selected) selected { (language_label(selected)) },
             }
         }
         @for language in options {
@@ -4376,8 +4417,7 @@ pub fn language_combo(
     locale: Locale,
 ) -> Markup {
     let list_id = format!("compose-{name}-options");
-    let current_label =
-        languages::find(selected).map_or_else(|| selected.to_string(), Language::label);
+    let current_label = language_label(selected);
     html! {
         div.compose__combo data-compose-combo
             data-empty-label=(locale.text("compose-no-languages")) {
@@ -4417,16 +4457,36 @@ pub fn language_combo_optional(
     selected: Option<&str>,
     none_label: &str,
 ) -> Markup {
-    let list_id = format!("compose-{name}-options");
+    language_combo_optional_with_id(
+        name,
+        label,
+        options,
+        selected,
+        none_label,
+        &format!("compose-{name}-options"),
+        false,
+    )
+}
+
+/// Scoped picker IDs allow separate video metadata and caption forms on one page.
+pub(super) fn language_combo_optional_with_id(
+    name: &str,
+    label: &str,
+    options: &[&'static Language],
+    selected: Option<&str>,
+    none_label: &str,
+    list_id: &str,
+    required: bool,
+) -> Markup {
     let current_label = match selected {
-        Some(code) => languages::find(code).map_or_else(|| code.to_string(), Language::label),
+        Some(code) => language_label(code),
         None => none_label.to_owned(),
     };
     html! {
-        div.compose__combo data-compose-combo {
+        div.compose__combo data-compose-combo data-required-label=[required.then_some(none_label)] {
             label.compose__combo-native {
                 span.visually-hidden { (label) }
-                select name=(name) {
+                select name=(name) required[required] {
                     option value="" selected[selected.is_none()] { (none_label) }
                     @match selected {
                         Some(code) => (language_options(options, code)),
@@ -4441,6 +4501,9 @@ pub fn language_combo_optional(
                 aria-controls=(list_id) title=(label) {
                 span.compose__combo-label data-combo-label { (current_label) }
                 span.compose__combo-caret { (icon("chevron")) }
+            }
+            @if required {
+                span.settings-field__hint data-combo-validation role="alert" hidden {}
             }
             div.compose__combo-pop data-combo-pop hidden {
                 input.compose__combo-search type="text" data-combo-search

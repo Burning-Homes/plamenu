@@ -1,4 +1,4 @@
-FROM php:8.4-apache-bookworm
+FROM php:8.4.26-apache-bookworm@sha256:57ccfbd765e5ee5f85dee5864e47ca8db0b540b0c091c052d9b275b2498a5395
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \

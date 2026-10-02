@@ -66,8 +66,18 @@ def make_m4a() -> bytes:
         out = Path(tmp) / "tone.m4a"
         subprocess.run(
             [
-                "ffmpeg", "-nostdin", "-loglevel", "error", "-f", "lavfi", "-i",
-                "sine=frequency=440:duration=2", "-c:a", "aac", "-y", str(out),
+                "ffmpeg",
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=2",
+                "-c:a",
+                "aac",
+                "-y",
+                str(out),
             ],
             check=True,
         )

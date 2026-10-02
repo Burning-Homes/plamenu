@@ -21,6 +21,7 @@ pub(super) fn fields(category: &str, licence: &str, locale: Locale) -> Markup {
         .filter(|id| (1..=9).contains(id));
     let selected_url = selected.and_then(crate::video_metadata::licence_url);
     html! {
+        div.video-form__grid {
         label.settings-field {
             span.settings-field__label { (locale.text("videos-category")) }
             select name="category" {
@@ -30,9 +31,12 @@ pub(super) fn fields(category: &str, licence: &str, locale: Locale) -> Markup {
                 }
             }
         }
-        label.settings-field {
-            span.settings-field__label { (locale.text("videos-licence")) }
-            select name="licence" data-video-licence aria-describedby="video-licence-hint" {
+        div.settings-field {
+            div.video-field__heading { label.settings-field__label for="video-licence" { (locale.text("videos-licence")) } (super::video_workspace::help(locale,"videos-licence",&html! { p id="video-licence-hint" {
+            (locale.text("videos-licence-hint")) " "
+            a href="https://creativecommons.org/share-your-work/" target="_blank" rel="noopener noreferrer" { (locale.text("videos-licence-learn")) }
+        }})) }
+            select name="licence" id="video-licence" data-video-licence aria-describedby="video-licence-hint" {
                 option value="0" selected[licence.is_empty() || licence == "0"] { (locale.text("videos-unspecified")) }
                 @for (index, name) in crate::video_metadata::LICENCES.iter().enumerate() {
                     @let id = i32::try_from(index + 1).unwrap_or(9);
@@ -43,10 +47,8 @@ pub(super) fn fields(category: &str, licence: &str, locale: Locale) -> Markup {
                 }
             }
         }
-        p.settings-field__hint id="video-licence-hint" {
-            (locale.text("videos-licence-hint")) " "
-            a href="https://creativecommons.org/share-your-work/" target="_blank" rel="noopener noreferrer" { (locale.text("videos-licence-learn")) }
         }
+
         p role="status" aria-live="polite" data-video-licence-status hidden[selected_url.is_none()] {
             a data-video-licence-link href=[selected_url] target="_blank" rel="noopener noreferrer" {
                 @if let Some(id) = selected { (crate::video_metadata::LICENCES[usize::try_from(id - 1).unwrap_or(0)]) }
@@ -101,12 +103,12 @@ async fn render(
         .remove(&id)
         .unwrap_or_default();
     let body = html! {
-        section.column {
+        section.column.video-form {
             h1 { (user.locale.text("videos-metadata-manage")) }
             h2 { (publication.title) }
             @if saved { p.settings__saved role="status" { (user.locale.text("videos-metadata-saved")) } }
             @if let Some(error) = error { p.settings__error role="alert" { (error) } }
-            p { a href=(format!("/web/statuses/{}", publication.status_id)) { (user.locale.text("videos-caption-watch")) } }
+            (super::video_workspace::video_navigation(id,publication.status_id,user.locale))
             p { a href=(format!("/web/statuses/{}/edit",publication.status_id)) { (user.locale.text("status-edit")) }
                 " · " a href=(format!("/videos/{id}/captions")) { (user.locale.text("videos-caption-published-title")) }
                 " · " a href=(format!("/videos/{id}/chapters")) { (user.locale.text("videos-chapters-title")) }
@@ -119,12 +121,16 @@ async fn render(
             }
             (super::videos::replace_poster_form(id, &user.csrf, user.locale, true))
             @let delete_action=format!("/web/statuses/{}/delete",publication.status_id);
-            @let delete_message=user.locale.text("status-delete-confirm");
+            @let delete_message=user.locale.text("studio-delete-video-confirm");
+            details.video-form__section.video-form__panel.video-form__danger {
+            summary {(user.locale.text("studio-delete-video"))}
+            p.settings-field__hint {(user.locale.text("studio-delete-video-hint"))}
             form.settings-form method="post" action=(super::view::CONFIRM_PATH) data-confirm=(&delete_message) data-confirm-action=(&delete_action) {
                 input type="hidden" name="csrf" value=(user.csrf);
                 input type="hidden" name="return_to" value="/videos";
                 (super::view::confirmation_fields(&delete_action,Some(&delete_message)))
-                button.settings-button--danger type="submit" { (user.locale.text("status-delete")) }
+                button.settings-button--danger type="submit" { (user.locale.text("studio-delete-video")) }
+            }
             }
         }
     };

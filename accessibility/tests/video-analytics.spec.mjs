@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { randomUUID } from 'node:crypto';
-import { signIn } from '../session.mjs';
+import { signIn, openVideoOptions, createVideoChannel ,videoChannelForm} from '../session.mjs';
 
 async function submit(page, button, path) {
   const [response] = await Promise.all([
@@ -22,14 +22,14 @@ async function check(page, noScript) {
 async function journey(page, info, noScript) {
   test.setTimeout(240000);
   await signIn(page);
-  await page.goto('/videos');
-  const create = page.locator('form[action="/web/video-channels"]');
+  await page.goto('/videos/upload');await openVideoOptions(page);
+  const create = await videoChannelForm(page);
   if (!await create.isVisible()) await create.locator('..').locator(':scope > summary').press('Enter');
   const name = `stats_${randomUUID().replaceAll('-', '').slice(0, 18)}`;
   await create.getByLabel('Channel address').fill(name);
   await create.getByLabel('Channel name').fill(name);
   await submit(page, create.getByRole('button', { name: 'Create a video channel', exact: true }), '/web/video-channels');
-  await page.goto('/videos');
+  await page.goto('/videos/upload');await openVideoOptions(page);
   const upload = page.locator('form[action="/web/videos"]');
   await upload.getByRole('combobox', { name: 'Channel', exact: true }).selectOption({ label: name });
   const channel = await upload.getByRole('combobox', { name: 'Channel', exact: true }).inputValue();

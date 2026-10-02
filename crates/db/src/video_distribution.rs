@@ -65,7 +65,7 @@ pub async fn embed_allowed<'e, E: PgExecutor<'e>>(
     .await?)
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(sqlx::FromRow, serde::Deserialize)]
 pub struct Offer {
     pub media_id: i64,
     pub status_id: i64,
@@ -79,6 +79,6 @@ pub async fn offers<'e, E: PgExecutor<'e>>(
     if ids.is_empty() {
         return Ok(HashMap::new());
     }
-    Ok(sqlx::query_as::<_,Offer>("SELECT v.media_id,v.status_id,COALESCE(p.download_enabled,true) AS download_enabled,COALESCE(p.embed_enabled,true) AS embed_enabled FROM video_publications v LEFT JOIN video_distribution p ON p.media_id=v.media_id JOIN statuses s ON s.id=v.status_id WHERE v.media_id=ANY($1) AND s.deleted_at IS NULL AND s.visibility IN ('public','unlisted')")
+    Ok(sqlx::query_as::<_,Offer>("SELECT v.media_id,v.status_id,COALESCE(p.download_enabled,true) AS download_enabled,COALESCE(p.embed_enabled,true) AS embed_enabled FROM video_publications v LEFT JOIN video_distribution p ON p.media_id=v.media_id JOIN statuses s ON s.id=v.status_id WHERE v.media_id=ANY($1) AND s.deleted_at IS NULL AND s.visibility IN ('public','unlisted')\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos")
         .bind(ids).fetch_all(executor).await?.into_iter().map(|p|(p.media_id,p)).collect())
 }

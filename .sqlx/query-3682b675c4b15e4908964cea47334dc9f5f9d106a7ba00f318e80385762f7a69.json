@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT b.status_id AS \"status_id!\", b.broadcast_uuid,\n                CASE WHEN s.sensitive OR s.spoiler_text <> ''\n                     THEN 'Sensitive live broadcast'\n                     ELSE COALESCE(s.title, 'Live broadcast') END AS \"title!\",\n                b.scheduled_starts, s.updated_at\n         FROM native_live_broadcasts b\n         JOIN statuses s ON s.id = b.status_id\n         JOIN accounts a ON a.id = b.channel_id\n         JOIN accounts owner ON owner.id = s.account_id\n         WHERE b.status_id = $1 AND s.visibility IN ('public', 'unlisted')\n           AND s.deleted_at IS NULL AND a.domain IS NULL AND a.suspended_at IS NULL\n           AND owner.suspended_at IS NULL",
+  "query": "SELECT b.status_id AS \"status_id!\", b.broadcast_uuid,\n                CASE WHEN s.sensitive OR s.spoiler_text <> ''\n                     THEN 'Sensitive live broadcast'\n                     ELSE COALESCE(s.title, 'Live broadcast') END AS \"title!\",\n                b.scheduled_starts, s.updated_at\n         FROM native_live_broadcasts b\n         JOIN statuses s ON s.id = b.status_id\n         JOIN accounts a ON a.id = b.channel_id\n         JOIN accounts owner ON owner.id = s.account_id\n         WHERE b.status_id = $1 AND s.visibility IN ('public', 'unlisted')\n           AND s.deleted_at IS NULL AND a.domain IS NULL AND a.suspended_at IS NULL\n           AND owner.suspended_at IS NULL\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
   "describe": {
     "columns": [
       {
@@ -67,5 +67,5 @@
       false
     ]
   },
-  "hash": "4b52bf0c6f49430937d48c18168d9eeb2074a6f02269e1cf870736587e82b28a"
+  "hash": "3682b675c4b15e4908964cea47334dc9f5f9d106a7ba00f318e80385762f7a69"
 }

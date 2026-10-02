@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH candidates AS MATERIALIZED (\n            SELECT s.id, s.account_id,\n                   COALESCE(v.channel_id, r.channel_id, s.account_id) AS channel_id\n            FROM statuses s\n            LEFT JOIN video_publications v ON v.status_id = s.id\n            LEFT JOIN remote_video_channels r ON r.status_id = s.id\n            WHERE s.object_type = 'Video' AND s.visibility = 'public'\n              AND s.reblog_of_id IS NULL AND s.deleted_at IS NULL\n              AND s.ingest_provenance <> 'history'\n              AND ($1::bigint IS NULL OR s.id < $1)\n              AND ($2::text IS NULL OR\n                   to_tsvector('simple', coalesce(s.title, '') || ' ' || s.content)\n                     @@ websearch_to_tsquery('simple', $2))\n              AND EXISTS (SELECT 1 FROM media_attachments m\n                          WHERE m.status_id = s.id\n                            AND (m.kind IN ('video', 'gifv') OR m.content_type LIKE 'video/%')\n                            AND (m.processing = 'complete' OR m.download_on_demand))\n              AND (NOT $4::boolean OR EXISTS (\n                   SELECT 1 FROM follows f WHERE f.account_id = $3\n                     AND f.target_account_id = COALESCE(v.channel_id, r.channel_id, s.account_id)\n                     AND NOT f.pending))\n            ORDER BY s.id DESC LIMIT 1000\n        )\n        , visible AS (\n            SELECT c.id, c.channel_id FROM candidates c\n            LEFT JOIN video_channels vc ON vc.account_id=c.channel_id\n            WHERE NOT account_hidden($3, c.account_id)\n              AND NOT account_hidden($3, c.channel_id)\n              AND (vc.owner_account_id IS NULL OR NOT account_hidden($3, vc.owner_account_id))\n        ), scan AS (SELECT min(id) AS scan_before,count(*) AS scanned FROM candidates)\n        SELECT v.id AS \"status_id?\", v.channel_id AS \"channel_id?\",\n            scan.scan_before AS \"scan_before?\",scan.scanned AS \"scanned!\"\n        FROM scan LEFT JOIN visible v ON true\n        ORDER BY v.id DESC NULLS LAST LIMIT $5\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id?",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "scan_before?",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "scanned!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "447bd306c30f36be0aaeae290fe1bec9331c4d0d14fadef4fcaee6d72649fc02"
+}

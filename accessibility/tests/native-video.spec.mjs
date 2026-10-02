@@ -6,7 +6,8 @@ import { createServer } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { signIn } from '../session.mjs';
+import { signIn, openVideoOptions, createVideoChannel ,videoChannelForm,openDetailsFor,chooseVideoLanguage} from '../session.mjs';
+import { openVideoSettings, closeVideoSettings } from '../video-settings.mjs';
 
 let fixtureDirectory;
 let fixture;
@@ -43,8 +44,8 @@ test.afterAll(() => {
 
 async function publish(page, projectName, noScript) {
   await signIn(page);
-  await page.goto('/videos');
-  await expect(page.getByRole('heading', { name: 'Videos', exact: true })).toBeVisible();
+  await page.goto('/videos/upload');await openVideoOptions(page);
+  await expect(page.getByRole('heading', { name: 'Upload a video', exact: true })).toBeVisible();
   const name = `film_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
   let channelName = `Films ${name}`;
   let form = page.locator('form[action="/web/videos"]');
@@ -55,23 +56,21 @@ async function publish(page, projectName, noScript) {
     channelName = (await form.getByRole('combobox', { name: 'Channel', exact: true })
       .locator('option').first().textContent()).trim();
   } else {
-    const channelForm = page.locator('form[action="/web/video-channels"]');
+    const channelForm = await videoChannelForm(page);
     if (!await channelForm.isVisible()) await page.locator('summary').filter({ hasText: 'Create a video channel' }).click();
     await channelForm.getByLabel('Channel address').fill(name);
     await channelForm.getByLabel('Channel name').fill(`Films ${name}`);
-    await channelForm.getByRole('button', { name: 'Create a video channel' }).click();
-    await page.waitForURL(url => url.pathname === '/videos');
+    await createVideoChannel(page, channelForm.getByRole('button', { name: 'Create a video channel' }));
+    await page.waitForURL(url => url.pathname === '/videos/upload');await openVideoOptions(page);
     form = page.locator('form[action="/web/videos"]');
   }
   await form.getByRole('combobox', { name: 'Channel', exact: true }).selectOption({ label: channelName });
-  await expect(page.getByRole('navigation', { name: 'Your video channels' })
-    .getByRole('link', { name: channelName, exact: true }))
-    .toHaveAttribute('href', /\/videos\/explore\?channel=\d+/);
+  const channelId = await form.getByRole('combobox', { name: 'Channel', exact: true }).inputValue();
   await form.getByLabel('Video title').fill(`Browser video ${name}`);
   await form.getByLabel('Description', { exact: true }).fill('Native video from an ordinary HTML form.');
-  await form.getByLabel('Language code').fill('en');
+  await chooseVideoLanguage(form,'en');
   await form.getByLabel('Video or audio file', { exact: true }).setInputFiles(fixture);
-  const posterTime = form.getByLabel('Poster frame time (seconds)');
+  const posterTime = form.getByLabel('Poster frame time (seconds)', { exact: true });
   if (noScript) {
     await posterTime.fill('1.5');
   } else {
@@ -84,9 +83,9 @@ async function publish(page, projectName, noScript) {
     await picker.getByRole('button', { name: 'Use this frame' }).click();
     await expect(posterTime).toHaveValue('1.5');
   }
-  await form.getByLabel('Visual description').fill('A moving colour test pattern.');
+  await form.getByLabel('Visual description', { exact: true }).fill('A moving colour test pattern.');
   await form.getByLabel('Transcript', { exact: true }).fill('A steady test tone plays throughout.');
-  await form.getByLabel('Captions (WebVTT)').setInputFiles({ name: 'captions.vtt', mimeType: 'text/vtt',
+  await form.getByLabel('Captions (WebVTT)', { exact: true }).setInputFiles({ name: 'captions.vtt', mimeType: 'text/vtt',
     buffer: Buffer.from('WEBVTT\n\n00:00:00.000 --> 00:00:03.000\n[Steady test tone]\n') });
   if (!noScript) {
     await page.route('**/web/videos/resumable', async route => {
@@ -123,6 +122,7 @@ async function publish(page, projectName, noScript) {
   await expect(page.getByRole('img', { name: 'Selected poster frame' })).toBeVisible();
   await expect(page.locator('.video-publish__poster')).toContainText('1.5 s');
   const replacement = page.locator('form[data-video-poster-replace]');
+  await openDetailsFor(replacement);
   await expect(replacement).toBeVisible();
   await replacement.getByLabel('Describe the poster image, including any text shown in it')
     .fill('A solid blue square.');
@@ -184,7 +184,10 @@ async function publish(page, projectName, noScript) {
   if (!noScript) {
     expect(await player.getAttribute('data-p2p-uuid')).toMatch(/^[0-9a-f-]{36}$/);
     expect(await player.getAttribute('data-p2p-trackers')).toContain('/tracker/socket');
+    await expect(page.locator('.media__p2p-toggle')).toBeHidden();
+    await openVideoSettings(page);
     await expect(page.locator('.media__p2p-toggle')).toBeVisible();
+    await closeVideoSettings(page);
   }
   // Exercise the browser's real decoder and WebVTT engine, also with page
   // scripts disabled. This is not a claim about native-control keyboard UX.
@@ -356,16 +359,13 @@ async function publish(page, projectName, noScript) {
       const frame = host.frameLocator('iframe.plamenu-embed');
       await expect(frame.locator('video[data-hls]')).toBeVisible();
       const choice = frame.getByRole('checkbox', { name: 'Share video with other viewers' });
+      await openVideoSettings(frame);
       await expect(choice).toBeChecked();
-      expect(await frame.locator('figure[data-p2p="true"]').evaluate(figure => {
-        const control = figure.querySelector('.media__p2p').getBoundingClientRect();
-        const video = figure.querySelector('video').getBoundingClientRect();
-        return control.bottom <= video.top;
-      })).toBe(true);
       await host.locator('iframe.plamenu-embed').screenshot({ path: '../target/e2e/native-video-p2p-embed-before.png' });
       await choice.focus();
       await host.keyboard.press('Space');
       await expect(choice).not.toBeChecked();
+      await closeVideoSettings(frame);
       const embeddedPlayer = frame.locator('video[data-hls]');
       await embeddedPlayer.evaluate(video => { video.muted = true; video.play().catch(() => {}); });
       await expect.poll(() => embeddedPlayer.evaluate(video => video.currentTime)).toBeGreaterThan(0.1);
@@ -409,9 +409,7 @@ async function publish(page, projectName, noScript) {
   await page.goto(`/web/statuses/${statusId}/edit`);
   await expect(edit.getByLabel('Video title')).toHaveValue(editedTitle);
   await expect(edit.getByRole('textbox', { name: 'Post text', exact: true })).toHaveValue(description);
-  await page.goto('/videos');
-  await page.getByRole('navigation', { name: 'Your video channels', exact: true })
-    .getByRole('link', { name: channelName, exact: true }).click();
+  await page.goto(`/videos/explore?channel=${channelId}`);
   await expect(page.getByRole('heading', { level: 1 })).toContainText(channelName);
   await expect(page.getByText(editedTitle, { exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Creator profile' }).click();
@@ -456,7 +454,7 @@ test('native video upload, captions and publication @no-js', async ({ page }, in
 async function scheduleVideo(page, noScript) {
   test.setTimeout(120_000);
   await signIn(page);
-  await page.goto('/videos');
+  await page.goto('/videos/upload');await openVideoOptions(page);
   const form = page.locator('form[action="/web/videos"]');
   const channel = form.getByRole('combobox', { name: 'Channel', exact: true });
   await channel.selectOption({ index: 0 });
@@ -476,6 +474,7 @@ async function scheduleVideo(page, noScript) {
   }
   await page.getByRole('link', { name: 'Review your video' }).click();
   const review = page.locator('form[data-video-schedule-form]');
+  await page.locator('summary').filter({hasText:/^Publish later$/}).press('Enter');
   const when = review.getByLabel('Publication time');
   await expect(when).toBeVisible();
   await expect(page.locator('#videos-schedule-hint')).toContainText('UTC');
@@ -501,6 +500,7 @@ async function scheduleVideo(page, noScript) {
   await entry.getByRole('button', { name: 'Cancel post', exact: true }).click();
   await expect(page.getByText(title, { exact: true })).toHaveCount(0);
   await page.goto(`/videos/drafts/${mediaId}`);
+  await page.locator('summary').filter({hasText:/^Cancel and delete draft$/}).press('Enter');
   await page.getByRole('checkbox', { name: 'I want to delete this draft and its files' }).check();
   await page.getByRole('button', { name: 'Cancel and delete draft' }).click();
   await page.waitForURL(url => url.pathname === '/videos');
@@ -512,16 +512,16 @@ test('native video review schedules without JavaScript @no-js', async ({ page })
 async function metadataVideo(page, noScript) {
   test.setTimeout(120_000);
   await signIn(page);
-  await page.goto('/videos');
+  await page.goto('/videos/upload');await openVideoOptions(page);
   const form = page.locator('form[action="/web/videos"]');
   await expect(form).toBeVisible();
   if (await form.getByRole('combobox', { name: 'Channel', exact: true }).locator('option').count() === 0) {
-    const create = page.locator('form[action="/web/video-channels"]');
+    const create = await videoChannelForm(page);
     if (!await create.isVisible()) await page.locator('summary').filter({ hasText: 'Create a video channel' }).click();
     await create.getByLabel('Channel address').fill(`metadata_${Date.now()}`);
     await create.getByLabel('Channel name').fill('Metadata films');
-    await create.getByRole('button', { name: 'Create a video channel' }).click();
-    await page.waitForURL(url => url.pathname === '/videos');
+    await createVideoChannel(page, create.getByRole('button', { name: 'Create a video channel' }));
+    await page.waitForURL(url => url.pathname === '/videos/upload');await openVideoOptions(page);
   }
   await form.getByRole('combobox', { name: 'Channel', exact: true }).selectOption({ index: 0 });
   const title = `Metadata film ${Date.now()}`;
@@ -611,23 +611,23 @@ test('Video metadata authoring and editing without JavaScript @no-js', async ({ 
 async function publishAudioOnly(page, projectName, noScript) {
   test.setTimeout(90_000);
   await signIn(page);
-  await page.goto('/videos');
+  await page.goto('/videos/upload');await openVideoOptions(page);
   const name = `audio_${Date.now().toString(36)}_${projectName.slice(0, 3)}`;
-  const channelForm = page.locator('form[action="/web/video-channels"]');
+  const channelForm = await videoChannelForm(page);
   if (!await channelForm.isVisible()) {
     await page.locator('summary').filter({ hasText: 'Create a video channel' }).click();
   }
   await channelForm.getByLabel('Channel address').fill(name);
   await channelForm.getByLabel('Channel name').fill(`Films ${name}`);
-  await channelForm.getByRole('button', { name: 'Create a video channel' }).click();
-  await page.waitForURL(url => url.pathname === '/videos');
+  await createVideoChannel(page, channelForm.getByRole('button', { name: 'Create a video channel' }));
+  await page.waitForURL(url => url.pathname === '/videos/upload');await openVideoOptions(page);
   const form = page.locator('form[action="/web/videos"]');
   await form.getByRole('combobox', { name: 'Channel', exact: true })
     .selectOption({ label: `Films ${name}` });
   await form.getByLabel('Video title').fill(`Waveform ${name}`);
   await form.getByLabel('Video or audio file', { exact: true }).setInputFiles(audioFixture);
-  await form.getByLabel('Poster frame time (seconds)').fill('1.5');
-  await form.getByLabel('Visual description').fill('A blue waveform on a dark background.');
+  await form.getByLabel('Poster frame time (seconds)', { exact: true }).fill('1.5');
+  await form.getByLabel('Visual description', { exact: true }).fill('A blue waveform on a dark background.');
   await form.getByLabel('Transcript', { exact: true }).fill('A steady test tone plays.');
   await form.getByRole('button', { name: 'Upload video' }).click();
   await page.waitForURL(url => /\/videos\/drafts\/\d+$/.test(url.pathname));
@@ -684,14 +684,14 @@ test('audio-only Video source is authorable and playable @no-js', async ({ page 
 test('interrupted video upload resumes from its committed offset', async ({ page }, info) => {
   test.setTimeout(90_000);
   await signIn(page);
-  await page.goto('/videos');
+  await page.goto('/videos/upload');await openVideoOptions(page);
   const name = `resume_${Date.now().toString(36)}_${info.project.name.slice(0, 3)}`;
-  const channelForm = page.locator('form[action="/web/video-channels"]');
+  const channelForm = await videoChannelForm(page);
   if (!await channelForm.isVisible()) await page.locator('summary').filter({ hasText: 'Create a video channel' }).click();
   await channelForm.getByLabel('Channel address').fill(name);
   await channelForm.getByLabel('Channel name').fill(`Films ${name}`);
-  await channelForm.getByRole('button', { name: 'Create a video channel' }).click();
-  await page.waitForURL(url => url.pathname === '/videos');
+  await createVideoChannel(page, channelForm.getByRole('button', { name: 'Create a video channel' }));
+  await page.waitForURL(url => url.pathname === '/videos/upload');await openVideoOptions(page);
   const form = page.locator('form[action="/web/videos"]');
   await form.getByRole('combobox', { name: 'Channel', exact: true }).selectOption({ label: `Films ${name}` });
   await form.getByLabel('Video title').fill(`Resume ${name}`);

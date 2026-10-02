@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: N999 -- executable CLI names use hyphens; these are not importable modules.
 """Syntax checks over tracked files only; no Python modules are imported."""
 
 import ast

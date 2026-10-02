@@ -1,9 +1,15 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { signIn } from '../session.mjs';
+import { signIn, openVideoOptions, createVideoChannel ,videoChannelForm} from '../session.mjs';
 
 async function form(page, operation) {
   return page.locator(`form:has(input[name="operation"][value="${operation}"])`);
+}
+async function submitAndCommit(page, button, channelPath) {
+  const posted=page.waitForResponse(response=>response.request().method()==='POST'
+    && new URL(response.url()).pathname===channelPath.replace('/videos/channels/','/web/video-channels/'));
+  await button.press('Enter');
+  expect((await posted).status()).toBe(303);
 }
 async function scan(page, noScript) {
   const widths = await page.evaluate(() => [innerWidth, document.documentElement.scrollWidth]);
@@ -17,16 +23,16 @@ async function scan(page, noScript) {
 async function journey(page, browser, info, noScript) {
   test.setTimeout(120_000);
   await signIn(page);
-  await page.goto('/videos');
+  await page.goto('/videos/upload');await openVideoOptions(page);
   const name = `team_${Date.now().toString(36)}_${info.project.name.slice(0, 3)}`;
-  const create = page.locator('form[action="/web/video-channels"]');
+  const create = await videoChannelForm(page);
   if (!await create.isVisible()) await create.locator('..').locator(':scope > summary').click();
   await create.getByLabel('Channel address').fill(name);
   await create.getByLabel('Channel name').fill(`Team ${name}`);
-  await create.getByRole('button', { name: 'Create a video channel' }).press('Enter');
-  await page.waitForURL(url => url.pathname === '/videos');
-  await page.getByRole('link', { name: 'Manage video channels', exact: true }).first().click();
-  await page.getByRole('link', { name: `Team ${name} (@${name})`, exact: true }).click();
+  await createVideoChannel(page, create.getByRole('button', { name: 'Create a video channel' }));
+  await page.waitForURL(url => url.pathname === '/videos/upload');await openVideoOptions(page);
+  await page.getByRole('link', { name: 'Channels', exact: true }).first().click();
+  await page.getByRole('link', { name: `Team ${name}`, exact: true }).click();
   const channelPath = new URL(page.url()).pathname;
   await scan(page, noScript);
   let profile = await form(page, 'profile');
@@ -53,7 +59,7 @@ async function journey(page, browser, info, noScript) {
     await recipient.getByRole('button', { name: 'Sign in', exact: true }).click();
     await recipient.waitForURL(url => url.pathname === '/');
     await recipient.goto('/videos/channels');
-    await recipient.getByRole('link', { name: `Team revised ${name} (@${name})`, exact: true }).click();
+    await recipient.getByRole('link', { name: `Team revised ${name}`, exact: true }).click();
     await expect(await form(recipient, 'profile')).toHaveCount(0);
     await scan(recipient, noScript);
     await (await form(recipient, 'accept')).getByRole('button', { name: 'Accept invitation' }).press('Enter');
@@ -61,17 +67,17 @@ async function journey(page, browser, info, noScript) {
     await expect(await form(recipient, 'invite')).toHaveCount(0);
     profile = await form(recipient, 'profile');
     await profile.getByRole('textbox', { name: 'Description', exact: true }).fill('Corrected by a consenting editor.');
-    await profile.getByRole('button', { name: 'Save channel profile' }).press('Enter');
+    await submitAndCommit(recipient, profile.getByRole('button', { name: 'Save channel profile' }), channelPath);
     await page.reload();
     await expect((await form(page, 'profile')).getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('Corrected by a consenting editor.');
-    await page.getByRole('button', { name: 'Revoke access for @channel_editor', exact: true }).press('Enter');
+    await submitAndCommit(page, page.getByRole('button', { name: 'Revoke access for @channel_editor', exact: true }), channelPath);
     expect((await recipient.request.get(channelPath)).status()).toBe(404);
     await page.locator('summary').filter({ hasText: /^Transfer ownership$/ }).press('Enter');
     let transfer = await form(page, 'transfer');
     await transfer.getByLabel("Local person's username").fill('channel_editor');
-    await transfer.getByRole('button', { name: 'Request ownership transfer' }).press('Enter');
+    await submitAndCommit(page, transfer.getByRole('button', { name: 'Request ownership transfer' }), channelPath);
     await recipient.goto('/videos/channels');
-    await recipient.getByRole('link', { name: `Team revised ${name} (@${name})`, exact: true }).click();
+    await recipient.getByRole('link', { name: `Team revised ${name}`, exact: true }).click();
     await expect(recipient.getByRole('heading', { name: 'Ownership transfer invitation', exact: true })).toBeVisible();
     transfer = await form(recipient, 'accept_transfer');
     await transfer.getByLabel(`Type the channel address to confirm (@${name})`).fill(name);

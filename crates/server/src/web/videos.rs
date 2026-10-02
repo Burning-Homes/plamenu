@@ -51,11 +51,11 @@ async fn owned_preview(
 
 fn poster_picker(draft: &Draft, locale: Locale) -> Markup {
     html! {
-        label.settings-field {
-            span.settings-field__label { (locale.text("videos-poster-time")) }
-            input type="number" name="poster_time" min="0" max="86400" step="0.1" aria-describedby="video-poster-time-hint" value=(if draft.poster_time.is_empty() { "0" } else { &draft.poster_time }) data-poster-time;
+        div.settings-field {
+            div.video-field__heading { label.settings-field__label for="video-poster-time" { (locale.text("videos-poster-time")) } (super::video_workspace::help(locale,"videos-poster-time",&html! {p id="video-poster-time-hint" {(locale.text("videos-poster-time-hint"))}})) }
+            input type="number" id="video-poster-time" name="poster_time" min="0" max="86400" step="0.1" aria-describedby="video-poster-time-hint" value=(if draft.poster_time.is_empty() { "0" } else { &draft.poster_time }) data-poster-time;
         }
-        p.settings-field__hint id="video-poster-time-hint" { (locale.text("videos-poster-time-hint")) }
+
         div.video-poster-picker data-poster-picker data-poster-status-prefix=(locale.text("videos-poster-at")) hidden {
             video controls preload="metadata" muted playsinline aria-label=(locale.text("videos-poster-picker")) data-poster-source {}
             button type="button" data-poster-use-current { (locale.text("videos-poster-use-current")) }
@@ -109,24 +109,50 @@ pub(super) fn replace_poster_form(
     }
 }
 
-fn new_channel_form(csrf: &str, expand: bool, locale: Locale) -> Markup {
-    html! {
-        details open[expand] {
-            summary { (locale.text("videos-new-channel")) }
+fn new_channel_form(
+    csrf: &str,
+    expand: bool,
+    locale: Locale,
+    name: &str,
+    display_name: &str,
+    standalone: bool,
+) -> Markup {
+    let form = html! {
             form.settings-form method="post" action="/web/video-channels" {
                 input type="hidden" name="csrf" value=(csrf);
+                input type="hidden" name="return_to" value=(if standalone {"/videos/channels"} else {"/videos/upload"});
                 label.settings-field {
                     span.settings-field__label { (locale.text("videos-channel-address")) }
-                    input name="username" pattern="[a-zA-Z0-9_]+" maxlength="30" required;
+                    input name="username" pattern="[a-zA-Z0-9_]+" maxlength="30" required value=(name);
                 }
                 label.settings-field {
                     span.settings-field__label { (locale.text("videos-channel-name")) }
-                    input name="display_name" maxlength="120" required;
+                    input name="display_name" maxlength="120" required value=(display_name);
                 }
                 button type="submit" { (locale.text("videos-new-channel")) }
             }
-        }
+    };
+    if standalone {
+        form
+    } else {
+        html! {details.video-workspace__create open[expand] {summary {(locale.text("videos-new-channel"))} (form)}}
     }
+}
+
+fn channel_page(user: &WebUser, name: &str, display_name: &str, error: Option<&str>) -> Response {
+    let locale = user.locale;
+    let body = html! {section.column.video-workspace {
+        h1 {(locale.text("videos-new-channel"))}
+        (super::video_workspace::navigation("/videos/channels",locale))
+        @if let Some(error)=error {p.settings__error role="alert" {(error)}}
+        (new_channel_form(&user.csrf,true,locale,name,display_name,true))
+    }};
+    super::video_history::private(
+        layout::shell(&locale.text("videos-new-channel"), Some(user), &body).into_response(),
+    )
+}
+pub async fn new_channel(user: WebUser) -> Response {
+    channel_page(&user, "", "", None)
 }
 
 #[allow(clippy::too_many_lines, reason = "one HTML authoring/review template")]
@@ -148,27 +174,6 @@ pub(super) async fn page(
         None
     };
     let edit_target = edit.as_ref().and_then(|e| e.target_media_id);
-    let recent = if preview.is_none() {
-        plamenu_db::video_draft::recent_owned(&state.pool, user.current.account.id).await?
-    } else {
-        Vec::new()
-    };
-    let recent_published = if preview.is_none() {
-        plamenu_db::video_captions::recent_owned_publications(&state.pool, user.current.account.id)
-            .await?
-    } else {
-        Vec::new()
-    };
-    let editable_ids = crate::video_edit::ready_native_ids(
-        state,
-        &recent_published
-            .iter()
-            .map(|p| p.media_id)
-            .collect::<Vec<_>>(),
-    )
-    .await?;
-    let live_broadcasts =
-        plamenu_db::native_live::recent_owned(&state.pool, user.current.account.id).await?;
     // Derive privacy from stored ownership, never a client-submitted flag.
     let native = if let Some(media) = &preview {
         plamenu_db::video_draft::find_owned(&state.pool, media.id, user.current.account.id)
@@ -194,99 +199,22 @@ pub(super) async fn page(
         Vec::new()
     };
     let body = html! {
-        section.column {
-            h1 { (locale.text("videos-title")) }
+        section.column.video-form {
+            h1 { (locale.text(if preview.is_some() { "videos-review" } else { "studio-upload" })) }
             @if let Some(message) = error { p.settings__error role="alert" { (message) } }
-            p { (locale.text("videos-intro")) }
-            p { a href="/videos/explore" { (locale.text("videos-explore-browse")) } }
-            p { a href="/videos/import" { (locale.text("video-import-title")) } }
-            p { a href="/videos/sources" { (locale.text("video-sources-title")) } }
-            p { a href="/videos/channels" { (locale.text("video-channel-manage")) } }
-            p { a href="/videos/playlists" { (locale.text("playlist-title")) } }
-            p { a href="/videos/history" { (locale.text("video-history-title")) } " · " a href="/videos/settings" { (locale.text("video-viewer-settings")) } }
-            @if !recent.is_empty() {
-                nav aria-label=(locale.text("videos-recent-drafts")) {
-                    h2 { (locale.text("videos-recent-drafts")) }
-                    ul {
-                        @for pending in &recent {
-                            li { a href=(format!("/videos/drafts/{}", pending.media_id)) { (pending.title) } }
-                        }
-                    }
-                }
-            }
-            @if !recent_published.is_empty() {
-                nav aria-label=(locale.text("videos-your-published")) {
-                    h2 { (locale.text("videos-your-published")) }
-                    ul {
-                        @for published in &recent_published {
-                            li {
-                                a href=(format!("/videos/{}/captions", published.media_id)) {
-                                    (published.title) " — " (locale.text("videos-caption-published-title"))
-                                }
-                                " · "
-                                a href=(format!("/videos/{}/chapters", published.media_id)) {
-                                    (locale.text("videos-chapters-title"))
-                                }
-                                " · " a href=(format!("/videos/{}/metadata", published.media_id)) { (locale.text("videos-metadata-manage")) }
-                                " · " a href=(format!("/videos/{}/sharing",published.media_id)){(locale.text("video-sharing-title"))}
-                                @if editable_ids.contains(&published.media_id) { " · " a href=(format!("/videos/{}/edit", published.media_id)) { (locale.text("video-edit-title")) } }
-                                " · " a href=(format!("/videos/{}/metadata#video-poster-replace", published.media_id)) { (locale.text("videos-replace-poster")) }
-                                " · " a href=(format!("/web/statuses/{}/edit",published.status_id)) { (locale.text("status-edit")) }
-                            }
-                        }
-                    }
-                }
-            }
-            @if !live_broadcasts.is_empty() {
-                nav aria-label=(locale.text("videos-live-your-broadcasts")) {
-                    h2 { (locale.text("videos-live-your-broadcasts")) }
-                    ul {
-                        @for broadcast in &live_broadcasts {
-                            @let state_label = match broadcast.state.as_str() {
-                                "live" => "videos-live-state-live",
-                                "interrupted" => "videos-live-state-interrupted",
-                                "ended" => "videos-live-state-ended",
-                                _ => "videos-live-state-waiting",
-                            };
-                            li {
-                                a href=(format!("/videos/live/{}", broadcast.status_id)) {
-                                    (broadcast.title) " — " (locale.text(state_label))
-                                }
-                                @if let Some(at) = broadcast.scheduled_at {
-                                    " — " (locale.text("status-live-planned-start")) " "
-                                    (user.clock.element_absolute(at))
-                                }
-                            }
-                        }
-                    }
-                }
+            (super::video_workspace::navigation("/videos",locale))
+            @if preview.is_none() {
+                p.video-form__intro { (locale.text("videos-intro")) }
+                p.settings-field__hint {(locale.text("studio-required"))}
+                @if channels.is_empty() { (new_channel_form(&user.csrf, true, locale,"","",false)) }
             }
             @if !channels.is_empty() {
-                p { a href="/videos/live/new" { (locale.text("videos-live-start")) } }
-                @if preview.is_none() {
-                nav aria-label=(locale.text("videos-your-channels")) {
-                    h2 { (locale.text("videos-your-channels")) }
-                    ul {
-                        @for channel in &channels {
-                            @let name = if channel.display_name.is_empty() {
-                                &channel.username
-                            } else {
-                                &channel.display_name
-                            };
-                            li { a href=(format!("/videos/explore?channel={}", channel.id)) { (name) }
-                                " · " a href=(format!("/videos/channels/{}",channel.id)) { (locale.text("video-channel-manage")) }
-                            }
-                        }
-                    }
-                }
-                }
                 form.settings-form data-video-upload[preview.is_none()] data-video-schedule-form[preview.is_some() && edit.is_none()] method="post"
                     action=(if edit.is_some(){format!("/web/videos/drafts/{}/alternatives",draft.media_id.unwrap())}else{"/web/videos".into()})
                     enctype=(if edit.is_some(){"application/x-www-form-urlencoded"}else{"multipart/form-data"}) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     @if let Some(media) = &preview {
                         input type="hidden" name="media_id" value=(media.id);
-                        h2 { (locale.text("videos-review")) }
                         @if let Some(file) = &media.file_name {
                             video.video-publish__preview controls preload="metadata" aria-label=(locale.text("videos-preview")) {
                                 source src=(if native { format!("/videos/drafts/{}/preview/video", media.id) } else { format!("/media/{file}") }) type=(media.content_type);
@@ -297,7 +225,7 @@ pub(super) async fn page(
                                         format!("/videos/drafts/{}/captions/{}.vtt", media.id, track.language)
                                     };
                                     track kind="captions" src=(src) srclang=(track.language)
-                                        label=(track.language) default[index == 0];
+                                        label=(super::view::language_label(&track.language)) default[index == 0];
                                 }
                             }
                         }
@@ -310,24 +238,35 @@ pub(super) async fn page(
                     @if edit.is_none(){fieldset.settings-form__group {
                         legend { (locale.text("videos-details")) }
                         label.settings-field {
-                            span.settings-field__label { (locale.text("videos-channel")) }
+                            span.settings-field__label { (locale.text("videos-channel"))  span.video-form__required aria-hidden="true" {" *"} }
                             @if native { input type="hidden" name="channel" value=(draft.channel); }
-                            select name="channel" required disabled[native] {
+                            select name="channel" aria-label=(locale.text("videos-channel")) required disabled[native] {
                                 @for channel in &channels {
                                     option value=(channel.id) selected[draft.channel == channel.id.to_string()] { (channel.display_name) }
                                 }
                             }
                         }
+                        @if preview.is_none() {a.video-form__minor-action href="/videos/channels/new" {(locale.text("videos-new-channel"))}}
                         @if preview.is_some() && edit.is_none(){p{a href=(format!("/videos/{}/sharing",draft.media_id.unwrap())){(locale.text("video-sharing-title"))}}}
                         label.settings-field {
-                            span.settings-field__label { (locale.text("videos-name")) }
-                            input name="title" value=(draft.title) minlength="3" maxlength="120" required;
+                            span.settings-field__label { (locale.text("videos-name"))  span.video-form__required aria-hidden="true" {" *"} }
+                            input name="title" aria-label=(locale.text("videos-name")) value=(draft.title) minlength="3" maxlength="120" required;
                         }
                         label.settings-field {
-                            span.settings-field__label { (locale.text("videos-description")) }
-                            textarea name="description" rows="5" maxlength="10000" { (draft.description) }
+                            span.settings-field__label { (locale.text("videos-visibility")) }
+                            select name="visibility" {
+                                option value="public" selected[draft.visibility != "unlisted"] { (locale.text("videos-public")) }
+                                option value="unlisted" selected[draft.visibility == "unlisted"] { (locale.text("videos-unlisted")) }
+                            }
                         }
-                        p.settings-field__hint { (locale.text("videos-tags-hint")) }
+                        details.video-workspace__options.video-form__section data-video-options open[preview.is_some() || error.is_some()] {
+                        summary {(locale.text("studio-options"))}
+                        div.video-form__section-body {
+                        div.settings-field {
+                            div.video-field__heading { label.settings-field__label for="video-description" { (locale.text("videos-description")) } (super::video_workspace::help(locale,"videos-description",&html! {p {(locale.text("videos-tags-hint"))}})) }
+                            textarea name="description" id="video-description" rows="5" maxlength="10000" { (draft.description) }
+                        }
+
                         (super::video_metadata::fields(&draft.category, &draft.licence, locale))
                         label.settings-field {
                             span.settings-field__label { (locale.text("compose-content-warning")) }
@@ -340,27 +279,23 @@ pub(super) async fn page(
                                 " " (locale.text("compose-sensitive"))
                             }
                         }
-                        label.settings-field {
-                            span.settings-field__label { (locale.text("videos-language")) }
-                            input name="language" value=(draft.language) placeholder="en" maxlength="35";
+                        (super::video_workspace::language_field("videos-language", &draft.language, false, "metadata", locale))
+                        @if preview.is_none() {(poster_picker(draft, locale))}
                         }
-                        label.settings-field {
-                            span.settings-field__label { (locale.text("videos-visibility")) }
-                            select name="visibility" {
-                                option value="public" selected[draft.visibility != "unlisted"] { (locale.text("videos-public")) }
-                                option value="unlisted" selected[draft.visibility == "unlisted"] { (locale.text("videos-unlisted")) }
-                            }
                         }
                     }}
+                    // Native multipart metadata must precede file bytes so quota is reserved before streaming.
                     @if preview.is_none() {
                         fieldset.settings-form__group {
                             legend { (locale.text("videos-file")) }
-                            p.settings-field__hint { (locale.text("videos-upload-hint")) " " (state.config.native_video.max_upload_mib) " MiB." }
-                            (poster_picker(draft, locale))
+                            p.settings-field__hint { (locale.text("studio-upload-limit")) " " (state.config.native_video.max_upload_mib) " MiB" }
                             label.settings-field {
-                                span.settings-field__label { (locale.text("videos-file")) }
-                                input type="file" name="file" accept="video/*,audio/*" required;
+                                span.settings-field__label { (locale.text("videos-file"))  span.video-form__required aria-hidden="true" {" *"} }
+                                input type="file" name="file" aria-label=(locale.text("videos-file")) accept="video/*,audio/*" required;
                             }
+                            details.video-form__section open[error.is_some()] {
+                            summary { (locale.text("studio-accessibility")) }
+                            div.video-form__section-body {
                             label.settings-field {
                                 span.settings-field__label { (locale.text("videos-alt")) }
                                 textarea name="alt" rows="3" maxlength="1500" { (draft.alt) }
@@ -369,11 +304,11 @@ pub(super) async fn page(
                                 span.settings-field__label { (locale.text("videos-captions")) }
                                 input type="file" name="captions" accept=".vtt,text/vtt";
                             }
-                            label.settings-field {
-                                span.settings-field__label { (locale.text("videos-transcript")) }
-                                textarea name="transcript" rows="5" maxlength="50000" aria-describedby="video-transcript-hint" { (draft.transcript) }
+                            div.settings-field {
+                                div.video-field__heading { label.settings-field__label for="video-transcript" { (locale.text("videos-transcript")) } (super::video_workspace::help(locale,"videos-transcript",&html! {p id="video-transcript-hint" {(locale.text("compose-transcript-description"))}})) }
+                                textarea name="transcript" id="video-transcript" rows="5" maxlength="50000" aria-describedby="video-transcript-hint" { (draft.transcript) }
                             }
-                            p.settings-field__hint id="video-transcript-hint" { (locale.text("compose-transcript-description")) }
+
                             label.settings-field {
                                 span.settings-field__label { (locale.text("compose-visual-audio")) }
                                 select name="visual_audio" {
@@ -383,7 +318,10 @@ pub(super) async fn page(
                                 }
                             }
                         }
-                    } @else if edit.is_some() {
+                            }
+                        }
+                    }
+                    @if preview.is_some() && edit.is_some() {
                         p {(locale.text("video-edit-candidate-hint"))}
                         @if edit.as_ref().is_some_and(|e|e.operation=="trim"){p {(locale.text("video-edit-trim-hint"))}}
                         div.settings-field {label.settings-field__label for="video-edit-alt" {(locale.text("videos-alt"))}
@@ -399,11 +337,12 @@ pub(super) async fn page(
                                 option value="soundtrack" selected[draft.visual_audio=="soundtrack"] {(locale.text("compose-visuals-in-audio"))}
                             }
                         }
-                    } @else {
+                    } @else if preview.is_some() {
                         input type="hidden" name="alt" value=(draft.alt);
                         input type="hidden" name="transcript" value=(draft.transcript);
-                        fieldset.settings-form__group {
-                            legend { (locale.text("videos-schedule-title")) }
+                        details.video-form__section.video-form__panel open[error.is_some() || !draft.scheduled_at.is_empty()] {
+                            summary { (locale.text("videos-schedule-title")) }
+                            div.video-form__section-body {
                             label.settings-field {
                                 span.settings-field__label { (locale.text("videos-schedule-at")) }
                                 input type="datetime-local" name="scheduled_at" value=(draft.scheduled_at)
@@ -411,6 +350,7 @@ pub(super) async fn page(
                             }
                             p.settings-field__hint id="videos-schedule-hint" {
                                 (locale.text("videos-schedule-hint")) " " (user.clock.label()) "."
+                            }
                             }
                         }
                     }
@@ -434,22 +374,25 @@ pub(super) async fn page(
                         } @else if preview.is_some() {
                             button type="submit" name="op" value="publish" { (locale.text("videos-publish")) }
                             button type="submit" name="op" value="schedule" data-video-schedule-submit { (locale.text("videos-schedule-button")) }
-                            a href="/videos" { (locale.text("videos-start-over")) }
+                            a href="/videos/upload" { (locale.text("videos-start-over")) }
                         } @else {
                             button type="submit" name="op" value="review" { (locale.text("videos-upload-review")) }
+                            a href="/videos" {(locale.text("studio-cancel"))}
                         }
                     }
                 }
                 @if native {
                     @if let Some(media) = &preview {
+                        details.video-form__section.video-form__panel open[error.is_some()] {
+                            summary {(locale.text("videos-caption-manage"))}
                         section.video-captions id="caption-languages" {
-                            h2 { (locale.text("videos-caption-manage")) }
+                            h2.visually-hidden { (locale.text("videos-caption-manage")) }
                             p.settings-field__hint { (locale.text("videos-caption-manage-hint")) }
                             @if !caption_tracks.is_empty() {
                                 ul {
                                     @for track in &caption_tracks {
                                         li {
-                                            (track.language) " — "
+                                            (super::view::language_label(&track.language)) " — "
                                             a href=(if track.legacy {
                                                 format!("/videos/drafts/{}/preview/captions.vtt", media.id)
                                             } else {
@@ -458,7 +401,7 @@ pub(super) async fn page(
                                             form method="post" action=(format!("/web/videos/drafts/{}/captions/{}/remove", media.id, track.language)) {
                                                 input type="hidden" name="csrf" value=(user.csrf);
                                                 button.video-captions__remove type="submit"
-                                                    aria-label=(format!("{} {}", locale.text("videos-caption-remove"), track.language)) {
+                                                    aria-label=(format!("{} {}", locale.text("videos-caption-remove"), super::view::language_label(&track.language))) {
                                                     (locale.text("videos-caption-remove"))
                                                 }
                                             }
@@ -472,10 +415,7 @@ pub(super) async fn page(
                                 data-caption-too-large=(locale.text("videos-caption-too-large"))
                                 method="post" action=(format!("/web/videos/drafts/{}/captions", media.id)) enctype="multipart/form-data" {
                                 input type="hidden" name="csrf" value=(user.csrf);
-                                label.settings-field {
-                                    span.settings-field__label { (locale.text("videos-caption-language")) }
-                                    input name="language" required maxlength="35" pattern="[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*" placeholder="en";
-                                }
+                                (super::video_workspace::language_field("videos-caption-language", "", true, "draft-captions", locale))
                                 label.settings-field {
                                     span.settings-field__label { (locale.text("videos-captions")) }
                                     input type="file" name="caption" accept=".vtt,text/vtt" required;
@@ -484,12 +424,18 @@ pub(super) async fn page(
                                 button type="submit" { (locale.text("videos-caption-save")) }
                             }
                         }
-                        (super::video_chapters::editor(media.id, &chapter_tracks, &user.csrf, false, locale))
-                        (replace_poster_form(media.id, &user.csrf, locale, false))
+                        }
+                        details.video-form__section.video-form__panel open[error.is_some()] {
+                            summary {(locale.text("videos-chapters-title"))}
+                            (super::video_chapters::editor(media.id, &chapter_tracks, &user.csrf, false, locale))
+                        }
+                        details.video-form__section.video-form__panel open[error.is_some()] {
+                            summary {(locale.text("videos-replace-poster"))}
+                            (replace_poster_form(media.id, &user.csrf, locale, false))
+                        }
                     }
                 }
             }
-            (new_channel_form(&user.csrf, channels.is_empty(), locale))
         }
     };
     Ok(layout::shell(
@@ -617,7 +563,23 @@ pub async fn create_channel(State(state): State<AppState>, user: WebUser, body: 
     )
     .await
     {
-        Ok(_) => redirect_to("/videos"),
+        Ok(channel) => redirect_to(&if field(&pairs, "return_to") == Some("/videos/channels") {
+            format!("/videos/channels/{}", channel.id)
+        } else {
+            "/videos/upload".into()
+        }),
+        Err(ApiError::Unprocessable(message))
+            if field(&pairs, "return_to") == Some("/videos/channels") =>
+        {
+            let mut response = channel_page(
+                &user,
+                field(&pairs, "username").unwrap_or_default(),
+                field(&pairs, "display_name").unwrap_or_default(),
+                Some(&message),
+            );
+            *response.status_mut() = axum::http::StatusCode::UNPROCESSABLE_ENTITY;
+            response
+        }
         Err(error) => refusal(&state, &user, &Draft::default(), error).await,
     }
 }
