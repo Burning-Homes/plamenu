@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/ap", "crates/db", "crates/federation", "crates/server"]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 license = "AGPL-3.0-only"
 repository = "https://codefloe.com/plamenu/plamenu"
@@ -213,12 +213,17 @@ module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 
-# Keep debug symbols in split `.dwo`/object files instead of copying the full
-# debuginfo into every binary. Debug/test binaries here run ~0.5 GB each and
-# cargo never GCs stale hash-suffixed copies, so unpacked split-debuginfo keeps
-# `target/debug` from ballooning (it hit 462 GB before this).
+# Local development and tests prioritize rebuild time: omit debug information
+# and preserve incremental compilation. If debug information is explicitly
+# enabled, unpacked split-debuginfo avoids duplicating symbols in every binary.
 [profile.dev]
+debug = 0
+incremental = true
 split-debuginfo = "unpacked"
+
+[profile.test]
+debug = 0
+incremental = true
 
 # RSA keygen and argon2id are unusably slow at opt-level 0; always optimize
 # the math-heavy crypto dependencies, even in dev/test builds.
@@ -264,3 +269,14 @@ strip = "debuginfo"
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+# Optimized local iteration and staging favor compile time over binary size.
+# Keep unwind for worker supervision; qualify performance with this exact profile.
+[profile.iteration]
+inherits = "release"
+opt-level = 3
+lto = "off"
+codegen-units = 64
+incremental = true
+debug = 0
+panic = "unwind"

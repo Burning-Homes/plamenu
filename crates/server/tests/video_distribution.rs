@@ -728,3 +728,66 @@ async fn draft_recovery_and_private_preview_do_not_upgrade_scoped_cookies(pool: 
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn direct_and_download_stream_large_ranges_and_resume_identical_bytes(pool: PgPool) {
+    let f = fixture(pool, false).await;
+    publish(&f).await;
+    let length = 2 * 1024 * 1024 + 19;
+    let bytes: Vec<u8> = (0..length)
+        .map(|i| u8::try_from(i % 251).unwrap())
+        .collect();
+    f.state
+        .media
+        .put(&format!("{}.mp4", f.media), bytes.clone())
+        .await
+        .unwrap();
+    let app = plamenu::build_router(f.state.clone());
+    for path in [
+        format!("/media/{}.mp4", f.media),
+        format!("/media/{}/download", f.media),
+    ] {
+        // Cancel an in-progress response, then resume across multiple chunks.
+        let mut response = get(&f, path.clone()).await;
+        assert_eq!(response.headers()["Content-Length"], length.to_string());
+        let first = response
+            .body_mut()
+            .frame()
+            .await
+            .unwrap()
+            .unwrap()
+            .into_data()
+            .unwrap();
+        assert_eq!(&first[..], &bytes[..first.len()]);
+        let resume = first.len();
+        drop(response);
+        for (start, end, range) in [
+            (resume, length - 1, format!("bytes={resume}-")),
+            (65_530, 262_150, "bytes=65530-262150".to_owned()),
+            (length - 131_075, length - 1, "bytes=-131075".to_owned()),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(&path)
+                        .header("Range", range)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+            assert_eq!(
+                response.headers()["Content-Range"],
+                format!("bytes {start}-{end}/{length}")
+            );
+            assert_eq!(
+                response.headers()["Content-Length"],
+                (end - start + 1).to_string()
+            );
+            let received = response.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(&received[..], &bytes[start..=end]);
+        }
+    }
+}

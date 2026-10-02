@@ -622,6 +622,42 @@ pub async fn followed_ids(
     Ok(rows.into_iter().collect())
 }
 
+/// Both viewer flags for a finite tag page. A tag can occur in both sets.
+#[derive(Default)]
+pub struct ViewerFlags {
+    pub following: std::collections::HashSet<i64>,
+    pub featuring: std::collections::HashSet<i64>,
+}
+
+/// Resolves follow and feature membership in one account-scoped round trip.
+/// UNION ALL preserves both reasons for a tag followed and featured together.
+pub async fn viewer_flags(
+    pool: &PgPool,
+    account_id: i64,
+    tag_ids: &[i64],
+) -> Result<ViewerFlags, DbError> {
+    let rows = sqlx::query!(
+        r#"SELECT tag_id AS "tag_id!", true AS "following!" FROM tag_follows
+           WHERE account_id = $1 AND tag_id = ANY($2)
+           UNION ALL
+           SELECT tag_id AS "tag_id!", false AS "following!" FROM featured_tags
+           WHERE account_id = $1 AND tag_id = ANY($2)"#,
+        account_id,
+        tag_ids,
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut flags = ViewerFlags::default();
+    for row in rows {
+        if row.following {
+            flags.following.insert(row.tag_id);
+        } else {
+            flags.featuring.insert(row.tag_id);
+        }
+    }
+    Ok(flags)
+}
+
 /// The followed-hashtag names on each given status, keyed by status id, for the
 /// home hashtag-source banner — but returned **only** for statuses that reached
 /// the feed *solely* via a followed tag (`status::home_timeline` arm B,

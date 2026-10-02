@@ -2656,10 +2656,17 @@ async fn update_remote_note_with_publication(
         }
         return Ok(existing.clone());
     }
+    // A verified live Update may genuinely omit the optional timestamp; apply
+    // it in object-gate admission order, like the pre-replay implementation.
+    // Such payloads cannot prove remote chronological order. Fetched snapshots
+    // and present-but-invalid timestamps still cannot overwrite a known edit.
     if let Some(stored_edited_at) = existing.edited_at
-        && incoming_updated.is_none_or(|updated| {
-            updated < stored_edited_at || (context.is_history() && updated == stored_edited_at)
-        })
+        && incoming_updated.map_or_else(
+            || context != RemoteIngestContext::Delivery || object.get("updated").is_some(),
+            |updated| {
+                updated < stored_edited_at || (context.is_history() && updated == stored_edited_at)
+            },
+        )
     {
         return Ok(existing.clone());
     }

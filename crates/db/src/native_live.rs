@@ -1055,14 +1055,19 @@ pub async fn published_replays_by_status(
     status_id: i64,
 ) -> Result<Vec<(i64, i64)>, DbError> {
     Ok(sqlx::query_as(
-        "SELECT ls.generation, s.id FROM native_live_broadcasts b
-         JOIN native_live_sessions ls ON ls.media_id = b.media_id
-         JOIN media_attachments m ON m.id = ls.replay_media_id
-         JOIN statuses s ON s.id = m.status_id
-         JOIN public_native_videos v ON v.status_id = s.id AND v.media_id = m.id
+        "SELECT replay.generation, replay.status_id FROM native_live_broadcasts b
+         CROSS JOIN LATERAL (
+             SELECT ls.generation, s.id AS status_id
+             FROM native_live_sessions ls
+             JOIN media_attachments m ON m.id = ls.replay_media_id
+             JOIN statuses s ON s.id = m.status_id
+             JOIN public_native_videos v ON v.status_id = s.id AND v.media_id = m.id
+             WHERE ls.media_id = b.media_id
+               AND s.visibility IN ('public', 'unlisted')
+             ORDER BY ls.generation DESC LIMIT 30
+         ) replay
          WHERE b.status_id = $1 AND b.permanent
-           AND s.visibility IN ('public', 'unlisted')
-         ORDER BY ls.generation DESC LIMIT 30\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
+         ORDER BY replay.generation DESC\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
     )
     .bind(status_id)
     .fetch_all(pool)
@@ -1433,6 +1438,54 @@ pub async fn rotate_key(
 mod tests {
     use super::*;
     use crate::{account, id, media, status};
+
+    async fn navigation_video(
+        pool: &PgPool,
+        owner: i64,
+        channel: i64,
+        visibility: &str,
+    ) -> (i64, i64) {
+        let stored = status::create_local(
+            pool,
+            status::NewLocalStatus::new(owner, "navigation fixture", visibility, None),
+        )
+        .await
+        .unwrap();
+        let media_id = id::next();
+        let file_name = format!("{media_id}.navigation.mp4");
+        media::create_local(
+            pool,
+            media::NewLocalMedia::new(owner, media_id, &file_name, "video/mp4"),
+        )
+        .await
+        .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("UPDATE media_attachments SET status_id=$2 WHERE id=$1")
+            .bind(media_id)
+            .bind(stored.id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        video::publish(&mut tx, stored.id, channel, media_id)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        (stored.id, media_id)
+    }
+
+    async fn navigation_session(pool: &PgPool, media_id: i64, generation: i64, replay_media: i64) {
+        sqlx::query(
+            "INSERT INTO native_live_sessions (session_id,media_id,generation,ended_at,replay_media_id)
+             VALUES ($1,$2,$3,now(),$4)",
+        )
+        .bind(format!("navigation-{generation}"))
+        .bind(media_id)
+        .bind(generation)
+        .bind(replay_media)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
 
     #[sqlx::test]
     async fn recurring_replay_is_private_idempotent_and_independent_of_newer_session(pool: PgPool) {
@@ -1857,6 +1910,112 @@ mod tests {
         assert_eq!(
             published_replays_by_status(&pool, live.id).await.unwrap(),
             vec![(1, vod.id)]
+        );
+        // More than thirty newer ineligible sessions must not hide an older
+        // independently public replay: LIMIT belongs after authority filtering.
+        for generation in 3..=37 {
+            let (_, private_media) = navigation_video(&pool, owner.id, channel.id, "private").await;
+            navigation_session(&pool, media_id, generation, private_media).await;
+        }
+        assert_eq!(
+            published_replays_by_status(&pool, live.id).await.unwrap(),
+            vec![(1, vod.id)]
+        );
+        sqlx::query("UPDATE statuses SET visibility='unlisted' WHERE id=$1")
+            .bind(vod.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            published_replays_by_status(&pool, live.id).await.unwrap(),
+            vec![(1, vod.id)]
+        );
+        // Every session owns distinct replay media, as required by the unique
+        // index. Keep all eligibility filtering before the thirty-row limit.
+        let mut visible = Vec::new();
+        for generation in 38..=68 {
+            let (status_id, replay_media) =
+                navigation_video(&pool, owner.id, channel.id, "public").await;
+            navigation_session(&pool, media_id, generation, replay_media).await;
+            visible.push((generation, status_id));
+        }
+        let newest_thirty: Vec<_> = visible.iter().rev().take(30).copied().collect();
+        assert_eq!(
+            published_replays_by_status(&pool, live.id).await.unwrap(),
+            newest_thirty
+        );
+        assert_eq!(newest_thirty.len(), 30);
+        assert_eq!(
+            newest_thirty
+                .iter()
+                .map(|(_, status_id)| status_id)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            30
+        );
+        for actor_id in [owner.id, channel.id] {
+            sqlx::query("UPDATE accounts SET suspended_at=now() WHERE id=$1")
+                .bind(actor_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(
+                published_replays_by_status(&pool, live.id)
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+            sqlx::query("UPDATE accounts SET suspended_at=NULL WHERE id=$1")
+                .bind(actor_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert_eq!(
+                published_replays_by_status(&pool, live.id).await.unwrap(),
+                newest_thirty
+            );
+        }
+        // Deleting the old unlisted replay must leave the independent newer
+        // replay statuses intact; deleting the newest admits generation38.
+        sqlx::query("UPDATE statuses SET deleted_at=now() WHERE id=$1")
+            .bind(vod.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            published_replays_by_status(&pool, live.id).await.unwrap(),
+            newest_thirty
+        );
+        let newest_id = visible.last().unwrap().1;
+        sqlx::query("UPDATE statuses SET deleted_at=now() WHERE id=$1")
+            .bind(newest_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let remaining: Vec<_> = visible.iter().rev().skip(1).copied().collect();
+        assert_eq!(remaining.len(), 30);
+        assert_eq!(remaining.last().unwrap().0, 38);
+        assert_eq!(
+            published_replays_by_status(&pool, live.id).await.unwrap(),
+            remaining
+        );
+        let visible_ids: Vec<i64> = visible.iter().map(|(_, status_id)| *status_id).collect();
+        sqlx::query("UPDATE statuses SET deleted_at=now() WHERE id=ANY($1)")
+            .bind(&visible_ids)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            published_replays_by_status(&pool, live.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            published_replays_by_status(&pool, i64::MAX)
+                .await
+                .unwrap()
+                .is_empty()
         );
     }
 }

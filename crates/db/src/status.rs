@@ -3809,6 +3809,52 @@ pub async fn count_by_account_batch(
         .collect())
 }
 
+/// Both account-entity status facts from the same live-row scan. Counts keep
+/// the origin-advertised outbox total when present; the timestamp still comes
+/// from locally cached rows. All visibility kinds and boosts count as before.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AccountStatusStats {
+    pub count: u64,
+    pub last_created_at: Option<OffsetDateTime>,
+}
+
+/// Missing accounts are absent; existing accounts with no live cached rows
+/// retain their advertised count (or zero) and have no last-created timestamp.
+pub async fn account_status_stats_batch(
+    pool: &PgPool,
+    account_ids: &[i64],
+) -> Result<HashMap<i64, AccountStatusStats>, DbError> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT a.id AS "id!", COALESCE(a.remote_statuses_count, s.cnt, 0) AS "count!",
+               s.last_created_at
+        FROM accounts a
+        LEFT JOIN (
+            SELECT account_id, count(*) AS cnt, max(created_at) AS last_created_at
+            FROM statuses
+            WHERE account_id = ANY($1) AND deleted_at IS NULL -- STUBFILTER
+            GROUP BY 1
+        ) s ON s.account_id = a.id
+        WHERE a.id = ANY($1)
+        "#,
+        account_ids,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            (
+                row.id,
+                AccountStatusStats {
+                    count: u64::try_from(row.count).unwrap_or(0),
+                    last_created_at: row.last_created_at,
+                },
+            )
+        })
+        .collect())
+}
+
 /// [`last_created_at`] for every id in `account_ids` in one query; ids with
 /// no statuses are absent from the map (treat as `None`).
 pub async fn last_created_at_batch(
@@ -5830,6 +5876,78 @@ mod tests {
         assert!(!last_at.contains_key(&carol));
 
         assert!(count_by_account_batch(&pool, &[]).await.unwrap().is_empty());
+    }
+
+    #[sqlx::test]
+    async fn combined_account_stats_preserve_private_deleted_remote_and_empty_counts(pool: PgPool) {
+        let local = local_account(&pool, "stats_local").await;
+        let empty = local_account(&pool, "stats_empty").await;
+        let remote = remote_account(&pool).await;
+        for visibility in ["public", "private", "direct"] {
+            create_local(
+                &pool,
+                NewLocalStatus::new(local, visibility, visibility, None),
+            )
+            .await
+            .unwrap();
+        }
+        let deleted = create_local(&pool, NewLocalStatus::new(local, "deleted", "public", None))
+            .await
+            .unwrap();
+        sqlx::query("UPDATE statuses SET deleted_at=now() WHERE id=$1")
+            .bind(deleted.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        upsert_remote(
+            &pool,
+            remote_note("https://remote.example/stats/known", remote, "cached"),
+        )
+        .await
+        .unwrap();
+        account::set_remote_statuses_count(&pool, remote, 1000)
+            .await
+            .unwrap();
+        let unknown = i64::MAX;
+        let ids = [local, empty, remote, unknown, local];
+        let stats = account_status_stats_batch(&pool, &ids).await.unwrap();
+        let old_counts = count_by_account_batch(&pool, &ids).await.unwrap();
+        let old_times = last_created_at_batch(&pool, &ids).await.unwrap();
+        for id in ids {
+            assert_eq!(
+                stats.get(&id).map_or(0, |value| value.count),
+                old_counts.get(&id).copied().unwrap_or(0)
+            );
+            assert_eq!(
+                stats.get(&id).and_then(|value| value.last_created_at),
+                old_times.get(&id).copied()
+            );
+        }
+        assert_eq!(
+            stats[&local].count, 3,
+            "private/direct rows retain count semantics"
+        );
+        assert_eq!(
+            stats[&remote].count, 1000,
+            "origin total overrides cached slice"
+        );
+        assert_eq!(stats[&empty].count, 0);
+        assert!(stats[&empty].last_created_at.is_none());
+        assert!(!stats.contains_key(&unknown));
+        account::set_remote_statuses_count(&pool, remote, 0)
+            .await
+            .unwrap();
+        assert_eq!(
+            account_status_stats_batch(&pool, &[remote]).await.unwrap()[&remote].count,
+            0,
+            "advertised zero is authoritative"
+        );
+        assert!(
+            account_status_stats_batch(&pool, &[])
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[sqlx::test]

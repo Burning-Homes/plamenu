@@ -628,3 +628,165 @@ async fn admin_tag_registry_show_update_list(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn tag_viewer_flags_keep_both_reasons_and_exact_scope(pool: PgPool) {
+    let alice = create_local_account(&pool, "flagalice", "Alice").await;
+    let bob = create_local_account(&pool, "flagbob", "Bob").await;
+    let both = tag::ensure(&pool, "both").await.unwrap();
+    let followed = tag::ensure(&pool, "followed").await.unwrap();
+    let featured = tag::ensure(&pool, "featured").await.unwrap();
+    let neither = tag::ensure(&pool, "neither").await.unwrap();
+    let outside = tag::ensure(&pool, "outside").await.unwrap();
+    for id in [both, followed, outside] {
+        tag::follow(&pool, alice.id, id).await.unwrap();
+    }
+    for id in [both, featured, outside] {
+        plamenu_db::featured_tag::feature(&pool, alice.id, id)
+            .await
+            .unwrap();
+    }
+    tag::follow(&pool, bob.id, neither).await.unwrap();
+    plamenu_db::featured_tag::feature(&pool, bob.id, followed)
+        .await
+        .unwrap();
+    let ids = [both, followed, featured, neither, both];
+    let flags = tag::viewer_flags(&pool, alice.id, &ids).await.unwrap();
+    assert_eq!(flags.following, [both, followed].into_iter().collect());
+    assert_eq!(flags.featuring, [both, featured].into_iter().collect());
+    let flags = tag::viewer_flags(&pool, bob.id, &ids).await.unwrap();
+    assert_eq!(flags.following, [neither].into_iter().collect());
+    assert_eq!(flags.featuring, [followed].into_iter().collect());
+    let empty = tag::viewer_flags(&pool, alice.id, &[]).await.unwrap();
+    assert!(empty.following.is_empty() && empty.featuring.is_empty());
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn trends_tag_viewer_page_preserves_order_history_and_anonymous_shape(pool: PgPool) {
+    let today = OffsetDateTime::now_utc().date();
+    let high = seed_trending_tag(&pool, "high", 1, today).await;
+    let middle = seed_trending_tag(&pool, "middle", 1, today).await;
+    let low = seed_trending_tag(&pool, "low", 1, today).await;
+    let denied = seed_trending_tag(&pool, "denied", 1, today).await;
+    for (id, score, allowed) in [
+        (high, 60.0, true),
+        (middle, 30.0, true),
+        (low, 10.0, true),
+        (denied, 1000.0, false),
+    ] {
+        plamenu_db::tag_trend::upsert(&pool, id, score, allowed)
+            .await
+            .unwrap();
+    }
+    let past_author = create_local_account(&pool, "pasthistory", "Past").await;
+    let past = status::create_local(
+        &pool,
+        status::NewLocalStatus::new(past_author.id, "past", "public", None),
+    )
+    .await
+    .unwrap();
+    tag::attach(&pool, past.id, high).await.unwrap();
+    for age in [2, 7] {
+        tag::record_uses(&pool, past.id, today - time::Duration::days(age))
+            .await
+            .unwrap();
+    }
+    let private = status::create_local(
+        &pool,
+        status::NewLocalStatus::new(past_author.id, "private", "private", None),
+    )
+    .await
+    .unwrap();
+    tag::attach(&pool, private.id, high).await.unwrap();
+    tag::record_uses(&pool, private.id, today).await.unwrap();
+    let (alice, alice_token) = admin_token(&pool, "pagealice").await;
+    let (bob, bob_token) = admin_token(&pool, "pagebob").await;
+    tag::follow(&pool, alice.id, high).await.unwrap();
+    plamenu_db::featured_tag::feature(&pool, alice.id, high)
+        .await
+        .unwrap();
+    tag::follow(&pool, bob.id, middle).await.unwrap();
+    let app = test_app(pool.clone());
+    let (status, alice_page) = api(
+        app.clone(),
+        "GET",
+        "/api/v1/trends/tags?limit=2",
+        Some(&alice_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(alice_page[0]["id"], high.to_string());
+    assert_eq!(alice_page[1]["id"], middle.to_string());
+    assert_eq!(alice_page.as_array().unwrap().len(), 2);
+    assert_eq!(alice_page[0]["following"], true);
+    assert_eq!(alice_page[0]["featuring"], true);
+    assert_eq!(alice_page[1]["following"], false);
+    assert_eq!(alice_page[1]["featuring"], false);
+    let history = alice_page[0]["history"].as_array().unwrap();
+    assert_eq!(history.len(), 7);
+    for (age, entry) in history.iter().enumerate() {
+        let day = today - time::Duration::days(i64::try_from(age).unwrap());
+        assert_eq!(
+            entry["day"],
+            day.with_time(time::Time::MIDNIGHT)
+                .assume_utc()
+                .unix_timestamp()
+                .to_string()
+        );
+        let count = if age == 0 || age == 2 { "1" } else { "0" };
+        assert_eq!(entry["uses"], count);
+        assert_eq!(entry["accounts"], count);
+    }
+    let (status, bob_page) = api(
+        app.clone(),
+        "GET",
+        "/api/v1/trends/tags?limit=1&offset=1",
+        Some(&bob_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bob_page.as_array().unwrap().len(), 1);
+    assert_eq!(bob_page[0]["id"], middle.to_string());
+    assert_eq!(bob_page[0]["following"], true);
+    assert_eq!(bob_page[0]["featuring"], false);
+    let (status, anonymous) = api(app, "GET", "/api/v1/trends/tags?limit=2", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    let mut expected = alice_page;
+    for entity in expected.as_array_mut().unwrap() {
+        entity.as_object_mut().unwrap().remove("following");
+        entity.as_object_mut().unwrap().remove("featuring");
+    }
+    assert_eq!(
+        anonymous, expected,
+        "anonymous omits both flags without changing ranked/history rows"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn trends_disabled_hides_populated_authenticated_flags(pool: PgPool) {
+    let (viewer, token) = admin_token(&pool, "disabledviewer").await;
+    let id = tag::ensure(&pool, "hidden").await.unwrap();
+    tag::follow(&pool, viewer.id, id).await.unwrap();
+    plamenu_db::featured_tag::feature(&pool, viewer.id, id)
+        .await
+        .unwrap();
+    plamenu_db::tag_trend::upsert(&pool, id, 100.0, true)
+        .await
+        .unwrap();
+    let settings = instance_settings::get(&pool).await.unwrap();
+    let mut update = settings.as_update();
+    update.trends_enabled = false;
+    instance_settings::save(&pool, update).await.unwrap();
+    let (status, page) = api(
+        test_app(pool),
+        "GET",
+        "/api/v1/trends/tags",
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(page, json!([]));
+}

@@ -3421,18 +3421,19 @@ async fn handle_update(
                 return Ok(());
             }
             // A stale Update — older than an edit already applied — is
-            // rejected whole (content, tallies and all), so a replayed
-            // backlog can never roll an edited post back: Mastodon's
+            // rejected whole (content, tallies and all). Truly unstamped live
+            // Updates remain arrival-ordered; the object gate checks again.
+            // Stamped backlog cannot roll an edited post back: Mastodon's
             // `already_updated_more_recently?`.
             let incoming_updated = object
                 .get("updated")
                 .and_then(Value::as_str)
                 .and_then(|s| time::OffsetDateTime::parse(s, &Rfc3339).ok());
-            let unstamped_question = crate::ingest::object_type_in(object, &["Question"])
-                && object.get("updated").is_none();
             if let Some(stored_edited_at) = existing.edited_at
-                && !unstamped_question
-                && incoming_updated.is_none_or(|updated| updated < stored_edited_at)
+                && incoming_updated.map_or_else(
+                    || object.get("updated").is_some(),
+                    |updated| updated < stored_edited_at,
+                )
             {
                 return Ok(());
             }

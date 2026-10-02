@@ -109,7 +109,18 @@ before the release draft is finalized. Known conflicting versions are refused.
 Deployment is a separate manual operation with environment-specific access.
 `./dev deploy-staging` builds and deploys to the configured staging environment,
 checks health, and retains the previous binary for rollback. It is independent
-of Codefloe CI. `./dev docs-deploy` builds and checks locally, pushes a signed
+of Codefloe CI. Staging defaults to the optimized `iteration` profile, with
+LTO disabled, 64 codegen units and incremental compilation. Worker supervision
+still uses panic unwinding. Set `PLAMENU_STAGING_PROFILE=deploy` to use the
+shipping profile. Benchmark qualification must use the same profile as the
+staging binary; results from another profile do not qualify deployment.
+Dedicated `PLAMENU_STAGING_RUSTFLAGS` defines the compiler flags, with an empty
+default for portable builds. Staging rejects conflicting Cargo profile, encoded
+flags, incremental and compiler wrapper overrides, and binds its output to
+`target/`. Performance qualification also binds the target and compiler flags. Local
+Cargo builds use the available CPU count unless `CARGO_BUILD_JOBS` is set.
+Development and test profiles omit debug information and retain incremental
+compilation and optimized crypto/image dependencies. `./dev docs-deploy` builds and checks locally, pushes a signed
 commit of generated content to the separate `plamenu/docs` repository, and
 verifies the public site. When docs
 hosting is enabled in local release configuration, `./dev release --publish`

@@ -61,26 +61,11 @@ pub async fn tags_index(
     }
 
     let tags = tag_trend::allowed(&state.pool, limit, offset).await?;
-    let (following, featuring) = match &viewer {
-        Some(user) => {
-            let ids: Vec<i64> = tags.iter().map(|t| t.id).collect();
-            (
-                tag::followed_ids(&state.pool, user.account.id, &ids).await?,
-                plamenu_db::featured_tag::featured_ids(&state.pool, user.account.id, &ids).await?,
-            )
-        }
-        None => (
-            std::collections::HashSet::new(),
-            std::collections::HashSet::new(),
-        ),
-    };
-    let entities = entities::tag_json_page(
+    let entities = entities::tag_json_page_for_viewer(
         &state.pool,
         &state.config.domain,
         &tags,
-        &following,
-        &featuring,
-        viewer.is_some(),
+        viewer.as_ref().map(|user| user.account.id),
     )
     .await?;
 

@@ -2171,3 +2171,172 @@ async fn signed_foreign_known_uri_cannot_be_reinterpreted_as_a_poll_vote(pool: P
         .unwrap();
     assert_eq!(jobs_final, jobs_before);
 }
+
+async fn complete_remote_video_snapshot(pool: &PgPool, status_id: i64) -> (Value, Value, Value) {
+    let row: Value = sqlx::query_scalar("SELECT to_jsonb(s) FROM statuses s WHERE id=$1")
+        .bind(status_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let media: Value = sqlx::query_scalar("SELECT COALESCE(jsonb_agg(to_jsonb(m) ORDER BY m.id),'[]'::jsonb) FROM media_attachments m WHERE status_id=$1")
+        .bind(status_id).fetch_one(pool).await.unwrap();
+    let edits: Value = sqlx::query_scalar("SELECT COALESCE(jsonb_agg(to_jsonb(e) ORDER BY e.id),'[]'::jsonb) FROM status_edits e WHERE status_id=$1")
+        .bind(status_id).fetch_one(pool).await.unwrap();
+    (row, media, edits)
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn signed_unstamped_video_updates_clear_accessibility_without_snapshot_rollback(
+    pool: PgPool,
+) {
+    create_local_account(&pool, "alice", "Alice").await;
+    let bob = RemoteUser::new("remote.example", "bob");
+    let eve = RemoteUser::new("remote.example", "eve");
+    let state = test_state_with(
+        pool.clone(),
+        StubFederation::with_actors([bob.actor.clone(), eve.actor.clone()]),
+    );
+    let app = plamenu::build_router(state.clone());
+    let uri = format!("{}/videos/unstamped-accessibility", bob.actor.id);
+    let mut object = remote_note(&bob, &uri, "<p>initial film</p>");
+    object["type"] = json!("Video");
+    object["name"] = json!("Film");
+    object["url"] = json!([{"type":"Link","mediaType":"application/x-mpegURL","href":"https://remote.example/unstamped.m3u8","tag":[{"type":"Link","mediaType":"video/mp4","href":"https://remote.example/unstamped.mp4","height":360}]}]);
+    object["transcript"] = json!("Original speech");
+    object["visualDescription"] = json!("Original scene");
+    object["audioDescribed"] = json!(true);
+    let original = object.clone();
+    let create = remote_create(&bob, &uri, object.clone(), "unstamped-video-create");
+    assert_eq!(
+        post_signed(app.clone(), "/inbox", &create, &bob.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    let row = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+    let media_id = media::for_statuses_read_only(&pool, &[row.id])
+        .await
+        .unwrap()
+        .remove(&row.id)
+        .unwrap()[0]
+        .id;
+    object["content"] = json!("<p>timestamped edit</p>");
+    object["updated"] = json!("2026-06-01T13:00:00Z");
+    let mut update = json!({"@context":"https://www.w3.org/ns/activitystreams", "type":"Update", "actor":bob.actor.id, "object":object, "id":format!("{uri}#stamped")});
+    assert_eq!(
+        post_signed(app.clone(), "/inbox", &update, &bob.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    update["object"].as_object_mut().unwrap().remove("updated");
+    update["object"]["content"] = json!("<p>unstamped revision</p>");
+    update["object"]["transcript"] = json!("Revised speech");
+    update["object"]["audioDescribed"] = json!(false);
+    update["object"]["visualsConveyedInAudio"] = json!(true);
+    update["id"] = json!(format!("{uri}#unstamped-one"));
+    assert_eq!(
+        post_signed(app.clone(), "/inbox", &update, &bob.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    let revised = media::for_statuses_read_only(&pool, &[row.id])
+        .await
+        .unwrap()
+        .remove(&row.id)
+        .unwrap()
+        .remove(0);
+    assert_eq!(revised.id, media_id);
+    assert_eq!(revised.transcript.as_deref(), Some("Revised speech"));
+    assert!(!revised.audio_described && revised.visuals_conveyed_in_audio);
+    update["object"]["content"] = json!("<p>current film</p>");
+    update["object"]["transcript"] = Value::Null;
+    update["object"]["visualDescription"] = Value::Null;
+    update["object"]["visualsConveyedInAudio"] = json!(false);
+    update["id"] = json!(format!("{uri}#unstamped-two"));
+    assert_eq!(
+        post_signed(app.clone(), "/inbox", &update, &bob.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    let current = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+    assert_eq!(current.content, "<p>current film</p>");
+    let cleared = media::for_statuses_read_only(&pool, &[row.id])
+        .await
+        .unwrap()
+        .remove(&row.id)
+        .unwrap()
+        .remove(0);
+    assert_eq!(cleared.id, media_id);
+    assert!(
+        cleared.transcript.is_none()
+            && cleared.description.is_none()
+            && !cleared.audio_described
+            && !cleared.visuals_conveyed_in_audio
+    );
+    let canonical = complete_remote_video_snapshot(&pool, row.id).await;
+    assert_eq!(
+        canonical.2.as_array().unwrap().len(),
+        4,
+        "initial plus three legitimate edits"
+    );
+    // Identical signed delivery remains a no-change Update and cannot add history.
+    assert_eq!(
+        post_signed(app.clone(), "/inbox", &update, &bob.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        complete_remote_video_snapshot(&pool, row.id).await,
+        canonical
+    );
+    for (index, timestamp) in [json!("2020-01-01T00:00:00Z"), Value::Null, json!("invalid")]
+        .into_iter()
+        .enumerate()
+    {
+        update["id"] = json!(format!("{uri}#rejected-{index}"));
+        update["object"] = original.clone();
+        update["object"]["updated"] = timestamp;
+        assert_eq!(
+            post_signed(app.clone(), "/inbox", &update, &bob.signer()).await,
+            StatusCode::ACCEPTED
+        );
+        assert_eq!(
+            complete_remote_video_snapshot(&pool, row.id).await,
+            canonical
+        );
+    }
+    // Same-origin foreign authors are still unable to overwrite the known owner.
+    update["id"] = json!(format!("{}/activities/foreign-unstamped", eve.actor.id));
+    update["actor"] = json!(eve.actor.id);
+    update["object"] = original.clone();
+    update["object"]["attributedTo"] = json!(eve.actor.id);
+    assert_eq!(
+        post_signed(app.clone(), "/inbox", &update, &eve.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        complete_remote_video_snapshot(&pool, row.id).await,
+        canonical
+    );
+    let author = plamenu_db::account::find_by_id(&pool, row.account_id)
+        .await
+        .unwrap()
+        .unwrap();
+    for context in [
+        plamenu::ingest::RemoteIngestContext::History,
+        plamenu::ingest::RemoteIngestContext::ExplicitResolution,
+    ] {
+        plamenu::ingest::update_remote_note_in_context(
+            &state, &author, &current, &original, context,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            complete_remote_video_snapshot(&pool, row.id).await,
+            canonical
+        );
+    }
+    // A replayed original Create keeps all canonical data, even after unstamped edits.
+    assert_eq!(
+        post_signed(app, "/inbox", &create, &bob.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        complete_remote_video_snapshot(&pool, row.id).await,
+        canonical
+    );
+}

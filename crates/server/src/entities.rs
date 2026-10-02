@@ -1518,8 +1518,8 @@ pub struct AccountCounts {
     pub last_status_at: Option<OffsetDateTime>,
 }
 
-/// [`AccountCounts`] for every id in `account_ids`, in four batched queries
-/// total rather than four per account. Ids absent from an underlying batch
+/// [`AccountCounts`] for every id in `account_ids`, in three batched queries
+/// total rather than separate counter reads per account. Ids absent from a batch
 /// query (no followers/following/statuses) count as the zero/`None` default.
 pub async fn account_counts_batch(
     pool: &PgPool,
@@ -1531,16 +1531,15 @@ pub async fn account_counts_batch(
     // origin's authoritative total instead of the locally-known slice
     // (Mastodon's `statuses_count`); the fallback logic lives inside the
     // batch query.
-    let statuses = status::count_by_account_batch(pool, account_ids).await?;
-    let last_status_at = status::last_created_at_batch(pool, account_ids).await?;
+    let statuses = status::account_status_stats_batch(pool, account_ids).await?;
     Ok(account_ids
         .iter()
         .map(|&id| {
             let counts = AccountCounts {
                 followers: followers.get(&id).copied().unwrap_or(0),
                 following: following.get(&id).copied().unwrap_or(0),
-                statuses: statuses.get(&id).copied().unwrap_or(0),
-                last_status_at: last_status_at.get(&id).copied(),
+                statuses: statuses.get(&id).map_or(0, |stats| stats.count),
+                last_status_at: statuses.get(&id).and_then(|stats| stats.last_created_at),
             };
             (id, counts)
         })
@@ -2027,15 +2026,33 @@ struct RelationshipBatch {
 
 impl RelationshipBatch {
     async fn load(pool: &PgPool, viewer_id: i64, ids: &[i64]) -> Result<Self, ApiError> {
+        // Bound each request to two concurrent pool reads, preserving the
+        // fixed query count and the viewer-scoped facts used by the assembler.
+        let (follows_out, incoming_pending) = tokio::try_join!(
+            follow::find_out_batch(pool, viewer_id, ids),
+            follow::pending_state_in_batch(pool, viewer_id, ids),
+        )?;
+        let (blocking_out, blocked_by) = tokio::try_join!(
+            block::blocking_out_batch(pool, viewer_id, ids),
+            block::blocked_by_batch(pool, viewer_id, ids),
+        )?;
+        let (mutes, domain_blocks) = tokio::try_join!(
+            mute::active_batch(pool, viewer_id, ids),
+            plamenu_db::account_domain_block::all_domains(pool, viewer_id),
+        )?;
+        let (notes, endorsed) = tokio::try_join!(
+            account_note::get_batch(pool, viewer_id, ids),
+            endorsement::exists_batch(pool, viewer_id, ids),
+        )?;
         Ok(Self {
-            follows_out: follow::find_out_batch(pool, viewer_id, ids).await?,
-            incoming_pending: follow::pending_state_in_batch(pool, viewer_id, ids).await?,
-            blocking_out: block::blocking_out_batch(pool, viewer_id, ids).await?,
-            blocked_by: block::blocked_by_batch(pool, viewer_id, ids).await?,
-            mutes: mute::active_batch(pool, viewer_id, ids).await?,
-            domain_blocks: plamenu_db::account_domain_block::all_domains(pool, viewer_id).await?,
-            notes: account_note::get_batch(pool, viewer_id, ids).await?,
-            endorsed: endorsement::exists_batch(pool, viewer_id, ids).await?,
+            follows_out,
+            incoming_pending,
+            blocking_out,
+            blocked_by,
+            mutes,
+            domain_blocks,
+            notes,
+            endorsed,
         })
     }
 }
@@ -2347,9 +2364,53 @@ pub async fn tag_json_page<T: TagRow, S: std::hash::BuildHasher>(
     let (from, today) = tag_history_window();
     let ids: Vec<i64> = rows.iter().map(TagRow::tag_id).collect();
     let histories = tag::history_batch(pool, &ids, from).await?;
+    Ok(assemble_tag_json_page(
+        domain, rows, following, featuring, authed, &histories, today,
+    ))
+}
+
+/// Resolves a tag page's viewer flags and history concurrently. Anonymous
+/// callers query only history and continue to omit both viewer flags.
+pub async fn tag_json_page_for_viewer<T: TagRow>(
+    pool: &PgPool,
+    domain: &str,
+    rows: &[T],
+    viewer_account_id: Option<i64>,
+) -> Result<Vec<Value>, ApiError> {
+    let (from, today) = tag_history_window();
+    let ids: Vec<i64> = rows.iter().map(TagRow::tag_id).collect();
+    let (flags, histories) = match viewer_account_id {
+        Some(account_id) => tokio::try_join!(
+            tag::viewer_flags(pool, account_id, &ids),
+            tag::history_batch(pool, &ids, from),
+        )?,
+        None => (
+            tag::ViewerFlags::default(),
+            tag::history_batch(pool, &ids, from).await?,
+        ),
+    };
+    Ok(assemble_tag_json_page(
+        domain,
+        rows,
+        &flags.following,
+        &flags.featuring,
+        viewer_account_id.is_some(),
+        &histories,
+        today,
+    ))
+}
+
+fn assemble_tag_json_page<T: TagRow, S: std::hash::BuildHasher>(
+    domain: &str,
+    rows: &[T],
+    following: &HashSet<i64, S>,
+    featuring: &HashSet<i64, S>,
+    authed: bool,
+    histories: &HashMap<i64, Vec<tag::DayCount>>,
+    today: time::Date,
+) -> Vec<Value> {
     let empty: Vec<tag::DayCount> = Vec::new();
-    Ok(rows
-        .iter()
+    rows.iter()
         .map(|row| {
             let id = row.tag_id();
             let counts = histories.get(&id).unwrap_or(&empty);
@@ -2363,7 +2424,7 @@ pub async fn tag_json_page<T: TagRow, S: std::hash::BuildHasher>(
                 tag_history_series(counts, today),
             )
         })
-        .collect())
+        .collect()
 }
 
 /// Builds `Admin::Tag` entities for a page of tags (`REST::Admin::TagSerializer`

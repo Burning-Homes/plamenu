@@ -33,11 +33,13 @@ SERVICE=${PLAMENU_STAGING_SERVICE:-plamenu}
 OWNER=${PLAMENU_STAGING_OWNER:-$SERVICE}
 GROUP=${PLAMENU_STAGING_GROUP:-$SERVICE}
 TARGET=${PLAMENU_STAGING_TARGET:-x86_64-unknown-linux-musl}
+PROFILE=${PLAMENU_STAGING_PROFILE:-iteration}
 REMOTE_BIN=${PLAMENU_STAGING_REMOTE_BIN:-/opt/plamenu/plamenu}
 HEALTH_PATH=${PLAMENU_STAGING_HEALTH_PATH:-/api/v1/instance}
 HEALTH_ATTEMPTS=${PLAMENU_STAGING_HEALTH_ATTEMPTS:-30}
-UNSTRIPPED_BIN="target/$TARGET/deploy/plamenu"
-BIN="target/$TARGET/deploy/plamenu.stripped"
+TARGET_DIR="$ROOT/target"
+UNSTRIPPED_BIN="$TARGET_DIR/$TARGET/$PROFILE/plamenu"
+BIN="$TARGET_DIR/$TARGET/$PROFILE/plamenu.stripped"
 STRIP_TOOL=${PLAMENU_STAGING_STRIP:-llvm-strip}
 UPLOAD="/tmp/${SERVICE}.deploy.$$"
 BUILD_NUMBER=${PLAMENU_BUILD_NUMBER:-$(git rev-list --count HEAD)}
@@ -51,6 +53,7 @@ fi
 say() { printf '\033[1;34m>>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m!!\033[0m %s\n' "$*" >&2; exit 1; }
 
+[[ "$PROFILE" == iteration || "$PROFILE" == deploy ]] || die "staging profile must be iteration or deploy"
 [[ "$CONTAINER" =~ ^[A-Za-z0-9_.-]+$ ]] || die "unsafe container name: $CONTAINER"
 if [[ ! "$SSH_HOST" =~ ^([A-Za-z0-9_.-]+@)?[A-Za-z0-9.-]+$ ]] \
   || [[ "$SSH_HOST" == -* ]] \
@@ -69,6 +72,29 @@ fi
 [[ "$HEALTH_PATH" == /* ]] || die "health path must start with /"
 [[ "$HEALTH_ATTEMPTS" =~ ^[0-9]+$ ]] || die "health attempts must be numeric"
 
+# Qualify the same compiler profile and flags used by the staging binary.
+# Empty encoded flags also override RUSTFLAGS, so remove them after checking.
+[[ -z ${CARGO_ENCODED_RUSTFLAGS:-} ]] \
+  || die "encoded compiler flags conflict with staging qualification"
+unset CARGO_ENCODED_RUSTFLAGS
+for override in "${!CARGO_PROFILE_@}"; do
+  die "Cargo profile override conflicts with staging qualification: $override"
+done
+[[ ! ${CARGO_INCREMENTAL+x} ]] \
+  || die "incremental override conflicts with staging qualification"
+for override in RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER \
+  CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER; do
+  [[ -z ${!override:-} ]] \
+    || die "compiler wrapper conflicts with staging qualification: $override"
+  unset "$override"
+done
+if [[ -n ${CARGO_TARGET_DIR:-} ]]; then
+  [[ "$(realpath -m -- "$CARGO_TARGET_DIR")" == "$TARGET_DIR" ]] \
+    || die "Cargo target directory conflicts with staging qualification"
+fi
+export CARGO_TARGET_DIR="$TARGET_DIR"
+export RUSTFLAGS="${PLAMENU_STAGING_RUSTFLAGS:-}"
+
 command -v cargo >/dev/null || die "cargo is not installed"
 command -v rustup >/dev/null || die "rustup is not installed"
 command -v scp >/dev/null || die "scp is not installed"
@@ -86,16 +112,13 @@ esac
 [[ -z "$linker" ]] || command -v "$linker" >/dev/null \
   || die "musl linker is missing: $linker"
 
-say "Building locked $TARGET staging binary (build $BUILD_NUMBER)"
-if [[ -n ${PLAMENU_STAGING_RUSTFLAGS:-} ]]; then
-  export RUSTFLAGS=$PLAMENU_STAGING_RUSTFLAGS
-fi
+say "Building locked $TARGET staging binary with $PROFILE profile (build $BUILD_NUMBER)"
 PLAMENU_BUILD_CHANNEL=staging \
 PLAMENU_BUILD_NUMBER=$BUILD_NUMBER \
 PLAMENU_GIT_SHA=$GIT_SHA \
 PLAMENU_GIT_DIRTY=$GIT_DIRTY \
 SQLX_OFFLINE=true \
-  cargo build --locked --profile deploy --target "$TARGET" -p plamenu
+  cargo build --locked --profile "$PROFILE" --target "$TARGET" -p plamenu
 [[ -s "$UNSTRIPPED_BIN" ]] || die "build produced no binary at $UNSTRIPPED_BIN"
 install -m 0755 "$UNSTRIPPED_BIN" "$BIN"
 "$STRIP_TOOL" --strip-all "$BIN"

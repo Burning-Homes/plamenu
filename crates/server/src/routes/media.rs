@@ -525,8 +525,20 @@ pub(crate) fn parse_range(header: Option<&axum::http::HeaderValue>, total: u64) 
 /// A streamed body over `len` bytes of an opened media file (constant
 /// memory — a feature video must never be buffered per request).
 fn stream_body(reader: Box<dyn crate::storage::MediaReader>, len: u64) -> axum::body::Body {
+    use futures_util::TryStreamExt as _;
     use tokio::io::AsyncReadExt;
-    axum::body::Body::from_stream(tokio_util::io::ReaderStream::new(reader.take(len)))
+    // Tokio disk reads use the blocking pool. Small default chunks repeatedly
+    // wake it and emit HTTP frames for a single large video; keep reads bounded
+    // at 64 KiB, as in the other large-file paths, without reading ahead.
+    let stream =
+        tokio_util::io::ReaderStream::with_capacity(reader.take(len), 64 * 1024).map_err(|error| {
+            // A cancelled body is dropped without a read error. Actual storage
+            // failures need evidence, but error strings may include private
+            // backend paths or URLs, so record only the I/O error class.
+            tracing::warn!(error_kind = ?error.kind(), "stored media read failed");
+            error
+        });
+    axum::body::Body::from_stream(stream)
 }
 
 /// `GET /media/{file_name}` — serves stored uploads, streaming from the
@@ -958,5 +970,131 @@ async fn ensure<T>(
     match tokio::time::timeout(PROXY_FETCH_TIMEOUT, fut).await {
         Ok(Ok(value)) => value,
         Ok(Err(_)) | Err(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod streaming_tests {
+    use std::pin::Pin;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::task::{Context, Poll};
+
+    use http_body_util::BodyExt;
+    use tokio::io::{AsyncRead, AsyncSeek, ReadBuf};
+
+    struct ObservedReader {
+        inner: std::io::Cursor<Vec<u8>>,
+        fail: bool,
+        bytes_read: Arc<AtomicUsize>,
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl AsyncRead for ObservedReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            if self.fail {
+                return Poll::Ready(Err(std::io::ErrorKind::PermissionDenied.into()));
+            }
+            let before = buf.filled().len();
+            let result = Pin::new(&mut self.inner).poll_read(cx, buf);
+            self.bytes_read
+                .fetch_add(buf.filled().len() - before, Ordering::Relaxed);
+            result
+        }
+    }
+
+    impl AsyncSeek for ObservedReader {
+        fn start_seek(
+            mut self: Pin<&mut Self>,
+            position: std::io::SeekFrom,
+        ) -> std::io::Result<()> {
+            Pin::new(&mut self.inner).start_seek(position)
+        }
+
+        fn poll_complete(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<std::io::Result<u64>> {
+            Pin::new(&mut self.inner).poll_complete(cx)
+        }
+    }
+
+    impl Drop for ObservedReader {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::Relaxed);
+        }
+    }
+
+    #[tokio::test]
+    async fn stored_stream_waits_for_demand_and_releases_reader_on_cancel() {
+        let bytes_read = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let reader = ObservedReader {
+            inner: std::io::Cursor::new(vec![7; 1024 * 1024]),
+            fail: false,
+            bytes_read: bytes_read.clone(),
+            dropped: dropped.clone(),
+        };
+        let mut body = super::stream_body(Box::new(reader), 1024 * 1024);
+        assert_eq!(bytes_read.load(Ordering::Relaxed), 0);
+        let first = body.frame().await.unwrap().unwrap().into_data().unwrap();
+        assert!(!first.is_empty());
+        assert!(first.len() <= 64 * 1024);
+        assert_eq!(bytes_read.load(Ordering::Relaxed), first.len());
+        tokio::task::yield_now().await;
+        assert_eq!(bytes_read.load(Ordering::Relaxed), first.len());
+        drop(body);
+        assert!(dropped.load(Ordering::Relaxed));
+        assert_eq!(bytes_read.load(Ordering::Relaxed), first.len());
+    }
+
+    #[tokio::test]
+    async fn stored_stream_batches_large_reads_and_stops_at_requested_length() {
+        let length = 4 * 1024 * 1024 + 17;
+        let bytes_read = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let reader = ObservedReader {
+            inner: std::io::Cursor::new(vec![7; length + 100]),
+            fail: false,
+            bytes_read: bytes_read.clone(),
+            dropped: dropped.clone(),
+        };
+        let mut body = super::stream_body(Box::new(reader), length as u64);
+        let (mut chunks, mut received) = (0, 0);
+        while let Some(frame) = body.frame().await {
+            let data = frame.unwrap().into_data().unwrap();
+            assert!(data.len() <= 64 * 1024);
+            assert!(data.iter().all(|byte| *byte == 7));
+            chunks += 1;
+            received += data.len();
+        }
+        assert_eq!(received, length);
+        assert_eq!(bytes_read.load(Ordering::Relaxed), length);
+        // Catch a return to tiny per-frame disk jobs without requiring one
+        // exact chunk shape from every storage backend.
+        assert!(chunks <= 128, "large stored file emitted {chunks} chunks");
+        drop(body);
+        assert!(dropped.load(Ordering::Relaxed));
+    }
+    #[tokio::test]
+    async fn stored_stream_propagates_read_failure_and_releases_reader() {
+        let bytes_read = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let reader = ObservedReader {
+            inner: std::io::Cursor::new(vec![7; 100]),
+            fail: true,
+            bytes_read: bytes_read.clone(),
+            dropped: dropped.clone(),
+        };
+        let mut body = super::stream_body(Box::new(reader), 100);
+        assert!(body.frame().await.unwrap().is_err());
+        assert_eq!(bytes_read.load(Ordering::Relaxed), 0);
+        assert!(body.frame().await.is_none());
+        drop(body);
+        assert!(dropped.load(Ordering::Relaxed));
     }
 }

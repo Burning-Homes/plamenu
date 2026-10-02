@@ -3286,7 +3286,7 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "plamenu"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "aes-gcm 0.11.0",
  "altcha",
@@ -3356,7 +3356,7 @@ dependencies = [
 
 [[package]]
 name = "plamenu-ap"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "ammonia",
  "base64 0.23.0",
@@ -3376,7 +3376,7 @@ dependencies = [
 
 [[package]]
 name = "plamenu-db"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "base64 0.23.0",
  "serde",
@@ -3390,7 +3390,7 @@ dependencies = [
 
 [[package]]
 name = "plamenu-federation"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "base64 0.23.0",
  "ed25519-dalek",
