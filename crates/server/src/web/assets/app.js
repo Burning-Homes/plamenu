@@ -4458,10 +4458,15 @@
     // by this edge-recovery rule and are never fast-forwarded behind the user.
     video.addEventListener('timeupdate', () => { lastLiveTime = video.currentTime; });
     video.addEventListener('seeking', () => {
+      const previousTime = lastLiveTime;
+      // HLS can set its initial edge before a decoded frame produces a
+      // timeupdate. Remember that pending seek too, so a viewer's subsequent
+      // backward seek is not compared with the old zero position.
+      lastLiveTime = video.currentTime;
       if (!liveVideo || !hlsPlayer) return;
       const sync = hlsPlayer.liveSyncPosition;
       if (Number.isFinite(sync) && video.currentTime >= sync - 1) rewoundLive = false;
-      else if (video.currentTime < lastLiveTime - .5) rewoundLive = true;
+      else if (video.currentTime < previousTime - .5) rewoundLive = true;
       hlsPlayer.config.liveMaxLatencyDuration = rewoundLive ? Infinity : 5;
     });
     let vodPending = false;

@@ -89,6 +89,49 @@ def test_native_tracker_bounds_atomic_signaling_and_fault_recovery():
         result = {"pid": pid}
         try:
             proc = Path(f"/proc/{pid}")
+            stat = (proc / "stat").read_text().rsplit(") ", 1)[1].split()
+            result.update(
+                start_ticks=int(stat[19]),
+                cpu_user_ticks=int(stat[11]),
+                cpu_system_ticks=int(stat[12]),
+            )
+            for line in (proc / "limits").read_text().splitlines():
+                for label, prefix in (
+                    ("open_files", "Max open files"),
+                    ("processes", "Max processes"),
+                ):
+                    if line.startswith(prefix):
+                        values = line[len(prefix) :].split()
+                        result[label + "_soft_limit"] = (
+                            int(values[0]) if values[0].isdigit() else None
+                        )
+                        result[label + "_hard_limit"] = (
+                            int(values[1]) if values[1].isdigit() else None
+                        )
+            cgroup = next(
+                (
+                    line.split(":", 2)[2]
+                    for line in (proc / "cgroup").read_text().splitlines()
+                    if line.startswith("0::")
+                ),
+                None,
+            )
+            if cgroup is not None:
+                directory = Path("/sys/fs/cgroup") / cgroup.lstrip("/")
+                for filename in ("pids.current", "pids.max"):
+                    path = directory / filename
+                    if path.is_file():
+                        value = path.read_text().strip()
+                        result["cgroup_" + filename.replace(".", "_")] = (
+                            int(value) if value.isdigit() else None
+                        )
+                path = directory / "pids.events"
+                if path.is_file():
+                    result["cgroup_pid_limit_hits"] = int(
+                        dict(
+                            line.split() for line in path.read_text().splitlines()
+                        ).get("max", 0)
+                    )
             result["fd_count"] = sum(1 for _ in (proc / "fd").iterdir())
             for line in (proc / "status").read_text().splitlines():
                 name, _, value = line.partition(":")
@@ -351,6 +394,12 @@ def test_native_tracker_bounds_atomic_signaling_and_fault_recovery():
                     response = _receive(connection)
                     assert response["incomplete"] == number - 99, response
                     members.append(connection)
+                metrics["peak_admission"] = {
+                    "admitted": len(members),
+                    "elapsed_seconds": time.monotonic() - admission_started,
+                    "test_process": numeric_process_state(os.getpid()),
+                    "server_process": numeric_process_state(peer._proc.pid),
+                }
                 rejected(_message(hashes[0], 228), "swarm full")
                 _send(members[0], _message(hashes[0], 100, event="stopped"))
                 _receive(members[0])

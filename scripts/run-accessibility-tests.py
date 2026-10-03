@@ -3,6 +3,7 @@
 
 import hashlib
 import ipaddress
+import json
 import os
 import secrets
 import shutil
@@ -26,6 +27,47 @@ CADDY_IMAGE = (
 
 def run(*args, **kwargs):
     return subprocess.run(args, cwd=ROOT, check=True, **kwargs)
+
+
+class ApplicationBinary:
+    """Freeze one executable for every fixture CLI and the browser server."""
+
+    def __init__(self, path):
+        path = Path(path)
+        if not path.is_absolute():
+            raise ValueError("PLAMENU_BINARY must be an absolute executable path")
+        self.path = path.resolve()
+        if not self.path.is_file() or not os.access(self.path, os.X_OK):
+            raise RuntimeError("Plamenu candidate is missing or not executable")
+        self.sha256 = self.digest(self.path)
+
+    @staticmethod
+    def digest(path):
+        with Path(path).open("rb") as source:
+            return hashlib.file_digest(source, "sha256").hexdigest()
+
+    def command(self, config, *arguments):
+        if self.digest(self.path) != self.sha256:
+            raise RuntimeError("Plamenu candidate changed during the browser fixture")
+        return [str(self.path), "--config", str(config), *arguments]
+
+    def running_identity(self, process):
+        proc = Path(f"/proc/{process.pid}")
+        if (
+            process.poll() is not None
+            or (proc / "exe").resolve() != self.path
+            or self.digest(proc / "exe") != self.sha256
+        ):
+            raise RuntimeError("Running browser fixture differs from its candidate")
+        return {"pid": process.pid, "executable": str(self.path), "sha256": self.sha256}
+
+
+def prepare_application():
+    selected = os.environ.get("PLAMENU_BINARY")
+    if selected:
+        return ApplicationBinary(selected)
+    run("cargo", "build", "--locked", "-q")
+    return ApplicationBinary(ROOT / "target/debug/plamenu")
 
 
 def browser_image():
@@ -212,7 +254,10 @@ def main():
     if sys.argv[1:] == ["--prepare-browser-image"]:
         print(browser_image())
         return 0
-    for tool in ("cargo", "curl", "docker", "npm", "ffmpeg"):
+    tools = ("curl", "docker", "npm", "ffmpeg")
+    if not os.environ.get("PLAMENU_BINARY"):
+        tools += ("cargo",)
+    for tool in tools:
         if not shutil.which(tool):
             print(f"Accessibility fixture requires {tool}", file=sys.stderr)
             return 1
@@ -234,6 +279,11 @@ def main():
         except RuntimeError as error:
             print(str(error), file=sys.stderr)
             return 1
+    try:
+        application = prepare_application()
+    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
+        print(f"Accessibility candidate failed: {error}", file=sys.stderr)
+        return 1
     encoder_image = BROWSER_IMAGE if local_browsers else browser_image()
     with tempfile.TemporaryDirectory(prefix="plamenu-a11y-") as temporary:
         fixture = Path(temporary)
@@ -369,33 +419,18 @@ def main():
                 "port = 9\n"
                 'from_address = "Plamenu <notifications@localhost>"\n'
             )
+            run(*application.command(config, "account", "add", "developer"))
             run(
-                "cargo",
-                "run",
-                "--locked",
-                "-q",
-                "--",
-                "--config",
-                config,
-                "account",
-                "add",
-                "developer",
-            )
-            run(
-                "cargo",
-                "run",
-                "--locked",
-                "-q",
-                "--",
-                "--config",
-                config,
-                "account",
-                "passwd",
-                "developer",
-                "--email",
-                "developer@localhost",
-                "--password",
-                "plamenu-development-only",
+                *application.command(
+                    config,
+                    "account",
+                    "passwd",
+                    "developer",
+                    "--email",
+                    "developer@localhost",
+                    "--password",
+                    "plamenu-development-only",
+                ),
             )
             # Each engine creates real channels under its own finite quota;
             # persisted private draft/catalogue fixtures keep their seed owner.
@@ -413,36 +448,23 @@ def main():
             )
             for username in ("channel_editor", *creator_users):
                 run(
-                    "cargo",
-                    "run",
-                    "--locked",
-                    "-q",
-                    "--",
-                    "--config",
-                    config,
-                    "account",
-                    "add",
-                    username,
-                    "--email",
-                    f"{username}@localhost",
-                    "--password",
-                    "plamenu-development-only",
+                    *application.command(
+                        config,
+                        "account",
+                        "add",
+                        username,
+                        "--email",
+                        f"{username}@localhost",
+                        "--password",
+                        "plamenu-development-only",
+                    ),
                 )
             seed_native_draft_pages(name, fixture, video_fixture)
             log = ROOT / "target/accessibility/server.log"
             log.parent.mkdir(parents=True, exist_ok=True)
             log_handle = log.open("wb")
             server = subprocess.Popen(
-                [
-                    "cargo",
-                    "run",
-                    "--locked",
-                    "-q",
-                    "--",
-                    "--config",
-                    str(config),
-                    "serve",
-                ],
+                application.command(config, "serve"),
                 cwd=ROOT,
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
@@ -450,6 +472,9 @@ def main():
             )
             base_url = f"http://{app_address}:{app_port}"
             wait_for_server(server, base_url, log)
+            (log.parent / "application.json").write_text(
+                json.dumps(application.running_identity(server), indent=2) + "\n"
+            )
             tls_port = free_port() if local_browsers else 443
             caddyfile = fixture / "Caddyfile"
             caddyfile.write_text(

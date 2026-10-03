@@ -126,9 +126,10 @@ generation-fenced processing leases. Failed encoding retains the source for
 retry; unfinished drafts expire, but published media is not draft-expired.
 
 Worker slots are bounded before a job is claimed. Temporary-space reservations
-cover the source spool, a compatibility MP4, at most six HLS files and possible
-destination copies, poster scratch and a 2 MiB storyboard plus its copy. For a
-default-ceiling 2 GiB source, this conservative reservation is about 30 GiB
+cover the source spool, original and compatibility MP4 outputs, at most six
+HLS files and possible destination copies, poster scratch and a 2 MiB
+storyboard plus its copy. For a
+default-ceiling 2 GiB source, this conservative reservation is about 34 GiB
 plus 16 MiB per active job, in addition to the free-space floor. Actual outputs
 are often much smaller. Insufficient free space leaves work queued; it does
 not delete the original or relax the output ceilings. Other processes can use

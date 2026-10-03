@@ -3,6 +3,8 @@
 import json
 import os
 import subprocess
+import tempfile
+from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
@@ -143,7 +145,13 @@ def test_peertube_live_swarm_in_both_first_party_players(plamenu_api: Api):
             with step(
                 "both real first-party players exchange checksum-validated live bytes"
             ):
-                subprocess.run(
+                artifacts = config.PLAMENU_DIR / "target/e2e/peertube-live-p2p"
+                artifacts.mkdir(parents=True, exist_ok=True)
+                evidence = Path(
+                    tempfile.mkdtemp(prefix=f"{video['uuid']}-", dir=artifacts)
+                )
+                evidence.chmod(0o700)
+                result = subprocess.run(
                     [
                         "node",
                         "verify-peertube-live-p2p.mjs",
@@ -152,13 +160,24 @@ def test_peertube_live_swarm_in_both_first_party_players(plamenu_api: Api):
                         json.dumps(hashes),
                     ],
                     cwd=config.PLAMENU_DIR / "accessibility",
-                    check=True,
+                    check=False,
+                    capture_output=True,
+                    text=True,
                     timeout=210,
                     env={
                         **os.environ,
                         "PEERTUBE_E2E_USER": peertube.ROOT_USER,
                         "PEERTUBE_E2E_PASSWORD": peertube.ROOT_PASS,
                     },
+                )
+                # Pytest discards successful captured output by default. Keep
+                # actual decoder/peer counters, and preserve failures privately
+                # instead of reconstructing evidence from a passing assertion.
+                (evidence / "browser-stdout.private").write_text(result.stdout)
+                (evidence / "browser-stderr.private").write_text(result.stderr)
+                result.check_returncode()
+                (evidence / "result.json").write_text(
+                    json.dumps(json.loads(result.stdout), indent=2) + "\n"
                 )
         with step("ending the live removes its peer controls and checksum document"):
             ended = wait_for(

@@ -88,6 +88,13 @@ ingest listens only on its isolated host-side address; test encoders use that
 address instead of the TLS container's localhost. Encoder failures include
 exit/transport diagnostics with stream keys redacted.
 
+To test an existing executable, set `PLAMENU_BINARY` to its absolute path when
+running `scripts/run-accessibility-tests.py`. The harness uses those same bytes
+for account setup and the server, refuses a changed candidate, and records the
+running executable SHA-256 in `target/accessibility/application.json`. Without
+the override, it builds the locked development executable once before creating
+fixtures. The candidate override requires no Rust compiler.
+
 Prefer the default pinned image for native media tests. Explicit Linux host
 mode (`A11Y_LOCAL_BROWSERS=1`) additionally requires complete WebKit/GStreamer
 dependencies, including `autoaudiosink` and `gst-inspect-1.0`; the harness checks
