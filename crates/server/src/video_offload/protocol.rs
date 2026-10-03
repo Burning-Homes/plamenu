@@ -7,7 +7,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const VERSION: u8 = 1;
+pub const VERSION: u8 = 2;
+pub const LEGACY_VERSION: u8 = 1;
 pub const LEASE_SECONDS: u64 = 30;
 pub const MAX_MANIFEST: usize = 32 * 1024 * 1024;
 
@@ -78,7 +79,7 @@ impl Spec {
         })
     }
     pub fn validate(&self, limits: NativeVideoConfig) -> Result<(), ApiError> {
-        if self.version != VERSION
+        if ![LEGACY_VERSION, VERSION].contains(&self.version)
             || !(33..=64).contains(&self.stem.len())
             || !self.stem.bytes().all(|byte| byte.is_ascii_hexdigit())
             || self.source_bytes == 0
@@ -147,6 +148,10 @@ pub struct Manifest {
     pub renditions: Vec<Rendition>,
     pub board: Board,
     pub blurhash: Option<String>,
+    /// v2 appends exactly one verified progressive artifact after the rungs.
+    /// Omitted in v1, preserving the strict legacy manifest shape/count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progressive: Option<plamenu_db::native_video_hls::Progressive>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -246,7 +251,7 @@ mod tests {
             invalid.push(item);
         }
         let mut version = base.clone();
-        version.version = 2;
+        version.version = VERSION + 1;
         invalid.push(version);
         let mut preset = base.clone();
         preset.preset = "-i file:///private".into();

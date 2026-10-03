@@ -105,7 +105,7 @@ async function journey(page, info) {
   const profile = form(page,'profile');
   await profile.getByRole('combobox', { name: 'Visibility' }).selectOption('private');
   await profile.getByRole('button', { name: 'Save playlist', exact: true }).press('Enter');
-  const anonymous = await page.context().browser().newContext({ baseURL: new URL(playlistUrl).origin, ignoreHTTPSErrors: true, javaScriptEnabled: !noScript });
+  const anonymous = await page.context().browser().newContext({ baseURL: new URL(playlistUrl).origin, ignoreHTTPSErrors: false, javaScriptEnabled: !noScript });
   expect((await anonymous.request.get(playlistUrl)).status()).toBe(404);
   await anonymous.close();
   await page.locator('summary').filter({ hasText: /^Playlist settings$/ }).press('Enter');

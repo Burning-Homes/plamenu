@@ -41,6 +41,7 @@ pub(crate) mod pages;
 pub(crate) mod password;
 mod people;
 mod personal_emojis;
+mod profile_media;
 mod reactions;
 mod register;
 mod relationships;
@@ -545,6 +546,12 @@ pub fn router() -> Router<AppState> {
             post(video_analytics::save),
         )
         .route("/web/video-channels/{id}", post(video_channels::change))
+        .route(
+            "/web/video-channels/{id}/profile",
+            post(video_channels::profile).layer(axum::extract::DefaultBodyLimit::max(
+                2 * crate::media_processing::MAX_UPLOAD_BYTES + 64 * 1024,
+            )),
+        )
         .route(
             "/web/videos",
             post(videos::submit).layer(axum::extract::DefaultBodyLimit::max(

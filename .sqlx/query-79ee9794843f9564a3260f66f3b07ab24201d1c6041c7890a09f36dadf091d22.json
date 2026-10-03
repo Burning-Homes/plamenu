@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT status_id AS \"status_id!\", account_id AS \"account_id!\", mentioned AS \"mentioned!\"\n        FROM (\n            SELECT sm.status_id, sm.account_id, TRUE AS mentioned\n            FROM status_mentions sm\n            JOIN groups g ON g.account_id = sm.account_id\n            WHERE sm.status_id = ANY($1)\n            UNION\n            SELECT b.reblog_of_id, b.account_id, FALSE\n            FROM statuses b -- STUBKEEP: a boost wrapper never stubs (nothing replies to it)\n            JOIN accounts a ON a.id = b.account_id\n            WHERE b.reblog_of_id = ANY($1) AND a.actor_type = 'Group'\n              AND NOT EXISTS (SELECT 1 FROM video_channels vc WHERE vc.account_id = a.id)\n              AND NOT EXISTS (SELECT 1 FROM remote_video_channels rv\n                              WHERE rv.channel_id=a.id AND rv.status_id=b.reblog_of_id)\n        ) attributions\n        ORDER BY status_id, mentioned DESC, account_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "mentioned!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "79ee9794843f9564a3260f66f3b07ab24201d1c6041c7890a09f36dadf091d22"
+}

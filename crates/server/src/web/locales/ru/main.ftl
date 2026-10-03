@@ -2379,3 +2379,15 @@ studio-delete-video-confirm = Удалить это видео и его опу�
 studio-collaborators-empty = Соавторов пока нет.
 
 studio-preview-video = Просмотр видео и субтитров
+
+video-player-play = Воспроизвести
+video-player-pause = Пауза
+video-player-seek = Позиция воспроизведения
+video-player-mute = Выключить звук
+video-player-unmute = Включить звук
+video-player-volume = Громкость
+video-player-off = Выключены
+video-player-fullscreen = На весь экран
+video-player-settings = Настройки воспроизведения
+video-player-speed = Скорость воспроизведения
+video-player-pip = Картинка в картинке

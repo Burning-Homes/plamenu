@@ -7,7 +7,7 @@ use super::{
 use crate::{AppState, error::ApiError};
 use axum::{
     body::Bytes,
-    extract::{Path, Query, State},
+    extract::{Multipart, Path, Query, State},
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -166,9 +166,8 @@ async fn render(
                 }
             }
             @if matches!(role.as_deref(),Some("owner"|"editor")) {
-                form.settings-form method="post" action=(&target) {
+                form.settings-form method="post" enctype="multipart/form-data" action=(format!("{target}/profile")) {
                     input type="hidden" name="csrf" value=(user.csrf);
-                    input type="hidden" name="operation" value="profile";
                     fieldset.settings-form__group {
                     legend {(locale.text("video-channel-profile"))}
                     label.settings-field { span.settings-field__label { (locale.text("videos-channel-name")) }
@@ -177,6 +176,7 @@ async fn render(
                     label.settings-field { span.settings-field__label { (locale.text("videos-description")) }
                         textarea name="description" rows="5" maxlength="1000" { (channel.note_source) }
                     }
+                    (super::profile_media::fields(&channel, locale))
                     div.settings-form__actions {
                         button type="submit" { (locale.text("video-channel-save")) }
                         a href="/videos/channels" {(locale.text("studio-cancel"))}
@@ -303,4 +303,36 @@ async fn change_inner(
         }
         Err(error) => Err(error),
     }
+}
+
+/// Multipart profile edit; collaborator actions retain their established wire format.
+pub async fn profile(
+    State(state): State<AppState>,
+    user: WebUser,
+    Path(id): Path<i64>,
+    mut multipart: Multipart,
+) -> Response {
+    let form = match super::profile_media::read(&mut multipart).await {
+        Ok(form) => form,
+        Err(response) => return private(response),
+    };
+    if !user.csrf_ok(field(&form.pairs, "csrf").unwrap_or_default()) {
+        return private(csrf_rejection());
+    }
+    let changes = crate::video_channels::ProfileEdit {
+        display_name: field(&form.pairs, "display_name").map(str::to_owned),
+        description: field(&form.pairs, "description").map(str::to_owned),
+        avatar: form.avatar,
+        header: form.header,
+        avatar_description: field(&form.pairs, "avatar_description").map(str::to_owned),
+        header_description: field(&form.pairs, "header_description").map(str::to_owned),
+    };
+    private(
+        match crate::video_channels::update_profile(&state, &user.current.account, id, changes)
+            .await
+        {
+            Ok(()) => redirect_to(&format!("/videos/channels/{id}")),
+            Err(error) => error.into_response(),
+        },
+    )
 }

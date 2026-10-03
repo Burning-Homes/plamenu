@@ -177,6 +177,11 @@ async fn process(
         .iter()
         .map(|item| (item.file_name.clone(), item.file_size))
         .collect();
+    hls_sizes.extend(
+        hls.iter()
+            .filter_map(|r| r.progressive.as_ref())
+            .map(|p| (p.metadata.file_name.clone(), p.metadata.size_bytes)),
+    );
     hls_sizes.push((storyboard.file_name.clone(), storyboard.file_size));
     if !video_draft::reserve_outputs_with_hls(
         &state.pool,
@@ -357,6 +362,13 @@ async fn store(
             .put_file(&rendition.file_name, &rendition.file_path)
             .await
             .map_err(|e| ApiError::Internal(Box::new(e)))?;
+        if let Some(p) = &rendition.progressive {
+            state
+                .media
+                .put_file(&p.metadata.file_name, &p.file_path)
+                .await
+                .map_err(|e| ApiError::Internal(Box::new(e)))?;
+        }
     }
     state
         .media
@@ -411,13 +423,34 @@ async fn store(
     {
         return Err(lost_claim());
     }
-    let hls_rows = hls_rows(claim, hls);
-    native_video_hls::replace(&mut tx, claim.media_id, claim.generation, &hls_rows).await?;
+    store_hls_metadata(&mut tx, claim, hls).await?;
     plamenu_db::video_storyboards::replace(&mut tx, &storyboard_row(claim, storyboard)).await?;
     if !video_draft::mark_ready(&mut tx, claim).await? {
         return Err(lost_claim());
     }
     tx.commit().await.map_err(plamenu_db::DbError::from)?;
+    Ok(())
+}
+
+async fn store_hls_metadata(
+    connection: &mut plamenu_db::PgConnection,
+    claim: &video_draft::Claim,
+    hls: &[PackagedHls],
+) -> Result<(), ApiError> {
+    let hls_rows = hls_rows(claim, hls);
+    native_video_hls::replace(connection, claim.media_id, claim.generation, &hls_rows).await?;
+    for rung in hls {
+        if let Some(p) = &rung.progressive {
+            native_video_hls::set_progressive(
+                connection,
+                claim.media_id,
+                claim.generation,
+                rung.height,
+                &p.metadata,
+            )
+            .await?;
+        }
+    }
     Ok(())
 }
 

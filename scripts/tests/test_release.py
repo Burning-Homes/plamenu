@@ -465,6 +465,7 @@ class WorkerTests(TemporaryTest):
         forge.api.side_effect = urllib.error.HTTPError(
             "https://forge.invalid", 422, "bad ref", {}, None
         )
+        self.addCleanup(forge.api.side_effect.close)
         with (
             patch.object(worker, "Forge", return_value=forge),
             self.assertRaises(urllib.error.HTTPError),

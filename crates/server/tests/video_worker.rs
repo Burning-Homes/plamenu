@@ -4,6 +4,7 @@ mod common;
 
 use std::{path::Path, sync::Arc, time::Duration};
 
+use axum::response::IntoResponse;
 use axum::{
     body::Body,
     http::{Request, StatusCode, header},
@@ -86,6 +87,7 @@ struct Fixture {
 #[derive(Clone, Copy)]
 enum SourceShape {
     Video,
+    HighVideo,
     Audio,
     SilentPortrait,
     SilentUltrawide,
@@ -157,6 +159,7 @@ async fn fixture_with_source_and_time(
         ]);
     } else {
         let size = match source_shape {
+            SourceShape::HighVideo => "1920x1080",
             SourceShape::SilentPortrait => "270x480",
             SourceShape::SilentUltrawide => "1000x250",
             _ => "64x64",
@@ -2414,4 +2417,277 @@ async fn upgrade_does_not_allocate_posters_to_failed_or_live_attempts(pool: PgPo
             .iter()
             .any(|k| k.ends_with(".poster.jpg"))
     );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one lifecycle verifies publication and retirement share journal authority"
+)]
+async fn progressive_artifact_shares_job_journal_quota_and_readiness(pool: PgPool) {
+    let f = fixture_with_source(pool, false, false, false, SourceShape::HighVideo).await;
+    let processing_pool = plamenu::video_resources::ProcessingPool::new(1, 128 * 1024 * 1024);
+    assert!(
+        run_one(&f.state, reserve(&processing_pool, 4 * 1024 * 1024))
+            .await
+            .unwrap()
+    );
+    assert_ready(&f).await;
+    let mut connection = f.state.pool.acquire().await.unwrap();
+    let p = plamenu_db::native_video_hls::progressive_for_media(&mut connection, f.media_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(p.height, 720);
+    assert!(p.valid());
+    let charge: Option<i64> = sqlx::query_scalar(
+        "SELECT reserved_bytes FROM video_storage_reservations WHERE file_name=$1",
+    )
+    .bind(&p.file_name)
+    .fetch_one(&mut *connection)
+    .await
+    .unwrap();
+    assert_eq!(charge, Some(p.size_bytes));
+    let journal: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM video_draft_outputs WHERE file_name=$1 AND NOT retired)",
+    )
+    .bind(&p.file_name)
+    .fetch_one(&mut *connection)
+    .await
+    .unwrap();
+    assert!(journal);
+    drop(connection);
+    let keys = plamenu_db::media_cleanup::referenced_keys(&f.state.pool)
+        .await
+        .unwrap();
+    assert!(keys.contains(&p.file_name));
+    assert_eq!(f.store.get(&f.source).await.unwrap(), f.original);
+    assert!(
+        !media::public_file_allowed(&f.state.pool, &p.file_name)
+            .await
+            .unwrap()
+    );
+    let posted = publish_fixture(&f).await;
+    assert!(
+        media::public_file_allowed(&f.state.pool, &p.file_name)
+            .await
+            .unwrap()
+    );
+    let rendered = plamenu::entities::render_status(
+        &f.state.pool,
+        &f.state.config.domain,
+        &posted,
+        Some(f.owner),
+    )
+    .await
+    .unwrap();
+    assert!(
+        rendered["media_attachments"][0]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with(&p.file_name)
+    ); // A lingering JSON value is not another storage owner or public offer.
+    let path = format!("/media/{}", p.file_name);
+    let request = || {
+        plamenu::build_router(f.state.clone())
+            .oneshot(Request::builder().uri(&path).body(Body::empty()).unwrap())
+    };
+    assert_eq!(request().await.unwrap().status(), StatusCode::OK);
+    sqlx::query("UPDATE video_draft_outputs SET retired=true WHERE file_name=$1")
+        .bind(&p.file_name)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    assert!(
+        !plamenu_db::media_cleanup::referenced_keys(&f.state.pool)
+            .await
+            .unwrap()
+            .contains(&p.file_name)
+    );
+    assert!(
+        !media::public_file_allowed(&f.state.pool, &p.file_name)
+            .await
+            .unwrap()
+    );
+    assert_eq!(request().await.unwrap().status(), StatusCode::NOT_FOUND);
+    let rendered = plamenu::entities::render_status(
+        &f.state.pool,
+        &f.state.config.domain,
+        &posted,
+        Some(f.owner),
+    )
+    .await
+    .unwrap();
+    assert!(
+        rendered["media_attachments"][0]
+            .get("progressive")
+            .is_none()
+    );
+    assert!(
+        rendered["media_attachments"][0]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with(".draft.mp4")
+    );
+    let mut connection = f.state.pool.acquire().await.unwrap();
+    assert!(
+        plamenu_db::native_video_hls::progressive_for_media(&mut connection, f.media_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    drop(connection);
+    let owner = plamenu_db::account::find_by_id(&f.state.pool, f.owner)
+        .await
+        .unwrap()
+        .unwrap();
+    let wire = plamenu::note::note_for_status(&f.state, &posted, &owner)
+        .await
+        .unwrap();
+    assert!(
+        !wire["url"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|link| link["name"] == "Playable MP4")
+    );
+}
+
+async fn start_progressive_processor(
+    root: &Path,
+) -> (tokio::process::Child, String, reqwest::Client) {
+    let address = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap()
+        .local_addr()
+        .unwrap();
+    let config = root.join("processor.toml");
+    std::fs::write(&config,format!("bind = \"{address}\"\ntoken = \"{}\"\ndirectory = {}\n[native_video]\njobs = 1\nmax_upload_mib = 4\n", "a".repeat(64), toml::Value::String(root.join("scratch").display().to_string()))).unwrap();
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_plamenu"))
+        .arg("--config")
+        .arg(&config)
+        .arg("video-worker")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let http = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let worker_url = format!("http://{address}");
+    let mut available = false;
+    for _ in 0..50 {
+        if http
+            .get(format!("{worker_url}/v1/health"))
+            .bearer_auth("a".repeat(64))
+            .send()
+            .await
+            .is_ok_and(|r| r.status().is_success())
+        {
+            available = true;
+            break;
+        }
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "processor exited during startup"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(available, "bounded worker startup");
+    (child, worker_url, http)
+}
+
+// The actual installed worker produces both wire versions. The origin's encoder
+// is deliberately unavailable, so a successful ready job cannot hide a native
+// fallback after an invalid transfer.
+async fn progressive_offload_version(pool: PgPool, version: u8) {
+    let mut f = fixture_with_source(pool, false, false, false, SourceShape::HighVideo).await;
+    let root = tempfile::tempdir().unwrap();
+    let (mut child, worker_url, http) = start_progressive_processor(root.path()).await;
+    let jobs = Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+    let recorded = jobs.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy_address = listener.local_addr().unwrap();
+    let proxy_http = http.clone();
+    let target = worker_url.clone();
+    let app = axum::Router::new().fallback(move |request: axum::extract::Request| {
+        let http = proxy_http.clone();
+        let target = target.clone();
+        let jobs = recorded.clone();
+        async move {
+            if request.uri().path() == "/v1/health" {
+                return axum::Json(serde_json::json!({"version":version})).into_response();
+            }
+            let (parts, body) = request.into_parts();
+            let bytes = axum::body::to_bytes(body, 4 * 1024 * 1024).await.unwrap();
+            if parts.method == axum::http::Method::POST && parts.uri.path() == "/v1/jobs" {
+                let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                jobs.lock()
+                    .unwrap()
+                    .push(u8::try_from(value["version"].as_u64().unwrap()).unwrap());
+            }
+            let response = http
+                .request(parts.method, format!("{target}{}", parts.uri))
+                .bearer_auth("a".repeat(64))
+                .header("content-type", "application/json")
+                .body(bytes)
+                .send()
+                .await
+                .unwrap();
+            let status = response.status();
+            let bytes = response.bytes().await.unwrap();
+            (status, bytes).into_response()
+        }
+    });
+    let proxy = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let settings = Arc::make_mut(&mut f.state.config);
+    settings.ffmpeg_path = "deliberately-unavailable-origin-encoder".into();
+    settings.video_offload = vec![plamenu::video_offload::Target {
+        url: format!("http://{proxy_address}/"),
+        token: "a".repeat(64).into(),
+    }];
+    let processing_pool = plamenu::video_resources::ProcessingPool::new(1, 128 * 1024 * 1024);
+    let result = run_one(&f.state, reserve(&processing_pool, 4 * 1024 * 1024)).await;
+    let health: serde_json::Value = http
+        .get(format!("{worker_url}/v1/health"))
+        .bearer_auth("a".repeat(64))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    child.kill().await.unwrap();
+    child.wait().await.unwrap();
+    proxy.abort();
+    let _ = proxy.await;
+    assert!(result.unwrap());
+    assert_ready(&f).await;
+    assert_eq!(health["completed_jobs"], 1);
+    assert_eq!(*jobs.lock().unwrap(), vec![version]);
+    assert_eq!(processing_pool.usage(), (0, 0));
+    assert_eq!(f.store.get(&f.source).await.unwrap(), f.original);
+    let mut conn = f.state.pool.acquire().await.unwrap();
+    let p = plamenu_db::native_video_hls::progressive_for_media(&mut conn, f.media_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        p.is_some(),
+        version == 2,
+        "legacy wire retains the original fallback; v2 transfers exactly one verified progressive artifact"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn progressive_offload_legacy_wire_retains_exact_artifacts(pool: PgPool) {
+    progressive_offload_version(pool, 1).await;
+}
+#[sqlx::test(migrations = "../db/migrations")]
+async fn progressive_offload_v2_transfers_verified_artifact_without_local_encode(pool: PgPool) {
+    progressive_offload_version(pool, 2).await;
 }

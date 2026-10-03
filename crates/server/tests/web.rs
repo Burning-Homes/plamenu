@@ -7294,8 +7294,15 @@ async fn home_merges_repeated_boosts_into_one_card(pool: PgPool) {
     );
     assert_eq!(
         home.body.matches("posted in").count(),
+        2,
+        "both cards retain community context without duplicating it inside the announce"
+    );
+    assert_eq!(
+        home.body
+            .matches(&format!(r#"data-booster-id="{}""#, group_account.id))
+            .count(),
         1,
-        "the community announce is never merged away"
+        "the community's own announce remains a separate card"
     );
     // The merged card names every booster and keys all three for the in-place
     // moderation JS.
@@ -17552,4 +17559,177 @@ async fn composer_schedules_an_article_and_publishes_its_title_and_body(pool: Pg
             .unwrap()
             .is_none()
     );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+#[allow(
+    clippy::too_many_lines,
+    reason = "channel profile permissions, publication and rejection share one upload lifecycle fixture"
+)]
+async fn channel_manager_uploads_shared_profile_images_with_editor_authority(pool: PgPool) {
+    let owner = seed_alice(&pool).await;
+    let editor = seed_user(&pool, "editor", "editor@example.com", PASSWORD).await;
+    let publisher = seed_user(&pool, "publisher", "publisher@example.com", PASSWORD).await;
+    let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
+    common::open_previews(&pool).await;
+    let channel = plamenu::video::create_channel(&state, &owner, "films", "Films")
+        .await
+        .unwrap();
+    for (person, role, accepted) in [
+        (editor.id, "editor", true),
+        (publisher.id, "publisher", true),
+    ] {
+        sqlx::query("INSERT INTO video_channel_grants(channel_id,account_id,role,accepted) VALUES($1,$2,$3,$4)").bind(channel.id).bind(person).bind(role).bind(accepted).execute(&pool).await.unwrap();
+    }
+    follow::create(&pool, editor.id, channel.id, None)
+        .await
+        .unwrap();
+    let app = build_router(state.clone());
+    let owner_cookie = login(&app).await;
+    let editor_cookie = login_as(&app, "editor@example.com", PASSWORD).await;
+    let publisher_cookie = login_as(&app, "publisher@example.com", PASSWORD).await;
+    let manage = format!("/videos/channels/{}", channel.id);
+    let action = format!("/web/video-channels/{}/profile", channel.id);
+    let page = get(&app, &manage, Some(&editor_cookie)).await;
+    assert!(
+        page.body.contains("multipart/form-data")
+            && page.body.contains("name=\"avatar\"")
+            && page.body.contains("name=\"header\"")
+    );
+    assert!(
+        !get(&app, &manage, Some(&publisher_cookie))
+            .await
+            .body
+            .contains("name=\"avatar\"")
+    );
+    let csrf = csrf_of(&page.body);
+    for (cookie, token, expected) in [
+        (&editor_cookie, "wrong", StatusCode::FORBIDDEN),
+        (&publisher_cookie, &csrf, StatusCode::FORBIDDEN),
+    ] {
+        assert_eq!(
+            post_multipart_file(
+                &app,
+                &action,
+                cookie,
+                &[("csrf", token)],
+                ("avatar", "square.png", "image/png", &sample_png_bytes())
+            )
+            .await
+            .status,
+            expected
+        );
+    }
+    let publisher_csrf = csrf_of(&get(&app, &manage, Some(&publisher_cookie)).await.body);
+    assert_eq!(
+        post_multipart_file(
+            &app,
+            &action,
+            &publisher_cookie,
+            &[("csrf", &publisher_csrf)],
+            ("avatar", "square.png", "image/png", &sample_png_bytes())
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    let saved = post_multipart_file(
+        &app,
+        &action,
+        &editor_cookie,
+        &[
+            ("csrf", &csrf),
+            ("display_name", "Collaborative films"),
+            ("description", "Our channel"),
+            ("avatar_description", "A purple square"),
+        ],
+        ("avatar", "square.png", "image/png", &sample_png_bytes()),
+    )
+    .await;
+    assert_eq!(saved.status, StatusCode::SEE_OTHER);
+    assert_eq!(saved.cache_control, "private, no-store");
+    let updated = account::find_by_id(&pool, channel.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(updated.uri, channel.uri);
+    assert_eq!(updated.username, channel.username);
+    assert!(updated.avatar_file_name.is_some());
+    assert_eq!(updated.avatar_description, "A purple square");
+    assert_eq!(updated.display_name, "Collaborative films");
+    let actor = get_ap(&app, &format!("/ap/accounts/{}", channel.id)).await;
+    let actor: serde_json::Value = serde_json::from_str(&actor.body).unwrap();
+    assert_eq!(actor["type"], "Group");
+    assert_eq!(actor["icon"]["summary"], "A purple square");
+    assert_eq!(actor["id"], channel.uri.as_deref().unwrap());
+    let owner_page = get(&app, &manage, Some(&owner_cookie)).await;
+    let owner_csrf = csrf_of(&owner_page.body);
+    assert_eq!(
+        post_multipart_file(
+            &app,
+            &action,
+            &owner_cookie,
+            &[
+                ("csrf", &owner_csrf),
+                ("header_description", "A purple banner")
+            ],
+            ("header", "banner.png", "image/png", &sample_png_bytes())
+        )
+        .await
+        .status,
+        StatusCode::SEE_OTHER
+    );
+    let public = get(&app, "/@films", None).await;
+    assert!(
+        public.body.contains("alt=\"A purple square\"")
+            && public.body.contains("alt=\"A purple banner\"")
+    );
+    let before = account::find_by_id(&pool, channel.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        post_multipart_file(
+            &app,
+            &action,
+            &owner_cookie,
+            &[("csrf", &owner_csrf), ("display_name", "Invalid mutation")],
+            ("avatar", "fake.png", "image/png", b"not an image")
+        )
+        .await
+        .status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    let after = account::find_by_id(&pool, channel.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(before.avatar_file_name, after.avatar_file_name);
+    assert_eq!(before.display_name, after.display_name);
+    sqlx::query("DELETE FROM video_channel_grants WHERE channel_id=$1 AND account_id=$2")
+        .bind(channel.id)
+        .bind(editor.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        post_multipart_file(
+            &app,
+            &action,
+            &editor_cookie,
+            &[("csrf", &csrf)],
+            ("header", "banner.png", "image/png", &sample_png_bytes())
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    if let Ok(dir) = std::env::var("PLAMENU_CHANNEL_PARITY_EVIDENCE") {
+        std::fs::write(
+            format!("{dir}/manager.html"),
+            get(&app, &manage, Some(&owner_cookie)).await.body,
+        )
+        .unwrap();
+        std::fs::write(format!("{dir}/channel.html"), public.body).unwrap();
+    }
 }

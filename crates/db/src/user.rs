@@ -1090,10 +1090,8 @@ pub async fn settings_by_account_id(
     }))
 }
 
-/// The Account-entity attributes only a local account carries (Mastodon's
-/// `if: :local?` serializer branch): the owner's `noindex` preference and
-/// their role when it is publicly highlighted (`roles` shows highlighted
-/// roles only), plus native video-channel identity. A channel need not have a
+/// Local Account attributes (`noindex` and publicly highlighted roles), plus
+/// native or independently verified remote video-channel identity. A channel need not have a
 /// login, so its `noindex` remains `None` rather than inventing a preference.
 #[derive(Debug, Clone)]
 pub struct AccountEntityOverlay {
@@ -1131,12 +1129,14 @@ pub async fn account_entity_overlay_batch(
         SELECT input.id AS "account_id!",
                u.noindex AS "noindex?",
                r.id AS "role_id?", r.name AS "role_name?", r.color AS "role_color?",
-               (c.account_id IS NOT NULL) AS "video_channel!"
+               (c.account_id IS NOT NULL OR EXISTS
+                   (SELECT 1 FROM remote_video_channels rv WHERE rv.channel_id=input.id)) AS "video_channel!"
         FROM unnest($1::bigint[]) AS input(id)
         LEFT JOIN users u ON u.account_id = input.id
         LEFT JOIN video_channels c ON c.account_id = input.id
         LEFT JOIN user_roles r ON r.id = u.role_id AND r.highlighted
         WHERE u.account_id IS NOT NULL OR c.account_id IS NOT NULL
+           OR EXISTS (SELECT 1 FROM remote_video_channels rv WHERE rv.channel_id=input.id)
         "#,
         account_ids,
     )

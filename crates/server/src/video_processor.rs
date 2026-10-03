@@ -104,6 +104,10 @@ impl Bundle {
             0 => Some(self.processed.file_path.clone()),
             1 => Some(self.poster_path.clone()),
             2 => Some(self.board.file_path.clone()),
+            n if n == self.hls.len() + 3 && self.manifest.progressive.is_some() => self
+                .hls
+                .iter()
+                .find_map(|r| r.progressive.as_ref().map(|p| p.file_path.clone())),
             n => self.hls.get(n - 3).map(|rung| rung.file_path.clone()),
         }
     }
@@ -511,8 +515,14 @@ async fn encode(worker: &Worker, job: &Job) -> Result<Bundle, ApiError> {
     {
         artifacts.push(protocol::digest(path).await?);
     }
+    let progressive = (job.spec.version == protocol::VERSION)
+        .then(|| hls.iter().find_map(|r| r.progressive.as_ref()))
+        .flatten();
+    if let Some(p) = progressive {
+        artifacts.push(protocol::digest(&p.file_path).await?);
+    }
     let manifest = Manifest {
-        version: protocol::VERSION,
+        version: job.spec.version,
         artifacts,
         renditions: hls
             .iter()
@@ -532,6 +542,7 @@ async fn encode(worker: &Worker, job: &Job) -> Result<Bundle, ApiError> {
             interval_seconds: board.interval_seconds,
         },
         blurhash: processed.blurhash.clone(),
+        progressive: progressive.map(|p| p.metadata.clone()),
     };
     if serde_json::to_vec(&manifest)
         .map_err(|_| protocol::invalid())?
@@ -600,7 +611,7 @@ mod tests {
         let worker = Worker {
             config: Arc::new(config),
             token: "a".repeat(64).into(),
-            resources: ProcessingPool::new(1, 200),
+            resources: ProcessingPool::new(1, 220),
             jobs: Arc::default(),
             completed: Arc::default(),
         };
@@ -685,7 +696,7 @@ mod tests {
         );
         assert_eq!(worker.resources.usage(), (0, 0));
         let id = admitted(&worker).await;
-        assert_eq!(worker.resources.usage(), (1, 200));
+        assert_eq!(worker.resources.usage(), (1, 220));
         assert_eq!(
             request(
                 &worker,
@@ -758,7 +769,7 @@ mod tests {
         );
         let job = find(&worker, &id).unwrap();
         assert!(matches!(*job.phase.lock_or_recover(), Phase::Failed));
-        assert_eq!(worker.resources.usage(), (1, 200));
+        assert_eq!(worker.resources.usage(), (1, 220));
         drop(job);
         request(&worker, "DELETE", &format!("/v1/jobs/{id}"), vec![], true).await;
         assert_eq!(worker.resources.usage(), (0, 0));

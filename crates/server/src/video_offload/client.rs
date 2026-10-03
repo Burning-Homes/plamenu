@@ -50,7 +50,7 @@ pub(super) async fn encode(
     if original.len == 0 || original.len > params.max_av_bytes as u64 {
         return Err(protocol::invalid());
     }
-    let spec = Spec::new(params, stem, original.len, poster)?;
+    let mut spec = Spec::new(params, stem, original.len, poster)?;
     spec.validate(state.config.native_video)?;
     let http = reqwest::Client::builder()
         .no_proxy()
@@ -60,22 +60,7 @@ pub(super) async fn encode(
         .timeout(Duration::from_hours(4))
         .build()
         .map_err(http_error)?;
-    let response = http
-        .post(format!("{}/v1/jobs", target.url.trim_end_matches('/')))
-        .bearer_auth(target.token.expose())
-        .json(&spec)
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await
-        .map_err(http_error)?;
-    let created: Created =
-        serde_json::from_slice(&limited(response, 1024).await?).map_err(|_| protocol::invalid())?;
-    if created.id.len() != 33
-        || !created.id.bytes().all(|byte| byte.is_ascii_hexdigit())
-        || created.lease_seconds != protocol::LEASE_SECONDS
-    {
-        return Err(protocol::invalid());
-    }
+    let created = admit(&http, target, &mut spec).await?;
     let remote = Remote {
         http,
         target: target.clone(),
@@ -165,18 +150,75 @@ async fn limited(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8
     Ok(bytes)
 }
 
+/// Negotiate once before sending any source bytes. Rejections never create a
+/// second job with a guessed legacy schema.
+async fn admit(
+    http: &reqwest::Client,
+    target: &Target,
+    spec: &mut Spec,
+) -> Result<Created, ApiError> {
+    // Authenticated, bounded capability discovery precedes job admission.
+    // A validation rejection is never retried as another protocol version.
+    let capability = http
+        .get(format!("{}/v1/health", target.url.trim_end_matches('/')))
+        .bearer_auth(target.token.expose())
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .map_err(http_error)?;
+    let capability: serde_json::Value = serde_json::from_slice(&limited(capability, 2048).await?)
+        .map_err(|_| protocol::invalid())?;
+    spec.version = match capability["version"].as_u64() {
+        Some(1) => protocol::LEGACY_VERSION,
+        Some(2) => protocol::VERSION,
+        _ => return Err(protocol::invalid()),
+    };
+    let response = http
+        .post(format!("{}/v1/jobs", target.url.trim_end_matches('/')))
+        .bearer_auth(target.token.expose())
+        .json(&spec)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(http_error)?;
+    let created: Created =
+        serde_json::from_slice(&limited(response, 1024).await?).map_err(|_| protocol::invalid())?;
+    if created.id.len() != 33
+        || !created.id.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || created.lease_seconds != protocol::LEASE_SECONDS
+    {
+        return Err(protocol::invalid());
+    }
+    Ok(created)
+}
+
 fn validate_manifest(spec: &Spec, manifest: &Manifest) -> Result<(), ApiError> {
     let count = manifest.renditions.len();
-    if manifest.version != protocol::VERSION
+    if manifest.version != spec.version
         || count == 0
         || count > 6
-        || manifest.artifacts.len() != count + 3
+        || manifest.artifacts.len() != count + 3 + usize::from(manifest.progressive.is_some())
+        || (manifest.version == protocol::LEGACY_VERSION && manifest.progressive.is_some())
         || manifest
             .blurhash
             .as_ref()
             .is_some_and(|hash| hash.len() > 128)
     {
         return Err(protocol::invalid());
+    }
+    if let Some(p) = &manifest.progressive {
+        let artifact = manifest.artifacts.last().ok_or_else(protocol::invalid)?;
+        if !p.valid()
+            || p.file_name != format!("{}.draft.progressive{}.mp4", spec.stem, p.height)
+            || !manifest
+                .renditions
+                .iter()
+                .any(|r| (r.width, r.height) == (p.width, p.height))
+            || u64::try_from(p.size_bytes).ok() != Some(artifact.bytes)
+            || p.sha256 != artifact.sha256
+        {
+            return Err(protocol::invalid());
+        }
     }
     for (index, artifact) in manifest.artifacts.iter().enumerate() {
         let cap = match index {
@@ -341,7 +383,28 @@ async fn retrieve(
     {
         return Err(protocol::invalid());
     }
-    let hls = validate_renditions(state, &manifest, &paths).await?;
+    let mut hls = validate_renditions(state, &manifest, &paths).await?;
+    if let Some(p) = &manifest.progressive {
+        let path = paths.last().ok_or_else(protocol::invalid)?;
+        let actual = crate::media_transcode::probe(&state.config, path).await?;
+        if checked_dimensions(&actual)? != (p.width, p.height)
+            || actual.audio_codec != p.audio_codec
+            || actual
+                .duration
+                .is_none_or(|d| (d - p.duration).abs() > 0.001)
+            || actual.bitrate != Some(p.bitrate)
+            || actual.frame_rate != p.frame_rate
+        {
+            return Err(protocol::invalid());
+        }
+        hls.iter_mut()
+            .find(|r| r.height == p.height)
+            .ok_or_else(protocol::invalid)?
+            .progressive = Some(crate::media_transcode::PackagedProgressive {
+            file_path: path.clone(),
+            metadata: p.clone(),
+        });
+    }
     let board = PackagedStoryboard {
         file_path: paths[2].clone(),
         file_name: format!("{}.draft.storyboard.jpg", spec.stem),
@@ -431,6 +494,7 @@ async fn validate_renditions(
             bandwidth: rung.bandwidth,
             playlist: rung.playlist.clone(),
             segment_sha256: hashes,
+            progressive: None,
         });
     }
     Ok(hls)
@@ -479,8 +543,69 @@ mod tests {
         let _ = server.await;
     }
 
-    #[test]
-    fn manifest_rejects_unbounded_artifacts_forged_names_and_geometry() {
+    #[tokio::test]
+    async fn progressive_capability_negotiates_once_and_never_retries_rejection() {
+        use std::sync::{Arc, Mutex};
+        for (version, status, expected_jobs) in [
+            (1, 200, 1),
+            (2, 200, 1),
+            (99, 200, 0),
+            (2, 400, 1),
+            (2, 422, 1),
+        ] {
+            let jobs = Arc::new(Mutex::new(Vec::new()));
+            let captured = jobs.clone();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let app = axum::Router::new()
+                .route("/v1/health", axum::routing::get(move |headers: axum::http::HeaderMap| async move {
+                    assert_eq!(headers["authorization"], format!("Bearer {}", "a".repeat(64)));
+                    axum::Json(serde_json::json!({"version":version}))
+                }))
+                .route("/v1/jobs", axum::routing::post(move |axum::Json(spec): axum::Json<Spec>| async move {
+                    captured.lock().unwrap().push(spec.version);
+                    (axum::http::StatusCode::from_u16(status).unwrap(), axum::Json(serde_json::json!({"id":"1".repeat(33),"lease_seconds":protocol::LEASE_SECONDS})))
+                }));
+            let server = tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+            let http = reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap();
+            let target = Target {
+                url: format!("http://{address}"),
+                token: "a".repeat(64).into(),
+            };
+            let mut spec = Spec::new(
+                &TranscodeParams {
+                    file_size_limit: Some(crate::media_limits::FileSizeLimit {
+                        launcher: std::env::current_exe().unwrap(),
+                        bytes: 1024,
+                    }),
+                    ..TranscodeParams::default()
+                },
+                &"1".repeat(33),
+                10,
+                0.0,
+            )
+            .unwrap();
+            let result = admit(&http, &target, &mut spec).await;
+            assert_eq!(result.is_ok(), version != 99 && status == 200);
+            {
+                let requests = jobs.lock().unwrap();
+                assert_eq!(requests.len(), expected_jobs);
+                if expected_jobs > 0 {
+                    assert_eq!(requests[0], version);
+                }
+            }
+            server.abort();
+            let _ = server.await;
+        }
+    }
+
+    fn manifest_fixture() -> (Spec, Manifest) {
         let spec = Spec {
             version: protocol::VERSION,
             stem: "1".repeat(33),
@@ -520,9 +645,61 @@ mod tests {
                 interval_seconds: 1,
             },
             blurhash: None,
+            progressive: None,
         };
+        (spec, base)
+    }
+
+    #[test]
+    fn manifest_rejects_unbounded_artifacts_forged_names_and_geometry() {
+        let (spec, base) = manifest_fixture();
         assert!(validate_manifest(&spec, &base).is_ok());
+        let mut legacy_spec = spec.clone();
+        legacy_spec.version = protocol::LEGACY_VERSION;
+        let mut legacy = base.clone();
+        legacy.version = protocol::LEGACY_VERSION;
+        assert!(validate_manifest(&legacy_spec, &legacy).is_ok());
+        assert!(validate_manifest(&spec, &legacy).is_err());
+        assert!(
+            serde_json::to_value(&legacy)
+                .unwrap()
+                .get("progressive")
+                .is_none()
+        );
+        let mut progressive = base.clone();
+        progressive.progressive = Some(plamenu_db::native_video_hls::Progressive {
+            file_name: format!("{}.draft.progressive360.mp4", spec.stem),
+            size_bytes: 100,
+            sha256: "a".repeat(64),
+            width: 640,
+            height: 360,
+            duration: 1.0,
+            frame_rate: Some("30/1".into()),
+            bitrate: 1000,
+            audio_codec: Some("aac".into()),
+        });
+        progressive.artifacts.push(progressive.artifacts[0].clone());
+        assert!(validate_manifest(&spec, &progressive).is_ok());
         let mut invalid = Vec::new();
+        let mut item = progressive.clone();
+        item.version = protocol::LEGACY_VERSION;
+        assert!(validate_manifest(&legacy_spec, &item).is_err());
+        let mut item = progressive.clone();
+        item.progressive.as_mut().unwrap().sha256 = "b".repeat(64);
+        invalid.push(item);
+        let mut item = progressive.clone();
+        item.progressive.as_mut().unwrap().width = 641;
+        invalid.push(item);
+        let mut item = progressive.clone();
+        item.progressive.as_mut().unwrap().file_name = "other.draft.progressive360.mp4".into();
+        invalid.push(item);
+        let mut item = progressive.clone();
+        item.artifacts.push(item.artifacts[0].clone());
+        invalid.push(item);
+        let mut item = progressive.clone();
+        item.progressive.as_mut().unwrap().duration = f64::NAN;
+        invalid.push(item);
+
         let mut item = base.clone();
         item.artifacts[0].bytes = spec.output_bytes + 1;
         invalid.push(item);

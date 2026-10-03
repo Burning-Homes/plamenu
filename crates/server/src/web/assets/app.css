@@ -8957,3 +8957,108 @@ html { scrollbar-gutter: stable; }
 
 /* Native language choices keep the browser's recognizable dropdown caret. */
 .video-form .compose__combo-native select { appearance: auto; }
+
+/* Finite VOD controls. A single seek bar carries the prospective thumbnail;
+   native controls remain the baseline for live, no-JS and failed enhancement. */
+.vod-player {
+  inline-size: 100%;
+  min-inline-size: 0;
+  background: #111;
+}
+.vod-player:fullscreen {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.vod-player:fullscreen video {
+  flex: 1;
+  min-block-size: 0;
+  object-fit: contain;
+}
+.vod-controls {
+  position: relative;
+  padding: var(--space-2);
+  background: var(--surface);
+  color: var(--text);
+}
+.vod-controls__timeline {
+  position: relative;
+  inline-size: 100%;
+}
+.vod-controls__timeline > input {
+  touch-action: pan-y;
+  display: block;
+  inline-size: 100%;
+  min-block-size: 44px;
+  margin: 0;
+}
+.vod-controls__preview {
+  position: absolute;
+  inset-block-end: 100%;
+  transform: translateX(-50%);
+  inline-size: 160px;
+  padding: 0;
+  background: #111;
+  color: #fff;
+  text-align: center;
+  pointer-events: none;
+  z-index: 2;
+}
+.vod-controls__tile {
+  display: block;
+  inline-size: 160px;
+  block-size: 90px;
+  overflow: hidden;
+  contain: paint;
+}
+.status__media .media .vod-controls__tile img {
+  inline-size: auto;
+  max-inline-size: none;
+  block-size: auto;
+  max-block-size: none;
+}
+.vod-controls__row, .vod-controls__settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+.vod-controls button, .vod-controls select, .vod-controls summary {
+  min-block-size: 44px;
+}
+.vod-controls button {
+  min-inline-size: 44px;
+}
+.vod-controls__time {
+  font-variant-numeric: tabular-nums;
+  font-size: .875rem;
+  white-space: nowrap;
+}
+.vod-controls__volume {
+  inline-size: 64px;
+  min-block-size: 44px;
+}
+.vod-controls__menu {
+  inline-size: 100%;
+}
+.vod-controls__menu summary {
+  display: list-item;
+  align-content: center;
+  cursor: pointer;
+}
+.vod-controls__settings select {
+  max-inline-size: 100%;
+}
+.vod-controls__settings .video-quality {
+  position: static;
+  inset: auto;
+  margin: 0;
+  background: var(--surface);
+  color: var(--text);
+  opacity: 1;
+}
+.vod-controls :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

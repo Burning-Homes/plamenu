@@ -791,3 +791,374 @@ async fn direct_and_download_stream_large_ranges_and_resume_identical_bytes(pool
         }
     }
 }
+
+async fn progressive_fixture(f: &Fixture) -> plamenu_db::native_video_hls::Progressive {
+    progressive_fixture_schema(f, false).await
+}
+
+async fn progressive_fixture_schema(
+    f: &Fixture,
+    legacy: bool,
+) -> plamenu_db::native_video_hls::Progressive {
+    use sha2::Digest;
+    use std::fmt::Write as _;
+    let bytes = vec![42u8; 196_731];
+    let p = plamenu_db::native_video_hls::Progressive {
+        file_name: format!("{}.draft.progressive240.mp4", f.media),
+        size_bytes: bytes.len().try_into().unwrap(),
+        sha256: sha2::Sha256::digest(&bytes).iter().fold(
+            String::with_capacity(64),
+            |mut output, byte| {
+                write!(output, "{byte:02x}").unwrap();
+                output
+            },
+        ),
+        width: 320,
+        height: 240,
+        duration: 5.0,
+        frame_rate: Some("30/1".into()),
+        bitrate: 123_456,
+        audio_codec: Some("aac".into()),
+    };
+    f.state.media.put(&p.file_name, bytes).await.unwrap();
+    sqlx::query("UPDATE video_drafts SET generation=1 WHERE media_id=$1")
+        .bind(f.media)
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    for file in [&p.file_name, &format!("{}.draft.hls240.m4s", f.media)] {
+        sqlx::query("INSERT INTO video_draft_outputs(file_name,media_id,generation,cleanup_job_id) VALUES($1,$2,1,$3)").bind(file).bind(f.media).bind(id::next()).execute(&f.state.pool).await.unwrap();
+    }
+    sqlx::query("INSERT INTO native_video_hls_renditions(media_id,generation,height,width,bandwidth,size_bytes,file_name,playlist) SELECT media_id,generation,240,320,123456,196731,$2,E'#EXTM3U\n#EXT-X-ENDLIST\n' FROM video_drafts WHERE media_id=$1")
+        .bind(f.media).bind(format!("{}.draft.hls240.m4s",f.media)).execute(&f.state.pool).await.unwrap();
+    if legacy {
+        sqlx::query("UPDATE native_video_hls_renditions SET progressive=$2 WHERE media_id=$1")
+            .bind(f.media)
+            .bind(sqlx::types::Json(&p))
+            .execute(&f.state.pool)
+            .await
+            .unwrap();
+    } else {
+        let mut conn = f.state.pool.acquire().await.unwrap();
+        plamenu_db::native_video_hls::set_progressive(&mut conn, f.media, 1, 240, &p)
+            .await
+            .unwrap();
+    }
+    p
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn progressive_serving_validators_authority_and_original_identity(pool: PgPool) {
+    let f = fixture(pool, true).await;
+    let p = progressive_fixture(&f).await;
+    let path = format!("/media/{}", p.file_name);
+    assert_eq!(
+        get(&f, path.clone()).await.status(),
+        StatusCode::NOT_FOUND,
+        "private ready draft is never exposed"
+    );
+    let posted = publish(&f).await;
+    let etag = format!("\"{}\"", p.sha256);
+    let request = |headers: &[(&str, &str)]| {
+        let mut r = Request::builder().uri(&path);
+        for (key, value) in headers {
+            r = r.header(*key, *value);
+        }
+        plamenu::build_router(f.state.clone()).oneshot(r.body(Body::empty()).unwrap())
+    };
+    let r = request(&[("Range", "bytes=65530-131100"), ("If-Range", &etag)])
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(r.headers()["etag"], etag);
+    assert_eq!(
+        r.into_body().collect().await.unwrap().to_bytes().len(),
+        65571
+    );
+    let r = request(&[
+        ("Range", "bytes=65530-131100"),
+        ("If-Range", "\"different\""),
+    ])
+    .await
+    .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    assert_eq!(
+        r.into_body().collect().await.unwrap().to_bytes().len(),
+        196_731
+    );
+    assert_eq!(
+        request(&[("If-None-Match", &etag)]).await.unwrap().status(),
+        StatusCode::NOT_MODIFIED
+    );
+    assert_eq!(
+        request(&[("Range", "bytes=196731-")])
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::RANGE_NOT_SATISFIABLE
+    );
+    let status_entity = plamenu::entities::render_status(
+        &f.state.pool,
+        &f.state.config.domain,
+        &posted,
+        Some(f.owner),
+    )
+    .await
+    .unwrap();
+    assert!(
+        status_entity["media_attachments"][0]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with(&p.file_name)
+    );
+    assert!(
+        status_entity["media_attachments"][0]["progressive"]["original_url"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("{}.mp4", f.media))
+    );
+    assert_eq!(
+        status_entity["media_attachments"][0]["meta"]["original"]["bitrate"],
+        123_456
+    );
+    let owner = plamenu_db::account::find_by_id(&f.state.pool, f.owner)
+        .await
+        .unwrap()
+        .unwrap();
+    let note = plamenu::note::note_for_status(&f.state, &posted, &owner)
+        .await
+        .unwrap();
+    assert!(
+        note["attachment"][0]["url"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("{}.mp4", f.media)),
+        "Document identity remains original"
+    );
+    assert!(
+        note["url"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|link| link["name"] == "Playable MP4" && link["size"] == p.size_bytes)
+    );
+    let original = get(&f, format!("/media/{}/download", f.media)).await;
+    assert_eq!(
+        original
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .as_ref(),
+        &(0u8..128).collect::<Vec<_>>()
+    );
+    plamenu_db::account::suspend(&f.state.pool, f.owner, "test")
+        .await
+        .unwrap();
+    assert_eq!(get(&f, path).await.status(), StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn progressive_missing_failed_stale_metadata_keeps_original(pool: PgPool) {
+    let f = fixture(pool, true).await;
+    let p = progressive_fixture(&f).await;
+    let posted = publish(&f).await;
+    f.state.media.delete(&p.file_name).await.unwrap();
+    assert_eq!(
+        get(&f, format!("/media/{}", p.file_name)).await.status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        get(&f, format!("/media/{}.mp4", f.media)).await.status(),
+        StatusCode::OK
+    );
+    for query in [
+        "DELETE FROM native_video_progressive_files WHERE media_id=$1",
+        "UPDATE video_drafts SET generation=generation+1 WHERE media_id=$1",
+        "UPDATE video_drafts SET state='failed' WHERE media_id=$1",
+        "UPDATE video_draft_outputs SET retired=true WHERE media_id=$1",
+    ] {
+        sqlx::query("UPDATE video_drafts SET generation=1,state='ready' WHERE media_id=$1")
+            .bind(f.media)
+            .execute(&f.state.pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE video_draft_outputs SET retired=false WHERE media_id=$1")
+            .bind(f.media)
+            .execute(&f.state.pool)
+            .await
+            .unwrap();
+        let mut conn = f.state.pool.acquire().await.unwrap();
+        plamenu_db::native_video_hls::set_progressive(&mut conn, f.media, 1, 240, &p)
+            .await
+            .unwrap();
+        drop(conn);
+        sqlx::query(query)
+            .bind(f.media)
+            .execute(&f.state.pool)
+            .await
+            .unwrap();
+        let status_entity = plamenu::entities::render_status(
+            &f.state.pool,
+            &f.state.config.domain,
+            &posted,
+            Some(f.owner),
+        )
+        .await
+        .unwrap();
+        assert!(
+            status_entity["media_attachments"][0]["url"]
+                .as_str()
+                .unwrap()
+                .ends_with(&format!("{}.mp4", f.media))
+        );
+        assert!(
+            status_entity["media_attachments"][0]
+                .get("progressive")
+                .is_none()
+        );
+    }
+}
+
+#[sqlx::test(migrations = false)]
+async fn progressive_upgrade_preserves_metadata_journal_and_original(pool: PgPool) {
+    sqlx::raw_sql("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+        .execute(&pool)
+        .await
+        .unwrap();
+    plamenu_db::MIGRATOR.run_to(132, &pool).await.unwrap();
+    let f = fixture(pool.clone(), true).await;
+    let expected = progressive_fixture_schema(&f, true).await;
+    plamenu_db::MIGRATOR.run(&pool).await.unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    let actual = plamenu_db::native_video_hls::progressive_for_media(&mut conn, f.media)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(&expected).unwrap()
+    );
+    drop(conn);
+    assert_eq!(
+        get(&f, format!("/media/{}", expected.file_name))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    publish(&f).await;
+    assert_eq!(
+        get(&f, format!("/media/{}", expected.file_name))
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        get(&f, format!("/media/{}/download", f.media))
+            .await
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .as_ref(),
+        &(0u8..128).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM video_draft_outputs WHERE media_id=$1")
+            .bind(f.media)
+            .fetch_one(&pool)
+            .await
+            .unwrap(),
+        2
+    );
+    plamenu_db::MIGRATOR.run(&pool).await.unwrap();
+}
+
+#[sqlx::test(migrations = false)]
+async fn progressive_upgrade_failure_retains_legacy_metadata(pool: PgPool) {
+    sqlx::raw_sql("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
+        .execute(&pool)
+        .await
+        .unwrap();
+    plamenu_db::MIGRATOR.run_to(132, &pool).await.unwrap();
+    let f = fixture(pool.clone(), true).await;
+    let expected = progressive_fixture_schema(&f, true).await;
+    for (field, invalid) in [
+        ("sha256", serde_json::json!("invalid")),
+        ("unsupported", serde_json::json!("invalid")),
+        ("duration", serde_json::json!("5")),
+        ("frame_rate", serde_json::json!(30)),
+    ] {
+        let mut malformed = serde_json::to_value(&expected).unwrap();
+        malformed[field] = invalid;
+        sqlx::query("UPDATE native_video_hls_renditions SET progressive=$2 WHERE media_id=$1")
+            .bind(f.media)
+            .bind(sqlx::types::Json(&malformed))
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            plamenu_db::MIGRATOR.run(&pool).await.is_err(),
+            "reject malformed {field}"
+        );
+        let retained: serde_json::Value = sqlx::query_scalar(
+            "SELECT progressive FROM native_video_hls_renditions WHERE media_id=$1",
+        )
+        .bind(f.media)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            retained, malformed,
+            "failed upgrade preserves every legacy metadata field"
+        );
+    }
+    sqlx::query("UPDATE native_video_hls_renditions SET progressive=$2 WHERE media_id=$1")
+        .bind(f.media)
+        .bind(sqlx::types::Json(expected))
+        .execute(&pool)
+        .await
+        .unwrap();
+    plamenu_db::MIGRATOR.run(&pool).await.unwrap();
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn progressive_typed_metadata_rejects_invalid_and_unowned_updates(pool: PgPool) {
+    let f = fixture(pool.clone(), true).await;
+    let expected = progressive_fixture(&f).await;
+    let error =
+        sqlx::query("UPDATE native_video_progressive_files SET sha256='invalid' WHERE media_id=$1")
+            .bind(f.media)
+            .execute(&pool)
+            .await
+            .unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().code().as_deref(),
+        Some("23514")
+    );
+    let mut conn = pool.acquire().await.unwrap();
+    assert!(
+        plamenu_db::native_video_hls::set_progressive(&mut conn, f.media, 2, 240, &expected)
+            .await
+            .is_err(),
+        "stale generation has no matching owned rendition"
+    );
+    let mut unowned = expected.clone();
+    unowned.file_name = "missing.draft.progressive240.mp4".into();
+    assert!(
+        plamenu_db::native_video_hls::set_progressive(&mut conn, f.media, 1, 240, &unowned)
+            .await
+            .is_err(),
+        "missing journal cannot replace verified metadata"
+    );
+    let actual = plamenu_db::native_video_hls::progressive_for_media(&mut conn, f.media)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(expected).unwrap()
+    );
+}

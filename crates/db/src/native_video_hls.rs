@@ -6,6 +6,90 @@ use std::collections::HashMap;
 
 use crate::DbError;
 
+/// One verified progressive MP4 owned by its existing native rendition/job.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+#[serde(deny_unknown_fields)]
+pub struct Progressive {
+    pub file_name: String,
+    pub size_bytes: i64,
+    pub sha256: String,
+    pub width: i32,
+    pub height: i32,
+    pub duration: f64,
+    pub frame_rate: Option<String>,
+    pub bitrate: i64,
+    pub audio_codec: Option<String>,
+}
+
+impl Progressive {
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        self.file_name
+            .split_once(".draft.progressive")
+            .is_some_and(|(stem, tail)| {
+                !stem.is_empty()
+                    && stem.bytes().all(|b| b.is_ascii_alphanumeric())
+                    && tail == format!("{}.mp4", self.height)
+            })
+            && self.size_bytes > 0
+            && self.width > 0
+            && self.height > 0
+            && self.duration.is_finite()
+            && self.duration > 0.0
+            && self.bitrate > 0
+            && self.sha256.len() == 64
+            && self
+                .sha256
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            && self.audio_codec.as_deref().is_none_or(|c| c == "aac")
+    }
+}
+
+pub async fn set_progressive(
+    conn: &mut PgConnection,
+    media_id: i64,
+    generation: i64,
+    height: i32,
+    progressive: &Progressive,
+) -> Result<(), DbError> {
+    if progressive.height != height || !progressive.valid() {
+        return Err(sqlx::Error::Protocol("Invalid progressive rendition metadata".into()).into());
+    }
+    let affected = sqlx::query(
+        "INSERT INTO native_video_progressive_files
+         (media_id,generation,height,file_name,size_bytes,sha256,width,duration,frame_rate,bitrate,audio_codec)
+         SELECT r.media_id,r.generation,r.height,$4,$5,$6,$7,$8,$9,$10,$11
+         FROM native_video_hls_renditions r
+         JOIN video_draft_outputs o ON o.file_name=$4 AND o.media_id=r.media_id
+             AND o.generation=r.generation AND NOT o.retired
+         WHERE r.media_id=$1 AND r.generation=$2 AND r.height=$3
+         ON CONFLICT (media_id) DO UPDATE SET file_name=EXCLUDED.file_name,
+             size_bytes=EXCLUDED.size_bytes,sha256=EXCLUDED.sha256,width=EXCLUDED.width,
+             duration=EXCLUDED.duration,frame_rate=EXCLUDED.frame_rate,
+             bitrate=EXCLUDED.bitrate,audio_codec=EXCLUDED.audio_codec
+         WHERE native_video_progressive_files.generation=EXCLUDED.generation
+             AND native_video_progressive_files.height=EXCLUDED.height",
+    )
+    .bind(media_id).bind(generation).bind(height).bind(&progressive.file_name)
+    .bind(progressive.size_bytes).bind(&progressive.sha256).bind(progressive.width)
+    .bind(progressive.duration).bind(&progressive.frame_rate).bind(progressive.bitrate)
+    .bind(&progressive.audio_codec).execute(conn).await?.rows_affected();
+    if affected != 1 {
+        return Err(sqlx::Error::RowNotFound.into());
+    }
+    Ok(())
+}
+
+pub async fn progressive_for_media(
+    conn: &mut PgConnection,
+    media_id: i64,
+) -> Result<Option<Progressive>, DbError> {
+    let data = sqlx::query_as::<_, Progressive>("SELECT p.* FROM native_video_progressive_files p JOIN native_video_hls_renditions r ON r.media_id=p.media_id AND r.height=p.height AND r.generation=p.generation JOIN video_drafts d ON d.media_id=r.media_id AND d.generation=r.generation AND d.state='ready' JOIN media_attachments m ON m.id=r.media_id AND m.processing='complete' JOIN video_draft_outputs o ON o.file_name=p.file_name AND o.media_id=r.media_id AND o.generation=r.generation AND NOT o.retired WHERE r.media_id=$1")
+        .bind(media_id).fetch_optional(conn).await?;
+    Ok(data.filter(Progressive::valid))
+}
+
 /// `PeerTube` 8.3 / P2P Media Loader v4's twenty-byte ASCII `WebTorrent`
 /// infohash. Resolution zero denotes a stream without advertised dimensions.
 #[must_use]
@@ -53,6 +137,7 @@ pub struct FileTag {
     pub size_bytes: i64,
     pub file_name: String,
     pub has_segment_sha256: bool,
+    pub progressive: Option<serde_json::Value>,
 }
 
 pub async fn tags_for_media(
@@ -62,17 +147,18 @@ pub async fn tags_for_media(
     if media_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let rows = sqlx::query_as!(
-        FileTag,
+    let rows = sqlx::query_as::<_,FileTag>(
         "SELECT r.media_id, m.video_content_revision AS content_revision, r.height, r.width, r.size_bytes, r.file_name,
-                (r.segment_sha256 <> '{}'::jsonb) AS \"has_segment_sha256!\"
+                (r.segment_sha256 <> '{}'::jsonb) AS has_segment_sha256,
+                CASE WHEN m.processing='complete' AND EXISTS(SELECT 1 FROM video_draft_outputs o WHERE o.file_name=p.file_name AND o.media_id=r.media_id AND o.generation=r.generation AND NOT o.retired) AND NOT EXISTS(SELECT 1 FROM media_cleanup_jobs j WHERE j.file_name=p.file_name) THEN to_jsonb(p) - ARRAY['media_id','generation'] ELSE NULL END AS progressive
          FROM native_video_hls_renditions r
+         LEFT JOIN native_video_progressive_files p ON p.media_id=r.media_id AND p.height=r.height AND p.generation=r.generation
          JOIN media_attachments m ON m.id=r.media_id
          JOIN video_drafts d ON d.media_id = r.media_id AND d.generation = r.generation AND d.state = 'ready'
          WHERE r.media_id = ANY($1)
          ORDER BY r.height DESC",
-        media_ids,
     )
+    .bind(media_ids)
     .fetch_all(conn)
     .await?;
     let mut by_media: HashMap<i64, Vec<FileTag>> = HashMap::new();

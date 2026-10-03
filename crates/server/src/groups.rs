@@ -1471,28 +1471,12 @@ pub async fn update_settings(
     let approval = settings.policy == MembershipPolicy::Approval;
     // Uploads are processed before anything is written, so a rejected image
     // leaves the group's settings as they were.
-    let avatar_file = match settings.profile.avatar {
-        Some(bytes) => Some(
-            crate::profile::store_profile_image(
-                state,
-                bytes,
-                crate::media_processing::AVATAR_MAX_EDGE,
-            )
-            .await?,
-        ),
-        None => None,
-    };
-    let header_file = match settings.profile.header {
-        Some(bytes) => Some(
-            crate::profile::store_profile_image(
-                state,
-                bytes,
-                crate::media_processing::HEADER_MAX_EDGE,
-            )
-            .await?,
-        ),
-        None => None,
-    };
+    let images = crate::profile::PreparedProfileImages::prepare(
+        state,
+        settings.profile.avatar,
+        settings.profile.header,
+    )
+    .await?;
     let fields = settings.profile.fields.as_ref().map(|fields| {
         fields
             .iter()
@@ -1503,21 +1487,18 @@ pub async fn update_settings(
             })
             .collect()
     });
-    let update = account::ProfileUpdate {
+    let mut update = account::ProfileUpdate {
         display_name: Some(settings.display_name),
         note: Some(settings.note_html),
         note_source: Some(settings.note_source),
         locked: Some(approval),
         discoverable: Some(settings.discoverable),
         fields,
-        avatar_file_name: avatar_file.as_ref().map(|(name, _)| name.as_str()),
-        header_file_name: header_file.as_ref().map(|(name, _)| name.as_str()),
-        avatar_file_size: avatar_file.as_ref().map(|(_, size)| *size),
-        header_file_size: header_file.as_ref().map(|(_, size)| *size),
         avatar_description: settings.profile.avatar_description.as_deref(),
         header_description: settings.profile.header_description.as_deref(),
         ..account::ProfileUpdate::default()
     };
+    images.apply(&mut update);
     let mut tx = state
         .pool
         .begin()
@@ -1543,40 +1524,13 @@ pub async fn update_settings(
         Ok(updated) => updated,
         Err(error) => {
             drop(tx);
-            crate::profile::enqueue_stray_profile_images(
-                state,
-                avatar_file.as_ref(),
-                header_file.as_ref(),
-            )
-            .await;
+            images.abandon(state).await;
             return Err(error);
         }
     };
     tx.commit().await.map_err(plamenu_db::DbError::from)?;
-    // A replaced avatar/header has no `media_attachments` row for the orphan
-    // sweep to find, and `/media/{file}` serves any valid key without a DB
-    // check — so the superseded file is removed now, exactly as for a person's
-    // profile.
     if let Some(updated) = &updated {
-        for (replaced, old, new) in [
-            (
-                avatar_file.is_some(),
-                group_account.avatar_file_name.as_deref(),
-                updated.avatar_file_name.as_deref(),
-            ),
-            (
-                header_file.is_some(),
-                group_account.header_file_name.as_deref(),
-                updated.header_file_name.as_deref(),
-            ),
-        ] {
-            if replaced
-                && let Some(old) = old
-                && new != Some(old)
-            {
-                crate::profile::delete_superseded_profile_image(state, old).await;
-            }
-        }
+        images.finish(state, group_account, updated).await;
     }
     Ok(())
 }

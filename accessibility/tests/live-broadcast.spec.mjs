@@ -722,7 +722,7 @@ test('@no-js live authoring retains external encoder routes', async ({ page }) =
   expect(live.calendar_url).toContain(`/videos/live/${id}/calendar.ics`);
   await openDetailsFor(page.getByLabel('Broadcast calendar URL',{exact:true}));
   await expect(page.getByRole('textbox', { name: 'Broadcast calendar URL' })).toHaveValue(live.calendar_url);
-  const anonymous = await request.newContext({ ignoreHTTPSErrors: true });
+  const anonymous = await request.newContext({ ignoreHTTPSErrors: false });
   const calendar = await anonymous.get(live.calendar_url);
   expect(calendar.status()).toBe(200);
   expect(calendar.headers()['content-type']).toContain('text/calendar');
@@ -783,7 +783,7 @@ async function publicLiveCalendar(page, noScript) {
   await schedule.getByLabel('Planned start (optional)').fill(planned);
   await schedule.getByRole('button', { name: 'Save planned start' }).click();
   const live = (await liveMedia(page, id)).live;
-  const anonymous = await request.newContext({ ignoreHTTPSErrors: true });
+  const anonymous = await request.newContext({ ignoreHTTPSErrors: false });
   const feed = await anonymous.get(live.channel_calendar_url);
   expect(feed.status()).toBe(200);
   expect(await feed.text()).toContain(`URL:https://${new URL(page.url()).host}/web/statuses/${id}`);

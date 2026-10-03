@@ -13,7 +13,7 @@ test('@no-js private posts cannot be embedded through a signed-in frame', async 
   await page.waitForURL(url => /\/@[^/]+\/\d+$/.test(url.pathname));
   const id = page.url().split('/').pop();
   try {
-    const anonymous = await request.newContext({ ignoreHTTPSErrors: true });
+    const anonymous = await request.newContext({ ignoreHTTPSErrors: false });
     try {
       const denied = await anonymous.get(`${new URL(page.url()).origin}/web/statuses/${id}/embed`);
       expect(denied.status()).toBe(404);

@@ -44,6 +44,39 @@ fn window(rows: Vec<DiscoveryRow>) -> DiscoveryPage {
     DiscoveryPage { hits, scan_before }
 }
 
+/// Verified publication context for a status batch. Drafts, deleted/private
+/// statuses and unavailable actors never contribute a public attribution.
+/// This is not membership or community voting evidence.
+pub async fn publication_contexts_of(
+    pool: &sqlx::PgPool,
+    status_ids: &[i64],
+    viewers: &[Option<i64>],
+) -> Result<Vec<(Option<i64>, i64, i64)>, DbError> {
+    Ok(sqlx::query_as(
+        r"SELECT viewer.id, s.id, c.id FROM statuses s
+        CROSS JOIN unnest($2::bigint[]) AS viewer(id)
+        JOIN (
+            SELECT status_id, channel_id FROM video_publications WHERE status_id=ANY($1)
+            UNION SELECT status_id, channel_id FROM remote_video_channels WHERE status_id=ANY($1)
+        ) p ON p.status_id=s.id
+        JOIN accounts c ON c.id=p.channel_id
+        LEFT JOIN video_channels vc ON vc.account_id=c.id
+        LEFT JOIN accounts owner ON owner.id=vc.owner_account_id
+        WHERE s.id=ANY($1) AND s.object_type='Video' AND s.reblog_of_id IS NULL
+          AND s.visibility IN ('public','unlisted') AND s.deleted_at IS NULL -- STUBFILTER: exclude soft-deleted thread stubs
+          AND NOT account_hidden(viewer.id,s.account_id)
+          AND NOT account_hidden(viewer.id,c.id)
+          AND (vc.owner_account_id IS NULL OR NOT account_hidden(viewer.id,vc.owner_account_id))
+          AND c.actor_type='Group' AND c.deleted_at IS NULL AND c.suspended_at IS NULL
+          AND (vc.account_id IS NULL OR (owner.deleted_at IS NULL AND owner.suspended_at IS NULL))
+        ORDER BY s.id,c.id",
+    )
+    .bind(status_ids)
+    .bind(viewers)
+    .fetch_all(pool)
+    .await?)
+}
+
 /// At most four 1,000-match windows per request, never an unbounded scan of
 /// filtered spam. HTML Older navigation can advance even across an empty page.
 pub async fn discovery_page(

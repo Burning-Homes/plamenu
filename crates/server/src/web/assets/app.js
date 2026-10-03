@@ -4397,7 +4397,7 @@
       hls.on(Hls.Events.LEVEL_SWITCHED, () => {
         if (!audioMode && hls.autoLevelEnabled) select.value = "-1";
       });
-      figure.appendChild(select);
+      (figure.querySelector(".vod-controls__settings") || figure).appendChild(select);
     }
     // The explicit audio-only choice (PeerTube offers it; saves data), added
     // once its track and url are known.
@@ -4409,6 +4409,7 @@
     }
   }
 
+  const hlsCleanup = new WeakMap();
   function initHlsVideo(video) {
     const hlsUrl = video.getAttribute("data-hls");
     if (!hlsUrl) return;
@@ -4416,7 +4417,10 @@
     // Keep the original control/listeners when its panel moves into a dialog.
     const choice = video.closest("figure")?.querySelector(".media__p2p-toggle");
     const progressive = video.getAttribute("src") || video.getAttribute("data-src");
+    const original = video.getAttribute("data-original");
+    let originalFallback = false;
     let hlsPlayer = null;
+    let retired = false;
     // Opt-in numeric E2E observations; no engine control or URI export.
     const profiling = window.__ownedVideoProfile === true;
     let profileLevelCount = null;
@@ -4465,8 +4469,14 @@
     let vodFallback = false;
     let adaptiveStarted = false;
     const clearVodWatch = () => { clearTimeout(vodTimer); vodTimer = null; };
+    hlsCleanup.set(video, () => {
+      retired = true; vodPending = false; clearVodWatch();
+      hlsPlayer?.destroy(); hlsPlayer = null; video.pause();
+    });
     const standardVideo = (reason = 'unclassified') => {
-      if (liveVideo || !progressive || vodFallback) return;
+      if (retired || liveVideo || !progressive || (vodFallback && (!original || originalFallback))) return;
+      const source = vodFallback ? original : progressive;
+      if (vodFallback) originalFallback = true;
       vodFallback = true;
       if (profiling) {
         profileLevelCount = hlsPlayer?.levels?.length ?? profileLevelCount;
@@ -4487,13 +4497,13 @@
       quality?.remove();
       const sharing = choice;
       if (sharing) { sharing.checked = false; sharing.disabled = true; }
-      if (figure) {
+      if (figure && !figure.querySelector('.media__live-recovery')) {
         const notice = document.createElement('p');
         notice.className = 'media__live-recovery';
         notice.setAttribute('role','status');
         notice.textContent = video.dataset.vodFallback || 'Adaptive playback failed. Using the standard video player; peer sharing is off for this playback.';
         const link = document.createElement('a');
-        link.href = progressive;
+        link.href = source;
         link.textContent = video.dataset.vodBasic || 'Open standard video';
         const actions = document.createElement('span');
         actions.className = 'media__live-recovery-actions';
@@ -4501,17 +4511,19 @@
         notice.appendChild(actions);
         figure.appendChild(notice);
       }
+      const recoveryLink = figure?.querySelector('.media__live-recovery a');
+      if (recoveryLink) recoveryLink.href = source;
       video.addEventListener('loadedmetadata', () => {
         if (resume > 0) video.currentTime = Number.isFinite(video.duration) ? Math.min(resume, Math.max(0,video.duration-.1)) : resume;
         if (playing) video.play().catch(() => {});
       }, {once:true});
-      video.src = progressive;
+      video.src = source;
       reloadExternalTracks();
       video.load();
     };
     const watchVodStart = () => {
       clearVodWatch();
-      if (liveVideo || vodFallback || !progressive) return;
+      if (retired || liveVideo || vodFallback || !progressive) return;
       const started = performance.now();
       const position = video.currentTime;
       let bufferedSince = null;
@@ -4645,6 +4657,7 @@
     video.addEventListener(
       "play",
       function onPlay() {
+        if (retired) return;
         adaptiveStarted = true;
         // The progressive source existed only to keep the native control
         // actionable. Stop its just-started request before selecting HLS, so a
@@ -4668,7 +4681,7 @@
           return;
         }
         loadHls((Hls) => {
-          if (vodFallback) return;
+          if (retired || vodFallback) return;
           if (Hls && Hls.isSupported()) {
             // A live stream has no beginning to seek to and a window that
             // moves out from under a stalled player, so it starts at the live
@@ -4697,7 +4710,7 @@
             // after the viewer had a chance to opt out and checksums loaded.
             // A failed peer setup must not block ordinary HLS playback.
             const startHls = (options, Engine) => {
-              if (vodFallback) return;
+              if (retired || vodFallback) return;
               let hls;
               try {
                 const Player = options && Engine ? Engine.injectMixin(Hls) : Hls;
@@ -4788,7 +4801,7 @@
             });
             };
             peerOptions(video, live).then((options) => {
-              if (vodFallback) return;
+              if (retired || vodFallback) return;
               if (!options || !peerSharingEnabled()) return startHls(null, null);
               loadP2P((Engine) => startHls(Engine && peerSharingEnabled() ? options : null, Engine));
             }).catch(() => startHls(null, null));
@@ -4821,12 +4834,284 @@
     });
   }
 
+  // Progressive enhancement owns only the chrome. The media element and HLS
+  // engine remain the source of playback, caption, history and quality state.
+  const vodControllers = new Map();
+  let vodObserver;
+  function bindVodControls(root) {
+    root.querySelectorAll('[data-vod-controls]').forEach(gallery => {
+      const figure = gallery.closest('figure');
+      const video = figure?.querySelector('video');
+      if (!video || video.dataset.live || vodControllers.has(video)) return;
+      let board;
+      try {
+        board = JSON.parse(gallery.dataset.vodControls);
+        board.url = new URL(board.url, location.href);
+        if (board.url.origin !== location.origin || !['http:', 'https:'].includes(board.url.protocol)
+          || !Number.isInteger(board.columns) || board.columns < 1 || board.columns > 10
+          || !Number.isInteger(board.rows) || board.rows < 1 || board.rows > 10
+          || !Number.isInteger(board.count) || board.count < 1 || board.count > 100
+          || board.count > board.columns * board.rows
+          || !Number.isInteger(board.interval) || board.interval < 1 || board.interval > 604800
+          || !Number.isFinite(board.duration) || board.duration <= 0 || board.duration > 604800
+          || !board.labels || Object.values(board.labels).some(label => typeof label !== 'string')) return;
+      } catch { return; }
+      const owner = new AbortController();
+      const listen = (target, kind, handler) => target.addEventListener(kind, handler, {signal: owner.signal});
+      const labels = board.labels;
+      const element = (tag, className) => {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        return node;
+      };
+      const button = (label, text) => {
+        const node = element('button');
+        node.type = 'button'; node.textContent = text;
+        node.setAttribute('aria-label', label);
+        return node;
+      };
+      const wrapper = element('div', 'vod-player');
+      const controls = element('div', 'vod-controls');
+      const timeline = element('div', 'vod-controls__timeline');
+      const seek = element('input');
+      seek.type = 'range'; seek.min = '0'; seek.max = String(board.duration); seek.step = '0.1'; seek.value = '0';
+      seek.setAttribute('aria-label', labels.seek);
+      const preview = element('div', 'vod-controls__preview'); preview.hidden = true; preview.setAttribute('aria-hidden', 'true');
+      const tile = element('span', 'vod-controls__tile');
+      const image = element('img'); image.alt = ''; image.width = board.columns * 160; image.height = board.rows * 90;
+      const previewTime = element('span'); tile.append(image); preview.append(tile, previewTime); timeline.append(preview, seek);
+      const row = element('div', 'vod-controls__row');
+      const play = button(labels.play, '▶');
+      const time = element('span', 'vod-controls__time'); time.setAttribute('aria-hidden', 'true');
+      const mute = button(labels.mute, '♪');
+      const volume = element('input'); volume.type = 'range'; volume.min = '0'; volume.max = '1'; volume.step = '.05';
+      volume.setAttribute('aria-label', labels.volume); volume.className = 'vod-controls__volume';
+      const captions = element('select'); captions.setAttribute('aria-label', labels.captions);
+      const fullscreen = button(labels.fullscreen, '⛶');
+      const settings = element('details', 'vod-controls__menu');
+      const summary = element('summary'); summary.textContent = labels.settings;
+      const options = element('div', 'vod-controls__settings');
+      const speed = element('select'); speed.setAttribute('aria-label', labels.speed);
+      [.5, .75, 1, 1.25, 1.5, 2].forEach(value => speed.add(new Option(`${value}×`, String(value))));
+      speed.value = String(video.playbackRate);
+      options.append(speed);
+      const standardPip = document.pictureInPictureEnabled && video.requestPictureInPicture;
+      const webkitPip = video.webkitSupportsPresentationMode && video.webkitSetPresentationMode;
+      let pip;
+      if (standardPip || webkitPip) {
+        pip = button(labels.pip, '▣'); options.append(pip);
+        listen(pip, 'click', async () => {
+          try {
+            if (standardPip) {
+              if (document.pictureInPictureElement === video) await document.exitPictureInPicture();
+              else await video.requestPictureInPicture();
+            } else video.webkitSetPresentationMode(video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+          } catch { /* The platform may deny this request. */ }
+        });
+      }
+      settings.append(summary, options);
+      row.append(play, time, mute, volume, captions, fullscreen, settings); controls.append(timeline, row);
+      let duration = board.duration;
+      let dragging = false;
+      let pointer = null;
+      let pending = null;
+      let pointerCommit = null;
+      let spriteUrl = null;
+      let spriteLoading = false;
+      let disposed = false;
+      const format = seconds => {
+        seconds = Math.max(0, Math.floor(seconds || 0));
+        const minutes = Math.floor(seconds / 60);
+        return minutes >= 60 ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+          : `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+      };
+      const clamp = value => Math.min(duration, Math.max(0, Number(value) || 0));
+      const release = () => {
+        const captured = pointer;
+        pointer = null; dragging = false;
+        if (captured !== null && seek.hasPointerCapture(captured)) seek.releasePointerCapture(captured);
+      };
+      const sync = () => {
+        if (disposed) return;
+        if (!dragging && pending === null) seek.value = String(clamp(video.currentTime));
+        const position = dragging ? Number(seek.value) : pending ?? video.currentTime;
+        seek.setAttribute('aria-valuetext', `${format(position)} / ${format(duration)}`);
+        time.textContent = `${format(position)} / ${format(duration)}`;
+        play.textContent = video.paused ? '▶' : 'Ⅱ'; play.setAttribute('aria-label', video.paused ? labels.play : labels.pause);
+        mute.setAttribute('aria-label', video.muted ? labels.unmute : labels.mute);
+        mute.setAttribute('aria-pressed', String(video.muted)); volume.value = String(video.muted ? 0 : video.volume);
+        speed.value = String(video.playbackRate);
+        fullscreen.setAttribute('aria-pressed', String(document.fullscreenElement === wrapper || video.webkitDisplayingFullscreen === true));
+        if (pip) {
+          pip.disabled = video.readyState < HTMLMediaElement.HAVE_METADATA || video.videoWidth === 0
+            || (!standardPip && !video.webkitSupportsPresentationMode('picture-in-picture'));
+          pip.setAttribute('aria-pressed', String(document.pictureInPictureElement === video || video.webkitPresentationMode === 'picture-in-picture'));
+        }
+      };
+      const hidePreview = () => { preview.hidden = true; };
+      // Fetch at first preview intent, never on card render. Read incrementally
+      // so even a broken response cannot allocate an unbounded sprite buffer.
+      const loadSprite = async () => {
+        if (spriteLoading || spriteUrl || disposed) return;
+        spriteLoading = true;
+        try {
+          const response = await fetch(board.url, {signal: owner.signal, credentials: 'same-origin', redirect: 'error'});
+          if (!response.ok || !response.headers.get('content-type')?.startsWith('image/jpeg')) throw new Error('Invalid storyboard');
+          const reader = response.body.getReader(); const chunks = []; let size = 0;
+          try {
+            while (true) {
+              const {value, done} = await reader.read(); if (done) break;
+              size += value.byteLength;
+              if (size > 2 * 1024 * 1024) { await reader.cancel(); throw new Error('Storyboard exceeds limit'); }
+              chunks.push(value);
+            }
+          } finally { reader.releaseLock(); }
+          if (disposed) return;
+          spriteUrl = URL.createObjectURL(new Blob(chunks, {type: 'image/jpeg'})); image.src = spriteUrl;
+          await image.decode();
+          if (image.naturalWidth !== board.columns * 160 || image.naturalHeight !== board.rows * 90) throw new Error('Invalid storyboard dimensions');
+        } catch { if (!disposed) dispose(); }
+      };
+      const showPreview = seconds => {
+        if (disposed) return;
+        seconds = clamp(seconds);
+        const index = Math.min(board.count - 1, Math.floor(seconds / board.interval));
+        image.style.transform = `translate(${-index % board.columns * 160}px, ${-Math.floor(index / board.columns) * 90}px)`;
+        previewTime.textContent = format(seconds);
+        // Clamp within the control surface even at 320px and either endpoint.
+        const width = timeline.clientWidth;
+        preview.style.left = `${Math.max(80, Math.min(width - 80, seconds / duration * width))}px`;
+        preview.hidden = false; loadSprite();
+      };
+      const commit = value => {
+        pending = clamp(value); seek.value = String(pending); hidePreview(); sync();
+        if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+          video.currentTime = pending; pending = null; sync();
+        } else if (video.dataset.hls) video.play().catch(() => {});
+        else video.load();
+      };
+      listen(play, 'click', () => { if (video.paused) video.play().catch(() => {}); else video.pause(); });
+      listen(mute, 'click', () => { video.muted = !video.muted; });
+      listen(volume, 'input', () => { video.volume = Number(volume.value); video.muted = video.volume === 0; });
+      listen(speed, 'change', () => { video.playbackRate = Number(speed.value); });
+      const pointerPosition = event => {
+        const bounds = seek.getBoundingClientRect();
+        return clamp((event.clientX - bounds.left) / bounds.width * duration);
+      };
+      listen(seek, 'pointerdown', event => {
+        if (event.button !== 0 || dragging) return;
+        // Own the pointer position as well as capture. WebKit's native range
+        // drag stops updating its value when script owns pointer capture.
+        event.preventDefault(); seek.focus({preventScroll: true});
+        pointerCommit = null; dragging = true; pointer = event.pointerId;
+        seek.setPointerCapture(pointer); seek.value = String(pointerPosition(event));
+        showPreview(Number(seek.value)); sync();
+      });
+      listen(seek, 'pointermove', event => {
+        if (event.pointerType === 'touch' && !dragging) return;
+        if (dragging && event.pointerId !== pointer) return;
+        if (dragging) { seek.value = String(pointerPosition(event)); sync(); }
+        showPreview(dragging ? Number(seek.value) : pointerPosition(event));
+      });
+      listen(seek, 'input', () => { showPreview(Number(seek.value)); if (dragging) sync(); });
+      listen(seek, 'pointerup', event => { if (dragging && event.pointerId === pointer) {
+        seek.value = String(pointerPosition(event));
+        const value = seek.value; pointerCommit = value; release(); commit(value);
+      } });
+      listen(seek, 'pointercancel', event => { if (event.pointerId === pointer) {
+        release(); hidePreview(); sync(); pointerCommit = seek.value;
+      } });
+      listen(seek, 'lostpointercapture', () => { if (dragging) { release(); hidePreview(); sync(); pointerCommit = seek.value; } });
+      // Native range keyboard behavior supplies arrows, Page Up/Down, Home/End.
+      listen(seek, 'keydown', () => { pointerCommit = null; });
+      listen(seek, 'change', () => { if (!dragging && seek.value !== pointerCommit) commit(seek.value); });
+      listen(seek, 'focus', () => showPreview(Number(seek.value)));
+      listen(seek, 'blur', () => { if (!dragging) hidePreview(); });
+      listen(seek, 'pointerleave', () => { if (!dragging && document.activeElement !== seek) hidePreview(); });
+      const syncCaptions = () => {
+        if (disposed) return;
+        const tracks = Array.from(video.textTracks).filter(track => ['captions', 'subtitles'].includes(track.kind));
+        const selected = tracks.findIndex(track => track.mode === 'showing');
+        captions.replaceChildren(new Option(labels.off, '-1'));
+        tracks.forEach((track, index) => captions.add(new Option(track.label || track.language || labels.captions, String(index))));
+        captions.value = String(selected); captions.hidden = tracks.length === 0;
+      };
+      listen(captions, 'change', () => {
+        Array.from(video.textTracks).filter(track => ['captions', 'subtitles'].includes(track.kind))
+          .forEach((track, index) => { track.mode = index === Number(captions.value) ? 'showing' : 'disabled'; });
+      });
+      ['addtrack', 'removetrack', 'change'].forEach(kind => listen(video.textTracks, kind, syncCaptions));
+      fullscreen.hidden = !wrapper.requestFullscreen && !video.webkitEnterFullscreen;
+      listen(fullscreen, 'click', async () => {
+        try { if (document.fullscreenElement === wrapper) await document.exitFullscreen();
+          else if (wrapper.requestFullscreen) await wrapper.requestFullscreen();
+          else { video.controls = true; video.webkitEnterFullscreen(); } }
+        catch { video.controls = false; }
+      });
+      listen(video, 'webkitendfullscreen', () => { video.controls = false; sync(); });
+      listen(document, 'fullscreenchange', sync);
+      ['webkitbeginfullscreen', 'enterpictureinpicture', 'leavepictureinpicture', 'webkitpresentationmodechanged'].forEach(kind => listen(video, kind, sync));
+      ['play', 'pause', 'playing', 'ended', 'timeupdate', 'volumechange', 'ratechange', 'seeked'].forEach(kind => listen(video, kind, sync));
+      listen(video, 'loadedmetadata', () => {
+        if (!Number.isFinite(video.duration) || video.duration <= 0) return dispose();
+        duration = video.duration; seek.max = String(duration);
+        // Engine fallback listeners can restore the previous position in this
+        // same metadata event. Apply the explicit user intent after them.
+        if (pending !== null) queueMicrotask(() => {
+          if (disposed || pending === null) return;
+          video.currentTime = clamp(pending); pending = null; sync();
+        });
+        syncCaptions(); sync();
+      });
+      listen(video, 'emptied', () => { release(); hidePreview(); sync(); });
+      listen(video, 'durationchange', () => {
+        if (video.readyState < HTMLMediaElement.HAVE_METADATA) return;
+        if (!Number.isFinite(video.duration) || video.duration <= 0) return dispose();
+        duration = video.duration; seek.max = String(duration); release(); hidePreview(); sync();
+      });
+      // A media error can still trigger the existing engine fallback. Return
+      // native chrome immediately rather than trapping it behind broken UI.
+      listen(video, 'error', () => dispose());
+      const previousTabIndex = video.getAttribute('tabindex');
+      const dispose = () => {
+        if (disposed) return;
+        disposed = true; release(); owner.abort();
+        if (!video.isConnected) { video.pause(); hlsCleanup.get(video)?.(); }
+        if (spriteUrl) URL.revokeObjectURL(spriteUrl);
+        video.controls = true; gallery.hidden = false;
+        if (previousTabIndex === null) video.removeAttribute('tabindex'); else video.setAttribute('tabindex', previousTabIndex);
+        const quality = options.querySelector('.video-quality'); if (quality) figure.append(quality);
+        if (wrapper.parentNode) { wrapper.before(video); wrapper.remove(); }
+        vodControllers.delete(video);
+      };
+      // Bind every handler before removing the working native controls.
+      video.before(wrapper); wrapper.append(video, controls);
+      const quality = figure.querySelector('.video-quality'); if (quality) options.append(quality);
+      video.tabIndex = 0; syncCaptions(); sync(); gallery.hidden = true; video.controls = false;
+      vodControllers.set(video, dispose);
+    });
+    if (!vodObserver && vodControllers.size) {
+      vodObserver = new MutationObserver(records => {
+        // Time labels also mutate the DOM. Scan controllers only when a
+        // removed element contains a video, not on every timeupdate.
+        if (!records.some(record => Array.from(record.removedNodes).some(node =>
+          node.nodeType === Node.ELEMENT_NODE && (node.matches('video') || node.querySelector('video'))))) return;
+        for (const [video, dispose] of vodControllers) if (!video.isConnected) dispose();
+      });
+      vodObserver.observe(document.body, {childList: true, subtree: true});
+      window.addEventListener('pagehide', () => {
+        for (const dispose of vodControllers.values()) dispose();
+      });
+      window.addEventListener('pageshow', () => bindVodControls(document));
+    }
+  }
+
   function bindVideoChapters(root) {
     root.querySelectorAll(".media__chapters a[data-chapter-seek]").forEach((link) => {
       if (link.dataset.chapterBound) return;
       link.dataset.chapterBound = "1";
       link.addEventListener("click", (event) => {
-        const video = link.closest("figure")?.querySelector("video[controls]");
+        const video = link.closest("figure")?.querySelector("video");
         const seconds = Number(link.dataset.chapterSeek);
         if (!video || !Number.isFinite(seconds) || seconds < 0) return;
         event.preventDefault();
@@ -4852,7 +5137,7 @@
   function bindVideoHistory(root) {
     root.querySelectorAll('form[data-video-history]').forEach((form) => {
       if (form.dataset.historyBound) return;
-      const video = form.closest('figure')?.querySelector('video[controls]');
+      const video = form.closest('figure')?.querySelector('video');
       if (!video) return;
       form.dataset.historyBound = '1';
       const input = form.elements.position_seconds;
@@ -4933,7 +5218,7 @@
       if (link.dataset.transcriptBound) return;
       link.dataset.transcriptBound = "1";
       link.addEventListener("click", (event) => {
-        const video = link.closest(".caption-transcript")?.querySelector("video[controls]");
+        const video = link.closest(".caption-transcript")?.querySelector("video");
         const milliseconds = Number(link.dataset.transcriptSeekMs);
         if (!video || !Number.isFinite(milliseconds) || milliseconds < 0) return;
         event.preventDefault();
@@ -6178,7 +6463,7 @@
   // forced navigation: finish is announced, and Next remains a native link.
   function bindPlaylistClips(root) {
     root.querySelectorAll("[data-playlist-start]").forEach(region => {
-      const video = region.querySelector("video[controls]");
+      const video = region.querySelector("video");
       if (!video || region.dataset.clipBound) return;
       region.dataset.clipBound = "1";
       const start = Number(region.dataset.playlistStart);
@@ -6274,6 +6559,7 @@
     bindLightboxes(root);
     bindBlurhashes(root);
     bindHlsVideos(root);
+    bindVodControls(root);
     bindVideoChapters(root);
     bindVideoHistory(root);
     bindPlaylistClips(root);

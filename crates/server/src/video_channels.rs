@@ -96,6 +96,19 @@ pub async fn change(
     channel_id: i64,
     input: &Change,
 ) -> Result<(), ApiError> {
+    if input.operation == "profile" {
+        return update_profile(
+            state,
+            actor,
+            channel_id,
+            ProfileEdit {
+                display_name: input.display_name.clone(),
+                description: input.description.clone(),
+                ..Default::default()
+            },
+        )
+        .await;
+    }
     let mut tx = state
         .pool
         .begin()
@@ -197,39 +210,6 @@ pub async fn change(
                     .map_err(plamenu_db::DbError::from)?;
             }
         }
-        "profile" => {
-            if !matches!(role.as_deref(), Some("owner" | "editor")) {
-                return Err(ApiError::NotFound);
-            }
-            let title = input
-                .display_name
-                .as_deref()
-                .unwrap_or(&channel.display_name)
-                .trim();
-            let description = input.description.as_deref().unwrap_or(&channel.note_source);
-            if title.is_empty()
-                || title.chars().count() > 120
-                || description.chars().count() > 1_000
-            {
-                return Err(invalid(
-                    "Use a name of 1–120 characters and a description of at most 1000 characters",
-                ));
-            }
-            let note = plamenu_ap::text::plain_to_html(description);
-            let updated = account::update_local_profile_conn(
-                &mut tx,
-                channel_id,
-                account::ProfileUpdate {
-                    display_name: Some(title),
-                    note: Some(&note),
-                    note_source: Some(description),
-                    ..Default::default()
-                },
-            )
-            .await?
-            .ok_or(ApiError::NotFound)?;
-            crate::profile::fan_out_actor_update_conn(state, &mut tx, &updated).await?;
-        }
         "invite" | "revoke" | "transfer" | "cancel_transfer" | "delete" => {
             if role.as_deref() != Some("owner") {
                 return Err(ApiError::NotFound);
@@ -310,4 +290,106 @@ pub async fn change(
     }
     tx.commit().await.map_err(plamenu_db::DbError::from)?;
     Ok(())
+}
+
+/// Delegated profile editing uses account profile media, not community roles.
+#[derive(Default)]
+pub struct ProfileEdit {
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub avatar: Option<Vec<u8>>,
+    pub header: Option<Vec<u8>>,
+    pub avatar_description: Option<String>,
+    pub header_description: Option<String>,
+}
+
+pub async fn update_profile(
+    state: &AppState,
+    actor: &Account,
+    channel_id: i64,
+    input: ProfileEdit,
+) -> Result<(), ApiError> {
+    if !matches!(
+        access::role(&state.pool, channel_id, actor.id)
+            .await?
+            .as_deref(),
+        Some("owner" | "editor")
+    ) {
+        return Err(ApiError::NotFound);
+    }
+    if input
+        .display_name
+        .as_ref()
+        .is_some_and(|name| name.trim().is_empty() || name.trim().chars().count() > 120)
+        || input
+            .description
+            .as_ref()
+            .is_some_and(|text| text.chars().count() > 1000)
+        || [&input.avatar_description, &input.header_description]
+            .iter()
+            .any(|text| {
+                text.as_ref()
+                    .is_some_and(|text| text.chars().count() > 1500)
+            })
+    {
+        return Err(invalid(
+            "Use a name of 1–120 characters, a description of at most 1000 characters and image descriptions of at most 1500 characters",
+        ));
+    }
+    let images =
+        crate::profile::PreparedProfileImages::prepare(state, input.avatar, input.header).await?;
+    let result = async {
+        let mut tx = state
+            .pool
+            .begin()
+            .await
+            .map_err(plamenu_db::DbError::from)?;
+        // Serialize profile replacements with each other and grant/owner changes.
+        sqlx::query("SELECT account_id FROM video_channels WHERE account_id=$1 FOR UPDATE")
+            .bind(channel_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(plamenu_db::DbError::from)?;
+        if !matches!(
+            access::lock_access(&mut tx, channel_id, actor.id)
+                .await?
+                .as_deref(),
+            Some("owner" | "editor")
+        ) {
+            return Err(ApiError::NotFound);
+        }
+        let old = account::find_by_id(&mut *tx, channel_id)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        let note = input
+            .description
+            .as_deref()
+            .map(plamenu_ap::text::plain_to_html);
+        let mut update = account::ProfileUpdate {
+            display_name: input.display_name.as_deref().map(str::trim),
+            note: note.as_deref(),
+            note_source: input.description.as_deref(),
+            avatar_description: input.avatar_description.as_deref(),
+            header_description: input.header_description.as_deref(),
+            ..Default::default()
+        };
+        images.apply(&mut update);
+        let updated = account::update_local_profile_conn(&mut tx, channel_id, update)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+        crate::profile::fan_out_actor_update_conn(state, &mut tx, &updated).await?;
+        tx.commit().await.map_err(plamenu_db::DbError::from)?;
+        Ok::<_, ApiError>((old, updated))
+    }
+    .await;
+    match result {
+        Ok((old, updated)) => {
+            images.finish(state, &old, &updated).await;
+            Ok(())
+        }
+        Err(error) => {
+            images.abandon(state).await;
+            Err(error)
+        }
+    }
 }

@@ -3827,7 +3827,7 @@ pub async fn account_status_stats_batch(
     let rows = sqlx::query!(
         r#"
         SELECT a.id AS "id!", COALESCE(a.remote_statuses_count, s.cnt, 0) AS "count!",
-               s.last_created_at
+               s.last_created_at AS "last_created_at?"
         FROM accounts a
         LEFT JOIN (
             SELECT account_id, count(*) AS cnt, max(created_at) AS last_created_at

@@ -520,6 +520,70 @@ pub(crate) async fn store_profile_image(
     Ok((file_name, file_size))
 }
 
+/// Prepared account profile images shared by delegated Group editors. Cleanup follows the same durable profile-image path.
+#[derive(Default)]
+pub(crate) struct PreparedProfileImages {
+    pub avatar: Option<(String, i64)>,
+    pub header: Option<(String, i64)>,
+}
+
+impl PreparedProfileImages {
+    pub async fn prepare(
+        state: &AppState,
+        avatar: Option<Vec<u8>>,
+        header: Option<Vec<u8>>,
+    ) -> Result<Self, ApiError> {
+        let avatar = match avatar {
+            Some(bytes) => Some(store_profile_image(state, bytes, AVATAR_MAX_EDGE).await?),
+            None => None,
+        };
+        let header = match header {
+            Some(bytes) => match store_profile_image(state, bytes, HEADER_MAX_EDGE).await {
+                Ok(file) => Some(file),
+                Err(error) => {
+                    enqueue_stray_profile_images(state, avatar.as_ref(), None).await;
+                    return Err(error);
+                }
+            },
+            None => None,
+        };
+        Ok(Self { avatar, header })
+    }
+
+    pub fn apply<'a>(&'a self, update: &mut ProfileUpdate<'a>) {
+        update.avatar_file_name = self.avatar.as_ref().map(|(name, _)| name.as_str());
+        update.header_file_name = self.header.as_ref().map(|(name, _)| name.as_str());
+        update.avatar_file_size = self.avatar.as_ref().map(|(_, size)| *size);
+        update.header_file_size = self.header.as_ref().map(|(_, size)| *size);
+    }
+
+    pub async fn abandon(&self, state: &AppState) {
+        enqueue_stray_profile_images(state, self.avatar.as_ref(), self.header.as_ref()).await;
+    }
+
+    pub async fn finish(&self, state: &AppState, old: &Account, updated: &Account) {
+        for (replaced, old, new) in [
+            (
+                self.avatar.is_some(),
+                old.avatar_file_name.as_deref(),
+                updated.avatar_file_name.as_deref(),
+            ),
+            (
+                self.header.is_some(),
+                old.header_file_name.as_deref(),
+                updated.header_file_name.as_deref(),
+            ),
+        ] {
+            if replaced
+                && let Some(old) = old
+                && new != Some(old)
+            {
+                delete_superseded_profile_image(state, old).await;
+            }
+        }
+    }
+}
+
 /// Applies a profile change to a local account and fans the new actor
 /// document out to follower inboxes as `Update(Actor)`.
 pub async fn update_profile(
@@ -730,9 +794,8 @@ pub async fn fan_out_actor_update_conn(
     account: &Account,
 ) -> Result<(), ApiError> {
     let actor = local_actor_conn(state, conn, account).await?;
-    let activity = plamenu_ap::activity::update_actor(
-        &state.config.domain,
-        &account.username,
+    let activity = plamenu_ap::activity::update_actor_for_actor(
+        &crate::entities::account_uri(&state.config.domain, account),
         serde_json::to_value(actor).map_err(|e| ApiError::Internal(Box::new(e)))?,
         plamenu_db::id::next(),
     );

@@ -425,6 +425,18 @@ pub fn enrich_object(
     let mut urls = vec![json!({
         "type":"Link", "mediaType":"text/html", "href":web
     })];
+    if let Some(p) = hls
+        .iter()
+        .filter_map(|r| r.progressive.as_ref())
+        .filter_map(|v| {
+            serde_json::from_value::<plamenu_db::native_video_hls::Progressive>(v.clone()).ok()
+        })
+        .find(plamenu_db::native_video_hls::Progressive::valid)
+    {
+        urls.push(json!({"type":"Link","name":"Playable MP4","mediaType":"video/mp4",
+            "href":format!("https://{domain}/media/{}",p.file_name),"width":p.width,"height":p.height,
+            "size":p.size_bytes,"duration":format!("PT{}S",p.duration),"bitrate":p.bitrate}));
+    }
     if let Some(file) = file {
         urls.push(json!(
             {"type":"Link", "mediaType":"video/mp4", "href":format!("https://{domain}/media/{file}"),

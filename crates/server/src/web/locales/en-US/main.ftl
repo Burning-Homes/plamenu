@@ -2357,3 +2357,15 @@ studio-delete-video-confirm = Delete this video and its published post?
 studio-collaborators-empty = No collaborators yet.
 
 studio-preview-video = Preview video and captions
+
+video-player-play = Play
+video-player-pause = Pause
+video-player-seek = Seek
+video-player-mute = Mute
+video-player-unmute = Unmute
+video-player-volume = Volume
+video-player-off = Off
+video-player-fullscreen = Fullscreen
+video-player-settings = Playback settings
+video-player-speed = Playback speed
+video-player-pip = Picture in picture

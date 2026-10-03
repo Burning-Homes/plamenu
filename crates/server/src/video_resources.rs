@@ -53,8 +53,8 @@ impl ProcessingPool {
         }))
     }
 
-    /// Cover the source spool, seven encoded files (MP4 + up to six HLS
-    /// renditions) plus possible destination copies, and poster/hash scratch.
+    /// Cover the source spool, eight encoded files (original + progressive +
+    /// up to six HLS renditions) plus possible destination copies, and poster/hash scratch.
     /// Every encoder output is independently kernel-bounded by `limit`.
     #[must_use]
     pub fn try_reserve(&self, limit: FileSizeLimit, source_ceiling: u64) -> Option<Reservation> {
@@ -66,7 +66,7 @@ impl ProcessingPool {
             .checked_add(
                 limit
                     .bytes
-                    .checked_mul(2 * (1 + crate::media_transcode::NATIVE_HLS_MAX_RENDITIONS))?,
+                    .checked_mul(2 * (2 + crate::media_transcode::NATIVE_HLS_MAX_RENDITIONS))?,
             )?
             .checked_add(poster_limit.checked_mul(3)?)?;
         let bytes = bytes.checked_add(
@@ -134,9 +134,9 @@ mod tests {
     fn temporary_remux_and_encode_share_limits_and_release_on_drop() {
         let pool = ProcessingPool::new(2, 400);
         let encode = pool.try_reserve(limit(10), 10).unwrap();
-        assert!(pool.try_reserve_temporary(201).is_none());
+        assert!(pool.try_reserve_temporary(181).is_none());
         assert!(pool.try_reserve_temporary(0).is_none());
-        let temporary = pool.try_reserve_temporary(200).unwrap();
+        let temporary = pool.try_reserve_temporary(180).unwrap();
         assert_eq!(pool.usage(), (2, 400));
         assert!(pool.try_reserve_temporary(1).is_none());
         drop(temporary);
@@ -153,13 +153,13 @@ mod tests {
 
     #[test]
     fn admission_counts_copy_and_poster_peaks_and_releases_on_drop() {
-        let pool = ProcessingPool::new(2, 400);
+        let pool = ProcessingPool::new(2, 440);
         let a = pool.try_reserve(limit(10), 10).unwrap();
-        assert_eq!(pool.usage(), (1, 200));
+        assert_eq!(pool.usage(), (1, 220));
         assert!(pool.try_reserve(limit(11), 10).is_none());
         let b = pool.try_reserve(limit(10), 10).unwrap();
         assert!(pool.try_reserve(limit(1), 1).is_none());
-        assert_eq!(pool.usage(), (2, 400));
+        assert_eq!(pool.usage(), (2, 440));
         drop(a);
         drop(b);
         assert_eq!(pool.usage(), (0, 0));
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn concurrent_claims_share_one_budget() {
-        let pool = ProcessingPool::new(8, 200);
+        let pool = ProcessingPool::new(8, 220);
         let rendezvous = Arc::new(std::sync::Barrier::new(8));
         let threads = (0..8)
             .map(|_| {

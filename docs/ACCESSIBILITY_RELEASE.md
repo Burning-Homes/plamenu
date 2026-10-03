@@ -28,11 +28,16 @@ The browsers share a disposable TLS proxy's network namespace: canonical
 `https://localhost` URLs, including absolute media and caption URLs, resolve
 to that fixture without request rewriting. The native server binds only to
 Docker's bridge gateway, and host readiness ports bind only to loopback.
-Set `A11Y_LOCAL_BROWSERS=1` only for diagnostics after installing Playwright's
-local engines and host libraries. That mode uses a random loopback TLS port
-and cannot verify canonical absolute media URLs; use the container mode for
-video playback. A release report still requires every
-project. The suite exercises representative signed-out and signed-in pages at desktop
+The runner exports the proxy's ephemeral CA certificate, generates a fresh
+fixture-local NSS database with the browser image's own library, and trusts
+that CA only inside the disposable browser container. Firefox imports it by
+an explicit container-only automation policy; WebKit uses the container's certificate store. Browser
+and API contexts verify certificates normally. No host certificate store or
+browser profile changes. Local-browser mode is rejected because it cannot
+provide this isolated trust contract. The service-worker qualification uses
+actual HTTPS login cookies, channel image uploads and reload freshness in all
+three engines; the other accessibility cases block workers for deterministic
+page sampling. A release report still requires every project. The suite exercises representative signed-out and signed-in pages at desktop
 and 320 CSS-pixel mobile viewports. Firefox uses a narrow desktop viewport
 with touch enabled, not Android emulation: [Playwright documents `isMobile`
 as unsupported in Firefox](https://playwright.dev/docs/api/class-testoptions#test-options-is-mobile).

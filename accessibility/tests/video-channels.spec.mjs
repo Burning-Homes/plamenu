@@ -47,7 +47,7 @@ async function journey(page, browser, info, noScript) {
   await expect(page.getByText('Awaiting acceptance', { exact: false }).first()).toBeVisible();
 
   const context = await browser.newContext({
-    baseURL: process.env.A11Y_BASE_URL || 'https://plamenu.local', ignoreHTTPSErrors: true,
+    baseURL: process.env.A11Y_BASE_URL || 'https://plamenu.local', ignoreHTTPSErrors: false,
     javaScriptEnabled: !noScript, viewport: info.project.use.viewport,
     ...(process.env.A11Y_CANONICAL_ORIGIN ? { extraHTTPHeaders: { Origin: process.env.A11Y_CANONICAL_ORIGIN } } : {}),
   });

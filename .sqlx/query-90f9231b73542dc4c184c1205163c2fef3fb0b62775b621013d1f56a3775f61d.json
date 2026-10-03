@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT a.id AS \"id!\", COALESCE(a.remote_statuses_count, s.cnt, 0) AS \"count!\",\n               s.last_created_at\n        FROM accounts a\n        LEFT JOIN (\n            SELECT account_id, count(*) AS cnt, max(created_at) AS last_created_at\n            FROM statuses\n            WHERE account_id = ANY($1) AND deleted_at IS NULL -- STUBFILTER\n            GROUP BY 1\n        ) s ON s.account_id = a.id\n        WHERE a.id = ANY($1)\n        ",
+  "query": "\n        SELECT a.id AS \"id!\", COALESCE(a.remote_statuses_count, s.cnt, 0) AS \"count!\",\n               s.last_created_at AS \"last_created_at?\"\n        FROM accounts a\n        LEFT JOIN (\n            SELECT account_id, count(*) AS cnt, max(created_at) AS last_created_at\n            FROM statuses\n            WHERE account_id = ANY($1) AND deleted_at IS NULL -- STUBFILTER\n            GROUP BY 1\n        ) s ON s.account_id = a.id\n        WHERE a.id = ANY($1)\n        ",
   "describe": {
     "columns": [
       {
@@ -22,7 +22,7 @@
       },
       {
         "ordinal": 2,
-        "name": "last_created_at",
+        "name": "last_created_at?",
         "type_info": "Timestamptz",
         "origin": "Expression"
       }
@@ -38,5 +38,5 @@
       true
     ]
   },
-  "hash": "13ff298af8702f5fc0e1e69390d2005f8b7c10229800a2a55120a91e092a76b9"
+  "hash": "90f9231b73542dc4c184c1205163c2fef3fb0b62775b621013d1f56a3775f61d"
 }

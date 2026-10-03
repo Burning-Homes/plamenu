@@ -860,6 +860,48 @@ pub struct PackagedHls {
     pub bandwidth: i64,
     pub playlist: String,
     pub segment_sha256: serde_json::Value,
+    pub progressive: Option<PackagedProgressive>,
+}
+
+pub struct PackagedProgressive {
+    pub file_path: std::path::PathBuf,
+    pub metadata: plamenu_db::native_video_hls::Progressive,
+}
+
+/// The ladder's height means encoded height, including portrait films.
+/// A copied original only qualifies through its measured bitrate. Unknown
+/// sizes never establish the lighter-than-original fallback condition.
+#[must_use]
+pub fn progressive_choice(
+    candidates: &[(i32, Option<u32>, Option<i64>)],
+    original_bytes: i64,
+) -> Option<usize> {
+    candidates
+        .iter()
+        .enumerate()
+        .filter(|(_, (h, rate, _))| *h > 0 && *h <= 720 && rate.is_some_and(|r| r > 0 && r <= 4000))
+        .max_by_key(|(_, (h, _, _))| *h)
+        .map(|(i, _)| i)
+        .or_else(|| {
+            candidates
+                .iter()
+                .enumerate()
+                .filter(|(_, (h, _, size))| {
+                    *h > 0 && size.is_some_and(|s| s > 0 && s < original_bytes)
+                })
+                .min_by_key(|(_, (h, _, _))| *h)
+                .map(|(i, _)| i)
+        })
+}
+
+fn native_video_rate(height: i32) -> u32 {
+    match height {
+        1080 => 6000,
+        720 => 3000,
+        480 => 1800,
+        360 => 1000,
+        _ => 500,
+    }
 }
 
 /// One bounded JPEG sprite, generated from keyframes without decoding every
@@ -968,14 +1010,39 @@ pub async fn package_native_hls(
             "Video has no usable dimensions".into(),
         ));
     }
+    let lower: Vec<_> = native_lower_heights(height)
+        .filter(|lower| {
+            i64::from(processed.width.unwrap_or(0)) * i64::from(*lower) / i64::from(height) >= 2
+        })
+        .collect();
+    let mut candidates = vec![(
+        height,
+        processed
+            .bitrate
+            .and_then(|b| u32::try_from(b.saturating_add(999) / 1000).ok()),
+        Some(processed.file_size),
+    )];
+    candidates.extend(
+        lower
+            .iter()
+            .map(|h| (*h, Some(native_video_rate(*h)), None)),
+    );
+    let selected = progressive_choice(&candidates, processed.file_size).map(|i| candidates[i].0);
     let mut renditions = Vec::with_capacity(NATIVE_HLS_HEIGHTS.len() + 1);
-    renditions.push(package_one_hls(config, processed, stem, params, height, None).await?);
-    for lower in native_lower_heights(height) {
-        if i64::from(processed.width.unwrap_or(0)) * i64::from(lower) / i64::from(height) < 2 {
-            continue;
-        }
-        renditions
-            .push(package_one_hls(config, processed, stem, params, lower, Some(lower)).await?);
+    renditions.push(package_one_hls(config, processed, stem, params, height, None, false).await?);
+    for lower in lower {
+        renditions.push(
+            package_one_hls(
+                config,
+                processed,
+                stem,
+                params,
+                lower,
+                Some(lower),
+                selected == Some(lower),
+            )
+            .await?,
+        );
     }
     Ok(renditions)
 }
@@ -1004,13 +1071,7 @@ fn native_hls_args(
     ]));
     if let Some(height) = target_height {
         let scale = format!("scale=-2:{height}:flags=bicubic");
-        let rate = match height {
-            1080 => 6000,
-            720 => 3000,
-            480 => 1800,
-            360 => 1000,
-            _ => 500,
-        };
+        let rate = native_video_rate(height);
         let maxrate = format!("{rate}k");
         let bufsize = format!("{}k", rate * 2);
         args.extend(os_args(&[
@@ -1055,6 +1116,105 @@ fn native_hls_args(
     args
 }
 
+/// Encode before HLS while AAC priming and composition timestamps still exist.
+/// Completed HLS cannot safely reconstruct the lost encoder-delay metadata.
+async fn package_progressive(
+    config: &Config,
+    processed: &ProcessedAv,
+    stem: &str,
+    params: &TranscodeParams,
+    target_height: i32,
+    encoder_args: &[std::ffi::OsString],
+) -> Result<PackagedProgressive, ApiError> {
+    let progressive_path = processed
+        .scratch
+        .path()
+        .join(format!("progressive{target_height}.mp4"));
+    let mut mp4_args = encoder_args.to_vec();
+    mp4_args.extend(os_args(&["-movflags", "faststart", "-y"]));
+    mp4_args.push(progressive_path.as_os_str().into());
+    run_ffmpeg(
+        config,
+        mp4_args,
+        ENCODE_TIMEOUT,
+        params.file_size_limit.as_ref(),
+    )
+    .await?;
+    let size_bytes = checked_output_size(&progressive_path, params).await?;
+    let metadata = probe(config, &progressive_path).await?;
+    if metadata.video_codec.as_deref() != Some("h264")
+        || metadata.audio_codec.as_deref().is_some_and(|c| c != "aac")
+        || metadata.duration.is_none_or(|d| !d.is_finite() || d <= 0.0)
+    {
+        return Err(transcode_failed(
+            "Progressive rendition has invalid codecs or duration".into(),
+        ));
+    }
+    let digest = crate::video_offload::protocol::digest(&progressive_path).await?;
+    let value = plamenu_db::native_video_hls::Progressive {
+        file_name: format!("{stem}.draft.progressive{target_height}.mp4"),
+        size_bytes,
+        sha256: digest.sha256,
+        width: metadata
+            .width
+            .and_then(|w| i32::try_from(w).ok())
+            .unwrap_or(0),
+        height: metadata
+            .height
+            .and_then(|h| i32::try_from(h).ok())
+            .unwrap_or(0),
+        duration: metadata.duration.unwrap_or_default(),
+        frame_rate: metadata.frame_rate,
+        bitrate: metadata.bitrate.unwrap_or(0),
+        audio_codec: metadata.audio_codec,
+    };
+    if !value.valid() {
+        return Err(transcode_failed("Invalid progressive metadata".into()));
+    }
+    Ok(PackagedProgressive {
+        file_path: progressive_path,
+        metadata: value,
+    })
+}
+
+async fn progressive_hls_input(
+    config: &Config,
+    processed: &ProcessedAv,
+    stem: &str,
+    params: &TranscodeParams,
+    target_height: i32,
+    args: &[std::ffi::OsString],
+) -> Result<(Vec<std::ffi::OsString>, PackagedProgressive), ApiError> {
+    let boundary = args
+        .iter()
+        .position(|a| a == "-hls_time")
+        .expect("native HLS mux boundary");
+    let progressive = package_progressive(
+        config,
+        processed,
+        stem,
+        params,
+        target_height,
+        &args[..boundary],
+    )
+    .await?;
+    let mux = args[boundary..].to_vec();
+    let mut args = os_args(&["-i"]);
+    args.push(progressive.file_path.as_os_str().into());
+    args.extend(os_args(&[
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a:0?",
+        "-map_metadata",
+        "-1",
+        "-c",
+        "copy",
+    ]));
+    args.extend(mux);
+    Ok((args, progressive))
+}
+
 async fn package_one_hls(
     config: &Config,
     processed: &ProcessedAv,
@@ -1062,14 +1222,23 @@ async fn package_one_hls(
     params: &TranscodeParams,
     target_height: i32,
     encode_height: Option<i32>,
+    keep_progressive: bool,
 ) -> Result<PackagedHls, ApiError> {
     let base = format!("hls{target_height}");
     let playlist_path = processed.scratch.path().join(format!("{base}.m3u8"));
     let file_path = processed.scratch.path().join(format!("{base}.m4s"));
-    let args = native_hls_args(processed, &playlist_path, params, encode_height);
+    let mut args = native_hls_args(processed, &playlist_path, params, encode_height);
     // Copy-only packaging is I/O-bound; each lower encode takes one heavy slot.
     let _permit = if encode_height.is_some() {
         Some(crate::media_gate::acquire().await)
+    } else {
+        None
+    };
+    let progressive = if keep_progressive {
+        let (mux, progressive) =
+            progressive_hls_input(config, processed, stem, params, target_height, &args).await?;
+        args = mux;
+        Some(progressive)
     } else {
         None
     };
@@ -1141,6 +1310,7 @@ async fn package_one_hls(
         bandwidth,
         playlist,
         segment_sha256,
+        progressive,
     })
 }
 
@@ -1707,6 +1877,49 @@ async fn checked_output_size(path: &Path, params: &TranscodeParams) -> Result<i6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn progressive_policy_prefers_existing_720_target_and_measured_original() {
+        let ladder = [
+            (1080, Some(6000), Some(1000)),
+            (720, Some(3000), None),
+            (480, Some(1800), None),
+            (360, Some(1000), None),
+        ];
+        assert_eq!(progressive_choice(&ladder, 1000), Some(1));
+        assert_eq!(
+            progressive_choice(&[(720, Some(4000), None), (480, Some(1800), None)], 1000),
+            Some(0)
+        );
+        assert_eq!(
+            progressive_choice(&[(720, Some(4001), None), (480, Some(1800), None)], 1000),
+            Some(1)
+        );
+        assert_eq!(
+            progressive_choice(
+                &[(720, Some(3999), Some(1000)), (480, Some(1800), None)],
+                1000
+            ),
+            Some(0)
+        );
+        assert_eq!(
+            progressive_choice(&[(720, None, Some(1000)), (480, Some(1800), None)], 1000),
+            Some(1)
+        );
+        assert_eq!(
+            progressive_choice(&[(1080, None, Some(500)), (2160, None, Some(900))], 1000),
+            Some(0)
+        );
+        assert_eq!(
+            progressive_choice(&[(1080, None, Some(1000)), (2160, None, None)], 1000),
+            None
+        );
+        assert_eq!(progressive_choice(&[(0, Some(1), Some(1))], 1000), None);
+        assert_eq!(
+            progressive_choice(&[(720, Some(0), Some(1000))], 1000),
+            None
+        );
+    }
 
     #[test]
     fn native_ladder_is_finite_downscale_only_and_avoids_redundant_rungs() {

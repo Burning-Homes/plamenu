@@ -29,7 +29,7 @@ export default defineConfig({
   ],
   use: {
     baseURL,
-    ignoreHTTPSErrors: true,
+    ignoreHTTPSErrors: false,
     actionTimeout: 10_000,
     navigationTimeout: 20_000,
     trace: 'retain-on-failure',

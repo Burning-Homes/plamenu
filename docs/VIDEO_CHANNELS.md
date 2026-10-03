@@ -67,3 +67,19 @@ transferred channel remains owned by its recipient, but the deleting person's
 own original videos are still removed, including from that transferred channel.
 Transferring a channel does not override an original author's account-deletion
 privacy guarantee.
+
+## Channel identity on posts
+
+A channel uses the same account profile images as a person or community.
+Owners and accepted editors can upload its avatar and header and provide image
+descriptions in **Manage video channels**. Publishers and pending invitees
+cannot edit the profile. Empty upload fields preserve the existing images.
+Profile edits keep the actor address and subscribers and publish an actor Update.
+
+Video cards retain the content author's identity and show **published on** with
+a link to the channel on detail, profile, home, public, search and notification
+surfaces. This also works when a person's boost carries the video. Imported
+videos show this context only after the channel and its ownership were verified;
+an arbitrary Group announcement alone is insufficient. Channels retain their
+subscription and collaboration model and do not acquire community membership,
+voting or moderation powers from this context.

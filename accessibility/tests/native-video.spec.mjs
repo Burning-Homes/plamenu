@@ -42,7 +42,20 @@ test.afterAll(() => {
   if (fixtureDirectory) rmSync(fixtureDirectory, { recursive: true });
 });
 
+test.afterEach(async ({page},info) => {
+  if (info.status !== info.expectedStatus) await info.attach('native-playback-state', {
+    body:JSON.stringify(await page.evaluate(()=>Array.from(document.querySelectorAll('video')).slice(0,5).map(video=>({
+      time:video.currentTime,paused:video.paused,ready:video.readyState,seeking:video.seeking,
+      width:video.videoWidth,height:video.videoHeight,error:video.error?.code,
+      quality:video.closest('figure')?.querySelector('.video-quality')?.outerHTML,
+      bounds:{top:video.getBoundingClientRect().top,bottom:video.getBoundingClientRect().bottom,viewport:innerHeight},
+      frames:video.getVideoPlaybackQuality?.().totalVideoFrames,
+      profile:window.__ownedVideoProfiles?.get(video)?.(),
+    }))).catch(error=>({observationUnavailable:String(error)})),null,2),contentType:'application/json'});
+});
+
 async function publish(page, projectName, noScript) {
+  if (!noScript) await page.addInitScript(() => { window.__ownedVideoProfile = true; });
   await signIn(page);
   await page.goto('/videos/upload');await openVideoOptions(page);
   await expect(page.getByRole('heading', { name: 'Upload a video', exact: true })).toBeVisible();
@@ -191,6 +204,9 @@ async function publish(page, projectName, noScript) {
   }
   // Exercise the browser's real decoder and WebVTT engine, also with page
   // scripts disabled. This is not a claim about native-control keyboard UX.
+  // WebKit may pause muted autoplay when the element is outside the viewport.
+  // Closing the settings dialog restores focus below the player on mobile.
+  await player.scrollIntoViewIfNeeded();
   await player.evaluate(video => {
     video.muted = true; // Decoder check, independent of autoplay permission.
     video.textTracks[0].mode = 'showing';
@@ -198,20 +214,42 @@ async function publish(page, projectName, noScript) {
     // while attaching HLS; the observable contract is decoded playback.
     video.play().catch(() => {});
   });
+  if (noScript) {
+    // Native playback still decodes frames, but page callback/timer scheduling
+    // is disabled. Poll its synchronous decoder counter from the test host.
+    await expect.poll(()=>player.evaluate(video=>video.getVideoPlaybackQuality().totalVideoFrames),{timeout:20_000})
+      .toBeGreaterThan(0);
+  } else {
+    await player.evaluate(video => new Promise((resolve,reject) => {
+      const deadline=setTimeout(()=>{video.cancelVideoFrameCallback(callback);reject(new Error('No decoded video frame'));},20_000);
+      const callback=video.requestVideoFrameCallback(()=>{clearTimeout(deadline);resolve();});
+    }));
+  }
   await expect.poll(() => player.evaluate(video => video.currentTime)).toBeGreaterThan(0.1);
   await expect.poll(() => player.evaluate(video => video.textTracks[0].activeCues?.[0]?.text))
     .toBe('[Steady test tone]');
   if (!noScript) {
-    const quality = page.getByRole('combobox', { name: 'Video quality' });
-    if (await quality.isVisible()) {
+    const quality = page.getByRole('combobox', { name: 'Video quality', includeHidden:true });
+    if (await quality.count()) {
+      const settings = page.locator('.vod-controls__menu');
+      if (!await quality.isVisible() && await settings.count()) await settings.locator('summary').click();
+      await expect(quality).toBeVisible();
       await expect(quality.locator('option')).toHaveText(['Auto', '240p', '360p', '480p']);
       await quality.selectOption({ label:'240p' });
+      await player.scrollIntoViewIfNeeded();
       await player.evaluate(video=>{ video.currentTime=1; video.play().catch(()=>{}); });
       await expect.poll(()=>player.evaluate(video=>video.videoWidth), {timeout:15_000}).toBe(320);
       await expect.poll(()=>player.evaluate(video=>video.currentTime), {timeout:15_000}).toBeGreaterThan(1.1);
     } else {
-      // Native-HLS engines retain their own controls instead of a false UI.
-      expect(await player.evaluate(video=>video.canPlayType('application/vnd.apple.mpegurl'))).not.toBe('');
+      const nativeHls = await player.evaluate(video=>video.canPlayType('application/vnd.apple.mpegurl'));
+      if (!nativeHls) {
+        // Qualify the actual progressive fallback and decoding when this
+        // session has no quality selector or native HLS support.
+        await expect(player).toHaveAttribute('data-p2p-fallback','true');
+        expect(await player.evaluate(video=>video.currentSrc)).toBe(await player.getAttribute('data-src'));
+        await expect.poll(()=>player.evaluate(video=>video.videoWidth)).toBeGreaterThan(0);
+        await expect.poll(()=>player.evaluate(video=>video.currentTime)).toBeGreaterThan(.3);
+      }
     }
   }
   expect(await player.evaluate(video => video.error)).toBeNull();
@@ -219,30 +257,46 @@ async function publish(page, projectName, noScript) {
   const permalink = page.url();
   const statusId = new URL(permalink).pathname.split('/').pop();
   const previews = page.locator('.media__seek-previews');
-  await previews.locator('summary').press('Enter');
-  await expect(previews).toContainText('Approximate keyframe previews');
-  const previewLinks = previews.locator('.media__seek-grid a');
-  await expect(previewLinks).toHaveCount(3);
-  await expect(previewLinks.nth(1)).toHaveAttribute('href', /#t=1$/);
-  await expect.poll(() => previews.locator('img').first().evaluate(image => image.naturalWidth)).toBe(480);
-  // Natural dimensions alone miss the general media rule shrinking the
-  // entire sprite into one tile. Its rendered dimensions must stay intact.
-  await expect.poll(() => previews.locator('img').first().evaluate(image => image.getBoundingClientRect().width)).toBe(480);
-  await expect.poll(() => previews.locator('img').first().evaluate(image => image.getBoundingClientRect().height)).toBe(90);
-  expect(await previews.locator('.media__seek-grid').evaluate(grid => grid.scrollWidth <= grid.clientWidth + 1)).toBe(true);
-  await page.setViewportSize({width:320,height:800});
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  await previewLinks.nth(1).press('Enter');
   if (noScript) {
+    await previews.locator('summary').press('Enter');
+    await expect(previews).toContainText('Approximate keyframe previews');
+    const previewLinks = previews.locator('.media__seek-grid a');
+    await expect(previewLinks).toHaveCount(3);
+    await expect(previewLinks.nth(1)).toHaveAttribute('href', /#t=1$/);
+    await expect.poll(() => previews.locator('img').first().evaluate(image => image.naturalWidth)).toBe(480);
+    // Natural dimensions alone miss the general media rule shrinking the
+    // entire sprite into one tile. Its rendered dimensions must stay intact.
+    await expect.poll(() => previews.locator('img').first().evaluate(image => image.getBoundingClientRect().width)).toBe(480);
+    await expect.poll(() => previews.locator('img').first().evaluate(image => image.getBoundingClientRect().height)).toBe(90);
+    expect(await previews.locator('.media__seek-grid').evaluate(grid => grid.scrollWidth <= grid.clientWidth + 1)).toBe(true);
+    await page.setViewportSize({width:320,height:800});
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await previewLinks.nth(1).press('Enter');
     await page.waitForURL(url => url.pathname.startsWith('/media/') && url.hash === '#t=1');
     const native = page.locator('video');
     await expect.poll(() => native.evaluate(video => video.currentTime)).toBeGreaterThanOrEqual(1);
     await page.goto(permalink);
   } else {
+    await expect(previews).toBeHidden();
+    const seek = page.getByRole('slider', {name:'Seek',exact:true});
+    await seek.focus();
+    await expect.poll(() => page.locator('.vod-controls__tile img').evaluate(image => image.naturalWidth)).toBe(480);
+    await page.setViewportSize({width:320,height:800});
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await seek.press('Home');
+    for (let i=0;i<10;i++) await seek.press('ArrowRight');
     await expect.poll(() => player.evaluate(video => video.currentTime)).toBeGreaterThanOrEqual(1);
-    await expect(player).toBeFocused();
-    const audit = await new AxeBuilder({page}).include('.media__seek-previews').analyze();
+    const quality = page.locator('.vod-controls__settings .video-quality');
+    if (await quality.count()) {
+      await page.locator('.vod-controls__menu').evaluate(menu=>{menu.open=true;});
+      expect(await quality.evaluate(select=>{
+        const bounds=select.getBoundingClientRect(),parent=select.parentElement.getBoundingClientRect();
+        return getComputedStyle(select).position==='static' && bounds.top>=parent.top && bounds.bottom<=parent.bottom+1;
+      })).toBe(true);
+    }
+    const audit = await new AxeBuilder({page}).include('.vod-controls').analyze();
     expect(audit.violations).toEqual([]);
+    await page.screenshot({path:test.info().outputPath('published-vod-controls-320.png'),fullPage:true});
   }
   await page.setViewportSize({width:projectName.includes('mobile') ? 390 : 1440,height:900});
   if (noScript) await page.setViewportSize({ width: 320, height: 800 });
@@ -439,7 +493,8 @@ async function publish(page, projectName, noScript) {
   await page.getByText('Poster image description', {exact:true}).click();
   await expect(page.getByText('Updated blue poster after publication.', {exact:true})).toBeVisible();
   await expect(page.locator('video').first()).toBeVisible();
-  await expect(page.locator('.media__seek-previews')).toBeVisible();
+  if (noScript) await expect(page.locator('.media__seek-previews')).toBeVisible();
+  else await expect(page.locator('.media__seek-previews')).toBeHidden();
 }
 
 test('native video upload, review and publication', async ({ page }, info) => {

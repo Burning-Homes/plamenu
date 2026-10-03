@@ -31,11 +31,26 @@ def run(*args, **kwargs):
 def browser_image():
     """Cache the pinned engines plus a real, distro-packaged test encoder."""
     dockerfile = ROOT / "accessibility/Dockerfile"
-    image = "plamenu-accessibility-encoder:" + hashlib.sha256(dockerfile.read_bytes()).hexdigest()[:16]
-    present = subprocess.run(["docker", "image", "inspect", image],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    image = (
+        "plamenu-accessibility-encoder:"
+        + hashlib.sha256(dockerfile.read_bytes()).hexdigest()[:16]
+    )
+    present = subprocess.run(
+        ["docker", "image", "inspect", image],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
     if present.returncode:
-        run("docker", "build", "--file", dockerfile, "--tag", image, ROOT / "accessibility")
+        run(
+            "docker",
+            "build",
+            "--file",
+            dockerfile,
+            "--tag",
+            image,
+            ROOT / "accessibility",
+        )
     run("docker", "run", "--rm", image, "ffmpeg", "-version", stdout=subprocess.DEVNULL)
     return image
 
@@ -51,15 +66,55 @@ def seed_native_draft_pages(container, fixture, video):
     media = fixture / "media"
     media.mkdir(exist_ok=True)
     poster = fixture / "draft-poster.avif"
-    run("ffmpeg", "-nostdin", "-v", "error", "-i", video, "-frames:v", "1",
-        "-c:v", "libaom-av1", "-still-picture", "1", "-cpu-used", "8", poster)
-    run("docker", "exec", "-i", container, "psql", "-U", "postgres", "-d", "plamenu_a11y",
-        "-v", f"source_bytes={video.stat().st_size}", "-v", f"poster_bytes={poster.stat().st_size}",
-        input=(ROOT / "accessibility/fixtures/native-drafts.sql").read_text(), text=True,
-        stdout=subprocess.DEVNULL)
-    run("docker", "exec", "-i", container, "psql", "-U", "postgres", "-d", "plamenu_a11y",
-        input=(ROOT / "accessibility/fixtures/video-catalogue.sql").read_text(), text=True,
-        stdout=subprocess.DEVNULL)
+    run(
+        "ffmpeg",
+        "-nostdin",
+        "-v",
+        "error",
+        "-i",
+        video,
+        "-frames:v",
+        "1",
+        "-c:v",
+        "libaom-av1",
+        "-still-picture",
+        "1",
+        "-cpu-used",
+        "8",
+        poster,
+    )
+    run(
+        "docker",
+        "exec",
+        "-i",
+        container,
+        "psql",
+        "-U",
+        "postgres",
+        "-d",
+        "plamenu_a11y",
+        "-v",
+        f"source_bytes={video.stat().st_size}",
+        "-v",
+        f"poster_bytes={poster.stat().st_size}",
+        input=(ROOT / "accessibility/fixtures/native-drafts.sql").read_text(),
+        text=True,
+        stdout=subprocess.DEVNULL,
+    )
+    run(
+        "docker",
+        "exec",
+        "-i",
+        container,
+        "psql",
+        "-U",
+        "postgres",
+        "-d",
+        "plamenu_a11y",
+        input=(ROOT / "accessibility/fixtures/video-catalogue.sql").read_text(),
+        text=True,
+        stdout=subprocess.DEVNULL,
+    )
     for media_id in range(9001, 9015):
         shutil.copyfile(video, media / f"{media_id}.orig")
         shutil.copyfile(video, media / f"{media_id}.draft.mp4")
@@ -96,10 +151,20 @@ def wait_for_server(server, url, log):
     raise RuntimeError(f"Plamenu fixture timed out; see {log}")
 
 
-def wait_for_https(name, url):
+def wait_for_https(name, url, certificate):
     for _ in range(60):
         healthy = subprocess.run(
-            ["curl", "--noproxy", "*", "-kfsS", "--max-time", "2", url + "/health"],
+            [
+                "curl",
+                "--noproxy",
+                "*",
+                "--cacert",
+                str(certificate),
+                "-fsS",
+                "--max-time",
+                "2",
+                url + "/health",
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
@@ -129,9 +194,12 @@ def local_browser_preflight():
     if not sys.platform.startswith("linux"):
         return
     inspector = shutil.which("gst-inspect-1.0")
-    if not inspector or subprocess.run(
-        [inspector, "autoaudiosink"], capture_output=True, check=False
-    ).returncode:
+    if (
+        not inspector
+        or subprocess.run(
+            [inspector, "autoaudiosink"], capture_output=True, check=False
+        ).returncode
+    ):
         raise RuntimeError(
             "Host WebKit needs GStreamer autoaudiosink (gst-plugins-good) and "
             "gst-inspect-1.0. Use the default pinned browser image by unsetting "
@@ -154,6 +222,12 @@ def main():
     server = None
     log_handle = None
     local_browsers = os.environ.get("A11Y_LOCAL_BROWSERS") == "1"
+    if local_browsers:
+        print(
+            "Strict fixture TLS trust is confined to disposable containers; unset A11Y_LOCAL_BROWSERS.",
+            file=sys.stderr,
+        )
+        return 1
     if local_browsers:
         try:
             local_browser_preflight()
@@ -191,14 +265,28 @@ def main():
             )
             audio_fixture = fixture / "native-audio.m4a"
             run(
-                "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
-                "sine=frequency=440:duration=9", "-c:a", "aac",
+                "ffmpeg",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=9",
+                "-c:a",
+                "aac",
                 str(audio_fixture),
             )
             poster_fixture = fixture / "native-poster.png"
             run(
-                "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
-                "color=c=blue:size=96x96", "-frames:v", "1",
+                "ffmpeg",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=blue:size=96x96",
+                "-frames:v",
+                "1",
                 str(poster_fixture),
             )
             run(
@@ -257,11 +345,16 @@ def main():
             # Explicit local-peer import drills permit local addresses; ordinary
             # browser fixtures retain the production-default SSRF guards.
             import_private_fetch = (
-                "allow_private_fetch = true\n" if (os.environ.get("A11Y_IMPORT_SOURCE_URL") or os.environ.get("A11Y_SOURCE_SYNC_URL")) else ""
+                "allow_private_fetch = true\n"
+                if (
+                    os.environ.get("A11Y_IMPORT_SOURCE_URL")
+                    or os.environ.get("A11Y_SOURCE_SYNC_URL")
+                )
+                else ""
             )
             config.write_text(
                 'domain = "localhost"\n'
-                f'{import_private_fetch}'
+                f"{import_private_fetch}"
                 f'database_url = "{database_url}"\n'
                 f'bind = "{app_address}:{app_port}"\n'
                 # External encoder tests run in the browser/TLS namespace.
@@ -307,15 +400,34 @@ def main():
             # Each engine creates real channels under its own finite quota;
             # persisted private draft/catalogue fixtures keep their seed owner.
             creator_projects = (
-                "chromium-desktop", "chromium-mobile", "firefox-desktop",
-                "firefox-mobile", "webkit-desktop", "webkit-mobile",
+                "chromium-desktop",
+                "chromium-mobile",
+                "firefox-desktop",
+                "firefox-mobile",
+                "webkit-desktop",
+                "webkit-mobile",
                 "chromium-no-javascript",
             )
-            creator_users = tuple("a11y_" + project.replace("-", "_") for project in creator_projects)
+            creator_users = tuple(
+                "a11y_" + project.replace("-", "_") for project in creator_projects
+            )
             for username in ("channel_editor", *creator_users):
-                run("cargo", "run", "--locked", "-q", "--", "--config", config,
-                    "account", "add", username, "--email", f"{username}@localhost",
-                    "--password", "plamenu-development-only")
+                run(
+                    "cargo",
+                    "run",
+                    "--locked",
+                    "-q",
+                    "--",
+                    "--config",
+                    config,
+                    "account",
+                    "add",
+                    username,
+                    "--email",
+                    f"{username}@localhost",
+                    "--password",
+                    "plamenu-development-only",
+                )
             seed_native_draft_pages(name, fixture, video_fixture)
             log = ROOT / "target/accessibility/server.log"
             log.parent.mkdir(parents=True, exist_ok=True)
@@ -373,7 +485,35 @@ def main():
                 published_port = int(mapping.splitlines()[0].rsplit(":", 1)[1])
                 readiness_url = f"https://localhost:{published_port}"
                 base_url = "https://localhost"
-            wait_for_https(proxy_name, readiness_url)
+            # Export only the ephemeral CA certificate, never its private key.
+            certificate = fixture / "fixture-ca.crt"
+            for _ in range(60):
+                copied = subprocess.run(
+                    [
+                        "docker",
+                        "cp",
+                        f"{proxy_name}:/data/caddy/pki/authorities/local/root.crt",
+                        str(certificate),
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                if copied.returncode == 0:
+                    break
+                time.sleep(1)
+            else:
+                raise RuntimeError("Disposable TLS fixture did not issue its CA")
+            wait_for_https(proxy_name, readiness_url, certificate)
+            # Chromium's brand-new NSS database is generated by the browser
+            # image's own library, never host ~/.pki or a host-version certutil.
+            # Firefox imports the same CA by its explicit automation policy.
+            nss = fixture / "nssdb"
+            nss.mkdir()
+            policies = fixture / "policies.json"
+            policies.write_text(
+                '{"policies":{"Certificates":{"Install":["/tmp/plamenu-fixture-ca.crt"]}}}\n'
+            )
             environment = os.environ | {
                 "A11Y_BASE_URL": base_url,
                 "A11Y_USERNAME": "developer",
@@ -430,9 +570,30 @@ def main():
                     "--ipc",
                     "host",
                     "--user",
-                    f"{os.getuid()}:{os.getgid()}",
+                    "0:0",
+                    "--env",
+                    "A11Y_DISPOSABLE_TRUST=1",
+                    "--env",
+                    f"A11Y_RUN_UID={os.getuid()}",
+                    "--env",
+                    f"A11Y_RUN_GID={os.getgid()}",
+                    "--env",
+                    "NODE_EXTRA_CA_CERTS=/tmp/plamenu-fixture-ca.crt",
+                    "--volume",
+                    f"{certificate}:/tmp/plamenu-fixture-ca.crt:ro",
+                    "--volume",
+                    f"{nss}:/tmp/.pki/nssdb",
+                    "--env",
+                    "PLAYWRIGHT_FIREFOX_POLICIES_JSON=/tmp/plamenu-fixture-policies.json",
+                    "--volume",
+                    f"{policies}:/tmp/plamenu-fixture-policies.json:ro",
                     "--env",
                     "HOME=/tmp",
+                    *(
+                        ["--env", "DEBUG=pw:browser"]
+                        if os.environ.get("A11Y_BROWSER_DEBUG") == "1"
+                        else []
+                    ),
                     "--env",
                     "A11Y_NULL_AUDIO=1",
                     "--env",
@@ -444,13 +605,34 @@ def main():
                     "--env",
                     f"A11Y_LIVE_INGEST_HOST={app_address}",
                     "--env",
-                    "A11Y_BROWSER_IMAGE=" + subprocess.check_output(
-                        ["docker", "image", "inspect", "--format", "{{.Id}}", encoder_image], text=True
+                    "A11Y_BROWSER_IMAGE="
+                    + subprocess.check_output(
+                        [
+                            "docker",
+                            "image",
+                            "inspect",
+                            "--format",
+                            "{{.Id}}",
+                            encoder_image,
+                        ],
+                        text=True,
                     ).strip(),
-                    *(["--env", f"A11Y_IMPORT_SOURCE_URL={os.environ['A11Y_IMPORT_SOURCE_URL']}"]
-                      if os.environ.get("A11Y_IMPORT_SOURCE_URL") else []),
-                    *(["--env", f"A11Y_SOURCE_SYNC_URL={os.environ['A11Y_SOURCE_SYNC_URL']}"]
-                      if os.environ.get("A11Y_SOURCE_SYNC_URL") else []),
+                    *(
+                        [
+                            "--env",
+                            f"A11Y_IMPORT_SOURCE_URL={os.environ['A11Y_IMPORT_SOURCE_URL']}",
+                        ]
+                        if os.environ.get("A11Y_IMPORT_SOURCE_URL")
+                        else []
+                    ),
+                    *(
+                        [
+                            "--env",
+                            f"A11Y_SOURCE_SYNC_URL={os.environ['A11Y_SOURCE_SYNC_URL']}",
+                        ]
+                        if os.environ.get("A11Y_SOURCE_SYNC_URL")
+                        else []
+                    ),
                     "--volume",
                     f"{video_fixture}:/tmp/native-video.mp4:ro",
                     "--volume",
@@ -475,6 +657,8 @@ def main():
                     "--workdir",
                     str(ROOT),
                     encoder_image,
+                    "bash",
+                    str(ROOT / "scripts/accessibility-container.sh"),
                     "npm",
                     "--prefix",
                     "accessibility",
@@ -498,7 +682,7 @@ def main():
             if log_handle:
                 log_handle.close()
             subprocess.run(
-                ["docker", "rm", "--force", proxy_name],
+                ["docker", "rm", "--force", "--volumes", proxy_name],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,

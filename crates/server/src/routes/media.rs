@@ -567,6 +567,9 @@ pub async fn serve(
     }
     // Content is immutable: the file name embeds a unique id.
     let content_type = crate::media_processing::content_type_for(&file_name);
+    if file_name.contains(".draft.progressive") {
+        return serve_progressive(&state, &file_name, &headers).await;
+    }
     stream_stored_file(
         &state,
         &file_name,
@@ -575,6 +578,70 @@ pub async fn serve(
         &headers,
     )
     .await
+}
+
+async fn serve_progressive(
+    state: &AppState,
+    file: &str,
+    headers: &HeaderMap,
+) -> Result<Response, ApiError> {
+    let data = sqlx::query_as::<_, plamenu_db::native_video_hls::Progressive>("SELECT p.* FROM native_video_progressive_files p JOIN native_video_hls_renditions r ON r.media_id=p.media_id AND r.height=p.height AND r.generation=p.generation JOIN video_drafts d ON d.media_id=r.media_id AND d.generation=r.generation AND d.state='ready' JOIN video_draft_outputs o ON o.file_name=p.file_name AND o.media_id=r.media_id AND o.generation=r.generation AND NOT o.retired WHERE p.file_name=$1")
+        .bind(file).fetch_optional(&state.pool).await.map_err(plamenu_db::DbError::from)?;
+    let p = data
+        .filter(plamenu_db::native_video_hls::Progressive::valid)
+        .ok_or(ApiError::NotFound)?;
+    let opened = state
+        .media
+        .open(file)
+        .await
+        .map_err(|_| ApiError::NotFound)?;
+    if i64::try_from(opened.len).ok() != Some(p.size_bytes) {
+        return Err(ApiError::NotFound);
+    }
+    drop(opened);
+    let etag = format!("\"{}\"", p.sha256);
+    if headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|h| h.to_str().ok())
+        .is_some_and(|v| {
+            v.split(',').any(|tag| {
+                tag.trim() == etag
+                    || tag.trim() == "*"
+                    || tag.trim().strip_prefix("W/") == Some(etag.as_str())
+            })
+        })
+    {
+        return Ok((
+            StatusCode::NOT_MODIFIED,
+            [
+                (header::ETAG, etag),
+                (
+                    header::CACHE_CONTROL,
+                    "public, max-age=31536000, immutable".into(),
+                ),
+            ],
+        )
+            .into_response());
+    }
+    let mut request = headers.clone();
+    if request
+        .get(header::IF_RANGE)
+        .is_some_and(|h| h.to_str().ok() != Some(etag.as_str()))
+    {
+        request.remove(header::RANGE);
+    }
+    let mut response = stream_stored_file(
+        state,
+        file,
+        "video/mp4",
+        "public, max-age=31536000, immutable",
+        &request,
+    )
+    .await?;
+    response
+        .headers_mut()
+        .insert(header::ETAG, etag.parse().map_err(|_| ApiError::NotFound)?);
+    Ok(response)
 }
 
 /// Explicit native MP4 download offer; anonymous audience checks still apply.

@@ -370,6 +370,8 @@ pub async fn group_attributions_of<'e, E: sqlx::PgExecutor<'e>>(
         JOIN accounts a ON a.id = b.account_id
         WHERE b.reblog_of_id = ANY($1) AND a.actor_type = 'Group'
           AND NOT EXISTS (SELECT 1 FROM video_channels vc WHERE vc.account_id = a.id)
+          AND NOT EXISTS (SELECT 1 FROM remote_video_channels rv
+                          WHERE rv.channel_id=a.id AND rv.status_id=b.reblog_of_id)
         ORDER BY 1, 2
         ",
     )
@@ -411,6 +413,8 @@ pub async fn community_attributions_of<'e, E: sqlx::PgExecutor<'e>>(
             JOIN accounts a ON a.id = b.account_id
             WHERE b.reblog_of_id = ANY($1) AND a.actor_type = 'Group'
               AND NOT EXISTS (SELECT 1 FROM video_channels vc WHERE vc.account_id = a.id)
+              AND NOT EXISTS (SELECT 1 FROM remote_video_channels rv
+                              WHERE rv.channel_id=a.id AND rv.status_id=b.reblog_of_id)
         ) attributions
         ORDER BY status_id, mentioned DESC, account_id
         "#,
@@ -461,6 +465,8 @@ pub async fn boosting_group_ids<'e, E: sqlx::PgExecutor<'e>>(
         JOIN accounts a ON a.id = b.account_id
         WHERE b.reblog_of_id = $1 AND a.actor_type = 'Group'
           AND NOT EXISTS (SELECT 1 FROM video_channels vc WHERE vc.account_id = a.id)
+          AND NOT EXISTS (SELECT 1 FROM remote_video_channels rv
+                          WHERE rv.channel_id=a.id AND rv.status_id=b.reblog_of_id)
         "#,
         status_id,
     )

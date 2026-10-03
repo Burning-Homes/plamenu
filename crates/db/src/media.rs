@@ -158,7 +158,11 @@ pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool,
             SELECT m.id, m.account_id, m.status_id FROM media_attachments m
             JOIN video_drafts d ON d.media_id = m.id AND d.state = 'ready'
             JOIN native_video_hls_renditions r ON r.media_id = m.id AND r.generation = d.generation
-            WHERE r.file_name = $1
+            WHERE r.file_name = $1 OR EXISTS(
+                SELECT 1 FROM native_video_progressive_files p
+                JOIN video_draft_outputs o ON o.file_name=p.file_name AND o.media_id=p.media_id
+                  AND o.generation=p.generation AND NOT o.retired
+                WHERE p.file_name=$1 AND p.media_id=r.media_id AND p.height=r.height AND p.generation=r.generation)
             UNION
             SELECT m.id, m.account_id, m.status_id FROM media_attachments m
             JOIN video_drafts d ON d.media_id = m.id AND d.state = 'ready'

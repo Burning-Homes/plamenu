@@ -172,7 +172,7 @@ async function journey(page,noScript){
   expect(connections.filter(url=>/\/tracker\/socket|p2p-media-loader/.test(url))).toEqual([]);
   // A fresh browser storage partition, and a read-only embed, both inherit
   // account opt-out from the ordinary non-JS form. No identity/CSRF is framed.
-  const fresh=await page.context().browser().newContext({ignoreHTTPSErrors:true,
+  const fresh=await page.context().browser().newContext({ignoreHTTPSErrors:false,
     javaScriptEnabled:!noScript,viewport:{width:320,height:800},
     extraHTTPHeaders:process.env.A11Y_CANONICAL_ORIGIN?{Origin:process.env.A11Y_CANONICAL_ORIGIN}:undefined});
   await fresh.addCookies(await page.context().cookies());

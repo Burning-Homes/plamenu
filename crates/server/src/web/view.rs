@@ -874,6 +874,14 @@ impl<'a> Status<'a> {
             .map_or(Vec::new(), |items| items.iter().map(Account).collect())
     }
 
+    /// Verified publication channels, independently of the content author.
+    pub fn channel_attribution(&self) -> Vec<Account<'a>> {
+        self.0
+            .get("video_channels")
+            .and_then(Value::as_array)
+            .map_or(Vec::new(), |items| items.iter().map(Account).collect())
+    }
+
     /// The viewer's `filtered` results (`FilterResult` entities) — empty for
     /// anonymous viewers and unmatched statuses alike.
     fn filtered(&self) -> &'a [Value] {
@@ -1640,7 +1648,7 @@ fn status_article(status: &Status, ctx: &Ctx, detail: bool, interactions: bool) 
                 }] {
                 // A Group's announce isn't a boost to the reader — it's the
                 // post reaching the community's followers.
-                @if status.account().video_channel() {
+                @if status.account().video_channel() && inner.channel_attribution().iter().any(|channel| channel.id() == status.account().id()) {
                     p.status__boost {
                         (icon("video"))
                         (ctx.locale.text("status-published-on")) " "
@@ -1661,6 +1669,7 @@ fn status_article(status: &Status, ctx: &Ctx, detail: bool, interactions: bool) 
                 } @else {
                     (booster_line(boosters, false, ctx.locale))
                 }
+                (group_attribution_banner(&inner, ctx.locale, Some(status.account().id())))
                 (status_main(&inner, ctx, detail, &verdict, interactions))
             }
         }
@@ -1676,7 +1685,7 @@ fn status_article(status: &Status, ctx: &Ctx, detail: bool, interactions: bool) 
                 @if !boosters.is_empty() {
                     (booster_line(boosters, status.also_boosted(), ctx.locale))
                 }
-                (group_attribution_banner(status, ctx.locale))
+                (group_attribution_banner(status, ctx.locale, None))
                 (tag_source_banner(status, ctx.locale))
                 (status_main(status, ctx, detail, &verdict, interactions))
             }
@@ -1767,17 +1776,24 @@ fn booster_domains_attr(boosters: &[Value]) -> Option<String> {
     (!out.is_empty()).then_some(out)
 }
 
-/// The "posted in [group]" banner on a bare group post. A Group Announce
-/// wrapper renders the equivalent line in [`status_article`] and never reaches
-/// this branch; every other surface reads the status entity's `groups`
-/// extension, so profile/public/search/thread cards cannot lose the context.
-fn group_attribution_banner(status: &Status, locale: Locale) -> Markup {
+/// Publication context from the shared status entity. A wrapper's own context
+/// line is omitted here to avoid duplication; other channels/communities still
+/// accompany the author's post, including through an ordinary person's boost.
+fn group_attribution_banner(status: &Status, locale: Locale, wrapper: Option<&str>) -> Markup {
     let groups = status.group_attribution();
-    if groups.is_empty() {
+    let channels = status.channel_attribution();
+    if groups.is_empty() && channels.is_empty() {
         return html! {};
     }
     html! {
-        @for group in &groups {
+        @for channel in channels.iter().filter(|channel| Some(channel.id()) != wrapper) {
+            p.status__boost {
+                (icon("video"))
+                (locale.text("status-published-on")) " "
+                a href=(channel.profile_path()) { (channel.name_markup()) }
+            }
+        }
+        @for group in groups.iter().filter(|group| Some(group.id()) != wrapper) {
             p.status__boost {
                 (icon("group"))
                 (locale.text("status-posted-in")) " "
@@ -2895,8 +2911,10 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>, owner: Optio
                             _ => figure.media.media--video data-p2p=[p2p.map(|_| "true")]
                                 data-chapters=[has_chapters.then_some("true")] {
                                 @if let Some(master) = hls_master {
-                                    video src=(url) poster=(preview) controls playsinline preload="none"
+                                    @let original = item.get("progressive").and_then(|p| p.get("original_url")).and_then(Value::as_str);
+                                    video src=[original.is_none().then_some(url)] poster=(preview) controls playsinline preload="none"
                                         data-hls=(master) data-src=(url)
+                                        data-original=[original]
                                         data-vod-fallback=(ctx.locale.text("status-vod-fallback"))
                                         data-vod-basic=(ctx.locale.text("status-vod-basic"))
                                         data-p2p-uuid=[p2p.and_then(|p| p.get("video_uuid")).and_then(Value::as_str)]
@@ -2911,6 +2929,10 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>, owner: Optio
                                         width=[width] height=[height]
                                         lang=[language]
                                         title=[Some(alt).filter(|a| !a.is_empty())] {
+                                        @if let Some(original) = original {
+                                            source src=(url) type="video/mp4";
+                                            source src=(original) type="video/mp4";
+                                        }
                                         @if let Some(tracks) = caption_tracks {
                                             @for (index, track) in tracks.iter().enumerate() {
                                                 @if let (Some(url), Some(lang)) = (track.get("url").and_then(Value::as_str), track.get("language").and_then(Value::as_str)) {
@@ -2923,6 +2945,10 @@ fn media_markup(media: &[Value], ctx: &Ctx, language: Option<&str>, owner: Optio
                                                 srclang=(language.unwrap_or("und"))
                                                 label=(ctx.locale.text("status-captions")) default;
                                         }
+                                    }
+                                    @if original.is_some() {
+                                        p { a href=(url) { (ctx.locale.text("status-vod-basic")) " (MP4, "
+                                            (item["progressive"]["height"].as_i64().unwrap_or(0)) "p)" } }
                                     }
                                 } @else {
                                     video src=(url) poster=(preview) controls playsinline preload="none"
@@ -3438,8 +3464,24 @@ fn media_seek_previews(item: &Value, video_url: &str, locale: Locale) -> Markup 
     {
         return html! {};
     }
+    let controls = item["meta"]["original"]["duration"]
+        .as_f64()
+        .filter(|duration| duration.is_finite() && *duration > 0.0 && *duration <= 604_800.0)
+        .filter(|_| item.get("live").is_none())
+        .map(|duration| serde_json::json!({
+            "url": url, "columns": columns, "rows": rows, "count": count,
+            "interval": interval, "duration": duration,
+            "labels": {
+                "play": locale.text("video-player-play"), "pause": locale.text("video-player-pause"),
+                "seek": locale.text("video-player-seek"), "mute": locale.text("video-player-mute"),
+                "unmute": locale.text("video-player-unmute"), "volume": locale.text("video-player-volume"),
+                "captions": locale.text("status-captions"), "off": locale.text("video-player-off"),
+                "fullscreen": locale.text("video-player-fullscreen"), "settings": locale.text("video-player-settings"),
+                "speed": locale.text("video-player-speed"), "pip": locale.text("video-player-pip"),
+            }
+        }).to_string());
     html! {
-        details.media__transcript.media__chapters.media__seek-previews {
+        details.media__transcript.media__chapters.media__seek-previews data-vod-controls=[controls] {
             summary { (locale.text("videos-seek-previews")) }
             p { (locale.text("videos-seek-previews-hint")) }
             ol.media__seek-grid {
@@ -6326,6 +6368,30 @@ mod tests {
             "columns":10,"rows":2,"tile_count":12,"interval_seconds":5}});
         let markup =
             media_seek_previews(&value, "/media/7.draft.mp4", Locale::default()).into_string();
+        assert!(
+            !markup.contains("data-vod-controls="),
+            "Unknown duration keeps native controls"
+        );
+        value["meta"]["original"]["duration"] = json!(60.5);
+        let enhanced =
+            media_seek_previews(&value, "/media/7.draft.mp4", Locale::default()).into_string();
+        assert!(enhanced.contains("data-vod-controls="));
+        for duration in [0.0, -1.0, 604_801.0] {
+            value["meta"]["original"]["duration"] = json!(duration);
+            assert!(
+                !media_seek_previews(&value, "/media/7.draft.mp4", Locale::default())
+                    .into_string()
+                    .contains("data-vod-controls=")
+            );
+        }
+        value["meta"]["original"]["duration"] = json!(60.5);
+        value["live"] = json!({"state":"live"});
+        assert!(
+            !media_seek_previews(&value, "/media/7.draft.mp4", Locale::default())
+                .into_string()
+                .contains("data-vod-controls=")
+        );
+        value.as_object_mut().unwrap().remove("live");
         assert_eq!(markup.matches("data-chapter-seek=").count(), 12);
         assert!(markup.contains("/media/7.draft.mp4#t=55"));
         assert!(markup.contains("--sprite-x:-160px;--sprite-y:-90px"));
@@ -6369,6 +6435,30 @@ mod tests {
             "JS can still upgrade the same element to HLS: {rendered}"
         );
         assert!(!rendered.contains("<noscript>"), "{rendered}");
+    }
+
+    #[test]
+    fn progressive_html_preserves_source_candidates_quality_and_original_fallback() {
+        let value = json!({"media_attachments":[{"type":"video","url":"/media/7.draft.progressive720.mp4","preview_url":"/media/poster.jpg","progressive":{"original_url":"/media/7.draft.mp4","height":720},"hls":{"master":"/media/hls/7/master.m3u8"}}]});
+        let rendered = media_gallery(&Status(&value), &view_ctx(None, None)).into_string();
+        assert!(
+            rendered
+                .contains(r#"<source src="/media/7.draft.progressive720.mp4" type="video/mp4">"#)
+        );
+        assert!(rendered.contains(r#"<source src="/media/7.draft.mp4" type="video/mp4">"#));
+        assert!(rendered.contains(r#"data-original="/media/7.draft.mp4""#));
+        assert!(rendered.contains("(MP4, 720p)"));
+        assert!(
+            !rendered.contains(r#"<video src=""#),
+            "source candidates allow a missing derivative to fall back without JavaScript"
+        );
+        if let Ok(out) = std::env::var("PLAMENU_PROGRESSIVE_FIXTURE_DIR") {
+            std::fs::write(
+                std::path::Path::new(&out).join("production-gallery.html"),
+                rendered,
+            )
+            .unwrap();
+        }
     }
 
     #[test]

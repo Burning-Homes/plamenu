@@ -113,7 +113,7 @@ test('representative signed-in pages pass WCAG A/AA automated rules', async ({ p
 test('Russian, dark theme, reduced motion, and forced colours remain operable', async ({ browser }) => {
   const context = await browser.newContext({
     baseURL: process.env.A11Y_BASE_URL || 'https://plamenu.local',
-    ignoreHTTPSErrors: true,
+    ignoreHTTPSErrors: false,
     locale: 'ru-RU',
     colorScheme: 'dark',
     reducedMotion: 'reduce',

@@ -8,7 +8,6 @@ use std::collections::BTreeMap;
 
 use axum::body::Bytes;
 use axum::extract::{Multipart, Path, Query, State};
-use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use fluent_bundle::FluentArgs;
 use maud::{Markup, html};
@@ -30,7 +29,6 @@ use crate::error::ApiError;
 use crate::groups::{
     CreateFailure, CreateGroupParams, CreateInvalid, GroupProfileEdit, create_group, may_create,
 };
-use crate::media_processing::MAX_UPLOAD_BYTES;
 use crate::state::AppState;
 
 /// Directory page size, offset-paged via the shared "Show more" link.
@@ -793,50 +791,22 @@ struct SettingsForm {
 /// Reads the multipart settings form. Uploads are held in memory like the
 /// profile editor's, under the same per-file cap.
 async fn read_settings_form(multipart: &mut Multipart) -> Result<SettingsForm, Response> {
-    let mut form = SettingsForm::default();
-    loop {
-        let field = match multipart.next_field().await {
-            Ok(Some(field)) => field,
-            Ok(None) => break,
-            Err(e) => {
-                return Err((StatusCode::BAD_REQUEST, format!("invalid form: {e}")).into_response());
+    let uploaded = super::profile_media::read(multipart).await?;
+    let mut form = SettingsForm {
+        avatar: uploaded.avatar,
+        header: uploaded.header,
+        ..Default::default()
+    };
+    for (name, text) in uploaded.pairs {
+        if let Some((index, part)) = parse_field_key(&name) {
+            let entry = form.fields.entry(index).or_default();
+            if part == "name" {
+                entry.0 = text;
+            } else {
+                entry.1 = text;
             }
-        };
-        let name = field.name().unwrap_or_default().to_owned();
-        match name.as_str() {
-            "avatar" | "header" => {
-                let bytes = match field.bytes().await {
-                    Ok(bytes) => bytes,
-                    Err(e) => {
-                        return Err((StatusCode::BAD_REQUEST, format!("upload failed: {e}"))
-                            .into_response());
-                    }
-                };
-                if bytes.len() > MAX_UPLOAD_BYTES {
-                    return Err((StatusCode::PAYLOAD_TOO_LARGE, "file too large").into_response());
-                }
-                // An empty file part is "no new image", not "clear it".
-                if !bytes.is_empty() {
-                    if name == "avatar" {
-                        form.avatar = Some(bytes.to_vec());
-                    } else {
-                        form.header = Some(bytes.to_vec());
-                    }
-                }
-            }
-            _ => {
-                let text = field.text().await.unwrap_or_default();
-                if let Some((index, part)) = parse_field_key(&name) {
-                    let entry = form.fields.entry(index).or_default();
-                    if part == "name" {
-                        entry.0 = text;
-                    } else {
-                        entry.1 = text;
-                    }
-                } else {
-                    form.pairs.push((name, text));
-                }
-            }
+        } else {
+            form.pairs.push((name, text));
         }
     }
     Ok(form)

@@ -481,6 +481,10 @@ pub async fn reserve_outputs_with_hls(
                     && key
                         .strip_prefix(&format!("{stem}.draft.hls"))
                         .and_then(|tail| tail.strip_suffix(".m4s"))
+                        .or_else(|| {
+                            key.strip_prefix(&format!("{stem}.draft.progressive"))
+                                .and_then(|tail| tail.strip_suffix(".mp4"))
+                        })
                         .is_none_or(|height| {
                             height.is_empty()
                                 || height.starts_with('0')

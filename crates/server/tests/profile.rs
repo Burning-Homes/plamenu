@@ -1505,3 +1505,164 @@ async fn identity_proofs_concurrent_publications_respect_cap(pool: PgPool) {
     assert_eq!(replaced.len(), 10);
     assert!(replaced.contains(&existing));
 }
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn profile_updates_preserve_legacy_and_immutable_actor_identifiers(pool: PgPool) {
+    let viewer = RemoteUser::new("remote.test", "viewer");
+    let state = test_state_with(
+        pool.clone(),
+        StubFederation::with_actors([viewer.actor.clone()]),
+    );
+    let viewer = remote::store_remote_actor(&pool, &viewer.actor)
+        .await
+        .unwrap();
+    for (name, immutable) in [("legacy", false), ("numeric", true)] {
+        let mut person = if immutable {
+            common::create_immutable_local_account(&pool, name, "Person").await
+        } else {
+            create_local_account(&pool, name, "Person").await
+        };
+        let established = plamenu::key_store::account_signing_key(&state, person.id, "rsa")
+            .await
+            .unwrap()
+            .record;
+        let canonical = plamenu::entities::account_uri(&state.config.domain, &person);
+        if immutable {
+            assert!(
+                account::rename_local(&pool, person.id, "numeric_renamed")
+                    .await
+                    .unwrap()
+            );
+            person = account::find_by_id(&pool, person.id)
+                .await
+                .unwrap()
+                .unwrap();
+        } else {
+            assert!(
+                account::rename_local(&pool, person.id, "legacy_renamed")
+                    .await
+                    .is_err()
+            );
+        }
+        assert_eq!(
+            plamenu::entities::account_uri(&state.config.domain, &person),
+            canonical
+        );
+        follow::create(&pool, viewer.id, person.id, None)
+            .await
+            .unwrap();
+        let expected = plamenu::entities::account_uri(&state.config.domain, &person);
+        update_profile(
+            &state,
+            &person,
+            ProfileChanges {
+                display_name: Some("New name".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let activity: Value = sqlx::query_scalar(
+            "SELECT activity FROM delivery_jobs WHERE account_id=$1 ORDER BY id DESC LIMIT 1",
+        )
+        .bind(person.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(activity["actor"], expected);
+        assert_eq!(activity["object"]["id"], expected);
+        assert_eq!(activity["object"]["publicKey"]["owner"], expected);
+        assert_eq!(activity["object"]["publicKey"]["id"], established.key_uri);
+        let current_key = plamenu::key_store::account_signing_key(&state, person.id, "rsa")
+            .await
+            .unwrap()
+            .record;
+        assert_eq!(current_key.key_uri, established.key_uri);
+        assert_eq!(current_key.controller_uri, expected);
+        assert!(
+            activity["object"]["publicKey"]["id"]
+                .as_str()
+                .unwrap()
+                .starts_with(&format!("{expected}#"))
+        );
+        assert!(
+            activity["id"]
+                .as_str()
+                .unwrap()
+                .starts_with(&format!("{expected}#updates/"))
+        );
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn renamed_community_updates_keep_the_established_actor_and_signing_key(pool: PgPool) {
+    use plamenu_db::group::{MembershipPolicy, PostingPolicy};
+    let owner = create_local_account(&pool, "owner", "Owner").await;
+    let viewer = RemoteUser::new("remote.test", "viewer");
+    let state = test_state_with(
+        pool.clone(),
+        StubFederation::with_actors([viewer.actor.clone()]),
+    );
+    let viewer = remote::store_remote_actor(&pool, &viewer.actor)
+        .await
+        .unwrap();
+    let (community, _) = plamenu::groups::create_group(
+        &state,
+        plamenu::groups::CreateGroupParams {
+            name: "hiking",
+            display_name: "Hiking",
+            membership_policy: MembershipPolicy::Open,
+            posting_policy: PostingPolicy::Members,
+            created_by: owner.id,
+            enforce_username_blocklist: true,
+            enforce_account_quota: true,
+        },
+    )
+    .await
+    .unwrap();
+    follow::create(&pool, viewer.id, community.id, None)
+        .await
+        .unwrap();
+    let before = plamenu::key_store::account_signing_key(&state, community.id, "rsa")
+        .await
+        .unwrap()
+        .record;
+    assert!(
+        account::rename_local(&pool, community.id, "trails")
+            .await
+            .unwrap()
+    );
+    let current = account::find_by_id(&pool, community.id)
+        .await
+        .unwrap()
+        .unwrap();
+    plamenu::groups::update_settings(
+        &state,
+        &current,
+        plamenu::groups::GroupSettings {
+            display_name: "Trails",
+            note_html: "",
+            note_source: "",
+            policy: MembershipPolicy::Open,
+            sensitive: false,
+            posting_policy: PostingPolicy::Members,
+            discoverable: true,
+            profile: plamenu::groups::GroupProfileEdit::default(),
+        },
+    )
+    .await
+    .unwrap();
+    let activity:Value=sqlx::query_scalar("SELECT activity FROM delivery_jobs WHERE account_id=$1 AND activity->>'type'='Update' ORDER BY id DESC LIMIT 1").bind(community.id).fetch_one(&pool).await.unwrap();
+    let expected = community.uri.as_deref().unwrap();
+    assert_eq!(activity["actor"], expected);
+    assert_eq!(activity["object"]["id"], expected);
+    assert_eq!(activity["object"]["preferredUsername"], "trails");
+    assert_eq!(activity["object"]["publicKey"]["owner"], expected);
+    assert_eq!(activity["object"]["publicKey"]["id"], before.key_uri);
+    let after = plamenu::key_store::account_signing_key(&state, community.id, "rsa")
+        .await
+        .unwrap()
+        .record;
+    assert_eq!(after.key_uri, before.key_uri);
+    assert_eq!(after.controller_uri, expected);
+}

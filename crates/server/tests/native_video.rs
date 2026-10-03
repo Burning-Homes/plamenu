@@ -370,21 +370,14 @@ async fn native_hls_packages_copy_top_and_bounded_lower_rendition() {
     );
     let mut config = common::test_config();
     config.media_dir = dir.path().join("media");
-    let processed = plamenu::media_transcode::process_av_file(
-        &config,
-        &input,
-        &plamenu::media_transcode::TranscodeParams::default(),
-    )
-    .await
-    .unwrap();
-    let renditions = plamenu::media_transcode::package_native_hls(
-        &config,
-        &processed,
-        "A123",
-        &plamenu::media_transcode::TranscodeParams::default(),
-    )
-    .await
-    .unwrap();
+    let params = plamenu::media_transcode::TranscodeParams::default();
+    let processed = plamenu::media_transcode::process_av_file(&config, &input, &params)
+        .await
+        .unwrap();
+    let renditions =
+        plamenu::media_transcode::package_native_hls(&config, &processed, "A123", &params)
+            .await
+            .unwrap();
     assert_eq!(renditions.len(), 5);
     assert_eq!(
         renditions.iter().map(|r| r.height).collect::<Vec<_>>(),
@@ -432,11 +425,217 @@ async fn native_hls_packages_copy_top_and_bounded_lower_rendition() {
         assert_eq!(meta.video_codec.as_deref(), Some("h264"));
         assert_eq!(meta.audio_codec.as_deref(), Some("aac"));
     }
+    assert_progressive_rung(&renditions, 9.0, &processed.file_path);
     assert_eq!(
         video_packets(&processed.file_path),
         video_packets(&renditions[0].file_path),
         "top quality must remux identical compressed video packets, not encode again"
     );
+}
+
+fn assert_progressive_rung(
+    renditions: &[plamenu::media_transcode::PackagedHls],
+    duration: f64,
+    original: &std::path::Path,
+) {
+    let selected: Vec<_> = renditions
+        .iter()
+        .filter_map(|r| r.progressive.as_ref().map(|p| (r, p)))
+        .collect();
+    assert_eq!(selected.len(), 1);
+    let (rung, progressive) = selected[0];
+    assert_eq!(progressive.metadata.height, 720);
+    assert!(progressive.metadata.valid());
+    assert_eq!(
+        video_packets(&progressive.file_path),
+        video_packets(&rung.file_path),
+        "HLS reuses the selected encoding without another lossy pass"
+    );
+    assert_progressive_timing(&progressive.file_path, duration, true);
+    // The rejected post-HLS recipe loses encoder priming: production MP4 must
+    // retain the skip instruction rather than adding one AAC frame of silence.
+    let ordinary_pcm = decoded_pcm(&progressive.file_path);
+    let fragmented_pcm = decoded_pcm(&rung.file_path);
+    assert!(fragmented_pcm.len() > ordinary_pcm.len());
+    assert_eq!(
+        &fragmented_pcm[1024 * 2..1024 * 2 + ordinary_pcm.len()],
+        ordinary_pcm
+    );
+    if let Ok(destination) = std::env::var("PLAMENU_PROGRESSIVE_FIXTURE_DIR") {
+        let out = std::path::Path::new(&destination);
+        std::fs::create_dir_all(out).unwrap();
+        std::fs::copy(
+            &progressive.file_path,
+            out.join("production-progressive.mp4"),
+        )
+        .unwrap();
+        std::fs::copy(&rung.file_path, out.join("production-fragmented.m4s")).unwrap();
+        std::fs::copy(original, out.join("production-original.mp4")).unwrap();
+        std::fs::write(out.join("production-rung.m3u8"), &rung.playlist).unwrap();
+        std::fs::write(
+            out.join("production-progressive.json"),
+            serde_json::to_vec_pretty(&progressive.metadata).unwrap(),
+        )
+        .unwrap();
+    }
+}
+
+fn packet_json(path: &std::path::Path, stream: &str) -> serde_json::Value {
+    let output = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            stream,
+            "-show_packets",
+            "-show_streams",
+            "-of",
+            "json",
+        ])
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+fn decoded_pcm(path: &std::path::Path) -> Vec<u8> {
+    let output = std::process::Command::new("ffmpeg")
+        .args(["-nostdin", "-v", "error", "-i"])
+        .arg(path)
+        .args([
+            "-map",
+            "0:a:0",
+            "-c:a",
+            "pcm_s16le",
+            "-f",
+            "s16le",
+            "pipe:1",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    output.stdout
+}
+fn assert_progressive_timing(path: &std::path::Path, duration: f64, audio: bool) {
+    let bytes = std::fs::read(path).unwrap();
+    let moov = bytes.windows(4).position(|v| v == b"moov").unwrap();
+    let mdat = bytes.windows(4).position(|v| v == b"mdat").unwrap();
+    assert!(moov < mdat, "metadata precedes payload");
+    let video = packet_json(path, "v:0");
+    let packets = video["packets"].as_array().unwrap();
+    let pts: Vec<f64> = packets
+        .iter()
+        .map(|p| p["pts_time"].as_str().unwrap().parse().unwrap())
+        .collect();
+    assert!(
+        pts.iter().copied().fold(f64::INFINITY, f64::min).abs() < 0.001,
+        "video begins at zero"
+    );
+    assert!(
+        (video["streams"][0]["duration"]
+            .as_str()
+            .unwrap()
+            .parse::<f64>()
+            .unwrap()
+            - duration)
+            .abs()
+            < 0.1
+    );
+    if audio {
+        let audio = packet_json(path, "a:0");
+        assert_eq!(
+            audio["packets"][0]["side_data_list"][0]["skip_samples"],
+            1024
+        );
+        let first: f64 = audio["packets"][0]["pts_time"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(
+            (first + 1024.0 / 48000.0).abs() < 0.00001,
+            "priming ends at the first visible video frame"
+        );
+        let stream = &audio["streams"][0];
+        assert_eq!(stream["start_time"], "0.000000");
+        assert!(
+            (stream["duration"].as_str().unwrap().parse::<f64>().unwrap() - duration).abs() < 0.03
+        );
+        assert!(
+            (f64::from(u32::try_from(decoded_pcm(path).len()).unwrap()) / 2.0 / 48000.0 - duration)
+                .abs()
+                < 0.03
+        );
+    } else {
+        assert!(
+            packet_json(path, "a:0")["streams"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
+
+#[tokio::test]
+async fn progressive_preserves_silent_and_nonzero_source_timelines() {
+    for audio in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("source.mp4");
+        let mut command = std::process::Command::new("ffmpeg");
+        command.args([
+            "-nostdin",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=1440x800:rate=10",
+        ]);
+        if audio {
+            command.args(["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000"]);
+        }
+        command
+            .args([
+                "-t",
+                "2",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-bf",
+                "2",
+                "-c:a",
+                "aac",
+                "-output_ts_offset",
+                "5",
+                "-y",
+            ])
+            .arg(&input);
+        assert!(command.status().unwrap().success());
+        let source = packet_json(&input, "v:0");
+        assert!(
+            source["streams"][0]["start_time"]
+                .as_str()
+                .unwrap()
+                .parse::<f64>()
+                .unwrap()
+                >= 5.0
+        );
+        let mut config = common::test_config();
+        config.media_dir = dir.path().join("media");
+        let params = plamenu::media_transcode::TranscodeParams::default();
+        let processed = plamenu::media_transcode::process_av_file(&config, &input, &params)
+            .await
+            .unwrap();
+        let rungs =
+            plamenu::media_transcode::package_native_hls(&config, &processed, "B123", &params)
+                .await
+                .unwrap();
+        let progressive = rungs.iter().find_map(|r| r.progressive.as_ref()).unwrap();
+        assert_eq!(progressive.metadata.height, 720);
+        assert_eq!(progressive.metadata.audio_codec.is_some(), audio);
+        assert_progressive_timing(&progressive.file_path, 2.0, audio);
+    }
 }
 
 fn video_packets(path: &std::path::Path) -> Vec<u8> {

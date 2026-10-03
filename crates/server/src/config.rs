@@ -447,9 +447,9 @@ impl NativeVideoConfig {
     #[must_use]
     pub fn processing_budget(self) -> u64 {
         let file = self.max_upload_bytes();
-        // Compatibility MP4 plus at most six single-file HLS renditions;
+        // Original and optional progressive MP4 plus at most six HLS renditions;
         // count each scratch output and a possible cross-filesystem copy.
-        file + 2 * (1 + crate::media_transcode::NATIVE_HLS_MAX_RENDITIONS) * file
+        file + 2 * (2 + crate::media_transcode::NATIVE_HLS_MAX_RENDITIONS) * file
             + 3 * crate::media_transcode::POSTER_FILE_LIMIT_BYTES
             + 2 * crate::media_transcode::STORYBOARD_FILE_LIMIT_BYTES
     }

@@ -871,6 +871,7 @@ pub(crate) async fn preview_media_json(
         chapters,
         metadata: video_metadata,
         distribution,
+        progressives,
         ..
     } = media_extensions(pool, &selected_ids, &poster_ids, &[]).await?;
     Ok(media
@@ -894,6 +895,7 @@ pub(crate) async fn preview_media_json(
                 value["video_metadata"] = crate::video_metadata::entity(metadata);
             }
             attach_video_distribution(&mut value, item, distribution.get(&item.id), domain);
+            attach_progressive(&mut value, item, progressives.get(&item.id), domain);
             value
         })
         .collect())
@@ -914,6 +916,7 @@ struct MediaExtensions {
     native_peers: HashMap<i64, (String, i64)>,
     distribution: HashMap<i64, plamenu_db::video_distribution::Offer>,
     native_revisions: HashMap<i64, i64>,
+    progressives: HashMap<i64, plamenu_db::native_video_hls::Progressive>,
 }
 
 impl MediaExtensions {
@@ -958,6 +961,14 @@ impl MediaExtensions {
             "native-revision" => {
                 self.native_revisions
                     .insert(id, media_extension_value(data)?);
+            }
+            "progressive" => {
+                if let Ok(p) =
+                    serde_json::from_value::<plamenu_db::native_video_hls::Progressive>(data)
+                    && p.valid()
+                {
+                    self.progressives.insert(id, p);
+                }
             }
             _ => unreachable!("fixed media extension query returned an unknown branch"),
         }
@@ -1013,6 +1024,14 @@ async fn media_extensions(
          SELECT 'storyboard', b.media_id, to_jsonb(b) FROM video_storyboards b
          JOIN video_drafts d ON d.media_id=b.media_id AND d.generation=b.generation AND d.state='ready'
          WHERE b.media_id=ANY($1)
+         UNION ALL
+         SELECT 'progressive',r.media_id,to_jsonb(p) - ARRAY['media_id','generation'] FROM native_video_hls_renditions r
+         JOIN native_video_progressive_files p ON p.media_id=r.media_id AND p.height=r.height AND p.generation=r.generation
+         JOIN video_drafts d ON d.media_id=r.media_id AND d.generation=r.generation AND d.state='ready'
+         JOIN media_attachments m ON m.id=r.media_id AND m.processing='complete'
+         JOIN video_draft_outputs o ON o.file_name=p.file_name AND o.media_id=r.media_id AND o.generation=r.generation AND NOT o.retired
+         WHERE r.media_id=ANY($1)
+           AND NOT EXISTS (SELECT 1 FROM media_cleanup_jobs c WHERE c.file_name=p.file_name)
          UNION ALL
          SELECT 'chapter', media_id, to_jsonb(c) FROM video_chapters c WHERE media_id=ANY($1)
          UNION ALL
@@ -1072,6 +1091,28 @@ fn attach_video_distribution(
             "embed_url":offer.embed_enabled.then(||format!("https://{domain}/web/statuses/{}/embed",offer.status_id))
         });
     }
+}
+
+fn attach_progressive(
+    value: &mut Value,
+    file: &media::Media,
+    progressive: Option<&plamenu_db::native_video_hls::Progressive>,
+    domain: &str,
+) {
+    let Some(p) = progressive.filter(|p| p.valid()) else {
+        return;
+    };
+    if file.remote_url.is_some() || file.live_state.is_some() || file.not_processed() {
+        return;
+    }
+    let original = value["url"].clone();
+    value["url"] = json!(format!("https://{domain}/media/{}", p.file_name));
+    value["progressive"] = json!({"url":value["url"],"original_url":original,
+        "width":p.width,"height":p.height,"duration":p.duration,"size":p.size_bytes,
+        "sha256":p.sha256,"bitrate":p.bitrate,"frame_rate":p.frame_rate});
+    value["meta"]["source"] = value["meta"]["original"].clone();
+    value["meta"]["original"] = json!({"width":p.width,"height":p.height,
+        "duration":p.duration,"frame_rate":p.frame_rate,"bitrate":p.bitrate});
 }
 
 /// The non-text draft attributes a status [preview](preview_status_json)
@@ -1796,10 +1837,14 @@ async fn account_json_with_counts(
     // when it is publicly highlighted (Mastodon's `if: :local?` attributes);
     // a local account with no user row serializes `noindex` as null and
     // `roles` empty, like Mastodon's nil-tolerant delegates.
+    let overlay = if account.is_local() || account.is_group() {
+        follow_src.overlay(pool, account.id).await?
+    } else {
+        None
+    };
+    entity["video_channel"] =
+        (account.is_group() && overlay.as_ref().is_some_and(|o| o.video_channel)).into();
     if account.is_local() {
-        let overlay = follow_src.overlay(pool, account.id).await?;
-        entity["video_channel"] =
-            (account.is_group() && overlay.as_ref().is_some_and(|o| o.video_channel)).into();
         entity["noindex"] = overlay.as_ref().map_or(Value::Null, |o| o.noindex.into());
         entity["roles"] = if unavailable {
             json!([])
@@ -2901,6 +2946,8 @@ struct SharedMaps {
     /// Account entities live in the author maps, so status assembly stays
     /// query-free.
     group_attributions: HashMap<i64, Vec<i64>>,
+    /// Authoritative channel publication context, separate from community votes.
+    channel_attributions: HashMap<(Option<i64>, i64), Vec<i64>>,
     /// Status ids whose thread is locked in a group (no new comments).
     group_locked: HashSet<i64>,
     /// Reply-parent author account ids, keyed by *parent* status id — fills
@@ -3695,6 +3742,7 @@ async fn media_maps(
         native_peers,
         distribution,
         native_revisions,
+        progressives,
     } = media_extensions(pool, &media_ids, &poster_ids, &native_ids).await?;
     let now = time::OffsetDateTime::now_utc();
     for (status_id, files) in per_status {
@@ -3729,6 +3777,7 @@ async fn media_maps(
                     }
                     attach_remote_peer_hints(&mut value, file, &remote_peers, domain);
                     attach_video_distribution(&mut value, file, distribution.get(&file.id), domain);
+                    attach_progressive(&mut value, file, progressives.get(&file.id), domain);
                     if let Some(revision) = native_revisions.get(&file.id) {
                         value["content_revision"] = json!(revision);
                         if *revision > 0 && value.get("hls").is_some() {
@@ -4241,42 +4290,69 @@ async fn render_statuses_for_viewer_set(
     all_ids.extend(targets.keys().copied());
     // Independent reads run concurrently: this step costs the
     // slowest round trip, not the sum of all of them.
-    let (engagement, mut flags_by_viewer, group_attribution_rows, group_locked_rows, direct_optins) =
-        tokio::try_join!(
-            async {
-                status::engagement_for(pool, &all_ids)
-                    .await
-                    .map_err(ApiError::from)
-            },
-            viewer_flags_for_set(pool, &signed_in, &all_ids),
-            async {
-                plamenu_db::group::group_attributions_of(pool, &all_ids)
-                    .await
-                    .map_err(ApiError::from)
-            },
-            async {
-                plamenu_db::group::locked_of(pool, &all_ids)
-                    .await
-                    .map_err(ApiError::from)
-            },
-            async {
-                // Each viewer's direct-remote-media preference, resolved once for
-                // the set and baked into that viewer's proxy URLs. Fails
-                // closed to `false`, exactly like the singular resolver.
-                if signed_in.is_empty() {
-                    return Ok(HashSet::new());
-                }
-                Ok(user::allows_direct_remote_media_of(pool, &signed_in)
-                    .await
-                    .unwrap_or_default())
-            },
-        )?;
+    let (
+        engagement,
+        mut flags_by_viewer,
+        group_attribution_rows,
+        channel_attribution_rows,
+        group_locked_rows,
+        direct_optins,
+    ) = tokio::try_join!(
+        async {
+            status::engagement_for(pool, &all_ids)
+                .await
+                .map_err(ApiError::from)
+        },
+        viewer_flags_for_set(pool, &signed_in, &all_ids),
+        async {
+            plamenu_db::group::group_attributions_of(pool, &all_ids)
+                .await
+                .map_err(ApiError::from)
+        },
+        async {
+            plamenu_db::video::publication_contexts_of(pool, &all_ids, &set)
+                .await
+                .map_err(ApiError::from)
+        },
+        async {
+            plamenu_db::group::locked_of(pool, &all_ids)
+                .await
+                .map_err(ApiError::from)
+        },
+        async {
+            // Each viewer's direct-remote-media preference, resolved once for
+            // the set and baked into that viewer's proxy URLs. Fails
+            // closed to `false`, exactly like the singular resolver.
+            if signed_in.is_empty() {
+                return Ok(HashSet::new());
+            }
+            Ok(user::allows_direct_remote_media_of(pool, &signed_in)
+                .await
+                .unwrap_or_default())
+        },
+    )?;
     let mut group_attributions: HashMap<i64, Vec<i64>> = HashMap::new();
     for (status_id, group_id) in group_attribution_rows {
         group_attributions
             .entry(status_id)
             .or_default()
             .push(group_id);
+    }
+    let mut channel_attributions: HashMap<(Option<i64>, i64), Vec<i64>> = HashMap::new();
+    for (viewer, status_id, channel_id) in channel_attribution_rows {
+        channel_attributions
+            .entry((viewer, status_id))
+            .or_default()
+            .push(channel_id);
+    }
+    // Fold both context kinds into the existing account batch. Their semantic
+    // maps stay separate, so channel publication cannot activate group votes.
+    let mut context_accounts = group_attributions.clone();
+    for ((_, status_id), channels) in &channel_attributions {
+        context_accounts
+            .entry(*status_id)
+            .or_default()
+            .extend(channels);
     }
     let group_attributed: HashSet<i64> = group_attributions.keys().copied().collect();
     let group_locked: HashSet<i64> = group_locked_rows.into_iter().collect();
@@ -4302,7 +4378,7 @@ async fn render_statuses_for_viewer_set(
         domain,
         items,
         &targets,
-        &group_attributions,
+        &context_accounts,
         &set,
         &allow_direct_of,
     )
@@ -4517,6 +4593,7 @@ async fn render_statuses_for_viewer_set(
         engagement,
         group_attributed,
         group_attributions,
+        channel_attributions,
         group_locked,
         reply_parents,
         mentions,
@@ -5215,6 +5292,16 @@ fn render_plain(domain: &str, item: &Status, maps: &RenderMaps<'_>) -> Result<Va
     // instead of the Group actor's Announce wrapper. Appended outside the
     // already-large json! literal to keep that macro under its recursion limit.
     entity["groups"] = Value::Array(group_entities(item.id, maps));
+    entity["video_channels"] = Value::Array(
+        maps.shared
+            .channel_attributions
+            .get(&(maps.viewer_maps.viewer, item.id))
+            .into_iter()
+            .flatten()
+            .filter_map(|id| maps.viewer_maps.author_entities.get(id))
+            .cloned()
+            .collect(),
+    );
     // Plamenu extension: the AP URI of a reply parent we never fetched
     // (`in_reply_to_id` null). Lets the web client show an "unfetched parent"
     // notice and link out rather than orphaning the reply. Null the rest of the
