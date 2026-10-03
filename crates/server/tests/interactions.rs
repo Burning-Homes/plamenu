@@ -2491,6 +2491,167 @@ async fn mentions_resolve_render_notify_and_deliver(pool: PgPool) {
     assert!(fallback["mentions"].as_array().unwrap().is_empty());
 }
 
+/// A follower must not receive the first visible status while its mention
+/// rows are still being filed. Hashtags and mentions form the same API object.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn inbound_note_is_not_visible_without_mentions_and_tags(pool: PgPool) {
+    let (alice, token) = user_with_token(&pool, "alice").await;
+    let bob = RemoteUser::new("remote.example", "bob");
+    let stored_bob = remote::store_remote_actor(&pool, &bob.actor).await.unwrap();
+    follow::create(&pool, alice.id, stored_bob.id, None)
+        .await
+        .unwrap();
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let app = plamenu::build_router(test_state_with(pool.clone(), stub));
+    let mut blocker = pool.acquire().await.unwrap();
+    sqlx::query("SELECT pg_advisory_lock(711232)")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    sqlx::raw_sql(
+        "CREATE FUNCTION hold_mention_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN PERFORM pg_advisory_xact_lock(711232); RETURN NEW; END $$;
+         CREATE TRIGGER hold_mention_insert BEFORE INSERT ON status_mentions
+         FOR EACH ROW EXECUTE FUNCTION hold_mention_insert();",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let activity = json!({
+        "type": "Create", "actor": bob.actor.id,
+        "object": {
+            "id": format!("{}/statuses/atomic-mentions", bob.actor.id),
+            "type": "Note", "attributedTo": bob.actor.id,
+            "content": "<p>hello @alice #gate</p>",
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "tag": [
+                {"type": "Mention", "href": "https://plamenu.test/users/alice", "name": "@alice"},
+                {"type": "Hashtag", "href": "https://remote.example/tags/gate", "name": "#gate"},
+            ],
+        },
+    });
+    let writer_app = app.clone();
+    let signer = bob.signer();
+    let writer = tokio::spawn(async move { post_signed(writer_app, &activity, &signer).await });
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype = 'advisory'
+                 AND NOT granted AND objid = 711232
+                 AND database = (SELECT oid FROM pg_database WHERE datname = current_database()))",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if waiting {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("inbox did not reach the blocked mention insert");
+    let reader_app = app.clone();
+    let reader_token = token.clone();
+    let mut reader = tokio::spawn(async move {
+        api(
+            reader_app,
+            "GET",
+            "/api/v1/timelines/home",
+            Some(&reader_token),
+            None,
+        )
+        .await
+    });
+    let early = tokio::time::timeout(std::time::Duration::from_millis(250), &mut reader)
+        .await
+        .ok()
+        .map(Result::unwrap);
+    // Release the owned gate before assertions, including failed assertions.
+    sqlx::query("SELECT pg_advisory_unlock(711232)")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    assert_eq!(writer.await.unwrap(), StatusCode::ACCEPTED);
+    let completed_reader = match early.as_ref() {
+        Some(response) => response.clone(),
+        None => reader.await.unwrap(),
+    };
+    if let Some((code, timeline)) = early {
+        assert_eq!(code, StatusCode::OK);
+        for status in timeline.as_array().unwrap() {
+            assert_eq!(
+                status["mentions"][0]["acct"], "alice",
+                "home published the status before its mentions were stored: {status}"
+            );
+            assert_eq!(
+                status["tags"][0]["name"], "gate",
+                "home published the status before its tags were stored: {status}"
+            );
+        }
+    }
+    let (code, timeline) = api(app, "GET", "/api/v1/timelines/home", Some(&token), None).await;
+    assert_eq!(completed_reader.0, StatusCode::OK);
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(timeline.as_array().unwrap().len(), 1);
+    assert_eq!(timeline[0]["mentions"][0]["acct"], "alice");
+    assert_eq!(timeline[0]["tags"][0]["name"], "gate");
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn failed_remote_mention_write_rolls_back_status_tags_and_can_retry(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = RemoteUser::new("remote.example", "bob");
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let app = plamenu::build_router(test_state_with(pool.clone(), stub));
+    let uri = format!("{}/statuses/failed-mentions", bob.actor.id);
+    let activity = json!({
+        "type": "Create", "actor": bob.actor.id,
+        "object": {
+            "id": uri, "type": "Note", "attributedTo": bob.actor.id,
+            "content": "<p>hello @alice #retry</p>",
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "tag": [
+                {"type": "Mention", "href": "https://plamenu.test/users/alice", "name": "@alice"},
+                {"type": "Hashtag", "href": "https://remote.example/tags/retry", "name": "#retry"},
+            ],
+        },
+    });
+    sqlx::raw_sql("ALTER TABLE status_mentions ADD CONSTRAINT reject_test_mention CHECK (false)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        post_signed(app.clone(), &activity, &bob.signer()).await,
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert!(status::find_by_uri(&pool, &uri).await.unwrap().is_none());
+    let mentions: i64 = sqlx::query_scalar("SELECT count(*) FROM status_mentions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let tags: i64 = sqlx::query_scalar("SELECT count(*) FROM status_tags")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(mentions, 0);
+    assert_eq!(tags, 0);
+    sqlx::raw_sql("ALTER TABLE status_mentions DROP CONSTRAINT reject_test_mention")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        post_signed(app, &activity, &bob.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    let stored = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+    let shown = plamenu::entities::render_statuses(&pool, TEST_DOMAIN, &[stored], Some(alice.id))
+        .await
+        .unwrap();
+    assert_eq!(shown[0]["mentions"][0]["acct"], "alice");
+    assert_eq!(shown[0]["tags"][0]["name"], "retry");
+}
+
 #[sqlx::test(migrations = "../db/migrations")]
 async fn inbound_mentions_notify_and_grant_private_access(pool: PgPool) {
     common::open_previews(&pool).await;

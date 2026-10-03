@@ -84,17 +84,14 @@ pub fn parse_question(object: &Value) -> Option<ParsedQuestion> {
 }
 
 /// Stores the poll of a freshly-ingested remote `Question` status.
-pub async fn store_remote_poll(
-    state: &AppState,
+pub async fn store_remote_poll<'e, E: sqlx::PgExecutor<'e>>(
+    executor: E,
     author: &Account,
     stored: &Status,
-    object: &Value,
+    parsed: &ParsedQuestion,
 ) -> Result<(), ApiError> {
-    let Some(parsed) = parse_question(object) else {
-        return Ok(());
-    };
     poll::create(
-        &state.pool,
+        executor,
         poll::NewPoll {
             status_id: stored.id,
             account_id: author.id,

@@ -437,8 +437,8 @@ pub async fn upsert_remote(pool: &PgPool, new: NewRemoteStatus<'_>) -> Result<St
 /// dedup, and a newly discovered parent edge can fill an orphan without
 /// replacing any canonical content. One-shot delivery effects are claimed
 /// separately by [`claim_delivery_side_effects`].
-pub async fn upsert_remote_with_provenance(
-    pool: &PgPool,
+pub async fn upsert_remote_with_provenance<'e, E: PgExecutor<'e>>(
+    executor: E,
     new: NewRemoteStatus<'_>,
     provenance: IngestProvenance,
 ) -> Result<Status, DbError> {
@@ -491,7 +491,7 @@ pub async fn upsert_remote_with_provenance(
         provenance.as_str(),
         history,
     )
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await?;
     Ok(status)
 }
@@ -500,8 +500,8 @@ pub async fn upsert_remote_with_provenance(
 /// side-effect marker are committed by the same statement, so concurrent
 /// deliveries cannot both win. `None` means the URI already exists; callers
 /// then use the provenance-aware upsert and row-locked promotion claimant.
-pub async fn insert_remote_delivery_claimed(
-    pool: &PgPool,
+pub async fn insert_remote_delivery_claimed<'e, E: PgExecutor<'e>>(
+    executor: E,
     new: NewRemoteStatus<'_>,
 ) -> Result<Option<Status>, DbError> {
     let status = sqlx::query_as!(
@@ -536,7 +536,7 @@ pub async fn insert_remote_delivery_claimed(
         new.external_url,
         new.in_reply_to_uri,
     )
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?;
     Ok(status)
 }
@@ -558,6 +558,17 @@ pub async fn claim_delivery_side_effects_with_previous(
     status_id: i64,
 ) -> Result<Option<String>, DbError> {
     let mut tx = pool.begin().await?;
+    let previous = claim_delivery_side_effects_with_previous_conn(&mut tx, status_id).await?;
+    tx.commit().await?;
+    Ok(previous)
+}
+
+/// Claims delivery effects inside the caller's transaction. The caller must
+/// commit the status, its required child rows and this claim together.
+pub async fn claim_delivery_side_effects_with_previous_conn(
+    conn: &mut sqlx::PgConnection,
+    status_id: i64,
+) -> Result<Option<String>, DbError> {
     let previous = sqlx::query_scalar!(
         r#"SELECT CASE WHEN history_fetched_at IS NOT NULL
                        THEN 'history' ELSE ingest_provenance END AS "ingest_provenance!"
@@ -567,7 +578,7 @@ pub async fn claim_delivery_side_effects_with_previous(
            FOR UPDATE"#,
         status_id,
     )
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut *conn)
     .await?;
     if previous.is_some() {
         sqlx::query!(
@@ -578,10 +589,9 @@ pub async fn claim_delivery_side_effects_with_previous(
                WHERE id = $1"#,
             status_id,
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     }
-    tx.commit().await?;
     Ok(previous)
 }
 

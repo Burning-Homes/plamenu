@@ -270,6 +270,144 @@ async fn inbound_question_creates_poll_and_renders_entity(pool: PgPool) {
     );
 }
 
+/// Pause the child-row write, not readers, so the first visible API status
+/// must already carry its poll. This reproduces inbox/search concurrency
+/// without sleeps standing in for ingest progress.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn inbound_question_is_not_visible_without_poll(pool: PgPool) {
+    let (_, token) = user_with_token(&pool, "alice").await;
+    let bob = RemoteUser::new("remote.example", "bob");
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let question = question_object(&bob, [3, 4], "2027-01-01T00:00:00Z");
+    stub.objects
+        .lock()
+        .unwrap()
+        .insert(QUESTION_URI.to_owned(), question.clone());
+    let app = plamenu::build_router(test_state_with(pool.clone(), stub));
+    let mut blocker = pool.acquire().await.unwrap();
+    sqlx::query("SELECT pg_advisory_lock(711231)")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    sqlx::raw_sql(
+        "CREATE FUNCTION hold_poll_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN PERFORM pg_advisory_xact_lock(711231); RETURN NEW; END $$;
+         CREATE TRIGGER hold_poll_insert BEFORE INSERT ON polls
+         FOR EACH ROW EXECUTE FUNCTION hold_poll_insert();",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let writer_app = app.clone();
+    let activity = create_activity(&bob, &question);
+    let signer = bob.signer();
+    let writer =
+        tokio::spawn(async move { post_signed(writer_app, "/inbox", &activity, &signer).await });
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype = 'advisory'
+                 AND NOT granted AND objid = 711231
+                 AND database = (SELECT oid FROM pg_database WHERE datname = current_database()))",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if waiting {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("inbox did not reach the blocked poll insert");
+    let reader_app = app.clone();
+    let reader_token = token.clone();
+    let mut reader = tokio::spawn(async move {
+        api(
+            reader_app,
+            "GET",
+            &format!("/api/v2/search?q={QUESTION_URI}&resolve=true&type=statuses"),
+            Some(&reader_token),
+            None,
+        )
+        .await
+    });
+    let early = tokio::time::timeout(std::time::Duration::from_millis(250), &mut reader)
+        .await
+        .ok()
+        .map(Result::unwrap);
+    // Always release the owned gate and finish the writer before assertions.
+    sqlx::query("SELECT pg_advisory_unlock(711231)")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    assert_eq!(writer.await.unwrap(), StatusCode::ACCEPTED);
+    let final_response = match early.as_ref() {
+        Some(response) => response.clone(),
+        None => reader.await.unwrap(),
+    };
+    if let Some((code, entity)) = early {
+        assert_eq!(code, StatusCode::OK);
+        for status in entity["statuses"].as_array().unwrap() {
+            assert!(
+                status["poll"].is_object(),
+                "search published the status before its poll was stored: {status}"
+            );
+        }
+    }
+    let (code, entity) = api(
+        app,
+        "GET",
+        &format!("/api/v2/search?q={QUESTION_URI}&resolve=true&type=statuses"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(final_response.0, StatusCode::OK);
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(entity["statuses"].as_array().unwrap().len(), 1);
+    assert!(entity["statuses"][0]["poll"].is_object());
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn failed_remote_poll_write_does_not_publish_status_and_can_retry(pool: PgPool) {
+    let bob = RemoteUser::new("remote.example", "bob");
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let app = plamenu::build_router(test_state_with(pool.clone(), stub));
+    let activity = create_activity(&bob, &question_object(&bob, [3, 4], "2027-01-01T00:00:00Z"));
+    sqlx::raw_sql("ALTER TABLE polls ADD CONSTRAINT reject_test_poll CHECK (false)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let rejected = post_signed(app.clone(), "/inbox", &activity, &bob.signer()).await;
+    assert_eq!(rejected, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(
+        status::find_by_uri(&pool, QUESTION_URI)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    sqlx::raw_sql("ALTER TABLE polls DROP CONSTRAINT reject_test_poll")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        post_signed(app, "/inbox", &activity, &bob.signer()).await,
+        StatusCode::ACCEPTED,
+    );
+    let stored = status::find_by_uri(&pool, QUESTION_URI)
+        .await
+        .unwrap()
+        .expect("redelivery publishes the complete Question");
+    let rendered_poll = poll::find_by_status(&pool, stored.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(rendered_poll.options, vec!["yes", "no"]);
+    assert_eq!(rendered_poll.cached_tallies, vec![3, 4]);
+}
+
 #[sqlx::test(migrations = "../db/migrations")]
 async fn update_question_refreshes_tallies_without_an_edit(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");

@@ -2210,8 +2210,65 @@ async fn store_remote_note(
             &collection_urls.following_url,
         ),
     };
-    let (mut stored, delivery_effects, promote_media) = if context == RemoteIngestContext::Delivery
-    {
+    // Polls, mentions and hashtags are part of the first visible API object.
+    // Resolve recipients before opening the transaction; no remote fetch or
+    // optional enrichment runs while holding it. Plain Notes keep their cost.
+    let parsed_poll = crate::polls::parse_question(object);
+    let mention_plan = if carries_mentions(object, &state.config.domain) {
+        Box::pin(resolve_note_mentions(state, object)).await?
+    } else {
+        RemoteMentionPlan::default()
+    };
+    let hashtags = remote_hashtag_names(object);
+    let has_structural_rows =
+        parsed_poll.is_some() || !mention_plan.rows.is_empty() || !hashtags.is_empty();
+    let (mut stored, delivery_effects, promote_media) = if has_structural_rows {
+        let mut tx = state
+            .pool
+            .begin()
+            .await
+            .map_err(plamenu_db::DbError::from)?;
+        let (stored, delivery_effects, promote_media) = if context == RemoteIngestContext::Delivery
+        {
+            if let Some(stored) =
+                status::insert_remote_delivery_claimed(&mut *tx, new_status).await?
+            {
+                (stored, true, false)
+            } else {
+                let stored = status::upsert_remote_with_provenance(
+                    &mut *tx,
+                    new_status,
+                    context.provenance(),
+                )
+                .await?;
+                let previous =
+                    status::claim_delivery_side_effects_with_previous_conn(&mut tx, stored.id)
+                        .await?;
+                (
+                    stored,
+                    previous.is_some(),
+                    previous.as_deref() == Some("history"),
+                )
+            }
+        } else {
+            (
+                status::upsert_remote_with_provenance(&mut *tx, new_status, context.provenance())
+                    .await?,
+                false,
+                false,
+            )
+        };
+        if let Some(parsed_poll) = parsed_poll.as_ref() {
+            crate::polls::store_remote_poll(&mut *tx, author, &stored, parsed_poll).await?;
+        }
+        mention::attach_many(&mut *tx, stored.id, &mention_plan.rows).await?;
+        tag::ensure_and_attach_many(&mut tx, stored.id, &hashtags).await?;
+        tx.commit().await.map_err(plamenu_db::DbError::from)?;
+        if promote_media {
+            crate::remote_history::record_promotion();
+        }
+        (stored, delivery_effects, promote_media)
+    } else if context == RemoteIngestContext::Delivery {
         if let Some(stored) =
             status::insert_remote_delivery_claimed(&state.pool, new_status).await?
         {
@@ -2311,21 +2368,14 @@ async fn store_remote_note(
         delivery_effects && matches!(stored.visibility.as_str(), "public" | "unlisted" | "local"),
     ))
     .await?;
-    store_remote_tags(state, author, &stored, object, !context.is_history()).await?;
-    let mention_notify = if carries_mentions(object, &state.config.domain) {
-        Box::pin(reconcile_note_mentions(
-            state, &stored, object, false, false,
-        ))
-        .await?
-    } else {
-        Vec::new()
-    };
+    store_remote_featured_collections(state, author, &stored, object, !context.is_history())
+        .await?;
+    let mention_notify = mention_plan.notify;
     // Register tag usage for the ranking engine, at ingest time like Mastodon's
     // inbound-Create `Trends.tags.register`. Edits (above) don't re-register.
     if delivery_effects {
         tag::record_uses(&state.pool, stored.id, OffsetDateTime::now_utc().date()).await?;
     }
-    crate::polls::store_remote_poll(state, author, &stored, object).await?;
     if delivery_effects {
         let mut conn = state
             .pool
@@ -3399,6 +3449,22 @@ async fn record_remote_emoji_usage(
     Ok(())
 }
 
+/// The existing capped, valid hashtag names used by creation and edits.
+fn remote_hashtag_names(object: &Value) -> Vec<&str> {
+    one_or_many(object.get("tag"))
+        .iter()
+        .take(20)
+        .filter(|entry| entry.get("type").and_then(Value::as_str) == Some("Hashtag"))
+        .filter_map(|entry| {
+            entry
+                .get("name")
+                .and_then(Value::as_str)
+                .map(|n| n.trim_start_matches('#'))
+                .filter(|n| !n.is_empty() && n.len() <= 100)
+        })
+        .collect()
+}
+
 /// Persists the non-mention, non-emoji `tag` entries of an inbound Note:
 /// hashtags and, outside cold history, referenced featured collections. Every
 /// mention — both `tag` Mention entries and `to`/`cc`/`audience` addressing —
@@ -3415,18 +3481,7 @@ async fn store_remote_tags(
     if entries.is_empty() {
         return Ok(());
     }
-    let hashtag_names: Vec<&str> = entries
-        .iter()
-        .take(20)
-        .filter(|entry| entry.get("type").and_then(Value::as_str) == Some("Hashtag"))
-        .filter_map(|entry| {
-            entry
-                .get("name")
-                .and_then(Value::as_str)
-                .map(|n| n.trim_start_matches('#'))
-                .filter(|n| !n.is_empty() && n.len() <= 100)
-        })
-        .collect();
+    let hashtag_names = remote_hashtag_names(object);
     if !hashtag_names.is_empty() {
         let mut conn = state
             .pool
@@ -3435,6 +3490,18 @@ async fn store_remote_tags(
             .map_err(plamenu_db::DbError::from)?;
         tag::ensure_and_attach_many(&mut conn, stored.id, &hashtag_names).await?;
     }
+    store_remote_featured_collections(state, author, stored, object, resolve_collections).await
+}
+
+/// Optional collection dereferences run only after canonical publication commits.
+async fn store_remote_featured_collections(
+    state: &AppState,
+    author: &Account,
+    stored: &status::Status,
+    object: &Value,
+    resolve_collections: bool,
+) -> Result<(), ApiError> {
+    let entries = one_or_many(object.get("tag"));
     for entry in entries.iter().take(20) {
         if resolve_collections
             && entry.get("type").and_then(Value::as_str) == Some("FeaturedCollection")
@@ -3468,9 +3535,10 @@ async fn store_remote_tags(
 /// The whole mention set is then written in ONE transaction. On an edit
 /// (`rebuild`) the previous rows are detached in that same transaction, so a
 /// concurrent reader never observes a half-rebuilt set and a mid-rebuild failure
-/// can never strand a private post with its recipients dropped. (Committing the
-/// status row, its mentions, and the outbox together is the broader finding
-/// #18.) Notifications fire only after the commit; they are additive and, on an
+/// can never strand a private post with its recipients dropped. New statuses
+/// publish the resolved mention plan with the status and hashtags; edit-body
+/// and outbox atomicity remain the broader finding #18. Notifications fire
+/// only after the commit; they are additive and, on an
 /// edit, are suppressed for any recipient the status already had.
 ///
 /// Addressing semantics match Mastodon's `process_audience`: `to`, `cc`, and
@@ -3505,13 +3573,17 @@ fn record_mention(
     }
 }
 
-async fn reconcile_note_mentions(
+#[derive(Default)]
+struct RemoteMentionPlan {
+    rows: Vec<(i64, bool)>,
+    notify: Vec<i64>,
+}
+
+/// Resolve bounded recipients before opening any status publication transaction.
+async fn resolve_note_mentions(
     state: &AppState,
-    stored: &status::Status,
     object: &Value,
-    rebuild: bool,
-    notification_effects: bool,
-) -> Result<Vec<i64>, ApiError> {
+) -> Result<RemoteMentionPlan, ApiError> {
     // Classify the tag Mention hrefs into local usernames and remote hrefs.
     let mut local_tag_uris: Vec<String> = Vec::new();
     let mut remote_mention_hrefs: Vec<&str> = Vec::new();
@@ -3579,6 +3651,24 @@ async fn reconcile_note_mentions(
         }
     }
     let mention_rows: Vec<(i64, bool)> = order.iter().map(|id| (*id, silent_by_id[id])).collect();
+
+    Ok(RemoteMentionPlan {
+        rows: mention_rows,
+        notify,
+    })
+}
+
+async fn reconcile_note_mentions(
+    state: &AppState,
+    stored: &status::Status,
+    object: &Value,
+    rebuild: bool,
+    notification_effects: bool,
+) -> Result<Vec<i64>, ApiError> {
+    let RemoteMentionPlan {
+        rows: mention_rows,
+        notify,
+    } = resolve_note_mentions(state, object).await?;
 
     // Persist the whole set atomically; an edit clears the old rows in the same
     // transaction so a reader never sees a partially rebuilt mention set.
