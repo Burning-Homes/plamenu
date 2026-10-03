@@ -66,6 +66,29 @@ PLEROMA_EXT = ACCOUNT_EXT | {
 }
 
 
+def _plain_status_shape(label, mastodon_body, plamenu_body, *, allow_extra):
+    # Status.video_channels is verified publication context, not author
+    # membership. These plain-post fixtures must carry an empty array even
+    # inside boosts, notifications and timeline/context envelopes. Check its
+    # exact contract before allowing that additive key in the Mastodon diff.
+    def channels(body):
+        if isinstance(body, dict):
+            if "media_attachments" in body:
+                assert body["video_channels"] == [], (
+                    f"{label}: plain status has unexpected channel attribution"
+                )
+            for value in body.values():
+                channels(value)
+        elif isinstance(body, list):
+            for value in body:
+                channels(value)
+
+    channels(plamenu_body)
+    assert_same_shape(
+        label, mastodon_body, plamenu_body, allow_extra=allow_extra | {"video_channels"}
+    )
+
+
 def _png(w=2, h=2):
     """A minimal valid PNG, so a media test needs no fixture files."""
 
@@ -159,7 +182,7 @@ def test_statuses_shapes_match_mastodon(alice, plamenu_api, plamenu_user):
             f"#e2etag hi @{alice.get('/api/v1/accounts/verify_credentials')['username']} here"
         )
         p = plamenu_api.post_status(f"#e2etag hi @{plamenu_user.username} here")
-        assert_same_shape("status", m, p, allow_extra=PLEROMA_EXT)
+        _plain_status_shape("status", m, p, allow_extra=PLEROMA_EXT)
         assert m["tags"] and p["tags"], "hashtag not parsed"
         assert m["mentions"] and p["mentions"], "mention not parsed"
         log("Status + tags[] + mentions[] shapes identical")
@@ -167,14 +190,14 @@ def test_statuses_shapes_match_mastodon(alice, plamenu_api, plamenu_user):
     with step("the reblog wrapper is a full Status (incl. quote fields)"):
         m_rb = alice.reblog(m["id"])
         p_rb = plamenu_api.reblog(p["id"])
-        assert_same_shape("reblog wrapper", m_rb, p_rb, allow_extra=PLEROMA_EXT)
+        _plain_status_shape("reblog wrapper", m_rb, p_rb, allow_extra=PLEROMA_EXT)
         assert "quote_approval" in m_rb and "quote_approval" in p_rb
         log("reblog wrapper (with quote/quote_approval) shapes identical")
 
     with step("a status carrying a poll (+ the Poll entity)"):
         m_poll = alice.post_poll("q?", ["a", "b"])
         p_poll = plamenu_api.post_poll("q?", ["a", "b"])
-        assert_same_shape("status+poll", m_poll, p_poll, allow_extra=PLEROMA_EXT)
+        _plain_status_shape("status+poll", m_poll, p_poll, allow_extra=PLEROMA_EXT)
         assert_same_shape("poll", m_poll["poll"], p_poll["poll"])
         log("Status+poll and Poll entity shapes identical")
 
@@ -192,7 +215,9 @@ def test_statuses_shapes_match_mastodon(alice, plamenu_api, plamenu_user):
             assert p_media[flag] is False
         m_s = alice.post_with_media("with media", [m_media["id"]])
         p_s = plamenu_api.post_with_media("with media", [p_media["id"]])
-        assert_same_shape("status+media", m_s, p_s, allow_extra=PLEROMA_EXT | MEDIA_EXT)
+        _plain_status_shape(
+            "status+media", m_s, p_s, allow_extra=PLEROMA_EXT | MEDIA_EXT
+        )
         for field in MEDIA_EXT:
             assert p_s["media_attachments"][0][field] == p_media[field]
         log("MediaAttachment + Status.media_attachments[] shapes identical")
@@ -220,7 +245,7 @@ def test_notifications_shapes_match_mastodon(alice, plamenu_api, plamenu_user, m
         m = wait_for(_notif(alice, "follow"), desc="mastodon follow notif")
         p = wait_for(_notif(plamenu_api, "follow"), desc="plamenu follow notif")
         assert "status" not in p, f"follow notif must not carry `status`: {p}"
-        assert_same_shape("follow notif", m, p, allow_extra=PLEROMA_EXT)
+        _plain_status_shape("follow notif", m, p, allow_extra=PLEROMA_EXT)
         log("follow notification shape identical (no status key)")
 
     with step("favourite notification carries a `status`"):
@@ -238,7 +263,7 @@ def test_notifications_shapes_match_mastodon(alice, plamenu_api, plamenu_user, m
         plamenu_api.favourite(ap_on_p["id"])
         m = wait_for(_notif(alice, "favourite"), desc="mastodon favourite notif")
         p = wait_for(_notif(plamenu_api, "favourite"), desc="plamenu favourite notif")
-        assert_same_shape("favourite notif", m, p, allow_extra=PLEROMA_EXT)
+        _plain_status_shape("favourite notif", m, p, allow_extra=PLEROMA_EXT)
         log("favourite notification shape identical (with status)")
 
     with step("added_to_collection carries `collection` with `items`"):
@@ -274,7 +299,7 @@ def test_notifications_shapes_match_mastodon(alice, plamenu_api, plamenu_user, m
         p = wait_for(
             _notif(plamenu_api, "added_to_collection"), desc="plamenu collection notif"
         )
-        assert_same_shape("added_to_collection notif", m, p, allow_extra=PLEROMA_EXT)
+        _plain_status_shape("added_to_collection notif", m, p, allow_extra=PLEROMA_EXT)
         assert p["collection"]["items"], (
             f"collection notif must carry items (the revoke-button data): {p}"
         )
@@ -293,7 +318,7 @@ def test_notifications_shapes_match_mastodon(alice, plamenu_api, plamenu_user, m
         # Diff the group entity itself (the top-level accounts/statuses arrays
         # differ in account locality on a persistent Mastodon, so scope to the
         # group).
-        assert_same_shape("v2 collection group", m_g, p_g, allow_extra=PLEROMA_EXT)
+        _plain_status_shape("v2 collection group", m_g, p_g, allow_extra=PLEROMA_EXT)
         assert p_g["collection"]["items"], (
             f"v2 group must carry the collection's items: {p_g}"
         )
@@ -311,7 +336,7 @@ def test_timelines_context_search_shapes_match_mastodon(alice, plamenu_api, mark
         alice.post_status(f"ctx reply {marker}", in_reply_to_id=mp["id"])
         pp = plamenu_api.post_status(f"ctx parent {marker}")
         plamenu_api.post_status(f"ctx reply {marker}", in_reply_to_id=pp["id"])
-        assert_same_shape(
+        _plain_status_shape(
             "context",
             alice.context(mp["id"]),
             plamenu_api.context(pp["id"]),
@@ -320,7 +345,7 @@ def test_timelines_context_search_shapes_match_mastodon(alice, plamenu_api, mark
         log("context envelope + descendant Status shape identical")
 
     with step("GET /timelines/public (bare array of Status)"):
-        assert_same_shape(
+        _plain_status_shape(
             "public timeline",
             alice.public_timeline(local=True, limit=1)[:1],
             plamenu_api.public_timeline(local=True, limit=1)[:1],

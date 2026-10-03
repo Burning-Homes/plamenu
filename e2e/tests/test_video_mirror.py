@@ -288,7 +288,7 @@ def test_native_paired_disks_seed_failover_revoke_and_resume():
                         "range_bytes": 32,
                         "resumed_offset": offset,
                         "candidate_sha256": hashlib.sha256(
-                            ephemeral.BINARY.read_bytes()
+                            ephemeral.binary_path().read_bytes()
                         ).hexdigest(),
                     },
                     indent=2,

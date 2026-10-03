@@ -1243,6 +1243,7 @@ pub async fn preview_status_json(
         "filtered": [],
     });
     entity["groups"] = json!([]);
+    entity["video_channels"] = json!([]);
     entity["quote_approval"] = json!({
         "automatic": policy.automatic().keys(),
         "manual": policy.manual().keys(),
@@ -5025,6 +5026,7 @@ fn render_one(domain: &str, item: &Status, maps: &RenderMaps<'_>) -> Result<Valu
             "group_locked": maps.shared.group_locked.contains(&target_id),
         });
         entity["account"] = booster_entity.clone();
+        entity["video_channels"] = json!([]);
         apply_application(&mut entity, item, maps);
         if maps.viewer_maps.viewer.is_some() {
             entity["filtered"] = maps
@@ -5188,6 +5190,7 @@ fn render_plain(domain: &str, item: &Status, maps: &RenderMaps<'_>) -> Result<Va
             "deleted": true,
         });
         entity["groups"] = json!([]);
+        entity["video_channels"] = json!([]);
         entity["in_reply_to_uri"] = maps
             .shared
             .unresolved_parent_uris

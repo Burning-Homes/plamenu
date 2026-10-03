@@ -54,6 +54,11 @@ never exposed. This does not weaken authorized fetch on general status routes.
 These are Plamenu APIs, not a PeerTube REST API implementation. ActivityPub
 video interoperability is tracked separately in the [AP09 inventory](../AP09-FEATURE-INVENTORY.md).
 
+Mastodon-compatible Status entities add `video_channels`: an array of Account
+entities identifying verified publication channels visible to the requesting
+viewer. Ordinary posts carry `[]`. This describes where the video was published;
+it does not enumerate the author's channel memberships or collaborator grants.
+
 - `GET /api/v1/video_channels` (`read:accounts`): list channels you own or have
   accepted access to, with `owner_id` and `role` (`owner`, `publisher`, `editor`).
 - `POST /api/v1/video_channels` (`write:accounts`): create a channel with

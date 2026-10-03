@@ -43,9 +43,45 @@ overridden in the ignored root `.env`.
 
 When verifying an already-built candidate, set `PLAMENU_BINARY` to its absolute
 executable path and `PLAMENU_CONFIG` to the standing test instance's config.
-CLI fixtures then use that artifact instead of rebuilding via `cargo run`.
+CLI fixtures and disposable peers then use that artifact without rebuilding.
 `DATABASE_URL` must point to that same instance for database assertions. This
 does not start or replace the server; run the same candidate there first.
+Crash and offload drills freeze the running executable's inode and bind their
+restarts, CLI commands and processors to that copy, so a later build replacing
+the original pathname cannot change the program under test.
+
+A fresh main database creates new instance signing keys. Reusing its old domain
+against a persistent GoToSocial leaves that peer holding the previous keys;
+authorized fetch then fails before federation assertions can run. Updating the
+application executable alone preserves identity. Recreating the database must
+also isolate the peer state; do not delete standing peer caches or relax signature
+checks to make the suite pass.
+
+For an already running disposable main instance, the explicit wrapper below
+provides a fresh official GoToSocial with its own database, account credentials
+and token cache. Select the existing local container names and fleet path:
+
+```sh
+cd e2e
+../scripts/run-isolated-gotosocial.py \
+  --state-dir ../target/gotosocial-owned-NEW-RUN \
+  --peer-root peers \
+  --proxy-container mastodon-test-caddy-1 \
+  --standing-container gotosocial-test-gotosocial-1 \
+  -- .venv/bin/python -m pytest --release-matrix --maxfail=0
+```
+
+The state directory must be new and the pinned image already cached. The wrapper
+starts only owned containers, keeps strict server-side TLS and authorized fetch,
+and temporarily changes only the local `gotosocial.local` proxy upstream. Run it
+with exclusive ownership of that test proxy. It restores the original active
+configuration on normal exit, test failure or interruption and stops only the
+owned peer; it keeps containers, logs and data for diagnosis. The Caddyfile and
+standing GoToSocial volume, credentials and process stay intact. Configuration
+or ownership drift blocks restoration rather than overwriting someone else's
+change. A forced `SIGKILL` cannot run cleanup; the original proxy JSON is retained
+in the private state directory for recovery. This wrapper does not start or
+replace Plamenu or operate a remote proxy.
 
 The native-live matrix includes RTMP and HTTPS-FLV by default. To exercise an
 optional `[live_rtmps]` listener, set `PLAMENU_RTMPS=1` when running

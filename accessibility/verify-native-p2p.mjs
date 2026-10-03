@@ -3,7 +3,7 @@
 // bytes over Plamenu's in-process tracker. The receiving Plamenu player must
 // report checksum-validated playback, not just an attempted WebRTC transfer.
 import { chromium } from 'playwright';
-import {openVideoSettings,closeVideoSettings} from './video-settings.mjs';
+import {openVideoSettings,closeVideoSettings,selectVideoQuality} from './video-settings.mjs';
 import { installPeerTubeWelcomeHandler } from './peertube-session.mjs';
 
 const [localUrl, peerTubeUrl, expectedPixel] = process.argv.slice(2);
@@ -86,9 +86,7 @@ async function start(page, selector, qualityHeight = null) {
   await video.waitFor({ state: 'attached', timeout: 30000 });
   await video.evaluate(element => { element.muted = true; element.loop = true; element.play().catch(() => {}); });
   if (qualityHeight) {
-    const quality = page.getByRole('combobox', {name:'Video quality',exact:true});
-    await quality.waitFor({state:'visible',timeout:20000});
-    await quality.selectOption({label:`${qualityHeight}p`});
+    await selectVideoQuality(page, `${qualityHeight}p`);
   }
   for (let i = 0; i < 120; i++) {
     if (await video.evaluate(element => element.currentTime > 0.25)) return video;

@@ -212,7 +212,14 @@ def _restore_warm_cache(source, restored, evidence, candidate):
     )
     wrong.chmod(0o600)
     refusal = subprocess.run(
-        [str(ephemeral.BINARY), "--config", str(wrong), "federation", "keys", "audit"],
+        [
+            str(ephemeral.binary_path()),
+            "--config",
+            str(wrong),
+            "federation",
+            "keys",
+            "audit",
+        ],
         capture_output=True,
         timeout=30,
         check=False,

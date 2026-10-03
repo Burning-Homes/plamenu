@@ -365,7 +365,7 @@ def test_native_video_restore_preserves_assets_offsets_preferences_and_peer_iden
             wrong.chmod(0o600)
             negative = subprocess.run(
                 [
-                    str(ephemeral.BINARY),
+                    str(ephemeral.binary_path()),
                     "--config",
                     str(wrong),
                     "federation",
@@ -489,7 +489,7 @@ def test_native_video_restore_preserves_assets_offsets_preferences_and_peer_iden
                 desc="restored signer delivers Update without changing Video UUID",
             )
             record = {
-                "candidate_sha256": _digest(ephemeral.BINARY),
+                "candidate_sha256": _digest(ephemeral.binary_path()),
                 "database_major": postgres_major,
                 "recovery_files": {p.name: _digest(p) for p in backup.iterdir()},
                 "asset_count": len(assets),

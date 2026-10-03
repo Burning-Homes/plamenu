@@ -156,6 +156,16 @@ async fn channel_publication_context_is_batched_truthful_and_visibility_guarded(
         assert_eq!(streamed[&who], context(&state, &films[0], Some(who)).await);
     }
     let stored = &films[0];
+    let boost = status::create_local_reblog(&pool, viewer.id, stored.id)
+        .await
+        .unwrap();
+    let boosted = context(&state, &boost, Some(viewer.id)).await;
+    assert_eq!(boosted["video_channels"], json!([]));
+    assert_eq!(
+        boosted["reblog"]["video_channels"],
+        context(&state, stored, Some(viewer.id)).await["video_channels"],
+        "publication context belongs to the original, not its booster"
+    );
     for target in [channels[0].id, author.id] {
         plamenu_db::block::create(&pool, viewer.id, target, None)
             .await
@@ -185,11 +195,10 @@ async fn channel_publication_context_is_batched_truthful_and_visibility_guarded(
         .execute(&pool)
         .await
         .unwrap();
-    assert!(
-        context(&state, stored, None)
-            .await
-            .get("video_channels")
-            .is_none_or(|v| v == &json!([]))
+    assert_eq!(
+        context(&state, stored, None).await["video_channels"],
+        json!([]),
+        "tombstone has the Status extension shape without exposing publication context"
     );
     sqlx::query("UPDATE statuses SET deleted_at=NULL WHERE id=$1")
         .bind(stored.id)

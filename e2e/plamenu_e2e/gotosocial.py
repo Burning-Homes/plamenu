@@ -19,6 +19,7 @@ demand by this helper.
 """
 
 import re
+from pathlib import Path
 
 import requests
 
@@ -115,7 +116,12 @@ def dave() -> Api:
                 return api
             except ApiError:
                 pass
-    token = mint_token(DAVE_EMAIL, DAVE_PASS)
+    password = (
+        Path(config.GOTOSOCIAL_PASSWORD_FILE).read_text().strip()
+        if config.GOTOSOCIAL_PASSWORD_FILE
+        else DAVE_PASS
+    )
+    token = mint_token(DAVE_EMAIL, password)
     TOKEN_FILE.write_text(f"{SCOPES}\n{token}\n")
     return Api(config.GOTOSOCIAL_URL, token=token)
 

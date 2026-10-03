@@ -3,7 +3,7 @@
 // explicitly to establish peer exchange before the undelayed steady phase.
 import { chromium } from 'playwright';
 import { installPeerTubeWelcomeHandler } from './peertube-session.mjs';
-import {openVideoSettings,closeVideoSettings} from './video-settings.mjs';
+import {openVideoSettings,closeVideoSettings,selectVideoQuality} from './video-settings.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const [manifestPath, controlUrl, evidence] = process.argv.slice(2);
@@ -131,8 +131,7 @@ async function open(kind, url, delayMs, broadcast) {
       // A single source rendition has no artificial quality menu. Require
       // the actual decoded height below, just as for a selected VOD rung.
     } else if(kind==='native'){
-      const quality=page.getByRole('combobox',{name:'Video quality',exact:true});await quality.waitFor({state:'visible'});
-      await quality.selectOption({label:`${setting.qualityHeight}p`});
+      await selectVideoQuality(page, `${setting.qualityHeight}p`);
     }else{
       await video.hover({force:true});await page.locator('.vjs-settings').click();
       await page.locator('.vjs-main-menu .vjs-menu-item').filter({hasText:'Quality'}).click();

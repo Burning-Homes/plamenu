@@ -247,7 +247,7 @@ def test_interrupted_offload_restores_fenced_source_claim_and_peer_publication(
             wrong.chmod(0o600)
             failure = subprocess.run(
                 [
-                    str(ephemeral.BINARY),
+                    str(ephemeral.binary_path()),
                     "--config",
                     str(wrong),
                     "federation",

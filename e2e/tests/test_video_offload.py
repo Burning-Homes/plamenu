@@ -32,7 +32,7 @@ def _freeze(origin, evidence, monkeypatch):
     frozen = evidence / "candidate-plamenu"
     shutil.copyfile(f"/proc/{origin._proc.pid}/exe", frozen)
     frozen.chmod(0o700)
-    monkeypatch.setattr(ephemeral, "BINARY", frozen)
+    monkeypatch.setattr(ephemeral, "binary_path", lambda: frozen)
     return _digest(frozen)
 
 
@@ -43,7 +43,7 @@ class Processor:
         self.config = root / "worker.toml"
         subprocess.run(
             [
-                str(ephemeral.BINARY),
+                str(ephemeral.binary_path()),
                 "--config",
                 str(self.config),
                 "config",
@@ -95,7 +95,12 @@ class Processor:
     def launch(self):
         self.log = (self.root / "worker.log").open("a")
         self.proc = subprocess.Popen(
-            [str(ephemeral.BINARY), "--config", str(self.config), "video-worker"],
+            [
+                str(ephemeral.binary_path()),
+                "--config",
+                str(self.config),
+                "video-worker",
+            ],
             stdout=self.log,
             stderr=subprocess.STDOUT,
             env={**os.environ, "RUST_LOG": "info"},

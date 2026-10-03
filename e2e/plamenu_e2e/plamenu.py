@@ -3,7 +3,7 @@
 import re
 from dataclasses import dataclass, field
 
-from . import config, shell, unique
+from . import candidate, config, shell, unique
 from .api import Api, ApiError
 
 OOB = "urn:ietf:wg:oauth:2.0:oob"
@@ -42,7 +42,7 @@ class Cli:
         if self._runner is not None:
             return self._runner(*args)
         command = (
-            [config.PLAMENU_BINARY]
+            [str(candidate.binary_path())]
             if config.PLAMENU_BINARY
             else ["cargo", "run", "-q", "--"]
         )

@@ -134,6 +134,7 @@ async fn markdown_preview_renders_html_without_persisting(pool: PgPool) {
     assert!(preview["uri"].is_null());
     assert!(preview["url"].is_null());
     assert_eq!(preview["account"]["id"], alice.id.to_string());
+    assert_eq!(preview["video_channels"], json!([]));
 
     // Nothing was written: the author's statuses stay empty.
     let (_, timeline) = api(

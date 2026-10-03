@@ -1,6 +1,7 @@
 // Matched native HTTP-emission measurement, including seed cost. For a
 // PeerTube source this measures the Plamenu consumer, NOT PeerTube upstream.
 import { chromium } from 'playwright';
+import {selectVideoQuality} from './video-settings.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const [manifestPath, control, evidence] = process.argv.slice(2);
@@ -46,10 +47,8 @@ async function open(sharing) {
   await page.goto(manifest.local, { waitUntil: 'domcontentloaded' });
   const video = page.locator('video[data-hls]').first();
   await video.evaluate(v => { v.muted = true; v.play().catch(() => {}); });
-  const quality = page.getByRole('combobox', { name: 'Video quality', exact: true });
   try {
-    await quality.waitFor({ state: 'visible' });
-    await quality.selectOption({ label: '240p' });
+    await selectVideoQuality(page, '240p');
   } catch(error) {
     result.missingQualitySnapshot=await video.evaluate(v=>({sampledAtMs: performance.now(), playbackRate: v.playbackRate, seeking: v.seeking,
     bufferedRanges: [...Array(v.buffered.length)].map((_, n) => [v.buffered.start(n), v.buffered.end(n)]),

@@ -15,3 +15,17 @@ export async function closeVideoSettings(page) {
   await page.locator('.video-settings-dialog').getByRole('button', {name:'Close video settings', exact:true}).press('Enter');
   await page.locator('.video-settings-dialog').waitFor({state:'detached'});
 }
+
+// Finite VOD puts quality inside its playback disclosure; live/native controls
+// can keep it visible. Drive the real disclosure rather than forcing a hidden
+// select or changing player internals.
+export async function selectVideoQuality(page, label) {
+  const quality = page.getByRole('combobox', {name:'Video quality',exact:true,includeHidden:true});
+  await quality.waitFor({state:'attached',timeout:20000});
+  const menu = quality.locator('xpath=ancestor::details[1]');
+  const open = !await quality.isVisible() && await menu.count() === 1;
+  if (open) await menu.locator('summary').press('Enter');
+  await quality.waitFor({state:'visible',timeout:20000});
+  await quality.selectOption({label});
+  if (open) await menu.locator('summary').press('Enter');
+}

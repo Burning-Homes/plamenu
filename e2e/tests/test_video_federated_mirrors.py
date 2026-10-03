@@ -401,7 +401,7 @@ def test_native_mirror_copies_complete_graph_and_sends_real_cachefile_undo(
             wrong.chmod(0o600)
             negative = subprocess.run(
                 [
-                    str(ephemeral.BINARY),
+                    str(ephemeral.binary_path()),
                     "--config",
                     str(wrong),
                     "federation",

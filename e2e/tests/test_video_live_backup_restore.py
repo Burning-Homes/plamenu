@@ -715,7 +715,7 @@ def test_interrupted_live_recording_restores_into_fresh_database_and_storage(
                     root / "replica/native-live" / str(media) / session
                 ).exists()
             result = {
-                "candidate_sha256": _digest(ephemeral.BINARY),
+                "candidate_sha256": _digest(ephemeral.binary_path()),
                 "paired_roots": paired,
                 "backup_sha256": {
                     path.name: _digest(path) for path in backup.iterdir()

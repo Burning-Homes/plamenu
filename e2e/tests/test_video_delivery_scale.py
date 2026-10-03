@@ -438,7 +438,7 @@ def test_sustained_native_live_and_exact_peer_ranges_have_bounded_resources():
             times = sorted(value for result in seeks for value in result["latencies"])
             p95 = times[int((len(times) - 1) * 0.95)]
             result = {
-                "candidate_sha256": _digest(ephemeral.BINARY),
+                "candidate_sha256": _digest(ephemeral.binary_path()),
                 "duration_seconds": elapsed,
                 "live_viewers": LIVE_VIEWERS,
                 "range_viewers": RANGE_VIEWERS,

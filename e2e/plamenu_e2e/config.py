@@ -11,6 +11,7 @@ PLAMENU2_URL = os.environ.get("PLAMENU2_URL", "https://plamenu2.local")
 MASTODON_URL = os.environ.get("MASTODON_URL", "https://mastodon.local")
 PLEROMA_URL = os.environ.get("PLEROMA_URL", "https://pleroma.local")
 SHARKEY_URL = os.environ.get("SHARKEY_URL", "https://sharkey.local")
+GOTOSOCIAL_PASSWORD_FILE = os.environ.get("GOTOSOCIAL_PASSWORD_FILE")
 GOTOSOCIAL_URL = os.environ.get("GOTOSOCIAL_URL", "https://gotosocial.local")
 MITRA_URL = os.environ.get("MITRA_URL", "https://mitra.local")
 # The onion-identity Mitra (tor-test rig). Tests drive its client API

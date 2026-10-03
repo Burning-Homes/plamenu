@@ -315,7 +315,7 @@ def test_native_delivery_analytics_with_real_peer_ranges_and_live_encoder():
         ):
             manifest = {
                 "binary_sha256": hashlib.sha256(
-                    ephemeral.BINARY.read_bytes()
+                    ephemeral.binary_path().read_bytes()
                 ).hexdigest(),
                 "vod_body_bytes": sum(row["body_bytes"] for row in rows),
                 "live_body_bytes": sum(row["body_bytes"] for row in live_rows),

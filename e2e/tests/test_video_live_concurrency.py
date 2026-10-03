@@ -322,7 +322,7 @@ def test_two_broadcasts_eight_decoders_survive_real_tracker_tcp_loss(monkeypatch
                 time.sleep(1)
             elapsed = time.monotonic() - started
             summary = {
-                "candidate_sha256": _digest(ephemeral.BINARY),
+                "candidate_sha256": _digest(ephemeral.binary_path()),
                 "duration_seconds": elapsed,
                 "mean_service_cpu_cores": cpu_seconds / elapsed,
                 "max_service_rss": max(sample["service_rss"] for sample in samples),

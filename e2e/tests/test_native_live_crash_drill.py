@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 import requests
-from plamenu_e2e import config, peertube, unique
+from plamenu_e2e import candidate, config, peertube, unique
 from plamenu_e2e.api import ApiError
 from plamenu_e2e.steps import log, step, wait_for
 
@@ -37,21 +37,7 @@ def _ready():
 
 
 def _exact_local_server(pid: int):
-    root = config.PLAMENU_DIR.resolve()
-    cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
-    args = [part.decode() for part in cmdline if part]
-    assert args[0].endswith("/plamenu") and args[-3:] == [
-        "--config",
-        config.PLAMENU_CONFIG,
-        "serve",
-    ], args
-    assert Path(f"/proc/{pid}/cwd").resolve() == root
-    binary = Path(config.PLAMENU_BINARY or "").resolve()
-    assert binary == root / "target/debug/plamenu" and binary.is_file()
-    invoked = Path(args[0])
-    assert (invoked if invoked.is_absolute() else root / invoked).resolve() == binary
-    assert Path(f"/proc/{pid}/exe").resolve() == binary
-    return binary
+    return candidate.exact_local_server(pid)
 
 
 def _restart_candidate(binary: Path):

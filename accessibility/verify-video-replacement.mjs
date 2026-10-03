@@ -1,6 +1,7 @@
 // Keep an actual old first-party seeder alive across a stable-UUID replacement.
 // Only disposable local fixture credentials are accepted through the environment.
 import {chromium} from 'playwright';
+import {selectVideoQuality} from './video-settings.mjs';
 const [watchUrl,candidate]=process.argv.slice(2);
 const authorization=process.env.AP09_REPLACEMENT_AUTH;
 if(!watchUrl||!candidate||!authorization)throw new Error('expected local watch URL, private candidate and fixture authorization');
@@ -26,9 +27,7 @@ async function start(page){
   const video=page.locator('video[data-hls]');
   await video.waitFor({state:'attached'});
   await video.evaluate(v=>{v.muted=true;v.loop=true;v.play().catch(()=>{});});
-  const quality=page.getByRole('combobox',{name:'Video quality',exact:true});
-  await quality.waitFor({state:'visible',timeout:20000});
-  await quality.selectOption({label:'480p'});
+  await selectVideoQuality(page, '480p');
   await page.waitForFunction(()=>document.querySelector('video[data-hls]')?.videoHeight===480,null,{timeout:30000});
   await page.waitForFunction(()=>document.querySelector('video[data-hls]')?.currentTime>.5,null,{timeout:30000});
   return video;

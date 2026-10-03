@@ -30,7 +30,7 @@ import psycopg
 import requests
 from psycopg import sql
 
-from . import config, plamenu, unique
+from . import candidate, config, plamenu, unique
 from .api import Api
 from .db import Db
 
@@ -48,7 +48,10 @@ PEER_URL = config.PLAMENU2_URL
 PEER_BIND = "0.0.0.0:8422"
 PEER_DB_NAME = "plamenu_peer"
 
-BINARY = config.PLAMENU_DIR / "target" / "debug" / "plamenu"
+
+def binary_path() -> Path:
+    """Current candidate binding, also shared by frozen crash-drill consumers."""
+    return candidate.binary_path()
 
 
 class Instance:
@@ -77,11 +80,9 @@ class Instance:
         return Path(self._dir.name) / "plamenu.toml"
 
     def start(self, timeout: float = 120.0) -> None:
-        # The standing dev server is built from the same tree, so this is
-        # normally a cache hit; a stale binary would test yesterday's code.
-        subprocess.run(
-            ["cargo", "build", "-q"], cwd=config.PLAMENU_DIR, check=True, timeout=1800
-        )
+        # Resolve/validate an explicit candidate before any fixture mutations;
+        # ordinary development still builds the current default executable.
+        candidate.prepare_binary()
         # A fresh database every start: a previous run left accounts, follows
         # and (for doomed) a half-destroyed instance behind on purpose.
         with psycopg.connect(config.DB_DSN, autocommit=True) as conn:
@@ -125,7 +126,7 @@ class Instance:
         log_path = Path(self._dir.name) / "server.log"
         self._log = open(log_path, "a" if append_log else "w")  # noqa: SIM115 — process lifetime
         self._proc = subprocess.Popen(
-            [str(BINARY), "--config", str(self._config_path), "serve"],
+            [str(binary_path()), "--config", str(self._config_path), "serve"],
             cwd=self._dir.name,
             stdout=self._log,
             stderr=subprocess.STDOUT,
@@ -168,7 +169,7 @@ class Instance:
     def cli(self, *args: str, input_text: str | None = None) -> str:
         """Run the plamenu CLI against this instance's database."""
         proc = subprocess.run(
-            [str(BINARY), "--config", str(self._config_path), *args],
+            [str(binary_path()), "--config", str(self._config_path), *args],
             input=input_text,
             capture_output=True,
             text=True,

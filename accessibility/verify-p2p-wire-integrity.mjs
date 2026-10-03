@@ -2,7 +2,7 @@
 // actual PeerTube exchange, explicit opt-out and genuine no-JS playback.
 import {chromium} from 'playwright';
 import { installPeerTubeWelcomeHandler } from './peertube-session.mjs';
-import {openVideoSettings,closeVideoSettings} from './video-settings.mjs';
+import {openVideoSettings,closeVideoSettings,selectVideoQuality} from './video-settings.mjs';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {installPeerWireFault} from './p2p-wire-fault.mjs';
@@ -66,10 +66,8 @@ async function open(kind,{fault=false,delay=0,off=false,noJS=false,deferDecode=f
   await video.evaluate(v=>{v.muted=true;v.loop=true;v.play().catch(()=>{});});
   if(!noJS){
     if(kind==='native'){
-      const quality=page.getByRole('combobox',{name:'Video quality',exact:true});
       try {
-        await quality.waitFor({state:'visible'});
-        await quality.selectOption({label:'240p'});
+        await selectVideoQuality(page, '240p');
       } catch(error) {
         result.missingQualitySnapshot=await video.evaluate(v=>({sampledAtMs: performance.now(), playbackRate: v.playbackRate, seeking: v.seeking,
     bufferedRanges: [...Array(v.buffered.length)].map((_, n) => [v.buffered.start(n), v.buffered.end(n)]),
