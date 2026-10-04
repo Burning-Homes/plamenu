@@ -259,23 +259,27 @@ pub async fn resolve_status_ref(
     {
         Some((
             format!("https://{}/ap/accounts/{account_id}", state.config.domain),
+            None,
             status_id,
         ))
     } else {
         urls::parse_local_status_url(&state.config.domain, uri).map(|(username, status_id)| {
             (
                 format!("https://{}/users/{username}", state.config.domain),
+                Some(username),
                 status_id,
             )
         })
     };
-    if let Some((actor_uri, status_id)) = local_ref
-        && let Some(owner) =
-            crate::local_identity::find_actor(&state.pool, &state.config.domain, &actor_uri).await?
-    {
-        return status::find_local(&state.pool, owner.id, status_id)
-            .await
-            .map_err(ApiError::from);
+    if let Some((actor_uri, legacy_username, status_id)) = local_ref {
+        return status::find_local_by_actor_ref(
+            &state.pool,
+            &actor_uri,
+            legacy_username,
+            status_id,
+        )
+        .await
+        .map_err(ApiError::from);
     }
     Ok(None)
 }
@@ -347,7 +351,9 @@ pub async fn refresh_remote_status(
 /// stored note finds its parent already present. Backfill is best-effort:
 /// an unreachable or invalid ancestor truncates the thread there and the
 /// reply is still stored.
-async fn resolve_thread_parent(
+/// Backfills an already-probed missing parent. The caller authorizes discovery
+/// before entering; subsequent ancestors still check for a stored anchor first.
+async fn resolve_missing_thread_parent(
     state: &AppState,
     parent_uri: &str,
     quote_depth: usize,
@@ -361,12 +367,14 @@ async fn resolve_thread_parent(
     let mut anchor: Option<status::Status> = None;
     let mut seen: Vec<String> = Vec::new();
     let mut cursor = Some(parent_uri.to_owned());
+    let mut first_parent = true;
 
     while let Some(uri) = cursor.take() {
-        if let Some(known) = resolve_status_ref(state, &uri).await? {
+        if !first_parent && let Some(known) = resolve_status_ref(state, &uri).await? {
             anchor = Some(known);
             break;
         }
+        first_parent = false;
         // An unknown local URL cannot be fetched into existence, and a
         // forged chain must not make us walk in circles or without end.
         if uri.starts_with(&local_prefix)
@@ -809,6 +817,9 @@ async fn rewrite_remote_inline_images(
     status_id: i64,
     html: &str,
 ) -> Result<String, ApiError> {
+    if !INLINE_IMG_TAG.is_match(html) {
+        return Ok(html.to_owned());
+    }
     let rows = media::for_statuses_read_only(&state.pool, &[status_id])
         .await?
         .remove(&status_id)
@@ -1804,18 +1815,13 @@ pub(crate) async fn ingest_remote_note_delivery_deferred(
     author: &Account,
     object: &Value,
 ) -> Result<RemoteIngestResult, ApiError> {
-    let fetch_account_id = if object.get("inReplyTo").and_then(id_of).is_some() {
-        signed_fetch_recipient(state, author, object).await?
-    } else {
-        None
-    };
     ingest_remote_note_with_quote_depth(
         state,
         author,
         object,
         0,
         RemoteIngestContext::Delivery,
-        fetch_account_id,
+        ThreadFetchAccount::DeliveryRecipient,
     )
     .await
 }
@@ -1884,11 +1890,16 @@ pub async fn ingest_remote_note_in_context(
     object: &Value,
     context: RemoteIngestContext,
 ) -> Result<status::Status, ApiError> {
-    Ok(
-        ingest_remote_note_with_quote_depth(state, author, object, 0, context, None)
-            .await?
-            .status,
+    Ok(ingest_remote_note_with_quote_depth(
+        state,
+        author,
+        object,
+        0,
+        context,
+        ThreadFetchAccount::Supplied(None),
     )
+    .await?
+    .status)
 }
 
 /// Ingests an explicitly resolved object while preserving the local account
@@ -1900,11 +1911,23 @@ pub async fn ingest_remote_note_in_context_for_account(
     context: RemoteIngestContext,
     fetch_account_id: Option<i64>,
 ) -> Result<status::Status, ApiError> {
-    Ok(
-        ingest_remote_note_with_quote_depth(state, author, object, 0, context, fetch_account_id)
-            .await?
-            .status,
+    Ok(ingest_remote_note_with_quote_depth(
+        state,
+        author,
+        object,
+        0,
+        context,
+        ThreadFetchAccount::Supplied(fetch_account_id),
     )
+    .await?
+    .status)
+}
+
+/// Supplied signed-fetch identity stays authoritative for explicit resolution;
+/// delivery chooses a recipient only if a missing ancestor must be fetched.
+enum ThreadFetchAccount {
+    Supplied(Option<i64>),
+    DeliveryRecipient,
 }
 
 async fn ingest_remote_note_with_quote_depth(
@@ -1913,20 +1936,30 @@ async fn ingest_remote_note_with_quote_depth(
     object: &Value,
     quote_depth: usize,
     context: RemoteIngestContext,
-    fetch_account_id: Option<i64>,
+    fetch_account: ThreadFetchAccount,
 ) -> Result<RemoteIngestResult, ApiError> {
-    // A verified signer cannot make discovery allocate ancestors for a URI
-    // already owned by another author. Storage rechecks under its gate too.
     let object_uri = id_of(object).ok_or_else(|| ApiError::BadRequest("note has no id".into()))?;
-    ensure_known_remote_object_author(state, author, object_uri).await?;
-    let in_reply_to_id = match object.get("inReplyTo").and_then(id_of) {
-        Some(parent_uri) if context.is_history() => resolve_status_ref(state, parent_uri)
-            .await?
-            .map(|parent| parent.id),
-        Some(parent_uri) => {
+    let in_reply_to_id = if let Some(parent_uri) = object.get("inReplyTo").and_then(id_of) {
+        if let Some(parent) = resolve_status_ref(state, parent_uri).await? {
+            Some(parent.id)
+        } else if context.is_history()
+            || parent_uri.starts_with(&format!("https://{}/", state.config.domain))
+        {
+            None
+        } else {
+            // A verified signer cannot allocate ancestors for a URI already
+            // owned by another author. Known/local/history parents allocate
+            // nothing and proceed to the authoritative locked storage check.
+            ensure_known_remote_object_author(state, author, object_uri).await?;
+            let fetch_account_id = match fetch_account {
+                ThreadFetchAccount::Supplied(account_id) => account_id,
+                ThreadFetchAccount::DeliveryRecipient => {
+                    signed_fetch_recipient(state, author, object).await?
+                }
+            };
             // Ancestor backfill nests another storage future. Heap-allocate
             // this boundary so first-use sanitizers retain stack headroom.
-            Box::pin(resolve_thread_parent(
+            Box::pin(resolve_missing_thread_parent(
                 state,
                 parent_uri,
                 quote_depth,
@@ -1936,7 +1969,8 @@ async fn ingest_remote_note_with_quote_depth(
             .await?
             .map(|parent| parent.id)
         }
-        None => None,
+    } else {
+        None
     };
     Box::pin(store_remote_note(
         state,
@@ -2122,7 +2156,6 @@ async fn store_remote_note(
     context: RemoteIngestContext,
 ) -> Result<RemoteIngestResult, ApiError> {
     let object_uri = id_of(object).ok_or_else(|| ApiError::BadRequest("note has no id".into()))?;
-    ensure_known_remote_object_author(state, author, object_uri).await?;
     let _write_guard = state.remote_status_writes.lock(object_uri).await?;
     let current = status::find_by_uri(&state.pool, object_uri).await?;
     if current
@@ -2222,6 +2255,7 @@ async fn store_remote_note(
     let hashtags = remote_hashtag_names(object);
     let has_structural_rows =
         parsed_poll.is_some() || !mention_plan.rows.is_empty() || !hashtags.is_empty();
+    let mut inserted = false;
     let (mut stored, delivery_effects, promote_media) = if has_structural_rows {
         let mut tx = state
             .pool
@@ -2233,6 +2267,7 @@ async fn store_remote_note(
             if let Some(stored) =
                 status::insert_remote_delivery_claimed(&mut *tx, new_status).await?
             {
+                inserted = true;
                 (stored, true, false)
             } else {
                 let stored = status::upsert_remote_with_provenance(
@@ -2272,6 +2307,7 @@ async fn store_remote_note(
         if let Some(stored) =
             status::insert_remote_delivery_claimed(&state.pool, new_status).await?
         {
+            inserted = true;
             (stored, true, false)
         } else {
             let stored = status::upsert_remote_with_provenance(
@@ -2373,7 +2409,9 @@ async fn store_remote_note(
     let mention_notify = mention_plan.notify;
     // Register tag usage for the ranking engine, at ingest time like Mastodon's
     // inbound-Create `Trends.tags.register`. Edits (above) don't re-register.
-    if delivery_effects {
+    // A fresh untagged row has no usage to register. Existing statuses may
+    // retain tags from prior resolution even when this delivery omits them.
+    if delivery_effects && (!inserted || !hashtags.is_empty()) {
         tag::record_uses(&state.pool, stored.id, OffsetDateTime::now_utc().date()).await?;
     }
     if delivery_effects {
@@ -3181,7 +3219,7 @@ async fn resolve_or_fetch_quote_target(
         &object,
         quote_depth + 1,
         RemoteIngestContext::ExplicitResolution,
-        None,
+        ThreadFetchAccount::Supplied(None),
     ))
     .await
     .map(|result| Some(result.status))
@@ -4300,6 +4338,10 @@ async fn store_inline_image_attachments(
     object: &Value,
     force_on_demand: bool,
 ) -> Result<(), ApiError> {
+    let pairs = inline_image_pairs(object);
+    if pairs.is_empty() {
+        return Ok(());
+    }
     let existing = media::for_statuses_read_only(&state.pool, &[stored.id])
         .await?
         .remove(&stored.id)
@@ -4309,7 +4351,7 @@ async fn store_inline_image_attachments(
         .filter_map(|item| item.remote_url.clone())
         .collect();
     let mut total = existing.len();
-    for (url, description) in inline_image_pairs(object) {
+    for (url, description) in pairs {
         if urls.contains(&url) {
             if let Some(description) = description.as_deref() {
                 media::fill_remote_description(&state.pool, stored.id, &url, description).await?;

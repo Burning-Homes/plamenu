@@ -28,6 +28,67 @@ use tracing_subscriber::prelude::*;
 
 const ALICE_URI: &str = "https://plamenu.test/users/alice";
 
+struct GroupMembershipReadCounter(Arc<AtomicUsize>);
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for GroupMembershipReadCounter {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _context: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        #[derive(Default)]
+        struct Statement(bool);
+        impl tracing::field::Visit for Statement {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if matches!(field.name(), "summary" | "db.statement")
+                    && format!("{value:?}").contains("FROM groups g")
+                {
+                    self.0 = true;
+                }
+            }
+        }
+        if !event.metadata().target().starts_with("sqlx::query") {
+            return;
+        }
+        let mut statement = Statement::default();
+        event.record(&mut statement);
+        if statement.0 {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+struct FetchRecipientReadCounter(Arc<AtomicUsize>);
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for FetchRecipientReadCounter {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _context: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        #[derive(Default)]
+        struct Statement(bool);
+        impl tracing::field::Visit for Statement {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if matches!(field.name(), "summary" | "db.statement") {
+                    let sql = format!("{value:?}");
+                    self.0 |= sql.contains("f.target_account_id = $1")
+                        && sql.contains("ORDER BY f.account_id")
+                        && !sql.contains("f.notify");
+                }
+            }
+        }
+        if !event.metadata().target().starts_with("sqlx::query") {
+            return;
+        }
+        let mut statement = Statement::default();
+        event.record(&mut statement);
+        if statement.0 {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 fn follow_activity(bob: &RemoteUser) -> Value {
     json!({
         "@context": "https://www.w3.org/ns/activitystreams",
@@ -1631,7 +1692,8 @@ async fn create_note_attributed_to_someone_else_is_ignored(pool: PgPool) {
 async fn delete_removes_own_status_only(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
-    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let mallory = RemoteUser::new("remote.example", "mallory");
+    let stub = StubFederation::with_actors([bob.actor.clone(), mallory.actor.clone()]);
     let note_uri = format!("{}/statuses/1", bob.actor.id);
     let create = json!({
         "type": "Create",
@@ -1657,9 +1719,35 @@ async fn delete_removes_own_status_only(pool: PgPool) {
             .unwrap()
             .is_some()
     );
+    let counter = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(GroupMembershipReadCounter(counter.clone())),
+    );
+    let mut foreign_delete = delete.clone();
+    foreign_delete["actor"] = json!(mallory.actor.id);
+    assert_eq!(
+        post_signed(app(), "/inbox", &foreign_delete, &mallory.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    assert!(
+        status::find_by_uri(&pool, &note_uri)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        counter.load(Ordering::Relaxed),
+        0,
+        "foreign deletion has no audience"
+    );
     assert_eq!(
         post_signed(app(), "/inbox", &delete, &bob.signer()).await,
         StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        counter.load(Ordering::Relaxed),
+        1,
+        "capture the authenticated owner's group audience once"
     );
     assert!(
         status::find_by_uri(&pool, &note_uri)
@@ -1853,6 +1941,182 @@ async fn reply_to_unknown_status_backfills_ancestor_chain(pool: PgPool) {
         stub.account_fetches(),
         [(uri_of(&mid), alice.id), (uri_of(&root), alice.id),],
         "ancestor backfill must use the local follower's signing identity"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn plain_note_ingest_does_not_wait_for_inline_image_media(pool: PgPool) {
+    let bob = RemoteUser::new("remote.example", "bob");
+    let stored_bob = remote::store_remote_actor(&pool, &bob.actor).await.unwrap();
+    let state = test_state_with(pool.clone(), Arc::default());
+    let object = note_object(&bob, "no-inline-images", None);
+    let mut blocker = pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE media_attachments IN ACCESS EXCLUSIVE MODE")
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let result = tokio::time::timeout(
+        Duration::from_secs(3),
+        plamenu::ingest::ingest_remote_note(&state, &stored_bob, &object),
+    )
+    .await;
+    blocker.rollback().await.unwrap();
+    let stored = result
+        .expect("a plain Note has no inline images to resolve")
+        .unwrap();
+    assert_eq!(stored.content, "<p>no-inline-images</p>");
+    assert_eq!(stored.uri.as_deref(), Some(uri_of(&object).as_str()));
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn explicit_ancestor_fetch_keeps_supplied_account_or_instance_signer(pool: PgPool) {
+    let alice = create_local_account(&pool, "alice", "First eligible follower").await;
+    let reader = create_local_account(&pool, "reader", "Explicit reader").await;
+    let bob = RemoteUser::new("remote.example", "bob");
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let stored_bob = remote::store_remote_actor(&pool, &bob.actor).await.unwrap();
+    follow::create(&pool, alice.id, stored_bob.id, None)
+        .await
+        .unwrap();
+    let state = test_state_with(pool.clone(), stub.clone());
+    let mut expected_fetches = Vec::new();
+    let mut expected_account_fetches = Vec::new();
+    for (n, signer) in [Some(reader.id), None].into_iter().enumerate() {
+        let root = note_object(&bob, &format!("explicit-root-{n}"), None);
+        let mid = note_object(&bob, &format!("explicit-mid-{n}"), Some(&uri_of(&root)));
+        let leaf = note_object(&bob, &format!("explicit-leaf-{n}"), Some(&uri_of(&mid)));
+        stub.objects
+            .lock()
+            .unwrap()
+            .extend([(uri_of(&root), root.clone()), (uri_of(&mid), mid.clone())]);
+        let reply = plamenu::ingest::ingest_remote_note_in_context_for_account(
+            &state,
+            &stored_bob,
+            &leaf,
+            plamenu::ingest::RemoteIngestContext::ExplicitResolution,
+            signer,
+        )
+        .await
+        .unwrap();
+        let stored_root = stored_status(&pool, &uri_of(&root)).await.unwrap();
+        let stored_mid = stored_status(&pool, &uri_of(&mid)).await.unwrap();
+        assert_eq!(reply.in_reply_to_id, Some(stored_mid.id));
+        assert_eq!(stored_mid.in_reply_to_id, Some(stored_root.id));
+        expected_fetches.extend([uri_of(&mid), uri_of(&root)]);
+        if let Some(account_id) = signer {
+            expected_account_fetches
+                .extend([(uri_of(&mid), account_id), (uri_of(&root), account_id)]);
+        }
+    }
+    assert_eq!(stub.fetches(), expected_fetches);
+    assert_eq!(
+        stub.account_fetches(),
+        expected_account_fetches,
+        "an explicit account or instance signer is never replaced by the first follower"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn known_reply_parents_do_not_select_an_ancestor_fetch_recipient(pool: PgPool) {
+    use plamenu_db::conversation::{self, ContextRefs, EnsureConversation};
+
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = RemoteUser::new("remote.example", "bob");
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let stored_bob = remote::store_remote_actor(&pool, &bob.actor).await.unwrap();
+    follow::create(&pool, alice.id, stored_bob.id, None)
+        .await
+        .unwrap();
+    let app = || test_app_with(pool.clone(), stub.clone());
+    let mut parents = Vec::new();
+    for retained_stub in [false, true] {
+        let parent = status::create_local(
+            &pool,
+            status::NewLocalStatus::new(alice.id, "<p>private parent</p>", "private", None),
+        )
+        .await
+        .unwrap();
+        conversation::ensure_for_status(
+            &pool,
+            &EnsureConversation {
+                status_id: parent.id,
+                account_id: alice.id,
+                in_reply_to_id: None,
+                is_reply: false,
+                refs: ContextRefs {
+                    context_uri: None,
+                    history_uri: None,
+                },
+            },
+        )
+        .await
+        .unwrap();
+        if retained_stub {
+            status::create_local(
+                &pool,
+                status::NewLocalStatus::new(
+                    alice.id,
+                    "<p>retained reply</p>",
+                    "private",
+                    Some(parent.id),
+                ),
+            )
+            .await
+            .unwrap();
+            status::stub_local(&pool, parent.id, alice.id)
+                .await
+                .unwrap();
+        }
+        let uri = plamenu::entities::status_uri_for_account(TEST_DOMAIN, &parent, &alice);
+        parents.push((uri, parent.id, "private"));
+    }
+    let remote_parent = note_object(&bob, "already-known", None);
+    assert_eq!(
+        post_signed(
+            app(),
+            "/inbox",
+            &create_activity(&bob, &remote_parent),
+            &bob.signer()
+        )
+        .await,
+        StatusCode::ACCEPTED,
+    );
+    let remote_uri = uri_of(&remote_parent);
+    let remote_row = stored_status(&pool, &remote_uri).await.unwrap();
+    parents.push((remote_uri, remote_row.id, "public"));
+    stub.fetches.lock().unwrap().clear();
+    let reads = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(FetchRecipientReadCounter(reads.clone())),
+    );
+    let mut counts = Vec::new();
+    for (n, (uri, id, visibility)) in parents.into_iter().enumerate() {
+        let object = note_object(&bob, &format!("known-parent-{n}"), Some(&uri));
+        reads.store(0, Ordering::Relaxed);
+        assert_eq!(
+            post_signed(
+                app(),
+                "/inbox",
+                &create_activity(&bob, &object),
+                &bob.signer()
+            )
+            .await,
+            StatusCode::ACCEPTED,
+        );
+        counts.push(reads.load(Ordering::Relaxed));
+        let reply = stored_status(&pool, &uri_of(&object)).await.unwrap();
+        assert_eq!(reply.in_reply_to_id, Some(id));
+        assert_eq!(
+            reply.visibility, visibility,
+            "the root audience still clamps a reply"
+        );
+    }
+    assert!(stub.fetches().is_empty());
+    assert!(stub.account_fetches().is_empty());
+    assert_eq!(
+        counts,
+        [0, 0, 0],
+        "known local, stub and remote parents need no fetch signing identity"
     );
 }
 

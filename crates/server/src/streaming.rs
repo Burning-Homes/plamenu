@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use plamenu_db::account::Account;
 use plamenu_db::status::Status;
 use plamenu_db::streaming::{self as events, Event};
 use plamenu_db::{account, announcement, conversation, list, mention, notification, status, tag};
@@ -417,6 +418,15 @@ pub async fn prepare_delete_event(state: &AppState, item: &Status) -> Result<Eve
     let author = account::find_by_id(&state.pool, item.account_id)
         .await?
         .ok_or(ApiError::NotFound)?;
+    prepare_delete_event_for_author(state, item, &author).await
+}
+
+/// Reuse the fresh canonical author already captured by a deletion caller.
+pub(crate) async fn prepare_delete_event_for_author(
+    state: &AppState,
+    item: &Status,
+    author: &Account,
+) -> Result<Event, ApiError> {
     let original = item.reblog_of_id.is_none();
     let public = item.visibility == "public" && original;
     let local_account = author.has_local_account_on(&state.config.domain);

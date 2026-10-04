@@ -43,6 +43,15 @@ impl ActorKey {
     }
 }
 
+/// Public actor documents need no private envelope or lifecycle payload.
+#[derive(Debug, Clone)]
+pub struct PublishedPublicKey {
+    pub key_uri: String,
+    pub controller_uri: String,
+    pub algorithm: String,
+    pub public_key: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct NewPublicKey {
     pub key_uri: String,
@@ -357,6 +366,28 @@ pub async fn published_for_account<'e, E: sqlx::PgExecutor<'e>>(
         .bind(account_id)
         .fetch_all(pool)
         .await?)
+}
+
+/// Public projection of [`published_for_account`]. Scheduled keys are advertised
+/// before signing activation; revoked, retired and expired keys stay excluded.
+pub async fn published_public_for_account<'e, E: sqlx::PgExecutor<'e>>(
+    pool: E,
+    account_id: i64,
+) -> Result<Vec<PublishedPublicKey>, DbError> {
+    Ok(sqlx::query_as!(
+        PublishedPublicKey,
+        r#"
+        SELECT key_uri, controller_uri, algorithm, public_key
+        FROM actor_keys
+        WHERE owner_kind = 'account' AND account_id = $1
+          AND revoked_at IS NULL AND retired_at IS NULL
+          AND (expires_at IS NULL OR expires_at > now())
+        ORDER BY algorithm, activated_at DESC, id DESC
+        "#,
+        account_id,
+    )
+    .fetch_all(pool)
+    .await?)
 }
 
 /// Moves a newly-inserted private key's signing activation into the future.

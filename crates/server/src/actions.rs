@@ -4301,14 +4301,18 @@ pub async fn delete_status(
     let actor = &original_author;
     // The streaming event's routing data (tags, mentioned locals) must be
     // captured before the delete cascades those rows away.
-    let delete_event = crate::streaming::prepare_delete_event(state, &existing).await?;
+    let delete_event =
+        crate::streaming::prepare_delete_event_for_author(state, &existing, actor).await?;
     // Likewise a group submission's retraction data: the attributing
     // mention rows and the group's boost row cascade with the status.
     let group_accounts = crate::groups::group_accounts_of_status(state, &existing).await?;
-    let group_boosts = crate::groups::capture_boosts(state, &existing, actor).await?;
+    let group_boosts =
+        crate::groups::capture_boosts_from_groups(state, &existing, actor, &group_accounts).await?;
     // Remote communities the post belongs to: captured before the delete
     // cascade removes their boost rows, so the `Delete` can still reach them.
-    let remote_communities = crate::groups::remote_community_inboxes(state, &existing).await?;
+    let remote_communities =
+        crate::groups::remote_community_inboxes_from_groups(state, &existing, &group_accounts)
+            .await?;
     // A DM's audience (and its conversation) must be captured before the
     // delete cascades the mention rows away.
     let direct_audience = if existing.visibility == "direct" {

@@ -281,28 +281,28 @@ pub async fn get_replies(
     // is the one crawlers walk to backfill a thread, and a page of 60 used to
     // cost ~19 round trips each.
     let local: Vec<&Status> = replies.iter().filter(|reply| reply.uri.is_none()).collect();
-    let authors = if local.is_empty() {
-        Vec::new()
-    } else {
-        account::find_by_ids(
-            &state.pool,
-            &local
-                .iter()
-                .map(|reply| reply.account_id)
-                .collect::<Vec<_>>(),
-        )
-        .await?
-    };
-    let batch = NoteBatch::load(&state, &local).await?;
+    // Dereference already loaded this request's root owner. The self-replies
+    // page can reuse that identity; other local authors still load normally.
+    let author_ids: Vec<_> = local
+        .iter()
+        .map(|reply| reply.account_id)
+        .filter(|id| *id != account.id)
+        .collect();
+    let authors = account::find_by_ids(&state.pool, &author_ids).await?;
+    let batch = NoteBatch::load_with_parent(&state, &local, &stored, &account).await?;
     let mut items = Vec::with_capacity(replies.len());
     for reply in &replies {
         items.push(if let Some(remote_uri) = &reply.uri {
             Value::String(remote_uri.clone())
         } else {
-            let author = authors
-                .iter()
-                .find(|a| a.id == reply.account_id)
-                .ok_or(ApiError::NotFound)?;
+            let author = if reply.account_id == account.id {
+                &account
+            } else {
+                authors
+                    .iter()
+                    .find(|a| a.id == reply.account_id)
+                    .ok_or(ApiError::NotFound)?
+            };
             note_in_batch(&state, reply, author, &batch)?
         });
     }

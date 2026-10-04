@@ -56,7 +56,8 @@ async fn published_actor_keys_conn(
         account.uri.as_deref(),
     );
     let actor_id = urls.id.clone();
-    let usable = plamenu_db::actor_key::published_for_account(&mut *conn, account.id).await?;
+    let usable =
+        plamenu_db::actor_key::published_public_for_account(&mut *conn, account.id).await?;
     let rsa = usable.iter().find(|key| {
         key.algorithm == "rsa" && key.controller_uri == actor_id && !key.public_key.is_empty()
     });
@@ -150,6 +151,7 @@ pub async fn local_actor_conn(
     if account.suspended() {
         return suspended_actor_conn(state, conn, account, published).await;
     }
+    let sidecars = plamenu_db::actor_profile::load(&mut *conn, account.id).await?;
     let image_of = |file_name: &Option<String>, description: &str| {
         file_name.as_ref().map(|file| {
             Image::new(
@@ -185,11 +187,11 @@ pub async fn local_actor_conn(
         &[&emojifiable],
     )
     .await?;
-    for featured in plamenu_db::featured_tag::list(&mut *conn, account.id).await? {
+    for name in &sidecars.featured_names {
         emoji_tags.push(plamenu_ap::actor::profile_hashtag_tag(
             domain,
             &account.username,
-            &featured.name,
+            name,
         ));
     }
     let keys = published_actor_keys_conn(state, conn, account).await?;
@@ -236,7 +238,7 @@ pub async fn local_actor_conn(
             // in the actor), so only the bot/indexable flags reach the document.
             bot: account.is_bot,
             indexable: account.indexable,
-            attribution_domains: account::attribution_domains(&mut *conn, account.id).await?,
+            attribution_domains: sidecars.attribution_domains,
             memorial: account.memorial,
             suspended: false,
             show_featured: account.show_featured,
@@ -251,8 +253,16 @@ pub async fn local_actor_conn(
     );
     crate::video::channel_actor(state, conn, account, &mut actor).await?;
     actor.playlists = Some(format!("{}/playlists", actor.id));
-    let proofs = crate::identity::list_conn(conn, account, &actor.id).await?;
-    actor.attachment.extend(proofs);
+    let documents = sidecars
+        .identity_documents
+        .as_ref()
+        .and_then(Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
+    actor.attachment.extend(plamenu_ap::identity::verified(
+        documents,
+        &actor.id,
+        time::OffsetDateTime::now_utc(),
+    ));
     Ok(actor)
 }
 

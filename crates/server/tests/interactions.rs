@@ -2295,6 +2295,88 @@ fn build_router_state(state: &plamenu::AppState) -> Router {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn fresh_untagged_remote_note_does_not_wait_for_tag_usage_writer(pool: PgPool) {
+    let bob = RemoteUser::new("remote.example", "bob");
+    let state = test_state_with(
+        pool.clone(),
+        StubFederation::with_actors([bob.actor.clone()]),
+    );
+    let uri = format!("{}/notes/untagged", bob.actor.id);
+    let create = json!({"type":"Create","actor":bob.actor.id,
+        "to":["https://www.w3.org/ns/activitystreams#Public"],
+        "object":{"id":uri,"type":"Note","attributedTo":bob.actor.id,
+            "content":"<p>no hashtags</p>",
+            "to":["https://www.w3.org/ns/activitystreams#Public"]}});
+    let mut writer = pool.begin().await.unwrap();
+    sqlx::query("LOCK TABLE tag_usages IN SHARE MODE")
+        .execute(&mut *writer)
+        .await
+        .unwrap();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        post_signed(build_router_state(&state), &create, &bob.signer()),
+    )
+    .await;
+    writer.rollback().await.unwrap();
+    assert_eq!(
+        result.expect("untagged Note waited for an unrelated tag-usage writer"),
+        StatusCode::ACCEPTED,
+    );
+    let stored = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+    assert_eq!(stored.content, "<p>no hashtags</p>");
+    let uses: i64 = sqlx::query_scalar("SELECT count(*) FROM tag_usages")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(uses, 0);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn existing_remote_note_keeps_tag_usage_on_tagless_delivery(pool: PgPool) {
+    let bob = RemoteUser::new("remote.example", "bob");
+    let state = test_state_with(
+        pool.clone(),
+        StubFederation::with_actors([bob.actor.clone()]),
+    );
+    let author = remote::refresh_remote_actor(&state, &bob.actor)
+        .await
+        .unwrap();
+    let uri = format!("{}/notes/resolved-tags", bob.actor.id);
+    let mut object = json!({"id":uri,"type":"Note","attributedTo":bob.actor.id,
+        "content":"<p>resolved tags</p>",
+        "to":["https://www.w3.org/ns/activitystreams#Public"],
+        "tag":[{"type":"Hashtag","name":"#retained"}]});
+    plamenu::ingest::ingest_remote_note_in_context(
+        &state,
+        &author,
+        &object,
+        plamenu::ingest::RemoteIngestContext::ExplicitResolution,
+    )
+    .await
+    .unwrap();
+    object.as_object_mut().unwrap().remove("tag");
+    let create = json!({"type":"Create","actor":bob.actor.id,
+        "to":["https://www.w3.org/ns/activitystreams#Public"],"object":object});
+    for _ in 0..2 {
+        assert_eq!(
+            post_signed(build_router_state(&state), &create, &bob.signer()).await,
+            StatusCode::ACCEPTED,
+        );
+    }
+    let uses: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(sum(uses),0)::bigint FROM tag_usages WHERE account_id=$1",
+    )
+    .bind(author.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        uses, 1,
+        "existing tags count once on live delivery promotion"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn inbound_content_is_sanitized_and_attachments_stored(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");

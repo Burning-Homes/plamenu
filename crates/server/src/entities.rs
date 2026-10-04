@@ -22,9 +22,9 @@ use plamenu_db::scheduled_status::ScheduledStatus;
 use plamenu_db::status::{Engagement, Status};
 use plamenu_db::user::UserSettings;
 use plamenu_db::{
-    PgPool, account, account_note, block, bookmark, collection, conversation, endorsement,
-    favourite, featured_tag, follow, media, mention, mute, oauth, pin, poll, preview_card,
-    preview_card_trend, quote, reaction, rule, status, tag, tagged_object, user,
+    PgPool, account, account_note, block, collection, endorsement, featured_tag, follow, media,
+    mention, mute, oauth, poll, preview_card, preview_card_trend, quote, reaction, rule, status,
+    tag, tagged_object, user,
 };
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -2446,6 +2446,29 @@ pub async fn tag_json_page_for_viewer<T: TagRow>(
     ))
 }
 
+/// Loads a ranked public trends page and all its sidecars in one SQL snapshot.
+pub async fn trending_tag_json_page_for_viewer(
+    pool: &PgPool,
+    domain: &str,
+    limit: i64,
+    offset: i64,
+    viewer_account_id: Option<i64>,
+) -> Result<Vec<Value>, ApiError> {
+    let (from, today) = tag_history_window();
+    let page =
+        plamenu_db::tag_trend::allowed_page(pool, limit, offset, viewer_account_id, from, today)
+            .await?;
+    Ok(assemble_tag_json_page(
+        domain,
+        &page.tags,
+        &page.flags.following,
+        &page.flags.featuring,
+        viewer_account_id.is_some(),
+        &page.histories,
+        today,
+    ))
+}
+
 fn assemble_tag_json_page<T: TagRow, S: std::hash::BuildHasher>(
     domain: &str,
     rows: &[T],
@@ -3472,8 +3495,8 @@ struct ViewerFlags {
     muted: HashSet<i64>,
 }
 
-/// Every signed-in viewer's per-status flags, each dimension one batched
-/// query across the whole viewer set (N+1 decisions).
+/// Every signed-in viewer's per-status flags in one query across all six
+/// dimensions and the whole viewer set (N+1 decisions).
 async fn viewer_flags_for_set(
     pool: &PgPool,
     signed_in: &[i64],
@@ -3482,35 +3505,28 @@ async fn viewer_flags_for_set(
     if signed_in.is_empty() {
         return Ok(HashMap::new());
     }
-    // Six independent reads issued concurrently: the latency of
-    // this step is the slowest round trip, not the sum of all six.
-    let (favourited, disliked, reblogged, bookmarked, pinned, muted) = tokio::try_join!(
-        favourite::favourited_of_viewers(pool, signed_in, all_ids),
-        plamenu_db::dislike::disliked_of_viewers(pool, signed_in, all_ids),
-        status::reblogged_of_viewers(pool, signed_in, all_ids),
-        bookmark::bookmarked_of_viewers(pool, signed_in, all_ids),
-        pin::pinned_of_viewers(pool, signed_in, all_ids),
-        conversation::muted_status_ids_for_viewers(pool, signed_in, all_ids),
-    )?;
+    // One snapshot for every dimension and viewer, with one pool checkout.
+    let rows = status::viewer_flags_for_statuses(pool, signed_in, all_ids).await?;
     let mut flags: HashMap<i64, ViewerFlags> = signed_in
         .iter()
         .map(|&viewer| (viewer, ViewerFlags::default()))
         .collect();
-    let fold = |flags: &mut HashMap<i64, ViewerFlags>,
-                pairs: Vec<(i64, i64)>,
-                pick: fn(&mut ViewerFlags) -> &mut HashSet<i64>| {
-        for (viewer, status_id) in pairs {
-            if let Some(entry) = flags.get_mut(&viewer) {
-                pick(entry).insert(status_id);
+    for row in rows {
+        if let Some(entry) = flags.get_mut(&row.account_id) {
+            for (present, ids) in [
+                (row.favourited, &mut entry.favourited),
+                (row.disliked, &mut entry.disliked),
+                (row.reblogged, &mut entry.reblogged),
+                (row.bookmarked, &mut entry.bookmarked),
+                (row.pinned, &mut entry.pinned),
+                (row.muted, &mut entry.muted),
+            ] {
+                if present {
+                    ids.insert(row.status_id);
+                }
             }
         }
-    };
-    fold(&mut flags, favourited, |f| &mut f.favourited);
-    fold(&mut flags, disliked, |f| &mut f.disliked);
-    fold(&mut flags, reblogged, |f| &mut f.reblogged);
-    fold(&mut flags, bookmarked, |f| &mut f.bookmarked);
-    fold(&mut flags, pinned, |f| &mut f.pinned);
-    fold(&mut flags, muted, |f| &mut f.muted);
+    }
     Ok(flags)
 }
 
@@ -3518,11 +3534,7 @@ async fn application_maps(
     pool: &PgPool,
     items: &[Status],
     targets: &HashMap<i64, Status>,
-    author_rows: &HashMap<i64, Account>,
-) -> Result<(HashMap<i64, Value>, HashMap<i64, bool>), ApiError> {
-    let author_ids: Vec<i64> = author_rows.keys().copied().collect();
-    let show_application = user::show_application_by_account_ids(pool, &author_ids).await?;
-
+) -> Result<HashMap<i64, Value>, ApiError> {
     // Every distinct client application on the page in one query; ids whose
     // app row is gone are simply absent (the entity omits `application`).
     let mut app_ids: Vec<i64> = items
@@ -3538,7 +3550,7 @@ async fn application_maps(
         .map(|app| (app.id, status_application_json(app)))
         .collect();
 
-    Ok((applications, show_application))
+    Ok(applications)
 }
 
 fn attach_remote_peer_hints(
@@ -3982,6 +3994,12 @@ struct AuthorView {
     relations: FeatureRelations,
 }
 
+type AuthorPassMaps = (
+    HashMap<i64, Account>,
+    HashMap<Option<i64>, AuthorView>,
+    HashMap<i64, bool>,
+);
+
 /// Builds the author `Account` rows for a status page plus every viewer's
 /// rendered author entities. All facts are resolved in a fixed number of
 /// queries regardless of author count *and* viewer count (N+1 decisions):
@@ -3998,7 +4016,7 @@ async fn author_pass_for_viewer_set(
     group_attributions: &HashMap<i64, Vec<i64>>,
     set: &[Option<i64>],
     allow_direct_of: &HashMap<Option<i64>, bool>,
-) -> Result<(HashMap<i64, Account>, HashMap<Option<i64>, AuthorView>), ApiError> {
+) -> Result<AuthorPassMaps, ApiError> {
     let (author_rows, movers, moved_rows, union_ids) =
         author_batch_rows(pool, items, targets, group_attributions).await?;
     let signed_in: Vec<i64> = set.iter().copied().flatten().collect();
@@ -4027,6 +4045,12 @@ async fn author_pass_for_viewer_set(
                 .map_err(ApiError::from)
         },
     )?;
+    // Reuse the same user snapshot for Status application visibility, including
+    // the existing distinction between an omitted field and an explicit null.
+    let show_application = overlays
+        .iter()
+        .filter_map(|(&id, overlay)| overlay.show_application.map(|show| (id, show)))
+        .collect();
     // Profile emoji per distinct direct-media preference among the viewers (at
     // most two lookups, usually one).
     let mut variant_values: Vec<bool> = allow_direct_of.values().copied().collect();
@@ -4085,7 +4109,7 @@ async fn author_pass_for_viewer_set(
         .await?;
         views.insert(*viewer, view);
     }
-    Ok((shared.author_rows, views))
+    Ok((shared.author_rows, views, show_application))
 }
 
 /// The account rows of one status page: the distinct authors (statuses,
@@ -4374,7 +4398,7 @@ async fn render_statuses_for_viewer_set(
     // rendered entities and accepted-follow edges batched across the set (see
     // [`author_pass_for_viewer_set`]) — no per-author and no per-viewer round
     // trips.
-    let (author_rows, mut author_views) = author_pass_for_viewer_set(
+    let (author_rows, mut author_views, show_application) = author_pass_for_viewer_set(
         pool,
         domain,
         items,
@@ -4384,8 +4408,7 @@ async fn render_statuses_for_viewer_set(
         &allow_direct_of,
     )
     .await?;
-    let (applications, show_application) =
-        application_maps(pool, items, &targets, &author_rows).await?;
+    let applications = application_maps(pool, items, &targets).await?;
 
     // The per-artifact maps are independent of one another: issue them
     // concurrently so a page's latency approaches the slowest artifact rather

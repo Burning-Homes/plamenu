@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO conversations (id, uri, history_uri, owner_account_id, root_status_id)\n             VALUES ($1, $2, $3, $4, $5)\n             ON CONFLICT (uri) WHERE uri IS NOT NULL DO NOTHING\n             RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "conversations",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e3130faaf805ddd3ff27c47e3283f69e3d0cd25a0b8370745e1a2c0a21fae471"
+}

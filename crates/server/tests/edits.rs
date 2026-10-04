@@ -787,6 +787,59 @@ async fn concurrent_original_creates_share_row_and_delivery_claim(pool: PgPool) 
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn queued_parentless_create_rechecks_owner_after_another_signer_reserves_uri(pool: PgPool) {
+    let bob = RemoteUser::new("remote.example", "bob");
+    let mallory = RemoteUser::new("remote.example", "mallory");
+    let state = test_state_with(
+        pool.clone(),
+        StubFederation::with_actors([bob.actor.clone(), mallory.actor.clone()]),
+    );
+    let app = plamenu::build_router(state.clone());
+    let uri = format!("{}/notes/parentless-owner-race", bob.actor.id);
+    let held = state.remote_status_writes.lock(&uri).await.unwrap();
+    let real = remote_create(
+        &bob,
+        &uri,
+        remote_note(&bob, &uri, "<p>Bob's canonical reservation</p>"),
+        "parentless-first",
+    );
+    let real_app = app.clone();
+    let real_signer = bob.signer();
+    let first =
+        tokio::spawn(async move { post_signed(real_app, "/inbox", &real, &real_signer).await });
+    common::wait_remote_status_writers(&state, &uri, 2).await;
+    let forged = remote_create(
+        &mallory,
+        &uri,
+        remote_note(&mallory, &uri, "<p>forged replacement</p>"),
+        "parentless-second",
+    );
+    let attacker_signer = mallory.signer();
+    let second =
+        tokio::spawn(async move { post_signed(app, "/inbox", &forged, &attacker_signer).await });
+    common::wait_remote_status_writers(&state, &uri, 3).await;
+    assert!(status::find_by_uri(&pool, &uri).await.unwrap().is_none());
+    drop(held);
+    let (created, rejected) = tokio::join!(first, second);
+    assert_eq!(created.unwrap(), StatusCode::ACCEPTED);
+    assert_eq!(rejected.unwrap(), StatusCode::FORBIDDEN);
+    let stored = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+    let owner = plamenu_db::account::find_by_uri(&pool, &bob.actor.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.account_id, owner.id);
+    assert_eq!(stored.content, "<p>Bob's canonical reservation</p>");
+    assert!(stored.edited_at.is_none());
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM statuses WHERE uri=$1")
+        .bind(&uri)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn failed_first_create_retry_repairs_attachments_without_duplicate_row(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");

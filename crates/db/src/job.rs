@@ -493,6 +493,44 @@ pub async fn complete(pool: &PgPool, job_id: i64) -> Result<(), DbError> {
     Ok(())
 }
 
+/// Completes a delivered job and records its host's success in one round trip.
+/// The reset has the same no-insert and hourly-refresh rules as
+/// [`crate::reachability::record_success`]. A statement error rolls both writes
+/// back; callers that treat reachability errors as non-blocking must fall back
+/// to the separate success and completion operations.
+pub async fn complete_with_reachability_success(
+    pool: &PgPool,
+    job_id: i64,
+    host: &str,
+) -> Result<(), DbError> {
+    sqlx::query!(
+        r#"WITH success AS (
+               UPDATE host_reachability SET
+                   consecutive_failures = 0,
+                   first_failure_at = NULL,
+                   unreachable_since = NULL,
+                   next_probe_at = NULL,
+                   abandoned_at = NULL,
+                   last_success_at = now(),
+                   updated_at = now()
+               WHERE host = $2
+                 AND (consecutive_failures > 0
+                      OR unreachable_since IS NOT NULL
+                      OR next_probe_at IS NOT NULL
+                      OR abandoned_at IS NOT NULL
+                      OR last_success_at IS NULL
+                      OR last_success_at < now() - interval '1 hour')
+               RETURNING host
+           )
+           DELETE FROM delivery_jobs WHERE id = $1"#,
+        job_id,
+        host,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Reschedules a failed job with exponential backoff.
 pub async fn retry_later(pool: &PgPool, job_id: i64, attempts: i32) -> Result<(), DbError> {
     let delay = backoff_seconds(attempts);
@@ -846,5 +884,88 @@ mod tests {
         let second = claim_due(&pool, 2).await.unwrap();
         assert_eq!(second.len(), 1);
         assert_eq!(second[0].inbox_url, "https://r2.example/inbox");
+    }
+
+    #[sqlx::test]
+    async fn tied_backlog_claims_keep_time_id_order_skip_locks_and_lease_exact_payloads(
+        pool: PgPool,
+    ) {
+        let account_id = local_account(&pool).await;
+        let mut tied: Vec<i64> = (0..128).map(|_| id::next()).collect();
+        tied.sort_unstable();
+        let older = [id::next(), id::next()];
+        let future = id::next();
+        let mut inserted = tied.clone();
+        inserted.extend(older);
+        inserted.push(future);
+        inserted.reverse();
+        // Deliberately reverse insertion order. An earlier due time outranks
+        // a lower id; ties use id, while locks and leases remove only their
+        // own rows from another worker's next claim.
+        sqlx::query(
+            "INSERT INTO delivery_jobs(id,account_id,inbox_url,activity,synchronize_followers,run_at)
+             SELECT j.id, $2, 'https://remote.example/inbox',
+                    jsonb_build_object('id', 'urn:delivery:' || j.id, 'type', 'Create'),
+                    j.id % 2 = 0,
+                    CASE WHEN j.id = ANY($3::bigint[]) THEN now()-interval '2 minutes'
+                         WHEN j.id = $4 THEN now()+interval '1 day'
+                         ELSE now()-interval '1 minute' END
+             FROM unnest($1::bigint[]) j(id)",
+        ).bind(&inserted).bind(account_id).bind(&older[..]).bind(future)
+            .execute(&pool).await.unwrap();
+        let mut ordered = older.to_vec();
+        ordered.sort_unstable();
+        ordered.extend(&tied);
+        let locked = ordered[..8].to_vec();
+        let mut holder = pool.begin().await.unwrap();
+        sqlx::query("SELECT id FROM delivery_jobs WHERE id = ANY($1) FOR UPDATE")
+            .bind(&locked)
+            .fetch_all(&mut *holder)
+            .await
+            .unwrap();
+        let first = claim_due(&pool, 20).await.unwrap();
+        assert_eq!(
+            first.iter().map(|j| j.id).collect::<Vec<_>>(),
+            ordered[8..28]
+        );
+        holder.rollback().await.unwrap();
+        let second = claim_due(&pool, 20).await.unwrap();
+        let expected_second: Vec<i64> = ordered[..8]
+            .iter()
+            .chain(&ordered[28..40])
+            .copied()
+            .collect();
+        assert_eq!(
+            second.iter().map(|j| j.id).collect::<Vec<_>>(),
+            expected_second
+        );
+        for job in first.iter().chain(&second) {
+            assert_eq!(job.account_id, Some(account_id));
+            assert_eq!(job.attempts, 1);
+            assert_eq!(job.inbox_url, "https://remote.example/inbox");
+            assert_eq!(job.synchronize_followers, job.id % 2 == 0);
+            assert_eq!(
+                job.activity,
+                json!({"id": format!("urn:delivery:{}", job.id), "type": "Create"})
+            );
+        }
+        let leased: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM delivery_jobs WHERE attempts = 1 AND run_at > now()",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(leased, 40);
+        let future_attempts: i32 =
+            sqlx::query_scalar("SELECT attempts FROM delivery_jobs WHERE id = $1")
+                .bind(future)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(future_attempts, 0);
+        assert_eq!(
+            pending_count(&pool).await.unwrap(),
+            u64::try_from(inserted.len()).unwrap()
+        );
     }
 }

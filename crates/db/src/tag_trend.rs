@@ -3,11 +3,13 @@
 //! server crate (`crate::trends`); this module is the SQL behind it plus the
 //! read queries for the public and admin trends endpoints.
 
+use std::collections::HashMap;
+
 use sqlx::PgPool;
 use time::{Date, OffsetDateTime};
 
 use crate::DbError;
-use crate::tag::{AdminTag, Tag};
+use crate::tag::{AdminTag, DayCount, Tag, ViewerFlags};
 
 /// A tag in scope for a refresh pass — it either already has a trend row or was
 /// used today. Carries the two distinct-account counts the score compares and
@@ -200,6 +202,103 @@ pub async fn allowed(pool: &PgPool, limit: i64, offset: i64) -> Result<Vec<Tag>,
     .fetch_all(pool)
     .await?;
     Ok(rows)
+}
+
+/// A ranked tag page and its visible history/viewer state from one SQL snapshot.
+#[derive(Default)]
+pub struct AllowedTagPage {
+    pub tags: Vec<Tag>,
+    pub flags: ViewerFlags,
+    pub histories: HashMap<i64, Vec<DayCount>>,
+}
+
+/// Pages tags before joining sidecars, so history rows cannot consume the page
+/// limit. The caller bounds the page to 20 tags and the history to seven days.
+/// Both viewer reasons are aggregated independently; anonymous viewers have
+/// no flag rows. Each page tag aggregates its indexed daily counts before the
+/// final join, avoiding a sort of the whole page's raw usage rows. All sidecars
+/// still come from one statement snapshot.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one typed page query and its row assembly"
+)]
+pub async fn allowed_page(
+    pool: &PgPool,
+    limit: i64,
+    offset: i64,
+    viewer_account_id: Option<i64>,
+    from: Date,
+    today: Date,
+) -> Result<AllowedTagPage, DbError> {
+    let rows = sqlx::query!(
+        r#"
+        WITH page AS MATERIALIZED (
+            SELECT t.id, t.name, t.display_name, tr.score
+            FROM tag_trends tr JOIN tags t ON t.id = tr.tag_id
+            WHERE tr.allowed
+            ORDER BY tr.score DESC, t.id DESC
+            LIMIT $1 OFFSET $2
+        ), flags AS (
+            SELECT tag_id, bool_or(following) AS following,
+                   bool_or(NOT following) AS featuring
+            FROM (
+                SELECT f.tag_id, true AS following
+                FROM tag_follows f JOIN page p ON p.id = f.tag_id
+                WHERE f.account_id = $3
+                UNION ALL
+                SELECT f.tag_id, false AS following
+                FROM featured_tags f JOIN page p ON p.id = f.tag_id
+                WHERE f.account_id = $3
+            ) memberships
+            GROUP BY tag_id
+        )
+        SELECT p.id AS "id!", p.name AS "name!", p.display_name,
+               h.day AS "day?", h.uses AS "uses?", h.accounts AS "accounts?",
+               f.following AS "following?", f.featuring AS "featuring?"
+        FROM page p
+        LEFT JOIN LATERAL (
+            SELECT u.day, COALESCE(sum(u.uses), 0)::bigint AS uses,
+                   count(*)::bigint AS accounts
+            FROM tag_usages u
+            WHERE u.tag_id = p.id AND u.day BETWEEN $4 AND $5
+            GROUP BY u.day
+        ) h ON true
+        LEFT JOIN flags f ON f.tag_id = p.id
+        ORDER BY p.score DESC, p.id DESC, h.day DESC
+        "#,
+        limit,
+        offset,
+        viewer_account_id,
+        from,
+        today,
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut page = AllowedTagPage::default();
+    for row in rows {
+        if page.tags.last().is_none_or(|tag| tag.id != row.id) {
+            page.tags.push(Tag {
+                id: row.id,
+                name: row.name,
+                display_name: row.display_name,
+            });
+            if row.following == Some(true) {
+                page.flags.following.insert(row.id);
+            }
+            if row.featuring == Some(true) {
+                page.flags.featuring.insert(row.id);
+            }
+        }
+        if let Some(day) = row.day {
+            page.histories.entry(row.id).or_default().push(DayCount {
+                tag_id: row.id,
+                day,
+                uses: row.uses.unwrap_or_default(),
+                accounts: row.accounts.unwrap_or_default(),
+            });
+        }
+    }
+    Ok(page)
 }
 
 /// All trending tags (allowed or not), highest score first — the moderator view

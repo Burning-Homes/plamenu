@@ -47,7 +47,7 @@ pub async fn instance_v1(
     let settings = instance_settings::get(&state.pool).await?;
     let contact_account = contact_account_json(&state, &settings).await?;
     let thumbnail = site_thumbnail(&state).await?;
-    let registrations = super::registrations::registrations_json(&state).await?;
+    let registrations = super::registrations::registrations_json(&settings);
     let domain = &state.config.domain;
     let account_domain = &state.config.account_domain;
     let body = json!({
@@ -119,7 +119,7 @@ pub async fn instance_v2(State(state): State<AppState>) -> Result<Json<Value>, A
     let contact_account = contact_account_json(&state, &settings).await?;
     let thumbnail = site_thumbnail(&state).await?;
     let app_icons = app_icon_json(&state).await?;
-    let registrations = super::registrations::registrations_json(&state).await?;
+    let registrations = super::registrations::registrations_json(&settings);
     let domain = &state.config.domain;
     let account_domain = &state.config.account_domain;
     let mut body = json!({

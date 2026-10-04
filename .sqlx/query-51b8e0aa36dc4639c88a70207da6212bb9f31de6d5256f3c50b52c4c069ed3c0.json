@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH attachments AS MATERIALIZED (\n            SELECT id, file_name, small_file_name\n            FROM media_attachments WHERE status_id = $1\n        )\n        SELECT file_keys.key AS \"key!\"\n        FROM (\n            SELECT unnest(ARRAY[file_name, small_file_name]) AS key\n            FROM attachments\n            UNION ALL\n            SELECT s.cache_file AS key\n            FROM media_hls_segments s\n            JOIN attachments m ON m.id = s.media_id\n        ) file_keys\n        WHERE file_keys.key IS NOT NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "51b8e0aa36dc4639c88a70207da6212bb9f31de6d5256f3c50b52c4c069ed3c0"
+}

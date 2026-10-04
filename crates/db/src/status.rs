@@ -1739,6 +1739,50 @@ pub async fn find_local(
     Ok(status)
 }
 
+/// Resolves a local parent and its publicly available owner in one snapshot.
+/// An exact persisted actor URI wins over a pre-backfill username even when
+/// that actor owns a different post or is still awaiting registration approval.
+/// Stubs remain resolvable so the ingest caller can preserve thread structure.
+pub async fn find_local_by_actor_ref(
+    pool: &PgPool,
+    actor_uri: &str,
+    legacy_username: Option<&str>,
+    status_id: i64,
+) -> Result<Option<Status>, DbError> {
+    let status = sqlx::query_as!(
+        Status,
+        r#"
+        SELECT s.id, s.uri, s.account_id, s.content, s.created_at, s.updated_at,
+               s.visibility, s.in_reply_to_id, s.reblog_of_id, s.edited_at,
+               s.spoiler_text, s.sensitive, s.language, s.url, s.quote_approval_policy,
+               s.application_id, s.title, s.object_type, s.external_url
+        FROM statuses s -- STUBKEEP: parent identity; ingest retains the placeholder
+        JOIN accounts a ON a.id = s.account_id
+        WHERE s.id = $3 AND s.uri IS NULL AND a.domain IS NULL
+          AND (
+              a.uri = $1 OR (
+                  a.uri IS NULL AND $2::text IS NOT NULL AND NOT a.is_internal
+                  AND lower(a.username) = lower($2)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM accounts exact
+                      WHERE exact.uri = $1 AND exact.domain IS NULL
+                  )
+              )
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM users u
+              WHERE u.account_id = a.id AND (NOT u.approved OR u.confirmed_at IS NULL)
+          )
+        "#,
+        actor_uri,
+        legacy_username,
+        status_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(status)
+}
+
 /// Distributable (public/unlisted) replies to a status, oldest first,
 /// keyset-paginated by `min_id`: the parent author's own replies when
 /// `self_only`, everyone else's otherwise — the two halves of Mastodon's
@@ -3693,6 +3737,78 @@ pub async fn reblogged_of_viewers(
         .into_iter()
         .map(|row| (row.account_id, row.reblog_of_id))
         .collect())
+}
+
+/// The viewer's flags for one status, read together for a status page.
+/// Only pairs with at least one active flag are returned.
+#[derive(Debug)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "the snapshot mirrors six independent persisted viewer flags that may coexist"
+)]
+pub struct ViewerStatusFlags {
+    pub account_id: i64,
+    pub status_id: i64,
+    pub favourited: bool,
+    pub disliked: bool,
+    pub reblogged: bool,
+    pub bookmarked: bool,
+    pub pinned: bool,
+    pub muted: bool,
+}
+
+/// All six viewer dimensions in one snapshot and pool checkout. Each branch
+/// preserves the standalone lookup's predicates, including boost-target ids
+/// and conversation membership. Aggregation collapses multiple matching
+/// flags without mixing viewers or statuses; unmarked pairs remain absent.
+pub async fn viewer_flags_for_statuses(
+    pool: &PgPool,
+    viewer_ids: &[i64],
+    status_ids: &[i64],
+) -> Result<Vec<ViewerStatusFlags>, DbError> {
+    if viewer_ids.is_empty() || status_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_as!(
+        ViewerStatusFlags,
+        r#"
+        SELECT account_id AS "account_id!", status_id AS "status_id!",
+               bool_or(kind = 0) AS "favourited!",
+               bool_or(kind = 1) AS "disliked!",
+               bool_or(kind = 2) AS "reblogged!",
+               bool_or(kind = 3) AS "bookmarked!",
+               bool_or(kind = 4) AS "pinned!",
+               bool_or(kind = 5) AS "muted!"
+        FROM (
+            SELECT account_id, status_id, 0 AS kind FROM favourites
+            WHERE account_id = ANY($1) AND status_id = ANY($2)
+            UNION ALL
+            SELECT account_id, status_id, 1 AS kind FROM status_dislikes
+            WHERE account_id = ANY($1) AND status_id = ANY($2)
+            UNION ALL
+            SELECT account_id, reblog_of_id AS status_id, 2 AS kind
+            FROM statuses -- STUBKEEP: a boost wrapper never stubs
+            WHERE account_id = ANY($1) AND reblog_of_id = ANY($2)
+            UNION ALL
+            SELECT account_id, status_id, 3 AS kind FROM bookmarks
+            WHERE account_id = ANY($1) AND status_id = ANY($2)
+            UNION ALL
+            SELECT account_id, status_id, 4 AS kind FROM status_pins
+            WHERE account_id = ANY($1) AND status_id = ANY($2)
+            UNION ALL
+            SELECT cm.account_id, sc.status_id, 5 AS kind
+            FROM status_conversations sc
+            JOIN conversation_mutes cm ON cm.conversation_id = sc.conversation_id
+            WHERE cm.account_id = ANY($1) AND sc.status_id = ANY($2)
+        ) flags
+        GROUP BY account_id, status_id
+        "#,
+        viewer_ids,
+        status_ids,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
 }
 
 /// One entry of a status's `reblogged_by` listing: the boost row

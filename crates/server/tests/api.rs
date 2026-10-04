@@ -14,6 +14,40 @@ use http_body_util::BodyExt;
 use plamenu_db::PgPool;
 use serde_json::Value;
 use tower::ServiceExt;
+use tracing_subscriber::layer::SubscriberExt;
+
+struct SettingsReadCounter(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for SettingsReadCounter {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        #[derive(Default)]
+        struct Statement(bool);
+        impl tracing::field::Visit for Statement {
+            fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                if matches!(field.name(), "summary" | "db.statement")
+                    && value.contains("FROM instance_settings")
+                {
+                    self.0 = true;
+                }
+            }
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                self.record_str(field, &format!("{value:?}"));
+            }
+        }
+        if !event.metadata().target().starts_with("sqlx::query") {
+            return;
+        }
+        let mut statement = Statement::default();
+        event.record(&mut statement);
+        if statement.0 {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
 
 async fn create_alice(pool: &PgPool) {
     create_local_account(pool, "alice", "Alice").await;
@@ -495,6 +529,63 @@ async fn nodeinfo_is_discoverable_and_counts_users(pool: PgPool) {
     let (status, _, body) = get(test_app(pool), "/nodeinfo/2.0", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["version"], "2.0");
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn instance_entities_use_one_settings_snapshot_for_registrations(pool: PgPool) {
+    use plamenu_db::instance_settings::{self, RegistrationsMode};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let state = common::test_state_with(pool.clone(), Arc::default());
+    let app = plamenu::build_router(state.clone());
+    let counter = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(SettingsReadCounter(counter.clone())),
+    );
+    let mut measurements = Vec::new();
+    for mode in [
+        RegistrationsMode::None,
+        RegistrationsMode::Open,
+        RegistrationsMode::Approved,
+    ] {
+        let current = instance_settings::get(&pool).await.unwrap();
+        instance_settings::save(
+            &pool,
+            instance_settings::SettingsUpdate {
+                registrations_mode: mode,
+                ..current.as_update()
+            },
+        )
+        .await
+        .unwrap();
+        for uri in ["/api/v1/instance", "/api/v2/instance"] {
+            // The request limiter's independent TTL cache is outside this
+            // document's settings snapshot and query-count measurement.
+            state.settings_cache.get(&pool).await.unwrap();
+            counter.store(0, Ordering::Relaxed);
+            let (code, _, body) = get(app.clone(), uri, None).await;
+            measurements.push(counter.load(Ordering::Relaxed));
+            assert_eq!(code, StatusCode::OK);
+            let enabled = if uri.contains("/v1/") {
+                &body["registrations"]
+            } else {
+                &body["registrations"]["enabled"]
+            };
+            assert_eq!(*enabled, mode != RegistrationsMode::None);
+            let approval = if uri.contains("/v1/") {
+                &body["approval_required"]
+            } else {
+                &body["registrations"]["approval_required"]
+            };
+            assert_eq!(*approval, mode == RegistrationsMode::Approved);
+        }
+    }
+    assert_eq!(
+        measurements,
+        vec![1; 6],
+        "redundant settings reads per response"
+    );
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

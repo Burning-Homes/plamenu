@@ -3528,7 +3528,7 @@ async fn handle_delete(
             .filter(|row| row.account_id == sender.id);
         let (delete_event, conversation_id) = match &existing {
             Some(row) => (
-                Some(crate::streaming::prepare_delete_event(state, row).await?),
+                Some(crate::streaming::prepare_delete_event_for_author(state, row, sender).await?),
                 plamenu_db::conversation::of_status(&state.pool, row.id)
                     .await?
                     .map(|conversation| (conversation, row.id)),
@@ -3538,10 +3538,12 @@ async fn handle_delete(
         // A group submission's retraction data must be captured before the
         // delete cascades the mention and boost rows away.
         let (group_accounts, group_boosts) = match &existing {
-            Some(row) => (
-                crate::groups::group_accounts_of_status(state, row).await?,
-                crate::groups::capture_boosts(state, row, sender).await?,
-            ),
+            Some(row) => {
+                let groups = crate::groups::group_accounts_of_status(state, row).await?;
+                let boosts =
+                    crate::groups::capture_boosts_from_groups(state, row, sender, &groups).await?;
+                (groups, boosts)
+            }
             None => (Vec::new(), Vec::new()),
         };
         let deleted = status::stub_by_uri(&state.pool, object_uri, sender.id).await?;

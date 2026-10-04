@@ -1,0 +1,73 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT account_id AS \"account_id!\", status_id AS \"status_id!\",\n               bool_or(kind = 0) AS \"favourited!\",\n               bool_or(kind = 1) AS \"disliked!\",\n               bool_or(kind = 2) AS \"reblogged!\",\n               bool_or(kind = 3) AS \"bookmarked!\",\n               bool_or(kind = 4) AS \"pinned!\",\n               bool_or(kind = 5) AS \"muted!\"\n        FROM (\n            SELECT account_id, status_id, 0 AS kind FROM favourites\n            WHERE account_id = ANY($1) AND status_id = ANY($2)\n            UNION ALL\n            SELECT account_id, status_id, 1 AS kind FROM status_dislikes\n            WHERE account_id = ANY($1) AND status_id = ANY($2)\n            UNION ALL\n            SELECT account_id, reblog_of_id AS status_id, 2 AS kind\n            FROM statuses -- STUBKEEP: a boost wrapper never stubs\n            WHERE account_id = ANY($1) AND reblog_of_id = ANY($2)\n            UNION ALL\n            SELECT account_id, status_id, 3 AS kind FROM bookmarks\n            WHERE account_id = ANY($1) AND status_id = ANY($2)\n            UNION ALL\n            SELECT account_id, status_id, 4 AS kind FROM status_pins\n            WHERE account_id = ANY($1) AND status_id = ANY($2)\n            UNION ALL\n            SELECT cm.account_id, sc.status_id, 5 AS kind\n            FROM status_conversations sc\n            JOIN conversation_mutes cm ON cm.conversation_id = sc.conversation_id\n            WHERE cm.account_id = ANY($1) AND sc.status_id = ANY($2)\n        ) flags\n        GROUP BY account_id, status_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "account_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "status_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "favourited!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "disliked!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "reblogged!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "bookmarked!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "pinned!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "muted!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "add137c9c3d58c8debad0338df0a9460bb5c64bc45352be7a7788a253a057058"
+}

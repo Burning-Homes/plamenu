@@ -45,7 +45,7 @@ pub async fn attach<'e, E: PgExecutor<'e>>(
 }
 
 /// The set-based [`ensure`] + [`attach`]: upserts every hashtag name and links
-/// the set to one status in two statements instead of two per tag. Names that
+/// the set to one status in one statement instead of two per tag. Names that
 /// collide case-insensitively are deduplicated in the statement itself —
 /// `DISTINCT ON (lower(name))` keeps the first spelling, as sequential
 /// [`ensure`] calls would, and uses the same `lower()` the unique index does,
@@ -59,27 +59,25 @@ pub async fn ensure_and_attach_many(
         return Ok(());
     }
     let ids: Vec<i64> = names.iter().map(|_| id::next()).collect();
-    let tag_ids = sqlx::query_scalar!(
+    sqlx::query!(
         r#"
-        INSERT INTO tags (id, name)
-        SELECT DISTINCT ON (lower(v.name)) v.id, v.name
-        FROM unnest($1::bigint[], $2::text[]) WITH ORDINALITY AS v(id, name, ord)
-        ORDER BY lower(v.name), v.ord
-        ON CONFLICT (lower(name)) DO UPDATE SET name = tags.name
-        RETURNING id
+        WITH ensured AS (
+            -- STUBKEEP: attachment writes read status sort_at by identity, including stubs.
+            INSERT INTO tags (id, name)
+            SELECT DISTINCT ON (lower(v.name)) v.id, v.name
+            FROM unnest($1::bigint[], $2::text[]) WITH ORDINALITY AS v(id, name, ord)
+            ORDER BY lower(v.name), v.ord
+            ON CONFLICT (lower(name)) DO UPDATE SET name = tags.name
+            RETURNING id
+        )
+        INSERT INTO status_tags (status_id, tag_id, sort_at)
+        SELECT $3, ensured.id, (SELECT sort_at FROM statuses WHERE id = $3)
+        FROM ensured
+        ON CONFLICT DO NOTHING
         "#,
         &ids,
         &names as &[&str],
-    )
-    .fetch_all(&mut *conn)
-    .await?;
-    sqlx::query!(
-        r#"INSERT INTO status_tags (status_id, tag_id, sort_at)
-           SELECT $1, t.tag_id, (SELECT sort_at FROM statuses WHERE id = $1)
-           FROM unnest($2::bigint[]) AS t(tag_id)
-           ON CONFLICT DO NOTHING"#,
         status_id,
-        &tag_ids,
     )
     .execute(&mut *conn)
     .await?;

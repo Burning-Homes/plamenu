@@ -15,6 +15,7 @@ pub mod account_move_job;
 pub mod account_note;
 pub mod account_warning;
 pub mod actor_key;
+pub mod actor_profile;
 pub mod admin_account;
 pub mod admin_action_log;
 pub mod announcement;

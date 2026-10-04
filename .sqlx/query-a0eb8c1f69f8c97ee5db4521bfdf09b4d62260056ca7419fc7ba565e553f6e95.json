@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH policy AS MATERIALIZED (\n            SELECT COALESCE((SELECT instance_domain_rejects_media(domain)\n                             FROM accounts WHERE id = $2), false) AS rejects\n        ), inserted AS (\n            INSERT INTO media_attachments (id, account_id, status_id, remote_url,\n                                           content_type, description, blurhash,\n                                           focus_x, focus_y, width, height,\n                                           thumbnail_remote_url, remote_audio_url,\n                                           duration, download_on_demand,\n                                           history_deferred,\n                                           hls_master_url, live_state,\n                                           live_permanent, preview_card_id,\n                                           processing)\n            SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,\n                   $17, $18, $19, $20, $21,\n                   CASE WHEN policy.rejects OR $15 OR $17 THEN 'complete' ELSE 'queued' END\n            FROM policy\n            ON CONFLICT (status_id, remote_url) WHERE remote_url IS NOT NULL DO NOTHING\n            RETURNING id\n        ), queued AS (\n            INSERT INTO media_processing_jobs (id, media_id)\n            SELECT $16, inserted.id FROM inserted CROSS JOIN policy\n            WHERE NOT policy.rejects AND NOT $15 AND NOT $17\n            RETURNING id\n        )\n        SELECT policy.rejects AS \"rejects!\", inserted.id AS \"inserted_id?\"\n        FROM policy LEFT JOIN inserted ON true\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rejects!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "inserted_id?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Float8",
+        "Float8",
+        "Int4",
+        "Int4",
+        "Text",
+        "Text",
+        "Float8",
+        "Bool",
+        "Int8",
+        "Bool",
+        "Text",
+        "Text",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      true
+    ]
+  },
+  "hash": "a0eb8c1f69f8c97ee5db4521bfdf09b4d62260056ca7419fc7ba565e553f6e95"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT input.id AS \"account_id!\",\n               u.noindex AS \"noindex?\",\n               r.id AS \"role_id?\", r.name AS \"role_name?\", r.color AS \"role_color?\",\n               (c.account_id IS NOT NULL OR EXISTS\n                   (SELECT 1 FROM remote_video_channels rv WHERE rv.channel_id=input.id)) AS \"video_channel!\"\n        FROM unnest($1::bigint[]) AS input(id)\n        LEFT JOIN users u ON u.account_id = input.id\n        LEFT JOIN video_channels c ON c.account_id = input.id\n        LEFT JOIN user_roles r ON r.id = u.role_id AND r.highlighted\n        WHERE u.account_id IS NOT NULL OR c.account_id IS NOT NULL\n           OR EXISTS (SELECT 1 FROM remote_video_channels rv WHERE rv.channel_id=input.id)\n        ",
+  "query": "\n        SELECT input.id AS \"account_id!\",\n               u.noindex AS \"noindex?\",\n               u.show_application AS \"show_application?\",\n               r.id AS \"role_id?\", r.name AS \"role_name?\", r.color AS \"role_color?\",\n               (c.account_id IS NOT NULL OR EXISTS\n                   (SELECT 1 FROM remote_video_channels rv WHERE rv.channel_id=input.id)) AS \"video_channel!\"\n        FROM unnest($1::bigint[]) AS input(id)\n        LEFT JOIN users u ON u.account_id = input.id\n        LEFT JOIN video_channels c ON c.account_id = input.id\n        LEFT JOIN user_roles r ON r.id = u.role_id AND r.highlighted\n        WHERE u.account_id IS NOT NULL OR c.account_id IS NOT NULL\n           OR EXISTS (SELECT 1 FROM remote_video_channels rv WHERE rv.channel_id=input.id)\n        ",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,17 @@
       },
       {
         "ordinal": 2,
+        "name": "show_application?",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "show_application"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "role_id?",
         "type_info": "Int8",
         "origin": {
@@ -32,7 +43,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "role_name?",
         "type_info": "Text",
         "origin": {
@@ -43,7 +54,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "role_color?",
         "type_info": "Text",
         "origin": {
@@ -54,7 +65,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "video_channel!",
         "type_info": "Bool",
         "origin": "Expression"
@@ -71,8 +82,9 @@
       true,
       true,
       true,
+      true,
       null
     ]
   },
-  "hash": "83061542894166cf863d14bc0193d6153ecf332d024808e5dc9af0ece726e16d"
+  "hash": "d23c5d01d04e34a663df772e56083c0a9686cb9e2e4d505c67d4c9e0cd24849c"
 }

@@ -146,14 +146,12 @@ pub async fn show_invite(
     }
 }
 
-/// The v1/v2 instance entities' registration block inputs.
-pub async fn registrations_json(state: &AppState) -> Result<Value, ApiError> {
-    let settings = plamenu_db::instance_settings::get(&state.pool).await?;
+/// The v1/v2 registration block from the document's own settings snapshot.
+pub fn registrations_json(settings: &plamenu_db::instance_settings::InstanceSettings) -> Value {
     let mode = settings.registrations_mode();
-    let enabled = registration::open_for_registrations(state).await?;
-    Ok(json!({
-        "enabled": enabled,
+    json!({
+        "enabled": mode != plamenu_db::instance_settings::RegistrationsMode::None,
         "approval_required": mode == plamenu_db::instance_settings::RegistrationsMode::Approved,
         "message": Value::Null,
-    }))
+    })
 }

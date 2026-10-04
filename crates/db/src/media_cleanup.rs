@@ -76,35 +76,35 @@ pub async fn enqueue_many<'e, E: PgExecutor<'e>>(
 }
 
 /// Collects every stored file a status's media references — original, preview,
-/// and any cached HLS segments. Read *before* the cascade removes the media rows;
-/// the caller enqueues the result with [`enqueue_many`] only once it has
+/// and any cached HLS segments, in one snapshot. Read *before* the cascade
+/// removes the media rows; the caller enqueues the result with [`enqueue_many`] only once it has
 /// confirmed the status was actually deleted (so a no-op delete of a status the
 /// caller doesn't own never schedules its files for removal).
 pub async fn collect_status_keys(
     conn: &mut PgConnection,
     status_id: i64,
 ) -> Result<Vec<String>, DbError> {
-    let attachments = sqlx::query!(
-        "SELECT file_name, small_file_name FROM media_attachments WHERE status_id = $1",
+    let keys = sqlx::query_scalar!(
+        r#"
+        WITH attachments AS MATERIALIZED (
+            SELECT id, file_name, small_file_name
+            FROM media_attachments WHERE status_id = $1
+        )
+        SELECT file_keys.key AS "key!"
+        FROM (
+            SELECT unnest(ARRAY[file_name, small_file_name]) AS key
+            FROM attachments
+            UNION ALL
+            SELECT s.cache_file AS key
+            FROM media_hls_segments s
+            JOIN attachments m ON m.id = s.media_id
+        ) file_keys
+        WHERE file_keys.key IS NOT NULL
+        "#,
         status_id,
     )
     .fetch_all(&mut *conn)
     .await?;
-    let mut keys: Vec<String> = Vec::new();
-    for row in attachments {
-        keys.extend(row.file_name);
-        keys.extend(row.small_file_name);
-    }
-    let hls = sqlx::query_scalar!(
-        "SELECT s.cache_file
-         FROM media_hls_segments s
-         JOIN media_attachments m ON m.id = s.media_id
-         WHERE m.status_id = $1",
-        status_id,
-    )
-    .fetch_all(&mut *conn)
-    .await?;
-    keys.extend(hls);
     Ok(keys)
 }
 

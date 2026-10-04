@@ -26,6 +26,74 @@ use tower::ServiceExt;
 
 const AP_JSON: &str = "application/activity+json";
 
+#[sqlx::test(migrations = "../db/migrations")]
+async fn fresh_conversations_initialize_identity_without_rewriting_the_row(pool: PgPool) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let mut roots = Vec::new();
+    for _ in 0..2 {
+        roots.push(
+            status::create_local(
+                &pool,
+                status::NewLocalStatus::new(alice.id, "<p>root</p>", "public", None),
+            )
+            .await
+            .unwrap(),
+        );
+    }
+    let counter = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(common::QueryCounter(counter.clone())),
+    );
+    let mut counts = Vec::new();
+    for (index, root) in roots.iter().enumerate() {
+        let refs = if index == 0 {
+            conversation::ContextRefs::default()
+        } else {
+            conversation::ContextRefs {
+                context_uri: Some("https://remote.example/conversation/1"),
+                history_uri: Some("https://remote.example/history/1"),
+            }
+        };
+        let params = conversation::EnsureConversation {
+            status_id: root.id,
+            account_id: alice.id,
+            in_reply_to_id: None,
+            is_reply: false,
+            refs,
+        };
+        counter.store(0, Ordering::Relaxed);
+        let id = conversation::ensure_for_status(&pool, &params)
+            .await
+            .unwrap();
+        counts.push(counter.load(Ordering::Relaxed));
+        let row = conversation::find(&pool, id).await.unwrap().unwrap();
+        assert_eq!(row.owner_account_id, Some(alice.id));
+        assert_eq!(row.root_status_id, Some(root.id));
+        assert_eq!(row.uri.as_deref(), refs.context_uri);
+        assert_eq!(row.history_uri.as_deref(), refs.history_uri);
+        counter.store(0, Ordering::Relaxed);
+        assert_eq!(
+            conversation::ensure_for_status(&pool, &params)
+                .await
+                .unwrap(),
+            id
+        );
+        assert_eq!(
+            counter.load(Ordering::Relaxed),
+            1,
+            "mapped redelivery is a read"
+        );
+    }
+    assert_eq!(
+        counts,
+        [3, 4],
+        "fresh identity belongs in the insert snapshot"
+    );
+}
+
 async fn get_json(app: Router, uri: &str) -> (StatusCode, HeaderMap, Value) {
     let response = app
         .oneshot(

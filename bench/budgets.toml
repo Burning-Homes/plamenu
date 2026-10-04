@@ -6,13 +6,13 @@
 # Values are specific to the dataset and calibration machine.
 # Status-rendering query ceilings include one bulk mini-app invitation lookup
 # per rendered batch (two for federated public pages, profiles, and threads).
-# Query counts verified 2026-09-11; timing, size, and ratio limits are unchanged.
+# Query counts verified 2026-10-04; timing, size, and ratio limits are unchanged.
 # nplus1_guard exercises populated invitation cards as the page size grows.
 
 [budgets]
 
 # Includes the actor’s identity-proof lookup.
-"ap/actor" = { ms = 1.29, queries = 5, bytes = 5441, calibrated = "2026-07-28" }
+"ap/actor" = { ms = 1.29, queries = 3, bytes = 5441, calibrated = "2026-07-28" }
 "ap/followers_collection" = { ms = 2.6, queries = 4, bytes = 841, calibrated = "2026-08-22" }
 "ap/outbox_page" = { ms = 5.0, queries = 18, bytes = 51756, calibrated = "2026-07-30" }
 
@@ -20,43 +20,43 @@
 "ap/status_note" = { ms = 4.2, queries = 21, bytes = 3771, calibrated = "2026-07-30" }
 
 # A page of local replies rendered as ActivityPub objects.
-"ap/status_replies" = { ms = 6.0, queries = 22, bytes = 82607, calibrated = "2026-07-30" }
-"api/account_lookup" = { ms = 2.13, queries = 11, bytes = 1140, calibrated = "2026-07-28" }
-"api/account_statuses" = { ms = 15.4, queries = 46, bytes = 54646, calibrated = "2026-07-28" }
-"api/bookmarks_page" = { ms = 12.0, queries = 48, bytes = 81549, calibrated = "2026-08-22" }
-"api/context_deep" = { ms = 33.5, queries = 81, bytes = 106503, calibrated = "2026-08-22" }
-"api/conversations" = { ms = 24.5, queries = 51, bytes = 71326, calibrated = "2026-07-28" }
-"api/favourites_page" = { ms = 12.0, queries = 48, bytes = 78709, calibrated = "2026-08-22" }
-"api/followers_page" = { ms = 39.8, queries = 15, bytes = 40421, calibrated = "2026-07-28" }
-"api/group_hot" = { ms = 37.0, queries = 50, bytes = 120984, calibrated = "2026-08-31" }
-"api/group_new" = { ms = 17.8, queries = 50, bytes = 121069, calibrated = "2026-08-22" }
-"api/group_top" = { ms = 32.6, queries = 48, bytes = 119313, calibrated = "2026-07-28" }
+"ap/status_replies" = { ms = 6.0, queries = 19, bytes = 82607, calibrated = "2026-07-30" }
+"api/account_lookup" = { ms = 2.13, queries = 10, bytes = 1140, calibrated = "2026-07-28" }
+"api/account_statuses" = { ms = 15.4, queries = 40, bytes = 54646, calibrated = "2026-07-28" }
+"api/bookmarks_page" = { ms = 12.0, queries = 42, bytes = 81549, calibrated = "2026-08-22" }
+"api/context_deep" = { ms = 33.5, queries = 69, bytes = 106503, calibrated = "2026-08-22" }
+"api/conversations" = { ms = 24.5, queries = 44, bytes = 71326, calibrated = "2026-07-28" }
+"api/favourites_page" = { ms = 12.0, queries = 42, bytes = 78709, calibrated = "2026-08-22" }
+"api/followers_page" = { ms = 39.8, queries = 14, bytes = 40421, calibrated = "2026-07-28" }
+"api/group_hot" = { ms = 37.0, queries = 44, bytes = 120984, calibrated = "2026-08-31" }
+"api/group_new" = { ms = 17.8, queries = 44, bytes = 121069, calibrated = "2026-08-22" }
+"api/group_top" = { ms = 32.6, queries = 42, bytes = 119313, calibrated = "2026-07-28" }
 
 # The dense persona exercises the candidate pool across about 1,500 follows.
-"api/home_dense" = { ms = 192, queries = 44, bytes = 89895, calibrated = "2026-07-30" }
-"api/home_sparse" = { ms = 36.9, queries = 43, bytes = 52184, calibrated = "2026-07-28" }
+"api/home_dense" = { ms = 192, queries = 38, bytes = 89895, calibrated = "2026-07-30" }
+"api/home_sparse" = { ms = 36.9, queries = 37, bytes = 52184, calibrated = "2026-07-28" }
 
 # Warm cached instance document; excludes recomputing the instance totals.
-"api/instance_v1" = { ms = 1.27, queries = 7, bytes = 1557, calibrated = "2026-07-28" }
-"api/list_timeline" = { ms = 65.5, queries = 44, bytes = 78977, calibrated = "2026-07-28" }
-"api/notifications" = { ms = 24.5, queries = 53, bytes = 134573, calibrated = "2026-07-28" }
-"api/notifications_grouped" = { ms = 58.6, queries = 54, bytes = 277944, calibrated = "2026-07-30" }
-"api/public_federated" = { ms = 40.5, queries = 79, bytes = 59500, calibrated = "2026-07-30" }
-"api/public_federated_anon" = { ms = 35.4, queries = 57, bytes = 55909, calibrated = "2026-07-30" }
-"api/public_local" = { ms = 19.7, queries = 42, bytes = 68770, calibrated = "2026-07-28" }
+"api/instance_v1" = { ms = 1.27, queries = 5, bytes = 1557, calibrated = "2026-07-28" }
+"api/list_timeline" = { ms = 65.5, queries = 38, bytes = 78977, calibrated = "2026-07-28" }
+"api/notifications" = { ms = 24.5, queries = 46, bytes = 134573, calibrated = "2026-07-28" }
+"api/notifications_grouped" = { ms = 58.6, queries = 47, bytes = 277944, calibrated = "2026-07-30" }
+"api/public_federated" = { ms = 40.5, queries = 67, bytes = 59500, calibrated = "2026-07-30" }
+"api/public_federated_anon" = { ms = 35.4, queries = 55, bytes = 55909, calibrated = "2026-07-30" }
+"api/public_local" = { ms = 19.7, queries = 36, bytes = 68770, calibrated = "2026-07-28" }
 "api/relationships" = { ms = 3.09, queries = 12, bytes = 6852, calibrated = "2026-07-28" }
 
 # The search term matches accounts, statuses, and tags.
-"api/search" = { ms = 23.0, queries = 73, bytes = 65927, calibrated = "2026-07-28" }
-"api/search_accounts" = { ms = 19.3, queries = 33, bytes = 21926, calibrated = "2026-07-28" }
+"api/search" = { ms = 23.0, queries = 66, bytes = 65927, calibrated = "2026-07-28" }
+"api/search_accounts" = { ms = 19.3, queries = 32, bytes = 21926, calibrated = "2026-07-28" }
 
 # A common term matching about 42% of seeded statuses.
-"api/search_common" = { ms = 179, queries = 40, bytes = 48930, calibrated = "2026-07-28" }
+"api/search_common" = { ms = 179, queries = 34, bytes = 48930, calibrated = "2026-07-28" }
 "api/search_tags" = { ms = 6.32, queries = 7, bytes = 9451, calibrated = "2026-07-28" }
-"api/status_show" = { ms = 11.2, queries = 44, bytes = 3503, calibrated = "2026-07-28" }
-"api/tag_timeline" = { ms = 19.8, queries = 44, bytes = 55607, calibrated = "2026-07-28" }
-"api/trends_tags" = { ms = 1.56, queries = 7, bytes = 4721, calibrated = "2026-07-28" }
-"api/verify_credentials" = { ms = 2.84, queries = 13, bytes = 1268, calibrated = "2026-07-28" }
+"api/status_show" = { ms = 11.2, queries = 38, bytes = 3503, calibrated = "2026-07-28" }
+"api/tag_timeline" = { ms = 19.8, queries = 38, bytes = 55607, calibrated = "2026-07-28" }
+"api/trends_tags" = { ms = 1.56, queries = 4, bytes = 4721, calibrated = "2026-07-28" }
+"api/verify_credentials" = { ms = 2.84, queries = 12, bytes = 1268, calibrated = "2026-07-28" }
 "db/by_account_published" = { ms = 1.53, calibrated = "2026-08-22" }
 "db/by_account_received" = { ms = 1.53, calibrated = "2026-08-22" }
 
@@ -94,19 +94,19 @@
 # Compare one subscriber with fifty using the ratio cap below.
 "stream/route_status_1" = { ms = 14.3, calibrated = "2026-07-28" }
 "stream/route_status_50" = { ms = 579, ratio_of = "stream/route_status_1", ratio = 61.0, calibrated = "2026-07-28" }
-"web/web_explore" = { ms = 24.2, queries = 53, bytes = 201098, calibrated = "2026-08-22" }
-"web/web_home" = { ms = 42.8, queries = 60, bytes = 195513, calibrated = "2026-08-22" }
-"web/web_list" = { ms = 70.6, queries = 59, bytes = 203035, calibrated = "2026-08-22" }
+"web/web_explore" = { ms = 24.2, queries = 47, bytes = 201098, calibrated = "2026-08-22" }
+"web/web_home" = { ms = 42.8, queries = 54, bytes = 195513, calibrated = "2026-08-22" }
+"web/web_list" = { ms = 70.6, queries = 53, bytes = 203035, calibrated = "2026-08-22" }
 
 # Includes advancing the account’s read marker.
-"web/web_notifications" = { ms = 18.6, queries = 59, bytes = 153452, calibrated = "2026-08-22" }
+"web/web_notifications" = { ms = 18.6, queries = 52, bytes = 153452, calibrated = "2026-08-22" }
 
 # Includes the profile’s identity-proof lookup.
-"web/web_profile" = { ms = 39.8, queries = 109, bytes = 228934, calibrated = "2026-08-22" }
-"web/web_thread" = { ms = 41.0, queries = 132, bytes = 407594, calibrated = "2026-08-22" }
+"web/web_profile" = { ms = 39.8, queries = 96, bytes = 228934, calibrated = "2026-08-22" }
+"web/web_thread" = { ms = 41.0, queries = 114, bytes = 407594, calibrated = "2026-08-22" }
 
 # The thread page without an authenticated session.
-"web/web_thread_anon" = { ms = 31.1, queries = 85, bytes = 197313, calibrated = "2026-08-22" }
+"web/web_thread_anon" = { ms = 31.1, queries = 83, bytes = 197313, calibrated = "2026-08-22" }
 "write/inbox_announce" = { ms = 7.0, calibrated = "2026-09-02" }
 "write/inbox_create_note" = { ms = 3.89, calibrated = "2026-07-28" }
 "write/inbox_create_reply" = { ms = 4.84, calibrated = "2026-07-28" }

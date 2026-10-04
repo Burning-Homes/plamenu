@@ -1098,6 +1098,9 @@ pub struct AccountEntityOverlay {
     pub noindex: Option<bool>,
     pub highlighted_role: Option<HighlightedRole>,
     pub video_channel: bool,
+    /// A login owner's client-application visibility preference. Native
+    /// channels without a login have no preference, matching the standalone read.
+    pub show_application: Option<bool>,
 }
 
 /// The subset of a role the public Account entity's `roles` carries.
@@ -1128,6 +1131,7 @@ pub async fn account_entity_overlay_batch(
         r#"
         SELECT input.id AS "account_id!",
                u.noindex AS "noindex?",
+               u.show_application AS "show_application?",
                r.id AS "role_id?", r.name AS "role_name?", r.color AS "role_color?",
                (c.account_id IS NOT NULL OR EXISTS
                    (SELECT 1 FROM remote_video_channels rv WHERE rv.channel_id=input.id)) AS "video_channel!"
@@ -1150,6 +1154,7 @@ pub async fn account_entity_overlay_batch(
                 AccountEntityOverlay {
                     noindex: row.noindex,
                     video_channel: row.video_channel,
+                    show_application: row.show_application,
                     highlighted_role: match (row.role_id, row.role_name, row.role_color) {
                         (Some(id), Some(name), Some(color)) => {
                             Some(HighlightedRole { id, name, color })

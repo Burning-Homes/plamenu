@@ -1332,6 +1332,86 @@ fn identity_statement(uri: &str) -> Value {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn actor_profile_sidecars_share_one_transaction_snapshot(pool: PgPool) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let state = test_state_with(pool.clone(), Arc::default());
+    let counter = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(common::QueryCounter(counter.clone())),
+    );
+    let empty = plamenu::profile::local_actor(&state, &alice).await.unwrap();
+    let empty_count = counter.load(Ordering::Relaxed);
+    assert!(empty.tag.is_empty() && empty.attachment.is_empty());
+
+    // Feature order follows this author's usage counts, then the featuring id.
+    // Another author's uses must not change it, and private uses do not count.
+    let more = tag::ensure(&pool, "more").await.unwrap();
+    let less = tag::ensure(&pool, "less").await.unwrap();
+    let unused = tag::ensure(&pool, "unused").await.unwrap();
+    for (author, tag_id, visibility) in [
+        (alice.id, more, "public"),
+        (alice.id, more, "unlisted"),
+        (alice.id, less, "public"),
+        (alice.id, less, "private"),
+        (bob.id, less, "public"),
+        (bob.id, less, "public"),
+    ] {
+        let post = status::create_local(
+            &pool,
+            status::NewLocalStatus::new(author, "<p>tag usage</p>", visibility, None),
+        )
+        .await
+        .unwrap();
+        tag::attach(&pool, post.id, tag_id).await.unwrap();
+    }
+    let proof = identity_statement(ALICE_URI);
+    let mut invalid = proof.clone();
+    invalid["alsoKnownAs"] = json!("https://other.example/users/alice");
+    let mut tx = pool.begin().await.unwrap();
+    for id in [more, less, unused] {
+        plamenu_db::featured_tag::feature(&mut *tx, alice.id, id)
+            .await
+            .unwrap();
+    }
+    account::set_attribution_domains(&mut *tx, alice.id, &["author.example".into()])
+        .await
+        .unwrap();
+    plamenu_db::identity_proof::replace(
+        &mut *tx,
+        alice.id,
+        &[invalid, proof.clone(), proof.clone()],
+    )
+    .await
+    .unwrap();
+    counter.store(0, Ordering::Relaxed);
+    let actor = plamenu::profile::local_actor_conn(&state, &mut tx, &alice)
+        .await
+        .unwrap();
+    let populated_count = counter.load(Ordering::Relaxed);
+    assert_eq!(actor.attribution_domains, ["author.example"]);
+    let names: Vec<_> = actor
+        .tag
+        .iter()
+        .map(|tag| tag["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["#more", "#less", "#unused"]);
+    assert_eq!(actor.attachment, vec![proof]);
+    tx.rollback().await.unwrap();
+    let rolled_back = plamenu::profile::local_actor(&state, &alice).await.unwrap();
+    assert!(rolled_back.tag.is_empty() && rolled_back.attachment.is_empty());
+    assert!(rolled_back.attribution_domains.is_empty());
+    assert_eq!(
+        [empty_count, populated_count],
+        [2, 2],
+        "normalized key publication plus one profile sidecar snapshot"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn identity_proofs_api_publishes_replaces_removes_and_rejects_invalid(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let app = test_app(pool.clone());

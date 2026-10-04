@@ -262,27 +262,47 @@ pub async fn ensure_for_status_conn(
         (None, Some(parent_id)) => of_status(&mut *conn, parent_id).await?,
         (None, None) => None,
     };
+    let owner = (!params.is_reply).then_some(params.account_id);
+    let root = (!params.is_reply).then_some(params.status_id);
+    let mut initialized = false;
     let conversation_id = if let Some(existing) = inherited {
         existing
     } else if let Some(uri) = params.refs.context_uri {
         // Create-or-get keyed on the remote context IRI: a concurrent delivery
         // of the same brand-new conversation must not 23505 on the uri index.
         let fresh = id::next();
-        sqlx::query!(
-            "INSERT INTO conversations (id, uri, history_uri) VALUES ($1, $2, $3)
-             ON CONFLICT (uri) WHERE uri IS NOT NULL DO NOTHING",
+        let inserted = sqlx::query_scalar!(
+            "INSERT INTO conversations (id, uri, history_uri, owner_account_id, root_status_id)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (uri) WHERE uri IS NOT NULL DO NOTHING
+             RETURNING id",
             fresh,
             uri,
             params.refs.history_uri,
+            owner,
+            root,
+        )
+        .fetch_optional(&mut *conn)
+        .await?;
+        if let Some(id) = inserted {
+            initialized = true;
+            id
+        } else {
+            find_by_uri(&mut *conn, uri).await?.unwrap_or(fresh)
+        }
+    } else {
+        let fresh = id::next();
+        sqlx::query!(
+            "INSERT INTO conversations (id, history_uri, owner_account_id, root_status_id)
+             VALUES ($1, $2, $3, $4)",
+            fresh,
+            params.refs.history_uri,
+            owner,
+            root,
         )
         .execute(&mut *conn)
         .await?;
-        find_by_uri(&mut *conn, uri).await?.unwrap_or(fresh)
-    } else {
-        let fresh = id::next();
-        sqlx::query!("INSERT INTO conversations (id) VALUES ($1)", fresh)
-            .execute(&mut *conn)
-            .await?;
+        initialized = true;
         fresh
     };
     sqlx::query!(
@@ -293,6 +313,12 @@ pub async fn ensure_for_status_conn(
     )
     .execute(&mut *conn)
     .await?;
+    // A freshly inserted conversation already has its identity and history.
+    // Ordinary replies cannot change those fields on an inherited row either.
+    // Avoid redundant rewrites and shared conversation locks in both cases.
+    if initialized || (params.is_reply && params.refs.history_uri.is_none()) {
+        return Ok(conversation_id);
+    }
     // Any member may teach us the container (`contextHistory`); only a genuine
     // root (never a reply) claims ownership + the root status — and only into
     // blanks, so re-delivery and orphaned replies change nothing.
@@ -975,6 +1001,97 @@ mod tests {
         // The reply never reassigns ownership.
         let stored = find(&pool, conv).await.unwrap().unwrap();
         assert_eq!(stored.root_status_id, Some(root.id));
+    }
+
+    /// Ordinary replies do not rewrite the shared conversation's metadata.
+    /// A moderator/other writer holding its non-key row lock must not serialize
+    /// replies that only add their own status mapping.
+    #[sqlx::test]
+    async fn ordinary_reply_does_not_wait_for_conversation_metadata_writer(pool: PgPool) {
+        let alice = local_account(&pool, "alice").await;
+        let root = status::create_local(
+            &pool,
+            status::NewLocalStatus::new(alice, "<p>root</p>", "public", None),
+        )
+        .await
+        .unwrap();
+        let conversation_id = ensure_for_status(
+            &pool,
+            &EnsureConversation {
+                status_id: root.id,
+                account_id: alice,
+                in_reply_to_id: None,
+                is_reply: false,
+                refs: ContextRefs::default(),
+            },
+        )
+        .await
+        .unwrap();
+        let reply = status::create_local(
+            &pool,
+            status::NewLocalStatus::new(alice, "<p>reply</p>", "public", Some(root.id)),
+        )
+        .await
+        .unwrap();
+        let mut writer = pool.begin().await.unwrap();
+        sqlx::query("SELECT id FROM conversations WHERE id=$1 FOR NO KEY UPDATE")
+            .bind(conversation_id)
+            .fetch_one(&mut *writer)
+            .await
+            .unwrap();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            ensure_for_status(
+                &pool,
+                &EnsureConversation {
+                    status_id: reply.id,
+                    account_id: alice,
+                    in_reply_to_id: Some(root.id),
+                    is_reply: true,
+                    refs: ContextRefs::default(),
+                },
+            ),
+        )
+        .await;
+        writer.rollback().await.unwrap();
+        assert_eq!(
+            result
+                .expect("ordinary reply waited for an unrelated metadata row lock")
+                .unwrap(),
+            conversation_id,
+        );
+        let stored = find(&pool, conversation_id).await.unwrap().unwrap();
+        assert_eq!(stored.owner_account_id, Some(alice));
+        assert_eq!(stored.root_status_id, Some(root.id));
+    }
+
+    #[sqlx::test]
+    async fn orphaned_reply_can_teach_history_without_claiming_root(pool: PgPool) {
+        let alice = local_account(&pool, "alice").await;
+        let reply =
+            status::upsert_remote(&pool, remote(alice, "https://remote.example/posts/orphan"))
+                .await
+                .unwrap();
+        let history = "https://remote.example/contexts/9/history";
+        let conversation_id = ensure_for_status(
+            &pool,
+            &EnsureConversation {
+                status_id: reply.id,
+                account_id: alice,
+                in_reply_to_id: None,
+                is_reply: true,
+                refs: ContextRefs {
+                    context_uri: Some("https://remote.example/contexts/9"),
+                    history_uri: Some(history),
+                },
+            },
+        )
+        .await
+        .unwrap();
+        let stored = find(&pool, conversation_id).await.unwrap().unwrap();
+        assert_eq!(stored.history_uri.as_deref(), Some(history));
+        assert_eq!(stored.owner_account_id, None);
+        assert_eq!(stored.root_status_id, None);
     }
 
     /// A remote reply whose parent we never received still converges on the

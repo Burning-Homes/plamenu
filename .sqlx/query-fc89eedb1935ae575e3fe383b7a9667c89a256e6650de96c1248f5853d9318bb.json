@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.attribution_domains AS \"attribution_domains!\",\n               ARRAY(\n                   SELECT t.name\n                   FROM featured_tags ft JOIN tags t ON t.id = ft.tag_id\n                   LEFT JOIN status_tags st ON st.tag_id = ft.tag_id\n                   LEFT JOIN statuses s -- STUBKEEP: own-tag aggregate; a stub still witnesses the tag was used\n                       ON s.id = st.status_id AND s.account_id = ft.account_id\n                      AND s.visibility IN ('public', 'unlisted')\n                   WHERE ft.account_id = a.id\n                   GROUP BY ft.id, t.name\n                   ORDER BY count(s.id) DESC, ft.id DESC\n               ) AS \"featured_names!\",\n               p.documents AS \"identity_documents?\"\n        FROM accounts a\n        LEFT JOIN account_identity_proofs p ON p.account_id = a.id\n        WHERE a.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attribution_domains!",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "attribution_domains"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "featured_names!",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "identity_documents?",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "account_identity_proofs",
+            "name": "documents"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      true
+    ]
+  },
+  "hash": "fc89eedb1935ae575e3fe383b7a9667c89a256e6650de96c1248f5853d9318bb"
+}

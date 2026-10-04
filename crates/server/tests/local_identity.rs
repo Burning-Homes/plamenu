@@ -14,6 +14,195 @@ use plamenu_db::{PgPool, account};
 use serde_json::Value;
 use tower::ServiceExt;
 
+#[sqlx::test(migrations = "../db/migrations")]
+async fn local_parent_resolution_reads_identity_and_status_together(pool: PgPool) {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let legacy = common::create_local_account(&pool, "legacy", "Legacy").await;
+    let numeric = create_immutable_local_account(&pool, "numeric", "Numeric").await;
+    let state = test_state_with(pool.clone(), Arc::default());
+    let counter = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(common::QueryCounter(counter.clone())),
+    );
+    let mut counts = Vec::new();
+    for actor in [&legacy, &numeric] {
+        let post = plamenu_db::status::create_local(
+            &pool,
+            plamenu_db::status::NewLocalStatus::new(actor.id, "<p>parent</p>", "private", None),
+        )
+        .await
+        .unwrap();
+        let uri = plamenu::entities::status_uri_for_account(TEST_DOMAIN, &post, actor);
+        counter.store(0, Ordering::Relaxed);
+        let resolved = plamenu::ingest::resolve_status_ref(&state, &uri)
+            .await
+            .unwrap()
+            .unwrap();
+        counts.push(counter.load(Ordering::Relaxed));
+        assert_eq!(resolved.id, post.id);
+        assert_eq!(
+            resolved.visibility, "private",
+            "the caller applies the thread ceiling"
+        );
+        if actor.uri.is_none() {
+            let folded = format!("https://{TEST_DOMAIN}/users/LEGACY/statuses/{}", post.id);
+            assert_eq!(
+                plamenu::ingest::resolve_status_ref(&state, &folded)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .id,
+                post.id,
+            );
+        }
+        let wrong = format!("https://{TEST_DOMAIN}/users/other/statuses/{}", post.id);
+        assert!(
+            plamenu::ingest::resolve_status_ref(&state, &wrong)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        // Deletion retains a placeholder only while a live reply depends on it.
+        plamenu_db::status::create_local(
+            &pool,
+            plamenu_db::status::NewLocalStatus::new(
+                actor.id,
+                "<p>reply</p>",
+                "private",
+                Some(post.id),
+            ),
+        )
+        .await
+        .unwrap();
+        plamenu_db::status::stub_local(&pool, post.id, actor.id)
+            .await
+            .unwrap();
+        assert!(
+            plamenu::ingest::resolve_status_ref(&state, &uri)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+    assert_eq!(
+        counts,
+        [2, 2],
+        "remote URI probe plus one local identity/status snapshot"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn local_parent_resolution_preserves_canonical_uri_precedence_and_activation(pool: PgPool) {
+    let alice = common::create_local_account(&pool, "alice", "Alice").await;
+    let state = test_state_with(pool.clone(), std::sync::Arc::default());
+    let old = plamenu_db::status::create_local(
+        &pool,
+        plamenu_db::status::NewLocalStatus::new(alice.id, "<p>old</p>", "public", None),
+    )
+    .await
+    .unwrap();
+    // A stored legacy identity takes precedence over an upgrade fixture whose
+    // current handle matches that URI. Set the persisted historical identity
+    // directly: the handle-rename API intentionally rejects legacy actors.
+    let old_actor_uri = format!("https://{TEST_DOMAIN}/users/original_alice");
+    sqlx::query("UPDATE accounts SET uri = $1 WHERE id = $2")
+        .bind(&old_actor_uri)
+        .bind(alice.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let reused = common::create_local_account(&pool, "original_alice", "New Alice").await;
+    let new = plamenu_db::status::create_local(
+        &pool,
+        plamenu_db::status::NewLocalStatus::new(reused.id, "<p>new</p>", "public", None),
+    )
+    .await
+    .unwrap();
+    let canonical = format!("{old_actor_uri}/statuses/{}", old.id);
+    assert_eq!(
+        plamenu::ingest::resolve_status_ref(&state, &canonical)
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        old.id
+    );
+    for alias in [
+        format!("{old_actor_uri}/statuses/{}", new.id),
+        format!("https://{TEST_DOMAIN}/users/alice/statuses/{}", old.id),
+    ] {
+        assert!(
+            plamenu::ingest::resolve_status_ref(&state, &alias)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+    let immutable = create_immutable_local_account(&pool, "numeric_owner", "Numeric").await;
+    let numeric_post = plamenu_db::status::create_local(
+        &pool,
+        plamenu_db::status::NewLocalStatus::new(immutable.id, "<p>numeric</p>", "public", None),
+    )
+    .await
+    .unwrap();
+    let numeric_uri =
+        plamenu::entities::status_uri_for_account(TEST_DOMAIN, &numeric_post, &immutable);
+    account::rename_local(&pool, immutable.id, "numeric_renamed")
+        .await
+        .unwrap();
+    common::create_local_account(&pool, "numeric_owner", "Reused handle").await;
+    assert_eq!(
+        plamenu::ingest::resolve_status_ref(&state, &numeric_uri)
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        numeric_post.id,
+    );
+    for handle in ["numeric_owner", "numeric_renamed"] {
+        let alias = format!(
+            "https://{TEST_DOMAIN}/users/{handle}/statuses/{}",
+            numeric_post.id
+        );
+        assert!(
+            plamenu::ingest::resolve_status_ref(&state, &alias)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+    plamenu_db::user::create(&pool, alice.id, None, "unused-test-password-hash")
+        .await
+        .unwrap();
+    for state_sql in [
+        "UPDATE users SET approved = false, confirmed_at = now() WHERE account_id = $1",
+        "UPDATE users SET approved = true, confirmed_at = NULL WHERE account_id = $1",
+    ] {
+        sqlx::query(state_sql)
+            .bind(alice.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            plamenu::ingest::resolve_status_ref(&state, &canonical)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let shadowed = format!("{old_actor_uri}/statuses/{}", new.id);
+        assert!(
+            plamenu::ingest::resolve_status_ref(&state, &shadowed)
+                .await
+                .unwrap()
+                .is_none(),
+            "a pending canonical actor still blocks fallback to a reused handle"
+        );
+    }
+}
+
 async fn get(
     pool: &PgPool,
     path: &str,

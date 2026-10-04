@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH success AS (\n               UPDATE host_reachability SET\n                   consecutive_failures = 0,\n                   first_failure_at = NULL,\n                   unreachable_since = NULL,\n                   next_probe_at = NULL,\n                   abandoned_at = NULL,\n                   last_success_at = now(),\n                   updated_at = now()\n               WHERE host = $2\n                 AND (consecutive_failures > 0\n                      OR unreachable_since IS NOT NULL\n                      OR next_probe_at IS NOT NULL\n                      OR abandoned_at IS NOT NULL\n                      OR last_success_at IS NULL\n                      OR last_success_at < now() - interval '1 hour')\n               RETURNING host\n           )\n           DELETE FROM delivery_jobs WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e9cb184ad91830b6a171d8ea95c0ea84ea676c5d7a9a7b6e33b74b796a83e442"
+}

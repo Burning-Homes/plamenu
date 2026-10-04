@@ -969,37 +969,41 @@ pub async fn create_remote(pool: &PgPool, new: NewRemoteMedia<'_>) -> Result<(),
         None => (None, None),
     };
     let mut tx = pool.begin().await?;
-    let rejects_media = sqlx::query_scalar!(
-        r#"
-        SELECT COALESCE(instance_domain_rejects_media(domain), false) AS "rejects!"
-        FROM accounts
-        WHERE id = $1
-        "#,
-        new.account_id,
-    )
-    .fetch_optional(&mut *tx)
-    .await?
-    .unwrap_or(false);
     let media_id = id::next();
+    // Read policy at the insertion snapshot and queue only the returned new row.
+    // The surrounding transaction still owns the optional rendition ladder.
     // A deferred row is born `complete` with no file. Intrinsic/on-history A/V
     // waits for the play-triggered lane; a history-deferred image waits for the
     // ordinary proxy cache-miss path. Neither may create ingest-time work.
-    let inserted = sqlx::query_scalar!(
+    let row = sqlx::query!(
         r#"
-        INSERT INTO media_attachments (id, account_id, status_id, remote_url,
-                                       content_type, description, blurhash,
-                                       focus_x, focus_y, width, height,
-                                       thumbnail_remote_url, remote_audio_url,
-                                       duration, download_on_demand,
-                                       history_deferred,
-                                       hls_master_url, live_state,
-                                       live_permanent, preview_card_id,
-                                       processing)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-                $17, $18, $19, $20, $21,
-                CASE WHEN $16 OR $15 OR $17 THEN 'complete' ELSE 'queued' END)
-        ON CONFLICT (status_id, remote_url) WHERE remote_url IS NOT NULL DO NOTHING
-        RETURNING id
+        WITH policy AS MATERIALIZED (
+            SELECT COALESCE((SELECT instance_domain_rejects_media(domain)
+                             FROM accounts WHERE id = $2), false) AS rejects
+        ), inserted AS (
+            INSERT INTO media_attachments (id, account_id, status_id, remote_url,
+                                           content_type, description, blurhash,
+                                           focus_x, focus_y, width, height,
+                                           thumbnail_remote_url, remote_audio_url,
+                                           duration, download_on_demand,
+                                           history_deferred,
+                                           hls_master_url, live_state,
+                                           live_permanent, preview_card_id,
+                                           processing)
+            SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                   $17, $18, $19, $20, $21,
+                   CASE WHEN policy.rejects OR $15 OR $17 THEN 'complete' ELSE 'queued' END
+            FROM policy
+            ON CONFLICT (status_id, remote_url) WHERE remote_url IS NOT NULL DO NOTHING
+            RETURNING id
+        ), queued AS (
+            INSERT INTO media_processing_jobs (id, media_id)
+            SELECT $16, inserted.id FROM inserted CROSS JOIN policy
+            WHERE NOT policy.rejects AND NOT $15 AND NOT $17
+            RETURNING id
+        )
+        SELECT policy.rejects AS "rejects!", inserted.id AS "inserted_id?"
+        FROM policy LEFT JOIN inserted ON true
         "#,
         media_id,
         new.account_id,
@@ -1016,24 +1020,17 @@ pub async fn create_remote(pool: &PgPool, new: NewRemoteMedia<'_>) -> Result<(),
         new.remote_audio_url,
         new.duration,
         new.download_on_demand,
-        rejects_media,
+        id::next(),
         new.history_deferred,
         new.hls_master_url,
         new.live_state,
         new.live_permanent,
         new.preview_card_id,
     )
-    .fetch_optional(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
-    if inserted.is_some() && !rejects_media && !new.download_on_demand && !new.history_deferred {
-        sqlx::query!(
-            "INSERT INTO media_processing_jobs (id, media_id) VALUES ($1, $2)",
-            id::next(),
-            media_id,
-        )
-        .execute(&mut *tx)
-        .await?;
-    }
+    let rejects_media = row.rejects;
+    let inserted = row.inserted_id;
     // Persist the HLS rendition ladder (a new video row only; a conflict means
     // the attachment already existed with its ladder). The proxy range-caches
     // each rendition's fragmented mp4 independently and the built-in player

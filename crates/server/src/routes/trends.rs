@@ -60,11 +60,11 @@ pub async fn tags_index(
         return Ok((headers, Json(Value::Array(Vec::new()))));
     }
 
-    let tags = tag_trend::allowed(&state.pool, limit, offset).await?;
-    let entities = entities::tag_json_page_for_viewer(
+    let entities = entities::trending_tag_json_page_for_viewer(
         &state.pool,
         &state.config.domain,
-        &tags,
+        limit,
+        offset,
         viewer.as_ref().map(|user| user.account.id),
     )
     .await?;

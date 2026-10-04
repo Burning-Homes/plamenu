@@ -80,6 +80,23 @@ Read cases have an untimed pass that checks response content and counts SQL
 statements and response bytes. Mutation cases check their resulting data.
 The benchmark definitions and [`budgets.toml`](budgets.toml) list individual cases.
 
+Before each read case enters Criterion, the driver also sends eight setup
+requests per configured pool connection (128 requests for the current limit of
+16). Every response must succeed, be fully consumed, and satisfy the case's
+body-size floor and required content. This fixed, bounded setup gives
+connection-local prepared plans time to mature; it does not prove that every
+connection chose a generic plan. It does not force PostgreSQL's plan mode or
+change the measured request, dataset, pool settings, sample count, or existing
+warm-up and measurement windows.
+
+The run manifest keeps the setup request count, pool limit, first and last
+setup request latency, and total setup time in `read_bootstrap`, separately from
+Criterion measurements. These observations follow the existing metrics
+pre-pass; they describe per-case setup, not a cold server's first request.
+They are never used as qualifying medians. Filtered runs also perform setup for
+all declared read cases, as the metrics pre-pass already does, so filtering does
+not remove that setup cost.
+
 `write/inbox_update_note` measures subsequent edits: every target receives an
 untimed first edit before sampling, with both original and updated snapshots
 checked afterwards. Account purging warms up for three seconds before the

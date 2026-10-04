@@ -414,6 +414,20 @@ async fn process_job(state: &AppState, cache: &BatchCache, delivery_job: &job::D
             if matches!(outcome, AttemptOutcome::Delivered)
                 && let Some(host) = inbox_host(&delivery_job.inbox_url)
             {
+                match job::complete_with_reachability_success(&state.pool, delivery_job.id, &host)
+                    .await
+                {
+                    Ok(()) => {
+                        cache.note_success(&host);
+                        return;
+                    }
+                    Err(error) => {
+                        // Keep the original independent-write error semantics:
+                        // a reachability error must not retain a delivered job,
+                        // and a queue error must not discard the host's success.
+                        tracing::warn!(%error, host, "combined delivery bookkeeping failed; retrying separately");
+                    }
+                }
                 match reachability::record_success(&state.pool, &host).await {
                     Ok(()) => cache.note_success(&host),
                     Err(error) => {
@@ -1266,6 +1280,216 @@ mod tests {
             .collect();
         assert_eq!(delivered, vec!["first"]);
         assert_eq!(job::pending_count(&pool).await.unwrap(), 0);
+    }
+
+    struct SuccessStatementCounter(Arc<AtomicUsize>);
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for SuccessStatementCounter {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _context: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            #[derive(Default)]
+            struct Statement(bool);
+            impl tracing::field::Visit for Statement {
+                fn record_debug(
+                    &mut self,
+                    field: &tracing::field::Field,
+                    value: &dyn std::fmt::Debug,
+                ) {
+                    if matches!(field.name(), "summary" | "db.statement") {
+                        let sql = format!("{value:?}");
+                        self.0 |= sql.contains("UPDATE host_reachability")
+                            || sql.contains("DELETE FROM delivery_jobs");
+                    }
+                }
+            }
+            if event.metadata().target().starts_with("sqlx::query") {
+                let mut statement = Statement::default();
+                event.record(&mut statement);
+                if statement.0 {
+                    self.0.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+    }
+
+    #[sqlx::test(migrations = "../db/migrations")]
+    async fn delivered_jobs_reset_reachability_and_complete_in_one_statement(pool: PgPool) {
+        use tracing_subscriber::prelude::*;
+
+        let account_id = local_account(&pool).await;
+        set_emissions(&pool, false, false).await;
+        let federation = Arc::new(CountingFederation::default());
+        let state = state_with(&pool, &federation);
+        let writes = Arc::new(AtomicUsize::new(0));
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::registry().with(SuccessStatementCounter(writes.clone())),
+        );
+        let mut counts = Vec::new();
+        for host in [
+            "new.example",
+            "failed.example",
+            "recent.example",
+            "stale.example",
+        ] {
+            if host != "new.example" {
+                sqlx::query(
+                    "INSERT INTO host_reachability
+                         (host, consecutive_failures, first_failure_at, last_failure_class,
+                          last_error, last_success_at)
+                     VALUES ($1, CASE WHEN $1 = 'failed.example' THEN 1 ELSE 0 END,
+                         CASE WHEN $1 = 'failed.example' THEN now() END, 'transient', 'timeout',
+                         CASE WHEN $1 = 'recent.example' THEN now() ELSE now() - interval '2 hours' END)",
+                )
+                .bind(host)
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+            let before = reachability::find(&pool, host).await.unwrap();
+            job::enqueue(
+                &pool,
+                account_id,
+                &format!("https://{host}/inbox"),
+                &json!({"id": host, "type": "Follow"}),
+            )
+            .await
+            .unwrap();
+            let claimed = job::claim_due(&pool, 1).await.unwrap().pop().unwrap();
+            writes.store(0, Ordering::Relaxed);
+            process_job(&state, &BatchCache::default(), &claimed).await;
+            counts.push(writes.load(Ordering::Relaxed));
+            assert!(!job::still_queued(&pool, claimed.id).await.unwrap());
+            let after = reachability::find(&pool, host).await.unwrap();
+            if let Some(before) = before {
+                let after = after.unwrap();
+                assert_eq!(after.consecutive_failures, 0);
+                assert!(after.first_failure_at.is_none());
+                assert!(after.unreachable_since.is_none());
+                assert!(after.next_probe_at.is_none());
+                assert!(after.abandoned_at.is_none());
+                assert_eq!(after.last_failure_class, before.last_failure_class);
+                assert_eq!(after.last_error, before.last_error);
+                if host == "recent.example" {
+                    assert_eq!(after.last_success_at, before.last_success_at);
+                } else {
+                    assert!(after.last_success_at > before.last_success_at);
+                }
+            } else {
+                assert!(after.is_none(), "healthy hosts must not acquire a row");
+            }
+        }
+        assert_eq!(federation.deliveries.lock_or_recover().len(), 4);
+        assert_eq!(
+            counts,
+            [1, 1, 1, 1],
+            "one completion round trip per delivery"
+        );
+    }
+
+    #[sqlx::test(migrations = "../db/migrations")]
+    async fn delivered_job_completes_when_reachability_success_write_fails(pool: PgPool) {
+        let account_id = local_account(&pool).await;
+        set_emissions(&pool, false, false).await;
+        let before = reachability::record_failure(&pool, "failed.example", "transient", "timeout")
+            .await
+            .unwrap();
+        sqlx::raw_sql(
+            "CREATE FUNCTION reject_success() RETURNS trigger LANGUAGE plpgsql AS $$
+                 BEGIN RAISE EXCEPTION 'test reachability write failure'; END $$;
+             CREATE TRIGGER reject_success BEFORE UPDATE ON host_reachability
+                 FOR EACH STATEMENT EXECUTE FUNCTION reject_success();",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let id = job::enqueue(
+            &pool,
+            account_id,
+            "https://failed.example/inbox",
+            &json!({"id": "success", "type": "Follow"}),
+        )
+        .await
+        .unwrap();
+        let claimed = job::claim_due(&pool, 1).await.unwrap().pop().unwrap();
+        let federation = Arc::new(CountingFederation::default());
+        let state = state_with(&pool, &federation);
+        let cache = BatchCache::default();
+        process_job(&state, &cache, &claimed).await;
+        assert_eq!(federation.deliveries.lock_or_recover().len(), 1);
+        assert!(!job::still_queued(&pool, id).await.unwrap());
+        let after = reachability::find(&pool, "failed.example")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(after.consecutive_failures, before.consecutive_failures);
+        assert_eq!(after.last_success_at, before.last_success_at);
+        let cached = cache
+            .reachability(&pool, "failed.example")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(cached.consecutive_failures, before.consecutive_failures);
+        assert_eq!(cached.last_success_at, before.last_success_at);
+    }
+
+    #[sqlx::test(migrations = "../db/migrations")]
+    async fn delivered_job_retains_lease_and_closes_breaker_when_completion_fails(pool: PgPool) {
+        let account_id = local_account(&pool).await;
+        set_emissions(&pool, false, false).await;
+        reachability::record_failure(&pool, "failed.example", "transient", "timeout")
+            .await
+            .unwrap();
+        sqlx::raw_sql(
+            "CREATE FUNCTION reject_completion() RETURNS trigger LANGUAGE plpgsql AS $$
+                 BEGIN RAISE EXCEPTION 'test queue delete failure'; END $$;
+             CREATE TRIGGER reject_completion BEFORE DELETE ON delivery_jobs
+                 FOR EACH STATEMENT EXECUTE FUNCTION reject_completion();",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let id = job::enqueue(
+            &pool,
+            account_id,
+            "https://failed.example/inbox",
+            &json!({"id": "success", "type": "Follow"}),
+        )
+        .await
+        .unwrap();
+        let claimed = job::claim_due(&pool, 1).await.unwrap().pop().unwrap();
+        let federation = Arc::new(CountingFederation::default());
+        let state = state_with(&pool, &federation);
+        let cache = BatchCache::default();
+        process_job(&state, &cache, &claimed).await;
+        assert_eq!(federation.deliveries.lock_or_recover().len(), 1);
+        assert!(job::still_queued(&pool, id).await.unwrap());
+        let (attempts, leased): (i32, bool) =
+            sqlx::query_as("SELECT attempts, run_at > now() FROM delivery_jobs WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(attempts, 1);
+        assert!(
+            leased,
+            "completion failure must leave the claimed lease intact"
+        );
+        let after = reachability::find(&pool, "failed.example")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(after.consecutive_failures, 0);
+        assert!(after.last_success_at.is_some());
+        let cached = cache
+            .reachability(&pool, "failed.example")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(cached.consecutive_failures, 0);
+        assert!(cached.last_success_at.is_some());
     }
 
     #[test]

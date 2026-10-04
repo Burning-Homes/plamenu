@@ -20,6 +20,75 @@ use tower::ServiceExt;
 
 const TWO_WEEKS_SECS: i64 = 1_209_600;
 
+struct DeletionReadCounter {
+    author: Arc<std::sync::atomic::AtomicUsize>,
+    groups: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for DeletionReadCounter {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _context: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        #[derive(Default)]
+        struct Statement {
+            author: bool,
+            groups: bool,
+        }
+        impl tracing::field::Visit for Statement {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if matches!(field.name(), "summary" | "db.statement") {
+                    let sql = format!("{value:?}");
+                    self.author |=
+                        sql.contains("account_fields_json(id)") && sql.contains("WHERE id = $1");
+                    self.groups |= sql.contains("FROM groups g");
+                }
+            }
+        }
+        if !event.metadata().target().starts_with("sqlx::query") {
+            return;
+        }
+        let mut statement = Statement::default();
+        event.record(&mut statement);
+        if statement.author {
+            self.author
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        if statement.groups {
+            self.groups
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn deletion_reuses_captured_author_and_group_memberships(pool: PgPool) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let doomed = old_status(&pool, alice.id, "public", 2 * TWO_WEEKS_SECS).await;
+    let state = test_state_with(pool.clone(), Arc::default());
+    let author = Arc::new(AtomicUsize::new(0));
+    let groups = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(tracing_subscriber::registry().with(
+        DeletionReadCounter {
+            author: author.clone(),
+            groups: groups.clone(),
+        },
+    ));
+    actions::delete_status(&state, &alice, doomed, actions::DeleteMode::Wipe)
+        .await
+        .unwrap();
+    let reads = [
+        author.load(Ordering::Relaxed),
+        groups.load(Ordering::Relaxed),
+    ];
+    assert!(status::find_by_id(&pool, doomed).await.unwrap().is_none());
+    assert_eq!(reads, [1, 1], "one fresh author and one captured group set");
+}
+
 /// Lets a remote user follow the local account directly in the database.
 async fn add_follower(pool: &PgPool, user: &RemoteUser, followed: i64) {
     let remote = plamenu::remote::store_remote_actor(pool, &user.actor)

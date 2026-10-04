@@ -49,6 +49,10 @@ use tokio::runtime::Runtime;
 use tower::ServiceExt;
 use tracing_subscriber::layer::SubscriberExt;
 
+mod read_warmup;
+static READ_BOOTSTRAP: Mutex<BTreeMap<String, read_warmup::BootstrapEvidence>> =
+    Mutex::new(BTreeMap::new());
+
 const SCOPES: &str = "read write follow push";
 /// Sender notes pre-ingested for the `inbox_update_note` bench to edit.
 const UPDATE_NOTES: u64 = 256;
@@ -477,6 +481,7 @@ fn write_run_manifest(started_at: SystemTime, revision: &Revision) {
         "warm_up_secs": WARM_UP.as_secs_f64(),
         "measurement_secs": MEASUREMENT.as_secs_f64(),
         "cases": &*METRICS.lock().unwrap(),
+        "read_bootstrap": &*READ_BOOTSTRAP.lock().unwrap(),
     });
     match std::fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()) {
         Ok(()) => eprintln!("wrote {}", path.display()),
@@ -1490,6 +1495,21 @@ fn bench_reads(
             }
             None => {}
         }
+        // Setup is outside Criterion's existing warmup and all timed samples.
+        // The canonical metrics pre-pass already visits every declared case,
+        // including filtered runs; keep that inventory rather than parsing
+        // Criterion's private filter configuration independently.
+        let evidence = rt.block_on(read_warmup::prepare(
+            &fx.router,
+            || build_request(case),
+            fx.pool.options().get_max_connections(),
+            case.min_len,
+            &case.must_contain,
+        ));
+        READ_BOOTSTRAP
+            .lock()
+            .unwrap()
+            .insert(format!("{group}/{}", case.name), evidence);
         bench_group.bench_function(case.name, |b| {
             b.to_async(rt)
                 .iter(|| send(&fx.router, build_request(case), case.min_len));

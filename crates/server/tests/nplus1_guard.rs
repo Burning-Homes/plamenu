@@ -46,6 +46,968 @@ impl<S: tracing::Subscriber> Layer<S> for QueryCounter {
     }
 }
 
+struct ApplicationSettingsReadCounter(Arc<AtomicUsize>);
+
+impl<S: tracing::Subscriber> Layer<S> for ApplicationSettingsReadCounter {
+    fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+        #[derive(Default)]
+        struct Statement(bool);
+        impl tracing::field::Visit for Statement {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if matches!(field.name(), "summary" | "db.statement") {
+                    let sql = format!("{value:?}");
+                    self.0 |= sql.contains("SELECT account_id, show_application");
+                }
+            }
+        }
+        if event.metadata().target().starts_with("sqlx::query") {
+            let mut statement = Statement::default();
+            event.record(&mut statement);
+            if statement.0 {
+                self.0.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn status_application_settings_reuse_author_snapshot_and_preserve_wire_visibility(
+    pool: PgPool,
+) {
+    let author = create_local_account(&pool, "author", "Author").await;
+    plamenu_db::user::create(&pool, author.id, None, "unused-test-password-hash")
+        .await
+        .unwrap();
+    let booster = create_local_account(&pool, "booster", "Booster").await;
+    let plain = status::create_local(
+        &pool,
+        NewLocalStatus::new(author.id, "plain", "public", None),
+    )
+    .await
+    .unwrap();
+    let plain_boost = status::create_local_reblog(&pool, booster.id, plain.id)
+        .await
+        .unwrap();
+    let app = plamenu_db::oauth::create_app(
+        &pool,
+        plamenu_db::oauth::NewApp {
+            name: "Client",
+            website: Some("https://client.example"),
+            client_id: "test-client",
+            client_secret_hash: "unused-test-secret-hash",
+            redirect_uris: &["urn:ietf:wg:oauth:2.0:oob".to_owned()],
+            scopes: "read write",
+        },
+    )
+    .await
+    .unwrap();
+    let attributed = status::create_local(
+        &pool,
+        NewLocalStatus::new(author.id, "via app", "public", None),
+    )
+    .await
+    .unwrap();
+    status::set_application(&pool, attributed.id, app.id)
+        .await
+        .unwrap();
+    let attributed = status::find_by_id(&pool, attributed.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let app_boost = status::create_local_reblog(&pool, booster.id, attributed.id)
+        .await
+        .unwrap();
+
+    let reads = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(ApplicationSettingsReadCounter(reads.clone())),
+    );
+    let mut empty_counts = Vec::new();
+    for item in [&plain, &plain_boost] {
+        reads.store(0, Ordering::Relaxed);
+        let page =
+            entities::render_statuses(&pool, "plamenu.test", std::slice::from_ref(item), None)
+                .await
+                .unwrap();
+        empty_counts.push(reads.load(Ordering::Relaxed));
+        if item.reblog_of_id.is_some() {
+            assert!(
+                page[0].get("application").is_none(),
+                "no user preference exists for the booster"
+            );
+            assert_eq!(
+                page[0]["reblog"].get("application"),
+                Some(&serde_json::Value::Null)
+            );
+        } else {
+            assert_eq!(page[0].get("application"), Some(&serde_json::Value::Null));
+        }
+    }
+    let expected_app = serde_json::json!({"name": "Client", "website": "https://client.example"});
+    reads.store(0, Ordering::Relaxed);
+    let public = entities::render_statuses(
+        &pool,
+        "plamenu.test",
+        std::slice::from_ref(&app_boost),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        reads.load(Ordering::Relaxed),
+        0,
+        "boost targets reuse the same owner's loaded preference"
+    );
+    assert_eq!(public[0]["reblog"]["application"], expected_app);
+
+    sqlx::query("UPDATE users SET show_application = FALSE WHERE account_id = $1")
+        .bind(author.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let hidden = entities::render_statuses(
+        &pool,
+        "plamenu.test",
+        std::slice::from_ref(&app_boost),
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(hidden[0]["reblog"].get("application").is_none());
+    let owner = entities::render_statuses(
+        &pool,
+        "plamenu.test",
+        std::slice::from_ref(&app_boost),
+        Some(author.id),
+    )
+    .await
+    .unwrap();
+    assert_eq!(owner[0]["reblog"]["application"], expected_app);
+    assert_eq!(
+        empty_counts,
+        [0, 0],
+        "plain statuses reuse the loaded owner preference"
+    );
+}
+
+struct ViewerFlagsReadCounter(Arc<AtomicUsize>);
+
+impl<S: tracing::Subscriber> Layer<S> for ViewerFlagsReadCounter {
+    fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+        #[derive(Default)]
+        struct Statement(bool);
+        impl tracing::field::Visit for Statement {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if matches!(field.name(), "summary" | "db.statement") {
+                    let sql = format!("{value:?}");
+                    self.0 |= sql.contains("ANY($1)")
+                        && sql.contains("ANY($2)")
+                        && [
+                            "FROM favourites",
+                            "FROM status_dislikes",
+                            "FROM bookmarks",
+                            "FROM status_pins",
+                            "FROM statuses -- STUBKEEP: a boost",
+                            "FROM status_conversations sc",
+                        ]
+                        .iter()
+                        .any(|table| sql.contains(table));
+                }
+            }
+        }
+        if event.metadata().target().starts_with("sqlx::query") {
+            let mut statement = Statement::default();
+            event.record(&mut statement);
+            if statement.0 {
+                self.0.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn status_viewer_flags_share_one_snapshot_and_stay_viewer_specific(pool: PgPool) {
+    use plamenu_db::{bookmark, dislike, favourite, pin};
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let carol = create_local_account(&pool, "carol", "Carol").await;
+    let original = status::create_local(
+        &pool,
+        NewLocalStatus::new(alice.id, "original", "public", None),
+    )
+    .await
+    .unwrap();
+    let clean = status::create_local(&pool, NewLocalStatus::new(bob.id, "clean", "public", None))
+        .await
+        .unwrap();
+    let off_page = status::create_local(
+        &pool,
+        NewLocalStatus::new(carol.id, "off page", "public", None),
+    )
+    .await
+    .unwrap();
+    let boost = status::create_local_reblog(&pool, alice.id, original.id)
+        .await
+        .unwrap();
+    favourite::create(&pool, alice.id, original.id, None)
+        .await
+        .unwrap();
+    pin::create(&pool, alice.id, original.id).await.unwrap();
+    dislike::create(&pool, bob.id, original.id, None)
+        .await
+        .unwrap();
+    bookmark::create(&pool, bob.id, original.id).await.unwrap();
+    for (owner, item) in [(alice.id, &original), (carol.id, &off_page)] {
+        let conv = conversation::ensure_for_status(
+            &pool,
+            &conversation::EnsureConversation {
+                status_id: item.id,
+                account_id: owner,
+                in_reply_to_id: None,
+                is_reply: false,
+                refs: conversation::ContextRefs::default(),
+            },
+        )
+        .await
+        .unwrap();
+        let muter = if item.id == original.id {
+            bob.id
+        } else {
+            carol.id
+        };
+        conversation::mute(&pool, muter, conv).await.unwrap();
+    }
+    favourite::create(&pool, carol.id, off_page.id, None)
+        .await
+        .unwrap();
+    dislike::create(&pool, carol.id, off_page.id, None)
+        .await
+        .unwrap();
+    bookmark::create(&pool, carol.id, off_page.id)
+        .await
+        .unwrap();
+    pin::create(&pool, carol.id, off_page.id).await.unwrap();
+    status::create_local_reblog(&pool, carol.id, off_page.id)
+        .await
+        .unwrap();
+
+    let reads = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(ViewerFlagsReadCounter(reads.clone())),
+    );
+    let keys = [
+        "favourited",
+        "downvoted",
+        "reblogged",
+        "bookmarked",
+        "muted",
+    ];
+    let mut counts = Vec::new();
+    for (viewer, expected) in [
+        (Some(alice.id), [true, false, true, false, false]),
+        (Some(bob.id), [false, true, false, true, true]),
+        (Some(carol.id), [false; 5]),
+        (None, [false; 5]),
+    ] {
+        reads.store(0, Ordering::Relaxed);
+        let page = entities::render_statuses(
+            &pool,
+            "plamenu.test",
+            &[original.clone(), clean.clone(), boost.clone()],
+            viewer,
+        )
+        .await
+        .unwrap();
+        counts.push(reads.load(Ordering::Relaxed));
+        for (key, value) in keys.iter().zip(expected) {
+            assert_eq!(
+                page[0].get(*key),
+                Some(&serde_json::Value::Bool(value)),
+                "original {viewer:?} {key}"
+            );
+            assert_eq!(
+                page[2].get(*key),
+                Some(&serde_json::Value::Bool(value)),
+                "boost {viewer:?} {key}"
+            );
+            assert_eq!(
+                page[2]["reblog"].get(*key),
+                Some(&serde_json::Value::Bool(value)),
+                "target {viewer:?} {key}"
+            );
+            assert_eq!(
+                page[1].get(*key),
+                Some(&serde_json::Value::Bool(false)),
+                "unmarked {viewer:?} {key}"
+            );
+        }
+        if viewer == Some(alice.id) {
+            assert_eq!(page[0].get("pinned"), Some(&serde_json::Value::Bool(true)));
+        } else {
+            assert!(page[0].get("pinned").is_none());
+        }
+        if viewer == Some(bob.id) {
+            assert_eq!(page[1].get("pinned"), Some(&serde_json::Value::Bool(false)));
+        } else {
+            assert!(page[1].get("pinned").is_none());
+        }
+    }
+    reads.store(0, Ordering::Relaxed);
+    let recipients = entities::render_status_for_viewers(
+        &pool,
+        "plamenu.test",
+        &original,
+        &[alice.id, bob.id, carol.id],
+    )
+    .await
+    .unwrap();
+    counts.push(reads.load(Ordering::Relaxed));
+    assert_eq!(recipients[&alice.id]["favourited"], true);
+    assert_eq!(recipients[&bob.id]["bookmarked"], true);
+    assert_eq!(recipients[&bob.id]["muted"], true);
+    assert_eq!(recipients[&carol.id]["downvoted"], false);
+    favourite::delete(&pool, alice.id, original.id)
+        .await
+        .unwrap();
+    bookmark::delete(&pool, bob.id, original.id).await.unwrap();
+    let conv = conversation::of_status(&pool, original.id)
+        .await
+        .unwrap()
+        .unwrap();
+    conversation::unmute(&pool, bob.id, conv).await.unwrap();
+    let fresh =
+        entities::render_status_for_viewers(&pool, "plamenu.test", &original, &[alice.id, bob.id])
+            .await
+            .unwrap();
+    assert_eq!(fresh[&alice.id]["favourited"], false);
+    assert_eq!(fresh[&alice.id]["pinned"], true);
+    assert_eq!(fresh[&alice.id]["reblogged"], true);
+    assert_eq!(fresh[&bob.id]["bookmarked"], false);
+    assert_eq!(fresh[&bob.id]["muted"], false);
+    assert_eq!(fresh[&bob.id]["downvoted"], true);
+    assert_eq!(
+        counts,
+        [1, 1, 1, 0, 1],
+        "one fresh flags snapshot per signed-in page or recipient set"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn status_media_keys_share_one_snapshot_without_losing_cleanup_or_ownership(pool: PgPool) {
+    use plamenu_db::{media, media_cleanup};
+    async fn attachment(
+        pool: &PgPool,
+        owner: i64,
+        status_id: Option<i64>,
+        original: Option<&str>,
+        preview: Option<&str>,
+    ) -> i64 {
+        let media_id = id::next();
+        sqlx::query("INSERT INTO media_attachments (id, account_id, status_id, file_name, small_file_name, content_type, remote_url) VALUES ($1, $2, $3, $4, $5, 'video/mp4', $6)")
+            .bind(media_id).bind(owner).bind(status_id).bind(original).bind(preview)
+            .bind(original.is_none().then(|| format!("https://video.example/media/{media_id}")))
+            .execute(pool).await.unwrap();
+        media_id
+    }
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let original = status::create_local(
+        &pool,
+        NewLocalStatus::new(alice.id, "original", "public", None),
+    )
+    .await
+    .unwrap();
+    let empty = status::create_local(&pool, NewLocalStatus::new(bob.id, "empty", "public", None))
+        .await
+        .unwrap();
+    let foreign = status::create_local(
+        &pool,
+        NewLocalStatus::new(bob.id, "foreign", "public", None),
+    )
+    .await
+    .unwrap();
+    attachment(
+        &pool,
+        alice.id,
+        Some(original.id),
+        Some("orig.mp4"),
+        Some("thumb.jpg"),
+    )
+    .await;
+    let cached_only = attachment(&pool, alice.id, Some(original.id), None, None).await;
+    attachment(&pool, alice.id, Some(original.id), Some("orig.mp4"), None).await;
+    attachment(&pool, alice.id, Some(original.id), Some(""), None).await;
+    attachment(&pool, alice.id, None, Some("unattached.mp4"), None).await;
+    let foreign_media =
+        attachment(&pool, bob.id, Some(foreign.id), Some("foreign.mp4"), None).await;
+    for (media_id, url, key) in [
+        (cached_only, "https://video.example/one", "one.m4s"),
+        (cached_only, "https://video.example/two", "two.m4s"),
+        (
+            foreign_media,
+            "https://video.example/foreign",
+            "foreign.m4s",
+        ),
+    ] {
+        assert!(
+            media::hls_segment_record(&pool, media_id, url, 0, 50, key, 50)
+                .await
+                .unwrap()
+        );
+    }
+    let expected = vec![
+        "",
+        "one.m4s",
+        "orig.mp4",
+        "orig.mp4",
+        "thumb.jpg",
+        "two.m4s",
+    ];
+    let reads = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(QueryCounter(reads.clone())),
+    );
+    let mut conn = pool.acquire().await.unwrap();
+    let mut counts = Vec::new();
+    for (status_id, keys) in [
+        (original.id, expected.clone()),
+        (empty.id, Vec::new()),
+        (0, Vec::new()),
+        (foreign.id, vec!["foreign.m4s", "foreign.mp4"]),
+    ] {
+        reads.store(0, Ordering::Relaxed);
+        let mut actual = media_cleanup::collect_status_keys(&mut conn, status_id)
+            .await
+            .unwrap();
+        counts.push(reads.load(Ordering::Relaxed));
+        actual.sort();
+        assert_eq!(
+            actual, keys,
+            "every key stays attached to the requested status"
+        );
+    }
+    drop(conn);
+    let mut tx = pool.begin().await.unwrap();
+    assert!(
+        status::delete_local_conn(&mut tx, original.id, bob.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    tx.commit().await.unwrap();
+    assert_eq!(
+        media_cleanup::pending_count(&pool).await.unwrap(),
+        0,
+        "a non-owner cannot schedule another author's files"
+    );
+    assert!(
+        status::find_by_id(&pool, original.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let mut tx = pool.begin().await.unwrap();
+    assert!(
+        status::delete_local_conn(&mut tx, original.id, alice.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM media_cleanup_jobs")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    assert_eq!(
+        queued, 4,
+        "shared keys deduplicate and blank names do not enqueue"
+    );
+    tx.rollback().await.unwrap();
+    assert_eq!(
+        media_cleanup::pending_count(&pool).await.unwrap(),
+        0,
+        "cleanup and status deletion roll back together"
+    );
+    assert!(
+        status::find_by_id(&pool, original.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let mut conn = pool.acquire().await.unwrap();
+    let mut restored = media_cleanup::collect_status_keys(&mut conn, original.id)
+        .await
+        .unwrap();
+    restored.sort();
+    assert_eq!(
+        restored, expected,
+        "rollback restores cached-only segments as well as original and preview keys"
+    );
+    drop(conn);
+    let mut tx = pool.begin().await.unwrap();
+    assert!(
+        status::delete_local_conn(&mut tx, original.id, alice.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    tx.commit().await.unwrap();
+    let mut queued: Vec<String> = sqlx::query_scalar("SELECT file_name FROM media_cleanup_jobs")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    queued.sort();
+    assert_eq!(queued, ["one.m4s", "orig.mp4", "thumb.jpg", "two.m4s"]);
+    assert!(
+        status::find_by_id(&pool, original.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let mut conn = pool.acquire().await.unwrap();
+    assert!(
+        media_cleanup::collect_status_keys(&mut conn, original.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let mut foreign_keys = media_cleanup::collect_status_keys(&mut conn, foreign.id)
+        .await
+        .unwrap();
+    foreign_keys.sort();
+    assert_eq!(
+        foreign_keys,
+        ["foreign.m4s", "foreign.mp4"],
+        "foreign media remains referenced"
+    );
+    assert_eq!(
+        counts,
+        [1, 1, 1, 1],
+        "one keys snapshot for populated, empty, missing, and foreign statuses"
+    );
+}
+
+struct RemoteMediaWriteCounter(Arc<AtomicUsize>);
+
+impl<S: tracing::Subscriber> Layer<S> for RemoteMediaWriteCounter {
+    fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+        #[derive(Default)]
+        struct Statement(bool);
+        impl tracing::field::Visit for Statement {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if matches!(field.name(), "summary" | "db.statement") {
+                    let sql = format!("{value:?}");
+                    self.0 |= [
+                        "instance_domain_rejects_media(domain)",
+                        "INSERT INTO media_attachments",
+                        "INSERT INTO media_processing_jobs",
+                    ]
+                    .iter()
+                    .any(|part| sql.contains(part));
+                }
+            }
+        }
+        if event.metadata().target().starts_with("sqlx::query") {
+            let mut statement = Statement::default();
+            event.record(&mut statement);
+            if statement.0 {
+                self.0.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn remote_media_insert_and_processing_share_fresh_policy_snapshot(pool: PgPool) {
+    use plamenu_db::{instance_policy, media};
+    let author = remote_account(&pool, "media.example", "alice").await;
+    let post = status::create_local(
+        &pool,
+        NewLocalStatus::new(author.id, "media", "public", None),
+    )
+    .await
+    .unwrap();
+    let reads = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(RemoteMediaWriteCounter(reads.clone())),
+    );
+    let mut counts = Vec::new();
+    reads.store(0, Ordering::Relaxed);
+    media::create_remote(
+        &pool,
+        media::NewRemoteMedia {
+            account_id: author.id,
+            status_id: post.id,
+            remote_url: "https://media.example/original.jpg",
+            content_type: "image/jpeg",
+            description: Some("original"),
+            blurhash: Some("UBL_:rOpGG-;~qRjWBay0fI]%2s:S$M{R*of"),
+            focus: Some((0.1, -0.2)),
+            width: Some(640),
+            height: Some(480),
+            thumbnail_remote_url: Some("https://media.example/preview.jpg"),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    counts.push(reads.load(Ordering::Relaxed));
+    let original = media::for_statuses_read_only(&pool, &[post.id])
+        .await
+        .unwrap()[&post.id][0]
+        .clone();
+    assert_eq!(original.processing, "queued");
+    assert_eq!(original.description.as_deref(), Some("original"));
+    assert_eq!(
+        (
+            original.width,
+            original.height,
+            original.focus_x,
+            original.focus_y
+        ),
+        (Some(640), Some(480), Some(0.1), Some(-0.2))
+    );
+    assert_eq!(
+        original.thumbnail_remote_url.as_deref(),
+        Some("https://media.example/preview.jpg")
+    );
+    reads.store(0, Ordering::Relaxed);
+    media::create_remote(
+        &pool,
+        media::NewRemoteMedia {
+            account_id: author.id,
+            status_id: post.id,
+            remote_url: "https://media.example/original.jpg",
+            content_type: "image/png",
+            description: Some("duplicate must not edit"),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    counts.push(reads.load(Ordering::Relaxed));
+    let duplicate = media::for_statuses_read_only(&pool, &[post.id])
+        .await
+        .unwrap();
+    assert_eq!(duplicate[&post.id].len(), 1);
+    assert_eq!(duplicate[&post.id][0].id, original.id);
+    assert_eq!(
+        duplicate[&post.id][0].description.as_deref(),
+        Some("original")
+    );
+    for (url, intrinsic, history) in [
+        ("https://media.example/deferred.mp4", true, false),
+        ("https://media.example/cold.jpg", false, true),
+    ] {
+        reads.store(0, Ordering::Relaxed);
+        media::create_remote(
+            &pool,
+            media::NewRemoteMedia {
+                account_id: author.id,
+                status_id: post.id,
+                remote_url: url,
+                content_type: if intrinsic { "video/mp4" } else { "image/jpeg" },
+                download_on_demand: intrinsic,
+                history_deferred: history,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        counts.push(reads.load(Ordering::Relaxed));
+        let rows = media::for_statuses_read_only(&pool, &[post.id])
+            .await
+            .unwrap();
+        let row = rows[&post.id]
+            .iter()
+            .find(|row| row.remote_url.as_deref() == Some(url))
+            .unwrap();
+        assert_eq!(row.processing, "complete");
+        assert_eq!(row.download_on_demand, intrinsic);
+        let deferred: bool =
+            sqlx::query_scalar("SELECT history_deferred FROM media_attachments WHERE id=$1")
+                .bind(row.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(deferred, history);
+    }
+    let block = instance_policy::create_domain_block(
+        &pool,
+        instance_policy::NewDomainBlock {
+            domain: "media.example",
+            severity: "noop",
+            reject_media: true,
+            reject_reports: false,
+            private_comment: None,
+            public_comment: None,
+            obfuscate: false,
+        },
+    )
+    .await
+    .unwrap();
+    reads.store(0, Ordering::Relaxed);
+    media::create_remote(
+        &pool,
+        media::NewRemoteMedia {
+            account_id: author.id,
+            status_id: post.id,
+            remote_url: "https://media.example/rejected.jpg",
+            content_type: "image/jpeg",
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    counts.push(reads.load(Ordering::Relaxed));
+    let rows = media::for_statuses_read_only(&pool, &[post.id])
+        .await
+        .unwrap();
+    let rejected = rows[&post.id]
+        .iter()
+        .find(|row| row.remote_url.as_deref() == Some("https://media.example/rejected.jpg"))
+        .unwrap();
+    assert_eq!(rejected.processing, "complete");
+    instance_policy::update_domain_block(
+        &pool,
+        block.id,
+        instance_policy::DomainBlockUpdate {
+            reject_media: Some(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    reads.store(0, Ordering::Relaxed);
+    media::create_remote(
+        &pool,
+        media::NewRemoteMedia {
+            account_id: author.id,
+            status_id: post.id,
+            remote_url: "https://media.example/allowed-again.jpg",
+            content_type: "image/jpeg",
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    counts.push(reads.load(Ordering::Relaxed));
+    let jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM media_processing_jobs")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let queued_urls: Vec<String> = sqlx::query_scalar("SELECT m.remote_url FROM media_processing_jobs j JOIN media_attachments m ON m.id=j.media_id ORDER BY m.remote_url")
+        .fetch_all(&pool).await.unwrap();
+    assert_eq!(
+        jobs, 2,
+        "only original and fresh allowed work: {queued_urls:?}"
+    );
+    let rows = media::for_statuses_read_only(&pool, &[post.id])
+        .await
+        .unwrap();
+    assert_eq!(rows[&post.id].len(), 5);
+    assert_eq!(rows[&post.id].iter().find(|row| row.remote_url.as_deref() == Some("https://media.example/allowed-again.jpg")).unwrap().processing, "queued");
+
+    // A queue failure must roll back the attachment, including the combined statement.
+    sqlx::raw_sql("CREATE FUNCTION reject_media_job() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected media job failure'; END; $$; CREATE TRIGGER reject_media_job BEFORE INSERT ON media_processing_jobs FOR EACH ROW EXECUTE FUNCTION reject_media_job()")
+        .execute(&pool).await.unwrap();
+    assert!(
+        media::create_remote(
+            &pool,
+            media::NewRemoteMedia {
+                account_id: author.id,
+                status_id: post.id,
+                remote_url: "https://media.example/failed-job.jpg",
+                content_type: "image/jpeg",
+                ..Default::default()
+            }
+        )
+        .await
+        .is_err()
+    );
+    sqlx::raw_sql("DROP TRIGGER reject_media_job ON media_processing_jobs")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // A later rendition failure must roll back both the first statement and its job.
+    sqlx::raw_sql("CREATE FUNCTION reject_media_ladder() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected rendition failure'; END; $$; CREATE TRIGGER reject_media_ladder BEFORE INSERT ON media_renditions FOR EACH ROW EXECUTE FUNCTION reject_media_ladder()")
+        .execute(&pool).await.unwrap();
+    assert!(
+        media::create_remote(
+            &pool,
+            media::NewRemoteMedia {
+                account_id: author.id,
+                status_id: post.id,
+                remote_url: "https://media.example/failed-ladder.mp4",
+                content_type: "video/mp4",
+                renditions: vec![media::NewRendition {
+                    height: 360,
+                    width: Some(640),
+                    frame_rate: Some(30),
+                    size_bytes: Some(100),
+                    origin_url: "https://media.example/360.mp4",
+                    is_audio: false,
+                }],
+                ..Default::default()
+            }
+        )
+        .await
+        .is_err()
+    );
+    let rows = media::for_statuses_read_only(&pool, &[post.id])
+        .await
+        .unwrap();
+    assert_eq!(
+        rows[&post.id].len(),
+        5,
+        "neither failed attachment survived"
+    );
+    let jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM media_processing_jobs")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(jobs, 2, "neither failed write left queued work");
+    let ladders: i64 = sqlx::query_scalar("SELECT count(*) FROM media_renditions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(ladders, 0);
+    assert_eq!(
+        counts, [1; 6],
+        "fresh policy, insert, and processing queue share one statement"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn hashtag_upsert_and_links_share_snapshot_preserving_names_dates_and_rollback(pool: PgPool) {
+    use plamenu_db::tag;
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let original =
+        status::create_local(&pool, NewLocalStatus::new(alice.id, "tags", "public", None))
+            .await
+            .unwrap();
+    let other = status::create_local(
+        &pool,
+        NewLocalStatus::new(alice.id, "other tags", "public", None),
+    )
+    .await
+    .unwrap();
+    let rust_id = tag::ensure(&pool, "Rust").await.unwrap();
+    let reads = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(QueryCounter(reads.clone())),
+    );
+    let mut conn = pool.acquire().await.unwrap();
+    let mut counts = Vec::new();
+    reads.store(0, Ordering::Relaxed);
+    tag::ensure_and_attach_many(
+        &mut conn,
+        original.id,
+        &["rUsT", "Rust", "NewTag", "newtag", "Another"],
+    )
+    .await
+    .unwrap();
+    counts.push(reads.load(Ordering::Relaxed));
+    let ids: Vec<i64> =
+        sqlx::query_scalar("SELECT tag_id FROM status_tags WHERE status_id=$1 ORDER BY tag_id")
+            .bind(original.id)
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(ids.len(), 3);
+    assert!(ids.contains(&rust_id));
+    let linked_at: time::OffsetDateTime =
+        sqlx::query_scalar("SELECT sort_at FROM status_tags WHERE status_id=$1 LIMIT 1")
+            .bind(original.id)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    let matches_status: bool = sqlx::query_scalar("SELECT bool_and(st.sort_at=s.sort_at) FROM status_tags st JOIN statuses s ON s.id=st.status_id WHERE s.id=$1")
+        .bind(original.id).fetch_one(&mut *conn).await.unwrap();
+    assert!(matches_status);
+    sqlx::query("UPDATE statuses SET sort_at=sort_at-interval '1 day' WHERE id=$1")
+        .bind(original.id)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    reads.store(0, Ordering::Relaxed);
+    tag::ensure_and_attach_many(&mut conn, original.id, &["RUST", "NEWTAG", "another"])
+        .await
+        .unwrap();
+    counts.push(reads.load(Ordering::Relaxed));
+    let again: Vec<i64> =
+        sqlx::query_scalar("SELECT tag_id FROM status_tags WHERE status_id=$1 ORDER BY tag_id")
+            .bind(original.id)
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(again, ids, "redelivery preserves existing tag and link ids");
+    let dates: Vec<time::OffsetDateTime> =
+        sqlx::query_scalar("SELECT sort_at FROM status_tags WHERE status_id=$1")
+            .bind(original.id)
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap();
+    assert!(
+        dates.iter().all(|date| *date == linked_at),
+        "conflict keeps link dates"
+    );
+    reads.store(0, Ordering::Relaxed);
+    tag::ensure_and_attach_many(&mut conn, other.id, &[])
+        .await
+        .unwrap();
+    counts.push(reads.load(Ordering::Relaxed));
+    tag::ensure_and_attach_many(&mut conn, other.id, &["rust", "newTAG"])
+        .await
+        .unwrap();
+    drop(conn);
+    let names = tag::names_for_statuses(&pool, &[original.id, other.id])
+        .await
+        .unwrap();
+    assert_eq!(
+        names[&original.id],
+        ["Another", "NewTag", "Rust"],
+        "existing spelling and the first new spelling survive case-folded collisions"
+    );
+    assert_eq!(
+        names[&other.id],
+        ["NewTag", "Rust"],
+        "links stay scoped to the requested status"
+    );
+    let total: i64 = sqlx::query_scalar("SELECT count(*) FROM tags")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(total, 3, "no duplicate case-folded tags");
+    sqlx::raw_sql("CREATE FUNCTION reject_tag_link() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected tag link failure'; END; $$; CREATE TRIGGER reject_tag_link BEFORE INSERT ON status_tags FOR EACH ROW EXECUTE FUNCTION reject_tag_link()")
+        .execute(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    assert!(
+        tag::ensure_and_attach_many(&mut tx, original.id, &["Fault"])
+            .await
+            .is_err()
+    );
+    tx.rollback().await.unwrap();
+    let total: i64 = sqlx::query_scalar("SELECT count(*) FROM tags")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        total, 3,
+        "a failed transactional link cannot leave its tag behind"
+    );
+    assert_eq!(
+        tag::names_for_statuses(&pool, &[original.id])
+            .await
+            .unwrap()[&original.id],
+        ["Another", "NewTag", "Rust"]
+    );
+    assert_eq!(
+        counts,
+        [1, 1, 0],
+        "one upsert/link snapshot, with no query for empty input"
+    );
+}
+
 async fn seed_followers(pool: &PgPool, viewer: i64, n: usize) -> Vec<plamenu_db::account::Account> {
     let mut accounts = Vec::new();
     for i in 0..n {
@@ -1660,6 +2622,48 @@ async fn note_batch_query_count_is_flat(pool: PgPool) {
 /// something different from what a single dereference of the same status
 /// returns.
 #[sqlx::test(migrations = "../db/migrations")]
+async fn note_batch_seeded_parent_preserves_other_parents_and_documents(pool: PgPool) {
+    let state = common::test_state_with(pool.clone(), Arc::default());
+    let author = create_local_account(&pool, "author", "Author").await;
+    let other = create_local_account(&pool, "other", "Other root owner").await;
+    let parent = status::create_local(
+        &pool,
+        NewLocalStatus::new(author.id, "root", "public", None),
+    )
+    .await
+    .unwrap();
+    let other_parent = status::create_local(
+        &pool,
+        NewLocalStatus::new(other.id, "other root", "public", None),
+    )
+    .await
+    .unwrap();
+    let mut page = Vec::new();
+    for parent_id in [Some(parent.id), Some(other_parent.id), None] {
+        page.push(
+            status::create_local(
+                &pool,
+                NewLocalStatus::new(author.id, "<p>body</p>", "public", parent_id),
+            )
+            .await
+            .unwrap(),
+        );
+    }
+    let refs: Vec<&status::Status> = page.iter().collect();
+    let normal = plamenu::note::NoteBatch::load(&state, &refs).await.unwrap();
+    let seeded = plamenu::note::NoteBatch::load_with_parent(&state, &refs, &parent, &author)
+        .await
+        .unwrap();
+    for item in &page {
+        assert_eq!(
+            plamenu::note::note_in_batch(&state, item, &author, &seeded).unwrap(),
+            plamenu::note::note_in_batch(&state, item, &author, &normal).unwrap(),
+            "only the supplied parent's identity is reused; every document stays identical",
+        );
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn note_batch_matches_per_status_render(pool: PgPool) {
     let state = common::test_state_with(pool.clone(), Arc::default());
     let author = create_local_account(&pool, "author", "Author").await;
@@ -1787,18 +2791,17 @@ async fn mention_filing_query_count_is_independent_of_recipient_count(pool: PgPo
 /// N+1 close-out, delivery worker: draining a
 /// batch of same-host, same-signer jobs pays the host facts (reachability
 /// row, signature preference) and the signer keys ONCE per batch, plus a
-/// fixed four statements per job — the reads that must stay per-job: the
-/// domain-policy gate, the cancellation re-check, the success record and the
-/// job completion. Before the batch cache every job re-read the host and
+/// fixed three statements per job: the fresh domain-policy gate and
+/// cancellation re-check, plus the combined success record and job completion.
+/// Before the batch cache every job re-read the host and
 /// signer facts too (~8 per job); if someone uncaches them the marginal cost
 /// here roughly doubles and this fails.
 #[sqlx::test(migrations = "../db/migrations")]
 async fn delivery_drain_marginal_cost_per_job_is_constant(pool: PgPool) {
     use serde_json::json;
 
-    // The four deliberately per-job statements: the domain-policy gate, the
-    // cancellation re-check, the success record and the job completion.
-    const PER_JOB: usize = 4;
+    // Two deliberately fresh reads plus one success/completion statement.
+    const PER_JOB: usize = 3;
 
     let counter = Arc::new(AtomicUsize::new(0));
     let state = common::test_state_with(pool.clone(), Arc::default());

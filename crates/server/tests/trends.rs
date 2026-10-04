@@ -662,6 +662,58 @@ async fn tag_viewer_flags_keep_both_reasons_and_exact_scope(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn public_trending_tag_page_has_one_query_at_empty_and_full_page_sizes(pool: PgPool) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let state = test_state_with(pool.clone(), Arc::default());
+    let app = plamenu::build_router(state.clone());
+    let counter = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(common::QueryCounter(counter.clone())),
+    );
+    let mut counts = Vec::new();
+    for limit in [0, 1, 20] {
+        if limit == 1 {
+            for index in 0..21 {
+                let id = tag::ensure(&pool, &format!("querybudget{index}"))
+                    .await
+                    .unwrap();
+                plamenu_db::tag_trend::upsert(&pool, id, f64::from(index), true)
+                    .await
+                    .unwrap();
+            }
+        }
+        state.settings_cache.get(&pool).await.unwrap();
+        counter.store(0, Ordering::Relaxed);
+        let (code, body) = api(
+            app.clone(),
+            "GET",
+            &format!("/api/v1/trends/tags?limit={}", limit.max(1)),
+            None,
+            None,
+        )
+        .await;
+        counts.push(counter.load(Ordering::Relaxed));
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(
+            body.as_array().unwrap().len(),
+            usize::try_from(limit).unwrap()
+        );
+        for row in body.as_array().unwrap() {
+            assert_eq!(row["history"].as_array().unwrap().len(), 7);
+            assert!(row.get("following").is_none());
+            assert!(row.get("featuring").is_none());
+        }
+    }
+    assert_eq!(
+        counts,
+        vec![1; 3],
+        "page SQL cost grows beyond its single snapshot"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn trends_tag_viewer_page_preserves_order_history_and_anonymous_shape(pool: PgPool) {
     let today = OffsetDateTime::now_utc().date();
     let high = seed_trending_tag(&pool, "high", 1, today).await;
@@ -686,7 +738,7 @@ async fn trends_tag_viewer_page_preserves_order_history_and_anonymous_shape(pool
     .await
     .unwrap();
     tag::attach(&pool, past.id, high).await.unwrap();
-    for age in [2, 7] {
+    for age in [2, 7, -1] {
         tag::record_uses(&pool, past.id, today - time::Duration::days(age))
             .await
             .unwrap();
@@ -789,4 +841,130 @@ async fn trends_disabled_hides_populated_authenticated_flags(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(page, json!([]));
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn trends_history_stays_tag_scoped_with_ties_empty_days_and_distinct_accounts(pool: PgPool) {
+    let today = OffsetDateTime::now_utc().date();
+    let alice = create_local_account(&pool, "historyalice", "Alice").await;
+    let bob = create_local_account(&pool, "historybob", "Bob").await;
+    let mut ids = Vec::new();
+    for name in [
+        "historyfirst",
+        "historysecond",
+        "historyempty",
+        "historydenied",
+    ] {
+        ids.push(tag::ensure(&pool, name).await.unwrap());
+    }
+    for (index, id) in ids.iter().enumerate() {
+        plamenu_db::tag_trend::upsert(
+            &pool,
+            *id,
+            if index == 3 { 1000.0 } else { 50.0 },
+            index != 3,
+        )
+        .await
+        .unwrap();
+    }
+    // Two authors use each nonempty tag repeatedly. Future and old counts
+    // must not enter the seven-day series; counts for different tags must
+    // never be combined, even when their days and ranking scores match.
+    sqlx::query(
+        "INSERT INTO tag_usages(tag_id, day, account_id, uses)
+         SELECT t.id, $3::date - d.age, a.id, (t.n * 10 + a.n)::int
+         FROM unnest($1::bigint[]) WITH ORDINALITY t(id, n)
+         CROSS JOIN unnest($2::bigint[]) WITH ORDINALITY a(id, n)
+         CROSS JOIN generate_series(-1, 7) d(age)
+         WHERE d.age <> 3",
+    )
+    .bind(vec![ids[0], ids[1], ids[3]])
+    .bind(vec![alice.id, bob.id])
+    .bind(today)
+    .execute(&pool)
+    .await
+    .unwrap();
+    tag::follow(&pool, alice.id, ids[0]).await.unwrap();
+    plamenu_db::featured_tag::feature(&pool, alice.id, ids[1])
+        .await
+        .unwrap();
+    tag::follow(&pool, bob.id, ids[1]).await.unwrap();
+    let page = plamenu::entities::trending_tag_json_page_for_viewer(
+        &pool,
+        common::TEST_DOMAIN,
+        20,
+        0,
+        Some(alice.id),
+    )
+    .await
+    .unwrap();
+    let mut ranked = ids[..3].to_vec();
+    ranked.sort_unstable_by(|a, b| b.cmp(a));
+    assert_eq!(
+        page.iter()
+            .map(|v| v["id"].as_str().unwrap().parse::<i64>().unwrap())
+            .collect::<Vec<_>>(),
+        ranked
+    );
+    for entity in &page {
+        let id = entity["id"].as_str().unwrap().parse::<i64>().unwrap();
+        assert_eq!(entity["following"], id == ids[0]);
+        assert_eq!(entity["featuring"], id == ids[1]);
+        let series = entity["history"].as_array().unwrap();
+        assert_eq!(series.len(), 7);
+        for (age, entry) in series.iter().enumerate() {
+            let day = today - time::Duration::days(i64::try_from(age).unwrap());
+            assert_eq!(
+                entry["day"],
+                day.with_time(time::Time::MIDNIGHT)
+                    .assume_utc()
+                    .unix_timestamp()
+                    .to_string()
+            );
+            let present = id != ids[2] && age != 3;
+            let uses = if present {
+                if id == ids[0] { 23 } else { 43 }
+            } else {
+                0
+            };
+            assert_eq!(entry["uses"], uses.to_string());
+            assert_eq!(entry["accounts"], if present { "2" } else { "0" });
+        }
+    }
+    let offset = plamenu::entities::trending_tag_json_page_for_viewer(
+        &pool,
+        common::TEST_DOMAIN,
+        1,
+        1,
+        Some(alice.id),
+    )
+    .await
+    .unwrap();
+    assert_eq!(offset, page[1..2]);
+    let anonymous = plamenu::entities::trending_tag_json_page_for_viewer(
+        &pool,
+        common::TEST_DOMAIN,
+        20,
+        0,
+        None,
+    )
+    .await
+    .unwrap();
+    let mut anonymous_expected = page;
+    for entity in &mut anonymous_expected {
+        entity.as_object_mut().unwrap().remove("following");
+        entity.as_object_mut().unwrap().remove("featuring");
+    }
+    assert_eq!(anonymous, anonymous_expected);
+    let empty = plamenu_db::tag_trend::allowed_page(
+        &pool,
+        0,
+        0,
+        Some(alice.id),
+        today - time::Duration::days(6),
+        today,
+    )
+    .await
+    .unwrap();
+    assert!(empty.tags.is_empty() && empty.histories.is_empty());
 }

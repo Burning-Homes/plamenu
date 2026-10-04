@@ -17,6 +17,66 @@ use plamenu_db::{PgPool, conversation, dislike, favourite, status};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
+struct ParentStatusReadCounter(Arc<std::sync::atomic::AtomicUsize>);
+
+struct ReplyAuthorReadCounter(Arc<std::sync::atomic::AtomicUsize>);
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for ReplyAuthorReadCounter {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _context: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        #[derive(Default)]
+        struct Statement(bool);
+        impl tracing::field::Visit for Statement {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if matches!(field.name(), "summary" | "db.statement") {
+                    let sql = format!("{value:?}");
+                    self.0 |= sql.contains("SELECT id, username, domain")
+                        && sql.contains("WHERE id = ANY($1)");
+                }
+            }
+        }
+        if !event.metadata().target().starts_with("sqlx::query") {
+            return;
+        }
+        let mut statement = Statement::default();
+        event.record(&mut statement);
+        if statement.0 {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for ParentStatusReadCounter {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _context: tracing_subscriber::layer::Context<'_, S>,
+    ) {
+        #[derive(Default)]
+        struct Statement(bool);
+        impl tracing::field::Visit for Statement {
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if matches!(field.name(), "summary" | "db.statement") {
+                    let sql = format!("{value:?}");
+                    self.0 |= sql.contains("SELECT id, uri, account_id")
+                        && sql.contains("WHERE id = ANY($1)");
+                }
+            }
+        }
+        if !event.metadata().target().starts_with("sqlx::query") {
+            return;
+        }
+        let mut statement = Statement::default();
+        event.record(&mut statement);
+        if statement.0 {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
 const AP_JSON: &str = "application/activity+json";
 const AS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
 
@@ -265,6 +325,133 @@ async fn engagement_collections_carry_counts_only(pool: PgPool) {
     assert_eq!(note["shares"]["totalItems"], 1);
     assert_eq!(note["likes"]["id"], likes["id"]);
     assert_eq!(note["shares"]["id"], shares["id"]);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn replies_collection_reuses_its_dereferenced_parent_identity(pool: PgPool) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tracing_subscriber::prelude::*;
+
+    let legacy = create_local_account(&pool, "legacy", "Legacy").await;
+    let numeric = common::create_immutable_local_account(&pool, "numeric", "Numeric").await;
+    let reads = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(ParentStatusReadCounter(reads.clone())),
+    );
+    let mut counts = Vec::new();
+    for author in [&legacy, &numeric] {
+        let parent = post(&pool, &author.username, "root", "public", None).await;
+        for n in 0..3 {
+            post(
+                &pool,
+                &author.username,
+                &format!("reply {n}"),
+                "public",
+                Some(parent.id),
+            )
+            .await;
+        }
+        let parent_uri = plamenu::entities::status_uri_for_account(TEST_DOMAIN, &parent, author);
+        let parent_path = parent_uri.trim_start_matches(&format!("https://{TEST_DOMAIN}"));
+        let path = format!("{parent_path}/replies?page=true");
+        reads.store(0, Ordering::Relaxed);
+        let (code, _, page) = get_json(test_app(pool.clone()), &path, Some(AP_JSON)).await;
+        counts.push(reads.load(Ordering::Relaxed));
+        assert_eq!(code, StatusCode::OK);
+        let replies = page["items"].as_array().unwrap();
+        assert_eq!(replies.len(), 3);
+        for reply in replies {
+            assert_eq!(reply["inReplyTo"], parent_uri);
+        }
+    }
+    assert_eq!(
+        counts,
+        [0, 0],
+        "the root was already loaded and authorized by dereference"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn replies_collection_reuses_root_author_and_keeps_other_author_documents(pool: PgPool) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tracing_subscriber::prelude::*;
+
+    let legacy = create_local_account(&pool, "legacy", "Legacy").await;
+    let numeric = common::create_immutable_local_account(&pool, "numeric", "Numeric").await;
+    let other = common::create_immutable_local_account(&pool, "other", "Other").await;
+    let remote = cheap_remote(&pool, "remote").await;
+    let state = test_state_with(pool.clone(), Arc::default());
+    let reads = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(ReplyAuthorReadCounter(reads.clone())),
+    );
+    let mut self_counts = Vec::new();
+    let mut other_counts = Vec::new();
+    for author in [&legacy, &numeric] {
+        let parent = post(&pool, &author.username, "root", "public", None).await;
+        let own = post(
+            &pool,
+            &author.username,
+            "self reply",
+            "public",
+            Some(parent.id),
+        )
+        .await;
+        let different = post(
+            &pool,
+            &other.username,
+            "other reply",
+            "public",
+            Some(parent.id),
+        )
+        .await;
+        let remote_reply = remote_reply(&pool, remote.id, &author.username, parent.id).await;
+        let parent_uri = plamenu::entities::status_uri_for_account(TEST_DOMAIN, &parent, author);
+        let path = parent_uri.trim_start_matches(&format!("https://{TEST_DOMAIN}"));
+
+        reads.store(0, Ordering::Relaxed);
+        let (code, _, own_page) = get_json(
+            test_app(pool.clone()),
+            &format!("{path}/replies?page=true"),
+            Some(AP_JSON),
+        )
+        .await;
+        self_counts.push(reads.load(Ordering::Relaxed));
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(
+            own_page["items"],
+            json!([plamenu::note::note_for_status(&state, &own, author)
+                .await
+                .unwrap()]),
+            "the reused legacy/numeric owner must produce the same complete Note"
+        );
+
+        reads.store(0, Ordering::Relaxed);
+        let (code, _, other_page) = get_json(
+            test_app(pool.clone()),
+            &format!("{path}/replies?page=true&only_other_accounts=true"),
+            Some(AP_JSON),
+        )
+        .await;
+        other_counts.push(reads.load(Ordering::Relaxed));
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(
+            other_page["items"],
+            json!([
+                plamenu::note::note_for_status(&state, &different, &other)
+                    .await
+                    .unwrap(),
+                remote_reply.uri.unwrap(),
+            ]),
+            "other local owners must still load normally and remote replies stay IRIs"
+        );
+    }
+    assert_eq!(other_counts, [1, 1]);
+    assert_eq!(
+        self_counts,
+        [0, 0],
+        "dereference already loaded the root owner"
+    );
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

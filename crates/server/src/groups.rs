@@ -712,7 +712,16 @@ pub async fn communities_of_status_conn(
     conn: &mut plamenu_db::PgConnection,
     stored: &Status,
 ) -> Result<Vec<Account>, ApiError> {
-    let mut accounts = group_accounts_of_status_conn(state, conn, stored).await?;
+    let accounts = group_accounts_of_status_conn(state, conn, stored).await?;
+    communities_from_groups_conn(state, conn, stored, accounts).await
+}
+
+async fn communities_from_groups_conn(
+    state: &AppState,
+    conn: &mut plamenu_db::PgConnection,
+    stored: &Status,
+    mut accounts: Vec<Account>,
+) -> Result<Vec<Account>, ApiError> {
     let extra_ids: Vec<i64> = group::boosting_group_ids(&mut *conn, stored.id)
         .await?
         .into_iter()
@@ -759,8 +768,30 @@ pub async fn remote_community_inboxes_conn(
     conn: &mut plamenu_db::PgConnection,
     stored: &Status,
 ) -> Result<Vec<(String, String)>, ApiError> {
+    Ok(remote_inboxes(
+        communities_of_status_conn(state, conn, stored).await?,
+    ))
+}
+
+/// Extend a deletion's already captured local-group set with remote boosts.
+pub(crate) async fn remote_community_inboxes_from_groups(
+    state: &AppState,
+    stored: &Status,
+    groups: &[Account],
+) -> Result<Vec<(String, String)>, ApiError> {
+    let mut conn = state
+        .pool
+        .acquire()
+        .await
+        .map_err(plamenu_db::DbError::from)?;
+    Ok(remote_inboxes(
+        communities_from_groups_conn(state, &mut conn, stored, groups.to_vec()).await?,
+    ))
+}
+
+fn remote_inboxes(accounts: Vec<Account>) -> Vec<(String, String)> {
     let mut targets = Vec::new();
-    for account in communities_of_status_conn(state, conn, stored).await? {
+    for account in accounts {
         if account.is_local() {
             continue;
         }
@@ -768,7 +799,7 @@ pub async fn remote_community_inboxes_conn(
             targets.push((uri, account.inbox_url.clone()));
         }
     }
-    Ok(targets)
+    targets
 }
 
 /// A group boost captured before its target's deletion cascades it away —
@@ -788,12 +819,20 @@ pub async fn capture_boosts(
     stored: &Status,
     author: &Account,
 ) -> Result<Vec<CapturedBoost>, ApiError> {
+    let groups = group_accounts_of_status(state, stored).await?;
+    capture_boosts_from_groups(state, stored, author, &groups).await
+}
+
+/// Capture boost rows without rereading the deletion's local-group membership.
+pub(crate) async fn capture_boosts_from_groups(
+    state: &AppState,
+    stored: &Status,
+    author: &Account,
+    groups: &[Account],
+) -> Result<Vec<CapturedBoost>, ApiError> {
     let mut captured = Vec::new();
-    for g in group::groups_of_status(&state.pool, stored.id).await? {
-        let Some(group_account) = account::find_by_id(&state.pool, g.account_id).await? else {
-            continue;
-        };
-        let Some(boost) = status::find_reblog_by(&state.pool, g.account_id, stored.id).await?
+    for group_account in groups {
+        let Some(boost) = status::find_reblog_by(&state.pool, group_account.id, stored.id).await?
         else {
             continue;
         };
@@ -805,7 +844,7 @@ pub async fn capture_boosts(
                 stored,
                 author,
             ),
-            group_account,
+            group_account: group_account.clone(),
         });
     }
     Ok(captured)

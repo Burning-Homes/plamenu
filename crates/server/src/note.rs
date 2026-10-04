@@ -245,12 +245,39 @@ impl NoteBatch {
         Self::load_conn(state, &mut conn, items).await
     }
 
+    /// Reuses the parent identity the collection endpoint already dereferenced.
+    /// Other parents still resolve normally; no parent snapshot escapes the request.
+    pub async fn load_with_parent(
+        state: &AppState,
+        items: &[&Status],
+        parent: &Status,
+        parent_author: &Account,
+    ) -> Result<Self, ApiError> {
+        let mut conn = state
+            .pool
+            .acquire()
+            .await
+            .map_err(plamenu_db::DbError::from)?;
+        let parent_uri = status_uri_for_account(&state.config.domain, parent, parent_author);
+        Self::load_conn_with_parent_uri(state, &mut conn, items, Some((parent.id, parent_uri)))
+            .await
+    }
+
     /// Reads the current mutation's sidecars before its outbox is committed.
-    #[allow(clippy::too_many_lines)]
     pub async fn load_conn(
         state: &AppState,
         conn: &mut plamenu_db::PgConnection,
         items: &[&Status],
+    ) -> Result<Self, ApiError> {
+        Self::load_conn_with_parent_uri(state, conn, items, None).await
+    }
+
+    #[allow(clippy::too_many_lines)]
+    async fn load_conn_with_parent_uri(
+        state: &AppState,
+        conn: &mut plamenu_db::PgConnection,
+        items: &[&Status],
+        known_parent: Option<(i64, String)>,
     ) -> Result<Self, ApiError> {
         let mut batch = Self::default();
         if items.is_empty() {
@@ -262,7 +289,17 @@ impl NoteBatch {
         // Parents, for `inReplyTo`. On a replies collection all 60 rows share
         // one parent and one parent author, which used to be 120 lookups of the
         // same two rows.
-        let parent_ids = distinct(items.iter().filter_map(|item| item.in_reply_to_id));
+        if let Some((parent_id, parent_uri)) = known_parent {
+            for item in items {
+                if item.in_reply_to_id == Some(parent_id) {
+                    batch.parent_uris.insert(item.id, parent_uri.clone());
+                }
+            }
+        }
+        let parent_ids = distinct(items.iter().filter_map(|item| {
+            item.in_reply_to_id
+                .filter(|_| !batch.parent_uris.contains_key(&item.id))
+        }));
         if !parent_ids.is_empty() {
             let parents = plamenu_db::status::find_by_ids(&mut *conn, &parent_ids).await?;
             let author_ids = distinct(parents.iter().map(|parent| parent.account_id));
