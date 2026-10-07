@@ -2393,3 +2393,310 @@ async fn signed_unstamped_video_updates_clear_accessibility_without_snapshot_rol
         canonical
     );
 }
+
+/// Lifetime changes are publication state, even when authored content and the
+/// HLS URL are unchanged. Exercise the signature/authority path, not direct SQL.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn signed_live_lifetime_update_preserves_media_identity_and_updates_permanence(pool: PgPool) {
+    let bob = RemoteUser::new("remote.example", "bob");
+    let app = test_app_with(pool.clone(), StubFederation::with_users(&[&bob]));
+    let uri = format!("{}/videos/lifetime", bob.actor.id);
+    let mut object = remote_note(&bob, &uri, "<p>Same broadcast</p>");
+    object["type"] = json!("Video");
+    object["isLiveBroadcast"] = json!(true);
+    object["state"] = json!(1);
+    object["permanentLive"] = json!(false);
+    object["url"] = json!([{"type":"Link", "mediaType":"application/x-mpegURL",
+        "href":"https://remote.example/static/streaming-playlists/hls/lifetime/master.m3u8"}]);
+    let create = remote_create(&bob, &uri, object.clone(), "lifetime-create");
+    assert_eq!(
+        post_signed(app.clone(), "/inbox", &create, &bob.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    let stored = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+    let original = media::for_statuses_read_only(&pool, &[stored.id])
+        .await
+        .unwrap()
+        .remove(&stored.id)
+        .unwrap();
+    assert_eq!(original.len(), 1);
+    assert!(!original[0].live_permanent);
+    let mid = original[0].id;
+    let before = media::remote_live_lifecycle(&pool, mid)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(before.permanent_declared, Some(false));
+    assert_eq!(before.revision, 1);
+    assert!(
+        media::block_remote_live_reload(&pool, mid, before.revision)
+            .await
+            .unwrap()
+    );
+    let unchanged_false = json!({"@context":"https://www.w3.org/ns/activitystreams",
+        "id":format!("{}/activities/lifetime-unchanged-false", bob.actor.id),
+        "type":"Update", "actor":bob.actor.id, "object":object.clone(),
+        "to":["https://www.w3.org/ns/activitystreams#Public"]});
+    for _ in 0..2 {
+        assert_eq!(
+            post_signed(app.clone(), "/inbox", &unchanged_false, &bob.signer()).await,
+            StatusCode::ACCEPTED
+        );
+        let quarantined = media::remote_live_lifecycle(&pool, mid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(quarantined.revision, before.revision);
+        assert_eq!(quarantined.reload_blocked_revision, Some(before.revision));
+        assert_eq!(quarantined.permanent_declared, Some(false));
+    }
+    object["permanentLive"] = json!(true);
+    let update = json!({"@context":"https://www.w3.org/ns/activitystreams",
+        "id":format!("{}/activities/lifetime-update", bob.actor.id),
+        "type":"Update", "actor":bob.actor.id, "object":object,
+        "to":["https://www.w3.org/ns/activitystreams#Public"]});
+    assert_eq!(
+        post_signed(app.clone(), "/inbox", &update, &bob.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    let current = media::for_statuses_read_only(&pool, &[stored.id])
+        .await
+        .unwrap()
+        .remove(&stored.id)
+        .unwrap();
+    assert_eq!(current.len(), 1);
+    assert_eq!(
+        current[0].id, mid,
+        "a lifecycle Update must keep publication identity"
+    );
+    assert!(
+        current[0].live_permanent,
+        "signed false-to-true Update must revoke the non-permanent lifetime projection"
+    );
+    let mut expected_revision = before.revision + 1;
+    assert_eq!(
+        media::remote_live_lifecycle(&pool, mid)
+            .await
+            .unwrap()
+            .unwrap(),
+        media::RemoteLiveLifecycle {
+            permanent_declared: Some(true),
+            revision: expected_revision,
+            reload_blocked_revision: Some(before.revision),
+        }
+    );
+    // Re-delivery and a distinct unchanged Update must not invent generations.
+    assert_eq!(
+        post_signed(app.clone(), "/inbox", &update, &bob.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    let mut unchanged = update.clone();
+    unchanged["id"] = json!(format!("{}/activities/lifetime-unchanged", bob.actor.id));
+    assert_eq!(
+        post_signed(app.clone(), "/inbox", &unchanged, &bob.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        media::remote_live_lifecycle(&pool, mid)
+            .await
+            .unwrap()
+            .unwrap()
+            .revision,
+        expected_revision
+    );
+    // Missing/malformed declaration revokes authority without rewriting the
+    // ordinary permanent flag; a later explicit false changes both.
+    for (index, value, declared, ordinary) in [
+        (0, None, None, true),
+        (1, Some(json!("false")), None, true),
+        (2, Some(json!(false)), Some(false), false),
+    ] {
+        let mut next = update.clone();
+        next["id"] = json!(format!("{}/activities/lifetime-{index}", bob.actor.id));
+        if let Some(value) = value {
+            next["object"]["permanentLive"] = value;
+        } else {
+            next["object"]
+                .as_object_mut()
+                .unwrap()
+                .remove("permanentLive");
+        }
+        assert_eq!(
+            post_signed(app.clone(), "/inbox", &next, &bob.signer()).await,
+            StatusCode::ACCEPTED
+        );
+        if index != 1 {
+            expected_revision += 1;
+        }
+        let lifecycle = media::remote_live_lifecycle(&pool, mid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(lifecycle.permanent_declared, declared);
+        assert_eq!(lifecycle.revision, expected_revision);
+        assert_eq!(
+            media::find_by_ids(&pool, &[mid]).await.unwrap()[0].live_permanent,
+            ordinary
+        );
+    }
+    for (index, state) in [(0, 4), (1, 1), (2, 5)] {
+        let mut next = update.clone();
+        next["object"]["permanentLive"] = json!(false);
+        next["object"]["state"] = json!(state);
+        next["id"] = json!(format!(
+            "{}/activities/lifetime-state-{index}",
+            bob.actor.id
+        ));
+        assert_eq!(
+            post_signed(app.clone(), "/inbox", &next, &bob.signer()).await,
+            StatusCode::ACCEPTED
+        );
+        expected_revision += 1;
+        assert_eq!(
+            media::remote_live_lifecycle(&pool, mid)
+                .await
+                .unwrap()
+                .unwrap()
+                .revision,
+            expected_revision
+        );
+    }
+    let latest = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+    assert_eq!(
+        latest.edited_at, stored.edited_at,
+        "lifetime is not an authored edit"
+    );
+}
+
+/// Record the existing unknown-value behavior before adding a conservative
+/// declaration projection. Ordinary rendering treats these values as false.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn signed_live_unknown_lifetime_keeps_ordinary_projection_false(pool: PgPool) {
+    let bob = RemoteUser::new("remote.example", "bob");
+    let app = test_app_with(pool.clone(), StubFederation::with_users(&[&bob]));
+    for (index, declaration) in [
+        None,
+        Some(json!(null)),
+        Some(json!("false")),
+        Some(json!(0)),
+        Some(json!({})),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let uri = format!("{}/videos/unknown-{index}", bob.actor.id);
+        let mut object = remote_note(&bob, &uri, "<p>Unknown lifetime</p>");
+        object["type"] = json!("Video");
+        object["isLiveBroadcast"] = json!(true);
+        object["state"] = json!(1);
+        object["url"] = json!([{"type":"Link", "mediaType":"application/x-mpegURL",
+            "href":format!("https://remote.example/static/streaming-playlists/hls/unknown-{index}/master.m3u8")}]);
+        if let Some(value) = declaration {
+            object["permanentLive"] = value;
+        }
+        let create = remote_create(&bob, &uri, object, &format!("unknown-{index}"));
+        assert_eq!(
+            post_signed(app.clone(), "/inbox", &create, &bob.signer()).await,
+            StatusCode::ACCEPTED
+        );
+        let stored = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+        let rows = media::for_statuses_read_only(&pool, &[stored.id])
+            .await
+            .unwrap()
+            .remove(&stored.id)
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(!rows[0].live_permanent);
+        let lifecycle = media::remote_live_lifecycle(&pool, rows[0].id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(lifecycle.permanent_declared, None);
+    }
+}
+
+/// Old/imported rows do not acquire current lifetime authority from the legacy
+/// false flag. Only a current signed declaration can establish it.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn signed_live_history_and_wrong_author_do_not_grant_lifetime_authority(pool: PgPool) {
+    let bob = RemoteUser::new("remote.example", "bob");
+    let mallory = RemoteUser::new("remote.example", "mallory");
+    let stub = StubFederation::with_users(&[&bob, &mallory]);
+    let state = common::test_state_with(pool.clone(), stub);
+    let author = plamenu::remote::store_remote_actor(&pool, &bob.actor)
+        .await
+        .unwrap();
+    let uri = format!("{}/videos/historical-lifetime", bob.actor.id);
+    let mut object = remote_note(&bob, &uri, "<p>Historical live</p>");
+    object["type"] = json!("Video");
+    object["isLiveBroadcast"] = json!(true);
+    object["state"] = json!(1);
+    object["permanentLive"] = json!(false);
+    object["url"] = json!([{"type":"Link", "mediaType":"application/x-mpegURL",
+        "href":"https://remote.example/static/streaming-playlists/hls/history/master.m3u8"}]);
+    let stored = plamenu::ingest::ingest_remote_note_in_context(
+        &state,
+        &author,
+        &object,
+        plamenu::ingest::RemoteIngestContext::History,
+    )
+    .await
+    .unwrap();
+    let row = media::for_statuses_read_only(&pool, &[stored.id])
+        .await
+        .unwrap()
+        .remove(&stored.id)
+        .unwrap()
+        .remove(0);
+    assert!(!row.live_permanent);
+    assert_eq!(
+        media::remote_live_lifecycle(&pool, row.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .permanent_declared,
+        None
+    );
+    let app = plamenu::build_router(state);
+    let update = json!({"@context":"https://www.w3.org/ns/activitystreams",
+        "id":format!("{}/activities/history-lifetime-update", bob.actor.id),
+        "type":"Update", "actor":bob.actor.id, "object":object,
+        "to":["https://www.w3.org/ns/activitystreams#Public"]});
+    let mut forged = update.clone();
+    forged["id"] = json!(format!("{}/activities/forged-lifetime", mallory.actor.id));
+    forged["actor"] = json!(mallory.actor.id);
+    forged["object"]["attributedTo"] = json!(mallory.actor.id);
+    // Inbox admission is not application: foreign-author Updates can receive
+    // 202 while being ignored. Assert the durable authority below.
+    assert_eq!(
+        post_signed(app.clone(), "/inbox", &forged, &mallory.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        media::remote_live_lifecycle(&pool, row.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .permanent_declared,
+        None
+    );
+    assert_eq!(
+        post_signed(app, "/inbox", &update, &bob.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        media::remote_live_lifecycle(&pool, row.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .permanent_declared,
+        Some(false)
+    );
+    assert_eq!(
+        media::for_statuses_read_only(&pool, &[stored.id])
+            .await
+            .unwrap()[&stored.id][0]
+            .id,
+        row.id
+    );
+}

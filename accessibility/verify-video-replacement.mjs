@@ -2,10 +2,65 @@
 // Only disposable local fixture credentials are accepted through the environment.
 import {chromium} from 'playwright';
 import {selectVideoQuality} from './video-settings.mjs';
+import {writeFileSync} from 'node:fs';
 const [watchUrl,candidate]=process.argv.slice(2);
 const authorization=process.env.AP09_REPLACEMENT_AUTH;
 if(!watchUrl||!candidate||!authorization)throw new Error('expected local watch URL, private candidate and fixture authorization');
 const browser=await chromium.launch();
+const evidence=process.env.AP09_REPLACEMENT_EVIDENCE;
+const began=Date.now(),report={status:'running',stage:'start',sockets:[]};
+let seed, fresh, oldHash;
+function save(stage){
+  report.stage=stage;report.elapsedSeconds=(Date.now()-began)/1000;
+  if(evidence)try{writeFileSync(evidence,JSON.stringify(report,null,2),{mode:0o600});}catch{}
+}
+function observeSocket(page,client){
+  if(!evidence)return;
+  page.on('websocket',socket=>{
+    if(report.sockets.length>=64)return;
+    const row={client,createdSeconds:(Date.now()-began)/1000,sent:0,received:0,offers:0,answers:0};
+    report.sockets.push(row);
+    socket.on('framesent',event=>{
+      row.sent++;
+      recordFrame(row,'sent',event.payload);
+    });
+    socket.on('framereceived',event=>{
+      row.received++;
+      recordFrame(row,'received',event.payload);
+      try{
+        const data=JSON.parse(String(event.payload));
+        if(data.offer)row.offers++;if(data.answer)row.answers++;
+        if(typeof data['failure reason']==='string'&&/^[a-zA-Z_ ]{1,80}$/.test(data['failure reason']))row.failureReason=data['failure reason'];
+      }catch{}
+    });
+    socket.on('socketerror',()=>{row.errorObserved=true;save(report.stage);});
+    socket.on('close',()=>{row.closedSeconds=(Date.now()-began)/1000;save(report.stage);});
+  });
+}
+function recordFrame(row,direction,payload){
+  const frames=row.frames??=[];
+  if(frames.length>=24)return;
+  const frame={direction,atSeconds:(Date.now()-began)/1000};
+  try{
+    const message=JSON.parse(String(payload));
+    frame.action=message.action==='announce'?'announce':'other';
+    frame.event=['started','stopped','completed','update','paused'].includes(message.event)?message.event:null;
+    frame.offerCount=Array.isArray(message.offers)?message.offers.length:null;
+    frame.hasOffer=!!message.offer;frame.hasAnswer=!!message.answer;
+    frame.infoHashLength=typeof message.info_hash==='string'?[...message.info_hash].length:null;
+    frame.peerIdLength=typeof message.peer_id==='string'?[...message.peer_id].length:null;
+    if(typeof message['failure reason']==='string'&&/^[a-zA-Z_ ]{1,80}$/.test(message['failure reason']))frame.failureReason=message['failure reason'];
+  }catch{frame.unparsed=true;}
+  frames.push(frame);
+}
+async function snapshot(page){
+  if(!page)return null;
+  return page.evaluate(()=>{const v=document.querySelector('video[data-hls]');if(!v)return null;return{time:v.currentTime,ready:v.readyState,height:v.videoHeight,
+    peers:Number(v.dataset.p2pPeers||0),uploaded:Number(v.dataset.p2pUploaded||0),downloaded:Number(v.dataset.p2pDownloaded||0),
+    validated:Number(v.dataset.p2pValidated||0),validationErrors:Number(v.dataset.p2pValidationErrors||0),
+    profile:window.__ownedVideoProfiles?.get(v)?.()||null,
+    peerFailures:(window.__replacementPeerFailures||[]).map(e=>({type:e.type,cause:e.cause,source:e.source}))};}).catch(()=>null);
+}
 async function observePeerFailures(page){
   await page.addInitScript(()=>{
     window.__replacementPeerFailures=[];
@@ -34,20 +89,25 @@ async function start(page){
 }
 try{
   const seedContext=await browser.newContext({ignoreHTTPSErrors:true});
-  const seed=await seedContext.newPage();
+  seed=await seedContext.newPage();
+  if(evidence)await seed.addInitScript(()=>{window.__ownedVideoProfile=true;});
+  observeSocket(seed,'old-seeder');save('old-seeder-start');
   await seed.goto(watchUrl);
   const old=await start(seed);
   await seed.waitForFunction(()=>{
     const v=document.querySelector('video[data-hls]');
     return v?.dataset.p2pInfohash && v.buffered.length && v.buffered.end(v.buffered.length-1)>=v.duration-.2;
   },null,{timeout:30000});
-  const oldHash=await old.getAttribute('data-p2p-infohash');
+  oldHash=await old.getAttribute('data-p2p-infohash');save('old-seeder-buffered');
   const media=new URL(await old.getAttribute('data-hls')).pathname.split('/')[3];
   const api=new URL(`/api/v1/videos/${media}/content`,watchUrl).href;
   const applied=await seed.request.put(api,{headers:{Authorization:authorization},data:{candidate_media_id:candidate,revision:0,confirm:true}});
   if(applied.status()!==200)throw new Error(`replacement refused: ${applied.status()} ${await applied.text()}`);
+  save('replacement-applied');
   const freshContext=await browser.newContext({ignoreHTTPSErrors:true});
-  const fresh=await freshContext.newPage();
+  fresh=await freshContext.newPage();
+  if(evidence)await fresh.addInitScript(()=>{window.__ownedVideoProfile=true;});
+  observeSocket(fresh,'replacement-viewer');
   await observePeerFailures(fresh);
   await fresh.route('**/media/*.m4s*',async route=>{
     if(!route.request().headers().range?.startsWith('bytes=0-'))await new Promise(resolve=>setTimeout(resolve,8000));
@@ -55,8 +115,10 @@ try{
   });
   await fresh.goto(watchUrl);
   const current=await start(fresh);
+  save('replacement-decoded');
   if(!(await current.getAttribute('data-hls')).includes('rev=1'))throw new Error('new playback metadata was not revisioned');
   await fresh.waitForFunction(()=>Number(document.querySelector('video[data-hls]')?.dataset.p2pPeers||0)>0,null,{timeout:20000});
+  save('replacement-peer-connected');
   if(await current.getAttribute('data-p2p-infohash')!==oldHash)throw new Error('replacement changed the PeerTube-compatible UUID swarm');
   // The first fragment is urgent HTTP traffic. Observe the later peer
   // requests, not merely the first decoded frame before ICE discovery.
@@ -79,4 +141,9 @@ try{
   if(!state.frames || state.pixel[0]>30 || state.pixel[1]>30 || state.pixel[2]<200)throw new Error(`replacement decoder rendered old or invalid content: ${JSON.stringify(state)}`);
   console.log(JSON.stringify({oldInfohash:oldHash,oldBytesOffered:oldUploaded,oldBytesReceived:Number(state.dataset.p2pDownloaded||0),stalePeerRefusals:rejected,
     rejectedChecksums:Number(state.dataset.p2pValidationErrors||0),validatedOldBytes:0,replacementPixel:state.pixel,decodedFrames:state.frames}));
+  report.status='passed';save('complete');
+}catch(error){
+  report.status='failed';report.errorClass=error.name;report.failedStage=report.stage;
+  if(evidence){report.oldSeeder=await snapshot(seed);report.replacementViewer=await snapshot(fresh);}
+  save('failed');throw error;
 }finally{await browser.close();}

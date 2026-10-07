@@ -59,6 +59,7 @@ def test_two_peertube_broadcasts_eight_decoders_survive_scoped_tracker_tcp_loss(
     }
     proxy = observers = None
     logs, videos, publishers, samples = [], [], [], []
+    origin_samples = []
     pt = peertube.root()
     control = f"http://127.0.0.1:{_port()}"
     try:
@@ -263,6 +264,13 @@ def test_two_peertube_broadcasts_eight_decoders_survive_scoped_tracker_tcp_loss(
                 stderr=subprocess.STDOUT,
             )
             started = time.monotonic()
+            origin_observer = (
+                (
+                    config.PLAMENU_DIR / "accessibility/origin-file-observer.mjs"
+                ).read_text()
+                if os.environ.get("AP09_CONCURRENCY_TRACE") == "1"
+                else None
+            )
             previous_cpu, cpu_seconds = {}, 0
             while observers.poll() is None:
                 assert time.monotonic() - started <= 420, (
@@ -299,6 +307,36 @@ def test_two_peertube_broadcasts_eight_decoders_survive_scoped_tracker_tcp_loss(
                         ),
                     }
                 )
+                if (
+                    origin_observer
+                    and len(samples) % 2 == 0
+                    and len(origin_samples) < 40
+                ):
+                    try:
+                        observed = subprocess.run(
+                            [
+                                "docker",
+                                "exec",
+                                "-i",
+                                containers[0],
+                                "node",
+                                "--input-type=module",
+                                "-",
+                                "--owned-origin-observation",
+                                *(video["uuid"] for video in videos),
+                            ],
+                            input=origin_observer,
+                            capture_output=True,
+                            text=True,
+                            timeout=2,
+                            check=False,
+                        )
+                        if observed.returncode == 0:
+                            origin_samples.append(json.loads(observed.stdout))
+                        else:
+                            origin_samples.append({"unavailable": True})
+                    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+                        origin_samples.append({"unavailable": True})
                 assert remuxers <= 2, (
                     "remote viewers must not create a per-viewer encode/remux"
                 )
@@ -340,6 +378,10 @@ def test_two_peertube_broadcasts_eight_decoders_survive_scoped_tracker_tcp_loss(
             )
             print(f"Protected actual PeerTube-origin concurrency evidence: {evidence}")
     finally:
+        if origin_samples:
+            path = evidence / "origin-publication.json"
+            path.write_text(json.dumps(origin_samples, indent=2))
+            path.chmod(0o600)
         if samples:
             (evidence / "resource-progress.json").write_text(
                 json.dumps(samples, indent=2)

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_attachments SET remote_live_reload_blocked_revision=$2\n           WHERE id=$1 AND live_state IS NOT NULL\n             AND remote_live_lifecycle_revision=$2\n             AND remote_live_reload_blocked_revision IS DISTINCT FROM $2\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "71ccfa3ee5bf404d702d4b05c14651fde74d4b0bd90685f6384ef7d9e378570f"
+}

@@ -923,6 +923,9 @@ pub struct NewRemoteMedia<'a> {
     pub live_state: Option<&'a str>,
     /// Whether the live re-arms for a next broadcast instead of ending.
     pub live_permanent: bool,
+    /// Explicit remote wire declaration; missing/malformed or historical
+    /// metadata grants no current lifetime authority.
+    pub remote_live_permanent_declared: Option<bool>,
 }
 
 /// One rendition of an HLS video's ladder, to persist alongside the media row.
@@ -989,9 +992,11 @@ pub async fn create_remote(pool: &PgPool, new: NewRemoteMedia<'_>) -> Result<(),
                                            history_deferred,
                                            hls_master_url, live_state,
                                            live_permanent, preview_card_id,
-                                           processing)
+                                           remote_live_permanent_declared,
+                                           remote_live_lifecycle_revision, processing)
             SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-                   $17, $18, $19, $20, $21,
+                   $17, $18, $19, $20, $21, $22,
+                   CASE WHEN $18::text IS NOT NULL THEN 1 ELSE 0 END,
                    CASE WHEN policy.rejects OR $15 OR $17 THEN 'complete' ELSE 'queued' END
             FROM policy
             ON CONFLICT (status_id, remote_url) WHERE remote_url IS NOT NULL DO NOTHING
@@ -1026,6 +1031,7 @@ pub async fn create_remote(pool: &PgPool, new: NewRemoteMedia<'_>) -> Result<(),
         new.live_state,
         new.live_permanent,
         new.preview_card_id,
+        new.remote_live_permanent_declared,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -1292,24 +1298,78 @@ pub async fn update_live(
     media_id: i64,
     live_state: &str,
     hls_master_url: Option<&str>,
+    permanent_declared: Option<bool>,
 ) -> Result<bool, DbError> {
     let changed = sqlx::query_scalar!(
         r#"
         UPDATE media_attachments
         SET live_state = $2,
-            hls_master_url = COALESCE($3::text, hls_master_url)
-        WHERE id = $1
+            hls_master_url = COALESCE($3::text, hls_master_url),
+            live_permanent = COALESCE($4::bool, live_permanent),
+            remote_live_permanent_declared = $4,
+            remote_live_lifecycle_revision = remote_live_lifecycle_revision + 1
+        WHERE id = $1 AND live_state IS NOT NULL
           AND (live_state IS DISTINCT FROM $2
-               OR ($3::text IS NOT NULL AND hls_master_url IS DISTINCT FROM $3::text))
+               OR ($3::text IS NOT NULL AND hls_master_url IS DISTINCT FROM $3::text)
+               OR live_permanent IS DISTINCT FROM COALESCE($4::bool, live_permanent)
+               OR remote_live_permanent_declared IS DISTINCT FROM $4)
         RETURNING id
         "#,
         media_id,
         live_state,
         hls_master_url,
+        permanent_declared,
     )
     .fetch_optional(pool)
     .await?;
     Ok(changed.is_some())
+}
+
+/// Current remote lifetime authority, separate from ordinary rendering. An
+/// absent declaration cannot authorize generation-sensitive live behavior.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::FromRow)]
+pub struct RemoteLiveLifecycle {
+    pub permanent_declared: Option<bool>,
+    pub revision: i64,
+    pub reload_blocked_revision: Option<i64>,
+}
+
+pub async fn remote_live_lifecycle(
+    pool: &PgPool,
+    media_id: i64,
+) -> Result<Option<RemoteLiveLifecycle>, DbError> {
+    Ok(sqlx::query_as!(
+        RemoteLiveLifecycle,
+        r#"SELECT remote_live_permanent_declared AS permanent_declared,
+                  remote_live_lifecycle_revision AS revision,
+                  remote_live_reload_blocked_revision AS reload_blocked_revision
+           FROM media_attachments WHERE id=$1 AND live_state IS NOT NULL"#,
+        media_id,
+    )
+    .fetch_optional(pool)
+    .await?)
+}
+
+/// An observer can quarantine only the lifecycle it actually inspected. The
+/// declaration remains provenance; an accepted transition earns a new revision.
+/// Replayed or identical authenticated updates cannot clear this quarantine.
+pub async fn block_remote_live_reload(
+    pool: &PgPool,
+    media_id: i64,
+    revision: i64,
+) -> Result<bool, DbError> {
+    Ok(sqlx::query_scalar!(
+        r#"UPDATE media_attachments SET remote_live_reload_blocked_revision=$2
+           WHERE id=$1 AND live_state IS NOT NULL
+             AND remote_live_lifecycle_revision=$2
+             AND remote_live_reload_blocked_revision IS DISTINCT FROM $2
+           RETURNING id"#,
+        media_id,
+        revision,
+    )
+    .fetch_optional(pool)
+    .await?
+    .is_some())
 }
 
 /// Replaces a remote attachment's not-yet-cached poster URL.

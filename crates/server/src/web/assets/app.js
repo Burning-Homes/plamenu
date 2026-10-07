@@ -4226,6 +4226,28 @@
       ? Math.min(10000, Math.max(3000, Math.ceil(seconds * 1500))) : 3000;
   }
 
+  function preservePeerPlaylistIdentity(hls) {
+    const normalize = (_event, { details }) => {
+      if (!details?.url) return;
+      const url = new URL(details.url, location.href);
+      // Delivery directives select a snapshot of the same rendition. The
+      // peer engine keys its inventory by the master rendition's exact URL.
+      // Preserve ordinary/auth query bytes rather than reserializing them.
+      const parts = url.search.slice(1).split('&');
+      const retained = parts.filter(part => {
+        let key;
+        try { key = decodeURIComponent(part.split('=', 1)[0].replace(/\+/g, ' ')); }
+        catch (_err) { return true; }
+        return !['_HLS_msn', '_HLS_part', '_HLS_skip'].includes(key);
+      });
+      if (retained.length === parts.length) return;
+      url.search = retained.length ? '?' + retained.join('&') : '';
+      details.url = url.href;
+    };
+    hls.on(hls.constructor.Events.LEVEL_UPDATED, normalize);
+    hls.on(hls.constructor.Events.AUDIO_TRACK_LOADED, normalize);
+  }
+
   async function peerOptions(video, live) {
     if (!peerSharingEnabled() || !window.RTCPeerConnection || !window.crypto?.subtle) return null;
     const uuid = video.dataset.p2pUuid;
@@ -4272,6 +4294,10 @@
         ...(live ? {} : { httpNotReceivingBytesTimeoutMs: 10000 }),
       },
       onHlsJsCreated: (hls) => {
+        // This callback precedes the peer loader's event registration. Its
+        // inventory must see the canonical metadata identity on every reload;
+        // the actual HTTP request and parsed fragment URLs stay unchanged.
+        if (live) preservePeerPlaylistIdentity(hls);
         video.dataset.p2pActive = "true";
         hls.p2pEngine.addEventListener("onStreamAdded", ({ stream }) => {
           if (stream.type === "main") video.dataset.p2pInfohash = stream.infoHash;
@@ -4372,6 +4398,13 @@
       });
       select.value = "-1";
       let audioMode = false;
+      const changeLevel = (level) => {
+        // Before the first decoded buffer, an immediate switch aborts the
+        // initial fragment and flushes tracks still being created. Let that
+        // initialization complete and select the requested following load.
+        if (video.readyState < 2 || !video.buffered.length) hls.loadLevel = level;
+        else hls.currentLevel = level;
+      };
       select.addEventListener("change", () => {
         if (select.value === "audio") {
           // Read the url fresh — it is only known after AUDIO_TRACKS_UPDATED.
@@ -4387,11 +4420,11 @@
           // chosen level once its manifest is parsed.
           audioMode = false;
           hls.once(Hls.Events.MANIFEST_PARSED, () => {
-            hls.currentLevel = level;
+            hls.loadLevel = level;
           });
           hls.loadSource(masterUrl);
         } else {
-          hls.currentLevel = level;
+          changeLevel(level);
         }
       });
       hls.on(Hls.Events.LEVEL_SWITCHED, () => {
@@ -4410,6 +4443,20 @@
   }
 
   const hlsCleanup = new WeakMap();
+  function catchUpBufferedLive(video, hls, rewound) {
+    if (rewound || video.paused || video.readyState < 2) return false;
+    const target = hls.liveSyncPosition;
+    const edge = hls.latestLevelDetails?.edge;
+    if (!Number.isFinite(target) || !Number.isFinite(edge) ||
+        target - video.currentTime <= .25) return false;
+    for (let n = 0; n < video.buffered.length; n++) {
+      if (video.buffered.start(n) <= target && target + .1 < video.buffered.end(n)) {
+        video.currentTime = target;
+        return true;
+      }
+    }
+    return false;
+  }
   function initHlsVideo(video) {
     const hlsUrl = video.getAttribute("data-hls");
     if (!hlsUrl) return;
@@ -4428,11 +4475,15 @@
     let profileFallbackReason = 'none';
     let profileTargetDuration = null;
     const profileEvents = [];
-    const profileIssue = (kind, fatal = false) => {
+    const profileIssue = (kind, fatal = false, data = null) => {
       if (!profiling) return;
       if (profileEvents.length >= 128) profileEvents.shift();
+      const word = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(value) ? value : null;
       profileEvents.push({ kind, fatal, atMs: performance.now(),
-        time: video.currentTime, ready: video.readyState });
+        time: video.currentTime, ready: video.readyState,
+        ...(data ? {details:word(data.details),exceptionName:word(data.error?.name),
+          level:Number.isInteger(data.frag?.level)?data.frag.level:null,
+          sequence:Number.isInteger(data.frag?.sn)?data.frag.sn:null} : {}) });
     };
     if (profiling) {
       window.__ownedVideoProfiles ??= new WeakMap();
@@ -4697,6 +4748,10 @@
               ? {
                   capLevelToPlayerSize: true,
                   lowLatencyMode: true,
+                  // A playlist can advertise a closed segment before its
+                  // bytes reach MSE. Keep catch-up inside the decoded buffer;
+                  // seeking to its empty end repeatedly stops healthy live.
+                  liveSyncMode: 'buffered',
                   // Use seconds, not segment counts: compatible origins may
                   // publish four-second segments instead of our two seconds.
                   liveSyncDuration: 4,
@@ -4729,7 +4784,7 @@
               hls.on(Hls.Events.ERROR, (_event, data) => {
                 const kind = data?.type === Hls.ErrorTypes.NETWORK_ERROR ? 'hls-network-error'
                   : data?.type === Hls.ErrorTypes.MEDIA_ERROR ? 'hls-media-error' : 'hls-other-error';
-                profileIssue(kind, !!data?.fatal);
+                profileIssue(kind, !!data?.fatal, data);
               });
               hls.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
                 profileTargetDuration = Number.isFinite(data?.details?.targetduration) ? data.details.targetduration : null;
@@ -4751,6 +4806,13 @@
               });
             }
             if (live) {
+              // hls.js checks live sync when the playlist arrives. A safe
+              // buffered target may become available only after that check;
+              // converge to that selected target after the real bytes append
+              // rather than retaining the extra maximum-latency slack.
+              hls.on(Hls.Events.FRAG_BUFFERED, () => {
+                catchUpBufferedLive(video, hls, rewoundLive);
+              });
               hls.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
                 hls.p2pEngine?.applyDynamicConfig({ core: {
                   httpNotReceivingBytesTimeoutMs: liveSegmentTimeout(Number(data?.details?.targetduration)),

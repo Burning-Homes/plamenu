@@ -1109,6 +1109,8 @@ struct LiveInfo {
     state: LiveState,
     /// A permanent live re-arms for its next broadcast instead of ending.
     permanent: bool,
+    /// Only an actual boolean declaration establishes remote lifetime facts.
+    permanent_declared: Option<bool>,
 }
 
 /// `PeerTube`'s `VideoState` enum (`packages/models/src/videos/`).
@@ -1145,6 +1147,7 @@ fn live_info(object: &Value) -> Option<LiveInfo> {
     Some(LiveInfo {
         state,
         permanent: object.get("permanentLive").and_then(Value::as_bool) == Some(true),
+        permanent_declared: object.get("permanentLive").and_then(Value::as_bool),
     })
 }
 
@@ -2556,6 +2559,7 @@ async fn refresh_live_state(
         item.id,
         live.state.as_str(),
         hls_master_url(object),
+        live.permanent_declared,
     )
     .await?;
     let schedule_changed =
@@ -4054,6 +4058,10 @@ async fn store_remote_attachments(
                 renditions: primary.renditions,
                 live_state: primary.live.map(|live| live.state.as_str()),
                 live_permanent: primary.live.is_some_and(|live| live.permanent),
+                remote_live_permanent_declared: primary
+                    .live
+                    .and_then(|live| live.permanent_declared)
+                    .filter(|_| !force_on_demand),
                 ..Default::default()
             },
         )

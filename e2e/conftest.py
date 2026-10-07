@@ -7,7 +7,7 @@ tests are independent and re-runnable without cleanup.
 
 import time
 
-pytest_plugins = ["plamenu_e2e.release_policy"]
+pytest_plugins = ["plamenu_e2e.release_policy", "plamenu_e2e.progress"]
 
 import psycopg
 import pytest

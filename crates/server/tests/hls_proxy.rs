@@ -156,6 +156,911 @@ struct SplitHlsFixture {
     audio_playlist: Vec<u8>,
 }
 
+struct ReloadFixture {
+    app: Router,
+    state: plamenu::AppState,
+    stub: Arc<StubFederation>,
+    media: i64,
+    origin: String,
+    uri: String,
+    account: i64,
+}
+
+fn closed_history(first: u64, count: u64, target: u64, ended: bool) -> Vec<u8> {
+    use std::fmt::Write as _;
+    let mut body = format!(
+        "#EXTM3U\n#EXT-X-TARGETDURATION:{target}\n#EXT-X-MEDIA-SEQUENCE:{first}\n#EXT-X-PLAYLIST-TYPE:EVENT\n"
+    );
+    for n in first..first + count {
+        writeln!(body, "#EXTINF:{target}.0,\n{n}.ts").unwrap();
+    }
+    if ended {
+        body.push_str("#EXT-X-ENDLIST\n");
+    }
+    body.into_bytes()
+}
+
+fn sliding_history(first: u64, count: u64) -> Vec<u8> {
+    String::from_utf8(closed_history(first, count, 4, false))
+        .unwrap()
+        .lines()
+        .filter(|line| !line.starts_with("#EXT-X-PLAYLIST-TYPE:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .into_bytes()
+}
+
+async fn reload_fixture(pool: &PgPool, target: u64) -> ReloadFixture {
+    let account = create_local_account(pool, "reload", "Reload").await;
+    let media = hls_media_row(pool, account.id).await;
+    sqlx::query("UPDATE media_attachments SET live_state='live', remote_live_permanent_declared=false, remote_live_lifecycle_revision=1 WHERE id=$1")
+        .bind(media).execute(pool).await.unwrap();
+    let origin =
+        format!("https://remote.example/static/streaming-playlists/hls/vid/reload-{media}.m3u8");
+    let stub = Arc::new(StubFederation::default());
+    stub.serve_media(
+        MASTER,
+        "application/vnd.apple.mpegurl",
+        format!("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\n{origin}\n").into_bytes(),
+    );
+    stub.serve_media(
+        &origin,
+        "application/vnd.apple.mpegurl",
+        closed_history(0, 2, target, false),
+    );
+    let state = test_state_with(pool.clone(), stub.clone());
+    let app = build_router(state.clone());
+    let uri = format!("/media/hls/{media}/live/{}.m3u8", B64.encode(&origin));
+    ReloadFixture {
+        app,
+        state,
+        stub,
+        media,
+        origin,
+        uri,
+        account: account.id,
+    }
+}
+
+async fn reload_failures(pool: &PgPool, media: i64) -> Option<i32> {
+    sqlx::query_scalar(
+        "SELECT attempts FROM media_fetch_failures WHERE kind='hls-playlist' AND target_id=$1",
+    )
+    .bind(media)
+    .fetch_optional(pool)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_rounds_target_duration_by_truthful_version_and_preserves_original_extinf(
+    pool: PgPool,
+) {
+    let f = reload_fixture(&pool, 4).await;
+    let raw = String::from_utf8(closed_history(0, 2, 4, false))
+        .unwrap()
+        .replacen("#EXTM3U", "\u{feff}#EXTM3U\n#EXT-X-VERSION:3", 1)
+        .replacen("#EXTINF:4.0,", "#EXTINF:4.017167,", 1);
+    f.stub
+        .serve_media(&f.origin, "application/vnd.apple.mpegurl", raw.into_bytes());
+    let (status, bytes) = get(&f.app, &f.uri).await;
+    assert_eq!(status, StatusCode::OK);
+    let body = String::from_utf8(bytes).unwrap();
+    assert!(body.starts_with("#EXTM3U\n"));
+    assert_eq!(body.matches("#EXT-X-VERSION:").count(), 1);
+    assert!(body.contains("#EXT-X-VERSION:6\n"));
+    assert!(body.contains("#EXTINF:4.017167,\n"));
+    assert!(body.contains("#EXT-X-TARGETDURATION:4\n"));
+    assert!(body.contains("CAN-BLOCK-RELOAD=YES"));
+    assert_eq!(body.matches("#EXTINF:").count(), 2);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_cold_preflight_cannot_publish_after_lifecycle_revocation(pool: PgPool) {
+    let f = reload_fixture(&pool, 4).await;
+    let gate = Arc::new(tokio::sync::Semaphore::new(1));
+    *f.stub.media_fetch_gate.lock().unwrap() = Some(gate.clone());
+    let app = f.app.clone();
+    let uri = format!("{}?_HLS_msn=2", f.uri);
+    let pending = tokio::spawn(async move { get(&app, &uri).await });
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while f.stub.media_fetches.lock().unwrap().len() < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(!pending.is_finished());
+    plamenu_db::media::update_live(&pool, f.media, "live", None, Some(true))
+        .await
+        .unwrap();
+    *f.stub.media_fetch_gate.lock().unwrap() = None;
+    gate.add_permits(1);
+    assert_eq!(pending.await.unwrap().0, StatusCode::SERVICE_UNAVAILABLE);
+    let (status, bytes) = get(&f.app, &f.uri).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        !String::from_utf8(bytes)
+            .unwrap()
+            .contains("CAN-BLOCK-RELOAD")
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_stale_observer_racing_transition_cannot_quarantine_new_revision(
+    pool: PgPool,
+) {
+    use plamenu_db::media;
+    let f = reload_fixture(&pool, 4).await;
+    let (transition, observer) = tokio::join!(
+        media::update_live(&pool, f.media, "waiting", None, Some(false)),
+        media::block_remote_live_reload(&pool, f.media, 1)
+    );
+    assert!(transition.unwrap());
+    let blocked_old = observer.unwrap();
+    let current = media::remote_live_lifecycle(&pool, f.media)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.revision, 2);
+    assert_eq!(current.permanent_declared, Some(false));
+    assert_eq!(current.reload_blocked_revision, blocked_old.then_some(1));
+    assert_ne!(current.reload_blocked_revision, Some(current.revision));
+    assert!(
+        !media::block_remote_live_reload(&pool, f.media, 1)
+            .await
+            .unwrap()
+    );
+    assert!(
+        media::update_live(&pool, f.media, "live", None, Some(false))
+            .await
+            .unwrap()
+    );
+    assert!(
+        media::block_remote_live_reload(&pool, f.media, 3)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !media::update_live(&pool, f.media, "live", None, Some(false))
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        media::remote_live_lifecycle(&pool, f.media)
+            .await
+            .unwrap()
+            .unwrap()
+            .reload_blocked_revision,
+        Some(3)
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_oversized_rewritten_history_stays_playable_and_memoizes_bounded_original(
+    pool: PgPool,
+) {
+    let f = reload_fixture(&pool, 4).await;
+    f.stub.serve_media(
+        &f.origin,
+        "application/vnd.apple.mpegurl",
+        closed_history(0, 2048, 4, false),
+    );
+    for _ in 0..2 {
+        let (status, bytes) = get(&f.app, &f.uri).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(bytes.len() > 256 * 1024);
+        let body = String::from_utf8(bytes).unwrap();
+        assert_eq!(body.matches("#EXTINF:").count(), 2048);
+        assert!(!body.contains("SERVER-CONTROL"));
+        assert!(body.contains(&format!("/media/hls/{}/live/", f.media)));
+    }
+    assert_eq!(
+        f.stub.media_fetches.lock().unwrap().len(),
+        2,
+        "one bounded original and master preflight shared across ordinary viewers"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_ladder_shares_alternative_audio_preflight_and_counts_all_origin_reads(
+    pool: PgPool,
+) {
+    let f = reload_fixture(&pool, 4).await;
+    let audio = format!(
+        "https://remote.example/static/streaming-playlists/hls/vid/audio-{}.m3u8",
+        f.media
+    );
+    f.stub.serve_media(
+        &audio,
+        "application/vnd.apple.mpegurl",
+        closed_history(0, 2, 4, false),
+    );
+    f.stub.serve_media(MASTER, "application/vnd.apple.mpegurl", format!("#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",URI=\"{audio}\"\n#EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO=\"a\"\n{}\n",f.origin).into_bytes());
+    let audio_uri = format!("/media/hls/{}/live/{}.m3u8", f.media, B64.encode(&audio));
+    let mut viewers = Vec::new();
+    for n in 0..16 {
+        let app = f.app.clone();
+        let uri = if n % 2 == 0 {
+            f.uri.clone()
+        } else {
+            audio_uri.clone()
+        };
+        viewers.push(tokio::spawn(async move { get(&app, &uri).await }));
+    }
+    for viewer in viewers {
+        let (status, bytes) = viewer.await.unwrap();
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            String::from_utf8(bytes)
+                .unwrap()
+                .contains("CAN-BLOCK-RELOAD=YES")
+        );
+    }
+    let fetches = f.stub.media_fetches.lock().unwrap();
+    assert_eq!(
+        fetches.len(),
+        3,
+        "one master and each of two unique media playlists"
+    );
+    for url in [MASTER, &f.origin, &audio] {
+        assert_eq!(fetches.iter().filter(|u| u.as_str() == url).count(), 1);
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_ladder_over_cap_and_mixed_unsupported_histories_remain_playable_without_advertisement(
+    pool: PgPool,
+) {
+    use std::fmt::Write as _;
+    let f = reload_fixture(&pool, 4).await;
+    let mut master = String::from("#EXTM3U\n");
+    let mut children = vec![f.origin.clone()];
+    for n in 1..9 {
+        children.push(format!(
+            "https://remote.example/static/streaming-playlists/hls/vid/extra-{}-{n}.m3u8",
+            f.media
+        ));
+    }
+    for child in &children {
+        writeln!(master, "#EXT-X-STREAM-INF:BANDWIDTH=1000\n{child}").unwrap();
+        f.stub.serve_media(
+            child,
+            "application/vnd.apple.mpegurl",
+            closed_history(0, 2, 4, false),
+        );
+    }
+    f.stub
+        .serve_media(MASTER, "application/vnd.apple.mpegurl", master.into_bytes());
+    for child in &children {
+        let uri = format!("/media/hls/{}/live/{}.m3u8", f.media, B64.encode(child));
+        let (status, bytes) = get(&f.app, &uri).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!String::from_utf8(bytes).unwrap().contains("SERVER-CONTROL"));
+    }
+    assert_eq!(
+        f.stub.media_fetches.lock().unwrap().len(),
+        10,
+        "over-cap admission does not prefetch unused media"
+    );
+    for (tag, target, ended) in [
+        ("", 4, true),
+        ("", 5, false),
+        ("#EXT-X-PART-INF:PART-TARGET=0.2\n", 4, false),
+    ] {
+        // A fresh accepted lifecycle prevents an earlier quarantine from masking this case.
+        plamenu_db::media::update_live(&pool, f.media, "waiting", None, Some(false))
+            .await
+            .unwrap();
+        plamenu_db::media::update_live(&pool, f.media, "live", None, Some(false))
+            .await
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+        let mut other = closed_history(0, 2, target, ended);
+        other.extend_from_slice(tag.as_bytes());
+        f.stub
+            .serve_media(&children[1], "application/vnd.apple.mpegurl", other);
+        f.stub.serve_media(
+            MASTER,
+            "application/vnd.apple.mpegurl",
+            format!(
+                "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\n{}\n#EXT-X-STREAM-INF:BANDWIDTH=2\n{}\n",
+                children[0], children[1]
+            )
+            .into_bytes(),
+        );
+        for child in &children[..2] {
+            let uri = format!("/media/hls/{}/live/{}.m3u8", f.media, B64.encode(child));
+            let (status, bytes) = get(&f.app, &uri).await;
+            assert_eq!(status, StatusCode::OK);
+            assert!(!String::from_utf8(bytes).unwrap().contains("SERVER-CONTROL"));
+        }
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_waits_for_complete_msn_and_coalesces_with_ordinary_requests(pool: PgPool) {
+    let f = reload_fixture(&pool, 4).await;
+    let initial = request(&f.app, "GET", &f.uri, None).await;
+    assert_eq!(initial.status(), StatusCode::OK);
+    assert_eq!(initial.headers()[header::CACHE_CONTROL], "no-store");
+    let body = initial.into_body().collect().await.unwrap().to_bytes();
+    assert!(String::from_utf8_lossy(&body).contains("CAN-BLOCK-RELOAD=YES"));
+    let mut viewers = Vec::new();
+    for _ in 0..8 {
+        let app = f.app.clone();
+        let uri = format!("{}?_HLS_msn=2", f.uri);
+        viewers.push(tokio::spawn(async move { get(&app, &uri).await }));
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(
+        viewers.iter().all(|v| !v.is_finished()),
+        "future MSN cannot receive an unchanged 200"
+    );
+    assert_eq!(get(&f.app, &f.uri).await.0, StatusCode::OK);
+    assert_eq!(
+        f.stub.media_fetches.lock().unwrap().len(),
+        2,
+        "one master preflight and one media fetch"
+    );
+    f.stub.serve_media(
+        &f.origin,
+        "application/vnd.apple.mpegurl",
+        closed_history(0, 3, 4, false),
+    );
+    for viewer in viewers {
+        let (status, bytes) = tokio::time::timeout(std::time::Duration::from_secs(3), viewer)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(status, StatusCode::OK);
+        let body = String::from_utf8(bytes).unwrap();
+        assert_eq!(
+            body.matches("#EXTINF:").count(),
+            3,
+            "return the complete EVENT history"
+        );
+        assert!(body.contains("#EXT-X-MEDIA-SEQUENCE:0"));
+        assert!(body.contains(&format!(
+            "/media/hls/{}/live/{}.ts",
+            f.media,
+            B64.encode("https://remote.example/static/streaming-playlists/hls/vid/2.ts")
+        )));
+    }
+    let fetches = f.stub.media_fetches.lock().unwrap();
+    assert_eq!(
+        fetches.iter().filter(|url| *url == &f.origin).count(),
+        2,
+        "one shared media refresh"
+    );
+    assert!(
+        fetches.len() <= 4,
+        "count at most one shared master refresh too"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_rejects_bad_directives_without_new_origin_fetch_and_preserves_past_history(
+    pool: PgPool,
+) {
+    let f = reload_fixture(&pool, 4).await;
+    assert_eq!(get(&f.app, &f.uri).await.0, StatusCode::OK);
+    for endpoint in [
+        f.uri.clone(),
+        format!("/media/hls/{}/pl?u={}", f.media, B64.encode(&f.origin)),
+    ] {
+        let separator = if endpoint.contains('?') { '&' } else { '?' };
+        for query in [
+            "_HLS_msn=4",
+            "_HLS_msn=-1",
+            "_HLS_msn=18446744073709551616",
+            "_HLS_part=0",
+            "_HLS_msn=2&_HLS_part=0",
+            "_HLS_msn=2&_HLS_msn=3",
+        ] {
+            let response = request(
+                &f.app,
+                "GET",
+                &format!("{endpoint}{separator}{query}"),
+                None,
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{query}");
+        }
+        let (status, body) = get(
+            &f.app,
+            &format!("{endpoint}{separator}_HLS_msn=0&_HLS_skip=YES"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            String::from_utf8(body).unwrap().matches("#EXTINF:").count(),
+            2
+        );
+    }
+    assert_eq!(f.stub.media_fetches.lock().unwrap().len(), 2);
+    assert!(
+        reload_failures(&pool, f.media).await.is_none(),
+        "request errors are not origin failures"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_cold_flight_never_falls_through_while_origin_is_running(pool: PgPool) {
+    let f = reload_fixture(&pool, 4).await;
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    *f.stub.media_fetch_gate.lock().unwrap() = Some(gate.clone());
+    let mut requests = Vec::new();
+    for _ in 0..2 {
+        let app = f.app.clone();
+        let uri = f.uri.clone();
+        requests.push(tokio::spawn(async move { get(&app, &uri).await }));
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(3200)).await;
+    assert_eq!(
+        f.stub.media_fetches.lock().unwrap().len(),
+        1,
+        "no fallback fetch after the old three-second wait"
+    );
+    *f.stub.media_fetch_gate.lock().unwrap() = None;
+    gate.add_permits(1);
+    for request in requests {
+        assert_eq!(request.await.unwrap().0, StatusCode::OK);
+    }
+    assert_eq!(f.stub.media_fetches.lock().unwrap().len(), 2);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_stall_has_end_to_end_deadline_and_failure_is_coalesced(pool: PgPool) {
+    let f = reload_fixture(&pool, 1).await;
+    let started = std::time::Instant::now();
+    let response = request(&f.app, "GET", &format!("{}?_HLS_msn=2", f.uri), None).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(started.elapsed() >= std::time::Duration::from_millis(2900));
+    assert!(started.elapsed() < std::time::Duration::from_secs(4));
+    assert!(
+        response.headers()[header::CACHE_CONTROL]
+            .to_str()
+            .unwrap()
+            .contains("no-store")
+    );
+    assert!(
+        f.stub.media_fetches.lock().unwrap().len() <= 6,
+        "count shared master preflight reads too"
+    );
+    assert!(reload_failures(&pool, f.media).await.is_none());
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    f.stub.media.lock().unwrap().remove(&f.origin);
+    let mut requests = Vec::new();
+    for _ in 0..8 {
+        let app = f.app.clone();
+        let uri = f.uri.clone();
+        requests.push(tokio::spawn(async move { get(&app, &uri).await }));
+    }
+    let before = f.stub.media_fetches.lock().unwrap().len();
+    for request in requests {
+        assert_ne!(request.await.unwrap().0, StatusCode::OK);
+    }
+    assert_eq!(f.stub.media_fetches.lock().unwrap().len(), before + 1);
+    assert_eq!(reload_failures(&pool, f.media).await, Some(1));
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_endlist_ignores_directives_and_wakes_future_msn(pool: PgPool) {
+    let f = reload_fixture(&pool, 4).await;
+    assert_eq!(get(&f.app, &f.uri).await.0, StatusCode::OK);
+    let app = f.app.clone();
+    let uri = format!("{}?_HLS_msn=3", f.uri);
+    let pending = tokio::spawn(async move { get(&app, &uri).await });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    f.stub.serve_media(
+        &f.origin,
+        "application/vnd.apple.mpegurl",
+        closed_history(0, 2, 4, true),
+    );
+    let (status, bytes) = pending.await.unwrap();
+    assert_eq!(status, StatusCode::OK);
+    let body = String::from_utf8(bytes).unwrap();
+    assert!(body.contains("#EXT-X-ENDLIST"));
+    assert!(!body.contains("CAN-BLOCK-RELOAD"));
+    assert_eq!(
+        get(&f.app, &format!("{}?_HLS_msn=garbage&_HLS_part=999", f.uri))
+            .await
+            .0,
+        StatusCode::OK
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_quarantine_is_cas_persistent_and_duplicates_cannot_clear_it(pool: PgPool) {
+    use plamenu_db::media;
+    let f = reload_fixture(&pool, 4).await;
+    assert!(
+        media::block_remote_live_reload(&pool, f.media, 1)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !media::block_remote_live_reload(&pool, f.media, 1)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !media::update_live(&pool, f.media, "live", None, Some(false))
+            .await
+            .unwrap()
+    );
+    let current = media::remote_live_lifecycle(&pool, f.media)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.permanent_declared, Some(false));
+    assert_eq!(current.reload_blocked_revision, Some(1));
+    let (_, bytes) = get(
+        &build_router(test_state_with(pool.clone(), f.stub.clone())),
+        &f.uri,
+    )
+    .await;
+    assert!(
+        !String::from_utf8(bytes)
+            .unwrap()
+            .contains("CAN-BLOCK-RELOAD")
+    );
+    let (update, old_observer) = tokio::join!(
+        media::update_live(&pool, f.media, "waiting", None, Some(false)),
+        media::block_remote_live_reload(&pool, f.media, 1)
+    );
+    assert!(update.unwrap());
+    assert!(!old_observer.unwrap());
+    assert!(
+        !media::block_remote_live_reload(&pool, f.media, 1)
+            .await
+            .unwrap(),
+        "stale observer cannot block revision two"
+    );
+    assert!(
+        media::update_live(&pool, f.media, "live", None, Some(false))
+            .await
+            .unwrap()
+    );
+    let current = media::remote_live_lifecycle(&pool, f.media)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.revision, 3);
+    assert_eq!(current.reload_blocked_revision, Some(1));
+    let (_, body) = get(&f.app, &f.uri).await;
+    assert!(
+        String::from_utf8(body)
+            .unwrap()
+            .contains("CAN-BLOCK-RELOAD")
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_observed_event_restart_quarantines_ordinary_reload(pool: PgPool) {
+    let f = reload_fixture(&pool, 4).await;
+    f.stub.serve_media(
+        &f.origin,
+        "application/vnd.apple.mpegurl",
+        closed_history(0, 4, 4, false),
+    );
+    assert_eq!(get(&f.app, &f.uri).await.0, StatusCode::OK);
+    let app = f.app.clone();
+    let uri = format!("{}?_HLS_msn=4", f.uri);
+    let pending = tokio::spawn(async move { get(&app, &uri).await });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    f.stub.serve_media(
+        &f.origin,
+        "application/vnd.apple.mpegurl",
+        closed_history(0, 2, 4, false),
+    );
+    assert_eq!(pending.await.unwrap().0, StatusCode::SERVICE_UNAVAILABLE);
+    let current = plamenu_db::media::remote_live_lifecycle(&pool, f.media)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.permanent_declared, Some(false));
+    assert_eq!(current.reload_blocked_revision, Some(1));
+    assert!(
+        !plamenu_db::media::update_live(&pool, f.media, "live", None, Some(false))
+            .await
+            .unwrap()
+    );
+    let (status, body) = get(&f.app, &f.uri).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        !String::from_utf8(body)
+            .unwrap()
+            .contains("CAN-BLOCK-RELOAD")
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_revocation_lifecycle_change_and_shutdown_release_waiters(pool: PgPool) {
+    let f = reload_fixture(&pool, 4).await;
+    let settings = instance_settings::get(&pool).await.unwrap();
+    for action in [
+        "permanent",
+        "source",
+        "suspend",
+        "policy",
+        "end",
+        "shutdown",
+    ] {
+        // Establish a new accepted lifecycle before each independent request.
+        plamenu_db::media::update_live(&pool, f.media, "live", Some(MASTER), Some(false))
+            .await
+            .unwrap();
+        let app = f.app.clone();
+        let uri = format!("{}?_HLS_msn=2", f.uri);
+        let pending = tokio::spawn(async move { get(&app, &uri).await });
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(!pending.is_finished());
+        match action {
+            "permanent" => {
+                plamenu_db::media::update_live(&pool, f.media, "live", None, Some(true))
+                    .await
+                    .unwrap();
+            }
+            "source" => {
+                plamenu_db::media::update_live(
+                    &pool,
+                    f.media,
+                    "live",
+                    Some("https://remote.example/new/master.m3u8"),
+                    Some(false),
+                )
+                .await
+                .unwrap();
+            }
+            "suspend" => {
+                plamenu_db::account::suspend(&pool, f.account, "local")
+                    .await
+                    .unwrap();
+            }
+            "policy" => {
+                instance_settings::save(
+                    &pool,
+                    instance_settings::SettingsUpdate {
+                        remote_video_max_mb: 0,
+                        ..settings.as_update()
+                    },
+                )
+                .await
+                .unwrap();
+                f.state.settings_cache.invalidate();
+            }
+            "end" => {
+                plamenu_db::media::update_live(&pool, f.media, "ended", None, Some(false))
+                    .await
+                    .unwrap();
+            }
+            "shutdown" => f.state.shutdown.cancel(),
+            _ => unreachable!(),
+        }
+        let (status, _) = tokio::time::timeout(std::time::Duration::from_secs(2), pending)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_ne!(status, StatusCode::OK, "{action}");
+        if action == "policy" {
+            instance_settings::save(&pool, settings.as_update())
+                .await
+                .unwrap();
+            f.state.settings_cache.invalidate();
+        }
+        if action == "suspend" {
+            sqlx::query("UPDATE accounts SET suspended_at=NULL WHERE id=$1")
+                .bind(f.account)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_unknown_permanent_and_unsupported_media_keep_ordinary_playback(
+    pool: PgPool,
+) {
+    let f = reload_fixture(&pool, 4).await;
+    for declaration in [None, Some(true)] {
+        plamenu_db::media::update_live(&pool, f.media, "live", None, declaration)
+            .await
+            .unwrap();
+        let (status, bytes) = get(&f.app, &f.uri).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            !String::from_utf8(bytes)
+                .unwrap()
+                .contains("CAN-BLOCK-RELOAD")
+        );
+    }
+    plamenu_db::media::update_live(&pool, f.media, "live", None, Some(false))
+        .await
+        .unwrap();
+    let mut body = closed_history(0, 2, 4, false);
+    body.extend_from_slice(b"#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,CAN-SKIP-UNTIL=24\n");
+    f.stub
+        .serve_media(&f.origin, "application/vnd.apple.mpegurl", body);
+    let (status, bytes) = get(&f.app, &f.uri).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!String::from_utf8(bytes).unwrap().contains("SERVER-CONTROL"));
+    assert_eq!(
+        get(&f.app, &format!("{}?_HLS_msn=2", f.uri)).await.0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_last_plus_two_and_sliding_window_are_satisfied_by_complete_segments(
+    pool: PgPool,
+) {
+    let f = reload_fixture(&pool, 4).await;
+    f.stub.serve_media(
+        &f.origin,
+        "application/vnd.apple.mpegurl",
+        sliding_history(100, 2),
+    );
+    assert_eq!(get(&f.app, &f.uri).await.0, StatusCode::OK);
+    let app = f.app.clone();
+    let uri = format!("{}?_HLS_msn=103", f.uri);
+    let pending = tokio::spawn(async move { get(&app, &uri).await });
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(!pending.is_finished());
+    f.stub.serve_media(
+        &f.origin,
+        "application/vnd.apple.mpegurl",
+        sliding_history(100, 3),
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    assert!(
+        !pending.is_finished(),
+        "last+1 publication cannot satisfy a last+2 request"
+    );
+    f.stub.serve_media(
+        &f.origin,
+        "application/vnd.apple.mpegurl",
+        sliding_history(101, 3),
+    );
+    let (status, bytes) = pending.await.unwrap();
+    assert_eq!(status, StatusCode::OK);
+    let body = String::from_utf8(bytes).unwrap();
+    assert!(body.contains("#EXT-X-MEDIA-SEQUENCE:101"));
+    assert_eq!(body.matches("#EXTINF:").count(), 3);
+}
+
+struct Active(Arc<std::sync::atomic::AtomicUsize>);
+impl Drop for Active {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+async fn assert_h2_disconnect(f: &ReloadFixture, active: Arc<std::sync::atomic::AtomicUsize>) {
+    // Also exercise a real HTTP/2 RST_STREAM on a retained connection. The
+    // production listener is HTTP/1 behind Caddy; this tests the transport's
+    // future ownership without claiming a remote proxy lifecycle check.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let count = active.clone();
+    let app = f.app.clone().layer(axum::middleware::from_fn(
+        move |request, next: axum::middleware::Next| {
+            let count = count.clone();
+            async move {
+                count.fetch_add(1, Ordering::SeqCst);
+                let _active = Active(count);
+                next.run(request).await
+            }
+        },
+    ));
+    let h2_server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .serve_connection(
+                hyper_util::rt::TokioIo::new(socket),
+                hyper_util::service::TowerToHyperService::new(app),
+            )
+            .await
+            .unwrap();
+    });
+    let client = reqwest::Client::builder()
+        .http2_prior_knowledge()
+        .no_proxy()
+        .build()
+        .unwrap();
+    let request_client = client.clone();
+    let uri = format!("http://{address}{}?_HLS_msn=2", f.uri);
+    let pending = tokio::spawn(async move { request_client.get(uri).send().await });
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while active.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(!pending.is_finished());
+    pending.abort();
+    assert!(pending.await.unwrap_err().is_cancelled());
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while active.load(Ordering::SeqCst) != 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("actual RST_STREAM must drop the request-owned handler");
+    drop(client);
+    h2_server.abort();
+    assert!(h2_server.await.unwrap_err().is_cancelled());
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn blocking_reload_real_http_disconnect_drops_handler_and_origin_flight(pool: PgPool) {
+    use tokio::io::AsyncWriteExt;
+    let f = reload_fixture(&pool, 4).await;
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    *f.stub.media_fetch_gate.lock().unwrap() = Some(gate.clone());
+    let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let count = active.clone();
+    let app = f.app.clone().layer(axum::middleware::from_fn(
+        move |request, next: axum::middleware::Next| {
+            let count = count.clone();
+            async move {
+                count.fetch_add(1, Ordering::SeqCst);
+                let _active = Active(count);
+                next.run(request).await
+            }
+        },
+    ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let stop = tokio_util::sync::CancellationToken::new();
+    let stopped = stop.clone();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(stopped.cancelled_owned())
+            .await
+            .unwrap();
+    });
+    let mut socket = tokio::net::TcpStream::connect(address).await.unwrap();
+    socket
+        .write_all(format!("GET {} HTTP/1.1\r\nHost: localhost\r\n\r\n", f.uri).as_bytes())
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while f.stub.media_fetches.lock().unwrap().is_empty() {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(active.load(Ordering::SeqCst), 1);
+    drop(socket);
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while active.load(Ordering::SeqCst) != 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("actual HTTP/1 disconnect must drop the request-owned handler");
+    *f.stub.media_fetch_gate.lock().unwrap() = None;
+    gate.add_permits(1);
+    assert_eq!(
+        get(&f.app, &f.uri).await.0,
+        StatusCode::OK,
+        "the cancelled flight must release ownership"
+    );
+    assert_eq!(f.stub.media_fetches.lock().unwrap().len(), 3);
+    assert_h2_disconnect(&f, active.clone()).await;
+    stop.cancel();
+    tokio::time::timeout(std::time::Duration::from_secs(2), server)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
 #[sqlx::test(migrations = "../db/migrations")]
 async fn signed_native_rendition_outside_playlist_directory_and_revision_query_are_supported(
     pool: PgPool,

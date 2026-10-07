@@ -3,6 +3,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { signIn, openVideoOptions, createVideoChannel ,videoChannelForm} from '../session.mjs';
 
 async function form(page, operation) {
+  if (operation === 'profile') return page.locator('form[action^="/web/video-channels/"][action$="/profile"]');
   return page.locator(`form:has(input[name="operation"][value="${operation}"])`);
 }
 async function submitAndCommit(page, button, channelPath) {
@@ -67,7 +68,7 @@ async function journey(page, browser, info, noScript) {
     await expect(await form(recipient, 'invite')).toHaveCount(0);
     profile = await form(recipient, 'profile');
     await profile.getByRole('textbox', { name: 'Description', exact: true }).fill('Corrected by a consenting editor.');
-    await submitAndCommit(recipient, profile.getByRole('button', { name: 'Save channel profile' }), channelPath);
+    await submitAndCommit(recipient, profile.getByRole('button', { name: 'Save channel profile' }), `${channelPath}/profile`);
     await page.reload();
     await expect((await form(page, 'profile')).getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('Corrected by a consenting editor.');
     await submitAndCommit(page, page.getByRole('button', { name: 'Revoke access for @channel_editor', exact: true }), channelPath);

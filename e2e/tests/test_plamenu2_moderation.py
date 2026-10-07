@@ -47,6 +47,10 @@ def test_a_block_severs_the_relationship_on_both_servers(
         )
 
     with step("and cannot rebuild it while the block stands"):
+        wait_for(
+            lambda: plamenu2_api.relationship(mine["id"])["blocked_by"] is True,
+            desc="the Block to be recorded on the blocked server",
+        )
 
         def refollow_bounces():
             try:
@@ -66,6 +70,10 @@ def test_a_block_severs_the_relationship_on_both_servers(
         wait_for(
             lambda: plamenu_api.relationship(theirs["id"])["blocking"] is False,
             desc="the local block row to clear",
+        )
+        wait_for(
+            lambda: plamenu2_api.relationship(mine["id"])["blocked_by"] is False,
+            desc="the Undo(Block) to clear the block on the peer",
         )
         plamenu2_api.follow(mine["id"])
         wait_for(

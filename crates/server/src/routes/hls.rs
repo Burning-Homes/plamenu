@@ -37,7 +37,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use plamenu_db::{media, media_fetch_failure, native_video_hls, remote_hls_peers};
 use serde::Deserialize;
 
-use super::hls_live;
+use super::{hls_ladder, hls_live, hls_reload};
 use crate::error::ApiError;
 use crate::state::AppState;
 use crate::sync::RecoverableMutex as _;
@@ -183,7 +183,7 @@ async fn hls_suppressed(state: &AppState, kind: &str, media_id: i64) -> Result<b
     )
 }
 
-async fn note_hls_result(state: &AppState, kind: &str, media_id: i64, success: bool) {
+pub(super) async fn note_hls_result(state: &AppState, kind: &str, media_id: i64, success: bool) {
     if state.config.video_redundancy.is_some()
         && let Ok(items) = media::find_by_ids(&state.pool, &[media_id]).await
         && let Some(master) = items
@@ -212,6 +212,8 @@ async fn note_hls_result(state: &AppState, kind: &str, media_id: i64, success: b
 #[derive(Deserialize)]
 pub struct PlQuery {
     u: String,
+    #[serde(flatten)]
+    reload: hls_reload::Directives,
 }
 
 #[derive(Deserialize)]
@@ -291,6 +293,9 @@ pub async fn master(
     // Recent master failure → fail fast, don't re-probe a dead/hostile origin.
     if hls_suppressed(&state, "hls-master", media_id).await? {
         return Err(ApiError::NotFound);
+    }
+    if let Some(revision) = reload_revision(&state, media_id, &lane).await? {
+        return serve_reload_master(&state, media_id, &lane, revision).await;
     }
     match serve_playlist(&state, media_id, &lane.master_url, lane.live).await {
         Ok(response) => {
@@ -448,6 +453,9 @@ pub async fn playlist(
     if hls_suppressed(&state, "hls-playlist", media_id).await? {
         return Err(ApiError::NotFound);
     }
+    if let Some(revision) = reload_revision(&state, media_id, &lane).await? {
+        return serve_reload(&state, media_id, &url, &lane, revision, &q.reload).await;
+    }
     let result = serve_playlist(&state, media_id, &url, lane.live).await;
     ensure_current(&state, media_id, &lane).await?;
     note_hls_result(&state, "hls-playlist", media_id, result.is_ok()).await;
@@ -497,6 +505,7 @@ pub async fn segment(
 pub async fn live_child(
     State(state): State<AppState>,
     Path((media_id, name)): Path<(i64, String)>,
+    Query(reload): Query<hls_reload::Directives>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
     let lane = lane(&state, media_id).await?;
@@ -518,6 +527,11 @@ pub async fn live_child(
     if hls_suppressed(&state, kind, media_id).await? {
         return Err(ApiError::NotFound);
     }
+    if is_m3u8(&origin)
+        && let Some(revision) = reload_revision(&state, media_id, &lane).await?
+    {
+        return serve_reload(&state, media_id, &origin, &lane, revision, &reload).await;
+    }
     let result = if is_m3u8(&origin) {
         serve_playlist(&state, media_id, &origin, true).await
     } else {
@@ -531,6 +545,355 @@ pub async fn live_child(
 // ---------------------------------------------------------------------------
 // Playlist fetch + rewrite
 // ---------------------------------------------------------------------------
+
+async fn reload_revision(
+    state: &AppState,
+    media_id: i64,
+    lane: &Lane,
+) -> Result<Option<i64>, ApiError> {
+    if !lane.live || !lane.on_air || lane.permanent {
+        return Ok(None);
+    }
+    let current = media::remote_live_lifecycle(&state.pool, media_id).await?;
+    Ok(current
+        .filter(|l| {
+            l.permanent_declared == Some(false)
+                && l.revision > 0
+                && l.reload_blocked_revision != Some(l.revision)
+        })
+        .map(|l| l.revision))
+}
+
+pub(super) async fn ensure_reload_current(
+    state: &AppState,
+    media_id: i64,
+    expected: &Lane,
+    revision: i64,
+) -> Result<(), ApiError> {
+    let current = lane(state, media_id).await?;
+    if current.master_url != expected.master_url || current.live != expected.live {
+        return Err(ApiError::NotFound);
+    }
+    ensure_on_air(&current)?;
+    if hls_disabled(state).await? {
+        return Err(ApiError::NotFound);
+    }
+    if reload_revision(state, media_id, &current).await? != Some(revision) {
+        return Err(hls_reload::unavailable());
+    }
+    Ok(())
+}
+
+async fn serve_reload_master(
+    state: &AppState,
+    media_id: i64,
+    lane: &Lane,
+    revision: i64,
+) -> Result<Response, ApiError> {
+    let operation = async {
+        let _permit = hls_reload::Waiter::acquire(media_id, &lane.master_url)?;
+        let flight = hls_reload::master_flight(media_id, &lane.master_url)?;
+        let snapshot = hls_ladder::snapshot(state, media_id, lane, revision, &flight, true).await?;
+        ensure_reload_current(state, media_id, lane, revision).await?;
+        Ok(playlist_response(
+            rewrite_playlist(&snapshot.body, &lane.master_url, media_id, true),
+            true,
+        ))
+    };
+    tokio::select! {
+        () = state.shutdown.cancelled() => Err(hls_reload::unavailable()),
+        result = tokio::time::timeout(hls_reload::MAX_WAIT, operation) => result.unwrap_or_else(|_| Err(hls_reload::unavailable())),
+    }
+}
+
+/// Closed-segment reload is request-owned: no detached polling tasks, and the
+/// same deadline covers cold fetch, single-flight, policy reads and waiting.
+async fn serve_reload(
+    state: &AppState,
+    media_id: i64,
+    url: &str,
+    lane: &Lane,
+    revision: i64,
+    directives: &hls_reload::Directives,
+) -> Result<Response, ApiError> {
+    let started = tokio::time::Instant::now();
+    let operation = async {
+        let _permit = hls_reload::Waiter::acquire(media_id, url)?;
+        let flight = hls_reload::flight(media_id, url)?;
+        let master = hls_reload::master_flight(media_id, &lane.master_url)?;
+        let mut fingerprint = None;
+        let mut deadline = started + hls_reload::MAX_WAIT;
+        loop {
+            let (snapshot, preflight) = tokio::time::timeout_at(deadline, async {
+                ensure_reload_current(state, media_id, lane, revision).await?;
+                let snapshot =
+                    reload_snapshot(state, media_id, url, revision, &flight, true).await?;
+                if let Some(closed) = snapshot.closed.as_ref() {
+                    let msn = directives.msn(closed.ended)?;
+                    if let Some(msn) = msn {
+                        closed.validate_msn(msn)?;
+                    }
+                    deadline =
+                        deadline.min(started + (closed.target * 3).min(hls_reload::MAX_WAIT));
+                }
+                // The learned target-duration deadline also covers every
+                // shared preflight read, including unused renditions.
+                let preflight = match tokio::time::timeout_at(
+                    deadline,
+                    hls_ladder::snapshot(state, media_id, lane, revision, &master, false),
+                )
+                .await
+                {
+                    Ok(result) => result.ok(),
+                    Err(_) if !directives.requested() => None,
+                    Err(_) => return Err(hls_reload::unavailable()),
+                };
+                ensure_reload_current(state, media_id, lane, revision).await?;
+                Ok::<_, ApiError>((snapshot, preflight))
+            })
+            .await
+            .map_err(|_| hls_reload::unavailable())??;
+            let Some(closed) = snapshot.closed.as_ref() else {
+                if directives.requested() && !snapshot.ended {
+                    return Err(hls_reload::unavailable());
+                }
+                return Ok(playlist_response(
+                    reload_body(&snapshot, url, media_id),
+                    true,
+                ));
+            };
+            let ladder = preflight
+                .as_ref()
+                .and_then(|p| p.ladder.as_ref())
+                .filter(|l| l.children.iter().any(|child| child == url));
+            let Some(ladder) = ladder else {
+                if directives.requested() && !closed.ended {
+                    return Err(hls_reload::unavailable());
+                }
+                return Ok(playlist_response(snapshot.body.to_string(), true));
+            };
+            if fingerprint.is_some_and(|f| f != ladder.fingerprint) {
+                return Err(hls_reload::unavailable());
+            }
+            fingerprint = Some(ladder.fingerprint);
+            let msn = directives.msn(closed.ended)?;
+            if closed.ended || msn.is_none_or(|msn| msn <= closed.last) {
+                let advertised = tokio::time::timeout_at(
+                    deadline,
+                    hls_ladder::advertised(&master, revision, ladder.fingerprint, closed),
+                )
+                .await
+                .map_err(|_| hls_reload::unavailable())?;
+                if !advertised && directives.requested() && !closed.ended {
+                    return Err(hls_reload::unavailable());
+                }
+                tokio::time::timeout_at(
+                    deadline,
+                    ensure_reload_current(state, media_id, lane, revision),
+                )
+                .await
+                .map_err(|_| hls_reload::unavailable())??;
+                return Ok(reload_response(&snapshot, advertised));
+            }
+            // Do not retain a growing EVENT body per waiter while sleeping.
+            drop(snapshot);
+            drop(preflight);
+            if tokio::time::Instant::now() >= deadline {
+                return Err(hls_reload::unavailable());
+            }
+            tokio::time::sleep_until(
+                (tokio::time::Instant::now() + hls_reload::REFRESH).min(deadline),
+            )
+            .await;
+            if tokio::time::Instant::now() >= deadline {
+                return Err(hls_reload::unavailable());
+            }
+        }
+    };
+    tokio::select! {
+        () = state.shutdown.cancelled() => Err(hls_reload::unavailable()),
+        result = tokio::time::timeout(hls_reload::MAX_WAIT, operation) =>
+            result.unwrap_or_else(|_| Err(hls_reload::unavailable())),
+    }
+}
+
+pub(super) async fn reload_snapshot(
+    state: &AppState,
+    media_id: i64,
+    url: &str,
+    revision: i64,
+    flight: &tokio::sync::Mutex<hls_reload::Flight>,
+    record_outcome: bool,
+) -> Result<Arc<hls_reload::Snapshot>, ApiError> {
+    let mut entry = flight.lock().await;
+    if entry.revision == revision
+        && entry
+            .refreshed
+            .is_some_and(|at| at.elapsed() < hls_reload::REFRESH)
+    {
+        if record_outcome {
+            record_reload_outcome(state, media_id, &mut entry).await;
+        }
+        return entry.snapshot.clone().ok_or_else(hls_reload::unavailable);
+    }
+    if entry.revision != revision {
+        entry.observed = None;
+    }
+    let previous = entry.observed.clone();
+    let fetched = fetch_reload_snapshot(state, media_id, url).await;
+    entry.revision = revision;
+    entry.refreshed = Some(Instant::now());
+    entry.snapshot = None;
+    entry.origin_failed = matches!(fetched, Err(ApiError::NotFound));
+    entry.outcome_recorded = false;
+    // Publish the failure cooldown before awaiting outcome bookkeeping so
+    // cancellation cannot release a queue of independent failed retries.
+    let snapshot = match fetched {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            if record_outcome {
+                record_reload_outcome(state, media_id, &mut entry).await;
+            }
+            return Err(error);
+        }
+    };
+    if let (Some(previous), Some(closed)) = (previous.as_ref(), snapshot.closed.as_ref())
+        && closed.restarted(previous)
+    {
+        media::block_remote_live_reload(&state.pool, media_id, revision).await?;
+        hls_live::purge_media(media_id);
+        return Err(hls_reload::unavailable());
+    }
+    if let Some(closed) = snapshot.closed.as_ref() {
+        entry.observed = Some(closed.clone());
+    }
+    let snapshot = Arc::new(snapshot);
+    if snapshot.body.len() <= hls_reload::MAX_SNAPSHOT_BYTES {
+        entry.snapshot = Some(Arc::clone(&snapshot));
+    } else {
+        entry.refreshed = None;
+    }
+    if record_outcome {
+        record_reload_outcome(state, media_id, &mut entry).await;
+    }
+    Ok(snapshot)
+}
+
+async fn record_reload_outcome(state: &AppState, media_id: i64, entry: &mut hls_reload::Flight) {
+    if !entry.outcome_recorded && (entry.snapshot.is_some() || entry.origin_failed) {
+        entry.outcome_recorded = true;
+        note_hls_result(state, "hls-playlist", media_id, !entry.origin_failed).await;
+    }
+}
+
+async fn fetch_reload_snapshot(
+    state: &AppState,
+    media_id: i64,
+    url: &str,
+) -> Result<hls_reload::Snapshot, ApiError> {
+    let _permit = hls_reload::fetch_permit()?;
+    tracing::debug!(
+        media = media_id,
+        resource = "playlist",
+        "remote live reload metadata fetch"
+    );
+    let bytes = state
+        .federation
+        .fetch_media_limited(
+            url,
+            crate::video_mirrors::manifest::MAX_PLAYLIST_BYTES as u64,
+        )
+        .await
+        .map_err(|_| ApiError::NotFound)?
+        .bytes;
+    let body = std::str::from_utf8(&bytes).map_err(|_| ApiError::NotFound)?;
+    if !body.trim_start_matches('\u{feff}').starts_with("#EXTM3U") {
+        return Err(ApiError::NotFound);
+    }
+    // Preflight never allocates an expanded, ineligible EVENT history. Retain
+    // its bounded original body for the existing ordinary response rewrite.
+    let closed = hls_reload::ClosedPlaylist::parse(body)
+        .filter(|c| closed_rewritten_size(body, url, media_id).is_some_and(|bytes| c.fits(bytes)));
+    let rewritten = closed.is_some();
+    let output = if rewritten {
+        rewrite_playlist(body, url, media_id, true)
+    } else {
+        body.to_owned()
+    };
+    Ok(hls_reload::Snapshot {
+        body: output.into_boxed_str(),
+        closed,
+        ended: body.lines().any(|l| l.trim() == "#EXT-X-ENDLIST"),
+        rewritten,
+    })
+}
+
+fn reload_body(snapshot: &hls_reload::Snapshot, url: &str, media_id: i64) -> String {
+    if snapshot.rewritten {
+        snapshot.body.to_string()
+    } else {
+        rewrite_playlist(&snapshot.body, url, media_id, true)
+    }
+}
+
+fn reload_response(snapshot: &hls_reload::Snapshot, advertised: bool) -> Response {
+    let body = if advertised {
+        blocking_body(&snapshot.body)
+    } else {
+        snapshot.body.to_string()
+    };
+    playlist_response(body, true)
+}
+
+fn closed_rewritten_size(body: &str, url: &str, media_id: i64) -> Option<usize> {
+    let body = body.trim_start_matches('\u{feff}');
+    let base = url::Url::parse(url).ok()?;
+    let prefix = base.join(".").ok()?.to_string();
+    body.lines().try_fold(0_usize, |bytes, raw| {
+        let line = raw.trim_end_matches('\r');
+        if line != line.trim() {
+            return None;
+        }
+        let size = if line.is_empty() || line.starts_with('#') {
+            line.len()
+        } else {
+            let child = base.join(line).ok()?.to_string();
+            if child.len() > 4096
+                || !child.starts_with(&prefix)
+                || !plamenu_federation::is_federation_url(&child)
+            {
+                return None;
+            }
+            live_child_url(media_id, &child).len()
+        };
+        let total = bytes.checked_add(size)?.checked_add(1)?;
+        (total <= hls_reload::MAX_SNAPSHOT_BYTES).then_some(total)
+    })
+}
+
+fn blocking_body(body: &str) -> String {
+    use std::fmt::Write as _;
+    // Version 6 gives TARGETDURATION its rounded-duration semantics, matching
+    // the actual closed segments. Preserve durations and TS URLs byte-for-byte.
+    let version = body
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("#EXT-X-VERSION:")
+                .and_then(|v| v.parse::<u64>().ok())
+        })
+        .unwrap_or(6)
+        .max(6);
+    let mut output =
+        format!("#EXTM3U\n#EXT-X-VERSION:{version}\n#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES\n");
+    for line in body
+        .lines()
+        .skip(1)
+        .filter(|line| !line.starts_with("#EXT-X-VERSION:"))
+    {
+        writeln!(output, "{line}").expect("writing to a String cannot fail");
+    }
+    output
+}
 
 /// Rewritten playlists memoized for exactly the 60 s the browser is told to
 /// cache them ([`PLAYLIST_CACHE`]): N concurrent viewers of one video cost
@@ -668,6 +1031,7 @@ fn playlist_response(rewritten: String, live: bool) -> Response {
 /// playlist into a plain multi-segment one; everything else
 /// (`BANDWIDTH`/`RESOLUTION`/`CODECS`/`EXTINF`/…) is passed through verbatim.
 fn rewrite_playlist(body: &str, base_url: &str, media_id: i64, is_live: bool) -> String {
+    let body = body.trim_start_matches('\u{feff}');
     let child = |abs: &str| {
         if is_live {
             live_child_url(media_id, abs)
@@ -685,6 +1049,11 @@ fn rewrite_playlist(body: &str, base_url: &str, media_id: i64, is_live: bool) ->
     let mut next_offset: u64 = 0;
     for raw in body.lines() {
         let line = raw.trim_end_matches('\r');
+        // Delivery directives terminate at this proxy. An upstream capability
+        // is not permission to advertise services we do not forward/implement.
+        if is_live && line.starts_with("#EXT-X-SERVER-CONTROL:") {
+            continue;
+        }
         if let Some(rest) = line.strip_prefix("#EXT-X-MAP:") {
             if let Some((rewritten, end)) = rewrite_map(rest, base.as_ref(), media_id) {
                 next_offset = end;
@@ -1025,9 +1394,10 @@ async fn hls_disabled(state: &AppState) -> Result<bool, ApiError> {
 /// of its stream: where the origin playlist tree is rooted (the SSRF fence),
 /// and whether it is a live broadcast (which changes the caching rules for
 /// every layer below).
-struct Lane {
-    master_url: String,
+pub(super) struct Lane {
+    pub(super) master_url: String,
     live: bool,
+    permanent: bool,
     /// A live that is running right now. A broadcast that has not started, or
     /// that is over, has no playable playlist even when it still advertises a
     /// master URL.
@@ -1064,6 +1434,7 @@ async fn lane(state: &AppState, media_id: i64) -> Result<Lane, ApiError> {
     Ok(Lane {
         master_url: item.hls_master_url.ok_or(ApiError::NotFound)?,
         live: item.live_state.is_some(),
+        permanent: item.live_permanent,
         on_air: item.live_state.as_deref() == Some("live"),
     })
 }
@@ -1195,7 +1566,7 @@ fn parse_byterange(spec: &str, default_start: u64) -> (u64, u64) {
 /// One attribute value from an `#EXT-X-…` attribute list (quote-aware split, so
 /// a comma inside `CODECS="a,b"` doesn't break parsing). Strips surrounding
 /// quotes.
-fn attr(attrs: &str, name: &str) -> Option<String> {
+pub(super) fn attr(attrs: &str, name: &str) -> Option<String> {
     split_attrs(attrs).into_iter().find_map(|part| {
         let (k, v) = part.split_once('=')?;
         (k.trim() == name).then(|| v.trim().trim_matches('"').to_owned())
@@ -1203,7 +1574,7 @@ fn attr(attrs: &str, name: &str) -> Option<String> {
 }
 
 /// Whether an HLS URI names a (nested) playlist rather than a media segment.
-fn is_m3u8(url: &str) -> bool {
+pub(super) fn is_m3u8(url: &str) -> bool {
     url.split(['?', '#'])
         .next()
         .unwrap_or(url)

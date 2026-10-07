@@ -3,6 +3,7 @@
 import { chromium } from 'playwright';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { observeCaptureWire } from './capture-wire-observer.mjs';
 const [manifestPath,evidence]=process.argv.slice(2);
 const manifest=JSON.parse(readFileSync(manifestPath,'utf8'));
 const browser=await chromium.launch();
@@ -59,6 +60,7 @@ await creatorContext.addInitScript(()=>{
 const creator=await creatorContext.newPage();
 let peerAuth;
 const contexts=[];
+const wireObservers=[];
 try{
   await creator.goto(new URL('/login',manifest.manage).href);
   await creator.locator('input[name="identifier"]').fill(process.env.AP09_CAPTURE_USER);
@@ -85,6 +87,15 @@ try{
         viewport:{width:peer?800:320,height:800},...(peer&&peerAuth?{storageState:peerAuth}:{})});
       if(player!=='native-no-js')await context.addInitScript(()=>{window.__ownedVideoProfile=true;});
       contexts.push(context);const page=await context.newPage(),errors=[];
+      let stopWire = null;
+      if(player==='native-no-js'&&process.env.AP09_CAPTURE_TRACE==='1'){
+        try{
+          stopWire=await observeCaptureWire(context,page,evidence,kind);
+          wireObservers.push(stopWire);
+        }catch{
+          writeFileSync(join(evidence,`capture-${kind}-nojs-wire.json`),JSON.stringify({kind,unavailable:true}),{mode:0o600});
+        }
+      }
       page.on('pageerror',error=>errors.push(String(error)));
       if(peer&&!peerAuth){await page.goto(new URL('/login',remote.url).href);
         await page.locator('#username').fill(process.env.PEERTUBE_E2E_USER);await page.locator('#password').fill(process.env.PEERTUBE_E2E_PASSWORD);
@@ -93,9 +104,16 @@ try{
       if(peer){const consent=page.getByRole('button',{name:'OK',exact:true});await consent.waitFor({state:'visible',timeout:3000}).catch(()=>{});
         if(await consent.isVisible())await consent.click();}
       const video=page.locator(peer?'video.vjs-tech':'video[data-hls]').first();await video.waitFor({state:'attached'});
+      if(stopWire)await video.evaluate(v=>{
+        window.__ownedCaptureEvents=[];
+        for(const event of ['waiting','playing','stalled','seeking','seeked','error'])v.addEventListener(event,()=>{
+          window.__ownedCaptureEvents.push({event,at:performance.now(),time:v.currentTime,ready:v.readyState,
+            buffered:[...Array(v.buffered.length)].map((_,n)=>[v.buffered.start(n),v.buffered.end(n)])});
+        });
+      });
       if(peer&&await page.locator('.vjs-big-play-button').isVisible())await page.locator('.vjs-big-play-button').click();
       await video.evaluate(v=>{v.muted=true;v.play().catch(()=>{});});
-      clients.push({player,page,video,context,errors,start:await decoded(video)});
+      clients.push({player,page,video,context,errors,stopWire,start:await decoded(video)});
     }
     await pause(8000);const before=await Promise.all(clients.map(client=>sample(client.video))),observations=[];
     const untilMeasured=Date.now()+result.budgets.measuredSeconds*1000;
@@ -108,6 +126,10 @@ try{
       const p95Ms=latencies[Math.floor(latencies.length*.95)];
       const measured={player:client.player,start:client.start,before:before[n],after:after[n],samples:latencies.length,p95Ms,maxMs:latencies.at(-1)};
       phase.clients.push(measured);
+      if(client.stopWire){
+        measured.playbackEvents=await client.page.evaluate(()=>window.__ownedCaptureEvents);
+        await client.stopWire();wireObservers.splice(wireObservers.indexOf(client.stopWire),1);
+      }
       if(latencies.length<result.budgets.measuredSeconds*2||(client.player!=='peertube'&&p95Ms>result.budgets.p95GlassMs)||after[n].error||client.errors.length||
         after[n].presented-before[n].presented<result.budgets.measuredSeconds*result.budgets.minimumFramesPerSecond||
         after[n].time-before[n].time<result.budgets.measuredSeconds*result.budgets.minimumMediaSecondsPerSecond)
@@ -129,4 +151,4 @@ try{
   if(result.failures.length)throw new Error(result.failures.join(' | '));
   result.status='passed';save('complete');
 }catch(error){result.status='failed';result.error=String(error);save('failed');throw error;}
-finally{for(const context of contexts)await context.close().catch(()=>{});await browser.close();}
+finally{for(const stopWire of wireObservers)await stopWire().catch(()=>{});for(const context of contexts)await context.close().catch(()=>{});await browser.close();}

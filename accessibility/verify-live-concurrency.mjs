@@ -4,6 +4,7 @@
 import { chromium } from 'playwright';
 import { installPeerTubeWelcomeHandler } from './peertube-session.mjs';
 import {openVideoSettings,closeVideoSettings,selectVideoQuality} from './video-settings.mjs';
+import {observeLiveSegments} from './live-segment-observer.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const [manifestPath, controlUrl, evidence] = process.argv.slice(2);
@@ -12,6 +13,8 @@ const browser = await chromium.launch();
 const clients = [];
 const pages = [];
 const progress = { phases: [], status: 'running' };
+let observingSteady=false;
+const wireObservers=[];
 let peerAuth;
 const publicUrl = value => { const url = new URL(value); return `${url.origin}${url.pathname.startsWith('/plugins/') ? '/plugins/[redacted]' : url.pathname}`; };
 function checkpoint(stage) {
@@ -85,6 +88,9 @@ async function open(kind, url, delayMs, broadcast) {
     };
   },{original:setting.trackerOrigin,via:setting.trackerVia});
   const page = await context.newPage();
+  if(process.env.AP09_CONCURRENCY_TRACE==='1'&&kind==='native'&&delayMs===0){
+    wireObservers.push(observeLiveSegments(page,evidence,broadcast,()=>observingSteady));
+  }
   if (kind === 'peertube') await installPeerTubeWelcomeHandler(page);
   const diagnostic = { kind, broadcast, page, errors: [], failedRequests: [] };
   pages.push(diagnostic);
@@ -216,6 +222,7 @@ try {
   // requests finish outside the measured undelayed phase; don't wait forever
   // on Playwright's routing handler bookkeeping with continuously playing HLS.
   await pause(4500);
+  observingSteady=true;
   const steady = await phase('undelayed steady', 120);
   progress.phases.push(steady);
   const before = await control('status');
@@ -252,6 +259,9 @@ try {
     sample: await sample(client).catch(() => null), sockets: client.sockets })));
   throw error;
 } finally {
+  if(wireObservers.length){
+    progress.existingLiveResponses=(await Promise.all(wireObservers.map(finish=>finish()))).flat();
+  }
   writeFileSync(join(evidence, 'concurrent-live-progress.json'), JSON.stringify(progress, null, 2), { mode: 0o600 });
   await control('restore').catch(() => {});
   for (const client of clients) await client.context.close().catch(() => {});

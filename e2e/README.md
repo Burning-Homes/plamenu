@@ -50,6 +50,18 @@ Crash and offload drills freeze the running executable's inode and bind their
 restarts, CLI commands and processors to that copy, so a later build replacing
 the original pathname cannot change the program under test.
 
+Add `--progress-events PATH` to retain live execution evidence in a fresh JSON
+Lines file. Each event is flushed before execution continues. Collection records
+the selected inventory; test start records the current nodeid, and test finish
+records the result and duration after teardown. Every event includes completed
+and total counts plus pass, fail, skip, xfail and xpass counters. The session
+record includes source identity and the selected candidate's digest when
+`PLAMENU_BINARY` is set. A final event distinguishes a completed selected
+inventory from an interrupted run; use the release-matrix report to enforce full
+coverage. Monitoring does not change assertions, timeouts, selection or retries.
+An existing journal is never overwritten, and a runtime logging failure leaves
+test execution running while making its monitoring evidence incomplete.
+
 A fresh main database creates new instance signing keys. Reusing its old domain
 against a persistent GoToSocial leaves that peer holding the previous keys;
 authorized fetch then fails before federation assertions can run. Updating the

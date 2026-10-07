@@ -92,7 +92,15 @@ async function open(kind,{fault=false,delay=0,off=false,noJS=false,deferDecode=f
     await until(async()=>{const s=await sample(video);return s.presented>=8&&s.time>.2&&!s.error&&(!noJS?s.height===240:true);},30,'actual decoder failed startup');
     }
   } catch(error) {
-    result.failedStartup={kind,delay,off,noJS,sample:await sample(video),responses,errors,trackerContacts:sockets};
+    result.failedStartup={kind,delay,off,noJS,sample:await sample(video),responses,errors,trackerContacts:sockets,
+      playback:await video.evaluate(v=>({
+        sourceClass:!v.currentSrc?'empty':v.currentSrc.startsWith('blob:')?'blob-media-source':'resource-source',
+        profile:window.__ownedVideoProfiles?.get(v)?.()||null,
+        bufferedRanges:[...Array(v.buffered.length)].map((_,n)=>[v.buffered.start(n),v.buffered.end(n)]),
+        qualityValue:v.closest('figure')?.querySelector('.video-quality')?.value??null,
+        peerFallback:v.dataset.p2pFallback==='true',
+        paused:v.paused,seeking:v.seeking
+      }))};
     await page.screenshot({path:join(evidence,`failed-startup-${kind}.png`)});
     throw error;
   }
@@ -150,4 +158,15 @@ try{
   if(seed){result.seed=await sample(seed.video).catch(()=>null);result.actualWire=await seed.page.evaluate(()=>({...window.__ownedPeerWireFault})).catch(()=>null);}
   if(currentReceiver)result.failedReceiver={sample:await sample(currentReceiver.video).catch(()=>null),responses:currentReceiver.responses,errors:currentReceiver.errors};
   save('failed');throw error;}
-finally{for(const context of contexts)await context.close().catch(()=>{});await browser.close();}
+finally{
+  // Capture the existing seed only after every assertion has finished, so a
+  // successful attempt also preserves transient startup errors for diagnosis.
+  if(seed){
+    result.seedPlaybackProfile=await seed.page.evaluate(()=>{
+      const video=document.querySelector('video[data-hls]');
+      return video?window.__ownedVideoProfiles?.get(video)?.()||null:null;
+    }).catch(()=>null);
+    save(result.stage);
+  }
+  for(const context of contexts)await context.close().catch(()=>{});await browser.close();
+}

@@ -12,7 +12,9 @@ function fixture({live=false,paused=false,buffered=true,frames=0}={}){
   const timers=new Map(),events=new Map(),notices=[];
   const sharing={checked:true,disabled:false};
   const quality={removed:false,remove(){this.removed=true;}};
-  const figure={querySelector:selector=>selector==='.video-quality'?quality:sharing,
+  const figure={querySelector:selector=>selector==='.video-quality'?quality:
+    selector==='.media__live-recovery'?notices[0]||null:
+    selector==='.media__live-recovery a'?notices[0]?.children[0]?.children[0]||null:null,
     appendChild:child=>notices.push(child)};
   const video={dataset:{live:live?'live':undefined,p2pActive:'true'},currentTime:.25,
     duration:12,paused,readyState:buffered?4:0,isConnected:true,buffered:{length:buffered?1:0},
@@ -23,6 +25,7 @@ function fixture({live=false,paused=false,buffered=true,frames=0}={}){
   const document={hidden:false,activeElement:null,createElement:tag=>({tag,children:[],
     setAttribute(name,value){this[name]=value;},appendChild(child){this.children.push(child);}})};
   const api=runInNewContext(`let hlsPlayer=engine;${code};({watchVodStart,standardVideo,started(){adaptiveStarted=true;}})`,{
+    hlsCleanup:new WeakMap(),retired:false,original:null,originalFallback:false,profiling:false,
     video,document,choice:sharing,progressive:'https://local.test/media/film.mp4',engine:{destroy(){destroyed++;}},
     reloadExternalTracks(){},performance:{now:()=>now},
     setTimeout(fn){const task=++id;timers.set(task,fn);return task;},

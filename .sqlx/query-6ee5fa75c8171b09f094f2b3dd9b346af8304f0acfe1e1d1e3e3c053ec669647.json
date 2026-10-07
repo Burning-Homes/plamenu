@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE media_attachments\n        SET live_state = $2,\n            hls_master_url = COALESCE($3::text, hls_master_url),\n            live_permanent = COALESCE($4::bool, live_permanent),\n            remote_live_permanent_declared = $4,\n            remote_live_lifecycle_revision = remote_live_lifecycle_revision + 1\n        WHERE id = $1 AND live_state IS NOT NULL\n          AND (live_state IS DISTINCT FROM $2\n               OR ($3::text IS NOT NULL AND hls_master_url IS DISTINCT FROM $3::text)\n               OR live_permanent IS DISTINCT FROM COALESCE($4::bool, live_permanent)\n               OR remote_live_permanent_declared IS DISTINCT FROM $4)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "media_attachments",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6ee5fa75c8171b09f094f2b3dd9b346af8304f0acfe1e1d1e3e3c053ec669647"
+}

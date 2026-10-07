@@ -27,7 +27,7 @@
 //! gateway inherits that fence instead of handing a remote playlist to a
 //! process that would follow it anywhere.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock};
@@ -47,6 +47,12 @@ use crate::state::AppState;
 /// `FFmpeg` must fetch the playlist and at least one segment first, so this is
 /// a few segment durations rather than a moment.
 const START_TIMEOUT: Duration = Duration::from_secs(20);
+/// A progressive browser must see more than one closed fragment at startup.
+/// Its media cache exposes complete byte blocks, so a lone fragment can leave
+/// its trailing audio unavailable until the next publication. Two fragments
+/// start decoding with a small reserve rather than repeatedly starving audio.
+/// These are shared, already encoded bytes; there is no extra origin request.
+const START_FRAGMENTS: usize = 2;
 /// How long a session runs on with nobody watching before it is stopped. Long
 /// enough to survive a page reload or a player re-requesting the stream, short
 /// enough that a closed tab stops costing the origin promptly.
@@ -133,13 +139,13 @@ pub async fn stream(
     // Subscribe first, then take the initialization section: a fragment
     // produced while we were still setting up is one this viewer should get,
     // and `init` is always published before any fragment.
-    let fragments = session.fragments.subscribe();
-    let Some(init) = await_init(&session).await else {
+    let mut fragments = session.fragments.subscribe();
+    let Some(initial) = await_bootstrap(&session, &mut fragments).await else {
         return Err(ApiError::NotFound);
     };
 
     let body = Body::from_stream(fragment_stream(
-        init,
+        initial,
         fragments,
         guard,
         session.closed.clone(),
@@ -155,6 +161,37 @@ pub async fn stream(
         body,
     )
         .into_response())
+}
+
+/// Hold the response until the header and a bounded pair of closed fragments
+/// can be sent together. One deadline covers the entire bootstrap. A revoked,
+/// ended, or already lagged stream must not replay stale initial bytes.
+async fn await_bootstrap(
+    session: &Session,
+    fragments: &mut broadcast::Receiver<Arc<Vec<u8>>>,
+) -> Option<VecDeque<Arc<Vec<u8>>>> {
+    let mut closed = session.closed.clone();
+    let wait = async {
+        let init = await_init(session).await?;
+        let mut initial = VecDeque::with_capacity(START_FRAGMENTS + 1);
+        initial.push_back(init);
+        for _ in 0..START_FRAGMENTS {
+            if *closed.borrow() {
+                return None;
+            }
+            let fragment = tokio::select! {
+                biased;
+                _=closed.changed()=>return None,
+                received=fragments.recv()=>received.ok()?,
+            };
+            initial.push_back(fragment);
+        }
+        (!*closed.borrow()).then_some(initial)
+    };
+    tokio::time::timeout(START_TIMEOUT, wait)
+        .await
+        .ok()
+        .flatten()
 }
 
 /// Waits for the session's initialization section, giving up rather than
@@ -187,7 +224,7 @@ async fn await_init(session: &Session) -> Option<Arc<Vec<u8>>> {
 /// The response body: the initialization section, then every fragment as it is
 /// produced, until the viewer disconnects or the broadcast stops.
 fn fragment_stream(
-    init: Arc<Vec<u8>>,
+    initial: VecDeque<Arc<Vec<u8>>>,
     fragments: broadcast::Receiver<Arc<Vec<u8>>>,
     guard: ViewerGuard,
     closed: watch::Receiver<bool>,
@@ -195,14 +232,13 @@ fn fragment_stream(
     // The guard rides along in the stream's state, so the viewer count falls
     // exactly when the client disconnects and axum drops the body.
     futures_util::stream::unfold(
-        (Some(init), fragments, guard, closed),
-        |(pending, mut fragments, guard, mut closed)| async move {
+        (initial, fragments, guard, closed),
+        |(mut pending, mut fragments, guard, mut closed)| async move {
             if *closed.borrow() {
                 return None;
             }
-            let mut pending = pending;
-            if let Some(init) = pending.take() {
-                return Some((Ok(init.to_vec()), (None, fragments, guard, closed)));
+            if let Some(bytes) = pending.pop_front() {
+                return Some((Ok(bytes.to_vec()), (pending, fragments, guard, closed)));
             }
             loop {
                 let received = tokio::select! {
@@ -212,7 +248,7 @@ fn fragment_stream(
                 };
                 match received {
                     Ok(fragment) => {
-                        return Some((Ok(fragment.to_vec()), (None, fragments, guard, closed)));
+                        return Some((Ok(fragment.to_vec()), (pending, fragments, guard, closed)));
                     }
                     // Fell behind the backlog: skip to the live edge rather
                     // than ending the stream. A live viewer wants "now", not
@@ -666,7 +702,7 @@ mod tests {
         let (closed, closed_rx) = watch::channel(false);
         let viewers = Arc::new(AtomicUsize::new(1));
         let mut stream = Box::pin(fragment_stream(
-            Arc::new(vec![1]),
+            VecDeque::from([Arc::new(vec![1]), Arc::new(vec![4])]),
             receiver,
             ViewerGuard(Arc::clone(&viewers)),
             closed_rx,
@@ -680,6 +716,66 @@ mod tests {
             "revocation must outrank queued bytes"
         );
         assert_eq!(viewers.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn bootstrap_waits_for_two_fragments_and_preserves_every_byte_in_order() {
+        use std::future::Future;
+        use std::task::{Context, Waker};
+
+        let (_init_tx, init) = watch::channel(Some(Arc::new(vec![1, 2])));
+        let (_closed, closed) = watch::channel(false);
+        let (fragments, mut receiver) = broadcast::channel(16);
+        let session = Session {
+            init,
+            closed,
+            fragments: fragments.clone(),
+            viewers: Arc::new(AtomicUsize::new(1)),
+        };
+        let mut start = Box::pin(await_bootstrap(&session, &mut receiver));
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(start.as_mut().poll(&mut context).is_pending());
+        fragments.send(Arc::new(vec![3, 4])).unwrap();
+        assert!(start.as_mut().poll(&mut context).is_pending());
+        fragments.send(Arc::new(vec![5, 6])).unwrap();
+        let initial = start.await.unwrap();
+        assert_eq!(initial.len(), START_FRAGMENTS + 1);
+        let mut body = Box::pin(fragment_stream(
+            initial,
+            receiver,
+            ViewerGuard(Arc::clone(&session.viewers)),
+            session.closed.clone(),
+        ));
+        fragments.send(Arc::new(vec![7, 8])).unwrap();
+        let mut actual = Vec::new();
+        for _ in 0..4 {
+            actual.extend(body.next().await.unwrap().unwrap());
+        }
+        assert_eq!(actual, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+        drop(body);
+        assert_eq!(session.viewers.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn bootstrap_rejects_revocation_and_fragment_loss_before_response() {
+        let (_init_tx, init) = watch::channel(Some(Arc::new(vec![1])));
+        let (closed_tx, closed) = watch::channel(false);
+        let (fragments, mut receiver) = broadcast::channel(2);
+        let session = Session {
+            init,
+            closed,
+            fragments: fragments.clone(),
+            viewers: Arc::new(AtomicUsize::new(0)),
+        };
+        for byte in [2, 3, 4] {
+            fragments.send(Arc::new(vec![byte])).unwrap();
+        }
+        assert!(await_bootstrap(&session, &mut receiver).await.is_none());
+        let mut receiver = fragments.subscribe();
+        fragments.send(Arc::new(vec![5])).unwrap();
+        fragments.send(Arc::new(vec![6])).unwrap();
+        closed_tx.send(true).unwrap();
+        assert!(await_bootstrap(&session, &mut receiver).await.is_none());
     }
 
     #[tokio::test]

@@ -21,9 +21,9 @@ import pytest
 import requests
 from plamenu_e2e import config, ephemeral, peertube, unique
 from plamenu_e2e.steps import step, wait_for
+from plamenu_e2e.tracker import connect
 from tests.test_video_backup_restore import _csrf, _digest
 from websockets.exceptions import ConnectionClosed
-from websockets.sync.client import connect
 
 
 def _peer_id(number):

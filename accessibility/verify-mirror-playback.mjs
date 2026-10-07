@@ -29,9 +29,15 @@ try {
       const context=await browser.newContext({ignoreHTTPSErrors:true,javaScriptEnabled:kind!=='native-no-js',viewport:{width:peer?800:320,height:800}});
       const page=await context.newPage();
       const errors=[];
-      const mediaResponses=[],failedRequests=[];
+      const mediaResponses=[],failedRequests=[],playerEvents=[];
       let blocked=0,mirrorResponses=0,originalInit=0;
       page.on('pageerror',error=>errors.push(String(error)));
+      page.on('console',message=>{
+        const text=message.text();
+        const event=text.includes('Removed redundancy of segment URL')?'redundancy-removed':
+          /Segment .* error\./.test(text)?'segment-error':null;
+        if(event&&playerEvents.length<64)playerEvents.push({event,timeMs:Date.now()});
+      });
       const publicUrl=value=>{const url=new URL(value);return `${url.origin}${url.pathname}`;};
       page.on('requestfailed',request=>failedRequests.push({url:publicUrl(request.url()),reason:request.failure()?.errorText}));
       page.on('response',response=>{
@@ -104,9 +110,9 @@ try {
         }
         if(peer&&(!blocked||!mirrorResponses))throw new Error(`missing real PeerTube mirror decode under original-media outage ${JSON.stringify({blocked,mirrorResponses})}`);
         await page.screenshot({path:join(evidence,`mirror-${index}-${kind}.png`)});
-        observations.push({kind,initial,seek,steady,startupMs,seekMs,reflow,errors,blockedOriginalRequests:blocked,originalInitializationRanges:originalInit,actualMirrorResponses:mirrorResponses,mediaResponses});
+        observations.push({kind,initial,seek,steady,startupMs,seekMs,reflow,errors,blockedOriginalRequests:blocked,originalInitializationRanges:originalInit,actualMirrorResponses:mirrorResponses,mediaResponses,playerEvents});
       } catch(error) {
-        observations.push({kind,failure:String(error),errors,mediaResponses,failedRequests,blockedOriginalRequests:blocked,originalInitializationRanges:originalInit,actualMirrorResponses:mirrorResponses});
+        observations.push({kind,failure:String(error),errors,mediaResponses,failedRequests,blockedOriginalRequests:blocked,originalInitializationRanges:originalInit,actualMirrorResponses:mirrorResponses,playerEvents});
         await page.screenshot({path:join(evidence,`mirror-failed-${index}-${kind}.png`)}).catch(()=>{});
         throw error;
       } finally {await context.close();}
