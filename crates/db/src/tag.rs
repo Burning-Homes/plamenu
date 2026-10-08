@@ -448,7 +448,19 @@ async fn timeline_received(
         WHERE st.tag_id = $1
           AND s.visibility = 'public' AND s.reblog_of_id IS NULL
           AND s.deleted_at IS NULL -- STUBFILTER
-          AND s.ingest_provenance = 'delivery'
+          -- Boost targets are fetched as explicit resolutions, but a visible
+          -- live boost makes the original eligible for hashtag discovery.
+          AND (s.ingest_provenance = 'delivery' OR EXISTS (
+              SELECT 1 FROM statuses b
+              JOIN accounts ba ON ba.id = b.account_id
+              WHERE b.reblog_of_id = s.id
+                AND b.visibility = 'public'
+                AND b.deleted_at IS NULL -- STUBFILTER
+                AND b.ingest_provenance = 'delivery'
+                AND NOT account_hidden($2, b.account_id)
+                AND NOT account_silenced(b.account_id)
+                AND (ba.portable OR instance_domain_allowed(ba.domain))
+          ))
           AND NOT account_hidden($2, s.account_id)
           AND NOT account_silenced(s.account_id)
           AND (a.portable OR instance_domain_allowed(a.domain))
@@ -502,7 +514,19 @@ async fn timeline_published(
         JOIN accounts a ON a.id = s.account_id
         WHERE s.visibility = 'public' AND s.reblog_of_id IS NULL
           AND s.deleted_at IS NULL -- STUBFILTER
-          AND s.ingest_provenance = 'delivery'
+          -- Boost targets are fetched as explicit resolutions, but a visible
+          -- live boost makes the original eligible for hashtag discovery.
+          AND (s.ingest_provenance = 'delivery' OR EXISTS (
+              SELECT 1 FROM statuses b
+              JOIN accounts ba ON ba.id = b.account_id
+              WHERE b.reblog_of_id = s.id
+                AND b.visibility = 'public'
+                AND b.deleted_at IS NULL -- STUBFILTER
+                AND b.ingest_provenance = 'delivery'
+                AND NOT account_hidden($2, b.account_id)
+                AND NOT account_silenced(b.account_id)
+                AND (ba.portable OR instance_domain_allowed(ba.domain))
+          ))
           AND NOT account_hidden($2, s.account_id)
           AND NOT account_silenced(s.account_id)
           AND (a.portable OR instance_domain_allowed(a.domain))
@@ -831,6 +855,109 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    /// A fetched boost target belongs in hashtag discovery only while a live,
+    /// public boost visible to the viewer exists. Keep both sort modes aligned.
+    #[sqlx::test]
+    async fn timeline_includes_visible_delivered_boost_targets(pool: PgPool) {
+        let author = local(&pool, "author").await;
+        let booster = local(&pool, "booster").await;
+        let viewer = local(&pool, "viewer").await;
+        let tag_id = ensure(&pool, "FediDeck").await.unwrap();
+        let original = status::upsert_remote_with_provenance(
+            &pool,
+            status::NewRemoteStatus {
+                uri: "https://remote.example/posts/1",
+                account_id: author.id,
+                content: "<p>#FediDeck</p>",
+                created_at: time::macros::datetime!(2026-01-01 00:00 UTC),
+                visibility: "public",
+                in_reply_to_id: None,
+                in_reply_to_uri: None,
+                spoiler_text: "",
+                sensitive: false,
+                language: None,
+                url: None,
+                quote_approval_policy: 0,
+                title: None,
+                object_type: None,
+                external_url: None,
+            },
+            status::IngestProvenance::ExplicitResolution,
+        )
+        .await
+        .unwrap();
+        attach(&pool, original.id, tag_id).await.unwrap();
+        let boost = status::upsert_remote_reblog_history(
+            &pool,
+            "https://remote.example/boosts/1",
+            booster.id,
+            original.id,
+            None,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        // Each state is checked under both orderings and case-insensitive lookup.
+        let states = [
+            ("history", "public", false, "public", false, false),
+            ("delivery", "public", false, "public", false, true),
+            ("delivery", "unlisted", false, "public", false, false),
+            ("delivery", "public", true, "public", false, false),
+            ("delivery", "public", false, "private", false, false),
+            ("delivery", "public", false, "unlisted", false, false),
+            ("delivery", "public", false, "public", true, false),
+        ];
+        for (provenance, visibility, deleted, original_visibility, blocked, expected) in states {
+            sqlx::query(
+                "UPDATE statuses SET ingest_provenance = $2, visibility = $3,
+                 deleted_at = CASE WHEN $4 THEN now() ELSE NULL END WHERE id = $1",
+            )
+            .bind(boost.id)
+            .bind(provenance)
+            .bind(visibility)
+            .bind(deleted)
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query("UPDATE statuses SET visibility = $2 WHERE id = $1")
+                .bind(original.id)
+                .bind(original_visibility)
+                .execute(&pool)
+                .await
+                .unwrap();
+            if blocked {
+                crate::block::create(&pool, viewer.id, booster.id, None)
+                    .await
+                    .unwrap();
+            }
+            for order in [TimelineOrder::Published, TimelineOrder::Received] {
+                let rows = timeline(&pool, "fedideck", Some(viewer.id), order, None, 20)
+                    .await
+                    .unwrap();
+                let expected_ids = if expected { vec![original.id] } else { vec![] };
+                assert_eq!(
+                    rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+                    expected_ids
+                );
+                assert!(
+                    timeline(
+                        &pool,
+                        "FEDIDECK",
+                        Some(viewer.id),
+                        order,
+                        Some(original.id),
+                        20
+                    )
+                    .await
+                    .unwrap()
+                    .is_empty(),
+                    "the original's cursor must exclude it under either ordering"
+                );
+            }
+        }
     }
 
     /// A late-arriving old post sinks to its publish date under the default

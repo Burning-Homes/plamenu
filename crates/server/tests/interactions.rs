@@ -1372,6 +1372,7 @@ async fn remote_interactions_arrive_and_undo(pool: PgPool) {
 #[sqlx::test(migrations = "../db/migrations")]
 async fn remote_boost_of_unseen_post_is_fetched_and_surfaces(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
+    common::open_previews(&pool).await;
 
     // The booster we follow, and the stranger whose post they boost — a post
     // authored on a third host that our instance has never encountered.
@@ -1392,6 +1393,8 @@ async fn remote_boost_of_unseen_post_is_fetched_and_surfaces(pool: PgPool) {
             "content": "<p>a post from across the network</p>",
             "published": "2026-03-01T00:00:00Z",
             "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "tag": [{"type": "Hashtag", "name": "#FediDeck",
+                     "href": "https://other.example/tags/fedideck"}],
         }),
     );
 
@@ -1459,6 +1462,42 @@ async fn remote_boost_of_unseen_post_is_fetched_and_surfaces(pool: PgPool) {
         "<p>a post from across the network</p>"
     );
     assert_eq!(home[0]["reblog"]["account"]["acct"], "author@other.example");
+
+    // Clicking a fetched boost's hashtag must find the original even though
+    // its provenance is explicit_resolution rather than direct delivery.
+    assert_eq!(
+        status::ingest_provenance(&pool, ingested.id)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("explicit_resolution")
+    );
+    let (code, tagged) = api(
+        app(),
+        "GET",
+        "/api/v1/timelines/tag/fedideck",
+        Some(&alice_token),
+        None,
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(tagged.as_array().unwrap().len(), 1, "{tagged}");
+    assert_eq!(tagged[0]["id"], ingested.id.to_string());
+    assert!(tagged[0]["reblog"].is_null(), "return the original once");
+
+    let page = app()
+        .oneshot(
+            Request::builder()
+                .uri("/tags/fedideck")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    let bytes = page.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(html.contains("a post from across the network"), "{html}");
 }
 
 /// Pleroma's `Undo` carries only the original activity's id — a bare string
