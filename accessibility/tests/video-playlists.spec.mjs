@@ -3,6 +3,20 @@ import AxeBuilder from '@axe-core/playwright';
 import { randomUUID } from 'node:crypto';
 import { signIn, openVideoOptions, createVideoChannel ,videoChannelForm} from '../session.mjs';
 
+test.afterEach(async ({page}, info) => {
+  if (info.status === info.expectedStatus || page.isClosed()) return;
+  const player = page.locator('.video-playlist__player video').first();
+  if (!await player.count()) return;
+  const state = await player.evaluate(video => ({
+    time:video.currentTime, duration:video.duration, ready:video.readyState,
+    paused:video.paused, seeking:video.seeking, error:video.error?.code || null,
+    frames:video.getVideoPlaybackQuality().totalVideoFrames,
+    fallback:video.dataset.p2pFallback || null,
+    profile:window.__ownedVideoProfiles?.get(video)?.() || null,
+  }));
+  await info.attach('playlist-playback-state', {body:JSON.stringify(state,null,2),contentType:'application/json'});
+});
+
 async function scan(page, noScript) {
   const widths = await page.evaluate(() => [innerWidth, document.documentElement.scrollWidth]);
   expect(widths[1]).toBeLessThanOrEqual(widths[0]);
@@ -16,6 +30,7 @@ function form(page, op) { return page.locator(`form:has(input[name="operation"][
 async function journey(page, info) {
   test.setTimeout(180_000);
   const noScript = info.project.use.javaScriptEnabled === false;
+  if (!noScript) await page.addInitScript(() => { window.__ownedVideoProfile = true; });
   await signIn(page);
   await page.goto('/videos/upload');await openVideoOptions(page);
   const project = info.project.name.split('-').map(word=>word[0]).join('');
@@ -83,6 +98,9 @@ async function journey(page, info) {
   const player = page.locator('.video-playlist__player video').first();
   expect(await (await page.request.get(page.url())).text()).toContain('#t=1,2');
   if (noScript) expect(await player.getAttribute('src')).toContain('#t=1,2');
+  // Moving an entry leaves the viewport at its edit form, below the video.
+  // WebKit mobile suspends offscreen decoding: exercise visible playback.
+  await player.scrollIntoViewIfNeeded();
   // The normal JS player intentionally pauses the initial MP4 play request
   // while handing over to HLS. Verify decoded playback, not that promise.
   await player.evaluate(async video => {

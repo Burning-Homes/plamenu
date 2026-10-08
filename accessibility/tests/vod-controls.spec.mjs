@@ -46,14 +46,16 @@ async function fixture(page, options = {}) {
   await page.addInitScript(() => {
     window.controlEvents=[];
     for (const kind of ['pointerdown','pointerup','pointercancel','lostpointercapture','input','change',
-      'keydown','loadedmetadata','durationchange','emptied','timeupdate','seeking','seeked']) {
+      'keydown','loadedmetadata','durationchange','emptied','timeupdate','seeking','seeked','play','playing','pause','ended','error']) {
       document.addEventListener(kind,event => {
         if (!(event.target instanceof HTMLMediaElement) && event.target.getAttribute?.('aria-label')!=='Seek') return;
         const video=document.querySelector('video');
         if (window.controlEvents.length>=80) return;
         window.controlEvents.push({kind,value:document.querySelector('[aria-label="Seek"]')?.value,
           time:video?.currentTime,ready:video?.readyState,seeking:video?.seeking,duration:video?.duration,
-          seekable:video?.seekable.length,error:video?.error?.code});
+          seekable:video?.seekable.length,error:video?.error?.code,key:event.key,repeat:event.repeat,
+          paused:video?.paused,ended:video?.ended,muted:video?.muted,controls:video?.controls,
+          frames:video?.getVideoPlaybackQuality().totalVideoFrames});
       },true);
     }
   });
@@ -115,6 +117,64 @@ test('VOD pointer cancel restores position and pointer release commits once', as
   expect(requests.media).toBe(0);
   await page.locator('video').evaluate(video=>video.closest('figure').remove());
   await expect(page.locator('.vod-player')).toHaveCount(0);
+});
+
+test('VOD video surface routes keyboard and pointer playback once', async ({page}) => {
+  const requests = await fixture(page);
+  const video = page.locator('video');
+  await expect(page.getByRole('button', {name:'Play',exact:true})).toBeVisible();
+  expect(await video.evaluate(v => v.controls)).toBe(false);
+  // Decode is verified by the first-party framed history journey. This case
+  // isolates duplicate shortcut delivery and modifier/repeat handling.
+  await video.evaluate(v => {
+    let paused = true;
+    window.playbackCalls = [];
+    Object.defineProperty(v, 'paused', {get:()=>paused});
+    v.play = () => {
+      paused = false; window.playbackCalls.push('play'); v.dispatchEvent(new Event('play'));
+      return Promise.resolve();
+    };
+    v.pause = () => { paused = true; window.playbackCalls.push('pause'); v.dispatchEvent(new Event('pause')); };
+  });
+  await video.dispatchEvent('keydown', {key:' ',ctrlKey:true});
+  expect(await page.evaluate(() => window.playbackCalls)).toEqual([]);
+  await video.focus();
+  await video.press('Space');
+  await expect(page.getByRole('button', {name:'Pause',exact:true})).toBeVisible();
+  await video.dispatchEvent('keydown', {key:' ',repeat:true});
+  expect(await page.evaluate(() => window.playbackCalls)).toEqual(['play']);
+  await video.press('Space');
+  await video.press('Enter');
+  await video.click();
+  await page.getByRole('button', {name:'Play',exact:true}).press('Space');
+  await video.click();
+  expect(await page.evaluate(() => window.playbackCalls)).toEqual(['play','pause','play','pause','play','pause']);
+  expect(await video.evaluate(v => v.paused)).toBe(true);
+  expect(requests.media).toBe(0);
+});
+
+test('VOD transient zero metadata preserves controls and pending seek', async ({page}) => {
+  await fixture(page);
+  const seek = page.getByRole('slider', {name:'Seek',exact:true});
+  await expect(seek).toBeVisible();
+  await seek.evaluate(input => {
+    const video = document.querySelector('video');
+    let ready = 0, duration = 0, position = 0;
+    Object.defineProperty(video, 'readyState', {get:()=>ready});
+    Object.defineProperty(video, 'duration', {get:()=>duration});
+    Object.defineProperty(video, 'currentTime', {get:()=>position,set:value=>{position=value;}});
+    video.load = ()=>{};
+    input.value = '2';
+    input.dispatchEvent(new Event('change'));
+    ready = 4;
+    video.dispatchEvent(new Event('loadedmetadata'));
+    if (video.controls) throw new Error('Transient zero duration discarded enhanced controls');
+    duration = 3;
+    video.dispatchEvent(new Event('durationchange'));
+  });
+  await expect.poll(() => page.locator('video').evaluate(v => v.currentTime)).toBe(2);
+  await expect(seek).toHaveValue('2');
+  expect(await page.locator('video').evaluate(v => v.controls)).toBe(false);
 });
 
 test('VOD captions follow replaced tracks and playback state', async ({page}) => {

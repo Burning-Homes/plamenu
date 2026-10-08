@@ -5057,7 +5057,17 @@
         } else if (video.dataset.hls) video.play().catch(() => {});
         else video.load();
       };
-      listen(play, 'click', () => { if (video.paused) video.play().catch(() => {}); else video.pause(); });
+      const togglePlayback = () => { if (video.paused) video.play().catch(() => {}); else video.pause(); };
+      listen(play, 'click', togglePlayback);
+      listen(video, 'click', event => {
+        if (!video.controls && !event.defaultPrevented && event.button === 0) togglePlayback();
+      });
+      listen(video, 'keydown', event => {
+        if (video.controls || event.defaultPrevented || event.target !== video
+          || event.altKey || event.ctrlKey || event.metaKey || ![' ', 'Enter'].includes(event.key)) return;
+        event.preventDefault();
+        if (!event.repeat) togglePlayback();
+      });
       listen(mute, 'click', () => { video.muted = !video.muted; });
       listen(volume, 'input', () => { video.volume = Number(volume.value); video.muted = video.volume === 0; });
       listen(speed, 'change', () => { video.playbackRate = Number(speed.value); });
@@ -5119,8 +5129,11 @@
       listen(document, 'fullscreenchange', sync);
       ['webkitbeginfullscreen', 'enterpictureinpicture', 'leavepictureinpicture', 'webkitpresentationmodechanged'].forEach(kind => listen(video, kind, sync));
       ['play', 'pause', 'playing', 'ended', 'timeupdate', 'volumechange', 'ratechange', 'seeked'].forEach(kind => listen(video, kind, sync));
-      listen(video, 'loadedmetadata', () => {
-        if (!Number.isFinite(video.duration) || video.duration <= 0) return dispose();
+      const syncMetadata = () => {
+        if (!Number.isFinite(video.duration)) return dispose();
+        // WebKit can expose zero while completing an MP4 range read. Keep
+        // the known storyboard duration until the finite media duration lands.
+        if (video.duration <= 0) return;
         duration = video.duration; seek.max = String(duration);
         // Engine fallback listeners can restore the previous position in this
         // same metadata event. Apply the explicit user intent after them.
@@ -5129,12 +5142,12 @@
           video.currentTime = clamp(pending); pending = null; sync();
         });
         syncCaptions(); sync();
-      });
+      };
+      listen(video, 'loadedmetadata', syncMetadata);
       listen(video, 'emptied', () => { release(); hidePreview(); sync(); });
       listen(video, 'durationchange', () => {
         if (video.readyState < HTMLMediaElement.HAVE_METADATA) return;
-        if (!Number.isFinite(video.duration) || video.duration <= 0) return dispose();
-        duration = video.duration; seek.max = String(duration); release(); hidePreview(); sync();
+        release(); hidePreview(); syncMetadata();
       });
       // A media error can still trigger the existing engine fallback. Return
       // native chrome immediately rather than trapping it behind broken UI.

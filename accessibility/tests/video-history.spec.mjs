@@ -214,15 +214,17 @@ async function journey(page,noScript){
     const embeddedVideo=frame.locator('video').first();
     await embeddedVideo.scrollIntoViewIfNeeded();
     await embeddedVideo.evaluate(v=>{v.muted=true;});
-    if(page.context().browser().browserType().name()==='webkit'){
-      // WebKit exposes its native start control in the video centre, but a
-      // focused <video> does not implement Chromium's Space shortcut.
-      await embeddedVideo.click();
-    }else{
-      await embeddedVideo.focus();
-      await embeddedVideo.press('Space');
-    }
+    await embeddedVideo.focus();
+    await embeddedVideo.press('Space');
     await decoded(embeddedVideo);
+    if(!noScript){
+      const frames=await embeddedVideo.evaluate(v=>v.getVideoPlaybackQuality().totalVideoFrames);
+      await embeddedVideo.press('Space');
+      await expect.poll(()=>embeddedVideo.evaluate(v=>v.paused)).toBe(true);
+      await embeddedVideo.click();
+      await expect.poll(()=>embeddedVideo.evaluate(v=>v.paused)).toBe(false);
+      await expect.poll(()=>embeddedVideo.evaluate(v=>v.getVideoPlaybackQuality().totalVideoFrames)).toBeGreaterThan(frames);
+    }
     expect(freshConnections.filter(url=>/\/tracker\/socket|p2p-media-loader/.test(url))).toEqual([]);
   }finally{await fresh.close();}
   await page.goto('/videos/history');
