@@ -116,6 +116,26 @@ impl ViewerClock {
         self.wall_clock(&zoned)
     }
 
+    /// A calendar bucket is already a local date, not an instant to shift.
+    /// Keep its language and field order consistent with other native dates.
+    #[must_use]
+    pub fn calendar_date(&self, date: time::Date) -> String {
+        let month = self.month_abbr(i8::try_from(u8::from(date.month())).unwrap_or(1));
+        if self.locale.tag() == "ru" {
+            format!("{} {month} {}", date.day(), date.year())
+        } else {
+            format!("{month} {}, {}", date.day(), date.year())
+        }
+    }
+    #[must_use]
+    pub fn calendar_month(&self, date: time::Date) -> String {
+        format!(
+            "{} {}",
+            self.month_abbr(i8::try_from(u8::from(date.month())).unwrap_or(1)),
+            date.year()
+        )
+    }
+
     /// [`ViewerClock::stamp`] for a value that arrives as RFC 3339 text (the
     /// shape `entities` stores). Falls back to the raw string on a parse
     /// failure rather than dropping the value.

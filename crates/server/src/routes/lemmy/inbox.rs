@@ -367,6 +367,7 @@ pub async fn create_private_message(
     let (status, _) = crate::actions::post_status_for_application(
         &state,
         PostParams {
+            music: None,
             username: &current.account.username,
             text: &text,
             visibility: "direct",

@@ -2720,21 +2720,20 @@ async fn unread_dot_lights_the_bell_until_the_page_is_opened(pool: PgPool) {
     assert!(home.body.contains("bell__dot"), "bell lights up");
     assert!(home.body.contains("(new)"));
 
-    // Opening the notifications page reads everything: the shared marker
-    // advances to the newest notification and this very render clears the dot.
+    // Both inbox URLs share explicit read behavior. Opening one does not
+    // silently consume unread activity; the visible Mark all read action does.
     let page = get(&app, "/notifications", Some(&cookie)).await;
     assert_eq!(page.status, StatusCode::OK);
-    assert!(!page.body.contains("bell__dot"), "reading clears the bell");
-
-    let user = plamenu_db::user::find_by_account_id(&pool, alice.id)
-        .await
-        .unwrap()
-        .unwrap();
-    let marker = plamenu_db::marker::find(&pool, user.id, "notifications")
-        .await
-        .unwrap()
-        .expect("opening the page saved a marker");
-    assert!(marker.last_read_id > 0);
+    assert!(page.body.contains("bell__dot"));
+    let csrf = csrf_of(&page.body);
+    let read = post_form(
+        &app,
+        "/web/notifications/inbox",
+        &cookie,
+        &[("csrf", &csrf), ("operation", "all")],
+    )
+    .await;
+    assert_eq!(read.status, StatusCode::SEE_OTHER);
 
     // And it stays cleared afterwards.
     let home = get(&app, "/", Some(&cookie)).await;
@@ -14679,7 +14678,7 @@ async fn conversations_page_tracks_direct_threads(pool: PgPool) {
     // An empty inbox educates instead of listing.
     let page = get(&app, "/conversations", Some(&alice)).await;
     assert_eq!(page.status, StatusCode::OK);
-    assert!(page.body.contains("Nothing here yet"), "{}", page.body);
+    assert!(page.body.contains("No conversations yet"), "{}", page.body);
     assert!(!page.body.contains("data-conversation-id"));
 
     let bob = login_as(&app, "bob@example.com", PASSWORD).await;
@@ -14691,7 +14690,7 @@ async fn conversations_page_tracks_direct_threads(pool: PgPool) {
     assert!(page.body.contains("data-conversation-id"));
     assert!(page.body.contains("is-unread"));
     assert!(page.body.contains("psst, tuesday?"));
-    assert!(page.body.contains("Menu (new private mentions)"));
+    assert!(page.body.contains("aria-label=\"Menu (new messages)\""));
 
     // Opening the thread reads it — the GET side effect, no JS involved.
     assert_eq!(
@@ -14701,7 +14700,7 @@ async fn conversations_page_tracks_direct_threads(pool: PgPool) {
     let page = get(&app, "/conversations", Some(&alice)).await;
     assert!(page.body.contains("data-conversation-id"));
     assert!(!page.body.contains("is-unread"));
-    assert!(!page.body.contains("Menu (new private mentions)"));
+    assert!(!page.body.contains("aria-label=\"Menu (new messages)\""));
 
     // The sender's own row was never unread (own sends don't self-flag).
     let page = get(&app, "/conversations", Some(&bob)).await;
@@ -14777,7 +14776,7 @@ async fn conversation_row_verbs(pool: PgPool) {
     assert_eq!(removed.status, StatusCode::SEE_OTHER);
     let page = get(&app, "/conversations", Some(&alice)).await;
     assert!(!page.body.contains("data-conversation-id"));
-    assert!(page.body.contains("Nothing here yet"));
+    assert!(page.body.contains("No conversations yet"));
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
@@ -17732,4 +17731,267 @@ async fn channel_manager_uploads_shared_profile_images_with_editor_authority(poo
         .unwrap();
         std::fs::write(format!("{dir}/channel.html"), public.body).unwrap();
     }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn client_messages_have_one_badge_and_shared_read_state(pool: PgPool) {
+    let alice = seed_user(&pool, "alice", EMAIL, PASSWORD).await;
+    let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
+    let app = common::test_app(pool.clone());
+    let sender = login(&app).await;
+    let page = get(&app, "/compose?visibility=direct", Some(&sender)).await;
+    assert!(page.body.contains("name=\"recipients\""));
+    let csrf = csrf_of(&page.body);
+    let sent = post_multipart(
+        &app,
+        "/web/compose",
+        &sender,
+        &[
+            ("csrf", &csrf),
+            ("post_kind", "note"),
+            ("visibility", "direct"),
+            ("recipients", "@bob"),
+            ("status", "A message without handles in its body"),
+        ],
+    )
+    .await;
+    assert_eq!(sent.status, StatusCode::SEE_OTHER, "{}", sent.body);
+    let thread = sent.location.unwrap();
+    let recipient = login_as(&app, "bob@example.com", PASSWORD).await;
+    let messages = get(&app, "/conversations", Some(&recipient)).await;
+    assert!(
+        messages
+            .body
+            .contains("A message without handles in its body")
+    );
+    assert!(messages.body.contains("is-unread"));
+    assert!(
+        !messages.body.contains("class=\"status__actions\""),
+        "Inbox previews are not complete timeline cards"
+    );
+    let inbox = get(&app, "/notifications", Some(&recipient)).await;
+    assert!(
+        !inbox.body.contains("A message without handles in its body"),
+        "Direct messages are not duplicated in activity"
+    );
+    let uid = user::find_by_account_id(&pool, bob.id)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+    assert!(
+        !notification::has_unread_activity(&pool, uid, bob.id)
+            .await
+            .unwrap()
+    );
+    assert!(
+        plamenu_db::conversation::has_unread(&pool, bob.id)
+            .await
+            .unwrap()
+    );
+    let read_page = get(&app, &thread, Some(&recipient)).await;
+    assert!(
+        !read_page
+            .body
+            .contains("aria-label=\"Menu (new messages)\""),
+        "The reading response already reflects the new state"
+    );
+    assert!(!notification::has_unread(&pool, uid, bob.id).await.unwrap());
+    assert!(
+        !plamenu_db::conversation::has_unread(&pool, bob.id)
+            .await
+            .unwrap()
+    );
+    let row = plamenu_db::conversation::list(&pool, bob.id, None, None, None, 20)
+        .await
+        .unwrap()
+        .remove(0);
+    plamenu_db::conversation::set_unread(&pool, bob.id, row.id, true)
+        .await
+        .unwrap();
+    let notification_id: i64 = sqlx::query_scalar(
+        "SELECT id FROM notifications WHERE account_id=$1 AND from_account_id=$2 LIMIT 1",
+    )
+    .bind(bob.id)
+    .bind(alice.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(notification::has_unread(&pool, uid, bob.id).await.unwrap());
+    assert!(
+        !plamenu_db::notification_read::set_read(&pool, alice.id, notification_id, true)
+            .await
+            .unwrap()
+    );
+    assert!(
+        plamenu_db::conversation::has_unread(&pool, bob.id)
+            .await
+            .unwrap()
+    );
+    plamenu_db::notification_read::set_read(&pool, bob.id, notification_id, true)
+        .await
+        .unwrap();
+    assert!(
+        !plamenu_db::conversation::has_unread(&pool, bob.id)
+            .await
+            .unwrap()
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn client_can_reuse_owned_media_in_a_note_without_changing_the_original(pool: PgPool) {
+    let alice = seed_user(&pool, "alice", EMAIL, PASSWORD).await;
+    seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
+    let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
+    state
+        .media
+        .put("reusable.wav", b"test audio bytes".to_vec())
+        .await
+        .unwrap();
+    let source_id = id::next();
+    let mut input = media::NewLocalMedia::new(alice.id, source_id, "reusable.wav", "audio/wav");
+    input.kind = "audio";
+    input.description = Some("A recording to reuse");
+    media::create_local(&pool, input).await.unwrap();
+    let app = build_router(state.clone());
+    let cookie = login(&app).await;
+    let csrf = csrf_of(&get(&app, "/compose", Some(&cookie)).await.body);
+    let original = post_multipart(
+        &app,
+        "/web/compose",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("post_kind", "note"),
+            ("status", "First note"),
+            ("media_keep[]", &source_id.to_string()),
+        ],
+    )
+    .await;
+    assert_eq!(original.status, StatusCode::SEE_OTHER, "{}", original.body);
+    let original_row = media::find_owned(&pool, source_id, alice.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let reused = post_multipart(
+        &app,
+        "/web/compose",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("post_kind", "note"),
+            ("status", "Another note"),
+            ("reuse_media[]", &format!("media:{source_id}")),
+        ],
+    )
+    .await;
+    assert_eq!(reused.status, StatusCode::SEE_OTHER, "{}", reused.body);
+    let copied:(i64,String,String)=sqlx::query_as("SELECT m.id,m.file_name,COALESCE(s.object_type,'Note') FROM media_attachments m JOIN statuses s ON s.id=m.status_id WHERE m.account_id=$1 AND m.id<>$2 ORDER BY m.id DESC LIMIT 1")
+        .bind(alice.id).bind(source_id).fetch_one(&pool).await.unwrap();
+    assert_ne!(copied.1, "reusable.wav");
+    assert_eq!(copied.2, "Note");
+    assert_eq!(
+        state.media.get(&copied.1).await.unwrap(),
+        b"test audio bytes"
+    );
+    assert_eq!(
+        media::find_owned(&pool, source_id, alice.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status_id,
+        original_row.status_id
+    );
+    let bob = login_as(&app, "bob@example.com", PASSWORD).await;
+    let csrf = csrf_of(&get(&app, "/compose", Some(&bob)).await.body);
+    let forged = post_multipart(
+        &app,
+        "/web/compose",
+        &bob,
+        &[
+            ("csrf", &csrf),
+            ("status", "Not mine"),
+            ("reuse_media[]", &format!("media:{source_id}")),
+        ],
+    )
+    .await;
+    assert_eq!(forged.status, StatusCode::NOT_FOUND);
+    state.media.delete("reusable.wav").await.unwrap();
+    assert_eq!(
+        state.media.get(&copied.1).await.unwrap(),
+        b"test audio bytes",
+        "Independent storage survives original cleanup"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn client_first_video_and_live_setup_do_not_require_channel_address_creation(pool: PgPool) {
+    let alice = seed_user(&pool, "alice", EMAIL, PASSWORD).await;
+    let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
+    let app = build_router(state.clone());
+    let cookie = login(&app).await;
+    for route in ["/videos/upload", "/videos/live/new"] {
+        let page = get(&app, route, Some(&cookie)).await;
+        assert_eq!(page.status, StatusCode::OK);
+        assert!(
+            page.body.contains("name=\"channel\" value=\"default\""),
+            "{route}"
+        );
+        assert!(
+            !page.body.contains("name=\"display_name\""),
+            "{route} should begin with the content, not channel setup"
+        );
+    }
+    let (first, second) = tokio::join!(
+        plamenu::video::default_channel(&state, &alice),
+        plamenu::video::default_channel(&state, &alice)
+    );
+    assert_eq!(first.unwrap().id, second.unwrap().id);
+    assert_eq!(
+        plamenu_db::video::owned_channels(&pool, alice.id)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn client_unknown_message_recipient_keeps_the_draft(pool: PgPool) {
+    let alice = seed_user(&pool, "alice", EMAIL, PASSWORD).await;
+    let app = build_router(common::test_state_with(
+        pool.clone(),
+        StubFederation::with_actors([]),
+    ));
+    let cookie = login(&app).await;
+    let csrf = csrf_of(
+        &get(&app, "/compose?visibility=direct", Some(&cookie))
+            .await
+            .body,
+    );
+    let result = post_multipart(
+        &app,
+        "/web/compose",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("visibility", "direct"),
+            ("recipients", "@unavailable_person"),
+            ("status", "Please send me the recording."),
+        ],
+    )
+    .await;
+    assert!(
+        result.body.contains("A recipient could not be found"),
+        "{}",
+        result.body
+    );
+    assert!(result.body.contains("Please send me the recording."));
+    assert!(result.body.contains("@unavailable_person"));
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM statuses WHERE account_id=$1")
+        .bind(alice.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
 }

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH delivery_kinds AS MATERIALIZED (\n            SELECT CASE WHEN NOT EXISTS (\n                SELECT 1 FROM notification_delivery_preferences\n                WHERE account_id=$1 AND NOT in_app\n            ) THEN $4::text[] ELSE ARRAY(\n                SELECT kind FROM unnest(COALESCE($4::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)\n                WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p\n                    WHERE p.account_id=$1 AND p.kind=k.kind AND NOT p.in_app)\n            ) END AS kinds\n        )\n        SELECT COUNT(*) AS \"count!\"\n        FROM (\n            SELECT 1 AS one\n            FROM notifications n\n            WHERE account_id = $1 AND ($2::bigint IS NULL OR id > $2)\n              AND notification_kind_for(reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL\n              AND ($5::bigint IS NULL OR from_account_id = $5)\n              AND ($6 OR NOT filtered)\n              AND NOT sender_filtered($1, n.from_account_id)\n            LIMIT $3\n        ) AS capped\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "TextArray",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1296333fa20fad4b1425cfe6701e29f3786d92976a0cbff3d0d35aa4a2e6d586"
+}

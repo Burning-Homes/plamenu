@@ -4,7 +4,7 @@ nav-home = Главная
 nav-live-feeds = Ленты
 nav-search = Поиск
 nav-notifications = Уведомления
-nav-private-mentions = Личные упоминания
+nav-private-mentions = Сообщения
 nav-bookmarks = Закладки
 nav-favourites = Избранное
 nav-lists = Списки
@@ -191,9 +191,9 @@ videos-live-schedule-added = Дата добавлена в список выш�
 videos-live-schedule-duplicate = Эта дата и время уже есть в списке.
 videos-live-schedule-hint = Это публичное объявление о времени эфира, а не автоматический запуск или ограничение подключения. Оставьте поле пустым, чтобы убрать дату. Часовой пояс:
 videos-live-save-schedule = Сохранить время начала
-videos-live-create = Создать ожидающий эфир
+videos-live-create = Перейти к настройке камеры
 videos-live-manage = Управление прямым эфиром
-videos-live-waiting = Ожидание кодировщика
+videos-live-waiting = Эфир не начат — выберите камеру, экран или приложение для трансляций
 videos-live-secret = Ключ трансляции
 videos-live-secret-once = Этот ключ показан только сейчас. Сохраните его надёжно. При смене прежний ключ перестанет разрешать новые подключения, а работающий с ним кодировщик остановится через несколько секунд.
 videos-live-server = Обычный RTMP-сервер (только доверенная сеть)
@@ -204,7 +204,7 @@ videos-live-https-help = Для удалённого FFmpeg-кодировщик
 videos-live-rotate = Заменить ключ трансляции
 videos-live-rotate-warning = Смена ключа остановит работающий кодировщик RTMP или HTTPS и сохранит запись. Разовый эфир завершится; повторяющийся можно начать заново с новым ключом. Трансляция с камеры или экрана браузера не затронута.
 videos-live-key-hidden = Ключ трансляции скрыт после создания. Замените его, чтобы получить новый.
-videos-live-state-waiting = Ожидание кодировщика
+videos-live-state-waiting = Эфир не начат — выберите камеру, экран или приложение для трансляций
 videos-live-state-live = Прямой эфир
 videos-live-state-interrupted = Соединение прервано
 videos-live-reconnect-help = Восстановите подключение кодировщика в течение минуты, чтобы сохранить трансляцию. Воспроизведение приостановлено до начала нового сеанса; после истечения срока разовая трансляция завершится, а повторяющаяся вернётся в ожидание.
@@ -443,7 +443,7 @@ nav-sign-in = Войти
 nav-sign-out = Выйти
 nav-switch-account = Сменить аккаунт
 nav-menu = Меню
-nav-menu-new-private = Меню (есть новые личные упоминания)
+nav-menu-new-private = Меню (новые сообщения)
 
 auth-choose-account = Выберите аккаунт
 auth-current-account = Текущий
@@ -467,10 +467,10 @@ page-favourites = Избранное
 page-favourites-empty = У вас пока нет публикаций в избранном.
 page-notifications = Уведомления
 page-notifications-empty = Уведомлений пока нет.
-page-private-mentions = Личные упоминания
+page-private-mentions = Сообщения
 page-private-mentions-help = Личные упоминания — это обычные публикации, видимые только упомянутым в них людям. Они не защищены сквозным шифрованием, и администраторы обоих серверов могут их прочитать.
-page-private-mentions-new = Новое личное упоминание
-page-private-mentions-empty = Здесь пока ничего нет. Чтобы начать разговор, упомяните кого-нибудь в публикации с видимостью «Личное упоминание». Сообщения от людей, подпадающих под ваши фильтры, ожидают в запросах уведомлений.
+page-private-mentions-new = Новое сообщение
+page-private-mentions-empty = Разговоров пока нет. Напишите кому-нибудь на Plamenu или другом сервере.
 page-search = Поиск
 page-search-placeholder = Поиск публикаций, людей и хэштегов
 page-search-help = Ищите публикации, людей и хэштеги.
@@ -2391,3 +2391,777 @@ video-player-fullscreen = На весь экран
 video-player-settings = Настройки воспроизведения
 video-player-speed = Скорость воспроизведения
 video-player-pip = Картинка в картинке
+
+compose-kind-audio = Аудио
+compose-compatibility-audio = Публикует объект Audio с названием и одним аудиовложением.
+    Музыкальные серверы и социальные клиенты получают одну и ту же публикацию.
+    Добавьте расшифровку, если речь или слова песни несут информацию.
+
+compose-audio-title = Название аудио
+compose-audio-description = Описание
+compose-placeholder-audio = Опишите эту запись…
+
+music-metadata = Данные о музыке
+music-artist = Исполнитель
+music-album = Альбом
+music-genre = Жанр
+music-title = Музыка
+music-hub-search = Найти музыку или вставить ссылку
+music-hub-placeholder = Песня, исполнитель, альбом или https://…
+music-hub-search-hint = Найдите песню, исполнителя или альбом либо вставьте ссылку на музыку.
+music-browse-types = Найти аудио
+music-browse-available = Слушать сейчас
+music-browse-servers = Подключённые каталоги
+music-browse-servers-hint = Откройте каталог сайта, чтобы найти больше песен, альбомов и радиоэфиров.
+music-browse-empty = Здесь пока нет подходящих песен. Вставьте ссылку на музыкальный сайт или альбом, откройте радио и подкасты или загрузите своё аудио.
+music-audio-posts = Публикации с аудио
+music-more-local = Ещё загруженное аудио
+music-more-remote = Ещё музыка с других сайтов
+music-live-radio = Радио в эфире
+music-upload-audio = Загрузить аудио
+music-now-playing = Сейчас играет
+music-play-now = Слушать
+music-post-options = Действия с аудио
+music-player-queue-tools = Действия с очередью
+music-player-advanced = Дополнительные настройки воспроизведения
+music-player-browse = Найти ещё музыку
+music-library-empty-hint = Сохраняйте песни и альбомы во время просмотра. Ваши загрузки и понравившаяся музыка тоже появятся здесь.
+music-library-tools = Управление медиатекой
+music-browse = Находите, слушайте и публикуйте аудио.
+music-publish = Опубликовать аудио
+music-empty = Нет подходящих аудиопубликаций.
+music-search = Поиск по названию, исполнителю или альбому
+music-search-submit = Найти
+music-mine = Мои аудио
+music-public = Общедоступные аудио
+music-older = Более ранние аудио
+
+music-year = Год выпуска
+music-track-number = Номер трека
+music-disc-number = Номер диска
+music-mbid = Идентификатор записи MusicBrainz
+
+compose-open-attachment = Открыть вложение
+
+music-subscriptions = Музыкальные подписки
+music-subscription-hint = Подпишитесь на публичную музыкальную библиотеку или композицию по её адресу ActivityPub. Музыкальные подписки не являются подписками на аккаунты.
+music-follow-url = Адрес музыкальной библиотеки или композиции
+music-follow = Подписаться на музыку
+music-unfollow = Отписаться
+music-follow-pending = Ожидает подтверждения
+
+music-follow-track = Подписаться на обновления композиции
+
+music-follow-unavailable = Этот музыкальный объект недоступен или не поддерживает подписку.
+
+music-assets-title = Загруженное аудио
+music-assets-mine = Мои треки
+music-assets-upload = Загрузить аудио
+music-assets-upload-hint = Выберите аудиофайл. Название, исполнителя и альбом можно указать сейчас или изменить позже.
+music-assets-file = Аудиофайл
+music-assets-edit = Изменить трек
+music-assets-visibility = Кто может слушать
+music-assets-private = Только я и те, кому я предоставил доступ
+music-assets-local = Авторизованные участники этого сервера
+music-assets-save = Сохранить трек
+music-assets-download = Скачать исходный аудиофайл
+music-assets-share = Предоставить доступ участнику
+music-assets-member = Локальное имя пользователя
+music-assets-grant = Предоставить доступ
+music-assets-revoke = Отозвать доступ
+music-assets-delete = Удалить трек и его аудиофайлы
+
+music-collections-title = Библиотеки и плейлисты
+music-collections-mine = Мои коллекции
+music-collection-create = Создать коллекцию
+music-collections-empty = Музыкальных коллекций пока нет.
+music-collection-name = Название
+music-collection-description = Описание
+music-collection-kind = Вид коллекции
+music-collection-library = Библиотека
+music-collection-playlist = Плейлист
+music-collection-edit = Изменить коллекцию
+music-collection-add = Добавить трек
+music-collection-access-hint = По умолчанию добавление трека сохраняет его права доступа. Включите доступ к трекам ниже, чтобы предоставить доступ к своим трекам через эту подборку.
+music-collection-share-tracks = Также предоставить доступ к моим трекам
+music-collection-sharing-hint = Все, кто может открыть эту подборку, смогут слушать мои треки в ней, включая закрытые. В общедоступной подборке их смогут слушать все. Права доступа к чужим трекам сохраняются. Доступ прекращается при удалении трека из подборки или отзыве доступа к ней.
+music-collection-sharing-save = Сохранить доступ к трекам
+music-collection-track-url = URL трека, аудиопубликации или выпуска подкаста
+music-collection-url-hint = Скопируйте ссылку на трек, аудиопубликацию или выпуск подкаста в вашем каталоге.
+music-collection-unavailable = Недоступный трек
+music-collection-up = Переместить выше
+music-collection-down = Переместить ниже
+music-collection-remove = Удалить из коллекции
+music-collection-delete = Удалить коллекцию
+music-collection-export = Скачать плейлист M3U
+
+music-assets-publish = Опубликовать аудио
+music-assets-withdraw = Снять аудиопубликацию
+music-assets-view-publication = Открыть аудиопубликацию
+
+music-collection-federation = Федеративная библиотека
+
+music-artists-title = Исполнители
+music-albums-title = Альбомы
+music-entities-mine = Мои исполнители и альбомы
+music-entity-mbid = Идентификатор MusicBrainz
+music-entity-tags = Теги
+music-entity-genres = Жанры
+music-entity-tracks = Доступные записи
+music-entity-access-hint = Посетители видят только доступные им треки и альбомы. Сведения об исполнителе доступны через доступные треки и альбомы.
+
+music-entity-name = Название
+music-entity-description = Описание
+music-entity-terms-hint = Разделяйте теги и жанры запятыми.
+music-entity-save = Сохранить сведения о музыке
+
+music-artist-edit = Изменить сведения об исполнителе
+music-album-edit = Изменить сведения об альбоме
+
+music-artwork-edit = Изменить изображение
+music-artwork-cover = Обложка
+music-artwork-image = Изображение
+music-artwork-cover-file = Файл обложки
+music-artwork-image-file = Файл изображения
+music-artwork-hint = Изображения уменьшаются до 1024 пикселей; максимальный размер файла — 8 МиБ. Доступ к ним определяется доступом к музыке.
+music-artwork-upload-cover = Загрузить обложку
+music-artwork-upload-image = Загрузить изображение
+music-artwork-remove-cover = Удалить обложку
+music-artwork-remove-image = Удалить изображение
+
+music-artist-create = Создать исполнителя
+music-album-create = Создать альбом
+music-album-choose-artist = Выберите одного из своих исполнителей для этого альбома.
+
+music-entity-delete = Удалить исполнителя или альбом
+music-entity-delete-recursive = Также удалить связанные композиции и альбомы
+music-entity-delete-hint = При удалении альбома композиции сохраняются, если не выбрано рекурсивное удаление. Исполнитель должен быть пустым или удаляться рекурсивно. Удалённые композиции изымаются из публикаций и коллекций.
+
+music-track-details-edit = Изменить описание и участников
+music-track-description-format = Формат описания
+music-track-format-plain = Обычный текст
+music-track-format-markdown = Markdown
+music-track-format-html = HTML
+music-track-description-hint = Описание также служит текстом публикации Audio. Изменения на обеих страницах синхронизируются.
+music-track-credits = Дополнительные исполнители
+music-track-credits-hint = Разделяйте теги и имена исполнителей запятыми. Не более 20 имён. Имена не создают аккаунты.
+music-track-details-save = Сохранить сведения о композиции
+music-track-album-choose = Выбрать альбом
+music-track-album-hint = Исполнитель композиции не меняется. Собственные год и жанр композиции сохраняются.
+music-track-album-remove = Убрать привязку к альбому
+music-track-album-select = Выбрать этот альбом
+
+# Persistent native music player
+music-player-title = Музыкальный проигрыватель
+music-player-empty = Очередь пуста.
+music-player-window-hint = Включите песню и продолжайте просмотр. В очереди можно выбрать, что будет играть дальше.
+music-player-open = Открыть в проигрывателе
+music-player-add = Добавить в очередь
+music-player-add-collection = Добавить коллекцию в очередь
+music-player-previous = Предыдущая композиция
+music-player-next = Следующая композиция
+music-player-repeat = Повтор
+music-player-repeat-off = Выключен
+music-player-repeat-one = Эта композиция
+music-player-repeat-all = Все композиции
+music-player-shuffle = Перемешать
+music-player-position = Позиция в секундах
+music-player-queue = Очередь
+music-player-select = Воспроизвести композицию
+music-player-remove = Убрать из очереди
+music-player-clear = Очистить очередь
+music-player-error = Не удалось сохранить изменение. Перезагрузите проигрыватель, чтобы получить актуальную очередь.
+music-player-up = Переместить вверх
+music-player-down = Переместить вниз
+music-player-devices = Сохранённые проигрыватели
+music-player-forget = Удалить этот проигрыватель
+
+# Private music listening history
+music-history-title = История прослушиваний
+music-history-hint = Проигрыватель учитывает прослушивание после достаточного времени воспроизведения. Загрузка аудио и перемотка не учитываются. Эта история видна только вам.
+music-history-preferences = Настройки прослушиваний
+music-history-enabled = Сохранять историю прослушиваний
+music-history-seconds = Минимальное время воспроизведения в секундах
+music-history-percent = Минимальный процент воспроизведения
+music-history-threshold-hint = Прослушивание учитывается при достижении первого из этих порогов. Изменения применяются к новым сеансам. Отключение истории отменяет незавершённые сеансы.
+music-history-save = Сохранить настройки прослушиваний
+music-history-empty = В истории пока нет доступных прослушиваний.
+music-history-erase = Удалить историю прослушиваний
+music-history-erase-hint = Записанные прослушивания и незавершённые сеансы будут удалены из вашего аккаунта.
+music-history-erase-confirm = Удалить все мои записанные прослушивания
+music-history-recorded = Прослушивание записано.
+
+music-favourites-title = Понравившаяся музыка
+music-favourites-hint = Понравившаяся музыка также есть в «Моей музыке». Сохранить песню или альбом можно отдельно.
+music-favourites-empty = Здесь появится понравившаяся вам музыка.
+music-favourites-save = Нравится
+music-favourites-remove = Убрать отметку «Нравится»
+music-favourites-notification = добавил ваш трек в избранную музыку
+music-favourites-unavailable = Этот трек больше недоступен.
+settings-push-music-favourite = Избранная музыка
+music-player-save-settings = Сохранить настройки плеера
+music-player-go-position = Перейти к позиции
+
+music-stats-title = Статистика прослушиваний
+music-stats-hint = Графики используют записанные прослушивания и доступную вам музыку. Предварительная загрузка аудио не учитывается.
+music-stats-empty = Нет записанных прослушиваний.
+music-stats-name = Название
+music-stats-count = Прослушивания
+music-stats-period = Период
+music-stats-from = Начальная дата
+music-stats-to = Конечная дата
+music-stats-group = Группировать по
+music-stats-day = День
+music-stats-week = Неделя
+music-stats-month = Месяц
+music-stats-year = Год
+music-stats-decade = Десятилетие
+music-stats-week-start = Первый день недели
+music-stats-monday = Понедельник
+music-stats-tuesday = Вторник
+music-stats-wednesday = Среда
+music-stats-thursday = Четверг
+music-stats-friday = Пятница
+music-stats-saturday = Суббота
+music-stats-sunday = Воскресенье
+music-stats-release-group = Группировать даты выпуска по
+music-stats-limit = Количество лидеров в каждом графике
+music-stats-show = Показать статистику
+music-stats-top-tracks = Самые прослушиваемые треки
+music-stats-top-artists = Самые прослушиваемые исполнители
+music-stats-top-albums = Самые прослушиваемые альбомы
+music-stats-top-genres = Самые прослушиваемые жанры
+music-stats-plays = Прослушивания по периодам
+music-stats-genres-timeline = Жанры по периодам
+music-stats-releases = Даты выпуска
+music-stats-clock = Прослушивания по местному часу
+
+music-radios-title = Радиостанции
+music-radios-hint = Сохраняйте настройки станций и делитесь ими.
+music-radios-mine = Мои станции
+music-radios-empty = Радиостанций пока нет.
+music-radio-name = Название станции
+music-radio-description = Описание
+music-radio-visibility = Кто может видеть
+music-radio-config = Настройки станции
+music-radio-config-hint = Настройки станции видны только вам.
+music-radio-create = Создать станцию
+music-radio-edit = Изменить станцию
+music-radio-save = Сохранить настройки станции
+music-radio-delete = Удалить станцию
+music-radio-delete-hint = Станция и разрешения на доступ будут удалены.
+
+music-total-duration = Длительность доступных записей: { $seconds } сек.
+music-entity-albums = Доступные альбомы
+
+music-mine-title = Ваша медиатека
+music-mine-hint = Ваши загрузки, сохранённые песни и альбомы и понравившаяся музыка. Сохранённая музыка остаётся на исходном сайте и может стать недоступной.
+music-mine-kind = Показать
+music-mine-all = Вся музыка
+music-mine-tracks = Треки
+music-mine-artists = Исполнители
+music-mine-albums = Альбомы
+music-mine-libraries = Библиотеки
+music-mine-playlists = Плейлисты
+music-mine-radios = Станции
+music-mine-empty = Нет доступной музыки в этом разделе.
+music-mine-save = Сохранить в мою музыку
+music-mine-remove = Убрать из «Моей музыки»
+music-mine-owned = Ваше
+music-mine-saved = Сохранено
+music-mine-favourite = Нравится
+music-mine-related-artist = Из сохранённой музыки
+music-album-access-title = Настроить доступ к альбому
+music-album-access-details = Кто может видеть сведения об альбоме
+music-album-access-hint = Сведения об альбоме имеют собственные настройки доступа. Публичный трек по-прежнему может показывать название альбома и год выпуска.
+music-album-access-source = По доступным трекам
+music-album-access-share-hint = Предоставить доступ к моим трекам через этот альбом. Публичный альбом делает их доступными всем. При доступе по трекам приватные треки доступны только участникам с явным разрешением. Публикация Audio остаётся отдельным действием.
+music-album-access-save = Сохранить доступ к альбому
+music-album-access-members-empty = На этой странице нет разрешений для участников.
+music-album-access-new-hint = Новые альбомы создаются приватными. После создания можно выбрать доступ к сведениям и трекам альбома.
+music-saved-manager = Управление сохранённой музыкой
+music-saved-manager-hint = Убирайте сохранённую музыку, включая недоступную. Исходное аудио, отметки «Нравится» и ваши загрузки останутся.
+music-saved-empty = Нет сохранённых ссылок.
+music-saved-unavailable = Этот сохранённый ресурс больше вам недоступен.
+
+music-shares-title = Общий доступ
+music-shares-hint = Просматривайте разрешения участникам и ссылки. Отзыв ссылки прекращает доступ к музыке и изображениям по ней.
+music-shares-show-revoked = Показывать отозванные ссылки
+music-shares-empty = Вы ещё не делились музыкой.
+music-shares-link = Ссылка для общего доступа
+music-shares-member = Доступ участника
+music-shares-revoked = Отозвана
+music-shares-expired = Срок истёк
+music-shares-expires = Срок действия
+music-shares-create = Создать ссылку
+music-shares-create-hint = Любой, у кого есть эта ссылка, сможет просмотреть сведения. Альбомы и коллекции предоставляют доступ к закрытым записям только при включении «Также поделиться моими записями».
+music-shares-day = Через день
+music-shares-week = Через неделю
+music-shares-month = Через 30 дней
+music-shares-never = До отзыва
+music-shares-created = Ссылка создана
+music-shares-once = Скопируйте ссылку сейчас. Она показывается только один раз; отозвать её можно в разделе общего доступа.
+music-shares-preview = Открыть общий просмотр
+music-shares-preview-hint = Этот просмотр доступен по ссылке общего доступа.
+music-shares-no-tracks = По этой ссылке нет доступных для воспроизведения записей.
+music-shares-unavailable = Эта ссылка недоступна
+music-shares-unavailable-hint = Срок действия мог истечь, ссылка могла быть отозвана или музыка больше недоступна.
+
+music-shares-notification = предоставил(а) вам доступ к музыке
+
+settings-push-music-share = Мне предоставлен доступ к музыке
+
+music-podcasts-title = Подкасты
+music-podcasts-hint = Добавьте подкаст по ссылке на его сайт или ленту, выберите выпуск и нажмите «Воспроизвести».
+music-podcasts-sort = Сортировка подкастов
+music-podcasts-latest = Последний выпуск
+music-podcasts-count = Выпуски
+music-podcasts-unplayed = Не прослушано
+music-podcasts-name = Название
+music-podcasts-direction = Порядок
+music-podcasts-desc = По убыванию
+music-podcasts-asc = По возрастанию
+music-podcasts-subscribe = Подписаться на подкаст
+music-podcasts-feed = Ссылка на сайт или ленту подкаста
+music-podcasts-opml = Управление подписками через OPML
+music-podcasts-export = Экспортировать подписки
+music-podcasts-import-hint = Вставьте документ OPML с подписками
+music-podcasts-import = Импортировать подписки
+music-podcasts-empty = Вы пока не подписаны на подкасты.
+music-podcasts-website = Открыть сайт
+music-podcasts-refreshed = Последнее обновление
+music-podcasts-refresh = Обновить ленту
+music-podcasts-unsubscribe = Отписаться от подкаста
+music-podcasts-newest = Сначала новые
+music-podcasts-oldest = Сначала старые
+music-podcasts-no-episodes = В этой ленте пока нет выпусков для прослушивания.
+music-podcasts-played = Прослушано
+music-podcasts-not-played = Не прослушано
+music-podcasts-mark-played = Отметить прослушанным
+music-podcasts-mark-unplayed = Отметить непрослушанным
+music-podcasts-source = Открыть исходное аудио
+music-podcasts-imported = Подписки добавлены
+music-podcasts-skipped = Уже в подписках
+music-podcasts-failed = Не удалось добавить
+
+music-podcasts-collection = Ваша музыкальная коллекция
+music-podcasts-add-collection = Добавить выпуск в коллекцию
+
+music-radios-search = Поиск станций по названию и описанию
+music-collections-search = Поиск коллекций по названию и описанию
+music-collections-all = Все коллекции
+
+music-podcasts-import-file = Импортировать файл OPML
+music-podcasts-page-queue = Добавить эти эпизоды в очередь
+music-podcasts-replace-queue = Заменить текущую очередь
+music-podcasts-page-played = Отметить выбранные эпизоды прослушанными
+music-podcasts-page-unplayed = Отметить выбранные эпизоды непрослушанными
+music-podcasts-explicit = Контент для взрослых
+music-podcasts-selected-collection = Добавить выбранные эпизоды в коллекцию
+music-podcasts-select-episode = Выбрать эпизод
+music-feed-rss = RSS-лента
+music-feed-atom = Atom-лента
+music-collection-tags = Управление тегами
+music-collection-save-tags = Сохранить теги коллекции
+
+music-embed-title = Встроить музыку
+music-embed-hint = Встроить можно только общедоступную музыку. Изменение её настроек доступа остановит воспроизведение во встроенных плеерах.
+music-embed-format = Формат встраивания
+music-embed-format-audio = Аудиоплеер
+music-embed-format-html = Список треков HTML
+music-embed-format-markdown = Ссылка Markdown
+music-embed-format-script = Виджет со скриптом
+music-embed-format-iframe = Iframe
+music-embed-show = Показать код
+music-embed-code = Код встраивания
+music-embed-preview = Просмотр плеера
+music-embed-open = Открыть в разделе «Музыка»
+music-embed-limited = Откройте раздел «Музыка», чтобы увидеть остальные треки.
+
+music-embed-unavailable = Музыка недоступна
+music-embed-unavailable-hint = Эта музыка больше не общедоступна или была удалена.
+music-embed-open-track = Открыть трек в разделе «Музыка»
+
+music-renditions-title = Форматы воспроизведения
+music-renditions-back = Вернуться к треку
+music-renditions-format = Формат аудио
+music-renditions-bitrate = Битрейт (кбит/с)
+music-renditions-prepare = Подготовить для воспроизведения
+music-renditions-hint = Подготовьте копию в удобном формате. Допустимый битрейт зависит от роли и настроек сервера. FLAC сохраняет звук без потерь; выбранный битрейт не ограничивает размер файла.
+music-renditions-cached = Готовые форматы воспроизведения
+music-renditions-empty = Копии для воспроизведения ещё не подготовлены.
+music-renditions-refresh = Обновить состояние
+music-renditions-listen = Слушать
+music-renditions-check = Проверить состояние
+music-renditions-remove = Удалить готовую копию
+music-renditions-cancel = Отменить подготовку
+music-rendition-queued = Ожидает кодирования
+music-rendition-running = Кодирование
+music-rendition-ready = Готово к воспроизведению
+music-rendition-failed = Не удалось подготовить копию
+music-rendition-cancelled = Подготовка отменена
+
+music-renditions-lossless = Без потерь
+
+music-renditions-play-now = Слушать сейчас
+music-renditions-stream-hint = Нажмите кнопку воспроизведения, чтобы начать кодирование и прослушивание. Готовая копия сохранится в кэше.
+music-renditions-ceiling = Максимальный битрейт
+
+music-embed-codec = Формат аудио локальных треков
+music-embed-codec-default = Исходная копия для воспроизведения
+music-embed-codec-hint = Применяется к локальным трекам. Встроенный плеер использует лимит битрейта для анонимных слушателей; FLAC сохраняет звук без потерь.
+music-remote-import = Найти музыку на другом сервере
+music-remote-url = Канонический адрес музыкального ресурса
+music-remote-origin = Опубликовано на
+music-remote-refresh = Обновить с исходного сервера
+music-remote-contents = Треки
+music-remote-more = Загрузить ещё с исходного сервера
+
+music-remote-select = Выбрать трек
+
+music-streams-title = Радио в эфире
+music-streams-mine = Мои трансляции
+music-stream-name = Название трансляции
+music-stream-mount = Адрес трансляции
+music-stream-format = Формат аудио
+music-stream-bitrate = Битрейт (кбит/с)
+music-stream-rate = Частота дискретизации (Гц)
+music-stream-create = Создать трансляцию
+music-streams-empty = Трансляции не найдены.
+music-stream-playing = Воспроизводится
+music-stream-paused = Приостановлено
+music-stream-queue = Управлять очередью трансляции
+music-stream-play = Воспроизвести
+music-stream-pause = Пауза
+music-stream-stop = Остановить
+music-stream-enable = Включить
+music-stream-disable = Отключить
+music-stream-settings = Настройки трансляции
+music-stream-save = Сохранить настройки
+music-stream-rotate = Заменить токен слушателя
+music-stream-delete = Удалить трансляцию
+music-stream-token-title = Приватная ссылка слушателя
+music-stream-token-hint = Сохраните эту ссылку сейчас. Она показывается один раз. Замена токена отключает текущих слушателей.
+music-stream-listen-link = Открыть ссылку слушателя
+music-stream-open = Открыть трансляцию
+
+music-player-destination = Где воспроизводить
+music-player-choose-destination = Выбрать место воспроизведения
+music-stream-window-hint = Воспроизведение продолжается после закрытия этой страницы.
+
+music-downloads-title = Загрузки
+music-downloads-hint = Нажмите «Скачать ZIP» на странице трека, альбома, исполнителя или коллекции, чтобы подготовить личный архив.
+music-downloads-empty = Загрузок музыки пока нет.
+music-download-label = Название загрузки
+music-download-create = Скачать ZIP
+music-download-queued = В очереди
+music-download-running = Подготовка загрузки
+music-download-ready = Готово
+music-download-failed = Ошибка загрузки
+music-download-cancelled = Отменено
+music-download-cancel = Отменить загрузку
+music-download-delete = Удалить загрузку
+music-download-progress = Ход подготовки загрузки
+music-download-refresh = Обновить ход подготовки
+music-download-file = Сохранить ZIP
+music-download-expires = Доступно до
+music-download-error = Не удалось подготовить загрузку. Проверьте доступ и место на диске, затем повторите попытку.
+music-download-unavailable = Аудио больше недоступно
+music-download-item-errors = Некоторые выбранные записи не удалось включить.
+music-download-selected = Скачать выбранное аудио в ZIP
+music-download-select = Выбрать для загрузки
+music-download-notification = Ваша загрузка музыки готова
+music-download-open = Открыть загрузку
+settings-push-music-download = Мои загрузки музыки
+
+music-clients-title = Музыкальные клиенты
+music-clients-hint = Подключите приложение Subsonic или OpenSubsonic. Создавайте отдельный пароль для каждого приложения; пароли только для чтения позволяют просматривать и слушать доступную вам музыку.
+music-clients-server = Адрес сервера:
+music-clients-user = Имя пользователя:
+music-clients-created = Пароль клиента создан
+music-clients-once = Скопируйте пароль в музыкальное приложение. Он отображается только один раз.
+music-clients-password = Пароль приложения
+music-clients-label = Название приложения
+music-clients-days = Срок действия в днях
+music-clients-manage = Управлять плейлистами, избранным и историей прослушивания
+music-clients-read = Просматривать и слушать музыку
+music-clients-create = Создать пароль приложения
+music-clients-expires = Истекает:
+music-clients-revoke = Отозвать
+
+music-clients-broadcast = Показывать текущие прослушивания участникам, которым доступна музыка (требуется право управления)
+
+music-folders-title = Локальные папки
+music-folders-hint = Администратор может подключить разрешённую папку к вашей библиотеке. Оригиналы остаются на диске; хранилище Plamenu используется только для воспроизведения. Удаление трека из индекса не удаляет исходный файл.
+music-folders-root = Разрешённая папка
+music-folders-owner = Локальное имя владельца библиотеки
+music-folders-directory = Подпапка (пустое поле — вся папка)
+music-folders-assign = Подключить библиотеку
+music-folders-empty = К вашей библиотеке ещё не подключены локальные папки.
+music-folders-watch = Следить за изменениями
+music-folders-enabled = Включить папку
+music-folders-refresh = Сохранить и сканировать
+music-folders-failed = Файлы с ошибками
+music-folders-error = Папка или аудиофайл недоступны. Проверьте диск и повторите сканирование.
+music-folders-state-idle = Обновлено
+music-folders-state-queued = Ожидает сканирования
+music-folders-state-scanning = Сканирование папок
+music-folders-state-indexing = Чтение метаданных аудио
+music-folders-state-failed = Ошибка сканирования
+
+music-folders-files = Исходные файлы
+music-folders-library = Открыть библиотеку
+music-folders-track = Открыть сведения о треке
+music-folders-new-name = Новое имя файла
+music-folders-rename = Переименовать исходный файл
+music-folders-tags-hint = Записать название, исполнителя, альбом, жанр и нумерацию из сведений о треке в оригинал. Аудио останется прежним.
+music-folders-write-tags = Записать теги в оригинал
+music-folders-delete-confirm = Навсегда удалить этот оригинальный файл из подключённой папки.
+music-folders-delete-source = Удалить оригинальный файл
+music-folders-file-queued = Ожидает индексирования
+music-folders-file-indexing = Чтение метаданных
+music-folders-file-ready = В индексе
+music-folders-file-failed = Не удалось прочитать аудио
+music-folders-file-missing = Файл недоступен
+music-folders-file-ignored = Удалён из индекса
+
+music-folders-more = Ещё исходные файлы
+
+music-folders-disconnect = Отключить папку
+music-folders-disconnect-hint = Удалить подключённую библиотеку и ссылки на папку. Исходные файлы останутся на диске.
+music-folders-restore = Вернуть файл в индекс
+
+music-folders-scan-options = Файлы для индексирования
+music-folders-recursive = Включать подпапки
+music-folders-extensions = Расширения аудиофайлов через запятую
+music-folders-exclusions = Исключить файлы и папки
+music-folders-exclusions-hint = Один шаблон на строку, например demos/* или *.backup.wav. Исходные файлы останутся на диске.
+
+music-folders-file-warning = Не удалось прочитать часть метаданных или обложку. Исходный файл не изменён.
+
+webmentions-title = Упоминания на сайтах
+webmentions-hint = Проверенные ответы и реакции с сайтов. Откройте источник, чтобы прочитать оригинал.
+webmentions-website = Сайт
+webmentions-reply = ответил
+webmentions-like = отметил понравившимся
+webmentions-repost = поделился
+webmentions-quote = процитировал
+webmentions-mention = упомянул
+webmentions-open-source = Исходная страница
+webmentions-open-target = Упомянутая страница
+webmentions-empty = Проверенных упоминаний на сайтах пока нет.
+webmentions-source-title = Открытая запись
+webmentions-notification = Вашу страницу упомянули на сайте
+settings-push-webmention = Упоминания на сайтах
+webmentions-response = Ваш открытый ответ
+webmentions-publish-reply = Опубликовать открытый ответ
+webmentions-publish-like = Опубликовать открытую отметку «Нравится»
+webmentions-publish-repost = Опубликовать открытый репост
+webmentions-publish-quote = Опубликовать открытую цитату
+
+notification-inbox-manage = Управление прочитанными уведомлениями
+notification-inbox-hint = Открытие этой страницы не отмечает уведомления прочитанными.
+notification-inbox-all = Все
+notification-inbox-unseen = Непрочитанные
+notification-inbox-type = Тип уведомления
+notification-inbox-seen-all = Отметить все прочитанными
+notification-inbox-delete-all = Удалить все уведомления
+notification-inbox-confirm = Подтверждаю удаление
+notification-inbox-mark-unseen = Отметить непрочитанным
+notification-inbox-mark-seen = Отметить прочитанным
+notification-inbox-delete = Удалить
+
+mentions-title = Упоминания
+mentions-hint = Упоминания сохраняются после очистки уведомлений. Удалённые, отозванные и недоступные публикации скрываются.
+mentions-source = Источник
+mentions-local = Местные
+mentions-federated = Федеративные
+mentions-private = Только непубличные упоминания
+mentions-empty = Нет упоминаний по этим фильтрам.
+
+notification-delivery-title = Доставка уведомлений
+notification-delivery-hint = Выберите доставку для каждого типа. Для почты нужен подтверждённый адрес. Сводки отправляются ежедневно и ведут в ваш личный список уведомлений.
+notification-delivery-no-smtp = Почтовая доставка недоступна, пока оператор не настроит SMTP. Ваш выбор сохраняется.
+notification-delivery-in-app = В приложении
+notification-delivery-email = По электронной почте
+notification-delivery-digest = Ежедневная почтовая сводка
+notification-delivery-save = Сохранить способы доставки
+notification-delivery-severed = Разорванные федеративные связи
+notification-delivery-moderation = Предупреждения модерации
+notification-delivery-annual = Годовые отчёты
+notification-delivery-signup = Запросы регистрации
+notification-delivery-report = Жалобы для модерации
+notification-delivery-collection-added = Добавление в коллекцию
+notification-delivery-collection-update = Обновления коллекций
+notification-delivery-mail-intro = У вас новые уведомления в Plamenu.
+notification-delivery-mail-open = Открыть уведомления
+notification-delivery-mail-subject = Уведомления Plamenu
+notification-delivery-mail-digest = Ежедневная сводка уведомлений Plamenu
+
+notification-delivery-digest-time = Время ежедневной сводки (UTC):
+
+music-activities-title = Активность
+music-activities-resource = Вернуться к ресурсу
+music-activities-kind = Тип активности
+music-activities-posts = Публикации
+music-activities-refresh = Обновить
+music-activities-empty = Нет доступной активности для этого ресурса.
+
+music-folders-recovery-pending = Изменение исходного файла ожидает восстановления. Верните исходный диск и файлы; восстановление повторяется автоматически.
+
+music-jobs-title = Музыкальные задачи
+music-jobs-hint = Просматривайте ожидающие и активные задачи. Остановка сохраняет настройки потоков и папок. Восстановление файлов завершается автоматически.
+music-jobs-counts = Количество задач
+music-jobs-kind = Тип задачи
+music-jobs-state = Состояние
+music-jobs-count = Количество
+music-jobs-owner = Учётная запись владельца
+music-jobs-empty = Нет ожидающих или активных музыкальных задач.
+music-jobs-cancel = Остановить текущую задачу
+music-jobs-kind-rendition = Преобразование аудио
+music-jobs-kind-export = Экспорт ZIP
+music-jobs-kind-output = Аудиопоток
+music-jobs-kind-folder = Сканирование папки
+music-jobs-kind-recovery = Восстановление файлов
+music-jobs-state-queued = В очереди
+music-jobs-state-running = Выполняется
+music-jobs-state-ready = Готово
+music-jobs-state-failed = Ошибка
+music-jobs-state-cancelled = Отменено
+music-jobs-state-playing = Воспроизводится
+music-jobs-state-paused = Приостановлено
+music-jobs-state-stopped = Остановлено
+music-jobs-state-idle = Ожидание
+music-jobs-state-scanning = Сканирование
+music-jobs-state-indexing = Индексирование
+music-jobs-state-pending = Ожидает восстановления
+music-jobs-state-applied = Завершается восстановление
+
+music-jobs-cancel-selected = Остановить выбранные задачи
+
+music-folders-no-roots = Разрешённые папки с музыкой ещё не настроены. Добавьте разрешённую папку в конфигурацию сервера, затем подключите библиотеку.
+
+music-player-choose-track = Выберите композицию из очереди для воспроизведения.
+
+music-tools = Дополнительные инструменты музыки
+music-discovery-browse = Обзор
+music-open-label = Открыть ссылку на музыкальный сервер, альбом или трек
+music-open-hint = Вставьте адрес Songhive для просмотра публичного каталога или ссылку на альбом или трек, чтобы слушать здесь. Подписка не требуется.
+music-open-submit = Открыть в Plamenu
+music-open-unavailable = Ресурс недоступен, приватный или не предоставляет публичный музыкальный каталог. Попробуйте адрес сервера для просмотра доступной музыки.
+music-discovery-back = Обзор другого музыкального сервера
+music-discovery-types = Разделы каталога
+music-discovery-empty = На сервере нет публичных записей, подходящих этому запросу.
+music-discovery-listen = Открыть и слушать
+music-discovery-offline = Поток не в эфире.
+music-discovery-radio-empty = Станция предоставляет описание, но не предлагает доступные треки или адрес для прослушивания.
+music-discovery-server = Обзор этого музыкального сервера
+music-remote-no-audio = У ресурса нет публично доступных треков. Подписка получает будущие обновления, но не предоставляет доступ и не создаёт аудио.
+music-play-all = Воспроизвести эти треки
+
+music-resource-tools = Подробности и дополнительные действия
+music-organise-playlist = Добавить песни в плейлист или библиотеку
+music-podcast-tools = Импорт и управление подписками на подкасты
+
+music-from-other-sites = Музыка с других сайтов
+
+music-radio-rules = Правила станции и расписание
+music-radio-rules-hint = Эти правила выбирают песни для станции. Чтобы слушать настоящий эфир, откройте радио в эфире.
+
+music-upload-title = Название (необязательно; из тегов аудио или имени файла)
+music-upload-publish-hint = Новое аудио сохранится лично для вас в «Моей музыке»; существующее сохранит свой доступ. «Опубликовать сейчас» откроет аудио всем и создаст публикацию.
+music-upload-publish = Опубликовать сейчас
+music-upload-published = Опубликовано. Люди могут найти и слушать это аудио; оно также есть в «Моей музыке».
+music-upload-private = Личная загрузка. Слушать можете только вы и те, кому вы дадите доступ. Измените трек, чтобы настроить доступ, или опубликуйте его, когда будете готовы.
+music-upload-unpublished = Аудио доступно выбранной аудитории. Опубликуйте его как запись, чтобы поделиться с подписчиками.
+
+music-play-problem = Сейчас не удаётся воспроизвести это аудио
+music-play-unavailable = Аудио могло быть удалено, закрыто или отключено. Текущая очередь сохранена. Вернитесь к поиску и выберите другое аудио.
+music-play-changed = Очередь изменилась в другом окне. Нажмите «Слушать» ещё раз, чтобы использовать её актуальное состояние.
+
+music-collection-sharing-settings = Настройки общего доступа
+music-collection-member-access = Доступ для участников
+
+music-upload-reused = Это аудио уже было загружено. Открыт ваш существующий трек; его название и доступ сохранены. Чтобы изменить их, выберите «Изменить трек».
+
+music-upload-problem = Не удалось завершить загрузку
+music-upload-file-problem = Проверьте, что выбран поддерживаемый аудиофайл допустимого размера, и попробуйте ещё раз.
+music-upload-publication-problem = Аудио сохранено, но публикацию не удалось подтвердить. Откройте его, чтобы проверить состояние или опубликовать ещё раз.
+music-upload-open-saved = Открыть сохранённое аудио
+
+music-podcasts-search = Поиск по вашим подкастам
+music-about-audio = Об этом аудио
+
+music-podcasts-episodes = Выпуски
+music-podcasts-episode-tools = Действия с выпуском
+music-podcasts-tools = Инструменты подкаста
+
+music-kind-track = Композиция
+music-kind-library = Медиатека
+music-kind-playlist = Плейлист
+music-kind-radio = Правила станции
+
+music-assets-empty = В этом списке пока нет загруженного аудио. Загрузите файл или откройте «Музыка», чтобы найти музыку для прослушивания.
+
+media-create-title = Создать и поделиться
+media-create-post = Запись
+media-create-video = Видео
+media-create-live = Выйти в эфир
+music-metadata-more = Дополнительные сведения о музыке (необязательно)
+videos-live-channel-help = Создайте канал для трансляций. Затем вы вернётесь сюда, чтобы настроить камеру или экран.
+videos-live-preview-ready = Предпросмотр — вы ещё не в эфире. Проверьте камеру и микрофон, затем нажмите «Выйти в эфир».
+videos-live-cancel-preview = Отменить предпросмотр
+compose-audio-add = Выбрать аудиофайл
+music-player-details = Сведения о треке и публикация
+compose-audio-file-error = Выберите один аудиофайл. Для видео нажмите «Видео» выше.
+compose-audio-attachment-description = Опишите аудиозапись
+videos-live-preview-cancelled = Предпросмотр закрыт. Эфир не начат.
+
+inbox-options = Параметры
+
+inbox-filter = Применить
+
+conversation-media = Медиафайл
+
+conversation-open = Открыть разговор
+
+conversation-privacy = Кто может читать эти сообщения?
+
+music-more = Ещё
+
+music-library-search = Поиск в медиатеке
+
+music-library-start = Медиатека пока пуста
+
+music-library-no-results = Музыка не найдена
+
+compose-video-workflow = Опубликуйте видео на своём канале. Сначала загрузите его, затем проверьте и опубликуйте.
+
+compose-live-workflow = Начните прямую трансляцию. Выберите зрителей, затем проверьте камеру перед выходом в эфир.
+
+compose-attachment-hint = К заметке можно прикрепить фото, аудио или видео, не меняя её тип.
+
+compose-continue = Продолжить
+
+music-player-close = Закрыть плеер
+
+compose-use-existing = Выбрать из своих загрузок
+
+compose-use-existing-hint = Недавние загрузки и песни из медиатеки. Выбранные файлы будут скопированы в эту публикацию.
+
+compose-recipients = Кому
+
+compose-recipients-hint = Введите один или несколько @адресов через запятую. Сообщение увидят только эти люди.
+
+compose-media-details = Описание и доступность
+
+music-upload-save-private = Сохранить для себя
+music-manage-track = Управление треком
+music-manage-catalogue = Управление каталогом
+
+compose-recipients-unresolved = Получатель не найден. Проверьте адреса в поле «Кому» перед отправкой.
+
+compose-send = Отправить
+music-stations-all = Все станции
+music-stations-saved = Сохранённые станции
+music-stations-search = Поиск радиостанций

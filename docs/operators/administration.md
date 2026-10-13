@@ -115,3 +115,19 @@ server self-destruct are intentionally consequential. Read their command help
 and specialized runbooks, take a current backup where recovery is possible,
 and verify the target before running the command. Self-destruct is irreversible from
 the federation's perspective even though local data remains while notices drain.
+
+
+### Music worker jobs
+
+`/admin/music/jobs` shows task counts and pending/active music work. Viewing needs
+`view_devops`; stopping a current run needs `manage_settings`. Select one or
+multiple conversions, ZIP exports, outputs or folder scans to stop their current
+run. Saved output/folder configuration remains, and watched folders may run again
+on their next scheduled scan. Each successful stop is audited. File recovery
+cannot be terminated halfway through repair; restore the original mount/files
+and let the recovery worker finish.
+
+The scoped API is `GET /api/v1/admin/music/jobs` (`admin:read`) and
+`POST /api/v1/admin/music/jobs/cancel` (`admin:write`). Cancellation accepts one
+`{kind,id}` reference or `{jobs:[{kind,id},...]}` with at most 100 unique tasks.
+Completed or already-stopped work is not deleted by a batch cancellation.

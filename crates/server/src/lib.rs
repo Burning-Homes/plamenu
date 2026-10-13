@@ -6,6 +6,7 @@ pub mod admin_log;
 pub mod altcha;
 pub mod archive;
 pub mod archive_worker;
+pub mod audio;
 pub mod auth;
 pub mod build_info;
 pub mod bulk_import;
@@ -48,10 +49,43 @@ pub mod media_limits;
 pub mod media_processing;
 pub mod media_transcode;
 pub mod media_worker;
+pub mod mentions;
 pub mod migration;
 pub mod moderation;
+pub mod music_activity;
+pub mod music_album_access;
+pub mod music_artworks;
+pub mod music_assets;
+mod music_bytes;
+pub mod music_clients;
+pub mod music_collections;
+pub mod music_downloads;
+pub mod music_entities;
+pub mod music_favourites;
+pub mod music_feeds;
+pub mod music_follows;
+pub mod music_jobs;
+pub mod music_library_federation;
+pub mod music_listening;
+pub mod music_local;
+pub mod music_mine;
+mod music_original;
+pub mod music_outputs;
+pub mod music_podcasts;
+pub mod music_publications;
+pub mod music_queues;
+pub mod music_radios;
+pub mod music_remote;
+pub mod music_renditions;
+pub mod music_saved;
+pub mod music_shares;
+pub mod music_stats;
+pub mod music_track_details;
+mod mutation;
 pub mod native_live;
 pub mod note;
+pub mod notification_config;
+pub mod notification_mail;
 pub mod oauth_app;
 pub mod owncast;
 pub mod parent_fetch;
@@ -78,6 +112,7 @@ pub mod state;
 pub mod statuses_cleanup;
 pub mod storage;
 pub mod streaming;
+pub mod subsonic;
 mod sync;
 pub mod time_zones;
 pub mod totp;
@@ -106,6 +141,7 @@ pub mod video_worker;
 pub mod web;
 pub mod web_push;
 pub mod webhooks;
+pub mod webmentions;
 pub mod webxdc;
 pub mod webxdc_realtime;
 pub mod worker;
@@ -207,6 +243,16 @@ fn is_credential_path(path: &str) -> bool {
         "/api/v3/user",  // Lemmy-compatible login, tokens, and account settings
         "/settings",     // private settings pages (security, applications, …)
         "/web/settings", // their POST mutation actions
+        "/rest",         // Subsonic query and form credentials
+        "/music/clients",
+        "/web/music/clients",
+        "/api/v1/music/clients",
+        "/music/share",              // anonymous music capabilities live in the query
+        "/music/shares",             // owner sharing management
+        "/web/music/share-links",    // one-time raw capability response
+        "/web/music/shares",         // native revoke forms
+        "/api/v1/music/share-links", // one-time raw capability response
+        "/api/v1/music/shares",      // private sharing overview
     ];
     PREFIXES
         .iter()
@@ -214,6 +260,22 @@ fn is_credential_path(path: &str) -> bool {
             Some(rest) => rest.is_empty() || rest.starts_with('/'),
             None => false,
         })
+}
+
+fn is_music_share_path(path: &str) -> bool {
+    [
+        "/music/share",
+        "/music/shares",
+        "/web/music/share-links",
+        "/web/music/shares",
+        "/api/v1/music/share-links",
+        "/api/v1/music/shares",
+    ]
+    .iter()
+    .any(|prefix| {
+        path.strip_prefix(prefix)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    })
 }
 
 /// The full content-security policy, **enforced** on every HTML response
@@ -285,7 +347,7 @@ fn content_security_policy(
 }
 
 /// Global response hardening. Denies framing of every HTML page except the
-/// public, read-only status embed; this blocks clickjacking of login, OAuth
+/// public, read-only status and music embeds; this blocks clickjacking of login, OAuth
 /// consent, and settings actions, and marks credential-bearing responses
 /// `no-store` so browsers and shared proxies never retain them. Wired in
 /// application middleware so direct deployments are protected regardless of the
@@ -298,16 +360,19 @@ async fn security_headers(
     use axum::http::{HeaderValue, header};
 
     let sensitive = is_credential_path(request.uri().path());
+    let music_share = is_music_share_path(request.uri().path());
     let embeddable_status = request
         .uri()
         .path()
         .strip_prefix("/web/statuses/")
         .and_then(|rest| rest.strip_suffix("/embed"))
         .is_some_and(|id| id.parse::<i64>().is_ok());
+    let embeddable_music = web::music_embeds::is_frame_path(request.uri().path());
     let security = RequestSecurityContext::default();
     request.extensions_mut().insert(security.clone());
     let mut response = next.run(request).await;
-    let embeddable_response = embeddable_status && response.status().is_success();
+    let embeddable_response =
+        (embeddable_status || embeddable_music) && response.status().is_success();
     let headers = response.headers_mut();
     // Content-type sniffing is refused everywhere, not just on HTML. It
     // matters most on `/media/{file}`, which serves attacker-supplied bytes
@@ -328,7 +393,8 @@ async fn security_headers(
     // Webxdc origin and explicit sensitive-route responses have the stricter
     // contract that they send no referrer at all. Preserve only that exact
     // stronger policy, never an arbitrary handler-supplied weaker policy.
-    let no_referrer = webxdc_runtime
+    let no_referrer = music_share
+        || webxdc_runtime
         || headers
             .get(header::REFERRER_POLICY)
             .is_some_and(|value| value == "no-referrer");
@@ -371,7 +437,24 @@ async fn security_headers(
         );
     }
     if sensitive {
-        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static(if music_share {
+                "private, no-store"
+            } else {
+                "no-store"
+            }),
+        );
+        if music_share {
+            headers.insert(
+                header::VARY,
+                HeaderValue::from_static("Authorization, Cookie"),
+            );
+            headers.insert(
+                "x-robots-tag",
+                HeaderValue::from_static("noindex, noarchive"),
+            );
+        }
         headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
     }
     response

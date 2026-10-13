@@ -1244,6 +1244,7 @@ pub async fn preview_status_json(
     });
     entity["groups"] = json!([]);
     entity["video_channels"] = json!([]);
+    entity["music"] = Value::Null;
     entity["quote_approval"] = json!({
         "automatic": policy.automatic().keys(),
         "manual": policy.manual().keys(),
@@ -2701,9 +2702,15 @@ fn bare_date(at: Option<OffsetDateTime>) -> Value {
 
 /// The public URL of an attachment: our cached copy when we have one, else the
 /// remote source (Mastodon serves `local ?? remote_url`).
+fn local_media_url(domain: &str, file: &str) -> String {
+    crate::music_publications::asset_from_key(file).map_or_else(
+        || format!("https://{domain}/media/{file}"),
+        |asset| format!("https://{domain}/music/assets/{asset}/stream"),
+    )
+}
 fn media_url(domain: &str, item: &Media) -> String {
     match (&item.file_name, &item.remote_url) {
-        (Some(file), _) => format!("https://{domain}/media/{file}"),
+        (Some(file), _) => local_media_url(domain, file),
         (None, Some(remote)) => remote.clone(),
         (None, None) => String::new(),
     }
@@ -2761,7 +2768,7 @@ pub fn media_json_hls(
     renditions: Option<&[MediaRendition]>,
 ) -> Value {
     let kind = item.kind_or_derived();
-    let local_url = |file: &str| format!("https://{domain}/media/{file}");
+    let local_url = |file: &str| local_media_url(domain, file);
     let proxy = |small: bool| media_proxy_url(domain, "attachment", item.id, small, allow_direct);
     let sparse_audio = || {
         let marker = if allow_direct { "?d=1" } else { "" };
@@ -2954,6 +2961,7 @@ pub fn ap_attachments(domain: &str, items: &[Media]) -> Vec<Value> {
 /// of the two-layer renderer (N+1 decisions), computed once per batch
 /// however many viewers the render serves.
 struct SharedMaps {
+    music: HashMap<i64, plamenu_db::music::Metadata>,
     webxdc_invitations: HashMap<i64, Value>,
     targets: HashMap<i64, Status>,
     /// The author `Account` rows (statuses, boost targets and attributing
@@ -4610,7 +4618,15 @@ async fn render_statuses_for_viewer_set(
             (status, crate::webxdc::invitation_entity(id, &uri, &name))
         })
         .collect();
+    let audio_ids: Vec<i64> = items
+        .iter()
+        .chain(targets.values())
+        .filter(|s| s.object_type.as_deref() == Some("Audio"))
+        .map(|s| s.id)
+        .collect();
+    let music = plamenu_db::music::for_statuses(pool, &audio_ids).await?;
     let shared = SharedMaps {
+        music,
         webxdc_invitations,
         targets,
         author_rows,
@@ -5050,6 +5066,7 @@ fn render_one(domain: &str, item: &Status, maps: &RenderMaps<'_>) -> Result<Valu
         });
         entity["account"] = booster_entity.clone();
         entity["video_channels"] = json!([]);
+        entity["music"] = Value::Null;
         apply_application(&mut entity, item, maps);
         if maps.viewer_maps.viewer.is_some() {
             entity["filtered"] = maps
@@ -5214,6 +5231,7 @@ fn render_plain(domain: &str, item: &Status, maps: &RenderMaps<'_>) -> Result<Va
         });
         entity["groups"] = json!([]);
         entity["video_channels"] = json!([]);
+        entity["music"] = Value::Null;
         entity["in_reply_to_uri"] = maps
             .shared
             .unresolved_parent_uris
@@ -5312,6 +5330,7 @@ fn render_plain(domain: &str, item: &Status, maps: &RenderMaps<'_>) -> Result<Va
         // comments); clients hide the reply control on one.
         "group_locked": maps.shared.group_locked.contains(&item.id),
     });
+    entity["music"] = json!(maps.shared.music.get(&item.id));
     entity["account"] = author_entity.clone();
     // Full community identities, not merely `group_post`. This is what lets
     // clients retain "posted in …" when a surface renders the bare original
@@ -5898,6 +5917,27 @@ pub async fn render_notifications(
         }
     }
 
+    let music_ids = items
+        .iter()
+        .filter(|i| i.kind == "music.favourite")
+        .map(|i| i.id)
+        .collect::<Vec<_>>();
+    let music_tracks =
+        crate::music_favourites::notification_tracks(pool, domain, &music_ids, viewer).await?;
+    let share_ids = items
+        .iter()
+        .filter(|n| n.kind == "music.share")
+        .map(|n| n.id)
+        .collect::<Vec<_>>();
+    let shared = crate::music_shares::notification_sources(pool, &share_ids, viewer).await?;
+    let download_ids = items
+        .iter()
+        .filter(|item| item.kind == "music.download")
+        .map(|item| item.id)
+        .collect::<Vec<_>>();
+    let downloads =
+        crate::music_downloads::notification_sources(pool, &download_ids, viewer).await?;
+
     let mut result = Vec::with_capacity(items.len());
     for item in items {
         // A dangling sender is a 404, exactly like the per-item
@@ -5944,6 +5984,20 @@ pub async fn render_notifications(
                 .report_id
                 .and_then(|id| reports_by_id.get(&id).cloned())
                 .unwrap_or(Value::Null);
+        }
+        if item.kind == "music.favourite" {
+            entity["music_track"] = music_tracks
+                .get(&item.id)
+                .map(serde_json::to_value)
+                .transpose()
+                .map_err(|e| ApiError::Internal(Box::new(e)))?
+                .unwrap_or(Value::Null);
+        }
+        if item.kind == "music.share" {
+            entity["music_resource"] = shared.get(&item.id).cloned().unwrap_or(Value::Null);
+        }
+        if item.kind == "music.download" {
+            entity["music_resource"] = downloads.get(&item.id).cloned().unwrap_or(Value::Null);
         }
         // Mastodon only emits `filtered` on a policy-filtered notification.
         if item.filtered {

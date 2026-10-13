@@ -143,6 +143,8 @@ class CandidateTests(unittest.TestCase):
             with (
                 patch.object(config, "PLAMENU_BINARY", str(self.binary)),
                 patch.object(config, "PLAMENU_DIR", self.root),
+                # This test exercises executable binding, not HTTP/DB readiness.
+                patch.object(ephemeral.Instance, "_ready", return_value=True),
             ):
                 instance.start(timeout=5)
                 deadline = time.monotonic() + 5

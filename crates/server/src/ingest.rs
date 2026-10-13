@@ -1739,7 +1739,7 @@ fn live_media<'a>(
 /// An `xsd:duration` (`PT2H49M45S`, `PT10185S`, …) as seconds — `PeerTube`
 /// declares the video length on the object; storing it means clients show
 /// the real duration before the file is ever downloaded and probed.
-fn parse_iso8601_seconds(raw: &str) -> Option<f64> {
+pub(crate) fn parse_iso8601_seconds(raw: &str) -> Option<f64> {
     let rest = raw.strip_prefix('P')?;
     let (date_part, time_part) = match rest.split_once('T') {
         Some((date, time)) => (date, time),
@@ -2339,6 +2339,7 @@ async fn store_remote_note(
     // retry. The delivery marker owns one-shot effects, not completion.
     store_remote_attachments(state, &stored, object, context.is_history()).await?;
     crate::video_metadata::ingest(state, stored.id, object).await?;
+    crate::audio::ingest(state, &stored, object).await?;
     // Cold history is not in discovery and must not add one actor fetch per
     // archived Video. Promotion through live delivery resolves the channel.
     if !context.is_history()
@@ -2843,6 +2844,7 @@ async fn update_remote_note_with_publication(
     // redistributions. Refresh before the fast path, then after any media
     // reconciliation below so replacement rows inherit the same metadata.
     let video_metadata_changed = crate::video_metadata::ingest(state, existing.id, object).await?;
+    crate::audio::ingest(state, existing, object).await?;
     let alternatives_changed = store_remote_video_alternatives(state, existing.id, object).await?;
     if !context.is_history()
         && existing.object_type.as_deref() == Some("Video")

@@ -414,6 +414,77 @@ async fn signing_out_drops_the_account_and_offers_the_rest(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn account_deletion_removes_its_roster_entry_and_keeps_other_sessions(pool: PgPool) {
+    let alice = seed(&pool, "alice").await;
+    let bob = seed(&pool, "bob").await;
+    let app = common::test_app(pool.clone());
+    let mut jar = Jar::default();
+    sign_in(&app, &mut jar, "alice").await;
+    sign_in(&app, &mut jar, "bob").await;
+    let alice_token = jar.roster_token(alice).unwrap();
+    let deleted = post_form(
+        &app,
+        "/web/settings/account/delete",
+        &jar,
+        &[
+            ("csrf", &jar.session_csrf()),
+            ("confirm_handle", "@bob"),
+            ("current_password", PASSWORD),
+        ],
+    )
+    .await;
+    assert_eq!(deleted.status, StatusCode::SEE_OTHER);
+    assert_eq!(deleted.location.as_deref(), Some("/"));
+    jar.update(&deleted);
+    assert!(plamenu_db::account::is_deleted(&pool, bob).await.unwrap());
+    assert!(jar.get(SESSION_COOKIE).is_none());
+    assert_eq!(jar.roster_ids(), vec![alice]);
+    assert_eq!(jar.roster_token(alice), Some(alice_token));
+    let chooser = get(&app, "/login", &jar).await;
+    assert!(chooser.body.contains("@alice"));
+    assert!(!chooser.body.contains("@bob"));
+    let switched = post_form(
+        &app,
+        "/web/accounts/switch",
+        &jar,
+        &[
+            ("csrf", &jar.roster_csrf()),
+            ("account_id", &alice.to_string()),
+        ],
+    )
+    .await;
+    assert_eq!(switched.status, StatusCode::SEE_OTHER);
+    assert_eq!(switched.location.as_deref(), Some("/"));
+    jar.update(&switched);
+    assert_eq!(
+        get(&app, "/settings/account", &jar).await.status,
+        StatusCode::OK
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn account_deleted_from_another_device_is_not_offered_in_a_stale_roster(pool: PgPool) {
+    let bob = seed(&pool, "bob").await;
+    let app = common::test_app(pool.clone());
+    let mut jar = Jar::default();
+    sign_in(&app, &mut jar, "bob").await;
+    let state = common::test_state_with(pool.clone(), common::StubFederation::with_actors([]));
+    let account = plamenu_db::account::find_by_id(&pool, bob)
+        .await
+        .unwrap()
+        .unwrap();
+    plamenu::moderation::self_delete_account(&state, &account)
+        .await
+        .unwrap();
+    let login = get(&app, "/login", &jar).await;
+    assert_eq!(login.status, StatusCode::OK);
+    assert!(!login.body.contains("Choose an account"));
+    assert!(!login.body.contains("@bob"));
+    assert!(login.body.contains("autocomplete=\"username\""));
+    assert!(login.body.contains("name=\"password\""));
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn signing_in_past_the_cap_revokes_the_evicted_session(pool: PgPool) {
     // MAX_ACCOUNTS is 5, so a sixth sign-in evicts the least-recently-added
     // account from the switcher.

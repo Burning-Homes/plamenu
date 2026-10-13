@@ -69,7 +69,10 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       (async () => {
         try {
-          return (await event.preloadResponse) || (await fetch(request));
+          const preloaded = await event.preloadResponse;
+          // An error response cannot fulfill navigation; let the offline path run.
+          if (preloaded && preloaded.type !== "error") return preloaded;
+          return await fetch(request);
         } catch {
           return (await caches.match(OFFLINE_URL)) || Response.error();
         }

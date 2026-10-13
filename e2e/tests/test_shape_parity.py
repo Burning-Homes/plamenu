@@ -77,6 +77,9 @@ def _plain_status_shape(label, mastodon_body, plamenu_body, *, allow_extra):
                 assert body["video_channels"] == [], (
                     f"{label}: plain status has unexpected channel attribution"
                 )
+                assert body["music"] is None, (
+                    f"{label}: plain status has unexpected Audio metadata"
+                )
             for value in body.values():
                 channels(value)
         elif isinstance(body, list):
@@ -85,7 +88,10 @@ def _plain_status_shape(label, mastodon_body, plamenu_body, *, allow_extra):
 
     channels(plamenu_body)
     assert_same_shape(
-        label, mastodon_body, plamenu_body, allow_extra=allow_extra | {"video_channels"}
+        label,
+        mastodon_body,
+        plamenu_body,
+        allow_extra=allow_extra | {"video_channels", "music"},
     )
 
 

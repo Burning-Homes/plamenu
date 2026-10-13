@@ -19,6 +19,7 @@ mod federation_debug;
 mod groups;
 mod instances;
 mod invites;
+mod music_jobs;
 mod policy;
 mod relays;
 mod remote_history;
@@ -129,6 +130,11 @@ const SECTIONS: &[Section] = &[
         href: "/admin",
         label: "Overview",
         permissions: &[],
+    },
+    Section {
+        href: "/admin/music/jobs",
+        label: "Music jobs",
+        permissions: &[permission::VIEW_DEVOPS],
     },
     Section {
         href: "/admin/accounts",
@@ -285,10 +291,11 @@ pub(super) fn admin_shell(admin: &WebAdmin, current: &str, title: &str, body: &M
             header.admin__head {
                 h1 { (icon("shield")) " Administration" }
             }
+            @let music_jobs_title=admin.user.locale.text("music-jobs-title");
             @let tabs: Vec<view::Tab> = SECTIONS
                 .iter()
                 .filter(|section| can_section(admin, section))
-                .map(|section| view::Tab::new(section.href, section.label, current == section.href))
+                .map(|section| view::Tab::new(section.href, if section.href=="/admin/music/jobs"{&music_jobs_title}else{section.label}, current == section.href))
                 .collect();
             (view::tab_strip("Admin sections", &tabs))
             div.admin__body {
@@ -874,6 +881,8 @@ pub fn router() -> Router<AppState> {
 fn moderation_router() -> Router<AppState> {
     Router::new()
         .route("/admin", get(overview))
+        .route("/admin/music/jobs", get(music_jobs::index))
+        .route("/web/admin/music/jobs/cancel", post(music_jobs::cancel))
         .route("/admin/accounts", get(accounts::index))
         .route("/admin/accounts/{id}", get(accounts::show))
         .route(

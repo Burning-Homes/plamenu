@@ -12,6 +12,11 @@ const mobile = {
   isMobile: true,
   hasTouch: true,
 };
+// Only the isolated fixture proxy consumes this bounded engine identity. It
+// keeps independent browser clients from sharing one login/IP rate budget.
+const clientHeaders = project => canonicalOrigin
+  ? { Origin: canonicalOrigin, 'X-Plamenu-Fixture-Client': project }
+  : {};
 
 export default defineConfig({
   testDir: './tests',
@@ -38,17 +43,17 @@ export default defineConfig({
     ...(canonicalOrigin ? { extraHTTPHeaders: { Origin: canonicalOrigin } } : {}),
   },
   projects: [
-    { name: 'chromium-desktop', grepInvert: /@no-js/, use: { ...devices['Desktop Chrome'], ...desktop } },
-    { name: 'chromium-mobile', grepInvert: /@no-js/, use: { ...devices['Desktop Chrome'], ...mobile } },
-    { name: 'firefox-desktop', grepInvert: /@no-js/, use: { ...devices['Desktop Firefox'], ...desktop } },
+    { name: 'chromium-desktop', grepInvert: /@no-js/, use: { ...devices['Desktop Chrome'], ...desktop, extraHTTPHeaders: clientHeaders('chromium-desktop') } },
+    { name: 'chromium-mobile', grepInvert: /@no-js/, use: { ...devices['Desktop Chrome'], ...mobile, extraHTTPHeaders: clientHeaders('chromium-mobile') } },
+    { name: 'firefox-desktop', grepInvert: /@no-js/, use: { ...devices['Desktop Firefox'], ...desktop, extraHTTPHeaders: clientHeaders('firefox-desktop') } },
     // Firefox supports a narrow viewport and touch input, but Playwright's
     // isMobile emulation is unsupported there and suppresses mouse pointers.
-    { name: 'firefox-mobile', grepInvert: /@no-js/, use: { ...devices['Desktop Firefox'], ...mobile, isMobile: false } },
-    { name: 'webkit-desktop', grepInvert: /@no-js/, use: { ...devices['Desktop Safari'], ...desktop } },
-    { name: 'webkit-mobile', grepInvert: /@no-js/, use: { ...devices['Desktop Safari'], ...mobile } },
+    { name: 'firefox-mobile', grepInvert: /@no-js/, use: { ...devices['Desktop Firefox'], ...mobile, isMobile: false, extraHTTPHeaders: clientHeaders('firefox-mobile') } },
+    { name: 'webkit-desktop', grepInvert: /@no-js/, use: { ...devices['Desktop Safari'], ...desktop, extraHTTPHeaders: clientHeaders('webkit-desktop') } },
+    { name: 'webkit-mobile', grepInvert: /@no-js/, use: { ...devices['Desktop Safari'], ...mobile, extraHTTPHeaders: clientHeaders('webkit-mobile') } },
     {
       name: 'chromium-no-javascript',
-      use: { ...devices['Desktop Chrome'], ...desktop, javaScriptEnabled: false },
+      use: { ...devices['Desktop Chrome'], ...desktop, javaScriptEnabled: false, extraHTTPHeaders: clientHeaders('chromium-no-javascript') },
       grep: /@no-js/,
     },
   ],

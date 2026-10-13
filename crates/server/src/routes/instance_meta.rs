@@ -182,6 +182,23 @@ pub async fn oembed(
         .split('#')
         .next()
         .unwrap_or_default();
+    if let Some(music) = crate::web::music_embeds::oembed(
+        &state,
+        url,
+        query
+            .maxwidth
+            .as_deref()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(400),
+        query
+            .maxheight
+            .as_deref()
+            .and_then(|value| value.parse().ok()),
+    )
+    .await?
+    {
+        return Ok(Json(music));
+    }
     let status_id = parse_status_url(&state.config.domain, url).ok_or(ApiError::NotFound)?;
     let item = status::find_by_id(&state.pool, status_id)
         .await?

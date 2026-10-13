@@ -355,6 +355,8 @@ pub struct PostParams<'a> {
     /// on the same explicit choice; passing `PostKind::Event` here without event
     /// params is refused rather than silently downgraded.
     pub kind: activity::PostKind,
+    /// Structured metadata for an explicitly authored Audio publication.
+    pub music: Option<&'a plamenu_db::music::Metadata>,
 }
 
 /// A progressive-enhancement link from an ordinary status to a Webxdc
@@ -377,11 +379,12 @@ fn stored_kind(
     has_poll: bool,
     has_title: bool,
 ) -> activity::PostKind {
-    use activity::PostKind::{Article, Event, Note, Page, Question, Video};
+    use activity::PostKind::{Article, Audio, Event, Note, Page, Question, Video};
     match authored {
         Article => Article,
         Event => Event,
         Video => Video,
+        Audio => Audio,
         // A `Question` and a group `Page` are implied, never chosen: a poll or a
         // group submission is what makes them.
         _ if has_poll => Question,
@@ -1213,6 +1216,26 @@ pub async fn post_status(
     post_status_inner(state, params, None, None, None, None, None).await
 }
 
+/// Website reactions are authored Notes, with their microformat edge committed
+/// alongside the ordinary native post and its transactional delivery jobs.
+pub(crate) async fn post_website_interaction(
+    state: &AppState,
+    params: PostParams<'_>,
+    source: &str,
+    kind: &str,
+    target: &str,
+) -> Result<(Status, usize), ApiError> {
+    post_status_transaction(
+        state,
+        params,
+        PostContext {
+            website_interaction: Some((source, kind, target)),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
 /// Publish in an owned video channel. Ownership, attachment and delivery are
 /// committed together; generic post endpoints cannot create an orphan Video.
 pub async fn post_video(
@@ -1465,7 +1488,6 @@ async fn inherit_reply_audience(
     Ok(())
 }
 
-#[allow(clippy::too_many_lines)]
 async fn post_status_inner(
     state: &AppState,
     params: PostParams<'_>,
@@ -1475,6 +1497,73 @@ async fn post_status_inner(
     video_channel_id: Option<i64>,
     replay_session_id: Option<&str>,
 ) -> Result<(Status, usize), ApiError> {
+    post_status_transaction(
+        state,
+        params,
+        PostContext {
+            application_id,
+            webxdc_invitation,
+            scheduled_claim,
+            video_channel_id,
+            replay_session_id,
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+#[derive(Default)]
+struct PostContext<'a> {
+    application_id: Option<i64>,
+    webxdc_invitation: Option<WebxdcInvitation<'a>>,
+    scheduled_claim: Option<(i64, i64)>,
+    video_channel_id: Option<i64>,
+    replay_session_id: Option<&'a str>,
+    connection: Option<&'a mut plamenu_db::PgConnection>,
+    prepared_media: Option<plamenu_db::media::Media>,
+    music_asset_id: Option<i64>,
+    website_interaction: Option<(&'a str, &'a str, &'a str)>,
+}
+
+/// The caller creates the protected attachment and asset reference in the
+/// same transaction. Only the music publication service invokes this path.
+pub(crate) async fn post_music_audio_conn(
+    state: &AppState,
+    connection: &mut plamenu_db::PgConnection,
+    params: PostParams<'_>,
+    media: plamenu_db::media::Media,
+    asset_id: i64,
+) -> Result<(Status, usize), ApiError> {
+    post_status_transaction(
+        state,
+        params,
+        PostContext {
+            connection: Some(connection),
+            prepared_media: Some(media),
+            music_asset_id: Some(asset_id),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+#[allow(clippy::too_many_lines)]
+async fn post_status_transaction(
+    state: &AppState,
+    params: PostParams<'_>,
+    context: PostContext<'_>,
+) -> Result<(Status, usize), ApiError> {
+    let PostContext {
+        application_id,
+        webxdc_invitation,
+        scheduled_claim,
+        video_channel_id,
+        replay_session_id,
+        connection,
+        prepared_media,
+        music_asset_id,
+        website_interaction,
+    } = context;
     validate_visibility(params.visibility)?;
     if params.kind == activity::PostKind::Video && video_channel_id.is_none() {
         return Err(ApiError::Unprocessable(
@@ -1490,7 +1579,10 @@ async fn post_status_inner(
     // shape every caller has passed since E4, and the composer gates them on an
     // explicit choice of their own); `kind` is what selects long-form.
     let kind = match (params.kind, params.event.is_some()) {
-        (activity::PostKind::Article | activity::PostKind::Video, true) => {
+        (
+            activity::PostKind::Article | activity::PostKind::Audio | activity::PostKind::Video,
+            true,
+        ) => {
             return Err(ApiError::Unprocessable(
                 "Validation failed: A post is either long-form or an event, not both".into(),
             ));
@@ -1544,13 +1636,38 @@ async fn post_status_inner(
     let has_typed_content = params.title.is_some_and(|t| !t.trim().is_empty())
         || params.external_url.is_some_and(|u| !u.trim().is_empty());
     ensure_status_has_content(&html, params.media_ids, has_typed_content)?;
-    let resolved_media = validate_media_ids(
-        state,
-        &author,
-        params.media_ids,
-        limits.max_media_attachments,
-    )
-    .await?;
+    let resolved_media = if let Some(media) = prepared_media {
+        if music_asset_id.is_none()
+            || kind != activity::PostKind::Audio
+            || media.account_id != author.id
+            || media.status_id.is_some()
+            || params.media_ids != [media.id]
+        {
+            return Err(ApiError::Unprocessable(
+                "Invalid stored music publication".into(),
+            ));
+        }
+        vec![media]
+    } else {
+        validate_media_ids(
+            state,
+            &author,
+            params.media_ids,
+            limits.max_media_attachments,
+        )
+        .await?
+    };
+    if music_asset_id.is_none()
+        && resolved_media.iter().any(|m| {
+            m.file_name
+                .as_ref()
+                .is_some_and(|key| key.starts_with("music"))
+        })
+    {
+        return Err(ApiError::Unprocessable(
+            "Publish a stored track from the Music library".into(),
+        ));
+    }
     if replay_session_id.is_none()
         && plamenu_db::native_live::contains_unpublished_replay(&state.pool, params.media_ids)
             .await?
@@ -1558,6 +1675,20 @@ async fn post_status_inner(
         return Err(ApiError::Forbidden(
             "A live replay is awaiting its session publication".into(),
         ));
+    }
+    if kind == activity::PostKind::Audio {
+        crate::audio::validate(&resolved_media, params.title)?;
+        if let Some(metadata) = params.music {
+            crate::audio::validate_metadata(metadata)?;
+        }
+        if params.poll.is_some()
+            || params.in_reply_to_id.is_some()
+            || params.external_url.is_some_and(|u| !u.trim().is_empty())
+        {
+            return Err(ApiError::Unprocessable(
+                "Audio publications cannot be polls, replies or link posts".into(),
+            ));
+        }
     }
     if video_channel_id.is_some() {
         crate::video::validate_publication(&params, &resolved_media)?;
@@ -1694,11 +1825,7 @@ async fn post_status_inner(
     // network I/O. Side effects that reference the still-uncommitted status
     // (notifications) or are regenerable (streaming, webhooks) run only after
     // the commit. Local-group Announce jobs belong to the transaction.
-    let mut tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(plamenu_db::DbError::from)?;
+    let mut tx = crate::mutation::Transaction::new(&state.pool, connection).await?;
     let conn = &mut *tx;
     if let Some(channel_id) = video_channel_id
         && !plamenu_db::video::lock_owned_channel(conn, channel_id, author.id).await?
@@ -1758,6 +1885,23 @@ async fn post_status_inner(
         },
     )
     .await?;
+    if kind == activity::PostKind::Audio {
+        let mut metadata = params.music.cloned().unwrap_or_default();
+        if metadata.artist.is_empty() {
+            metadata
+                .artist
+                .clone_from(if author.display_name.is_empty() {
+                    &author.username
+                } else {
+                    &author.display_name
+                });
+        }
+        plamenu_db::music::store(&mut *conn, stored.id, &metadata).await?;
+        if let Some(asset_id) = music_asset_id {
+            crate::music_publications::link(conn, asset_id, stored.id, resolved_media[0].id)
+                .await?;
+        }
+    }
     if let Some(invitation) = webxdc_invitation {
         plamenu_db::webxdc::attach_invitation_tx(conn, stored.id, invitation.session_id).await?;
     }
@@ -1966,6 +2110,29 @@ async fn post_status_inner(
             .as_ref()
             .map(crate::note::PreparedEvent::as_note_event),
     });
+    if kind == activity::PostKind::Audio {
+        let metadata = plamenu_db::music::for_statuses(&mut *conn, &[stored.id]).await?;
+        crate::audio::enrich(&mut create["object"], metadata.get(&stored.id));
+        if let Some(entities) = crate::music_entities::snapshots_conn(conn, &[stored.id])
+            .await?
+            .get(&stored.id)
+        {
+            entities.enrich(&state.config.domain, &mut create["object"]);
+        }
+        crate::music_library_federation::deliver_audio_conn(
+            state,
+            conn,
+            &author,
+            &stored,
+            &create["object"],
+            "Create",
+            None,
+        )
+        .await?;
+        mention_inboxes.extend(
+            crate::music_follows::inboxes(conn, &state.config.domain, &stored, &author).await?,
+        );
+    }
     let mut publication_streams = Vec::new();
     if video_channel_id.is_some() {
         let publication = plamenu_db::video::publications(&mut *conn, &[stored.id])
@@ -2070,7 +2237,13 @@ async fn post_status_inner(
         }
     }
 
-    tx.commit().await.map_err(plamenu_db::DbError::from)?;
+    if let Some((source, kind, target)) = website_interaction {
+        crate::webmentions::interactions::attach(conn, stored.id, source, kind, target).await?;
+    }
+
+    if !tx.commit().await? {
+        return Ok((stored, deliveries));
+    }
 
     // === Post-commit side effects: the post is durable, so these are best
     // effort — a failure is logged, never propagated as if the post failed. ===
@@ -2298,6 +2471,8 @@ async fn persist_compose_artifacts(
 /// current value, like Mastodon's `PUT /api/v1/statuses/{id}`.
 #[derive(Debug, Default)]
 pub struct EditParams<'a> {
+    /// Audio metadata replacement; omission preserves the existing metadata.
+    pub music: Option<plamenu_db::music::Metadata>,
     pub text: Option<&'a str>,
     /// The format the (possibly kept) text is authored in; `None` keeps the
     /// stored `content_type`, like the other absent fields.
@@ -2358,6 +2533,7 @@ pub struct MediaAccessibilityEdit {
 /// honest dry run of Save changes instead of a second, subtly different
 /// renderer.
 pub(crate) struct PreparedStatusEdit {
+    pub music: Option<plamenu_db::music::Metadata>,
     pub stored: Status,
     pub current_source: status::StatusSource,
     pub quote_row: Option<quote::Quote>,
@@ -2578,6 +2754,7 @@ pub(crate) async fn prepare_status_edit(
     let media_accessibility =
         changed_media_accessibility(&mut kept_media, params.media_accessibility)?;
     crate::video::validate_edit(state, &stored, &media_ids, effective_title.as_deref()).await?;
+    crate::audio::validate_edit(&stored, &kept_media, effective_title.as_deref())?;
 
     let composed = compose(state, &text, content_type).await?;
     let article = stored.object_type.as_deref() == Some("Article");
@@ -2603,6 +2780,7 @@ pub(crate) async fn prepare_status_edit(
     );
 
     Ok(PreparedStatusEdit {
+        music: crate::audio::validate_edit_metadata(&stored, params.music)?,
         stored,
         current_source,
         quote_row,
@@ -2673,6 +2851,31 @@ pub async fn edit_status(
     status_id: i64,
     params: EditParams<'_>,
 ) -> Result<Status, ApiError> {
+    edit_status_transaction(state, actor, status_id, params, None).await
+}
+
+pub(crate) async fn edit_status_conn(
+    state: &AppState,
+    connection: &mut plamenu_db::PgConnection,
+    actor: &Account,
+    status_id: i64,
+    params: EditParams<'_>,
+) -> Result<Status, ApiError> {
+    edit_status_transaction(state, actor, status_id, params, Some(connection)).await
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "shared edit keeps metadata and delivery in one transaction"
+)]
+async fn edit_status_transaction(
+    state: &AppState,
+    actor: &Account,
+    status_id: i64,
+    params: EditParams<'_>,
+    connection: Option<&mut plamenu_db::PgConnection>,
+) -> Result<Status, ApiError> {
+    let update_source = connection.is_none();
     let requester = actor.id;
     let stored = crate::video_channels::editable_status(state, requester, status_id).await?;
     let original_author = account::find_by_id(&state.pool, stored.account_id)
@@ -2680,6 +2883,7 @@ pub async fn edit_status(
         .ok_or(ApiError::NotFound)?;
     let actor = &original_author;
     let PreparedStatusEdit {
+        music,
         stored,
         current_source,
         quote_row: _,
@@ -2726,6 +2930,15 @@ pub async fn edit_status(
         _ => None,
     };
 
+    let mut music_rewrite = if let Some(metadata) = music {
+        let before = plamenu_db::music::for_statuses(&state.pool, &[stored.id]).await?;
+        // Retained-source edits also refresh embedded reusable metadata such
+        // as biographies/artwork, which does not live in the seven-field sidecar.
+        // The public status API retains its no-change behavior.
+        (!update_source || before.get(&stored.id) != Some(&metadata)).then_some(metadata)
+    } else {
+        None
+    };
     // Nothing changed: no snapshot, no federation (Mastodon swallows these).
     if html == stored.content
         && content_type.media_type() == current_source.content_type
@@ -2737,6 +2950,7 @@ pub async fn edit_status(
         && media_attributes.is_empty()
         && media_accessibility.is_empty()
         && event_rewrite.is_none()
+        && music_rewrite.is_none()
         && title
             .as_deref()
             .is_none_or(|t| Some(t) == stored.title.as_deref())
@@ -2753,15 +2967,35 @@ pub async fn edit_status(
     } else {
         None
     };
-    let mut tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(plamenu_db::DbError::from)?;
+    let mut tx = crate::mutation::Transaction::new(&state.pool, connection).await?;
+    if update_source
+        && stored.object_type.as_deref() == Some("Audio")
+        && (title.is_some()
+            || music_rewrite.is_some()
+            || text != current_source.text
+            || content_type.media_type() != current_source.content_type)
+        && let Some(metadata) = crate::music_assets::edit_publication_source_conn(
+            state,
+            &mut tx,
+            actor.id,
+            stored.id,
+            title.as_deref(),
+            music_rewrite.as_ref(),
+            (text != current_source.text
+                || content_type.media_type() != current_source.content_type)
+                .then_some((text.as_str(), content_type.media_type())),
+        )
+        .await?
+    {
+        music_rewrite = Some(metadata);
+    }
     // Written before the `Update` is built (it reads the sidecar back), so a moved
     // or cancelled event federates with this edit rather than one delivery later.
     if stored.object_type.as_deref() == Some("Video") {
         crate::video_channels::lock_status(&mut tx, requester, stored.id).await?;
+    }
+    if let Some(metadata) = &music_rewrite {
+        plamenu_db::music::store(&mut *tx, stored.id, metadata).await?;
     }
     let event_disruption = match &event_rewrite {
         Some((next, disrupted)) => {
@@ -2950,7 +3184,9 @@ pub async fn edit_status(
     crate::collections::scan_and_link_collections(state, &mut tx, &updated).await?;
 
     federate_note_update_conn(state, &mut tx, actor, &updated, edited_at, mention_inboxes).await?;
-    tx.commit().await.map_err(plamenu_db::DbError::from)?;
+    if !tx.commit().await? {
+        return Ok(updated);
+    }
     if let Err(error) =
         notification::create_mentions_many(&state.pool, &mention_notify, actor.id, updated.id).await
     {
@@ -3002,6 +3238,11 @@ pub(crate) async fn federate_note_update_conn(
     if updated.object_type.as_deref() == Some("Video") {
         mention_inboxes.extend(crate::video::follower_inboxes(conn, updated.id).await?);
     }
+    if updated.object_type.as_deref() == Some("Audio") {
+        mention_inboxes.extend(
+            crate::music_follows::inboxes(conn, &state.config.domain, updated, actor).await?,
+        );
+    }
     let batch = crate::note::NoteBatch::load_conn(state, conn, &[updated]).await?;
     let note = crate::note::note_in_batch(state, updated, actor, &batch)?;
     let updated_rfc3339 = edited_at
@@ -3013,6 +3254,22 @@ pub(crate) async fn federate_note_update_conn(
         note,
         &updated_rfc3339,
     );
+    if updated.object_type.as_deref() == Some("Audio")
+        && matches!(updated.visibility.as_str(), "public" | "unlisted")
+    {
+        crate::music_follows::deliver_entities(state, conn, actor, &update["object"], "Update")
+            .await?;
+        crate::music_library_federation::deliver_audio_conn(
+            state,
+            conn,
+            actor,
+            updated,
+            &update["object"],
+            "Update",
+            None,
+        )
+        .await?;
+    }
     if updated.visibility == "direct" {
         deliver_to_inboxes_conn(state, conn, actor, &update, &mention_inboxes).await?;
     } else {
@@ -4289,6 +4546,30 @@ pub async fn delete_status(
     status_id: i64,
     mode: DeleteMode,
 ) -> Result<Status, ApiError> {
+    delete_status_transaction(state, actor, status_id, mode, None).await
+}
+
+pub(crate) async fn delete_status_conn(
+    state: &AppState,
+    connection: &mut plamenu_db::PgConnection,
+    actor: &Account,
+    status_id: i64,
+    mode: DeleteMode,
+) -> Result<Status, ApiError> {
+    delete_status_transaction(state, actor, status_id, mode, Some(connection)).await
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "shared status deletion remains one atomic lifecycle"
+)]
+async fn delete_status_transaction(
+    state: &AppState,
+    actor: &Account,
+    status_id: i64,
+    mode: DeleteMode,
+    connection: Option<&mut plamenu_db::PgConnection>,
+) -> Result<Status, ApiError> {
     let requester = actor.id;
     // Boost deletion retains its original owner-only path.
     let existing = match status::find_local(&state.pool, requester, status_id).await? {
@@ -4356,15 +4637,33 @@ pub async fn delete_status(
             original_extras.push(inbox);
         }
     }
-    let mut tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(plamenu_db::DbError::from)?;
+    let mut tx = crate::mutation::Transaction::new(&state.pool, connection).await?;
     if existing.object_type.as_deref() == Some("Video") {
         crate::video_channels::lock_status(&mut tx, requester, existing.id).await?;
         original_extras.extend(crate::video::follower_inboxes(&mut tx, existing.id).await?);
         crate::video::federate_owner_delete_conn(state, &mut tx, &existing, actor).await?;
+    }
+    if existing.object_type.as_deref() == Some("Audio") {
+        original_extras.extend(
+            crate::music_follows::inboxes(&mut tx, &state.config.domain, &existing, actor).await?,
+        );
+    }
+    let music_document = if existing.object_type.as_deref() == Some("Audio")
+        && matches!(existing.visibility.as_str(), "public" | "unlisted")
+    {
+        let batch = crate::note::NoteBatch::load_conn(state, &mut tx, &[&existing]).await?;
+        Some(crate::note::note_in_batch(state, &existing, actor, &batch)?)
+    } else {
+        None
+    };
+    if let Some(object) = &music_document {
+        crate::music_library_federation::deliver_audio_conn(
+            state, &mut tx, actor, &existing, object, "Delete", None,
+        )
+        .await?;
+    }
+    if existing.object_type.as_deref() == Some("Audio") {
+        crate::music_publications::unlink(&mut tx, existing.id).await?;
     }
     let deleted = match mode {
         DeleteMode::Stub => status::stub_local_conn(&mut tx, status_id, actor.id).await?,
@@ -4380,8 +4679,9 @@ pub async fn delete_status(
         plamenu_db::status_tombstone::record(&mut *tx, deleted.id, actor.id, &uri).await?;
     }
     if deleted.visibility == "local" {
-        tx.commit().await.map_err(plamenu_db::DbError::from)?;
-        crate::streaming::publish(state, &delete_event).await;
+        if tx.commit().await? {
+            crate::streaming::publish(state, &delete_event).await;
+        }
         return Ok(deleted);
     }
     if let Some(audience) = &direct_audience {
@@ -4391,8 +4691,9 @@ pub async fn delete_status(
         let uri = status_uri_for_account(&state.config.domain, &deleted, actor);
         let delete = activity::delete_note(&state.config.domain, &actor.username, &uri);
         deliver_to_inboxes_conn(state, &mut tx, actor, &delete, &audience.inboxes).await?;
-        tx.commit().await.map_err(plamenu_db::DbError::from)?;
-        crate::streaming::publish(state, &delete_event).await;
+        if tx.commit().await? {
+            crate::streaming::publish(state, &delete_event).await;
+        }
         return Ok(deleted);
     }
     if let Some(target_id) = deleted.reblog_of_id {
@@ -4432,6 +4733,9 @@ pub async fn delete_status(
         let uri = status_uri_for_account(&state.config.domain, &deleted, actor);
         let delete = activity::delete_note(&state.config.domain, &actor.username, &uri);
         fan_out_conn(state, &mut tx, actor, &delete, &original_extras).await?;
+        if let Some(object) = &music_document {
+            crate::music_follows::deliver_entities(state, &mut tx, actor, object, "Delete").await?;
+        }
         // A local group submission's Delete travels onward wrapped in the
         // group's Announce, and the compat bare Announce is undone.
         if deleted.visibility == "public" {
@@ -4460,8 +4764,9 @@ pub async fn delete_status(
             }
         }
     }
-    tx.commit().await.map_err(plamenu_db::DbError::from)?;
-    crate::streaming::publish(state, &delete_event).await;
+    if tx.commit().await? {
+        crate::streaming::publish(state, &delete_event).await;
+    }
     Ok(deleted)
 }
 

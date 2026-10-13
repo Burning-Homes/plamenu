@@ -120,8 +120,7 @@ pub async fn complete(pool: &PgPool, job_id: i64) -> Result<(), DbError> {
 
 /// Reschedules a failed send with exponential backoff (60s, 4m, 16m, ~1h).
 pub async fn retry_later(pool: &PgPool, job_id: i64, attempts: i32) -> Result<(), DbError> {
-    let exp = u32::try_from(attempts.clamp(1, 9)).unwrap_or(1) - 1;
-    let delay = f64::from((60u32 * 4u32.saturating_pow(exp)).min(21_600));
+    let delay = retry_delay(attempts);
     sqlx::query!(
         "UPDATE email_jobs SET run_at = now() + make_interval(secs => $2) WHERE id = $1",
         job_id,
@@ -145,6 +144,23 @@ pub async fn make_all_due(pool: &PgPool) -> Result<(), DbError> {
     sqlx::query!("UPDATE email_jobs SET run_at = now()")
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+fn retry_delay(attempts: i32) -> f64 {
+    let exp = u32::try_from(attempts.clamp(1, 9)).unwrap_or(1) - 1;
+    f64::from((60u32 * 4u32.saturating_pow(exp)).min(21_600))
+}
+/// A notification worker must not postpone a batch another claimant owns.
+pub async fn retry_current(pool: &PgPool, job: &EmailJob) -> Result<(), DbError> {
+    sqlx::query(
+        "UPDATE email_jobs SET run_at=now()+make_interval(secs=>$3) WHERE id=$1 AND attempts=$2",
+    )
+    .bind(job.id)
+    .bind(job.attempts)
+    .bind(retry_delay(job.attempts))
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

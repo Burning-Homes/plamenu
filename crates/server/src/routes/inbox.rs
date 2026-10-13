@@ -78,6 +78,10 @@ macro_rules! dispatch_authenticated_activity {
             if webxdc_handled {
                 break 'dispatch Ok(StatusCode::ACCEPTED);
             }
+            crate::music_remote::incoming(state, sender, raw).await?;
+            if Box::pin(crate::music_follows::incoming(state, sender, raw)).await? {
+                break 'dispatch Ok(StatusCode::ACCEPTED);
+            }
             if Box::pin(crate::video_mirrors::incoming::handle(state,sender,activity)).await? {
                 break 'dispatch Ok(StatusCode::ACCEPTED);
             }

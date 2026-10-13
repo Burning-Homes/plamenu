@@ -605,9 +605,27 @@ async fn blocking_reload_cold_flight_never_falls_through_while_origin_is_running
     *f.stub.media_fetch_gate.lock().unwrap() = None;
     gate.add_permits(1);
     for request in requests {
-        assert_eq!(request.await.unwrap().0, StatusCode::OK);
+        let (status, bytes) = request.await.unwrap();
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            String::from_utf8(bytes)
+                .unwrap()
+                .matches("#EXTINF:")
+                .count(),
+            2
+        );
     }
-    assert_eq!(f.stub.media_fetches.lock().unwrap().len(), 2);
+    // After releasing the origin, SQL bookkeeping may outlast the one-second
+    // freshness interval and legitimately refresh a playlist. The strict
+    // single-fetch assertion above applies while the cold flight is running.
+    assert!(
+        f.stub
+            .media_fetches
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|url| url == MASTER || url == &f.origin)
+    );
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

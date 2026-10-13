@@ -109,18 +109,19 @@ pub(super) fn replace_poster_form(
     }
 }
 
-fn new_channel_form(
+pub(super) fn new_channel_form(
     csrf: &str,
     expand: bool,
     locale: Locale,
     name: &str,
     display_name: &str,
-    standalone: bool,
+    return_to: &str,
 ) -> Markup {
+    let standalone = return_to == "/videos/channels";
     let form = html! {
             form.settings-form method="post" action="/web/video-channels" {
                 input type="hidden" name="csrf" value=(csrf);
-                input type="hidden" name="return_to" value=(if standalone {"/videos/channels"} else {"/videos/upload"});
+                input type="hidden" name="return_to" value=(return_to);
                 label.settings-field {
                     span.settings-field__label { (locale.text("videos-channel-address")) }
                     input name="username" pattern="[a-zA-Z0-9_]+" maxlength="30" required value=(name);
@@ -145,7 +146,7 @@ fn channel_page(user: &WebUser, name: &str, display_name: &str, error: Option<&s
         h1 {(locale.text("videos-new-channel"))}
         (super::video_workspace::navigation("/videos/channels",locale))
         @if let Some(error)=error {p.settings__error role="alert" {(error)}}
-        (new_channel_form(&user.csrf,true,locale,name,display_name,true))
+        (new_channel_form(&user.csrf,true,locale,name,display_name,"/videos/channels"))
     }};
     super::video_history::private(
         layout::shell(&locale.text("videos-new-channel"), Some(user), &body).into_response(),
@@ -201,14 +202,14 @@ pub(super) async fn page(
     let body = html! {
         section.column.video-form {
             h1 { (locale.text(if preview.is_some() { "videos-review" } else { "studio-upload" })) }
+            @if preview.is_none() { (super::view::media_creation_navigation(locale, "video")) }
             @if let Some(message) = error { p.settings__error role="alert" { (message) } }
-            (super::video_workspace::navigation("/videos",locale))
+            @if preview.is_some() { (super::video_workspace::navigation("/videos",locale)) }
             @if preview.is_none() {
                 p.video-form__intro { (locale.text("videos-intro")) }
                 p.settings-field__hint {(locale.text("studio-required"))}
-                @if channels.is_empty() { (new_channel_form(&user.csrf, true, locale,"","",false)) }
             }
-            @if !channels.is_empty() {
+
                 form.settings-form data-video-upload[preview.is_none()] data-video-schedule-form[preview.is_some() && edit.is_none()] method="post"
                     action=(if edit.is_some(){format!("/web/videos/drafts/{}/alternatives",draft.media_id.unwrap())}else{"/web/videos".into()})
                     enctype=(if edit.is_some(){"application/x-www-form-urlencoded"}else{"multipart/form-data"}) {
@@ -237,7 +238,8 @@ pub(super) async fn page(
                     }
                     @if edit.is_none(){fieldset.settings-form__group {
                         legend { (locale.text("videos-details")) }
-                        label.settings-field {
+                        @if channels.is_empty() {input type="hidden" name="channel" value="default";}
+                        @else {                        label.settings-field {
                             span.settings-field__label { (locale.text("videos-channel"))  span.video-form__required aria-hidden="true" {" *"} }
                             @if native { input type="hidden" name="channel" value=(draft.channel); }
                             select name="channel" aria-label=(locale.text("videos-channel")) required disabled[native] {
@@ -246,7 +248,8 @@ pub(super) async fn page(
                                 }
                             }
                         }
-                        @if preview.is_none() {a.video-form__minor-action href="/videos/channels/new" {(locale.text("videos-new-channel"))}}
+                        }
+                        @if preview.is_none() && !channels.is_empty() {a.video-form__minor-action href="/videos/channels/new" {(locale.text("videos-new-channel"))}}
                         @if preview.is_some() && edit.is_none(){p{a href=(format!("/videos/{}/sharing",draft.media_id.unwrap())){(locale.text("video-sharing-title"))}}}
                         label.settings-field {
                             span.settings-field__label { (locale.text("videos-name"))  span.video-form__required aria-hidden="true" {" *"} }
@@ -435,7 +438,7 @@ pub(super) async fn page(
                         }
                     }
                 }
-            }
+
         }
     };
     Ok(layout::shell(
@@ -565,9 +568,19 @@ pub async fn create_channel(State(state): State<AppState>, user: WebUser, body: 
     {
         Ok(channel) => redirect_to(&if field(&pairs, "return_to") == Some("/videos/channels") {
             format!("/videos/channels/{}", channel.id)
+        } else if field(&pairs, "return_to") == Some("/videos/live/new") {
+            "/videos/live/new".into()
         } else {
             "/videos/upload".into()
         }),
+        Err(ApiError::Unprocessable(message))
+            if field(&pairs, "return_to") == Some("/videos/live/new") =>
+        {
+            match super::live::creation_form(&state, &user, &pairs, Some(&message)).await {
+                Ok(page) => (axum::http::StatusCode::UNPROCESSABLE_ENTITY, page).into_response(),
+                Err(error) => error.into_response(),
+            }
+        }
         Err(ApiError::Unprocessable(message))
             if field(&pairs, "return_to") == Some("/videos/channels") =>
         {
@@ -763,10 +776,6 @@ pub(super) async fn reserve_upload(
     captions: Option<&str>,
 ) -> Result<i64, ApiError> {
     validate_alternatives(draft)?;
-    let channel_id: i64 = draft
-        .channel
-        .parse()
-        .map_err(|_| ApiError::Unprocessable("Choose a video channel before the file".into()))?;
     if !(3..=120).contains(&draft.title.trim().chars().count()) {
         return Err(ApiError::Unprocessable(
             "Give the video a title of 3–120 characters".into(),
@@ -828,6 +837,16 @@ pub(super) async fn reserve_upload(
         disk_available_bytes: available,
         min_free_bytes: config.min_free_gib * crate::config::NativeVideoConfig::GIB,
         processing_reserved_bytes: state.video_resources.usage().1,
+    };
+    let channel_id = if draft.channel == "default" {
+        crate::video::default_channel(state, &user.current.account)
+            .await?
+            .id
+    } else {
+        draft
+            .channel
+            .parse()
+            .map_err(|_| ApiError::Unprocessable("Choose a video channel".into()))?
     };
     let new = video_draft::NewDraft {
         media_id: id,

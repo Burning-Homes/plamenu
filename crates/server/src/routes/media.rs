@@ -793,6 +793,14 @@ pub(crate) async fn stream_stored_file(
         .open(file_name)
         .await
         .map_err(|_| ApiError::NotFound)?;
+    stream_open_file(opened, content_type, cache_control, headers).await
+}
+pub(crate) async fn stream_open_file(
+    opened: crate::storage::MediaRead,
+    content_type: &str,
+    cache_control: &'static str,
+    headers: &HeaderMap,
+) -> Result<Response, ApiError> {
     let common = [
         (header::CONTENT_TYPE, content_type.to_owned()),
         (header::CACHE_CONTROL, cache_control.to_owned()),

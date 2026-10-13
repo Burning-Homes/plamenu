@@ -72,6 +72,33 @@ pub async fn create_channel(
     name: &str,
     title: &str,
 ) -> Result<Account, ApiError> {
+    create_channel_inner(state, owner, name, title, false).await
+}
+
+/// Ordinary publishing needs no channel-address setup. The owner lock below
+/// makes the first channel idempotent even when two upload tabs start together.
+pub async fn default_channel(state: &AppState, owner: &Account) -> Result<Account, ApiError> {
+    if let Some(channel) = video::owned_channels(&state.pool, owner.id).await?.first() {
+        return account::find_by_id(&state.pool, channel.account_id)
+            .await?
+            .ok_or(ApiError::NotFound);
+    }
+    let name = format!("videos_{}", plamenu_db::id::next());
+    let title = if owner.display_name.is_empty() {
+        owner.username.clone()
+    } else {
+        owner.display_name.chars().take(120).collect()
+    };
+    create_channel_inner(state, owner, &name, &title, true).await
+}
+
+async fn create_channel_inner(
+    state: &AppState,
+    owner: &Account,
+    name: &str,
+    title: &str,
+    only_if_empty: bool,
+) -> Result<Account, ApiError> {
     let name = name.trim();
     let title = title.trim();
     if name.is_empty()
@@ -116,7 +143,13 @@ pub async fn create_channel(
         .fetch_one(&mut *tx)
         .await
         .map_err(plamenu_db::DbError::from)?;
-    if video::owned_channels(&mut *tx, owner.id).await?.len() >= 50 {
+    let channels = video::owned_channels(&mut *tx, owner.id).await?;
+    if only_if_empty && let Some(channel) = channels.first() {
+        return account::find_by_id(&mut *tx, channel.account_id)
+            .await?
+            .ok_or(ApiError::NotFound);
+    }
+    if channels.len() >= 50 {
         return Err(ApiError::Unprocessable(
             "You have reached the limit of 50 video channels".into(),
         ));

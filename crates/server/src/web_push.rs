@@ -325,6 +325,10 @@ fn title(kind: &str, name: &str) -> Option<String> {
         "follow" => format!("{name} is now following you"),
         "follow_request" => format!("Pending follower: {name}"),
         "favourite" => format!("{name} favorited your post"),
+        "music.favourite" => format!("{name} saved your track as a music favourite"),
+        "music.share" => format!("{name} shared music with you"),
+        "music.download" => "Your music download is ready".into(),
+        "webmention" => "Your page received a website mention".into(),
         "reblog" => format!("{name} boosted your post"),
         "quote" => format!("{name} quoted your post"),
         "pleroma:emoji_reaction" => format!("{name} reacted to your post"),
@@ -424,6 +428,85 @@ enum AttemptError {
     Transient(String),
 }
 
+async fn notification_body(
+    state: &AppState,
+    notification: &notification::Notification,
+    target_status: Option<&status::Status>,
+    from_account: &account::Account,
+) -> Result<String, AttemptError> {
+    let music_track = if notification.kind == "music.favourite" {
+        Some(
+            crate::music_favourites::notification_tracks(
+                &state.pool,
+                &state.config.domain,
+                &[notification.id],
+                notification.account_id,
+            )
+            .await
+            .map_err(|e| AttemptError::Transient(e.to_string()))?
+            .remove(&notification.id)
+            .ok_or_else(|| AttemptError::Permanent("music source is no longer available".into()))?,
+        )
+    } else {
+        None
+    };
+    if notification.kind == "webmention" {
+        crate::webmentions::notification_sources(
+            state,
+            &[notification.id],
+            notification.account_id,
+        )
+        .await
+        .map_err(|e| AttemptError::Transient(e.to_string()))?
+        .remove(&notification.id)
+        .ok_or_else(|| AttemptError::Permanent("Website mention is no longer available".into()))?;
+        return Ok("Open Website mentions in Music".into());
+    }
+    if notification.kind == "music.download" {
+        crate::music_downloads::notification_sources(
+            &state.pool,
+            &[notification.id],
+            notification.account_id,
+        )
+        .await
+        .map_err(|error| AttemptError::Transient(error.to_string()))?
+        .remove(&notification.id)
+        .ok_or_else(|| AttemptError::Permanent("Music download is no longer available".into()))?;
+        return Ok("Open Music → Downloads".into());
+    }
+    let shared = if notification.kind == "music.share" {
+        Some(
+            crate::music_shares::notification_sources(
+                &state.pool,
+                &[notification.id],
+                notification.account_id,
+            )
+            .await
+            .map_err(|e| AttemptError::Transient(e.to_string()))?
+            .remove(&notification.id)
+            .ok_or_else(|| AttemptError::Permanent("music share is no longer available".into()))?,
+        )
+    } else {
+        None
+    };
+    let body_source = if let Some(source) = shared {
+        source["name"]
+            .as_str()
+            .or_else(|| source["title"].as_str())
+            .unwrap_or_default()
+            .to_owned()
+    } else if let Some(track) = music_track {
+        format!("{} — {}", track.title, track.artist)
+    } else {
+        match &target_status {
+            Some(status) if !status.spoiler_text.is_empty() => status.spoiler_text.clone(),
+            Some(status) => status.content.clone(),
+            None => from_account.note.clone(),
+        }
+    };
+    Ok(truncate(&decode_entities(&strip_tags(&body_source)), 140))
+}
+
 async fn attempt(
     state: &AppState,
     vapid: &Vapid,
@@ -440,10 +523,17 @@ async fn attempt(
         .await
         .map_err(db_err)?
         .ok_or_else(|| permanent("notification vanished"))?;
-    let reasons = notification::reasons(&state.pool, notification.id)
+    let mut reasons = notification::reasons(&state.pool, notification.id)
         .await
         .map_err(db_err)?;
 
+    if let Some(kinds) =
+        plamenu_db::notification_delivery::in_app_kinds(&state.pool, notification.account_id, None)
+            .await
+            .map_err(db_err)?
+    {
+        reasons.retain(|reason| kinds.contains(reason));
+    }
     // Stale notifications are pointless to wake a phone for.
     if OffsetDateTime::now_utc() - notification.created_at > time::Duration::seconds(TTL_SECONDS) {
         return Err(permanent("notification expired"));
@@ -488,12 +578,8 @@ async fn attempt(
         &from_account.display_name
     };
     let title = title(push_kind, name).ok_or_else(|| permanent("kind has no push rendering"))?;
-    let body_source = match &target_status {
-        Some(status) if !status.spoiler_text.is_empty() => status.spoiler_text.clone(),
-        Some(status) => status.content.clone(),
-        None => from_account.note.clone(),
-    };
-    let body = truncate(&decode_entities(&strip_tags(&body_source)), 140);
+    let body =
+        notification_body(state, &notification, target_status.as_ref(), &from_account).await?;
     // Push icons route through the proxy; the last-resort direct fallback does
     // not apply to a service-worker-fetched notification icon.
     let icon = avatar_url(domain, &from_account, false)

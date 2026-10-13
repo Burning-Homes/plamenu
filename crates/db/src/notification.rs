@@ -787,13 +787,23 @@ pub async fn list(
         let mut notifications = sqlx::query_as!(
             Notification,
             r#"
-            SELECT id, account_id, from_account_id,
-                   notification_kind_for(reasons, $5) AS "kind!",
+            WITH delivery_kinds AS MATERIALIZED (
+            SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM notification_delivery_preferences
+                WHERE account_id=$1 AND NOT in_app
+            ) THEN $5::text[] ELSE ARRAY(
+                SELECT kind FROM unnest(COALESCE($5::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)
+                WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p
+                    WHERE p.account_id=$1 AND p.kind=k.kind AND NOT p.in_app)
+            ) END AS kinds
+        )
+        SELECT id, account_id, from_account_id,
+                   notification_kind_for(reasons, (SELECT kinds FROM delivery_kinds)) AS "kind!",
                    status_id, collection_id, emoji, created_at, group_key, filtered, account_warning_id, report_id
             FROM notifications n
             WHERE account_id = $1 AND id > $2
               AND ($3::bigint IS NULL OR id < $3)
-              AND notification_kind_for(reasons, $5) IS NOT NULL
+              AND notification_kind_for(reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
               AND ($6::bigint IS NULL OR from_account_id = $6)
               AND ($7 OR NOT filtered)
               AND NOT sender_filtered($1, n.from_account_id)
@@ -816,14 +826,24 @@ pub async fn list(
     let notifications = sqlx::query_as!(
         Notification,
         r#"
+        WITH delivery_kinds AS MATERIALIZED (
+            SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM notification_delivery_preferences
+                WHERE account_id=$1 AND NOT in_app
+            ) THEN $5::text[] ELSE ARRAY(
+                SELECT kind FROM unnest(COALESCE($5::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)
+                WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p
+                    WHERE p.account_id=$1 AND p.kind=k.kind AND NOT p.in_app)
+            ) END AS kinds
+        )
         SELECT id, account_id, from_account_id,
-               notification_kind_for(reasons, $5) AS "kind!",
+               notification_kind_for(reasons, (SELECT kinds FROM delivery_kinds)) AS "kind!",
                status_id, collection_id, emoji, created_at, group_key, filtered, account_warning_id, report_id
         FROM notifications n
         WHERE account_id = $1
           AND ($2::bigint IS NULL OR id < $2)
           AND ($3::bigint IS NULL OR id > $3)
-          AND notification_kind_for(reasons, $5) IS NOT NULL
+          AND notification_kind_for(reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
           AND ($6::bigint IS NULL OR from_account_id = $6)
           AND ($7 OR NOT filtered)
           AND NOT sender_filtered($1, n.from_account_id)
@@ -872,20 +892,29 @@ pub async fn list_grouped(
     let notifications = sqlx::query_as!(
         Notification,
         r#"
-        WITH RECURSIVE grouped AS (
+        WITH RECURSIVE delivery_kinds AS MATERIALIZED (
+            SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM notification_delivery_preferences
+                WHERE account_id=$1 AND NOT in_app
+            ) THEN $6::text[] ELSE ARRAY(
+                SELECT kind FROM unnest(COALESCE($6::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)
+                WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p
+                    WHERE p.account_id=$1 AND p.kind=k.kind AND NOT p.in_app)
+            ) END AS kinds
+        ), grouped AS (
             (
                 SELECT n.id, n.account_id, n.from_account_id,
-                       notification_kind_for(n.reasons, $6) AS kind, n.status_id,
+                       notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) AS kind, n.status_id,
                        n.collection_id, n.emoji, n.created_at, n.group_key, n.filtered,
                        n.account_warning_id, n.report_id,
-                       ARRAY[COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, $6) = ANY($5)
+                       ARRAY[COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) = ANY($5)
                                            THEN n.group_key END,
                                       'ungrouped-' || n.id)] AS seen
                 FROM notifications n
                 WHERE n.account_id = $1
                   AND ($2::bigint IS NULL OR n.id < $2)
                   AND ($3::bigint IS NULL OR n.id > $3)
-                  AND notification_kind_for(n.reasons, $6) IS NOT NULL
+                  AND notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
                   AND ($7::bigint IS NULL OR n.from_account_id = $7)
                   AND ($8 OR NOT n.filtered)
                   AND NOT sender_filtered($1, n.from_account_id)
@@ -899,20 +928,20 @@ pub async fn list_grouped(
             FROM (SELECT id, seen FROM grouped WHERE cardinality(seen) < $4::bigint) AS wt
             CROSS JOIN LATERAL (
                 SELECT n.id, n.account_id, n.from_account_id,
-                       notification_kind_for(n.reasons, $6) AS kind, n.status_id,
+                       notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) AS kind, n.status_id,
                        n.collection_id, n.emoji, n.created_at, n.group_key, n.filtered,
                        n.account_warning_id, n.report_id,
-                       COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, $6) = ANY($5)
+                       COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) = ANY($5)
                                      THEN n.group_key END,
                                 'ungrouped-' || n.id) AS gkey
                 FROM notifications n
                 WHERE n.account_id = $1 AND n.id < wt.id
                   AND ($3::bigint IS NULL OR n.id > $3)
-                  AND notification_kind_for(n.reasons, $6) IS NOT NULL
+                  AND notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
                   AND ($7::bigint IS NULL OR n.from_account_id = $7)
                   AND ($8 OR NOT n.filtered)
                   AND NOT sender_filtered($1, n.from_account_id)
-                  AND COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, $6) = ANY($5)
+                  AND COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) = ANY($5)
                                     THEN n.group_key END,
                                'ungrouped-' || n.id) <> ALL(wt.seen)
                 ORDER BY n.id DESC
@@ -956,19 +985,28 @@ pub async fn list_grouped_above(
     let mut notifications = sqlx::query_as!(
         Notification,
         r#"
-        WITH RECURSIVE grouped AS (
+        WITH RECURSIVE delivery_kinds AS MATERIALIZED (
+            SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM notification_delivery_preferences
+                WHERE account_id=$1 AND NOT in_app
+            ) THEN $6::text[] ELSE ARRAY(
+                SELECT kind FROM unnest(COALESCE($6::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)
+                WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p
+                    WHERE p.account_id=$1 AND p.kind=k.kind AND NOT p.in_app)
+            ) END AS kinds
+        ), grouped AS (
             (
                 SELECT n.id, n.account_id, n.from_account_id,
-                       notification_kind_for(n.reasons, $6) AS kind, n.status_id,
+                       notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) AS kind, n.status_id,
                        n.collection_id, n.emoji, n.created_at, n.group_key, n.filtered,
                        n.account_warning_id, n.report_id,
-                       ARRAY[COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, $6) = ANY($5)
+                       ARRAY[COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) = ANY($5)
                                            THEN n.group_key END,
                                       'ungrouped-' || n.id)] AS seen
                 FROM notifications n
                 WHERE n.account_id = $1 AND n.id > $2
                   AND ($3::bigint IS NULL OR n.id < $3)
-                  AND notification_kind_for(n.reasons, $6) IS NOT NULL
+                  AND notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
                   AND ($7::bigint IS NULL OR n.from_account_id = $7)
                   AND ($8 OR NOT n.filtered)
                   AND NOT sender_filtered($1, n.from_account_id)
@@ -982,20 +1020,20 @@ pub async fn list_grouped_above(
             FROM (SELECT id, seen FROM grouped WHERE cardinality(seen) < $4::bigint) AS wt
             CROSS JOIN LATERAL (
                 SELECT n.id, n.account_id, n.from_account_id,
-                       notification_kind_for(n.reasons, $6) AS kind, n.status_id,
+                       notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) AS kind, n.status_id,
                        n.collection_id, n.emoji, n.created_at, n.group_key, n.filtered,
                        n.account_warning_id, n.report_id,
-                       COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, $6) = ANY($5)
+                       COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) = ANY($5)
                                      THEN n.group_key END,
                                 'ungrouped-' || n.id) AS gkey
                 FROM notifications n
                 WHERE n.account_id = $1 AND n.id > wt.id
                   AND ($3::bigint IS NULL OR n.id < $3)
-                  AND notification_kind_for(n.reasons, $6) IS NOT NULL
+                  AND notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
                   AND ($7::bigint IS NULL OR n.from_account_id = $7)
                   AND ($8 OR NOT n.filtered)
                   AND NOT sender_filtered($1, n.from_account_id)
-                  AND COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, $6) = ANY($5)
+                  AND COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) = ANY($5)
                                     THEN n.group_key END,
                                'ungrouped-' || n.id) <> ALL(wt.seen)
                 ORDER BY n.id ASC
@@ -1110,7 +1148,7 @@ pub async fn find_group_head(
     )
     .fetch_optional(pool)
     .await?;
-    Ok(notification)
+    in_app_notification(pool, account_id, notification).await
 }
 
 /// Deletes a whole notification group (Mastodon's v2 dismiss). Dismissing
@@ -1210,7 +1248,28 @@ pub async fn find_by_id(
     )
     .fetch_optional(pool)
     .await?;
-    Ok(notification)
+    in_app_notification(pool, account_id, notification).await
+}
+
+async fn in_app_notification(
+    pool: &PgPool,
+    account: i64,
+    row: Option<Notification>,
+) -> Result<Option<Notification>, DbError> {
+    let Some(mut row) = row else {
+        return Ok(None);
+    };
+    if let Some(kinds) = crate::notification_delivery::in_app_kinds(pool, account, None).await? {
+        let Some(kind) = reasons(pool, row.id)
+            .await?
+            .into_iter()
+            .find(|reason| kinds.contains(reason))
+        else {
+            return Ok(None);
+        };
+        row.kind = kind;
+    }
+    Ok(Some(row))
 }
 
 /// Deletes one notification; `false` when it does not exist (or belongs to
@@ -1382,12 +1441,22 @@ pub async fn unread_count(
     let shows_filtered = filter.shows_filtered();
     let count = sqlx::query_scalar!(
         r#"
+        WITH delivery_kinds AS MATERIALIZED (
+            SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM notification_delivery_preferences
+                WHERE account_id=$1 AND NOT in_app
+            ) THEN $4::text[] ELSE ARRAY(
+                SELECT kind FROM unnest(COALESCE($4::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)
+                WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p
+                    WHERE p.account_id=$1 AND p.kind=k.kind AND NOT p.in_app)
+            ) END AS kinds
+        )
         SELECT COUNT(*) AS "count!"
         FROM (
             SELECT 1 AS one
             FROM notifications n
             WHERE account_id = $1 AND ($2::bigint IS NULL OR id > $2)
-              AND notification_kind_for(reasons, $4) IS NOT NULL
+              AND notification_kind_for(reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
               AND ($5::bigint IS NULL OR from_account_id = $5)
               AND ($6 OR NOT filtered)
               AND NOT sender_filtered($1, n.from_account_id)
@@ -1424,6 +1493,8 @@ pub async fn lemmy_unread_counts(
     user_id: i64,
     account_id: i64,
 ) -> Result<LemmyUnreadCounts, DbError> {
+    let kinds = crate::notification_delivery::in_app_kinds(pool, account_id, None).await?;
+    let mention_enabled = kinds.is_none_or(|kinds| kinds.iter().any(|kind| kind == "mention"));
     let (replies, mentions, private_messages) = sqlx::query_as::<_, (i64, i64, i64)>(
         r"
         WITH marker_value AS (
@@ -1463,7 +1534,7 @@ pub async fn lemmy_unread_counts(
                 )::bigint AS mentions
             FROM unread_mentions n
             JOIN statuses s ON s.id = n.status_id
-            WHERE NOT n.filtered
+            WHERE NOT n.filtered AND $3
               AND s.deleted_at IS NULL -- STUBFILTER
               AND NOT sender_filtered($2, n.from_account_id)
         ), direct_counts AS (
@@ -1484,6 +1555,7 @@ pub async fn lemmy_unread_counts(
     )
     .bind(user_id)
     .bind(account_id)
+    .bind(mention_enabled)
     .fetch_one(pool)
     .await?;
     Ok(LemmyUnreadCounts {
@@ -1498,25 +1570,50 @@ pub async fn lemmy_unread_counts(
 /// than the user's `notifications` marker. A single indexed probe, cheap
 /// enough to run on every web page render for the navigation bell's dot.
 pub async fn has_unread(pool: &PgPool, user_id: i64, account_id: i64) -> Result<bool, DbError> {
-    let unread = sqlx::query_scalar!(
-        r#"
+    has_unread_filtered(pool, user_id, account_id, false).await
+}
+
+pub async fn has_unread_activity(
+    pool: &PgPool,
+    user_id: i64,
+    account_id: i64,
+) -> Result<bool, DbError> {
+    has_unread_filtered(pool, user_id, account_id, true).await
+}
+
+async fn has_unread_filtered(
+    pool: &PgPool,
+    user_id: i64,
+    account_id: i64,
+    exclude_direct: bool,
+) -> Result<bool, DbError> {
+    let unread = sqlx::query_scalar::<_, bool>(r"
+        WITH delivery_kinds AS MATERIALIZED (
+            SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM notification_delivery_preferences
+                WHERE account_id=$2 AND NOT in_app
+            ) THEN $3::text[] ELSE ARRAY(
+                SELECT kind FROM unnest(COALESCE($3::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)
+                WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p
+                    WHERE p.account_id=$2 AND p.kind=k.kind AND NOT p.in_app)
+            ) END AS kinds
+        ), marker_value AS (
+            SELECT COALESCE((SELECT last_read_id FROM markers WHERE user_id=$1 AND timeline='notifications'),0) AS id
+        )
         SELECT EXISTS (
-            SELECT 1
-            FROM notifications n
-            WHERE n.account_id = $2
-              AND n.id > COALESCE(
-                  (SELECT last_read_id FROM markers
-                   WHERE user_id = $1 AND timeline = 'notifications'),
-                  0)
-              AND NOT n.filtered
-              AND NOT sender_filtered($2, n.from_account_id)
-        ) AS "unread!"
-        "#,
-        user_id,
-        account_id,
-    )
-    .fetch_one(pool)
-    .await?;
+            SELECT 1 FROM notifications n CROSS JOIN marker_value m
+            WHERE n.account_id=$2 AND n.id>m.id AND NOT n.filtered
+              AND (NOT $4 OR NOT EXISTS(SELECT 1 FROM statuses s WHERE s.id=n.status_id AND s.visibility='direct'))
+              AND NOT sender_filtered($2,n.from_account_id) AND notification_kind_for(n.reasons,(SELECT kinds FROM delivery_kinds)) IS NOT NULL
+              AND NOT EXISTS(SELECT 1 FROM lemmy_notification_read_overrides o WHERE o.account_id=$2 AND o.notification_id=n.id AND o.read)
+            UNION ALL
+            SELECT 1 FROM lemmy_notification_read_overrides o
+            JOIN notifications n ON n.id=o.notification_id CROSS JOIN marker_value m
+            WHERE o.account_id=$2 AND NOT o.read AND n.account_id=$2 AND n.id<=m.id
+              AND (NOT $4 OR NOT EXISTS(SELECT 1 FROM statuses s WHERE s.id=n.status_id AND s.visibility='direct'))
+              AND NOT n.filtered AND NOT sender_filtered($2,n.from_account_id) AND notification_kind_for(n.reasons,(SELECT kinds FROM delivery_kinds)) IS NOT NULL
+        )
+    ").bind(user_id).bind(account_id).bind(Option::<Vec<String>>::None).bind(exclude_direct).fetch_one(pool).await?;
     Ok(unread)
 }
 

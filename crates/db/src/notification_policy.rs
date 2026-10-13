@@ -25,6 +25,8 @@ pub const FILTERABLE_KINDS: &[&str] = &[
     "follow",
     "follow_request",
     "favourite",
+    "music.favourite",
+    "music.share",
     "quote",
     "added_to_collection",
 ];

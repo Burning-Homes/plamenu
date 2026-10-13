@@ -927,6 +927,11 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
         supervise("web push", state.clone(), plamenu::web_push::spawn),
         supervise("link crawler", state.clone(), plamenu::link_preview::spawn),
         supervise("link verifier", state.clone(), plamenu::link_verify::spawn),
+        supervise(
+            "webmentions",
+            state.clone(),
+            plamenu::webmentions::worker::spawn,
+        ),
         supervise("reply fetcher", state.clone(), plamenu::reply_fetch::spawn),
         supervise(
             "remote history",
@@ -989,6 +994,22 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
             plamenu::video_analytics::spawn,
         ),
         supervise("trends", state.clone(), plamenu::trends::spawn),
+        supervise("podcasts", state.clone(), plamenu::music_podcasts::spawn),
+        supervise(
+            "music renditions",
+            state.clone(),
+            plamenu::music_renditions::spawn,
+        ),
+        supervise(
+            "music downloads",
+            state.clone(),
+            plamenu::music_downloads::worker::spawn,
+        ),
+        supervise(
+            "music outputs",
+            state.clone(),
+            plamenu::music_outputs::worker::spawn,
+        ),
         supervise("maintenance", state.clone(), plamenu::maintenance::spawn),
         supervise(
             "remote video channels",
@@ -1001,6 +1022,12 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
             plamenu::self_destruct::spawn,
         ),
     ]);
+    #[cfg(unix)]
+    supervisors.push(supervise(
+        "mounted music",
+        state.clone(),
+        plamenu::music_local::worker::spawn,
+    ));
     if state.config.live_rtmps.is_some() {
         supervisors.push(supervise(
             "native RTMPS ingest",

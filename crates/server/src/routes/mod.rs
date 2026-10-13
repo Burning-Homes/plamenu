@@ -33,9 +33,35 @@ pub(crate) mod live_dvr;
 mod live_stream;
 mod markers;
 pub(crate) mod media;
+mod mentions;
+mod music;
+mod music_activity;
+pub(crate) mod music_artworks;
+mod music_assets;
+mod music_clients;
+mod music_collections;
+mod music_downloads;
+mod music_entities;
+mod music_favourites;
+mod music_feeds;
+mod music_jobs;
+mod music_listening;
+#[cfg(unix)]
+mod music_local;
+mod music_outputs;
+pub(crate) mod music_podcasts;
+mod music_queues;
+mod music_radios;
+mod music_remote;
+pub(crate) mod music_renditions;
+mod music_saved;
+pub(crate) mod music_shares;
+mod music_stats;
 pub(crate) mod native_live_hls;
 mod native_live_ingest;
+mod notification_delivery;
 mod notification_filtering;
+pub(crate) mod notification_inbox;
 pub(crate) mod notifications;
 pub(crate) mod oauth;
 mod p2p_tracker;
@@ -60,6 +86,7 @@ mod video;
 pub(crate) mod video_playlists;
 mod virtual_mp4;
 mod web_api;
+mod webmentions;
 mod webxdc;
 mod wellknown;
 
@@ -142,6 +169,17 @@ fn cors_any_origin() -> CorsLayer {
 fn notification_routes() -> Router<AppState> {
     Router::new()
         .route("/api/v1/notifications", get(notifications::index))
+        .route(
+            "/api/v1/notifications/preferences",
+            get(notification_delivery::index).put(notification_delivery::update),
+        )
+        .route("/api/v1/mentions/archive", get(mentions::index))
+        .route("/api/v1/admin/music/jobs", get(music_jobs::index))
+        .route("/api/v1/admin/music/jobs/cancel", post(music_jobs::cancel))
+        .route(
+            "/api/v1/music/{kind}/{id}/activities",
+            get(music_activity::index),
+        )
         .route(
             "/api/v1/notifications/unread_count",
             get(notifications::unread_count),
@@ -928,6 +966,28 @@ fn api_routes(state: AppState) -> Router<AppState> {
         .merge(collection_routes())
         .merge(video::router())
         .merge(video_playlists::router())
+        .merge(music::router())
+        .merge(music_assets::router())
+        .merge(music_renditions::router())
+        .merge(music_artworks::router())
+        .merge(music_entities::router())
+        .merge(notification_inbox::router())
+        .merge(music_collections::router())
+        .merge(music_queues::router())
+        .merge(music_radios::router())
+        .merge(music_outputs::router())
+        .merge(music_clients::router())
+        .merge(music_local_router())
+        .merge(music_downloads::router())
+        .merge(music_podcasts::router())
+        .merge(music_podcasts::media_router())
+        .merge(music_listening::router())
+        .merge(music_favourites::router())
+        .merge(music_saved::router())
+        .merge(music_remote::router())
+        .merge(music_shares::router())
+        .merge(music_shares::public_router())
+        .merge(music_stats::router())
         .merge(filter_routes())
         .merge(admin_routes())
         .merge(email_routes())
@@ -1251,6 +1311,14 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/contexts/{id}", get(contexts::get_context))
         .route("/contexts/{id}/history", get(contexts::get_context_history))
+        .route(
+            "/users/{username}/statuses/{id}/{entity}",
+            get(statuses::get_music_entity),
+        )
+        .route(
+            "/ap/accounts/{username}/statuses/{id}/{entity}",
+            get(statuses::get_music_entity),
+        )
         .route("/users/{username}/statuses/{id}", get(statuses::get_status))
         .route(
             "/ap/accounts/{username}/statuses/{id}",
@@ -1297,6 +1365,7 @@ pub fn router(state: AppState) -> Router {
             get(statuses::get_quote_authorization),
         )
         .route("/emojis/{id}", get(emojis::get_emoji))
+        .merge(music::public_router())
         .route_layer(signed_fetch_gate);
 
     // PeerTube dereferences `hasParts` collections without an HTTP signature.
@@ -1394,6 +1463,16 @@ pub fn router(state: AppState) -> Router {
         .merge(federation_object_routes)
         .merge(public_video_chapters)
         .merge(video_playlists::public_router())
+        .merge(music_assets::public_router())
+        .merge(music_renditions::public_router())
+        .merge(music_artworks::public_router())
+        .merge(music_collections::public_router())
+        .merge(music_feeds::router())
+        .merge(music_remote::public_router())
+        .merge(music_outputs::public_router())
+        .merge(crate::subsonic::router())
+        .merge(webmentions::router())
+        .merge(music_downloads::file_router())
         .merge(api_routes(state.clone()))
         .merge(oauth_token_routes)
         .merge(crate::web::router())
@@ -1484,4 +1563,15 @@ pub fn router(state: AppState) -> Router {
             webxdc::runtime_origin_gate,
         ))
         .with_state(state)
+}
+
+fn music_local_router() -> Router<AppState> {
+    #[cfg(unix)]
+    {
+        music_local::router()
+    }
+    #[cfg(not(unix))]
+    {
+        Router::new()
+    }
 }

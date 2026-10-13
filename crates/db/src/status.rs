@@ -1234,6 +1234,16 @@ async fn strip_stub_children(
     sqlx::query!("DELETE FROM status_edits WHERE status_id = $1", status_id)
         .execute(&mut *tx)
         .await?;
+    // New music CASCADE children must disappear when the reply tree keeps a
+    // deleted row. Retained sources have their own independent file lifetime.
+    sqlx::query("DELETE FROM music_publications WHERE status_id=$1")
+        .bind(status_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM status_music WHERE status_id=$1")
+        .bind(status_id)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query!("DELETE FROM status_events WHERE status_id = $1", status_id)
         .execute(&mut *tx)
         .await?;

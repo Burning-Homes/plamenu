@@ -552,6 +552,40 @@ pub async fn destroy_suspended_account(
     Ok(())
 }
 
+/// Scheduled grace-period retirement uses the same transactional music and
+/// controller retractions as explicit deletion. Restoration shares this
+/// account advisory lock; whichever commits first determines eligibility.
+pub async fn purge_expired_suspension(state: &AppState, account_id: i64) -> Result<bool, ApiError> {
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(plamenu_db::DbError::from)?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(account_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(plamenu_db::DbError::from)?;
+    let eligible:Option<i64>=sqlx::query_scalar("SELECT a.id FROM accounts a JOIN account_deletion_requests r ON r.account_id=a.id WHERE a.id=$1 AND r.due_at<=now() AND a.suspended_at IS NOT NULL AND a.deleted_at IS NULL FOR UPDATE OF a")
+        .bind(account_id).fetch_optional(&mut *tx).await.map_err(plamenu_db::DbError::from)?;
+    if eligible.is_none() {
+        return Ok(false);
+    }
+    let target = account::find_by_id(&mut *tx, account_id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if target.is_local() {
+        federate_delete_conn(state, &mut tx, &target).await?;
+    }
+    if !account::purge_expired_suspension_conn(&mut tx, account_id).await? {
+        // Drop the transaction, including any prepared outbox, if a deadline
+        // request is no longer eligible. Never commit a deletion without purge.
+        return Ok(false);
+    }
+    tx.commit().await.map_err(plamenu_db::DbError::from)?;
+    Ok(true)
+}
+
 /// Approves a strike appeal (Mastodon's `ApproveAppealService`): reverses
 /// whatever the strike did, stamps the appeal approved and the warning
 /// overruled, and notifies the appellant by mail when possible. The caller
@@ -808,7 +842,7 @@ async fn self_delete_one_account_conn(
     target: &Account,
 ) -> Result<(), ApiError> {
     account::suspend_conn(&mut *conn, target.id, "local").await?;
-    // Fan out before the purge: the delivery audience is the followers list.
+    // Capture ordinary and music-resource subscribers before purging follows.
     federate_delete_conn(state, conn, target).await?;
     account::purge_local_data_conn(&mut *conn, target.id).await?;
     user::delete_by_account_id(&mut *conn, target.id).await?;
@@ -846,7 +880,7 @@ fn require_local(target: &Account) -> Result<(), ApiError> {
 }
 
 /// Federates a deleted local account's removal as `Delete(Actor)` to its
-/// followers (Mastodon's `DeleteAccountService`). Deletion only — a
+/// followers and music-resource subscribers (Mastodon's `DeleteAccountService`). Deletion only — a
 /// reversible suspension federates as a blanked `Update(Actor)` instead.
 ///
 /// Connection-scoped delivery for an enclosing mutation transaction.
@@ -855,8 +889,16 @@ async fn federate_delete_conn(
     conn: &mut plamenu_db::PgConnection,
     account: &Account,
 ) -> Result<(), ApiError> {
+    // Serialize the final audience with music Follow's controller key lock.
+    sqlx::query("SELECT id FROM accounts WHERE id=$1 FOR UPDATE")
+        .bind(account.id)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(plamenu_db::DbError::from)?;
+    crate::music_follows::retire_owner_conn(state, conn, account).await?;
     let activity = plamenu_ap::activity::delete_actor(&state.config.domain, &account.username);
-    let delivered = crate::actions::fan_out_conn(state, conn, account, &activity, &[]).await?;
+    let music = crate::music_follows::actor_inboxes(conn, account.id).await?;
+    let delivered = crate::actions::fan_out_conn(state, conn, account, &activity, &music).await?;
     tracing::info!(user = %account.username, inboxes = delivered, "account deleted");
     Ok(())
 }

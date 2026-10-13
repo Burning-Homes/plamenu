@@ -30,37 +30,7 @@ const MAX_COUNT_LIMIT: i64 = 1000;
 /// `types[]` is intersected with this list (so a request for an unknown
 /// type yields nothing rather than everything) and the SQL filter is only
 /// applied when the requested set is narrower than the whole list.
-pub(crate) const TYPES: &[&str] = &[
-    "mention",
-    "status",
-    "reblog",
-    "follow",
-    "follow_request",
-    "favourite",
-    "poll",
-    "update",
-    "severed_relationships",
-    "moderation_warning",
-    "annual_report",
-    "admin.sign_up",
-    "admin.report",
-    "quote",
-    "quoted_update",
-    "live",
-    "added_to_collection",
-    "collection_update",
-    // Plamenu also emits Pleroma's reaction kind (P1); listing it makes the
-    // type filters and the push-alert whitelist accept it, like Pleroma does.
-    "pleroma:emoji_reaction",
-    // Event participation (E-track). Mastodon has no event concept, so these are
-    // Plamenu extensions; listing them is what makes `types[]` filtering and the
-    // push-alert whitelist accept them at all.
-    "event.participation",
-    "event.accepted",
-    "event.rejected",
-    "event.changed",
-    "event.invite",
-];
+pub(crate) use plamenu_db::notification_delivery::TYPES;
 
 #[derive(Deserialize)]
 pub struct NotificationParams {
@@ -483,10 +453,41 @@ async fn render_grouped_page(
     .map(partial_account_json)
     .collect();
 
+    let music_ids = page
+        .iter()
+        .filter(|i| i.kind == "music.favourite")
+        .map(|i| i.id)
+        .collect::<Vec<_>>();
+    let music_tracks = crate::music_favourites::notification_tracks(
+        &state.pool,
+        &state.config.domain,
+        &music_ids,
+        viewer,
+    )
+    .await?;
+    let share_ids = page
+        .iter()
+        .filter(|n| n.kind == "music.share")
+        .map(|n| n.id)
+        .collect::<Vec<_>>();
+    let shared = crate::music_shares::notification_sources(&state.pool, &share_ids, viewer).await?;
+    let download_ids = page
+        .iter()
+        .filter(|item| item.kind == "music.download")
+        .map(|item| item.id)
+        .collect::<Vec<_>>();
+    let downloads =
+        crate::music_downloads::notification_sources(&state.pool, &download_ids, viewer).await?;
+    let mention_ids = page
+        .iter()
+        .filter(|n| n.kind == "webmention")
+        .map(|n| n.id)
+        .collect::<Vec<_>>();
+    let mentions = crate::webmentions::notification_sources(state, &mention_ids, viewer).await?;
     let mut groups = Vec::with_capacity(page.len());
     for item in page {
         let key = effective_group_key(item, grouped_kinds);
-        groups.push(group_entity(
+        let mut group = group_entity(
             item,
             &key,
             data.get(&key),
@@ -494,7 +495,25 @@ async fn render_grouped_page(
             &found_statuses,
             &rendered_collections,
             &rendered_warnings,
-        )?);
+        )?;
+        if item.kind == "music.favourite" {
+            group["music_track"] = music_tracks
+                .get(&item.id)
+                .map(serde_json::to_value)
+                .transpose()
+                .map_err(|e| ApiError::Internal(Box::new(e)))?
+                .unwrap_or(Value::Null);
+        }
+        if item.kind == "music.share" {
+            group["music_resource"] = shared.get(&item.id).cloned().unwrap_or(Value::Null);
+        }
+        if item.kind == "music.download" {
+            group["music_resource"] = downloads.get(&item.id).cloned().unwrap_or(Value::Null);
+        }
+        if item.kind == "webmention" {
+            group["webmention"] = mentions.get(&item.id).cloned().unwrap_or(Value::Null);
+        }
+        groups.push(group);
     }
 
     let mut body = json!({

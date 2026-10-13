@@ -4,7 +4,7 @@ nav-home = Home
 nav-live-feeds = Live feeds
 nav-search = Search
 nav-notifications = Notifications
-nav-private-mentions = Private mentions
+nav-private-mentions = Messages
 nav-bookmarks = Bookmarks
 nav-favourites = Favourites
 nav-lists = Lists
@@ -193,9 +193,9 @@ videos-live-schedule-added = Added to the planned starts above. Save the form to
 videos-live-schedule-duplicate = That date and time is already listed.
 videos-live-schedule-hint = This is a public calendar announcement, not an automatic start or an ingest restriction. Leave it blank to clear it. Time zone:
 videos-live-save-schedule = Save planned start
-videos-live-create = Create waiting broadcast
+videos-live-create = Continue to camera setup
 videos-live-manage = Manage live broadcast
-videos-live-waiting = Waiting for an encoder
+videos-live-waiting = Not live yet — choose a camera, screen or streaming app
 videos-live-secret = Stream key
 videos-live-secret-once = This key is shown only now. Store it securely. Rotating it blocks new connections with the old key and stops an active key-based encoder within a few seconds.
 videos-live-server = Plain RTMP server (trusted network only)
@@ -206,7 +206,7 @@ videos-live-https-help = For a remote FFmpeg encoder, POST an FLV stream to this
 videos-live-rotate = Rotate stream key
 videos-live-rotate-warning = Rotating stops an active RTMP or HTTPS encoder and saves its replay. A one-time broadcast then ends; a recurring broadcast can restart with the new key. Browser camera or screen capture is unaffected.
 videos-live-key-hidden = The stream key is hidden after creation. Rotate it to get a new one.
-videos-live-state-waiting = Waiting for an encoder
+videos-live-state-waiting = Not live yet — choose a camera, screen or streaming app
 videos-live-state-live = Live now
 videos-live-state-interrupted = Connection interrupted
 videos-live-reconnect-help = Reconnect your encoder within one minute to keep this broadcast. Playback is paused until the new session starts; if the window expires, a one-time stream ends and a recurring stream returns to waiting.
@@ -215,7 +215,7 @@ videos-live-watch-replay = Watch replay
 videos-live-session-replays = Session replays
 videos-live-replay-processing = A replay may still be processing. Refresh this page to check whether it was saved.
 videos-live-browser-title = Broadcast from this browser
-videos-live-browser-intro = Share a camera or screen. Keep this page open while live; stopping or closing it ends this session. An external encoder can use the RTMP key instead.
+videos-live-browser-intro = Preview your camera or screen, then choose Go live. Keep this page open while broadcasting. Use External encoder and stream key for a streaming app.
 videos-live-browser-devices = Capture devices
 videos-live-browser-camera-device = Camera
 videos-live-browser-mic-device = Microphone
@@ -446,7 +446,7 @@ nav-sign-in = Sign in
 nav-sign-out = Sign out
 nav-switch-account = Switch account
 nav-menu = Menu
-nav-menu-new-private = Menu (new private mentions)
+nav-menu-new-private = Menu (new messages)
 
 auth-choose-account = Choose an account
 auth-current-account = Current
@@ -470,10 +470,10 @@ page-favourites = Favourites
 page-favourites-empty = You haven't favourited any posts yet.
 page-notifications = Notifications
 page-notifications-empty = No notifications yet.
-page-private-mentions = Private mentions
+page-private-mentions = Messages
 page-private-mentions-help = Private mentions are ordinary posts visible only to the people mentioned in them. They are not end-to-end encrypted, and server administrators on both ends can read them.
-page-private-mentions-new = New private mention
-page-private-mentions-empty = Nothing here yet. Mention someone in a post with visibility set to “Private mention” to start a conversation. Messages from people you filter wait in notification requests instead.
+page-private-mentions-new = New message
+page-private-mentions-empty = No conversations yet. Start a message to someone on Plamenu or another server.
 page-search = Search
 page-search-placeholder = Search posts, people and hashtags
 page-search-help = Search for posts, people and hashtags.
@@ -824,7 +824,7 @@ compose-inline-image-help = Without JavaScript, the image is placed at the end. 
 compose-insert-inline = Insert in article
 compose-inline-inserted = Inserted in article
 compose-transcript = Transcript or media alternative
-compose-transcript-description = For video, include important visual information as well as dialogue and sounds
+compose-transcript-description = Include dialogue and important sounds; for video, also describe important visual information.
 compose-captions = Timed captions (WebVTT)
 compose-captions-attached = Timed captions attached
 compose-visual-audio = Access to important visuals
@@ -2328,7 +2328,7 @@ studio-accessibility = Descriptions and captions
 
 studio-upload-limit = Maximum file size:
 
-studio-live-intro = Set up your broadcast, then go live with your camera, screen or an encoder.
+studio-live-intro = Add a title and choose who can watch. Next, preview your camera or screen before going live.
 
 studio-live-details = Broadcast details
 
@@ -2369,3 +2369,777 @@ video-player-fullscreen = Fullscreen
 video-player-settings = Playback settings
 video-player-speed = Playback speed
 video-player-pip = Picture in picture
+
+compose-kind-audio = Audio
+compose-compatibility-audio = Publishes a native Audio object with a title and one audio attachment.
+    Music servers and social clients receive the same publication.
+    Add a transcript when speech or lyrics convey information.
+
+compose-audio-title = Audio title
+compose-audio-description = Description
+compose-placeholder-audio = Describe this recording…
+
+music-metadata = Music metadata
+music-artist = Artist
+music-album = Album
+music-genre = Genre
+music-title = Music
+music-hub-search = Search music or paste a link
+music-hub-placeholder = Song, artist, album or https://…
+music-hub-search-hint = Find a song, artist or album, or paste a music link.
+music-browse-types = Explore audio
+music-browse-available = Listen now
+music-browse-servers = Browse connected catalogues
+music-browse-servers-hint = Open a site's catalogue to find more songs, albums and live radio.
+music-browse-empty = No songs found here yet. Try a music site or album link, explore live radio and podcasts, or upload your own audio.
+music-audio-posts = Audio posts
+music-more-local = More uploaded audio
+music-more-remote = More music from other sites
+music-live-radio = Live radio
+music-upload-audio = Upload audio
+music-now-playing = Now playing
+music-play-now = Play
+music-post-options = Music options
+music-player-queue-tools = Queue options
+music-player-advanced = Advanced playback
+music-player-browse = Discover more music
+music-library-empty-hint = Save songs and albums while browsing. Your uploads and liked music appear here too.
+music-library-tools = Library tools
+music-browse = Find, play and share audio.
+music-publish = Publish audio
+music-empty = No audio publications match this view.
+music-search = Search title, artist or album
+music-search-submit = Search
+music-mine = My audio
+music-public = Public audio
+music-older = Older audio
+
+music-year = Release year
+music-track-number = Track number
+music-disc-number = Disc number
+music-mbid = MusicBrainz recording ID
+
+compose-open-attachment = Open attachment
+
+music-subscriptions = Music subscriptions
+music-subscription-hint = Subscriptions receive future music updates. To browse existing songs and listen, use Open in Plamenu above.
+music-follow-url = Music library or track URL
+music-follow = Subscribe to music
+music-unfollow = Unsubscribe
+music-follow-pending = Awaiting approval
+
+music-follow-track = Subscribe to track updates
+
+music-follow-unavailable = This music resource is unavailable or cannot be followed.
+
+music-assets-title = Uploaded audio
+music-assets-mine = My tracks
+music-assets-upload = Upload audio
+music-assets-upload-hint = Choose an audio file. Add its title, artist and album now or edit them afterwards.
+music-assets-file = Audio file
+music-assets-edit = Edit track
+music-assets-visibility = Who can listen
+music-assets-private = Only me and people I share with
+music-assets-local = Signed-in local members
+music-assets-save = Save track
+music-assets-download = Download original audio
+music-assets-share = Share with a member
+music-assets-member = Local username
+music-assets-grant = Grant access
+music-assets-revoke = Revoke access
+music-assets-delete = Delete track and its audio files
+
+music-collections-title = Libraries and playlists
+music-collections-mine = My collections
+music-collection-create = Create collection
+music-collections-empty = No music collections yet.
+music-collection-name = Name
+music-collection-description = Description
+music-collection-kind = Collection kind
+music-collection-library = Library
+music-collection-playlist = Playlist
+music-collection-edit = Edit collection
+music-collection-add = Add a track
+music-collection-access-hint = By default, adding a track keeps its existing permissions. Enable contents sharing below to share your own tracks through this collection.
+music-collection-share-tracks = Also share my tracks
+music-collection-sharing-hint = Let anyone who can open this collection listen to my tracks in it, including private tracks. A public collection shares them with everyone. Tracks owned by other people keep their own permissions. Access ends when a track is removed or collection access is revoked.
+music-collection-sharing-save = Save contents sharing
+music-collection-track-url = Track, Audio post or podcast episode URL
+music-collection-url-hint = Copy a link from the Music library, an Audio post or a podcast episode in your catalogue.
+music-collection-unavailable = Unavailable track
+music-collection-up = Move up
+music-collection-down = Move down
+music-collection-remove = Remove from collection
+music-collection-delete = Delete collection
+music-collection-export = Download M3U playlist
+
+music-assets-publish = Publish Audio
+music-assets-withdraw = Withdraw Audio publication
+music-assets-view-publication = Open post · comment and share
+
+music-collection-federation = Federated library
+
+music-artists-title = Artists
+music-albums-title = Albums
+music-entities-mine = My artists and albums
+music-entity-mbid = MusicBrainz ID
+music-entity-tags = Tags
+music-entity-genres = Genres
+music-entity-tracks = Readable tracks
+music-entity-access-hint = People see only tracks and albums they can already access. Artist details follow their readable tracks and albums.
+
+music-entity-name = Name
+music-entity-description = Description
+music-entity-terms-hint = Separate tags and genres with commas.
+music-entity-save = Save music metadata
+
+music-artist-edit = Edit artist metadata
+music-album-edit = Edit album metadata
+
+music-artwork-edit = Change artwork
+music-artwork-cover = Cover artwork
+music-artwork-image = Image
+music-artwork-cover-file = Cover file
+music-artwork-image-file = Image file
+music-artwork-hint = Images are resized to 1024 pixels and must fit within 8 MiB. Artwork follows the current access to its music.
+music-artwork-upload-cover = Upload cover
+music-artwork-upload-image = Upload image
+music-artwork-remove-cover = Remove cover
+music-artwork-remove-image = Remove image
+
+music-artist-create = Create artist
+music-album-create = Create album
+music-album-choose-artist = Choose one of your artists for this album.
+
+music-entity-delete = Delete artist or album
+music-entity-delete-recursive = Also delete associated tracks and albums
+music-entity-delete-hint = Album deletion keeps tracks unless you select recursive deletion. Artists must be empty or deleted recursively. Deleted tracks are withdrawn from publications and collections.
+
+music-track-details-edit = Edit track notes and credits
+music-track-description-format = Description format
+music-track-format-plain = Plain text
+music-track-format-markdown = Markdown
+music-track-format-html = HTML
+music-track-description-hint = The description is also the published Audio caption. Edits to either page stay in sync.
+music-track-credits = Additional artists
+music-track-credits-hint = Separate tags and artist names with commas. Use at most 20 artist names. Names do not create accounts.
+music-track-details-save = Save track details
+music-track-album-choose = Choose album
+music-track-album-hint = The track performer stays unchanged. Track-specific year and genre are kept.
+music-track-album-remove = Remove album assignment
+music-track-album-select = Use this album
+
+# Persistent native music player
+music-player-title = Music player
+music-player-empty = The queue is empty.
+music-player-window-hint = Play a song, then keep browsing. Open the queue to change what plays next.
+music-player-open = Open in music player
+music-player-add = Add to queue
+music-player-add-collection = Add collection to queue
+music-player-previous = Previous track
+music-player-next = Next track
+music-player-repeat = Repeat
+music-player-repeat-off = Off
+music-player-repeat-one = This track
+music-player-repeat-all = All tracks
+music-player-shuffle = Shuffle
+music-player-position = Position in seconds
+music-player-queue = Queue
+music-player-select = Play this track
+music-player-remove = Remove from queue
+music-player-clear = Clear queue
+music-player-error = The player could not save your change. Reload to get the current queue.
+music-player-up = Move up
+music-player-down = Move down
+music-player-devices = Saved players
+music-player-forget = Forget this player
+
+# Private music listening history
+music-history-title = Listening history
+music-history-hint = The music player records a listen after enough actual playback. Loading audio or seeking does not count. Only you can see this history.
+music-history-preferences = Listening preferences
+music-history-enabled = Keep my listening history
+music-history-seconds = Minimum playback seconds
+music-history-percent = Minimum playback percentage
+music-history-threshold-hint = A listen counts at the earlier of these thresholds. Changes apply to new listening sessions. Turning history off cancels pending sessions.
+music-history-save = Save listening preferences
+music-history-empty = No readable listening history yet.
+music-history-erase = Erase listening history
+music-history-erase-hint = This removes recorded listens and pending sessions from your account.
+music-history-erase-confirm = Remove all my recorded listens
+music-history-recorded = Listen recorded.
+
+music-favourites-title = Liked music
+music-favourites-hint = Music you like also appears in your library. Saving a song or album is a separate action.
+music-favourites-empty = Music you like will appear here.
+music-favourites-save = Like
+music-favourites-remove = Unlike
+music-favourites-notification = saved your track as a music favourite
+music-favourites-unavailable = This track is no longer available.
+settings-push-music-favourite = Music favourites
+music-player-save-settings = Save player settings
+music-player-go-position = Go to position
+
+music-stats-title = Listening statistics
+music-stats-hint = These charts use your recorded listens and music you can currently access. Prefetching audio never counts.
+music-stats-empty = No recorded listens.
+music-stats-name = Name
+music-stats-count = Plays
+music-stats-period = Period
+music-stats-from = Start date
+music-stats-to = End date
+music-stats-group = Group by
+music-stats-day = Day
+music-stats-week = Week
+music-stats-month = Month
+music-stats-year = Year
+music-stats-decade = Decade
+music-stats-week-start = First day of the week
+music-stats-monday = Monday
+music-stats-tuesday = Tuesday
+music-stats-wednesday = Wednesday
+music-stats-thursday = Thursday
+music-stats-friday = Friday
+music-stats-saturday = Saturday
+music-stats-sunday = Sunday
+music-stats-release-group = Group release dates by
+music-stats-limit = Ranked items per chart
+music-stats-show = Show statistics
+music-stats-top-tracks = Most played tracks
+music-stats-top-artists = Most played artists
+music-stats-top-albums = Most played albums
+music-stats-top-genres = Most played genres
+music-stats-plays = Plays over time
+music-stats-genres-timeline = Genres over time
+music-stats-releases = Release dates
+music-stats-clock = Listening by local hour
+
+music-radios-title = Radio stations
+music-radios-hint = Keep and share station configurations.
+music-radios-mine = My stations
+music-radios-empty = No radio stations yet.
+music-radio-name = Station name
+music-radio-description = Description
+music-radio-visibility = Who can view
+music-radio-config = Station settings
+music-radio-config-hint = Station settings are visible only to you.
+music-radio-create = Create station
+music-radio-edit = Edit station
+music-radio-save = Save station settings
+music-radio-delete = Delete station
+music-radio-delete-hint = The station and its sharing permissions will be removed.
+
+music-total-duration = Playable duration: { $seconds } seconds
+music-entity-albums = Readable albums
+
+music-mine-title = Your library
+music-mine-hint = Your uploads, saved songs and albums, and music you like. Saved music stays on its original site and may become unavailable.
+music-mine-kind = Show
+music-mine-all = All music
+music-mine-tracks = Tracks
+music-mine-artists = Artists
+music-mine-albums = Albums
+music-mine-libraries = Libraries
+music-mine-playlists = Playlists
+music-mine-radios = Stations
+music-mine-empty = No available music in this view.
+music-mine-save = Save to your library
+music-mine-remove = Remove from your library
+music-mine-owned = Yours
+music-mine-saved = Saved
+music-mine-favourite = Liked
+music-mine-related-artist = From your saved music
+music-album-access-title = Manage album access
+music-album-access-details = Who can view album details
+music-album-access-hint = Album details have their own access settings. A public track can still show its album name and year.
+music-album-access-source = Follow readable tracks
+music-album-access-share-hint = Share listening access to my tracks through this album. A public album shares them with everyone. With track-derived access, only explicit member grants share private tracks. Publishing Audio remains a separate choice.
+music-album-access-save = Save album access
+music-album-access-members-empty = No member grants on this page.
+music-album-access-new-hint = New albums start private. You can choose who can view their details and whether to share their tracks after creating them.
+music-saved-manager = Manage saved music
+music-saved-manager-hint = Remove saved music, including items that are no longer available. This keeps the original audio, your likes and your uploads.
+music-saved-empty = No saved references.
+music-saved-unavailable = This saved resource is no longer available to you.
+
+music-shares-title = Sharing
+music-shares-hint = Review your member grants and share links. Revoking a link stops future requests for its music and artwork.
+music-shares-show-revoked = Show revoked links
+music-shares-empty = You have not shared any music yet.
+music-shares-link = Share link
+music-shares-member = Member access
+music-shares-revoked = Revoked
+music-shares-expired = Expired
+music-shares-expires = Expires
+music-shares-create = Create share link
+music-shares-create-hint = Anyone with this link can view these details. Albums and collections share private audio only when Also share my tracks is enabled.
+music-shares-day = In one day
+music-shares-week = In one week
+music-shares-month = In 30 days
+music-shares-never = Until I revoke it
+music-shares-created = Share link created
+music-shares-once = Copy this link now. It is shown only once; you can revoke it from Sharing.
+music-shares-preview = Open shared preview
+music-shares-preview-hint = This preview is available through a share link.
+music-shares-no-tracks = No playable tracks are available through this link.
+music-shares-unavailable = This share link is unavailable
+music-shares-unavailable-hint = It may have expired, been revoked, or its music may no longer be available.
+
+music-shares-notification = shared music with you
+
+settings-push-music-share = Music shared with me
+
+music-podcasts-title = Podcasts
+music-podcasts-hint = Add a podcast using its website or feed link, then choose an episode and press Play.
+music-podcasts-sort = Sort podcasts
+music-podcasts-latest = Latest episode
+music-podcasts-count = Episodes
+music-podcasts-unplayed = Unplayed
+music-podcasts-name = Name
+music-podcasts-direction = Order
+music-podcasts-desc = Descending
+music-podcasts-asc = Ascending
+music-podcasts-subscribe = Follow a podcast
+music-podcasts-feed = Podcast website or feed link
+music-podcasts-opml = Manage subscriptions with OPML
+music-podcasts-export = Export subscriptions
+music-podcasts-import-hint = Paste an OPML subscription document
+music-podcasts-import = Import subscriptions
+music-podcasts-empty = You haven’t followed any podcasts yet.
+music-podcasts-website = Visit website
+music-podcasts-refreshed = Last refreshed
+music-podcasts-refresh = Refresh feed
+music-podcasts-unsubscribe = Unfollow podcast
+music-podcasts-newest = Newest first
+music-podcasts-oldest = Oldest first
+music-podcasts-no-episodes = This feed has no playable episodes yet.
+music-podcasts-played = Played
+music-podcasts-not-played = Unplayed
+music-podcasts-mark-played = Mark as played
+music-podcasts-mark-unplayed = Mark as unplayed
+music-podcasts-source = Open original audio
+music-podcasts-imported = Followed
+music-podcasts-skipped = Already followed
+music-podcasts-failed = Failed
+
+music-podcasts-collection = Your music collection
+music-podcasts-add-collection = Add episode to collection
+
+music-radios-search = Search station names and descriptions
+music-collections-search = Search collection names and descriptions
+music-collections-all = All collections
+
+music-podcasts-import-file = Import an OPML file
+music-podcasts-page-queue = Queue these episodes
+music-podcasts-replace-queue = Replace current queue
+music-podcasts-page-played = Mark selected episodes as played
+music-podcasts-page-unplayed = Mark selected episodes as unplayed
+music-podcasts-explicit = Explicit content
+music-podcasts-selected-collection = Add selected episodes to collection
+music-podcasts-select-episode = Select episode
+music-feed-rss = RSS feed
+music-feed-atom = Atom feed
+music-collection-tags = Manage tags
+music-collection-save-tags = Save collection tags
+
+music-embed-title = Embed music
+music-embed-hint = Only public music can be embedded. Changing its privacy settings will stop embedded playback.
+music-embed-format = Embed format
+music-embed-format-audio = Audio player
+music-embed-format-html = HTML track list
+music-embed-format-markdown = Markdown link
+music-embed-format-script = Script widget
+music-embed-format-iframe = Iframe
+music-embed-show = Show embed code
+music-embed-code = Embed code
+music-embed-preview = Preview player
+music-embed-open = Open in Music
+music-embed-limited = Open Music to browse the remaining tracks.
+
+music-embed-unavailable = Music is unavailable
+music-embed-unavailable-hint = This music is no longer public or has been removed.
+music-embed-open-track = Open track in Music
+
+music-renditions-title = Playback formats
+music-renditions-back = Back to track
+music-renditions-format = Audio format
+music-renditions-bitrate = Bitrate (kbps)
+music-renditions-prepare = Prepare playback
+music-renditions-hint = Prepare a playback copy in your preferred format. The allowed bitrate depends on your role and instance settings. FLAC preserves audio losslessly; its size is not limited by the selected bitrate.
+music-renditions-cached = Cached playback formats
+music-renditions-empty = No playback copies prepared yet.
+music-renditions-refresh = Refresh progress
+music-renditions-listen = Listen
+music-renditions-check = Check progress
+music-renditions-remove = Remove cached format
+music-renditions-cancel = Cancel preparation
+music-rendition-queued = Waiting to encode
+music-rendition-running = Encoding
+music-rendition-ready = Ready to play
+music-rendition-failed = Preparation failed
+music-rendition-cancelled = Preparation cancelled
+
+music-renditions-lossless = Lossless
+
+music-renditions-play-now = Play now
+music-renditions-stream-hint = Press Play to start encoding and listening. Your playback copy will be cached as it finishes.
+music-renditions-ceiling = Bitrate limit
+
+music-embed-codec = Native track audio format
+music-embed-codec-default = Original playback copy
+music-embed-codec-hint = Applies to native tracks. Embedded playback uses the anonymous bitrate limit; FLAC is lossless.
+music-remote-import = Find remote music
+music-remote-url = Canonical music resource URL
+music-remote-origin = Source
+music-remote-refresh = Refresh from origin
+music-remote-contents = Tracks
+music-remote-more = Load more from origin
+
+music-remote-select = Select track
+
+music-streams-title = Live radio
+music-streams-mine = My streams
+music-stream-name = Stream name
+music-stream-mount = Stream address
+music-stream-format = Audio format
+music-stream-bitrate = Bitrate (kbps)
+music-stream-rate = Sample rate (Hz)
+music-stream-create = Create stream
+music-streams-empty = No streams found.
+music-stream-playing = Playing
+music-stream-paused = Paused
+music-stream-queue = Manage stream queue
+music-stream-play = Play
+music-stream-pause = Pause
+music-stream-stop = Stop
+music-stream-enable = Enable
+music-stream-disable = Disable
+music-stream-settings = Stream settings
+music-stream-save = Save settings
+music-stream-rotate = Replace listener token
+music-stream-delete = Delete stream
+music-stream-token-title = Private listener link
+music-stream-token-hint = Save this link now. It is shown once. Replacing the token disconnects existing listeners.
+music-stream-listen-link = Open listener link
+music-stream-open = Open stream
+
+music-player-destination = Playback destination
+music-player-choose-destination = Choose destination
+music-stream-window-hint = Playback continues when you close this page.
+
+music-downloads-title = Downloads
+music-downloads-hint = Choose Download ZIP on a track, album, artist or collection to prepare a private download.
+music-downloads-empty = No music downloads yet.
+music-download-label = Download name
+music-download-create = Download ZIP
+music-download-queued = Queued
+music-download-running = Preparing download
+music-download-ready = Ready
+music-download-failed = Download failed
+music-download-cancelled = Cancelled
+music-download-cancel = Cancel download
+music-download-delete = Remove download
+music-download-progress = Download progress
+music-download-refresh = Refresh progress
+music-download-file = Save ZIP file
+music-download-expires = Available until
+music-download-error = The download could not finish. Check access and storage, then try again.
+music-download-unavailable = Audio no longer available
+music-download-item-errors = Some selected audio could not be included.
+music-download-selected = Download selected audio as ZIP
+music-download-select = Select for download
+music-download-notification = Your music download is ready
+music-download-open = Open download
+settings-push-music-download = your library downloads
+
+music-clients-title = Music clients
+music-clients-hint = Connect a Subsonic or OpenSubsonic app. Create a separate password for each app; read-only passwords can browse and play your accessible music.
+music-clients-server = Server address:
+music-clients-user = Username:
+music-clients-created = Client password created
+music-clients-once = Copy this password into your music app. It is shown only once.
+music-clients-password = App password
+music-clients-label = App name
+music-clients-days = Valid for days
+music-clients-manage = Manage playlists, favourites and listening history
+music-clients-read = Read and play music
+music-clients-create = Create app password
+music-clients-expires = Expires:
+music-clients-revoke = Revoke
+
+music-clients-broadcast = Share reported now-playing with members who can access the music (requires management access)
+
+music-folders-title = Local folders
+music-folders-hint = An operator can connect an approved music folder to your library. Originals stay on the mount; only generated playback files use Plamenu storage. Removing a track removes its index, leaving the original file in place.
+music-folders-root = Approved root
+music-folders-owner = Library owner’s local username
+music-folders-directory = Folder within the root (empty for the whole root)
+music-folders-assign = Connect library
+music-folders-empty = No local folders have been connected to your library.
+music-folders-watch = Watch for changes
+music-folders-enabled = Enable this folder
+music-folders-refresh = Save and scan
+music-folders-failed = Failed files
+music-folders-error = The folder or an audio file is unavailable. Check the mount and retry the scan.
+music-folders-state-idle = Up to date
+music-folders-state-queued = Waiting to scan
+music-folders-state-scanning = Scanning folders
+music-folders-state-indexing = Reading audio metadata
+music-folders-state-failed = Scan failed
+
+music-folders-files = Source files
+music-folders-library = Open library
+music-folders-track = Open track details
+music-folders-new-name = New filename
+music-folders-rename = Rename source
+music-folders-tags-hint = Write the current track title, artist, album, genre and numbering back to the original file. Audio stays unchanged.
+music-folders-write-tags = Write track tags to source
+music-folders-delete-confirm = Permanently delete this original file from the mounted folder.
+music-folders-delete-source = Delete original file
+music-folders-file-queued = Waiting to index
+music-folders-file-indexing = Reading metadata
+music-folders-file-ready = Indexed
+music-folders-file-failed = Could not read audio
+music-folders-file-missing = File unavailable
+music-folders-file-ignored = Removed from index
+
+music-folders-more = More source files
+
+music-folders-disconnect = Disconnect folder
+music-folders-disconnect-hint = Remove this mounted library and its folder references. Original files stay in place.
+music-folders-restore = Reindex this source file
+
+music-folders-scan-options = Files to include
+music-folders-recursive = Include subfolders
+music-folders-extensions = Audio extensions, separated by commas
+music-folders-exclusions = Exclude files or folders
+music-folders-exclusions-hint = One pattern per line, such as demos/* or *.backup.wav. Originals stay in place.
+
+music-folders-file-warning = Some metadata or artwork could not be read. The original file is unchanged.
+
+webmentions-title = Website mentions
+webmentions-hint = Verified replies and reactions from websites. Open the source to read the original.
+webmentions-website = Website
+webmentions-reply = replied
+webmentions-like = liked
+webmentions-repost = reposted
+webmentions-quote = quoted
+webmentions-mention = mentioned
+webmentions-open-source = Original page
+webmentions-open-target = Mentioned page
+webmentions-empty = No verified website mentions yet.
+webmentions-source-title = Public post
+webmentions-notification = Your page received a website mention
+settings-push-webmention = Website mentions
+webmentions-response = Your public response
+webmentions-publish-reply = Publish public reply
+webmentions-publish-like = Publish public like
+webmentions-publish-repost = Publish public repost
+webmentions-publish-quote = Publish public quote
+
+notification-inbox-manage = Manage read state and notifications
+notification-inbox-hint = Opening this inbox keeps unread notifications unread.
+notification-inbox-all = All
+notification-inbox-unseen = Unread
+notification-inbox-type = Notification type
+notification-inbox-seen-all = Mark all read
+notification-inbox-delete-all = Delete all notifications
+notification-inbox-confirm = Confirm deletion
+notification-inbox-mark-unseen = Mark unread
+notification-inbox-mark-seen = Mark read
+notification-inbox-delete = Delete
+
+mentions-title = Mentions
+mentions-hint = Mentions stay here when you clear notifications. Deleted, retracted or inaccessible posts are removed.
+mentions-source = Source
+mentions-local = Local
+mentions-federated = Federated
+mentions-private = Only non-public mentions
+mentions-empty = No mentions match these filters.
+
+notification-delivery-title = Notification delivery
+notification-delivery-hint = Choose delivery for each type. Email requires a confirmed address. Digests are sent daily; summaries link to your private inbox.
+notification-delivery-no-smtp = Email delivery is unavailable until the operator configures SMTP. Your choices are saved.
+notification-delivery-in-app = In app
+notification-delivery-email = Email
+notification-delivery-digest = Daily email digest
+notification-delivery-save = Save delivery preferences
+notification-delivery-severed = Removed remote relationships
+notification-delivery-moderation = Moderation warnings
+notification-delivery-annual = Annual reports
+notification-delivery-signup = Registration requests
+notification-delivery-report = Moderation reports
+notification-delivery-collection-added = Added to a collection
+notification-delivery-collection-update = Collection updates
+notification-delivery-mail-intro = You have new notifications in Plamenu.
+notification-delivery-mail-open = Open your inbox
+notification-delivery-mail-subject = Plamenu notifications
+notification-delivery-mail-digest = Your daily Plamenu notification digest
+
+notification-delivery-digest-time = Daily digest time (UTC):
+
+music-activities-title = Activities
+music-activities-resource = Back to resource
+music-activities-kind = Activity type
+music-activities-posts = Posts
+music-activities-refresh = Refresh
+music-activities-empty = No visible activities for this resource.
+
+music-folders-recovery-pending = A source file change is awaiting recovery. Restore the original mount and files; recovery retries automatically.
+
+music-jobs-title = Music jobs
+music-jobs-hint = Inspect pending and active work. Stop current runs without deleting saved output or folder configuration. File recovery finishes automatically.
+music-jobs-counts = Task counts
+music-jobs-kind = Task type
+music-jobs-state = State
+music-jobs-count = Count
+music-jobs-owner = Owner account
+music-jobs-empty = No pending or active music jobs.
+music-jobs-cancel = Stop current run
+music-jobs-kind-rendition = Audio conversion
+music-jobs-kind-export = ZIP export
+music-jobs-kind-output = Audio output
+music-jobs-kind-folder = Folder scan
+music-jobs-kind-recovery = File recovery
+music-jobs-state-queued = Queued
+music-jobs-state-running = Running
+music-jobs-state-ready = Ready
+music-jobs-state-failed = Failed
+music-jobs-state-cancelled = Cancelled
+music-jobs-state-playing = Playing
+music-jobs-state-paused = Paused
+music-jobs-state-stopped = Stopped
+music-jobs-state-idle = Idle
+music-jobs-state-scanning = Scanning
+music-jobs-state-indexing = Indexing
+music-jobs-state-pending = Pending recovery
+music-jobs-state-applied = Finishing recovery
+
+music-jobs-cancel-selected = Stop selected runs
+
+music-folders-no-roots = No approved music roots are configured. Add an approved root in the server configuration before connecting a library.
+
+music-player-choose-track = Choose a queued track to play.
+
+music-tools = Advanced music tools
+music-discovery-browse = Discover
+music-open-label = Open a music server, album or track link
+music-open-hint = Paste a Songhive server address to browse its public catalogue, or an album or track link to listen here. No subscription is needed.
+music-open-submit = Open in Plamenu
+music-open-unavailable = This resource is private, unavailable or has no public music catalogue. Try its server address to browse available music.
+music-discovery-back = Browse another music server
+music-discovery-types = Catalogue sections
+music-discovery-empty = This server has no public items matching this view.
+music-discovery-listen = View and listen
+music-discovery-offline = This stream is offline.
+music-discovery-radio-empty = This station provides metadata but does not expose playable tracks or a listening URL.
+music-discovery-server = Browse this music server
+music-remote-no-audio = This resource has no publicly playable tracks. A subscription receives future updates; it does not grant access or create audio.
+music-play-all = Play these tracks
+
+music-resource-tools = Details and tools
+music-organise-playlist = Add songs to a playlist or library
+music-podcast-tools = Import and manage podcast subscriptions
+
+music-from-other-sites = Music from other sites
+
+music-radio-rules = Station rules and scheduling
+music-radio-rules-hint = These rules choose songs for a station. To listen to an actual broadcast, open Live radio.
+
+music-upload-title = Title (optional; use audio tags or file name)
+music-upload-publish-hint = New uploads are private in your library; audio you already have keeps its access. Publish now makes the audio public and shares it as a post.
+music-upload-publish = Publish now
+music-upload-published = Published. People can find and listen to this audio; it is also in your library.
+music-upload-private = Private upload. Only you can listen unless you grant access. Edit the track to change who can listen, or publish it when ready.
+music-upload-unpublished = Available to your chosen audience. Publish as an audio post to share it with followers.
+
+music-play-problem = This audio cannot be played right now
+music-play-unavailable = The audio may have been removed, made private or taken offline. Your current queue has not been replaced. Return to Browse to choose something else.
+music-play-changed = Your queue changed in another window. Choose Play again to use the latest queue.
+
+music-collection-sharing-settings = Sharing settings
+music-collection-member-access = Member access
+
+music-upload-reused = You already uploaded this audio. This is your existing track; its title and access have been kept. Use Edit track to change it.
+
+music-upload-problem = The upload could not finish
+music-upload-file-problem = Check that the file is a supported audio recording and fits the upload limit, then try again.
+music-upload-publication-problem = Your audio has been saved, but publication could not be confirmed. Open it to check its status or try publishing again.
+music-upload-open-saved = Open saved audio
+
+music-podcasts-search = Search your podcasts
+music-about-audio = About this audio
+
+music-podcasts-episodes = Episodes
+music-podcasts-episode-tools = Episode actions
+music-podcasts-tools = Podcast tools
+
+music-kind-track = Song
+music-kind-library = Library
+music-kind-playlist = Playlist
+music-kind-radio = Station rules
+
+music-assets-empty = No uploaded audio matches this view. Upload a file or browse Music to find something to listen to.
+
+media-create-title = Create and share
+media-create-post = Post
+media-create-video = Video
+media-create-live = Go live
+music-metadata-more = More music details (optional)
+videos-live-channel-help = Create a channel for your broadcasts. You will return here to set up your camera or screen.
+videos-live-preview-ready = Preview only — you are not live. Check your camera and microphone, then choose Go live.
+videos-live-cancel-preview = Cancel preview
+compose-audio-add = Choose an audio file
+music-player-details = Track details and sharing
+compose-audio-file-error = Choose one audio file for an Audio post. For video, choose Video above.
+compose-audio-attachment-description = Describe this audio
+videos-live-preview-cancelled = Preview closed. You are not live.
+
+inbox-options = Options
+
+inbox-filter = Filter
+
+conversation-media = Media attachment
+
+conversation-open = Open conversation
+
+conversation-privacy = Who can read these messages?
+
+music-more = More
+
+music-library-search = Search your library
+
+music-library-start = Your library is empty
+
+music-library-no-results = No matching music
+
+compose-video-workflow = Publish a video on your channel. Upload first, then review and publish.
+
+compose-live-workflow = Start a live broadcast. Choose who can watch, then preview your camera before going live.
+
+compose-attachment-hint = You can attach photos, audio and video to a Note without changing its type.
+
+compose-continue = Continue
+
+music-player-close = Close player
+
+compose-use-existing = Choose from your uploads
+
+compose-use-existing-hint = Recent uploads and library tracks. Selected media is copied into this post.
+
+compose-recipients = To
+
+compose-recipients-hint = Enter one or more @handles, separated by commas. People named here or @mentioned in the message can see it.
+
+compose-media-details = Description and accessibility
+
+music-upload-save-private = Save privately
+music-manage-track = Manage track
+music-manage-catalogue = Manage catalogue
+
+compose-recipients-unresolved = A recipient could not be found. Check the handles in To before sending.
+
+compose-send = Send
+music-stations-all = All stations
+music-stations-saved = Saved stations
+music-stations-search = Search radio stations

@@ -603,7 +603,7 @@ impl RequestClass {
 }
 
 fn classify(method: &Method, path: &str, query: Option<&str>) -> RequestClass {
-    let api = path.starts_with("/api/");
+    let api = path.starts_with("/api/") || path.starts_with("/rest/");
     let post = method == Method::POST;
     RequestClass {
         api,
@@ -640,7 +640,11 @@ fn classify(method: &Method, path: &str, query: Option<&str>) -> RequestClass {
         web_sign_up: post && path == "/signup",
         // `/interact` submits trigger an outbound WebFinger for an anonymous
         // visitor, so they draw from the same admission budget.
-        remote_ingress: post && matches!(path, "/inbox" | "/actor/inbox" | "/interact")
+        remote_ingress: post
+            && matches!(
+                path,
+                "/inbox" | "/actor/inbox" | "/interact" | "/webmentions"
+            )
             || (post && path.starts_with("/users/") && path.ends_with("/inbox"))
             || (!post && path.starts_with("/users/"))
             || path.starts_with("/media/proxy/")
@@ -855,6 +859,35 @@ fn matching_buckets(
         }
     }
     checks
+}
+
+/// Cold Subsonic password verification shares the durable native IP budget.
+pub(crate) async fn check_music_password_ip(
+    state: &AppState,
+    ip: Option<IpAddr>,
+) -> Result<(), ApiError> {
+    let Some(ip) = ip else {
+        return Ok(());
+    };
+    let settings = state.settings_cache.get(&state.pool).await?;
+    if !settings.rate_limiting_enabled {
+        return Ok(());
+    }
+    let bucket = Bucket::LoginAttemptsIp;
+    let outcome = RateLimiter::check_durable(
+        &state.pool,
+        bucket,
+        &Identity::Ip(throttleable_ip(ip)),
+        bucket.limit(&settings),
+        now_epoch(),
+    )
+    .await
+    .map_err(|_| ApiError::ServiceUnavailable("Rate limiter unavailable".into()))?;
+    if outcome.throttled {
+        Err(ApiError::TooManyRequests)
+    } else {
+        Ok(())
+    }
 }
 
 /// The e-mail-keyed buckets, called from the handlers that have the form

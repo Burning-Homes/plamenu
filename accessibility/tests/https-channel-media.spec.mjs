@@ -1,6 +1,6 @@
 import {test, expect} from '@playwright/test';
 import {readFileSync} from 'node:fs';
-import {signIn, openVideoOptions, videoChannelForm, createVideoChannel} from '../session.mjs';
+import {signIn, openVideoOptions, videoChannelForm, createVideoChannel, freshMusicAudio, openDetailsFor} from '../session.mjs';
 
 test.use({serviceWorkers:'allow'});
 async function qualification(page, info, noScript) {
@@ -59,3 +59,44 @@ async function qualification(page, info, noScript) {
 }
 test('verified HTTPS auth and channel images survive service worker reload', async ({page},info)=>qualification(page,info,false));
 test('verified HTTPS auth and channel images retain native forms @no-js', async ({page},info)=>qualification(page,info,true));
+
+test('Music private pages stay out of the offline cache and recover online', async ({page},info)=>{
+  await signIn(page);
+  await page.evaluate(async()=>{
+    await Promise.race([navigator.serviceWorker.ready,new Promise((_,reject)=>setTimeout(()=>reject(new Error('Service worker not ready')),10000))]);
+  });
+  await page.reload();
+  expect(await page.evaluate(()=>Boolean(navigator.serviceWorker.controller))).toBe(true);
+  await page.goto('/music/assets?mine=true');
+  const form=page.locator('form[action="/web/music/assets/import"]');
+  await openDetailsFor(form);
+  await form.getByLabel('Audio file',{exact:true}).setInputFiles(await freshMusicAudio());
+  await form.getByRole('button',{name:'Import audio',exact:true}).press('Enter');
+  await page.waitForURL(url=>/^\/music\/assets\/\d+$/.test(url.pathname));
+  const track=page.url();const title=await page.getByRole('heading',{level:1}).innerText();
+  await expect(page.locator('section.music-library > p').filter({hasText:/^Only me and people I share with$/})).toBeVisible();
+  expect(process.env.A11Y_OFFLINE_CONTROL_URL,'Enable the owned origin outage with A11Y_OFFLINE_FIXTURE=1').toBeTruthy();
+  const availability=async mode=>{
+    const response=await fetch(process.env.A11Y_OFFLINE_CONTROL_URL+'/'+mode,{method:'POST'});
+    expect(response.status).toBe(204);
+  };
+  const workerProof=await page.evaluate(async()=>({controller:navigator.serviceWorker.controller?.state,scope:(await navigator.serviceWorker.getRegistration())?.scope,offlineCached:Boolean(await caches.match('/offline'))}));
+  expect(workerProof).toMatchObject({controller:'activated',offlineCached:true});
+  try{
+    await availability('offline');
+    const shell=await page.evaluate(async()=>fetch('/assets/app.css',{cache:'no-store'}).then(r=>({status:r.status})).catch(e=>({error:e.name})));
+    expect(shell,'The actual worker must serve its cached shell during the outage').toEqual({status:200});
+    // Navigate through the native resource link during a real origin outage.
+    await page.getByRole('link',{name:'Activities',exact:true}).click();
+    await expect(page.getByRole('heading',{name:"You're offline",exact:true})).toBeVisible();
+    await expect(page.getByRole('heading',{name:title,exact:true})).toHaveCount(0);
+    const cached=await page.evaluate(async()=>{
+      const urls=[];for(const name of await caches.keys()){for(const request of await(await caches.open(name)).keys())urls.push(request.url);}return urls;
+    });
+    expect(cached.some(value=>new URL(value).pathname.startsWith('/music/'))).toBe(false);
+    expect(cached.some(value=>new URL(value).pathname.startsWith('/api/'))).toBe(false);
+    await page.screenshot({path:info.outputPath('music-private-offline.png'),fullPage:true});
+  }finally{await availability('online');}
+  await page.goto(track);
+  await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
+});

@@ -28,25 +28,26 @@ test.afterEach(async ({ page }) => {
   expect(deleted.status()).toBe(303);
 });
 
-async function createLive(page, permanent, returnCredentials = false, visibility = 'unlisted') {
+async function createLive(page, permanent, returnCredentials = false, visibility = 'unlisted', firstPage = false) {
   await signIn(page);
   const name = `live_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
   await page.goto('/videos/live/new');
   let form = page.locator('form[action="/web/videos/live"]');
   if (!await form.isVisible()) {
-    await page.goto('/videos/upload');await openVideoOptions(page);
+
     const channelForm = await videoChannelForm(page);
     if (!await channelForm.isVisible()) {
       await page.locator('summary').filter({ hasText: 'Create a video channel' }).click();
     }
     await channelForm.getByLabel('Channel address').fill(name);
     await channelForm.getByLabel('Channel name').fill(`Live ${name}`);
-    await createVideoChannel(page, channelForm.getByRole('button', { name: 'Create a video channel' }));
-    await page.waitForURL(url => url.pathname === '/videos/upload');await openVideoOptions(page);
+    await channelForm.getByRole('button', { name: 'Create a video channel' }).click();
+    await page.waitForURL(url => url.pathname === '/videos/live/new');
     await page.goto('/videos/live/new');
     form = page.locator('form[action="/web/videos/live"]');
   }
-  await expect(form.getByRole('combobox', { name: 'Channel' })).toBeVisible();
+  if(await form.locator('select[name=channel]').count()) await expect(form.getByRole('combobox', { name: 'Channel' })).toBeVisible();
+  else await expect(form.locator('input[name=channel]')).toHaveValue('default');
   await form.getByLabel('Video title').fill(`Browser live ${name}`);
   await openDetailsFor(form.getByLabel('Description', { exact: true }));
   await form.getByLabel('Description', { exact: true }).fill('A browser-authored live test.');
@@ -55,8 +56,13 @@ async function createLive(page, permanent, returnCredentials = false, visibility
     await openDetailsFor(form.getByLabel('Reuse this broadcast for future sessions',{exact:true}));
     await form.getByRole('checkbox', {name:'Reuse this broadcast for future sessions',exact:true}).check();
   }
-  await form.getByRole('button', { name: 'Create waiting broadcast' }).click();
+  await form.getByRole('button', { name: 'Continue to camera setup' }).click();
   await expect(page.getByRole('heading', { name: 'Manage live broadcast' })).toBeVisible();
+  if (test.info().title.startsWith('camera preview')) {
+    await expect(page.locator('[data-live-browser]')).toBeVisible();
+    await page.screenshot({path:test.info().outputPath('live-ready-after-creation.png'),fullPage:true});
+  }
+  await openDetailsFor(page.getByRole('textbox', {name:'Stream key',includeHidden:true}));
   await expect(page.getByRole('textbox', { name: 'Stream key' })).toHaveValue(/[A-Za-z0-9_-]{43}/);
   const key = await page.getByRole('textbox', { name: 'Stream key' }).inputValue();
   const advertisedServer = await page.getByRole('textbox', { name: 'Plain RTMP server (trusted network only)' }).inputValue();
@@ -74,6 +80,10 @@ async function createLive(page, permanent, returnCredentials = false, visibility
   const href = await page.getByRole('link', { name: 'Manage live broadcast' }).getAttribute('href');
   const id = href.split('/').pop();
   createdLives.set(page, id);
+  if (firstPage) {
+    await page.locator('summary').filter({hasText:/^External encoder and stream key$/}).press('Enter');
+    return id;
+  }
   await page.goto(href);
   await openDetailsFor(page.locator('form[action$="/rotate-key"]'));
   await expect(page.getByText('The stream key is hidden after creation')).toBeVisible();
@@ -321,6 +331,8 @@ test('browser switches camera and screen inside one uninterrupted live session',
   await page.reload();
   const publisher = page.locator('[data-live-browser]');
   await publisher.getByRole('button', { name: 'Use camera and microphone' }).click();
+  await expect(publisher.getByRole('status')).toContainText(/Preview only|Broadcasting now/);
+  if (await publisher.locator('[data-live-start]').isVisible()) await publisher.locator('[data-live-start]').click();
   await expect(publisher.getByRole('status')).toContainText('Broadcasting now');
   await expect.poll(() => liveState(page, id)).toBe('live');
   await expect(publisher.getByRole('button', { name: 'Switch to screen' })).toBeEnabled();
@@ -329,6 +341,8 @@ test('browser switches camera and screen inside one uninterrupted live session',
   await openDetailsFor(publisher.getByLabel(/Request screen audio/));
   await publisher.getByRole('checkbox', { name: /Request screen audio/ }).uncheck();
   await publisher.getByRole('button', { name: 'Switch to screen' }).click();
+  await expect(publisher.getByRole('status')).toContainText(/Preview only|Broadcasting now/);
+  if (await publisher.locator('[data-live-start]').isVisible()) await publisher.locator('[data-live-start]').click();
   await expect(publisher.getByRole('status')).toContainText('Broadcasting now');
   await expect(publisher.getByRole('button', { name: 'Switch to camera and microphone' })).toBeEnabled();
   await expect(publisher.getByRole('button', { name: 'Screen (live)' })).toBeDisabled();
@@ -360,6 +374,8 @@ test('browser switches camera and screen inside one uninterrupted live session',
     return green > red * 2;
   })).toBe(true);
   await publisher.getByRole('button', { name: 'Switch to camera and microphone' }).click();
+  await expect(publisher.getByRole('status')).toContainText(/Preview only|Broadcasting now/);
+  if (await publisher.locator('[data-live-start]').isVisible()) await publisher.locator('[data-live-start]').click();
   await expect(publisher.getByRole('status')).toContainText('Broadcasting now');
   await expect(publisher.getByRole('button', { name: 'Switch to screen' })).toBeEnabled();
   expect(await page.evaluate(() => ({
@@ -428,6 +444,8 @@ test('browser publisher can recover after an unexpected socket close', async ({ 
   await page.reload();
   const publisher = page.locator('[data-live-browser]');
   await publisher.getByRole('button', { name: 'Use camera and microphone' }).click();
+  await expect(publisher.getByRole('status')).toContainText(/Preview only|Broadcasting now/);
+  if (await publisher.locator('[data-live-start]').isVisible()) await publisher.locator('[data-live-start]').click();
   await expect(publisher.getByRole('status')).toContainText('Broadcasting now');
   await expect.poll(() => liveState(page, id)).toBe('live');
   await page.evaluate(() => window.__liveTestSocket.close());
@@ -435,6 +453,8 @@ test('browser publisher can recover after an unexpected socket close', async ({ 
   await expect.poll(() => liveState(page, id)).toBe('interrupted');
   await expect(publisher.getByRole('button', { name: 'Use camera and microphone' })).toBeEnabled();
   await publisher.getByRole('button', { name: 'Use camera and microphone' }).click();
+  await expect(publisher.getByRole('status')).toContainText(/Preview only|Broadcasting now/);
+  if (await publisher.locator('[data-live-start]').isVisible()) await publisher.locator('[data-live-start]').click();
   await expect(publisher.getByRole('status')).toContainText('Broadcasting now');
   await expect.poll(() => liveState(page, id)).toBe('live');
   await publisher.getByRole('button', { name: 'Stop broadcasting' }).click();
@@ -497,12 +517,15 @@ test('browser capture failures and stalled startup recover without leaking devic
     window.WebSocket = StalledSocket;
   });
   await publisher.getByRole('button', { name: 'Use camera and microphone' }).click();
+  await publisher.locator('[data-live-start]').click();
   await expect(publisher.getByRole('status')).toContainText('did not respond', { timeout: 20_000 });
   await expect(publisher.getByRole('button', { name: 'Use camera and microphone' })).toBeEnabled();
   expect(await page.evaluate(() => window.__lastLiveStream.getTracks().every(track => track.readyState === 'ended'))).toBe(true);
   expect(await liveState(page, id)).toBe('waiting');
   await page.evaluate(() => { window.WebSocket = window.__nativeLiveSocket; });
   await publisher.getByRole('button', { name: 'Use camera and microphone' }).click();
+  await expect(publisher.getByRole('status')).toContainText(/Preview only|Broadcasting now/);
+  if (await publisher.locator('[data-live-start]').isVisible()) await publisher.locator('[data-live-start]').click();
   await expect(publisher.getByRole('status')).toContainText('Broadcasting now');
   await expect.poll(() => liveState(page, id)).toBe('live');
   await publisher.getByRole('button', { name: 'Stop broadcasting' }).click();
@@ -532,13 +555,15 @@ test('unavailable browser audio releases capture and permits a real retry', asyn
   expect(await liveState(page, id)).toBe('waiting');
   await page.evaluate(() => { window.AudioContext = window.__nativeAudioContext; });
   await publisher.getByRole('button', { name: 'Use camera and microphone' }).click();
+  await expect(publisher.getByRole('status')).toContainText(/Preview only|Broadcasting now/);
+  if (await publisher.locator('[data-live-start]').isVisible()) await publisher.locator('[data-live-start]').click();
   await expect(publisher.getByRole('status')).toContainText('Broadcasting now');
   await expect.poll(() => liveState(page, id)).toBe('live');
   await publisher.getByRole('button', { name: 'Stop broadcasting' }).click();
   await expect(publisher.getByRole('status')).toContainText('Broadcast stopped.');
 });
 
-test('live DVR rewinds and returns to the live edge accessibly', async ({ page }) => {
+test('live DVR rewinds and returns to the live edge accessibly', async ({ page }, info) => {
   await requireBrowserPublisher(page);
   test.setTimeout(150_000);
   const id = await createLive(page, true);
@@ -546,6 +571,8 @@ test('live DVR rewinds and returns to the live edge accessibly', async ({ page }
   await page.reload();
   const publisher = page.locator('[data-live-browser]');
   await publisher.getByRole('button', { name: 'Use camera and microphone' }).click();
+  await expect(publisher.getByRole('status')).toContainText(/Preview only|Broadcasting now/);
+  if (await publisher.locator('[data-live-start]').isVisible()) await publisher.locator('[data-live-start]').click();
   await expect(publisher.getByRole('status')).toContainText('Broadcasting now');
   await expect.poll(() => liveState(page, id)).toBe('live');
   const viewer = await page.context().newPage();
@@ -559,13 +586,29 @@ test('live DVR rewinds and returns to the live edge accessibly', async ({ page }
     await video.evaluate(element => {
       element.currentTime = element.seekable.end(0) - 14;
     });
+    await expect(viewer.locator('.vod-controls')).toBeVisible();
+    expect(await video.evaluate(v=>v.controls)).toBe(false);
+    await expect(viewer.getByRole('slider',{name:'Seek',exact:true})).toBeVisible();
     const goLive = viewer.getByRole('button', { name: 'Go live' });
     await expect(goLive).toBeVisible();
+    const controlBounds=await goLive.boundingBox(), pictureBounds=await video.boundingBox();
+    expect(controlBounds.y).toBeGreaterThanOrEqual(pictureBounds.y+pictureBounds.height-1);
+    expect(controlBounds.x+controlBounds.width).toBeLessThanOrEqual(pictureBounds.x+pictureBounds.width+1);
+    expect(controlBounds.width).toBeGreaterThanOrEqual(44);expect(controlBounds.height).toBeGreaterThanOrEqual(44);
+    await viewer.screenshot({path:info.outputPath('running-live-enhanced-player.png'),fullPage:true,animations:'disabled'});
     // Live-edge stall recovery must not undo a deliberate DVR rewind.
     await viewer.waitForTimeout(3500);
     expect(await video.evaluate(element => element.seekable.end(0) - element.currentTime)).toBeGreaterThan(10);
     const violations = (await new AxeBuilder({ page: viewer }).include('figure.media--video').analyze()).violations;
     expect(violations).toEqual([]);
+    if(await viewer.evaluate(()=>document.fullscreenEnabled)) {
+      await viewer.getByRole('button',{name:'Fullscreen',exact:true}).click();
+      await expect.poll(()=>viewer.evaluate(()=>Boolean(document.fullscreenElement))).toBe(true);
+      await viewer.mouse.move(30,30);
+      await expect.poll(()=>viewer.locator('.vod-controls').evaluate(e=>getComputedStyle(e).opacity),{timeout:7000}).toBe('0');
+      await viewer.screenshot({path:info.outputPath('live-fullscreen-unobstructed.png')});
+      await viewer.evaluate(()=>document.exitFullscreen());
+    }
     await goLive.focus();
     await viewer.keyboard.press('Enter');
     await expect(goLive).toBeHidden();
@@ -586,6 +629,8 @@ test('fatal live HLS failure offers accessible basic and refresh paths', async (
   await page.reload();
   const publisher = page.locator('[data-live-browser]');
   await publisher.getByRole('button', { name: 'Use camera and microphone' }).click();
+  await expect(publisher.getByRole('status')).toContainText(/Preview only|Broadcasting now/);
+  if (await publisher.locator('[data-live-start]').isVisible()) await publisher.locator('[data-live-start]').click();
   await expect(publisher.getByRole('status')).toContainText('Broadcasting now');
   await expect.poll(() => liveState(page, id)).toBe('live');
   const viewer = await page.context().newPage();
@@ -661,6 +706,8 @@ test('one-shot browser broadcast becomes a playable replay', async ({ page }) =>
   await page.reload();
   const publisher = page.locator('[data-live-browser]');
   await publisher.getByRole('button', { name: 'Use camera and microphone' }).click();
+  await expect(publisher.getByRole('status')).toContainText(/Preview only|Broadcasting now/);
+  if (await publisher.locator('[data-live-start]').isVisible()) await publisher.locator('[data-live-start]').click();
   await expect(publisher.getByRole('status')).toContainText('Broadcasting now');
   await expect.poll(() => liveState(page, id), { timeout: 30_000 }).toBe('live');
   await page.waitForTimeout(4_000);
@@ -975,4 +1022,34 @@ test('@no-js external encoder replay stays accessible in native video controls',
   expect(reflow.scrollWidth, JSON.stringify(reflow)).toBeLessThanOrEqual(321);
   expect(reflow.scrollX, JSON.stringify(reflow)).toBeLessThanOrEqual(1);
   expect(reflow.mainRight).toBeLessThanOrEqual(321);
+});
+
+
+test('camera preview stays private until Go live and cancellation releases devices', async ({page},info) => {
+  await requireBrowserPublisher(page);
+  test.setTimeout(90000);
+  await installSyntheticCapture(page);
+  await page.addInitScript(() => {
+    const Socket=window.WebSocket;
+    window.__previewConnections=0;
+    window.WebSocket=class extends Socket { constructor(...args) {super(...args);if(String(args[0]).includes("/publish"))window.__previewConnections++;} };
+  });
+  const id=await createLive(page,true,false,'unlisted',true);
+  const publisher=page.locator('[data-live-browser]');
+  await publisher.locator('[data-live-camera]').click();
+  await expect(publisher.getByRole('status')).toContainText('Preview only');
+  await expect(publisher.locator('video')).toBeVisible();
+  expect(await liveState(page,id)).toBe('waiting');
+  expect(await page.evaluate(()=>window.__previewConnections)).toBe(0);
+  await expect(publisher.locator('[data-live-start]')).toBeFocused();
+  expect(await page.locator('.skip-link').evaluate(e=>e.getBoundingClientRect().bottom)).toBeLessThanOrEqual(0);
+  await page.screenshot({path:info.outputPath('live-camera-viewport.png')});
+  // Capture from the top: Chromium's full-page capture otherwise paints fixed,
+  // off-viewport elements at their document-relative position in the PNG.
+  await page.locator('h1').click(); await page.evaluate(()=>scrollTo(0,0));
+  await page.screenshot({path:info.outputPath('live-camera-preview.png'),fullPage:true});
+  await publisher.locator('[data-live-cancel]').click();
+  await expect(publisher.locator('video')).toBeHidden();
+  expect(await page.evaluate(()=>window.__liveCaptureStreams.every(stream=>stream.getTracks().every(track=>track.readyState==='ended')))).toBe(true);
+  expect(await page.evaluate(()=>window.__previewConnections)).toBe(0);
 });

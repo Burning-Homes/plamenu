@@ -164,3 +164,9 @@ webxdc.plamenu2.local, *.webxdc.plamenu2.local {
 	tls internal
 	reverse_proxy host.docker.internal:8422
 }
+
+# Digest-pinned Songhive music and ActivityPub peer.
+songhive.local {
+	tls internal
+	reverse_proxy songhive-web:8000
+}

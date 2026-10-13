@@ -29,11 +29,13 @@ base64 = { workspace = true }
 blurhash = { workspace = true }
 clap = { workspace = true }
 csv = { workspace = true }
+encoding_rs = { workspace = true }
 fluent-bundle = { workspace = true }
 futures-util = { workspace = true }
 getrandom = { workspace = true }
 hkdf = { workspace = true }
 hmac = { workspace = true }
+md-5 = { workspace = true }
 html5ever = { workspace = true }
 image = { workspace = true }
 jiff = { workspace = true }
@@ -47,7 +49,9 @@ plamenu-federation = { workspace = true }
 pulldown-cmark = { workspace = true }
 qrcode = { workspace = true }
 quick_html2md = { workspace = true }
+roxmltree = { workspace = true }
 regex = { workspace = true }
+httpdate = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_urlencoded = { workspace = true }

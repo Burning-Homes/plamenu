@@ -64,8 +64,8 @@ pub async fn enqueue<'e, E: sqlx::PgExecutor<'e>>(
 
 /// Enqueues an `Accept(Follow)` or `Reject(Follow)` after a short commit grace
 /// for the initiating peer's relationship row.
-pub async fn enqueue_relationship_response(
-    pool: &PgPool,
+pub async fn enqueue_relationship_response<'e, E: sqlx::PgExecutor<'e>>(
+    pool: E,
     account_id: i64,
     inbox_url: &str,
     activity: &Value,

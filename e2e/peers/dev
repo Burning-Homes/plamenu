@@ -1476,12 +1476,13 @@ case "$action" in
       mobilizon)  mobilizon_up ;;
       discourse)  discourse_up ;;
       hubzilla)   hubzilla_up ;;
+      songhive)   "$PWD/songhive-test/peer" "$action" ;;
       funkwhale)  funkwhale_up ;;
       plup)       plup_up ;;
       onion)      onion_up ;;
       # `onion` is deliberately not in `all`: it is the only rig that needs
       # the real Tor network, and full-stack boots must stay offline-safe.
-      all)        masto_up; discourse_up; hubzilla_up; funkwhale_up; plamenu_up; pleroma_up; sharkey_up; gts_up; mitra_up; lemmy_up; peertube_up; owncast_up; mobilizon_up; plup_up ;;
+      all)        masto_up; discourse_up; hubzilla_up; funkwhale_up; "$PWD/songhive-test/peer" up; plamenu_up; pleroma_up; sharkey_up; gts_up; mitra_up; lemmy_up; peertube_up; owncast_up; mobilizon_up; plup_up ;;
       *)          echo "unknown target: $target (use mastodon, plamenu, pleroma, plup, sharkey, gotosocial, mitra, lemmy, peertube, owncast, mobilizon, discourse, hubzilla, funkwhale, onion, or all)"; exit 1 ;;
     esac
     ;;
@@ -1500,10 +1501,11 @@ case "$action" in
       mobilizon)  mobilizon_down ;;
       discourse)  discourse_down ;;
       hubzilla)   hubzilla_down ;;
+      songhive)   "$PWD/songhive-test/peer" "$action" ;;
       funkwhale)  funkwhale_down ;;
       plup)       plup_down ;;
       onion)      onion_down ;;
-      all)        onion_down; plup_down; mobilizon_down; owncast_down; peertube_down; lemmy_down; mitra_down; gts_down; sharkey_down; pleroma_down; plamenu_down; funkwhale_down; hubzilla_down; discourse_down; masto_down ;;
+      all)        onion_down; plup_down; mobilizon_down; owncast_down; peertube_down; lemmy_down; mitra_down; gts_down; sharkey_down; pleroma_down; plamenu_down; "$PWD/songhive-test/peer" down; funkwhale_down; hubzilla_down; discourse_down; masto_down ;;
       *)          echo "unknown target: $target (use mastodon, plamenu, pleroma, plup, sharkey, gotosocial, mitra, lemmy, peertube, owncast, mobilizon, discourse, hubzilla, funkwhale, onion, or all)"; exit 1 ;;
     esac
     ;;
@@ -1521,6 +1523,7 @@ case "$action" in
     mobilizon_status
     discourse_status
     hubzilla_status
+    "$PWD/songhive-test/peer" status
     funkwhale_status
     plup_status
     onion_status
@@ -1551,6 +1554,7 @@ case "$action" in
     discourse_creds
     echo "hubzilla   https://hubzilla.local"
     hubzilla_creds
+    echo "songhive   https://songhive.local (sylvia / songhive-sylvia-pass-123)"
     echo "funkwhale  https://funkwhale.local"
     funkwhale_creds
     echo "plup       https://plup.local"
@@ -1571,6 +1575,7 @@ case "$action" in
       mobilizon)  shift 1; mobilizon_logs "$@" ;;
       discourse)  shift 1; discourse_logs "$@" ;;
       hubzilla)   shift 1; hubzilla_logs "$@" ;;
+      songhive)   shift 1; "$PWD/songhive-test/peer" logs "$@" ;;
       funkwhale)  shift 1; funkwhale_logs "$@" ;;
       plup)       shift 1; plup_logs "$@" ;;
       onion)      onion_logs ;;

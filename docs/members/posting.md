@@ -30,6 +30,31 @@ convey every important visual, choose the separate soundtrack option. A
 transcript does not replace audio description for prerecorded synchronized
 video at WCAG Level AA.
 
+## Audio, video and live broadcasts
+
+**New post** offers **Audio**, **Video** and **Go live** alongside ordinary posts.
+Choose **Audio** for a titled recording: select one audio file, listen to the
+attached preview, and add a description. Artist, album and other catalogue
+fields are under **More music details (optional)**. Your audience and the usual
+post interactions apply. [Music](music.md) also supports private uploads,
+albums, playlists and a listening queue.
+
+Choose **Video** to open the video upload and review flow. Your video stays a
+private draft until you publish it. **Videos** in the main navigation opens the
+watch catalogue; upload and live creation are available there too. Local and
+remote videos use the same playback controls. Thumbnail previews appear when
+available, and native controls remain available without scripts.
+
+Choose **Go live**, create a channel if this is your first broadcast, and give
+the broadcast a title and audience. **Continue to camera setup** opens camera
+and screen controls immediately. Granting capture permission only opens a
+private preview. Check it, then press **Go live** to start transmitting.
+**Cancel preview** releases the camera and microphone without going live.
+Keep the page open while broadcasting and use **Stop broadcasting** to finish.
+Streaming apps use **External encoder and stream key**; those credentials are
+not needed for broadcasting from the browser. Screen capture and browser
+recording availability depend on your browser and device.
+
 ## Visibility
 
 | Visibility | Access |

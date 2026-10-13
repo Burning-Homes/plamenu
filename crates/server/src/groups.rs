@@ -273,6 +273,7 @@ pub async fn resolve_compose_targets(
             submission.kind,
             plamenu_ap::activity::PostKind::Event
                 | plamenu_ap::activity::PostKind::Article
+                | plamenu_ap::activity::PostKind::Audio
                 | plamenu_ap::activity::PostKind::Video
         );
         if submission.group_id.is_none() && !titled_kind {

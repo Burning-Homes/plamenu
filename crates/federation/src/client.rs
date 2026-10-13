@@ -1,6 +1,9 @@
 //! Outbound federation HTTP: actor dereferencing, webfinger resolution and
 //! signed delivery. Every request passes the SSRF [`crate::guard`] first.
 
+mod webmention;
+pub use webmention::MentionPage;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, SystemTime};
@@ -164,6 +167,15 @@ pub struct FetchedPage {
     pub body: String,
 }
 
+/// An unsigned conditional RSS/Atom fetch; no body denotes HTTP 304.
+#[derive(Debug, Clone)]
+pub struct FetchedFeed {
+    pub final_url: String,
+    pub bytes: Option<Vec<u8>>,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+}
+
 /// One conditional, signed `ActivityPub` document fetch. `document` is `None`
 /// only for `304 Not Modified`; byte accounting is the decoded response size,
 /// before JSON parsing.
@@ -208,6 +220,15 @@ pub struct FetchedMediaFile {
     pub final_url: String,
     pub content_type: String,
     pub bytes_written: u64,
+}
+
+/// A generic podcast enclosure response. Its body owns the origin request.
+pub struct FetchedEnclosure {
+    pub status: u16,
+    pub content_type: String,
+    pub content_length: Option<u64>,
+    pub content_range: Option<String>,
+    pub bytes: Pin<Box<dyn Stream<Item = Result<Vec<u8>, FederationError>> + Send>>,
 }
 
 /// A validated byte-range response whose body remains streaming.  Dropping
@@ -305,6 +326,7 @@ pub struct ProxyConfig {
 }
 
 pub struct FederationClient {
+    enclosures: EnclosureClients,
     http: reqwest::Client,
     /// Like `http` but never follows redirects — page fetches walk each hop
     /// manually so the SSRF guard sees every redirect target.
@@ -362,6 +384,7 @@ impl FederationClient {
         let http = build_client(user_agent, allow_private, None, REQUEST_TIMEOUT)?;
         let http_no_redirect = build_client(user_agent, allow_private, None, REQUEST_TIMEOUT)?;
         Ok(Self {
+            enclosures: EnclosureClients::new(user_agent, allow_private, None)?,
             http,
             http_no_redirect,
             direct: None,
@@ -416,6 +439,8 @@ impl FederationClient {
             )?);
         }
         self.no_proxy.clone_from(&proxies.no_proxy);
+        self.enclosures =
+            EnclosureClients::new(&self.user_agent, self.allow_private, Some(proxies))?;
         Ok(self)
     }
 
@@ -476,6 +501,15 @@ impl FederationClient {
             .parse()
             .map_err(|_| FederationError::InvalidUrl(raw_url.to_owned()))?;
         guard::check_url_syntax(&url, self.allow_private)?;
+        Ok(url)
+    }
+
+    fn checked_feed(&self, raw_url: &str) -> Result<Url, FederationError> {
+        let mut url: Url = raw_url
+            .parse()
+            .map_err(|_| FederationError::InvalidUrl("Invalid podcast feed URL".into()))?;
+        guard::check_feed_url_syntax(&url, self.allow_private)?;
+        url.set_fragment(None);
         Ok(url)
     }
 
@@ -1074,6 +1108,224 @@ impl FederationClient {
         Err(FederationError::InvalidUrl(format!(
             "{raw_url}: too many redirects"
         )))
+    }
+
+    /// Generic feed transport reuses pinned DNS, network policy, redirect checks,
+    /// and bounded HTTP clients. It never sends an `ActivityPub` actor signature.
+    pub async fn fetch_feed(
+        &self,
+        raw_url: &str,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+        max_bytes: usize,
+    ) -> Result<FetchedFeed, FederationError> {
+        self.fetch_unsigned_source(
+            raw_url,
+            etag,
+            last_modified,
+            max_bytes,
+            "application/rss+xml, application/atom+xml, application/xml, text/xml, text/html;q=0.5",
+        )
+        .await
+    }
+
+    /// Public feed artwork uses the same unsigned, bounded transport and guards.
+    pub async fn fetch_feed_image(&self, raw_url: &str) -> Result<Vec<u8>, FederationError> {
+        self.fetch_unsigned_source(raw_url, None, None, 2 * 1024 * 1024, "image/*")
+            .await?
+            .bytes
+            .ok_or(FederationError::Status(304))
+    }
+
+    async fn fetch_unsigned_source(
+        &self,
+        raw_url: &str,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+        max_bytes: usize,
+        accept: &str,
+    ) -> Result<FetchedFeed, FederationError> {
+        let max_bytes = max_bytes.min(2 * 1024 * 1024);
+        let mut url = self.checked_feed(raw_url)?;
+        let initial_origin = url.origin();
+        for _ in 0..=PAGE_MAX_REDIRECTS {
+            let mut request = self
+                .http_no_redirect_for(&url)
+                .get(url.clone())
+                .header(ACCEPT, accept);
+            if let Some(agent) = &self.page_user_agent {
+                request = request.header(USER_AGENT, agent);
+            }
+            if url.origin() == initial_origin {
+                if let Some(value) = etag {
+                    request = request.header(reqwest::header::IF_NONE_MATCH, value);
+                }
+                if let Some(value) = last_modified {
+                    request = request.header(reqwest::header::IF_MODIFIED_SINCE, value);
+                }
+            }
+            let mut response = request.send().await?;
+            if response.status().is_redirection()
+                && response.status() != reqwest::StatusCode::NOT_MODIFIED
+            {
+                let location = response
+                    .headers()
+                    .get(reqwest::header::LOCATION)
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or_else(|| FederationError::Status(response.status().as_u16()))?;
+                let next = url
+                    .join(location)
+                    .map_err(|_| FederationError::InvalidUrl("Invalid feed redirect".into()))?;
+                url = self.checked_feed(next.as_str())?;
+                continue;
+            }
+            let validator = |key| {
+                response
+                    .headers()
+                    .get(key)
+                    .and_then(|v| v.to_str().ok())
+                    .filter(|v| v.len() <= 512)
+                    .map(str::to_owned)
+            };
+            let response_etag = validator(reqwest::header::ETAG);
+            let response_modified = validator(reqwest::header::LAST_MODIFIED);
+            if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+                return Ok(FetchedFeed {
+                    final_url: url.to_string(),
+                    bytes: None,
+                    etag: response_etag,
+                    last_modified: response_modified,
+                });
+            }
+            if response.status() != reqwest::StatusCode::OK {
+                return Err(FederationError::Status(response.status().as_u16()));
+            }
+            if response
+                .content_length()
+                .is_some_and(|v| v > max_bytes as u64)
+            {
+                return Err(FederationError::TooLarge("Podcast feed".into()));
+            }
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await? {
+                if bytes.len().saturating_add(chunk.len()) > max_bytes {
+                    return Err(FederationError::TooLarge("Podcast feed".into()));
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            return Ok(FetchedFeed {
+                final_url: url.to_string(),
+                bytes: Some(bytes),
+                etag: response_etag,
+                last_modified: response_modified,
+            });
+        }
+        Err(FederationError::InvalidUrl(
+            "Too many feed redirects".into(),
+        ))
+    }
+
+    /// Streams one known podcast enclosure without caching or actor credentials.
+    /// The downstream owns this stream, so dropping it cancels origin work.
+    pub async fn fetch_enclosure(
+        &self,
+        raw_url: &str,
+        range: Option<&str>,
+    ) -> Result<FetchedEnclosure, FederationError> {
+        let mut url = self.checked_feed(raw_url)?;
+        for _ in 0..=PAGE_MAX_REDIRECTS {
+            let mut request = self
+                .enclosures
+                .client_for(&url, &self.no_proxy)
+                .get(url.clone())
+                .header(ACCEPT, "audio/*, application/octet-stream");
+            if let Some(agent) = &self.page_user_agent {
+                request = request.header(USER_AGENT, agent);
+            }
+            if let Some(range) = range {
+                request = request.header(reqwest::header::RANGE, range);
+            }
+            let response = tokio::time::timeout(REQUEST_TIMEOUT, request.send())
+                .await
+                .map_err(|_| FederationError::Stalled("Podcast response headers".into()))??;
+            if response.status().is_redirection() {
+                let location = response
+                    .headers()
+                    .get(reqwest::header::LOCATION)
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or_else(|| FederationError::Status(response.status().as_u16()))?;
+                let next = url.join(location).map_err(|_| {
+                    FederationError::InvalidUrl("Invalid enclosure redirect".into())
+                })?;
+                url = self.checked_feed(next.as_str())?;
+                continue;
+            }
+            let status = response.status().as_u16();
+            if !matches!(status, 200 | 206 | 416) {
+                return Err(FederationError::Status(status));
+            }
+            let content_range = response
+                .headers()
+                .get(reqwest::header::CONTENT_RANGE)
+                .and_then(|v| v.to_str().ok())
+                .filter(|v| v.len() < 100)
+                .map(str::to_owned);
+            let partial = if status == 206 {
+                Some(
+                    content_range
+                        .as_deref()
+                        .and_then(parse_content_range)
+                        .ok_or_else(|| {
+                            FederationError::InvalidUrl("Invalid enclosure Content-Range".into())
+                        })?,
+                )
+            } else {
+                None
+            };
+            if status == 416
+                && !content_range.as_deref().is_some_and(|v| {
+                    v.strip_prefix("bytes */")
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .is_some()
+                })
+            {
+                return Err(FederationError::InvalidUrl(
+                    "Invalid enclosure unsatisfied range".into(),
+                ));
+            }
+            let content_type = response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .filter(|v| v.starts_with("audio/") && v.len() < 128)
+                .unwrap_or("application/octet-stream")
+                .to_owned();
+            let content_length = response.content_length();
+            if let Some((start, end, _)) = partial
+                && content_length.is_some_and(|len| len != end - start + 1)
+            {
+                return Err(FederationError::InvalidUrl(
+                    "Incorrect enclosure range length".into(),
+                ));
+            }
+            // Per-chunk timeout, with no whole-body timer and no detached task.
+            let bytes = stream::try_unfold(response, |mut response| async move {
+                let chunk = tokio::time::timeout(AV_CHUNK_TIMEOUT, response.chunk())
+                    .await
+                    .map_err(|_| FederationError::Stalled("Podcast enclosure".into()))??;
+                Ok(chunk.map(|bytes| (bytes.to_vec(), response)))
+            });
+            return Ok(FetchedEnclosure {
+                status,
+                content_type,
+                content_length,
+                content_range,
+                bytes: Box::pin(bytes),
+            });
+        }
+        Err(FederationError::InvalidUrl(
+            "Too many enclosure redirects".into(),
+        ))
     }
 
     /// Downloads a remote media file (an attachment, avatar or header) for
@@ -1790,6 +2042,48 @@ impl FederationClient {
     }
 }
 
+/// Streaming lanes retain the same proxy and DNS policy, with bounded connect,
+/// header and idle-read times rather than a timer for the whole podcast episode.
+struct EnclosureClients {
+    public: reqwest::Client,
+    direct: Option<reqwest::Client>,
+    onion: Option<reqwest::Client>,
+    i2p: Option<reqwest::Client>,
+}
+impl EnclosureClients {
+    fn new(
+        agent: &str,
+        private: bool,
+        proxies: Option<&ProxyConfig>,
+    ) -> Result<Self, FederationError> {
+        let global = proxies.and_then(|p| p.proxy_url.as_deref());
+        let build = |proxy, timeout| build_client_mode(agent, private, proxy, timeout, true);
+        let hidden = |proxy: Option<&str>| {
+            proxy
+                .or(global)
+                .map(|p| build_client_mode(agent, private, Some(p), HIDDEN_REQUEST_TIMEOUT, true))
+                .transpose()
+        };
+        Ok(Self {
+            public: build(global, REQUEST_TIMEOUT)?,
+            direct: global.map(|_| build(None, REQUEST_TIMEOUT)).transpose()?,
+            onion: hidden(proxies.and_then(|p| p.onion_proxy_url.as_deref()))?,
+            i2p: hidden(proxies.and_then(|p| p.i2p_proxy_url.as_deref()))?,
+        })
+    }
+    fn client_for(&self, url: &Url, no_proxy: &[String]) -> &reqwest::Client {
+        let host = url.host_str().unwrap_or_default();
+        if no_proxy.iter().any(|v| v.eq_ignore_ascii_case(host)) {
+            return self.direct.as_ref().unwrap_or(&self.public);
+        }
+        match crate::network::network_type(host) {
+            crate::network::Network::Tor => self.onion.as_ref().unwrap_or(&self.public),
+            crate::network::Network::I2p => self.i2p.as_ref().unwrap_or(&self.public),
+            crate::network::Network::Default => &self.public,
+        }
+    }
+}
+
 /// One outbound HTTP client: redirects off (hops are walked manually so the
 /// SSRF guard sees every target), [`guard::SafeResolver`] installed, and an
 /// optional proxy for the overlay-network lanes.
@@ -1799,11 +2093,26 @@ fn build_client(
     proxy: Option<&str>,
     timeout: Duration,
 ) -> Result<reqwest::Client, FederationError> {
+    build_client_mode(user_agent, allow_private, proxy, timeout, false)
+}
+fn build_client_mode(
+    user_agent: &str,
+    allow_private: bool,
+    proxy: Option<&str>,
+    timeout: Duration,
+    streaming: bool,
+) -> Result<reqwest::Client, FederationError> {
     let mut builder = reqwest::Client::builder()
         .user_agent(user_agent)
-        .timeout(timeout)
         .redirect(reqwest::redirect::Policy::none())
         .dns_resolver(guard::SafeResolver::shared(allow_private));
+    builder = if streaming {
+        builder
+            .connect_timeout(timeout)
+            .read_timeout(AV_CHUNK_TIMEOUT)
+    } else {
+        builder.timeout(timeout)
+    };
     if let Some(proxy) = proxy {
         builder = builder.proxy(reqwest::Proxy::all(proxy).map_err(|_| {
             FederationError::InvalidUrl("configured proxy URL is invalid".to_owned())
@@ -2140,6 +2449,7 @@ fn host_header(url: &Url) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
     use http::HeaderMap;
     use http::header::{HeaderName, HeaderValue};
     use plamenu_ap::keys::generate_keypair;
@@ -2147,6 +2457,203 @@ mod tests {
 
     use super::*;
     use crate::signature::{PreparedVerification, SignatureError};
+
+    async fn feed_server(reply: String) -> (String, tokio::task::JoinHandle<String>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let job = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 1024];
+            while !request.windows(4).any(|v| v == b"\r\n\r\n") {
+                let count = socket.read(&mut buffer).await.unwrap();
+                if count == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..count]);
+            }
+            let _ = socket.write_all(reply.as_bytes()).await;
+            String::from_utf8(request).unwrap()
+        });
+        (format!("http://{address}/feed"), job)
+    }
+
+    #[tokio::test]
+    async fn podcast_feed_transport_handles_conditional_304_without_actor_credentials() {
+        let client = FederationClient::new("plamenu-test", true).unwrap();
+        let (url, job) = feed_server(
+            "HTTP/1.1 304 Not Modified\r\nETag: \"v1\"\r\nConnection: close\r\n\r\n".into(),
+        )
+        .await;
+        let response = client
+            .fetch_feed(
+                &url,
+                Some("\"v1\""),
+                Some("Fri, 09 Oct 2026 12:00:00 GMT"),
+                128,
+            )
+            .await
+            .unwrap();
+        assert!(response.bytes.is_none());
+        assert_eq!(response.etag.as_deref(), Some("\"v1\""));
+        let request = job.await.unwrap().to_ascii_lowercase();
+        assert!(request.contains("if-none-match: \"v1\""));
+        assert!(request.contains("if-modified-since:"));
+        assert!(!request.contains("authorization:"));
+        assert!(!request.contains("signature:"));
+    }
+
+    #[tokio::test]
+    async fn podcast_feed_transport_rejects_oversized_bodies_and_private_addresses() {
+        let client = FederationClient::new("plamenu-test", true).unwrap();
+        for reply in [
+            "HTTP/1.1 200 OK\r\nContent-Length: 129\r\nConnection: close\r\n\r\n".to_owned(),
+            format!(
+                "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n81\r\n{}\r\n0\r\n\r\n",
+                "x".repeat(129)
+            ),
+        ] {
+            let (url, job) = feed_server(reply).await;
+            assert!(matches!(
+                client.fetch_feed(&url, None, None, 128).await,
+                Err(FederationError::TooLarge(_))
+            ));
+            job.await.unwrap();
+        }
+        let strict = FederationClient::new("plamenu-test", false).unwrap();
+        assert!(matches!(
+            strict
+                .fetch_feed("http://127.0.0.1:1/feed", None, None, 128)
+                .await,
+            Err(FederationError::InvalidUrl(_) | FederationError::PrivateAddress(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn podcast_enclosure_ranges_never_send_actor_credentials_even_after_401() {
+        let pair = generate_keypair().unwrap();
+        let signer = RequestSigner::from_pkcs8_pem(
+            &pair.private_pem,
+            "https://plamenu.test/ap/instance#main-key".into(),
+        )
+        .unwrap();
+        let client = FederationClient::new("plamenu-test", true)
+            .unwrap()
+            .with_fetch_signer(signer);
+        let (url,job)=feed_server("HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 2-5/8\r\nContent-Type: audio/mpeg\r\nContent-Length: 4\r\nConnection: close\r\n\r\n2345".into()).await;
+        let mut result = client
+            .fetch_enclosure(&url, Some("bytes=2-5"))
+            .await
+            .unwrap();
+        assert_eq!(result.status, 206);
+        assert_eq!(result.content_length, Some(4));
+        assert_eq!(result.content_range.as_deref(), Some("bytes 2-5/8"));
+        let mut body = Vec::new();
+        while let Some(chunk) = result.bytes.next().await {
+            body.extend(chunk.unwrap());
+        }
+        assert_eq!(body, b"2345");
+        let request = job.await.unwrap().to_ascii_lowercase();
+        assert!(request.contains("range: bytes=2-5"));
+        assert!(!request.contains("signature:"));
+        assert!(!request.contains("authorization:"));
+        let (url, job) = feed_server(
+            "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into(),
+        )
+        .await;
+        assert!(matches!(
+            client.fetch_enclosure(&url, None).await,
+            Err(FederationError::Status(401))
+        ));
+        assert!(
+            !job.await
+                .unwrap()
+                .to_ascii_lowercase()
+                .contains("signature:")
+        );
+    }
+
+    #[tokio::test]
+    async fn dropping_a_podcast_body_cancels_the_origin_transfer() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let job = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut input = [0; 4096];
+            let mut request = Vec::new();
+            while !request.windows(4).any(|v| v == b"\r\n\r\n") {
+                let count = socket.read(&mut input).await.unwrap();
+                if count == 0 {
+                    break;
+                }
+                request.extend_from_slice(&input[..count]);
+            }
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: 67108864\r\nConnection: close\r\n\r\n").await.unwrap();
+            let chunk = vec![1; 64 * 1024];
+            let mut sent = 0_usize;
+            while sent < 64 * 1024 * 1024 {
+                if socket.write_all(&chunk).await.is_err() {
+                    break;
+                }
+                sent += chunk.len();
+            }
+            sent
+        });
+        let client = FederationClient::new("plamenu-test", true).unwrap();
+        let mut response = client
+            .fetch_enclosure(&format!("http://{address}/audio"), None)
+            .await
+            .unwrap();
+        assert!(response.bytes.next().await.unwrap().is_ok());
+        drop(response);
+        let sent = tokio::time::timeout(Duration::from_secs(5), job)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(sent < 64 * 1024 * 1024);
+    }
+
+    #[tokio::test]
+    async fn podcast_transfer_can_outlive_the_default_request_timer_while_progressing() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let job = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buffer = [0; 1024];
+            let mut request = Vec::new();
+            while !request.windows(4).any(|v| v == b"\r\n\r\n") {
+                let count = socket.read(&mut buffer).await.unwrap();
+                if count == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..count]);
+            }
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: 4\r\nConnection: close\r\n\r\na").await.unwrap();
+            for byte in *b"bcd" {
+                tokio::time::sleep(Duration::from_secs(6)).await;
+                socket.write_all(&[byte]).await.unwrap();
+            }
+        });
+        let client = FederationClient::new("plamenu-test", true).unwrap();
+        let body = tokio::time::timeout(Duration::from_secs(25), async {
+            let mut response = client
+                .fetch_enclosure(&format!("http://{address}/audio"), None)
+                .await
+                .unwrap();
+            let mut body = Vec::new();
+            while let Some(chunk) = response.bytes.next().await {
+                body.extend(chunk.unwrap());
+            }
+            body
+        })
+        .await
+        .unwrap();
+        assert_eq!(body, b"abcd");
+        job.await.unwrap();
+    }
 
     #[tokio::test]
     async fn activitypub_not_modified_is_not_a_redirect() {

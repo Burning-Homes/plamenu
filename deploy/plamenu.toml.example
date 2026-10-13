@@ -54,3 +54,19 @@ encryption_secret_version = 1
 # onion_proxy_url = "socks5h://127.0.0.1:9050"
 # i2p_proxy_url = "socks5h://127.0.0.1:4447"
 # no_proxy = []
+
+# Optional operator-approved mounted music roots. Keep this at the top level.
+# Originals remain on the mount and are not copied into media storage.
+# [[music_local_roots]]
+# id = "archive"
+# label = "Music archive"
+# path = "/srv/music"
+# allow_tag_writeback = false
+# allow_rename = false
+# allow_delete = false
+
+# Optional notification UTC schedule and seen-only retention.
+# [notifications]
+# retention_days = 90
+# purge_hour = 3
+# digest_hour = 8

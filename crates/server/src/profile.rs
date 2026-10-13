@@ -253,6 +253,12 @@ pub async fn local_actor_conn(
     );
     crate::video::channel_actor(state, conn, account, &mut actor).await?;
     actor.playlists = Some(format!("{}/playlists", actor.id));
+    if account.is_local() && !account.is_group() {
+        actor.library = Some(format!("{}/library", actor.id));
+        if let Some(context) = actor.context.as_array_mut() {
+            context.push(serde_json::json!("https://funkwhale.audio/ns"));
+        }
+    }
     let documents = sidecars
         .identity_documents
         .as_ref()
@@ -809,7 +815,8 @@ pub async fn fan_out_actor_update_conn(
         serde_json::to_value(actor).map_err(|e| ApiError::Internal(Box::new(e)))?,
         plamenu_db::id::next(),
     );
-    let reach = plamenu_db::account::reach_inboxes(&mut *conn, account.id).await?;
+    let mut reach = plamenu_db::account::reach_inboxes(&mut *conn, account.id).await?;
+    reach.extend(crate::music_follows::actor_inboxes(conn, account.id).await?);
     let delivered = crate::actions::fan_out_conn(state, conn, account, &activity, &reach).await?;
     tracing::info!(user = %account.username, inboxes = delivered, "profile updated");
     Ok(())

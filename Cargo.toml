@@ -49,12 +49,14 @@ ed25519-dalek = { version = "3", features = ["zeroize"] }
 # Mozilla Fluent catalogs for the server-rendered interface. Resources are
 # embedded in the binary; the concurrent bundle is safe to share across Axum
 # request threads.
+encoding_rs = "=0.8.35"
 fluent-bundle = "0.16"
 getrandom = "0.4"
 hkdf = "0.13"
 # TOTP (RFC 6238) needs HMAC-SHA1; both already in the tree as transitives
 # of the digest 0.11 generation.
 hmac = "0.13"
+md-5 = "0.11"
 sha1 = "0.11"
 # Already in-tree through ammonia; used directly (tokenizer only) to read
 # link-preview metadata out of fetched pages.
@@ -126,6 +128,7 @@ rsa = { version = "0.9", features = ["sha2", "getrandom"] }
 rtmp-rs = "0.6.0"
 # Keyword-filter matching: union of per-keyword regexes, case-insensitive,
 # optional word boundaries — like Mastodon's `CustomFilterKeyword#to_regex`.
+roxmltree = "0.21.1"
 regex = "1"
 rustix = { version = "1.1.4", features = ["process", "fs"] }
 sha2 = "0.11"

@@ -82,7 +82,7 @@ async function journey(page,noScript,info) {
   await live.locator('[name="latency"]').selectOption('low');
   await open(page,'Schedule and reuse');
   await live.locator('[name="scheduled_at"]').fill('2020-01-01T12:00');
-  await live.getByRole('button',{name:'Create waiting broadcast',exact:true}).press('Enter');
+  await live.getByRole('button',{name:'Continue to camera setup',exact:true}).press('Enter');
   // Validation happens before creation, so this journey leaves no broadcast.
   await expect(page.getByRole('alert')).toBeVisible();
   live=page.locator('form[action="/web/videos/live"]');

@@ -24,6 +24,7 @@ OWNCAST_URL = os.environ.get("OWNCAST_URL", "https://owncast.local")
 MOBILIZON_URL = os.environ.get("MOBILIZON_URL", "https://mobilizon.local")
 DISCOURSE_URL = os.environ.get("DISCOURSE_URL", "https://discourse.local")
 HUBZILLA_URL = os.environ.get("HUBZILLA_URL", "https://hubzilla.local")
+SONGHIVE_URL = os.environ.get("SONGHIVE_URL", "https://songhive.local")
 FUNKWHALE_URL = os.environ.get("FUNKWHALE_URL", "https://funkwhale.local")
 # Upstream Pleroma (real 2.10.2), a SEPARATE peer from the Akkoma `pleroma` one.
 PLUP_URL = os.environ.get("PLUP_URL", "https://plup.local")

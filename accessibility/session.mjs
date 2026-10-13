@@ -1,6 +1,39 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
+// Identity uses decoded PCM, so changing container metadata cannot isolate imports.
+// Generate a real WAV with a unique PCM prefix for each journey.
+export async function freshMusicAudio(seconds = 9) {
+  const rate = 44100, frames = rate * seconds;
+  const buffer = Buffer.alloc(44 + frames * 2);
+  buffer.write('RIFF', 0); buffer.writeUInt32LE(buffer.length - 8, 4);
+  buffer.write('WAVEfmt ', 8); buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20); buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(rate, 24); buffer.writeUInt32LE(rate * 2, 28);
+  buffer.writeUInt16LE(2, 32); buffer.writeUInt16LE(16, 34);
+  buffer.write('data', 36); buffer.writeUInt32LE(frames * 2, 40);
+  for (let frame = 0; frame < frames; frame++) {
+    buffer.writeInt16LE(Math.round(4096 * Math.sin(2 * Math.PI * 440 * frame / rate)), 44 + frame * 2);
+  }
+  Buffer.from(randomUUID().replaceAll('-', ''), 'hex').copy(buffer, 44);
+  return { name: 'native-audio.wav', mimeType: 'audio/wav', buffer };
+}
+
+// WebKit's native audio control does not map Space to play. Exercise its
+// visible play button; other engines retain the native keyboard path.
+export async function playNativeAudio(audio, info) {
+  if (await audio.evaluate(a => a.paused)) {
+    if (info.project.name.startsWith('webkit')) {
+      const box = await audio.boundingBox();
+      // Wide controls add Rewind after metadata loads. Cold preload=none
+      // controls still have Play at the left edge, as on narrow controls.
+      const loaded = await audio.evaluate(a => Number.isFinite(a.duration) && a.duration > 0);
+      await audio.click({ position: { x: box.width >= 400 && loaded ? 56 : 20, y: box.height / 2 } });
+    } else await audio.press('Space');
+    await expect.poll(() => audio.evaluate(a => a.paused)).toBe(false);
+  }
+}
+
 // Each worker signs in through the real browser form once. Reuse only its
 // session cookie in fresh test contexts: public-page tests remain signed out,
 // without creating storage-state files. Do not raise production rate limits
@@ -65,7 +98,9 @@ export async function signIn(page) {
 export async function videoChannelForm(page) {
   const form=page.locator('form[action="/web/video-channels"]');
   if (!await form.count()) {
-    await page.getByRole('link',{name:'Create a video channel',exact:true}).first().press('Enter');
+    const link=page.getByRole('link',{name:'Create a video channel',exact:true}).first();
+    if(await link.count()) await link.press('Enter');
+    else await page.goto('/videos/channels/new');
     await expect(page).toHaveURL(url=>url.pathname==='/videos/channels/new');
   }
   await openDetailsFor(form);

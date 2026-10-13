@@ -95,12 +95,19 @@ running executable SHA-256 in `target/accessibility/application.json`. Without
 the override, it builds the locked development executable once before creating
 fixtures. The candidate override requires no Rust compiler.
 
-Prefer the default pinned image for native media tests. Explicit Linux host
-mode (`A11Y_LOCAL_BROWSERS=1`) additionally requires complete WebKit/GStreamer
-dependencies, including `autoaudiosink` and `gst-inspect-1.0`; the harness checks
-these before creating fixtures. A missing host audio sink can crash WebKit even
-with JavaScript disabled and `preload="none"`. These are browser **test**
-dependencies, not production Plamenu installation requirements.
+Native media tests use the pinned disposable browser image with its WebKit,
+GStreamer and audio dependencies. Direct host mode (`A11Y_LOCAL_BROWSERS=1`)
+is refused so fixture certificates stay inside disposable containers. These
+are browser test dependencies, not production installation requirements.
+
+The offline journey disconnects only the owned fixture proxy's TLS listener,
+then restores its exact configuration. Its control uses a private nonce and
+checks the container/process identity; its admin listener binds to loopback
+inside the fixture network namespace. This exercises actual origin loss rather
+than browser offline emulation, which can leave service-worker fetches online.
+Focused checks that do not exercise offline behavior can omit this control with
+`A11Y_OFFLINE_FIXTURE=0`; the full default matrix includes it.
+
 `accessibility/diagnose-webkit-feed.mjs` is a read-only accumulated-feed probe
 for decoded playback at 320px with and without scripts; it retains aggregates,
 not account cookies or HTML.

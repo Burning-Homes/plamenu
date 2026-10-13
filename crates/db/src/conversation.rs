@@ -694,20 +694,15 @@ pub async fn set_unread(
     row_id: i64,
     unread: bool,
 ) -> Result<Option<AccountConversation>, DbError> {
-    let row = sqlx::query_as!(
-        AccountConversation,
-        r#"
-        UPDATE account_conversations SET unread = $3
-        WHERE id = $1 AND account_id = $2
-        RETURNING id, account_id, conversation_id, participant_account_ids,
-                  status_ids, last_status_id, unread
-        "#,
-        row_id,
-        account_id,
-        unread,
-    )
-    .fetch_optional(pool)
-    .await?;
+    let mut tx = pool.begin().await?;
+    let row = sqlx::query_as::<_, AccountConversation>(
+        "UPDATE account_conversations SET unread=$3 WHERE id=$1 AND account_id=$2
+         RETURNING id,account_id,conversation_id,participant_account_ids,status_ids,last_status_id,unread")
+        .bind(row_id).bind(account_id).bind(unread).fetch_optional(&mut *tx).await?;
+    if let Some(row) = &row {
+        sync_notification_read(&mut tx, account_id, &row.status_ids, !unread).await?;
+    }
+    tx.commit().await?;
     Ok(row)
 }
 
@@ -747,13 +742,32 @@ pub async fn mark_read_conversation(
     account_id: i64,
     conversation_id: i64,
 ) -> Result<(), DbError> {
-    sqlx::query!(
-        "UPDATE account_conversations SET unread = FALSE
-         WHERE account_id = $1 AND conversation_id = $2 AND unread",
-        account_id,
-        conversation_id,
+    let mut tx = pool.begin().await?;
+    let rows = sqlx::query_scalar::<_, Vec<i64>>(
+        "UPDATE account_conversations SET unread=FALSE WHERE account_id=$1 AND conversation_id=$2 RETURNING status_ids")
+        .bind(account_id).bind(conversation_id).fetch_all(&mut *tx).await?;
+    let ids: Vec<i64> = rows.into_iter().flatten().collect();
+    sync_notification_read(&mut tx, account_id, &ids, true).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Direct-message notifications and the conversation share one read action.
+async fn sync_notification_read(
+    conn: &mut sqlx::PgConnection,
+    account_id: i64,
+    status_ids: &[i64],
+    read: bool,
+) -> Result<(), DbError> {
+    sqlx::query(
+        "INSERT INTO lemmy_notification_read_overrides(account_id,notification_id,read)
+        SELECT $1,id,$3 FROM notifications WHERE account_id=$1 AND status_id=ANY($2)
+        ON CONFLICT(account_id,notification_id) DO UPDATE SET read=EXCLUDED.read",
     )
-    .execute(pool)
+    .bind(account_id)
+    .bind(status_ids)
+    .bind(read)
+    .execute(conn)
     .await?;
     Ok(())
 }

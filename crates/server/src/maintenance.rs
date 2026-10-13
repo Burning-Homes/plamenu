@@ -114,41 +114,9 @@ async fn purge_expired_suspensions(state: &AppState) {
     };
     let mut purged = 0_u64;
     for account_id in ids {
-        let snapshot = match plamenu_db::account::find_by_id(&state.pool, account_id).await {
-            Ok(snapshot) => snapshot,
-            Err(error) => {
-                tracing::error!(%error, account_id, "expired suspension load failed");
-                continue;
-            }
-        };
-        let reach = if snapshot
-            .as_ref()
-            .is_some_and(plamenu_db::account::Account::is_local)
-        {
-            plamenu_db::account::reach_inboxes(&state.pool, account_id)
-                .await
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        match plamenu_db::account::purge_expired_suspension(&state.pool, account_id).await {
+        match crate::moderation::purge_expired_suspension(state, account_id).await {
             Ok(true) => {
                 purged += 1;
-                if let Some(account) = snapshot.filter(plamenu_db::account::Account::is_local) {
-                    let delete =
-                        plamenu_ap::activity::delete_actor(&state.config.domain, &account.username);
-                    if let Err(error) = plamenu_db::job::enqueue_many(
-                        &state.pool,
-                        account.id,
-                        &reach,
-                        &delete,
-                        false,
-                    )
-                    .await
-                    {
-                        tracing::error!(%error, account_id, "permanent suspension Delete fan-out failed");
-                    }
-                }
             }
             Ok(false) => {}
             Err(error) => tracing::error!(%error, account_id, "expired suspension purge failed"),
@@ -536,6 +504,16 @@ pub fn spawn(state: AppState) -> JoinHandle<()> {
         }
         let mut tick: u64 = 0;
         loop {
+            if OffsetDateTime::now_utc().hour() >= state.config.notifications.purge_hour {
+                log_op(
+                    "seen notifications",
+                    plamenu_db::notification_read::purge_seen(
+                        &state.pool,
+                        state.config.notifications.retention_days,
+                    )
+                    .await,
+                );
+            }
             auto_close_registrations(&state).await;
             prune_translation_cache(&state).await;
             webxdc_lifecycle(&state).await;

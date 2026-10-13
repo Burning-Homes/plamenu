@@ -1,0 +1,74 @@
+name: songhive-test
+x-app: &app
+  image: quay.io/blacklight/songhive@sha256:6fe2f971350b1c364be5b41b35c60510da7d7664fcd5f11b5b82512e7f1b8bf1
+  restart: unless-stopped
+  environment:
+    SONGHIVE_DATABASE__URL: postgresql+asyncpg://songhive:songhive@postgres:5432/songhive
+    SONGHIVE_REDIS__URL: redis://redis:6379/0
+    SONGHIVE_CELERY__BROKER_URL: redis://redis:6379/1
+    SONGHIVE_CELERY__RESULT_BACKEND: redis://redis:6379/2
+    SONGHIVE_STORAGE__LOCAL_PATH: /data/media
+    SONGHIVE_FEDERATION__ENABLED: 'true'
+    SONGHIVE_FEDERATION__INSTANCE_DOMAIN: songhive.local
+    SONGHIVE_FEDERATION__INSTANCE_NAME: Songhive interoperability fixture
+    SONGHIVE_FEDERATION__PRIVATE_KEY_PATH: /data/federation/actor.pem
+    SONGHIVE_SERVER__HOST: 0.0.0.0
+    SONGHIVE_SERVER__PORT: '8000'
+    SONGHIVE_MUSICBRAINZ__ENABLED: 'false'
+    REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+    SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+    PYTHONPATH: /fixture
+  volumes:
+    - data:/data
+    - ../mastodon-test/ca-bundle.crt:/etc/ssl/certs/ca-certificates.crt:ro
+    - ./sitecustomize.py:/fixture/sitecustomize.py:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+services:
+  songhive:
+    <<: *app
+    networks:
+      default:
+      shared:
+        aliases: [songhive-web]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/.well-known/nodeinfo', timeout=5)"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 20s
+  worker:
+    <<: *app
+    command: celery -A songhive.tasks worker -B -l info -s /data/celerybeat-schedule -Q celery,scrobbles,bulk --concurrency=2
+    networks: [default, shared]
+  postgres:
+    restart: unless-stopped
+    image: postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+    environment:
+      POSTGRES_USER: songhive
+      POSTGRES_PASSWORD: songhive
+      POSTGRES_DB: songhive
+    volumes: [db:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U songhive]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  redis:
+    restart: unless-stopped
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+networks:
+  shared:
+    external: true
+    name: mastodon-test_internal
+volumes:
+  db:
+  data:

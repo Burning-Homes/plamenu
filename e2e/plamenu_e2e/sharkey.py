@@ -26,7 +26,9 @@ CAROL_PASS = "shrkpass123"
 
 
 class SharkeyError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, status: int | None = None):
+        super().__init__(message)
+        self.status = status
 
 
 class Sharkey:
@@ -52,7 +54,9 @@ class Sharkey:
         if r.status_code == 204 or not r.content:
             return None
         if not r.ok:
-            raise SharkeyError(f"{endpoint} -> {r.status_code}: {r.text[:500]}")
+            raise SharkeyError(
+                f"{endpoint} -> {r.status_code}: {r.text[:500]}", status=r.status_code
+            )
         return r.json()
 
     def ap_get(self, path: str):
@@ -226,7 +230,17 @@ def _carol_token() -> str:
     back to reading it straight out of the instance's `user` table."""
     token_file = config.SHARKEY_DIR / ".admin-token"
     if token_file.is_file() and (token := token_file.read_text().strip()):
-        return token
+        try:
+            actor = Sharkey(config.SHARKEY_URL, token=token).me()
+        except SharkeyError as error:
+            if error.status != 401:
+                raise
+        else:
+            if actor.get("username") == CAROL_NICK and actor.get("host") is None:
+                return token
+        # A preserved directory may have a token from another fixture DB.
+        # Recover from the verified running compose project, never skip auth.
+
     token = shell.sharkey_compose(
         "exec",
         "-T",
@@ -244,7 +258,11 @@ def _carol_token() -> str:
         raise SharkeyError(
             f"no token for {CAROL_NICK} — run `./dev up sharkey` to create her"
         )
+    actor = Sharkey(config.SHARKEY_URL, token=token).me()
+    if actor.get("username") != CAROL_NICK or actor.get("host") is not None:
+        raise SharkeyError("Running fixture token does not belong to local Carol")
     token_file.write_text(token + "\n")
+    token_file.chmod(0o600)
     return token
 
 

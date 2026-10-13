@@ -2188,10 +2188,10 @@ pub async fn unsensitize(pool: &PgPool, account_id: i64) -> Result<bool, DbError
 /// Removes any account by id (the admin `destroy`/`reject` delete); dependent
 /// rows cascade through the schema.
 pub async fn delete_by_id(pool: &PgPool, account_id: i64) -> Result<bool, DbError> {
-    let result = sqlx::query!("DELETE FROM accounts WHERE id = $1", account_id)
-        .execute(pool)
-        .await?;
-    Ok(result.rows_affected() > 0)
+    let mut tx = pool.begin().await?;
+    let deleted = delete_by_id_tx(&mut tx, account_id).await?;
+    tx.commit().await?;
+    Ok(deleted)
 }
 
 /// [`delete_by_id`] inside an open transaction, so the admin `destroy`/`reject`
@@ -2205,7 +2205,7 @@ pub async fn delete_by_id_tx(
     // Capture every stored file the account owns before the cascade removes its
     // media rows, so the bytes don't stay publicly retrievable after a hard
     // delete.
-    let keys = crate::media_cleanup::collect_account_keys(&mut *tx, account_id).await?;
+    let keys = crate::music::keys_before_account_delete(&mut *tx, account_id).await?;
     // Cancel the account's archives explicitly (rather than relying on the FK
     // cascade, which would drop the rows but orphan their private ZIPs on disk)
     // and schedule those files for durable removal too.
@@ -2245,14 +2245,12 @@ pub async fn delete_by_id_with_audit(
 /// `GET /media/{file}`.
 pub async fn delete_by_uri(pool: &PgPool, uri: &str) -> Result<bool, DbError> {
     let mut tx = pool.begin().await?;
-    let target = sqlx::query_scalar!("SELECT id FROM accounts WHERE uri = $1", uri)
-        .fetch_optional(&mut *tx)
-        .await?;
-    let Some(account_id) = target else {
+    let Some((account_id, keys)) =
+        crate::music::keys_before_account_delete_by_uri(&mut tx, uri).await?
+    else {
         tx.commit().await?;
         return Ok(false);
     };
-    let keys = crate::media_cleanup::collect_account_keys(&mut tx, account_id).await?;
     sqlx::query!("DELETE FROM accounts WHERE id = $1", account_id)
         .execute(&mut *tx)
         .await?;
@@ -2290,6 +2288,16 @@ pub async fn purge_local_data_conn(
 /// marks a permanent tombstone that restoration cannot lift.
 pub async fn purge_expired_suspension(pool: &PgPool, account_id: i64) -> Result<bool, DbError> {
     purge_data(pool, account_id, true, true, None).await
+}
+
+/// The deadline/restore checks and data purge on the caller's transaction,
+/// alongside its final federation outbox. A false result must not commit a
+/// previously prepared actor deletion.
+pub async fn purge_expired_suspension_conn(
+    conn: &mut sqlx::PgConnection,
+    account_id: i64,
+) -> Result<bool, DbError> {
+    purge_data_conn(conn, account_id, true, true, None).await
 }
 
 /// Permanently purges a temporarily suspended account and appends the admin
@@ -2386,6 +2394,7 @@ async fn purge_data_conn(
     // and HLS segments, and its avatar/header — and schedule durable deletion in
     // this same transaction, before the deletes/blanks below erase the file names
     // and leave the bytes publicly retrievable via `GET /media/{file}`.
+    crate::music::retire_account_assets(&mut *conn, account_id).await?;
     let media_keys = crate::media_cleanup::collect_account_keys(&mut *conn, account_id).await?;
     crate::media_cleanup::enqueue_many(&mut *conn, &media_keys).await?;
     // Cancel the account's archives in the same transaction.

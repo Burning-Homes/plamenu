@@ -65,6 +65,7 @@ pub struct CreateParams {
     /// present. The event kind is stated by `event` rather than here, so every
     /// client written against E4 keeps working unchanged.
     pub post_kind: Option<String>,
+    pub music: Option<plamenu_db::music::Metadata>,
 }
 
 /// Maps the `post_kind` parameter onto the author-selectable kinds. An
@@ -74,6 +75,7 @@ pub struct CreateParams {
 fn post_kind_param(raw: Option<&str>) -> Result<plamenu_ap::activity::PostKind, ApiError> {
     match raw.map(str::trim).filter(|value| !value.is_empty()) {
         None | Some("note") => Ok(plamenu_ap::activity::PostKind::Note),
+        Some("audio") => Ok(plamenu_ap::activity::PostKind::Audio),
         Some("article" | "long_form") => Ok(plamenu_ap::activity::PostKind::Article),
         Some(other) => Err(ApiError::Unprocessable(format!(
             "Validation failed: Unknown post kind {other}"
@@ -379,10 +381,13 @@ pub async fn create(
             }
             if params.event.is_some()
                 || event_from_form(&headers, &body).is_some()
-                || kind == plamenu_ap::activity::PostKind::Event
+                || matches!(
+                    kind,
+                    plamenu_ap::activity::PostKind::Event | plamenu_ap::activity::PostKind::Audio
+                )
             {
                 return Err(ApiError::Unprocessable(
-                    "Validation failed: Events can't be scheduled".into(),
+                    "Validation failed: Events and Audio publications can't be scheduled".into(),
                 ));
             }
             actions::validate_quote_target(&state, &current.account, quoted_status_id).await?;
@@ -415,6 +420,7 @@ pub async fn create(
     let (stored, _) = actions::post_status_for_application(
         &state,
         PostParams {
+            music: params.music.as_ref(),
             username: &current.account.username,
             text,
             visibility,
@@ -561,6 +567,7 @@ pub async fn preview(
 /// where absent and empty differ.
 #[derive(Deserialize)]
 pub struct UpdateParams {
+    pub music: Option<plamenu_db::music::Metadata>,
     pub status: Option<String>,
     pub spoiler_text: Option<String>,
     pub sensitive: Option<Value>,
@@ -659,6 +666,7 @@ pub async fn update(
         &current.account,
         status_id,
         EditParams {
+            music: params.music.clone(),
             title: params.title.as_deref(),
             text: params.status.as_deref(),
             content_type: params

@@ -2,6 +2,8 @@
 """Run the browser accessibility matrix against an isolated Plamenu fixture."""
 
 import hashlib
+import html
+import http.server
 import ipaddress
 import json
 import os
@@ -12,7 +14,9 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -23,6 +27,157 @@ BROWSER_IMAGE = (
 CADDY_IMAGE = (
     "caddy@sha256:77c07d5ebfa5be9fd6c820d2094ae662c9e7eeb9bf98346b7f639900263ee2a2"
 )
+BROWSER_PROJECTS = (
+    "chromium-desktop",
+    "chromium-mobile",
+    "firefox-desktop",
+    "firefox-mobile",
+    "webkit-desktop",
+    "webkit-mobile",
+    "chromium-no-javascript",
+)
+
+
+def tls_configuration(address, app_port, tls_port, *, offline=False):
+    """Give independent engines distinct client budgets behind the test proxy.
+
+    The mapping is confined to this disposable TLS fixture. Production rate
+    limits stay enabled and unchanged, including each client's failed logins.
+    Only the fixed engine names map to addresses; arbitrary forwarded headers
+    are replaced at the proxy.
+    """
+    clients = "".join(
+        f"    {project} 198.18.0.{index}\n"
+        for index, project in enumerate(BROWSER_PROJECTS, 1)
+    )
+
+    admin = "127.0.0.1:2019" if offline else "off"
+    return (
+        f"{{\n  admin {admin}\n  auto_https disable_redirects\n}}\n"
+        f"https://localhost:{tls_port} {{\n"
+        "  tls internal\n"
+        "  map {http.request.header.X-Plamenu-Fixture-Client} {fixture_client_ip} {\n"
+        f"{clients}"
+        "    default 198.18.0.100\n"
+        "  }\n"
+        f"  reverse_proxy http://{address}:{app_port} {{\n"
+        "    header_up X-Forwarded-For {fixture_client_ip}\n"
+        "  }\n"
+        "}\n"
+    )
+
+
+def offline_proxy_control(address, proxy, fixture):
+    """Disconnect only this fixture's TLS listener, retaining its network namespace.
+
+    Browser offline emulation does not consistently disconnect service-worker
+    fetches. A private nonce endpoint controls this exact disposable proxy; its
+    loopback-only admin listener is enabled solely for this opt-in fixture.
+    """
+    token = secrets.token_urlsafe(24)
+
+    def inspect():
+        return json.loads(
+            subprocess.check_output(["docker", "inspect", proxy], text=True)
+        )[0]
+
+    initial = inspect()
+    expected = str((fixture / "Caddyfile").resolve())
+    assert initial["Name"] == "/" + proxy and proxy.startswith("plamenu-a11y-tls-")
+    assert any(
+        m["Source"] == expected and m["Destination"] == "/etc/caddy/Caddyfile"
+        for m in initial["Mounts"]
+    )
+
+    def active():
+        return json.loads(
+            subprocess.check_output(
+                [
+                    "docker",
+                    "exec",
+                    initial["Id"],
+                    "wget",
+                    "-qO-",
+                    "http://127.0.0.1:2019/config/",
+                ],
+                text=True,
+                timeout=15,
+            )
+        )
+
+    original = active()
+    disconnected = json.loads(json.dumps(original))
+    assert list(disconnected["apps"]["http"]["servers"]) == ["srv0"]
+    disconnected["apps"]["http"]["servers"] = {}
+    current = original
+
+    def change(online):
+        nonlocal current
+        actual = inspect()
+        assert actual["Id"] == initial["Id"] and actual["Image"] == initial["Image"]
+        assert (
+            actual["State"]["Pid"] == initial["State"]["Pid"]
+            and actual["RestartCount"] == initial["RestartCount"]
+        )
+        assert active() == current
+        target = original if online else disconnected
+        subprocess.run(
+            ["docker", "exec", "-i", initial["Id"], "caddy", "reload", "--config", "-"],
+            input=json.dumps(target),
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+            timeout=15,
+        )
+        assert active() == target
+        current = target
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            if self.path not in (f"/{token}/offline", f"/{token}/online"):
+                self.send_error(403)
+                return
+            try:
+                change(self.path.endswith("/online"))
+            except (AssertionError, OSError, subprocess.SubprocessError):
+                self.send_error(500, "Owned proxy transition failed")
+                return
+            self.send_response(204)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    control = http.server.HTTPServer((address, 0), Handler)
+    threading.Thread(target=control.serve_forever, daemon=True).start()
+
+    def close():
+        control.shutdown()
+        control.server_close()
+        if current != original:
+            change(True)
+
+    return f"http://{address}:{control.server_port}/{token}", close
+
+
+def rendition_encoder(fixture):
+    """Use real-time input only for the owned native rendition output names."""
+    real = shutil.which("ffmpeg")
+    if not real:
+        raise RuntimeError("Cold rendition fixture requires FFmpeg")
+    script = fixture / "rendition-encoder.py"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import os,sys\n"
+        f"args=[{real!r}]+sys.argv[1:]\n"
+        "outputs={'encoded.mp3','encoded.ogg','encoded.flac','encoded.m4a','encoded.opus'}\n"
+        "if os.path.basename(args[-1]) in outputs and '-i' in args:\n"
+        "    args.insert(args.index('-i'),'-re')\n"
+        "os.execv(args[0],args)\n"
+    )
+    script.chmod(0o700)
+    return script
 
 
 def run(*args, **kwargs):
@@ -164,9 +319,11 @@ def seed_native_draft_pages(container, fixture, video):
 
 
 def wait_for_database(name):
+    # initdb briefly exposes a Unix-only temporary server. Require the final
+    # TCP listener used by the application before starting migrations/CLI.
     for _ in range(60):
         ready = subprocess.run(
-            ["docker", "exec", name, "pg_isready", "-U", "postgres"],
+            ["docker", "exec", name, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
@@ -250,6 +407,60 @@ def local_browser_preflight():
         )
 
 
+def podcast_producer(address, audio, poster):
+    """A real bounded RSS/enclosure origin confined to the disposable fixture."""
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            parsed = urllib.parse.urlsplit(self.path)
+            if parsed.path == "/show.xml":
+                title = urllib.parse.parse_qs(parsed.query).get(
+                    "title", ["Fixture show"]
+                )[0][:100]
+                base = f"http://{address}:{self.server.server_port}"
+                items = "".join(
+                    f"<item><guid>episode-{index}</guid><title>{html.escape(title)} {index}</title>"
+                    f"<description>Episode {index} notes</description>"
+                    f'<enclosure url="{base}/audio.m4a" type="audio/mp4" length="{audio.stat().st_size}"/>'
+                    "<i:duration>9</i:duration></item>"
+                    for index in (1, 2)
+                )
+                body = (
+                    '<rss xmlns:i="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel>'
+                    f"<title>{html.escape(title)}</title><description>Podcast browser fixture</description>"
+                    f'<i:image href="{base}/cover.png"/>{items}</channel></rss>'
+                ).encode()
+                content_type = "application/rss+xml"
+            elif parsed.path == "/show":
+                feed_path = "/show.xml" + ("?" + parsed.query if parsed.query else "")
+                body = (
+                    '<!doctype html><html><head><link rel="alternate" '
+                    f'type="application/rss+xml" href="{html.escape(feed_path, quote=True)}">'
+                    "</head><body>Podcast website fixture</body></html>"
+                ).encode()
+                content_type = "text/html; charset=utf-8"
+            elif parsed.path in ("/audio.m4a", "/cover.png"):
+                body = (audio if parsed.path == "/audio.m4a" else poster).read_bytes()
+                content_type = (
+                    "audio/mp4" if parsed.path == "/audio.m4a" else "image/png"
+                )
+            else:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    producer = http.server.ThreadingHTTPServer((address, 0), Handler)
+    threading.Thread(target=producer.serve_forever, daemon=True).start()
+    return producer
+
+
 def main():
     if sys.argv[1:] == ["--prepare-browser-image"]:
         print(browser_image())
@@ -265,6 +476,8 @@ def main():
     proxy_name = "plamenu-a11y-tls-" + secrets.token_hex(6)
     password = secrets.token_hex(24)
     server = None
+    podcasts = None
+    offline_close = None
     log_handle = None
     local_browsers = os.environ.get("A11Y_LOCAL_BROWSERS") == "1"
     if local_browsers:
@@ -386,12 +599,64 @@ def main():
                         ).strip()
                     )
                 )
+            if os.environ.get("A11Y_PODCAST_FIXTURE") == "1":
+                podcasts = podcast_producer(app_address, audio_fixture, poster_fixture)
             app_port = free_port(app_address)
             live_port = free_port(app_address)
+            tls_port = free_port() if local_browsers else 443
+            caddyfile = fixture / "Caddyfile"
+            caddyfile.write_text(
+                tls_configuration(
+                    app_address,
+                    app_port,
+                    tls_port,
+                    offline=os.environ.get("A11Y_OFFLINE_FIXTURE", "1") == "1",
+                )
+            )
+            run(
+                "docker",
+                "run",
+                "--detach",
+                "--name",
+                proxy_name,
+                *(
+                    ["--network", "host"]
+                    if local_browsers
+                    else ["--network", "bridge", "--publish", "127.0.0.1::443"]
+                ),
+                "--volume",
+                f"{caddyfile}:/etc/caddy/Caddyfile:ro",
+                CADDY_IMAGE,
+                stdout=subprocess.DEVNULL,
+            )
+            # Trust only this disposable reverse proxy, never all Docker peers.
+            proxy_address = (
+                "127.0.0.1"
+                if local_browsers
+                else str(
+                    ipaddress.IPv4Address(
+                        subprocess.check_output(
+                            [
+                                "docker",
+                                "inspect",
+                                "--format",
+                                '{{(index .NetworkSettings.Networks "bridge").IPAddress}}',
+                                proxy_name,
+                            ],
+                            text=True,
+                        ).strip()
+                    )
+                )
+            )
             database_url = (
                 f"postgres://postgres:{password}@127.0.0.1:{database_port}/plamenu_a11y"
             )
             config = fixture / "plamenu.toml"
+            rendition_config = (
+                f"ffmpeg_path = {json.dumps(str(rendition_encoder(fixture)))}\n"
+                if os.environ.get("A11Y_COLD_RENDITION_FIXTURE") == "1"
+                else ""
+            )
             # Explicit local-peer import drills permit local addresses; ordinary
             # browser fixtures retain the production-default SSRF guards.
             import_private_fetch = (
@@ -399,12 +664,15 @@ def main():
                 if (
                     os.environ.get("A11Y_IMPORT_SOURCE_URL")
                     or os.environ.get("A11Y_SOURCE_SYNC_URL")
+                    or os.environ.get("A11Y_PODCAST_FIXTURE") == "1"
                 )
                 else ""
             )
             config.write_text(
                 'domain = "localhost"\n'
+                f'trusted_proxies = ["{proxy_address}/32"]\n'
                 f"{import_private_fetch}"
+                f"{rendition_config}"
                 f'database_url = "{database_url}"\n'
                 f'bind = "{app_address}:{app_port}"\n'
                 # External encoder tests run in the browser/TLS namespace.
@@ -434,19 +702,24 @@ def main():
             )
             # Each engine creates real channels under its own finite quota;
             # persisted private draft/catalogue fixtures keep their seed owner.
-            creator_projects = (
-                "chromium-desktop",
-                "chromium-mobile",
-                "firefox-desktop",
-                "firefox-mobile",
-                "webkit-desktop",
-                "webkit-mobile",
-                "chromium-no-javascript",
-            )
+            creator_projects = BROWSER_PROJECTS
             creator_users = tuple(
                 "a11y_" + project.replace("-", "_") for project in creator_projects
             )
-            for username in ("channel_editor", *creator_users):
+            music_viewers = tuple(
+                "music_viewer_" + project.replace("-", "_")
+                for project in creator_projects
+            )
+            music_erasure_users = tuple(
+                "music_erasure_" + project.replace("-", "_")
+                for project in creator_projects
+            )
+            for username in (
+                "channel_editor",
+                *creator_users,
+                *music_viewers,
+                *music_erasure_users,
+            ):
                 run(
                     *application.command(
                         config,
@@ -474,31 +747,6 @@ def main():
             wait_for_server(server, base_url, log)
             (log.parent / "application.json").write_text(
                 json.dumps(application.running_identity(server), indent=2) + "\n"
-            )
-            tls_port = free_port() if local_browsers else 443
-            caddyfile = fixture / "Caddyfile"
-            caddyfile.write_text(
-                "{\n  admin off\n  auto_https disable_redirects\n}\n"
-                f"https://localhost:{tls_port} {{\n"
-                "  tls internal\n"
-                f"  reverse_proxy http://{app_address}:{app_port}\n"
-                "}\n"
-            )
-            run(
-                "docker",
-                "run",
-                "--detach",
-                "--name",
-                proxy_name,
-                *(
-                    ["--network", "host"]
-                    if local_browsers
-                    else ["--network", "bridge", "--publish", "127.0.0.1::443"]
-                ),
-                "--volume",
-                f"{caddyfile}:/etc/caddy/Caddyfile:ro",
-                CADDY_IMAGE,
-                stdout=subprocess.DEVNULL,
             )
             if local_browsers:
                 base_url = f"https://localhost:{tls_port}"
@@ -549,6 +797,15 @@ def main():
                     "A11Y_REPORT_PATH", "target/accessibility/automated.json"
                 ),
             }
+            if os.environ.get("A11Y_OFFLINE_FIXTURE", "1") == "1":
+                control_url, offline_close = offline_proxy_control(
+                    app_address, proxy_name, fixture
+                )
+                environment["A11Y_OFFLINE_CONTROL_URL"] = control_url
+            if podcasts:
+                environment["A11Y_PODCAST_SOURCE_URL"] = (
+                    f"http://{app_address}:{podcasts.server_port}/show.xml"
+                )
             if local_browsers:
                 environment["A11Y_VIDEO_FIXTURE"] = str(video_fixture)
                 environment["A11Y_AUDIO_FIXTURE"] = str(audio_fixture)
@@ -658,6 +915,22 @@ def main():
                         if os.environ.get("A11Y_SOURCE_SYNC_URL")
                         else []
                     ),
+                    *(
+                        [
+                            "--env",
+                            f"A11Y_PODCAST_SOURCE_URL={environment['A11Y_PODCAST_SOURCE_URL']}",
+                        ]
+                        if podcasts
+                        else []
+                    ),
+                    *(
+                        [
+                            "--env",
+                            f"A11Y_OFFLINE_CONTROL_URL={environment['A11Y_OFFLINE_CONTROL_URL']}",
+                        ]
+                        if "A11Y_OFFLINE_CONTROL_URL" in environment
+                        else []
+                    ),
                     "--volume",
                     f"{video_fixture}:/tmp/native-video.mp4:ro",
                     "--volume",
@@ -697,27 +970,34 @@ def main():
             print(f"Accessibility fixture failed: {error}", file=sys.stderr)
             return 1
         finally:
-            if server and server.poll() is None:
-                os.killpg(server.pid, signal.SIGTERM)
-                try:
-                    server.wait(timeout=30)
-                except subprocess.TimeoutExpired:
-                    os.killpg(server.pid, signal.SIGKILL)
-                    server.wait()
-            if log_handle:
-                log_handle.close()
-            subprocess.run(
-                ["docker", "rm", "--force", "--volumes", proxy_name],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-            subprocess.run(
-                ["docker", "rm", "--force", "--volumes", name],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
+            try:
+                if offline_close:
+                    offline_close()
+            finally:
+                if podcasts:
+                    podcasts.shutdown()
+                    podcasts.server_close()
+                if server and server.poll() is None:
+                    os.killpg(server.pid, signal.SIGTERM)
+                    try:
+                        server.wait(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(server.pid, signal.SIGKILL)
+                        server.wait()
+                if log_handle:
+                    log_handle.close()
+                subprocess.run(
+                    ["docker", "rm", "--force", "--volumes", proxy_name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                subprocess.run(
+                    ["docker", "rm", "--force", "--volumes", name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
 
 
 if __name__ == "__main__":

@@ -82,6 +82,12 @@ pub fn account_page(
         image: Some(MetaImage::avatar(account.avatar())),
         profile_username: Some(full_handle(account, account_domain)),
         alternate: non_empty(account.uri()),
+        rss_feed_url: feed_url.as_ref().map(|_| {
+            format!(
+                "https://{host_domain}/music/feeds/profiles/{}.rss",
+                account.acct()
+            )
+        }),
         feed_url,
         noindex,
         ..PageMeta::default()

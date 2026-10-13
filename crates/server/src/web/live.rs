@@ -147,7 +147,7 @@ fn schedule_form(user: &WebUser, id: i64, starts: &[time::OffsetDateTime]) -> Ma
     clippy::too_many_lines,
     reason = "one HTML authoring template with independent native disclosure sections"
 )]
-async fn creation_form(
+pub(super) async fn creation_form(
     state: &AppState,
     user: &WebUser,
     pairs: &[(String, String)],
@@ -169,26 +169,26 @@ async fn creation_form(
     let body = html! {
         section.column.video-form {
             h1 { (locale.text("videos-live-title")) }
-            (super::video_workspace::navigation("/videos",locale))
+            (super::view::media_creation_navigation(locale, "live"))
             p.video-form__intro { (locale.text("studio-live-intro")) }
             p.settings-field__hint {(locale.text("studio-required"))}
             @if let Some(error)=error {p.settings__error role="alert" {(error)}}
-            @if channels.is_empty() {
-                p { a href="/videos/channels/new" { (locale.text("videos-new-channel")) } }
-            } @else {
+
                 form.settings-form method="post" action="/web/videos/live" data-live-schedules
                     data-added=(locale.text("videos-live-schedule-added"))
                     data-duplicate=(locale.text("videos-live-schedule-duplicate")) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     fieldset.settings-form__group {
                         legend { (locale.text("studio-live-details")) }
-                        label.settings-field {
+                        @if channels.is_empty() {input type="hidden" name="channel" value="default";}
+                        @else {                        label.settings-field {
                             span.settings-field__label { (locale.text("videos-channel"))  span.video-form__required aria-hidden="true" {" *"} }
                             select name="channel" aria-label=(locale.text("videos-channel")) required {
                                 @for channel in &channels {
                                     option value=(channel.id) selected[value("channel")==channel.id.to_string()] { (channel.display_name) }
                                 }
                             }
+                        }
                         }
                         label.settings-field {
                             span.settings-field__label { (locale.text("videos-name"))  span.video-form__required aria-hidden="true" {" *"} }
@@ -262,7 +262,7 @@ async fn creation_form(
                         a href="/videos" {(locale.text("studio-cancel"))}
                     }
                 }
-            }
+
         }
     };
     Ok(layout::shell(
@@ -379,11 +379,16 @@ fn key_page(state: &AppState, user: &WebUser, status_id: i64, title: &str, key: 
     });
     let https_ingest = format!("https://{}/live/ingest", state.config.domain);
     let body = html! {
-        section.column {
-            h1 { (locale.text("videos-live-manage")) }
-            p { (title) }
-            p role="status" { (locale.text("videos-live-waiting")) }
-            p { (locale.text("videos-live-secret-once")) }
+        section.column.video-form {
+            header.video-workspace__header {
+                h1 { (locale.text("videos-live-manage")) }
+                p { (title) }
+                p role="status" { (locale.text("videos-live-waiting")) }
+            }
+            (browser_publisher(locale, user, status_id))
+            details.video-form__section.video-form__panel {
+                summary {(locale.text("studio-live-encoder"))}
+                p { (locale.text("videos-live-secret-once")) }
             label.settings-field {
                 span.settings-field__label { (locale.text("videos-live-server")) }
                 input type="text" readonly value=(server);
@@ -405,6 +410,7 @@ fn key_page(state: &AppState, user: &WebUser, status_id: i64, title: &str, key: 
             }
             p.settings-field__hint { (locale.text("videos-live-https-help")) }
             p.settings-field__hint { (locale.text("videos-live-transport-warning")) }
+            }
             p { a href=(format!("/videos/live/{status_id}")) { (locale.text("videos-live-manage")) } }
             p { a href=(format!("/web/statuses/{status_id}")) { (title) } }
         }
@@ -428,9 +434,6 @@ async fn create_inner(
     user.current.require_scope("write:media")?;
     user.current.require_scope("write:statuses")?;
     let result = async {
-        let channel_id = field(&pairs, "channel")
-            .and_then(|value| value.parse::<i64>().ok())
-            .ok_or(ApiError::Unprocessable("Choose a video channel".into()))?;
         let title = field(&pairs, "title").unwrap_or_default().trim();
         let description = field(&pairs, "description").unwrap_or_default().trim();
         let language = field(&pairs, "language").filter(|value| !value.is_empty());
@@ -438,6 +441,20 @@ async fn create_inner(
         let permanent = field(&pairs, "permanent") == Some("yes");
         let playback = playback_fields(&pairs)?;
         let scheduled_starts = schedule_fields(state, user, &pairs).await?;
+        if !(3..=120).contains(&title.chars().count()) {
+            return Err(ApiError::Unprocessable(
+                "Give the broadcast a title of 3–120 characters".into(),
+            ));
+        }
+        let channel_id = if field(&pairs, "channel") == Some("default") {
+            crate::video::default_channel(state, &user.current.account)
+                .await?
+                .id
+        } else {
+            field(&pairs, "channel")
+                .and_then(|value| value.parse::<i64>().ok())
+                .ok_or(ApiError::Unprocessable("Choose a video channel".into()))?
+        };
         let created = crate::native_live::create(
             state,
             &user.current.account,
@@ -711,6 +728,8 @@ fn browser_publisher(locale: Locale, user: &WebUser, id: i64) -> Markup {
             data-device-busy=(locale.text("videos-live-browser-device-busy"))
             data-capture-cancelled=(locale.text("videos-live-browser-capture-cancelled"))
             data-requesting=(locale.text("videos-live-browser-requesting"))
+            data-preview-ready=(locale.text("videos-live-preview-ready"))
+            data-preview-cancelled=(locale.text("videos-live-preview-cancelled"))
             data-slow-connection=(locale.text("videos-live-browser-slow"))
             data-on-air=(locale.text("videos-live-browser-on-air"))
             data-current-camera=(locale.text("videos-live-browser-current-camera"))
@@ -732,13 +751,17 @@ fn browser_publisher(locale: Locale, user: &WebUser, id: i64) -> Markup {
                 button type="button" data-live-screen { (locale.text("videos-live-browser-screen")) }
                 button type="button" data-live-stop hidden { (locale.text("videos-live-browser-stop")) }
             }
+            p role="status" aria-live="polite" data-live-status {}
+            video autoplay muted playsinline hidden data-live-preview
+                aria-label=(locale.text("videos-live-browser-preview")) {}
+            div.live-browser-publisher__confirm {
+                button type="button" data-live-start hidden {(locale.text("media-create-live"))}
+                button type="button" data-live-cancel hidden {(locale.text("videos-live-cancel-preview"))}
+            }
             details.video-form__section {
                 summary {(locale.text("videos-live-browser-devices"))}
                 (browser_capture_controls(locale))
             }
-            p role="status" aria-live="polite" data-live-status {}
-            video autoplay muted playsinline hidden data-live-preview
-                aria-label=(locale.text("videos-live-browser-preview")) {}
         }
         script defer src="/assets/live-broadcast.js" {}
     }

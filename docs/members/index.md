@@ -13,6 +13,8 @@ posts have menus for follow, reply, quote, mute, block, and report actions.
 | Bookmarks / Favourites | Saved posts / posts you have favourited |
 | Lists | Timelines for selected accounts you follow |
 | Groups | Communities and their threads |
+| Music | Songs, albums, playlists, podcasts and audio posts |
+| Videos | Local and remote videos, uploads and live broadcasts |
 | Apps | Webxdc sessions |
 | People / Trending | Profile and content discovery |
 | Settings | Profile, preferences, security, and account management |

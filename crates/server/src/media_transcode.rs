@@ -46,7 +46,7 @@ const BITS_PER_PIXEL: f64 = 0.11;
 /// ffprobe `format_name` values we accept — Mastodon's video + audio MIME
 /// list, expressed as containers (`wav` covers the `audio/x-wav` family,
 /// the mp4 muxer family covers m4a/3gp, `asf` is wma).
-const ACCEPTED_FORMATS: &[&str] = &[
+pub(crate) const ACCEPTED_FORMATS: &[&str] = &[
     "mov,mp4,m4a,3gp,3g2,mj2",
     "matroska,webm",
     "ogg",
@@ -143,13 +143,20 @@ struct ProbeFormat {
     format_name: String,
     duration: Option<String>,
     bit_rate: Option<String>,
+    #[serde(default)]
+    tags: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ProbeStream {
     #[serde(default)]
+    tags: std::collections::HashMap<String, String>,
+    #[serde(default)]
     codec_type: String,
     codec_name: Option<String>,
+    sample_rate: Option<String>,
+    channels: Option<i32>,
+    channel_layout: Option<String>,
     pix_fmt: Option<String>,
     width: Option<i64>,
     height: Option<i64>,
@@ -171,11 +178,16 @@ struct ProbeOutput {
 /// `VideoMetadataExtractor`).
 #[derive(Debug, Default)]
 pub struct Probe {
+    pub tags: std::collections::HashMap<String, String>,
     pub format_name: String,
     pub duration: Option<f64>,
     pub bitrate: Option<i64>,
     pub video_codec: Option<String>,
     pub audio_codec: Option<String>,
+    pub has_artwork: bool,
+    pub audio_sample_rate: Option<i32>,
+    pub audio_channels: Option<i32>,
+    pub audio_layout: Option<String>,
     pub colorspace: Option<String>,
     pub width: Option<i64>,
     pub height: Option<i64>,
@@ -215,6 +227,14 @@ fn transcode_failed(detail: String) -> ApiError {
 
 /// Runs ffprobe on the file and parses the metadata Mastodon reads.
 pub async fn probe(config: &Config, path: &Path) -> Result<Probe, ApiError> {
+    probe_with_tags(config, path, false).await
+}
+
+pub(crate) async fn probe_music(config: &Config, path: &Path) -> Result<Probe, ApiError> {
+    probe_with_tags(config, path, true).await
+}
+
+async fn probe_with_tags(config: &Config, path: &Path, tags: bool) -> Result<Probe, ApiError> {
     use tokio::io::AsyncReadExt;
     // `kill_on_drop` reaps the subprocess when the timeout (or a cancelled
     // caller) drops this future — a wedged ffprobe must not linger.
@@ -226,7 +246,7 @@ pub async fn probe(config: &Config, path: &Path) -> Result<Probe, ApiError> {
             "-print_format",
             "json",
             "-show_entries",
-            "format=format_name,duration,bit_rate:stream=codec_type,codec_name,pix_fmt,width,height,avg_frame_rate,r_frame_rate:stream_disposition=attached_pic",
+            if tags {"format=format_name,duration,bit_rate:format_tags:stream=codec_type,codec_name,sample_rate,channels,channel_layout,pix_fmt,width,height,avg_frame_rate,r_frame_rate:stream_tags:stream_disposition=attached_pic"} else {"format=format_name,duration,bit_rate:stream=codec_type,codec_name,pix_fmt,width,height,avg_frame_rate,r_frame_rate:stream_disposition=attached_pic"},
             "-show_error",
             "-loglevel",
             "fatal",
@@ -275,9 +295,18 @@ pub async fn probe(config: &Config, path: &Path) -> Result<Probe, ApiError> {
         result.format_name = format.format_name;
         result.duration = format.duration.as_deref().and_then(|d| d.parse().ok());
         result.bitrate = format.bit_rate.as_deref().and_then(|b| b.parse().ok());
+        result.tags = format.tags;
     }
     // Cover art rides files as a video stream flagged `attached_pic`; it
     // must not make an audio file a video.
+    result.has_artwork = parsed.streams.iter().any(|stream| {
+        stream.codec_type == "video"
+            && stream
+                .disposition
+                .get("attached_pic")
+                .and_then(Value::as_i64)
+                == Some(1)
+    });
     let video = parsed.streams.iter().find(|s| {
         s.codec_type == "video"
             && s.disposition.get("attached_pic").and_then(Value::as_i64) != Some(1)
@@ -293,6 +322,24 @@ pub async fn probe(config: &Config, path: &Path) -> Result<Probe, ApiError> {
     }
     if let Some(stream) = parsed.streams.iter().find(|s| s.codec_type == "audio") {
         result.audio_codec.clone_from(&stream.codec_name);
+        result.audio_sample_rate = stream.sample_rate.as_deref().and_then(|v| v.parse().ok());
+        result.audio_channels = stream.channels;
+        result.audio_layout.clone_from(&stream.channel_layout);
+        if tags {
+            // Vorbis/Opus keep music tags on their audio stream rather than
+            // the container. Container fields take precedence when both exist.
+            result.tags = result
+                .tags
+                .into_iter()
+                .map(|(k, v)| (k.to_ascii_lowercase(), v))
+                .collect();
+            for (key, value) in &stream.tags {
+                result
+                    .tags
+                    .entry(key.to_ascii_lowercase())
+                    .or_insert_with(|| value.clone());
+            }
+        }
     }
     Ok(result)
 }
@@ -355,7 +402,7 @@ pub fn classify(probe: &Probe, gifv_max_seconds: f64) -> Result<AvKind, ApiError
 /// that hit its own deadline, a disconnected upload): the subprocess dies
 /// with the future instead of encoding on detached — which also means the
 /// dropped `InflightGuard` can no longer race a live orphan.
-async fn run_ffmpeg(
+pub(crate) async fn run_ffmpeg(
     config: &Config,
     args: Vec<std::ffi::OsString>,
     timeout: Duration,
@@ -423,7 +470,7 @@ fn os_args(args: &[&str]) -> Vec<std::ffi::OsString> {
 /// not merely after probing has already performed their I/O. These paths only
 /// process files already fetched through the application's network safeguards.
 /// Live/HLS networking is handled separately, never by these upload commands.
-fn local_input_options() -> Vec<std::ffi::OsString> {
+pub(crate) fn local_input_options() -> Vec<std::ffi::OsString> {
     os_args(&[
         "-protocol_whitelist",
         "file",

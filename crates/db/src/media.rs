@@ -134,7 +134,7 @@ pub async fn public_file_allowed(pool: &PgPool, file_name: &str) -> Result<bool,
     // Federation copies use a permanently private key namespace. Their only
     // serving route checks the mirror lease/consent/source policy; unknown
     // legacy flat keys must not expose these files before or after retirement.
-    if file_name.starts_with("mirror") {
+    if file_name.starts_with("mirror") || file_name.starts_with("music") {
         return Ok(false);
     }
     // The HTTP file route already denies spooled originals. Keep the shared
@@ -305,7 +305,10 @@ impl<'a> NewLocalMedia<'a> {
     }
 }
 
-pub async fn create_local(pool: &PgPool, new: NewLocalMedia<'_>) -> Result<Media, DbError> {
+pub async fn create_local<'e, E: PgExecutor<'e>>(
+    pool: E,
+    new: NewLocalMedia<'_>,
+) -> Result<Media, DbError> {
     let (focus_x, focus_y) = match new.focus {
         Some((x, y)) => (Some(x), Some(y)),
         None => (None, None),

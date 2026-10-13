@@ -62,11 +62,14 @@ pub mod media_fetch_failure;
 pub mod mention;
 pub mod metrics;
 pub mod move_replay;
+pub mod music;
 pub mod mute;
 pub mod native_live;
 pub mod native_video_hls;
 pub mod notification;
+pub mod notification_delivery;
 pub mod notification_policy;
+pub mod notification_read;
 pub mod notification_request;
 pub mod oauth;
 pub mod pin;
@@ -301,6 +304,9 @@ mod schema_contract_tests {
                 "webauthn_state".to_owned(),
             ),
             ("web_settings".to_owned(), "data".to_owned()),
+            // Parsed external Microformats h-entry wire document. Its source,
+            // target, authority, lifecycle and delivery state are typed columns.
+            ("webmentions".to_owned(), "entry".to_owned()),
             // Preserve the exact advertised signed Create for CacheFile
             // dereference/Undo after recovery, like delivery_jobs.activity.
             // Mirror state, authority, quota and assets are normalized tables.
@@ -310,6 +316,13 @@ mod schema_contract_tests {
             ("webxdc_updates".to_owned(), "webxdc_update".to_owned()),
         ]);
         assert_eq!(actual, expected);
+        let composite_json_fields: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM pg_type t JOIN pg_attribute a ON a.attrelid=t.typrelid WHERE t.typname LIKE 'music_%' AND a.attnum>0 AND NOT a.attisdropped AND a.atttypid IN('json'::regtype,'jsonb'::regtype)",
+        ).fetch_one(&pool).await.unwrap();
+        assert_eq!(
+            composite_json_fields, 0,
+            "Typed music records must not hide JSON storage"
+        );
     }
 }
 

@@ -398,6 +398,8 @@ pub enum PostKind {
     Article,
     /// A calendar event with a start time and participation rules.
     Event,
+    /// A native audio publication with one playable audio attachment.
+    Audio,
     /// A native video published by an account in a video channel.
     Video,
 }
@@ -412,6 +414,7 @@ impl PostKind {
             Self::Article => "Article",
             Self::Event => "Event",
             Self::Video => "Video",
+            Self::Audio => "Audio",
         }
     }
 
@@ -426,6 +429,7 @@ impl PostKind {
             Some("Article") => Self::Article,
             Some("Event") => Self::Event,
             Some("Video") => Self::Video,
+            Some("Audio") => Self::Audio,
             Some("Page") => Self::Page,
             _ if has_poll => Self::Question,
             _ if has_title => Self::Page,

@@ -19,3 +19,5 @@ peertube-source|https://github.com/Chocobozzz/PeerTube.git|3324876a0b0f846f8b663
 pleroma-source|https://git.pleroma.social/pleroma/pleroma.git|cd8816eccec355b5ff1533dc75fc86e9927baf2b
 # sharkey-source: stable 2025.4.7; verified 2026-10-01
 sharkey-source|https://activitypub.software/TransFem-org/Sharkey.git|a5d61c9394bb7a9c61d5ff19d17966b2d55f7b1f
+# songhive-source: stable v0.4.9; verified 2026-10-08
+songhive-source|https://git.fabiomanganiello.com/songhive|4243a566f8de767b824a55df69ae87c03d17e35b

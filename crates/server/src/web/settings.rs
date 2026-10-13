@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 
 use axum::body::Bytes;
 use axum::extract::{Multipart, Query, State};
-use axum::http::{StatusCode, header};
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{AppendHeaders, IntoResponse, Redirect, Response};
 use fluent_bundle::FluentArgs;
 use maud::{Markup, html};
 use plamenu_db::DbError;
@@ -506,11 +506,15 @@ fn time_zone_field(current: &str, locale: Locale) -> Markup {
 /// push rendering (`crate::web_push`'s `title`), its label, and whether a
 /// fresh subscription starts with it on. Edit notifications default off —
 /// they are the noisy ones.
-const PUSH_ALERTS: &[(&str, &str, bool)] = &[
+pub(super) const PUSH_ALERTS: &[(&str, &str, bool)] = &[
     ("mention", "settings-push-mention", true),
     ("follow", "settings-push-follow", true),
     ("follow_request", "settings-push-follow-request", true),
     ("favourite", "settings-push-favourite", true),
+    ("music.favourite", "settings-push-music-favourite", true),
+    ("music.share", "settings-push-music-share", true),
+    ("music.download", "settings-push-music-download", true),
+    ("webmention", "settings-push-webmention", true),
     ("reblog", "settings-push-boost", true),
     ("quote", "settings-push-quote", true),
     (
@@ -1587,6 +1591,7 @@ pub async fn update_email_action(
 pub async fn delete_account_action(
     State(state): State<AppState>,
     user: WebUser,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Response {
     let pairs = match form_pairs(&body) {
@@ -1618,10 +1623,14 @@ pub async fn delete_account_action(
     }
     (
         StatusCode::SEE_OTHER,
-        [
+        AppendHeaders([
             (header::LOCATION, "/".to_owned()),
             (header::SET_COOKIE, session::clear_session_cookie()),
-        ],
+            (
+                header::SET_COOKIE,
+                session::forget_roster_account_cookie(&headers, user.current.account.id),
+            ),
+        ]),
     )
         .into_response()
 }

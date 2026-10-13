@@ -182,6 +182,25 @@ or dataset, and lower affected budgets after an optimization. Explain budget
 increases in the change review: what extra work is required, or what was wrong
 with the calibration. A failing run alone is not a reason to raise a ceiling.
 
+## Native media account-purge calibration (11 October 2026)
+
+The Songhive parity change adds required account/status erasure cascades for
+native Music, Webmentions and notification delivery. A rollback-only diagnostic
+on the calibration machine (Intel Core i7-11700F, x86-64, PostgreSQL 18) used the
+existing purge footprint: five statuses, eight tag usages and three preview-card
+usages. Ten `EXPLAIN (ANALYZE, BUFFERS, TIMING, FORMAT JSON)` deletes each rolled
+back to the same savepoint. The final warmed sample measured 44 newly required
+foreign-key triggers at 0.577 ms, within a 3.743 ms total delete. These cascades
+check and remove private media/delivery state even for an account with no Music.
+
+Only `db_jobs/purge_account` adds that measured fixed work to its existing
+5.21 ms ceiling, yielding 5.79 ms. The workload, query ceilings and strict 25%
+headroom requirement are unchanged. This is a calibration for required extra
+integrity/privacy work; it does not increase other hot-path budgets. The simpler
+fresh capture after owner locking is retained, with regression checks for managed
+file cleanup, private metadata deletion, foreign metadata preservation and
+idempotence. Final timing acceptance still requires the strict benchmark gate.
+
 ## Keep results
 
 A passing full hot-path run is recorded under `bench/results/` unless recording

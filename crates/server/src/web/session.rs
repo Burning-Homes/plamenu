@@ -185,6 +185,19 @@ fn clear_roster_cookie() -> String {
     format!("{ROSTER_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0")
 }
 
+/// Remove an erased account from this browser without discarding the other
+/// accounts' independent sessions. The erased account's tokens are revoked
+/// by the account deletion transaction before this cookie is returned.
+pub(crate) fn forget_roster_account_cookie(headers: &HeaderMap, account: i64) -> String {
+    let mut roster = read_roster(headers);
+    roster.retain(|entry| entry.account_id != account);
+    if roster.is_empty() {
+        clear_roster_cookie()
+    } else {
+        set_roster_cookie(&roster)
+    }
+}
+
 /// A CSRF token bound to the roster cookie — the account-chooser counterpart of
 /// [`csrf_token`]. Keying it to the roster (not the session) means the switch
 /// form is still guarded on the post-sign-out chooser, where there is no
@@ -493,10 +506,13 @@ async fn resolve(parts: &mut Parts, state: &AppState) -> Option<WebUser> {
         .is_some_and(|role| role.can(plamenu_db::role::permission::INVITE_USERS));
     // The navigation bell's unread dot. Chrome, not content: a failed probe
     // renders as "nothing new" rather than failing the page.
-    let unread_notifications =
-        plamenu_db::notification::has_unread(&state.pool, current.user.id, current.account.id)
-            .await
-            .unwrap_or(false);
+    let unread_notifications = plamenu_db::notification::has_unread_activity(
+        &state.pool,
+        current.user.id,
+        current.account.id,
+    )
+    .await
+    .unwrap_or(false);
     let unread_conversations =
         plamenu_db::conversation::has_unread(&state.pool, current.account.id)
             .await
@@ -645,6 +661,15 @@ async fn chooser_accounts(
     // client-controlled, so re-apply the cap on read (keeping room for the
     // active account appended above) before rendering anything.
     ids.truncate(MAX_ACCOUNTS + 1);
+    // Another browser can erase an account while this roster cookie remains.
+    // Keep the reserved actor tombstone out of both native and OAuth choosers.
+    let available: Vec<i64> =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE id=ANY($1) AND deleted_at IS NULL")
+            .bind(&ids)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
+    ids.retain(|id| available.contains(id));
     // One batched render for the whole roster instead of a fresh
     // `account_json` (several queries) per entry.
     let mut accounts = plamenu_db::account::find_by_ids(&state.pool, &ids)

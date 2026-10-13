@@ -59,7 +59,9 @@ const MAX_DB_POOL_SIZE: u32 = 1024;
 /// A complete, documented config with required values left for the operator.
 /// Settings with built-in defaults are commented out so upgrades can change
 /// those defaults until the operator deliberately pins a value.
-pub const CONFIG_TEMPLATE: &str = r#"# Plamenu configuration
+pub const CONFIG_TEMPLATE: &str = r#"# Notification schedules may be configured with an optional [notifications] table.
+# retention_days = 90 (seen only), purge_hour = 3, digest_hour = 8 (UTC).
+# Plamenu configuration
 #
 # Generate a fresh copy with: plamenu config generate
 # Required settings are active and empty. Plamenu will not start until all three
@@ -211,6 +213,24 @@ encryption_secret_version = 1
 
 # Outgoing mail is disabled when this whole section is absent. If enabled,
 # server is required; the remaining settings have the defaults shown here.
+# [music]
+# per_account_mib = 51200
+# global_mib = 1048576
+# min_free_mib = 1024
+# default_bitrate = 192
+# max_bitrate = 320
+# user_max_bitrate = 192
+# moderator_max_bitrate = 256
+# admin_max_bitrate = 320
+# rendition_jobs = 2
+# rendition_scratch_mib = 4096
+# max_rendition_mib = 1024
+# download_jobs = 2
+# max_download_items = 500
+# max_download_mib = 8192
+# max_download_item_mib = 1024
+# download_retention_days = 7
+
 # [smtp]
 # server = "smtp.example.com"
 # port = 587
@@ -316,6 +336,9 @@ pub struct Config {
     pub live_ingest_bind: SocketAddr,
     pub live_rtmps: Option<LiveRtmpsConfig>,
     pub native_video: NativeVideoConfig,
+    pub music: MusicConfig,
+    pub notifications: crate::notification_config::NotificationsConfig,
+    pub music_local_roots: Vec<crate::music_local::config::RootConfig>,
     /// Optional private processors; the origin alone owns DB/publication rights.
     pub video_offload: Vec<crate::video_offload::Target>,
     pub smtp: Option<SmtpConfig>,
@@ -398,6 +421,89 @@ pub struct LiveRtmpsConfig {
     pub bind: SocketAddr,
     pub cert: PathBuf,
     pub key: PathBuf,
+}
+
+/// Durable music budgets count originals, playback files and deletion debt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MusicConfig {
+    pub per_account_mib: u64,
+    pub global_mib: u64,
+    pub min_free_mib: u64,
+    pub default_bitrate: u32,
+    pub max_bitrate: u32,
+    pub user_max_bitrate: u32,
+    pub moderator_max_bitrate: u32,
+    pub admin_max_bitrate: u32,
+    pub rendition_jobs: usize,
+    pub rendition_scratch_mib: u64,
+    pub max_rendition_mib: u64,
+    pub download_jobs: usize,
+    pub max_download_items: usize,
+    pub max_download_mib: u64,
+    pub max_download_item_mib: u64,
+    pub download_retention_days: i32,
+}
+impl Default for MusicConfig {
+    fn default() -> Self {
+        Self {
+            per_account_mib: 51200,
+            global_mib: 1_048_576,
+            min_free_mib: 1024,
+            default_bitrate: 192,
+            max_bitrate: 320,
+            user_max_bitrate: 192,
+            moderator_max_bitrate: 256,
+            admin_max_bitrate: 320,
+            rendition_jobs: 2,
+            rendition_scratch_mib: 4096,
+            max_rendition_mib: 1024,
+            download_jobs: 2,
+            max_download_items: 500,
+            max_download_mib: 8192,
+            max_download_item_mib: 1024,
+            download_retention_days: 7,
+        }
+    }
+}
+impl MusicConfig {
+    fn validate(self) -> Result<Self, ConfigError> {
+        if self.per_account_mib == 0
+            || self.per_account_mib > self.global_mib
+            || self.global_mib > 1_073_741_824
+            || self.min_free_mib > 1_073_741_824
+        {
+            return Err(ConfigError::Invalid("music","requires positive account/server budgets, account <= server, and bounded MiB values".into()));
+        }
+        if [
+            self.default_bitrate,
+            self.max_bitrate,
+            self.user_max_bitrate,
+            self.moderator_max_bitrate,
+            self.admin_max_bitrate,
+        ]
+        .iter()
+        .any(|value| !(32..=512).contains(value))
+            || self.default_bitrate > self.max_bitrate
+            || !(1..=16).contains(&self.rendition_jobs)
+            || self.max_rendition_mib == 0
+            || self.max_rendition_mib > 16384
+            || self.rendition_scratch_mib < self.max_rendition_mib.saturating_mul(2)
+            || self.rendition_scratch_mib > 1_048_576
+        {
+            return Err(ConfigError::Invalid("music","requires bitrates 32..512 kbps, default <= instance cap, 1..16 rendition jobs, bounded output files and enough scratch for two output copies".into()));
+        }
+        if !(1..=8).contains(&self.download_jobs)
+            || !(1..=500).contains(&self.max_download_items)
+            || !(1..=65536).contains(&self.max_download_mib)
+            || self.max_download_item_mib == 0
+            || self.max_download_item_mib > self.max_download_mib
+            || !(1..=30).contains(&self.download_retention_days)
+        {
+            return Err(ConfigError::Invalid("music","requires 1..8 download workers, 1..500 items, bounded archive/item sizes and 1..30 retention days".into()));
+        }
+        Ok(self)
+    }
 }
 
 /// Native Video admission and worker budgets, independent of ordinary media.
@@ -576,6 +682,9 @@ impl std::fmt::Debug for Config {
             .field("video_redundancy", &self.video_redundancy)
             .field("video_analytics", &self.video_analytics)
             .field("native_video", &self.native_video)
+            .field("music", &self.music)
+            .field("notifications", &self.notifications)
+            .field("music_local_roots", &self.music_local_roots)
             .field("video_offload", &self.video_offload)
             .field("ffmpeg_path", &self.ffmpeg_path)
             .field("ffprobe_path", &self.ffprobe_path)
@@ -696,6 +805,9 @@ struct FileConfig {
     live_ingest_bind: Option<SocketAddr>,
     live_rtmps: Option<LiveRtmpsConfigFile>,
     native_video: Option<FileNativeVideoConfig>,
+    music: Option<MusicConfig>,
+    notifications: Option<crate::notification_config::NotificationsConfig>,
+    music_local_roots: Option<Vec<crate::music_local::config::RootConfig>>,
     video_offload: Option<Vec<crate::video_offload::Target>>,
     trusted_proxies: Option<Vec<String>>,
     encryption_secret: Option<String>,
@@ -1119,6 +1231,11 @@ impl Config {
             ));
         }
         Ok(Self {
+            music: file.music.unwrap_or_default().validate()?,
+            notifications: file.notifications.unwrap_or_default().validate()?,
+            music_local_roots: crate::music_local::config::validate(
+                file.music_local_roots.unwrap_or_default(),
+            )?,
             domain,
             account_domain,
             database_url,

@@ -78,7 +78,9 @@
 
 # A batch of 20 link-crawl jobs.
 "db_jobs/link_crawl_drain" = { ms = 29.6, calibrated = "2026-07-28" }
-"db_jobs/purge_account" = { ms = 5.21, calibrated = "2026-07-28" }
+# Native Music and delivery add 44 required FK cascade triggers (~0.58 ms).
+# Preserve the existing allowance and add only that measured fixed work.
+"db_jobs/purge_account" = { ms = 5.79, calibrated = "2026-10-11" }
 
 # 50 deletions from an account without followers; excludes delivery fan-out.
 "db_jobs/statuses_cleanup_sweep" = { ms = 212, calibrated = "2026-07-28" }

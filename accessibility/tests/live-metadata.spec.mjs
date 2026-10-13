@@ -54,7 +54,7 @@ async function journey(page,info,noScript){
   // authored fields, channel, terms and warning for ordinary HTML correction.
   await form.locator('input[name="scheduled_at"]').fill('2020-01-01T12:00');
   await audit(page,noScript);
-  const [invalid]=await Promise.all([page.waitForResponse(r=>new URL(r.url()).pathname==='/web/videos/live'&&r.request().method()==='POST'),form.getByRole('button',{name:'Create waiting broadcast',exact:true}).press('Enter')]);
+  const [invalid]=await Promise.all([page.waitForResponse(r=>new URL(r.url()).pathname==='/web/videos/live'&&r.request().method()==='POST'),form.getByRole('button',{name:'Continue to camera setup',exact:true}).press('Enter')]);
   expect(invalid.status()).toBe(422);await expect(page.getByRole('alert')).toBeVisible();
   form=page.locator('form[action="/web/videos/live"]');
   await expect(form.getByLabel('Video title',{exact:true})).toHaveValue(`Warning-bearing live ${name}`);
@@ -65,7 +65,8 @@ async function journey(page,info,noScript){
   await expect(form.getByRole('checkbox',{name:'Reuse this broadcast for future sessions',exact:true})).toBeChecked();
   await form.locator('input[name="scheduled_at"]').fill('');await audit(page,noScript);
   await page.locator('h1').click();await page.screenshot({path:info.outputPath('live-metadata-correction-320px.png'),fullPage:true});
-  await form.getByRole('button',{name:'Create waiting broadcast',exact:true}).press('Enter');
+  await form.getByRole('button',{name:'Continue to camera setup',exact:true}).press('Enter');
+  await openDetailsFor(page.getByRole('textbox',{name:'Stream key',exact:true,includeHidden:true}));
   await expect(page.getByRole('textbox',{name:'Stream key',exact:true})).toBeVisible();
   // No screenshot of the one-time secret response: protected evidence must
   // not accidentally contain a still-valid ingest credential.

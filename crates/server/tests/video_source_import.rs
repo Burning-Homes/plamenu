@@ -270,11 +270,13 @@ async fn cancelling_a_real_inflight_controller_drops_origin_work_and_scratch(poo
     let id = reserve(&f, url, "file", 100).await;
     let state = f.state.clone();
     let worker = tokio::spawn(async move { service::run_one(&state).await });
-    tokio::time::timeout(std::time::Duration::from_secs(2), async {
-        while f.stub.media_fetches.lock().unwrap().is_empty() {
-            tokio::task::yield_now().await;
-        }
-    })
+    // Admission includes SQL preflight and scratch creation, not cancellation.
+    // Await the actual polled origin signal instead of busy-spinning on a log;
+    // the six-second cancellation bound below remains unchanged.
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        f.stub.media_download_started.notified(),
+    )
     .await
     .unwrap();
     assert!(drafts::cancel(&f.state.pool, id, f.owner).await.unwrap());

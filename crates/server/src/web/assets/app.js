@@ -1742,6 +1742,7 @@
     const button = form.querySelector(`[data-compose-toggle="${name}"]`);
     const section = form.querySelector(`[data-compose-section="${name}"]`);
     if (button && section) setSectionOpen(button, section, true);
+    else if (section) { section.hidden = false; section.classList.add("is-open"); }
   }
 
   let composeMediaFieldSequence = 0;
@@ -1752,7 +1753,8 @@
     const body = section.querySelector(".compose__media-body");
     const staticSlots = section.querySelector("[data-media-static]");
     if (!body || !staticSlots) return;
-    const max = parseInt(section.dataset.mediaMax, 10) || 4;
+    const parsedMax = Number.parseInt(section.dataset.mediaMax, 10);
+    const max = Number.isFinite(parsedMax) ? parsedMax : 4;
 
     // Drop the no-JS slots; we submit our own inputs instead.
     staticSlots.remove();
@@ -1767,6 +1769,8 @@
     picker.type = "file";
     picker.accept = MEDIA_ACCEPT;
     picker.multiple = true;
+    picker.setAttribute("aria-label", form.dataset.i18nMediaAdd || "Add images, video or audio");
+    picker.tabIndex = -1;
     picker.className = "visually-hidden";
     // No `name`, so the picker itself never submits — the per-card inputs do.
 
@@ -1778,6 +1782,7 @@
           '<path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/>'
       );
     const dropzoneLabel = document.createElement("span");
+    dropzoneLabel.className = "compose__dropzone-label";
     dropzoneLabel.append(
       document.createTextNode(
         form.dataset.i18nMediaAdd || "Add images, video or audio"
@@ -1792,8 +1797,29 @@
 
     body.prepend(list, dropzone, picker);
 
+    const kindPicker = form.querySelector("[data-compose-kind]");
+    const isAudioPost = () => kindPicker?.value === "audio";
+    const mediaError = document.createElement("p");
+    mediaError.className = "compose__error"; mediaError.setAttribute("role", "alert"); mediaError.hidden = true;
+    body.append(mediaError);
+    const audioFileError = () => { mediaError.textContent = form.dataset.i18nAudioFile || "Choose one audio file for an Audio post."; mediaError.hidden = false; };
+    const existingCount = () => form.querySelectorAll('[name="reuse_media[]"]:checked').length;
     function refreshAddState() {
-      const full = items.length >= max;
+      form.dataset.composeCurrent = kindPicker?.value || 'note';
+      const selected = items.length + existingCount();
+      const sensitive = form.querySelector('[data-compose-sensitive]');
+      if (sensitive) sensitive.hidden = !selected && !form.querySelector('[name="media_keep[]"]');
+      form.querySelectorAll('[name="reuse_media[]"]').forEach(input => {
+        let audio = false;
+        try { audio = JSON.parse(input.dataset.existingMedia).type === 'audio'; } catch { /* Unusable metadata stays unavailable to audio posts. */ }
+        input.disabled = !input.checked && (selected >= (isAudioPost() ? Math.min(1,max) : max) || (isAudioPost() && !audio));
+      });
+      picker.accept = isAudioPost() ? "audio/*" : MEDIA_ACCEPT;
+      picker.multiple = !isAudioPost();
+      picker.setAttribute("aria-label", isAudioPost() ? (form.dataset.i18nAudioAdd || "Choose an audio file") : (form.dataset.i18nMediaAdd || "Add images, video or audio"));
+      const full = selected >= (isAudioPost() ? Math.min(1,max) : max);
+      mediaError.hidden = true;
+      if (isAudioPost() && (items.length > 1 || items.some(item => !item.file.type.startsWith("audio/")))) audioFileError();
       dropzone.hidden = full;
       picker.disabled = full;
     }
@@ -1802,6 +1828,7 @@
       const idx = items.indexOf(item);
       if (idx === -1) return;
       items.splice(idx, 1);
+      item.li.querySelector("audio, video")?.pause();
       if (item.url) URL.revokeObjectURL(item.url);
       if (item.inlineMarker) {
         const field = form.querySelector("textarea[name=status]");
@@ -1824,6 +1851,11 @@
         img.src = url;
         img.alt = "";
         preview.appendChild(img);
+      } else if (file.type.startsWith("audio/")) {
+        url = URL.createObjectURL(file);
+        li.dataset.audioPreviewUrl = url;
+        li.dataset.audioPreviewName = file.name;
+        preview.innerHTML = svgIcon(ICON_AUDIO);
       } else {
         preview.innerHTML = svgIcon(
           file.type.startsWith("video/") ? ICON_FILM : ICON_AUDIO
@@ -1832,7 +1864,7 @@
 
       const altName = document.createElement("label");
       altName.className = "compose__attachment-label";
-      altName.textContent = form.dataset.i18nAltDescription || "Describe this attachment";
+      altName.textContent = file.type.startsWith("audio/") ? (form.dataset.i18nAudioDescription || "Describe this audio") : form.dataset.i18nAltDescription || "Describe this attachment";
       const alt = document.createElement("textarea");
       const fieldSequence = ++composeMediaFieldSequence;
       alt.id = `compose-media-alt-${fieldSequence}`;
@@ -1933,6 +1965,8 @@
       const fileInput = document.createElement("input");
       fileInput.type = "file";
       fileInput.name = "media[]";
+      // This input only carries already-selected bytes in the form submission.
+      fileInput.hidden = true;
       fileInput.className = "visually-hidden";
       const dt = new DataTransfer();
       dt.items.add(file);
@@ -1993,7 +2027,10 @@
 
       const bodyEl = document.createElement("div");
       bodyEl.className = "compose__attachment-body";
-      bodyEl.append(
+      const details = document.createElement('details'); details.className='compose__attachment-details';
+      const summary = document.createElement('summary'); summary.textContent=form.dataset.i18nMediaDetails || 'Description and accessibility';
+      details.append(summary, altName);
+      details.append(
         alt,
         decorativeLabel,
         transcriptLabel,
@@ -2003,21 +2040,32 @@
         fileInput
       );
 
-      li.append(preview, altName, remove, bodyEl);
+      bodyEl.append(details);
+      const filename = document.createElement('span'); filename.className='compose__filename';filename.textContent=file.name;
+      if (/^(audio|video)\//.test(file.type)) {
+        const audioPreview = document.createElement(file.type.startsWith("video/") ? "video" : "audio");
+        audioPreview.controls = true; audioPreview.playsInline = true; audioPreview.preload = "metadata"; audioPreview.src = url;
+        audioPreview.setAttribute("aria-label", file.name);
+        bodyEl.prepend(audioPreview);
+      }
+      li.append(preview, filename, remove, bodyEl);
 
       const item = { file, li, url, inlineMarker };
       remove.addEventListener("click", () => removeItem(item));
       return item;
     }
 
+    kindPicker?.addEventListener("change", refreshAddState);
+    form.querySelectorAll('[name="reuse_media[]"]').forEach(input => input.addEventListener("change",refreshAddState));
     function addFiles(fileList) {
+      if (isAudioPost() && (fileList.length !== 1 || !fileList[0].type.startsWith("audio/"))) { audioFileError(); return; }
       const incoming = [...fileList].filter((f) =>
         /^(image|video|audio)\//.test(f.type)
       );
       if (!incoming.length) return;
       openSection(form, "media");
       for (const file of incoming) {
-        if (items.length >= max) break;
+        if (items.length + existingCount() >= (isAudioPost() ? Math.min(1,max) : max)) break;
         const item = makeCard(file);
         items.push(item);
         list.appendChild(item.li);
@@ -2424,12 +2472,21 @@
       const marker = token ? `[[upload:${token}]]` : null;
       return {
         src: img ? img.src : null,
+        audioSrc: card.dataset.audioPreviewUrl || null,
+        videoSrc: card.querySelector("video")?.src || null,
+        audioName: card.dataset.audioPreviewName || "",
         icon: img ? null : icon ? icon.innerHTML : "",
         alt: card.querySelector(".compose__alt")?.value || "",
         marker,
         inline: marker ? source.includes(marker) : false,
       };
-    });
+    }).concat([...form.querySelectorAll('input[name="reuse_media[]"]:checked')].map(input => {
+      try {
+        const media=JSON.parse(input.dataset.existingMedia);
+        return {src:media.type==='image'?media.url:null, audioSrc:media.type==='audio'?media.url:null,
+          videoSrc:media.type==='video'?media.url:null,alt:media.description||'',icon:'',inline:false};
+      } catch {return {icon:'',inline:false};}
+    }));
   }
 
   function previewAltBadge(alt) {
@@ -2487,7 +2544,16 @@
     for (const item of attachments) {
       const fig = document.createElement("figure");
       fig.className = "media";
-      if (item.src) {
+      if (item.audioSrc || item.videoSrc) {
+        fig.classList.add(item.videoSrc ? 'media--video' : 'media--audio');
+        const audio = document.createElement(item.videoSrc ? 'video' : 'audio');
+        audio.playsInline = true;
+        audio.src = item.videoSrc || item.audioSrc;
+        audio.controls = true;
+        audio.preload = "metadata";
+        audio.setAttribute("aria-label", item.alt || item.audioName);
+        fig.appendChild(audio);
+      } else if (item.src) {
         const img = document.createElement("img");
         img.src = item.src;
         img.alt = item.alt;
@@ -2505,7 +2571,9 @@
       }
       gallery.appendChild(fig);
     }
-    if (content) content.after(gallery);
+    const music = content?.parentElement?.querySelector(":scope > .status__music");
+    if (music) music.after(gallery);
+    else if (content) content.after(gallery);
     else card.appendChild(gallery);
   }
 
@@ -2572,16 +2640,33 @@
     };
     const sync = () => {
       const value = kind.value;
+      const workflow = ['video','live'].includes(value);
+      const editor = form.querySelector('[data-compose-editor]');
+      const route = form.querySelector('[data-compose-workflow]');
+      if (editor) editor.hidden = workflow;
+      if (route) {
+        route.hidden = !workflow;
+        if (workflow) {
+          route.querySelector('[data-compose-workflow-hint]').textContent = route.querySelector('[data-compose-workflow-hint]').dataset[value];
+          route.querySelector('a').href = value === 'live' ? '/videos/live/new' : '/videos/upload';
+        }
+      }
+      if (workflow) { title.required=false; return; }
+      openSection(form, 'media');
+      const mediaLabel = value === "audio" ? form.dataset.i18nAudioAdd : form.dataset.i18nMediaAdd;
+      const dropzoneLabel = form.querySelector(".compose__dropzone-label");
+      if (mediaLabel && dropzoneLabel) dropzoneLabel.firstChild.textContent = mediaLabel;
       show(titleFields, value !== "note" || !!link);
       title.required = value !== "note" || !!link?.value.trim();
       form.querySelectorAll("[data-compose-event-fields]").forEach((el) => show(el, value === "event"));
       form.querySelectorAll("[data-compose-note-only]").forEach((el) => show(el, value === "note"));
+      form.querySelectorAll("[data-compose-audio-only]").forEach((el) => show(el, value === "audio"));
       form.querySelectorAll("[data-compose-article-only]").forEach((el) => show(el, value === "article"));
-      form.querySelectorAll("[data-compose-schedulable]").forEach((el) => show(el, value !== "event"));
+      form.querySelectorAll("[data-compose-schedulable]").forEach((el) => show(el, !["event", "audio"].includes(value)));
       form.querySelectorAll("[data-compose-compatibility]").forEach((el) => show(el, el.dataset.composeCompatibility === value));
-      body.placeholder = body.dataset[`placeholder${value[0].toUpperCase()}${value.slice(1)}`];
+      body.placeholder = body.dataset[`placeholder${value[0].toUpperCase()}${value.slice(1)}`] || body.dataset.placeholderNew;
       form.querySelectorAll("[data-compose-title-label], [data-compose-body-label]").forEach((el) => {
-        el.textContent = el.dataset[value];
+        el.textContent = el.dataset[value] || el.dataset.note;
         if (el.hasAttribute("data-compose-body-label")) el.classList.toggle("visually-hidden", value === "note");
       });
       body.rows = value === "article" ? 12 : 5;
@@ -2589,6 +2674,14 @@
       body.style.height = `${body.scrollHeight}px`;
     };
     kind.addEventListener("change", () => {
+      // A fresh composer can open its publishing workflow immediately. Keep
+      // a populated draft in place so changing type never throws it away.
+      const populated = body.value.trim() || title.value.trim() ||
+        form.querySelector('.compose__attachment, [name="reuse_media[]"]:checked');
+      if (['video','live'].includes(kind.value) && !populated) {
+        location.assign(kind.value === 'live' ? '/videos/live/new' : '/videos/upload');
+        return;
+      }
       sync();
       // A preview belongs to the previous type until requested again.
       form.parentElement?.querySelector("[data-compose-preview]")?.replaceChildren();
@@ -4364,7 +4457,8 @@
   // Called on both MANIFEST_PARSED (video levels) and AUDIO_TRACKS_UPDATED: hls.js
   // populates hls.audioTracks only on the latter, AFTER the former, so the
   // "Audio only" entry can only be added on the second pass. Idempotent — builds
-  // the <select> once, then adds the audio option once its track is known.
+  // the <select> once (or fills the VOD placeholder), then adds the audio
+  // option once its track is known. Opening settings never loads the ladder.
   function buildQualityMenu(video, hls, Hls) {
     const figure = video.closest("figure") || video.parentNode;
     let select = figure.querySelector(".video-quality");
@@ -4373,12 +4467,20 @@
     // media playlist); hls.js resolves it to an absolute same-origin proxied url
     // we can play video-less.
     const audioUrl = ((hls.audioTracks || [])[0] || {}).url;
-    if (!select) {
-      if (levels.length < 2 && !audioUrl) return; // nothing to choose yet
+    if (!select || select.dataset.qualityPending === 'true') {
+      if (!select && levels.length < 2 && !audioUrl) return; // native/live baseline
+      if (!levels.length && !audioUrl) return; // keep the pending Auto row
+      const fresh = !select;
       const masterUrl = video.getAttribute("data-hls");
-      select = document.createElement("select");
-      select.className = "video-quality";
-      select.setAttribute("aria-label", "Video quality");
+      if (fresh) {
+        select = document.createElement("select");
+        select.className = "video-quality";
+        select.setAttribute("aria-label", "Video quality");
+      } else {
+        select.replaceChildren();
+        delete select.dataset.qualityPending;
+        select.disabled = false;
+      }
       const addOption = (value, label) => {
         const option = document.createElement("option");
         option.value = value;
@@ -4430,7 +4532,11 @@
       hls.on(Hls.Events.LEVEL_SWITCHED, () => {
         if (!audioMode && hls.autoLevelEnabled) select.value = "-1";
       });
-      (figure.querySelector(".vod-controls__settings") || figure).appendChild(select);
+      if (fresh) {
+        const settings = figure.querySelector(".vod-controls__settings");
+        if (settings) appendVodSetting(settings, select);
+        else figure.appendChild(select);
+      }
     }
     // The explicit audio-only choice (PeerTube offers it; saves data), added
     // once its track and url are known.
@@ -4550,7 +4656,8 @@
       const figure = video.closest('figure');
       const quality = figure?.querySelector('.video-quality');
       if (quality === document.activeElement) video.focus();
-      quality?.remove();
+      if (quality?.parentElement?.classList.contains('vod-controls__field')) quality.parentElement.remove();
+      else quality?.remove();
       const sharing = choice;
       if (sharing) { sharing.checked = false; sharing.disabled = true; }
       if (figure && !figure.querySelector('.media__live-recovery')) {
@@ -4905,23 +5012,34 @@
   // engine remain the source of playback, caption, history and quality state.
   const vodControllers = new Map();
   let vodObserver;
+  function appendVodSetting(settings, control) {
+    const field = document.createElement('label');
+    field.className = 'vod-controls__field';
+    const name = document.createElement('span');
+    name.textContent = control.getAttribute('aria-label');
+    field.append(name, control); settings.append(field);
+    return field;
+  }
   function bindVodControls(root) {
     root.querySelectorAll('[data-vod-controls]').forEach(gallery => {
       const figure = gallery.closest('figure');
       const video = figure?.querySelector('video');
-      if (!video || video.dataset.live || vodControllers.has(video)) return;
+      if (!video || vodControllers.has(video)) return;
+      const isLive = video.dataset.live === 'live';
       let board;
       try {
         board = JSON.parse(gallery.dataset.vodControls);
-        board.url = new URL(board.url, location.href);
-        if (board.url.origin !== location.origin || !['http:', 'https:'].includes(board.url.protocol)
-          || !Number.isInteger(board.columns) || board.columns < 1 || board.columns > 10
-          || !Number.isInteger(board.rows) || board.rows < 1 || board.rows > 10
-          || !Number.isInteger(board.count) || board.count < 1 || board.count > 100
-          || board.count > board.columns * board.rows
-          || !Number.isInteger(board.interval) || board.interval < 1 || board.interval > 604800
-          || !Number.isFinite(board.duration) || board.duration <= 0 || board.duration > 604800
-          || !board.labels || Object.values(board.labels).some(label => typeof label !== 'string')) return;
+        if (!board.labels || Object.values(board.labels).some(label => typeof label !== 'string')) return;
+        if (board.url) {
+          board.url = new URL(board.url, location.href);
+          if (board.url.origin !== location.origin || !['http:', 'https:'].includes(board.url.protocol)
+            || !Number.isInteger(board.columns) || board.columns < 1 || board.columns > 10
+            || !Number.isInteger(board.rows) || board.rows < 1 || board.rows > 10
+            || !Number.isInteger(board.count) || board.count < 1 || board.count > 100
+            || board.count > board.columns * board.rows
+            || !Number.isInteger(board.interval) || board.interval < 1 || board.interval > 604800) board.url = null;
+        }
+        if (!Number.isFinite(board.duration) || board.duration <= 0 || board.duration > 604800) board.duration = 0;
       } catch { return; }
       const owner = new AbortController();
       const listen = (target, kind, handler) => target.addEventListener(kind, handler, {signal: owner.signal});
@@ -4931,10 +5049,20 @@
         if (className) node.className = className;
         return node;
       };
-      const button = (label, text) => {
+      const icons = {
+        play: '<path d="m8 5 11 7-11 7Z" fill="currentColor" stroke="none"/>',
+        pause: '<path d="M8 5v14M16 5v14" stroke-width="4"/>',
+        sound: '<path d="m11 5-6 4H2v6h3l6 4Z"/><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
+        muted: '<path d="m11 5-6 4H2v6h3l6 4Z"/><path d="m16 9 6 6m0-6-6 6"/>',
+        fullscreen: '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',
+        settings: '<path d="m9 3-.6 2.2-2 .9-2-.6-2 3.5 1.5 1.6v2.8L2.4 15l2 3.5 2-.6 2 .9L9 21h6l.6-2.2 2-.9 2 .6 2-3.5-1.5-1.6v-2.8L21.6 9l-2-3.5-2 .6-2-.9L15 3Z"/><circle cx="12" cy="12" r="3"/>',
+        pip: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 12h6v5h-6Z" fill="currentColor" stroke="none"/>',
+      };
+      const setIcon = (node, icon) => { node.innerHTML = svgIcon(icons[icon]); };
+      const button = (label, icon) => {
         const node = element('button');
-        node.type = 'button'; node.textContent = text;
-        node.setAttribute('aria-label', label);
+        node.type = 'button'; setIcon(node, icon);
+        node.setAttribute('aria-label', label); node.title = label;
         return node;
       };
       const wrapper = element('div', 'vod-player');
@@ -4945,28 +5073,43 @@
       seek.setAttribute('aria-label', labels.seek);
       const preview = element('div', 'vod-controls__preview'); preview.hidden = true; preview.setAttribute('aria-hidden', 'true');
       const tile = element('span', 'vod-controls__tile');
-      const image = element('img'); image.alt = ''; image.width = board.columns * 160; image.height = board.rows * 90;
+      const image = element('img'); image.alt = ''; image.width = (board.columns || 1) * 160; image.height = (board.rows || 1) * 90; tile.hidden = !board.url;
       const previewTime = element('span'); tile.append(image); preview.append(tile, previewTime); timeline.append(preview, seek);
       const row = element('div', 'vod-controls__row');
-      const play = button(labels.play, '▶');
+      const play = button(labels.play, 'play'); play.className = 'vod-controls__play';
       const time = element('span', 'vod-controls__time'); time.setAttribute('aria-hidden', 'true');
-      const mute = button(labels.mute, '♪');
+      const mute = button(labels.mute, 'sound');
       const volume = element('input'); volume.type = 'range'; volume.min = '0'; volume.max = '1'; volume.step = '.05';
       volume.setAttribute('aria-label', labels.volume); volume.className = 'vod-controls__volume';
       const captions = element('select'); captions.setAttribute('aria-label', labels.captions);
-      const fullscreen = button(labels.fullscreen, '⛶');
+      const fullscreen = button(labels.fullscreen, 'fullscreen');
       const settings = element('details', 'vod-controls__menu');
-      const summary = element('summary'); summary.textContent = labels.settings;
+      const summary = element('summary'); setIcon(summary, 'settings');
+      summary.setAttribute('aria-label', labels.settings); summary.title = labels.settings;
+      const summaryText = element('span', 'visually-hidden'); summaryText.textContent = labels.settings; summary.append(summaryText);
       const options = element('div', 'vod-controls__settings');
+      const heading = element('p', 'vod-controls__heading'); heading.textContent = labels.settings; options.append(heading);
+      let quality = figure.querySelector('.video-quality');
+      if (!quality && video.dataset.hls) {
+        quality = element('select', 'video-quality'); quality.setAttribute('aria-label', 'Video quality');
+        quality.add(new Option('Auto', '-1')); quality.value = '-1'; quality.disabled = true;
+        quality.dataset.qualityPending = 'true';
+      }
+      if (quality) appendVodSetting(options, quality);
+      const settingsVolume = volume.cloneNode(); settingsVolume.className = 'vod-controls__volume-setting';
+      const volumeField = appendVodSetting(options, settingsVolume); volumeField.classList.add('vod-controls__field--volume');
       const speed = element('select'); speed.setAttribute('aria-label', labels.speed);
       [.5, .75, 1, 1.25, 1.5, 2].forEach(value => speed.add(new Option(`${value}×`, String(value))));
       speed.value = String(video.playbackRate);
-      options.append(speed);
+      const speedField = appendVodSetting(options, speed);
+      speedField.hidden = isLive;
+      const captionField = appendVodSetting(options, captions);
       const standardPip = document.pictureInPictureEnabled && video.requestPictureInPicture;
       const webkitPip = video.webkitSupportsPresentationMode && video.webkitSetPresentationMode;
       let pip;
       if (standardPip || webkitPip) {
-        pip = button(labels.pip, '▣'); options.append(pip);
+        pip = button(labels.pip, 'pip'); pip.className = 'vod-controls__pip';
+        const pipText = element('span'); pipText.textContent = labels.pip; pip.append(pipText); options.append(pip);
         listen(pip, 'click', async () => {
           try {
             if (standardPip) {
@@ -4976,9 +5119,44 @@
           } catch { /* The platform may deny this request. */ }
         });
       }
+      // Keep the existing MP4 escape hatch reachable without dedicating a
+      // second row to it. The original paragraph returns on native fallback.
+      const standardLink = video.dataset.original && Array.from(figure.querySelectorAll(':scope > p > a[href]'))
+        .find(link => link.getAttribute('href') === video.dataset.src);
+      const standard = standardLink?.parentElement;
+      const standardSlot = standard && document.createComment('standard video');
+      if (standard) {
+        standard.before(standardSlot); standard.classList.add('vod-controls__standard'); options.append(standard);
+      }
       settings.append(summary, options);
-      row.append(play, time, mute, volume, captions, fullscreen, settings); controls.append(timeline, row);
+      row.append(play, time, mute, volume, settings, fullscreen); controls.append(timeline, row);
+      const goLive = isLive && figure.querySelector('.media__go-live');
+      const liveSlot = goLive && document.createComment('live edge control');
+      if (goLive) { goLive.before(liveSlot); time.after(goLive); }
+      wrapper.classList.toggle('vod-player--live', isLive);
+      const placeSettings = () => {
+        if (!settings.open) return;
+        const bounds = controls.getBoundingClientRect();
+        const above = bounds.top + 16 - 8;
+        const below = innerHeight - bounds.bottom - 8;
+        // Narrow cards may have less video height than the settings panel.
+        // Use the side with room and scroll the panel on short viewports.
+        const placement = above >= options.scrollHeight || above >= below ? 'above' : 'below';
+        settings.dataset.placement = placement;
+        options.style.maxBlockSize = `${Math.max(44, placement === 'above' ? above : below)}px`;
+      };
+      listen(settings, 'toggle', placeSettings);
+      listen(window, 'resize', () => { hidePreview(); placeSettings(); });
+      listen(document, 'click', event => {
+        if (settings.open && !settings.contains(event.target)) settings.open = false;
+      });
+      listen(settings, 'keydown', event => {
+        if (event.key === 'Escape' && settings.open) {
+          event.preventDefault(); event.stopPropagation(); settings.open = false; summary.focus();
+        }
+      });
       let duration = board.duration;
+      let rangeStart = 0;
       let dragging = false;
       let pointer = null;
       let pending = null;
@@ -4986,13 +5164,14 @@
       let spriteUrl = null;
       let spriteLoading = false;
       let disposed = false;
+      let playIcon, muteIcon;
       const format = seconds => {
         seconds = Math.max(0, Math.floor(seconds || 0));
         const minutes = Math.floor(seconds / 60);
         return minutes >= 60 ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
           : `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
       };
-      const clamp = value => Math.min(duration, Math.max(0, Number(value) || 0));
+      const clamp = value => Math.min(duration, Math.max(rangeStart, Number(value) || 0));
       const release = () => {
         const captured = pointer;
         pointer = null; dragging = false;
@@ -5000,13 +5179,32 @@
       };
       const sync = () => {
         if (disposed) return;
+        if (isLive) {
+          const ranges = video.seekable;
+          rangeStart = ranges.length ? ranges.start(ranges.length - 1) : 0;
+          duration = ranges.length ? ranges.end(ranges.length - 1) : 0;
+          seek.min = String(rangeStart); seek.max = String(duration);
+          timeline.hidden = duration - rangeStart <= 1 || Number(video.dataset.liveDvr) === 0;
+        }
         if (!dragging && pending === null) seek.value = String(clamp(video.currentTime));
         const position = dragging ? Number(seek.value) : pending ?? video.currentTime;
-        seek.setAttribute('aria-valuetext', `${format(position)} / ${format(duration)}`);
-        time.textContent = `${format(position)} / ${format(duration)}`;
-        play.textContent = video.paused ? '▶' : 'Ⅱ'; play.setAttribute('aria-label', video.paused ? labels.play : labels.pause);
-        mute.setAttribute('aria-label', video.muted ? labels.unmute : labels.mute);
+        seek.disabled = duration <= rangeStart;
+        const behind = Math.max(0, duration - position);
+        const timeLabel = isLive ? (behind > 4 ? `−${format(behind)}` : (labels.live || 'Live')) : `${format(position)} / ${format(duration)}`;
+        seek.setAttribute('aria-valuetext', timeLabel);
+        seek.style.setProperty('--vod-progress', `${duration > rangeStart ? (clamp(position) - rangeStart) / (duration - rangeStart) * 100 : 0}%`);
+        time.textContent = timeLabel;
+        time.classList.toggle('vod-controls__time--live', isLive && behind <= 4);
+        const nextPlayIcon = video.paused ? 'play' : 'pause';
+        if (playIcon !== nextPlayIcon) { setIcon(play, nextPlayIcon); playIcon = nextPlayIcon; }
+        play.setAttribute('aria-label', video.paused ? labels.play : labels.pause); play.title = play.getAttribute('aria-label');
+        const nextMuteIcon = video.muted || video.volume === 0 ? 'muted' : 'sound';
+        if (muteIcon !== nextMuteIcon) { setIcon(mute, nextMuteIcon); muteIcon = nextMuteIcon; }
+        mute.setAttribute('aria-label', video.muted ? labels.unmute : labels.mute); mute.title = mute.getAttribute('aria-label');
         mute.setAttribute('aria-pressed', String(video.muted)); volume.value = String(video.muted ? 0 : video.volume);
+        volume.style.setProperty('--vod-progress', `${Number(volume.value) * 100}%`);
+        settingsVolume.value = volume.value;
+        settingsVolume.style.setProperty('--vod-progress', `${Number(volume.value) * 100}%`);
         speed.value = String(video.playbackRate);
         fullscreen.setAttribute('aria-pressed', String(document.fullscreenElement === wrapper || video.webkitDisplayingFullscreen === true));
         if (pip) {
@@ -5019,7 +5217,7 @@
       // Fetch at first preview intent, never on card render. Read incrementally
       // so even a broken response cannot allocate an unbounded sprite buffer.
       const loadSprite = async () => {
-        if (spriteLoading || spriteUrl || disposed) return;
+        if (!board.url || spriteLoading || spriteUrl || disposed) return;
         spriteLoading = true;
         try {
           const response = await fetch(board.url, {signal: owner.signal, credentials: 'same-origin', redirect: 'error'});
@@ -5037,17 +5235,20 @@
           spriteUrl = URL.createObjectURL(new Blob(chunks, {type: 'image/jpeg'})); image.src = spriteUrl;
           await image.decode();
           if (image.naturalWidth !== board.columns * 160 || image.naturalHeight !== board.rows * 90) throw new Error('Invalid storyboard dimensions');
-        } catch { if (!disposed) dispose(); }
+        } catch {
+          if (spriteUrl) URL.revokeObjectURL(spriteUrl);
+          spriteUrl = null; board.url = null; tile.hidden = true;
+        }
       };
       const showPreview = seconds => {
-        if (disposed) return;
+        if (disposed || duration <= 0) return;
         seconds = clamp(seconds);
         const index = Math.min(board.count - 1, Math.floor(seconds / board.interval));
-        image.style.transform = `translate(${-index % board.columns * 160}px, ${-Math.floor(index / board.columns) * 90}px)`;
-        previewTime.textContent = format(seconds);
+        if (board.url) image.style.transform = `translate(${-index % board.columns * 160}px, ${-Math.floor(index / board.columns) * 90}px)`;
+        previewTime.textContent = isLive ? `−${format(duration - seconds)}` : format(seconds);
         // Clamp within the control surface even at 320px and either endpoint.
         const width = timeline.clientWidth;
-        preview.style.left = `${Math.max(80, Math.min(width - 80, seconds / duration * width))}px`;
+        preview.style.left = `clamp(80px, ${(seconds - rangeStart) / (duration - rangeStart) * width}px, calc(100% - 80px))`;
         preview.hidden = false; loadSprite();
       };
       const commit = value => {
@@ -5058,8 +5259,38 @@
         else video.load();
       };
       const togglePlayback = () => { if (video.paused) video.play().catch(() => {}); else video.pause(); };
+      let chromeTimer;
+      let controlsHovered = false;
+      const fullscreenActive = () => document.fullscreenElement === wrapper;
+      const showChrome = () => {
+        clearTimeout(chromeTimer);
+        wrapper.classList.remove('vod-player--idle');
+        if (!fullscreenActive() || video.paused || video.ended) return;
+        chromeTimer = setTimeout(() => {
+          if (!video.paused && !settings.open && !dragging && !controlsHovered
+            && !controls.querySelector(':focus-visible')) wrapper.classList.add('vod-player--idle');
+        }, 2500);
+      };
+      let touchChromeIdle = null;
+      listen(wrapper, 'pointerdown', event => { if(event.pointerType === 'touch' && event.target === video && fullscreenActive()) touchChromeIdle=wrapper.classList.contains('vod-player--idle'); });
+      listen(wrapper, 'pointercancel', () => { touchChromeIdle=null; });
+      listen(wrapper, 'pointermove', event => { if(event.pointerType !== 'touch') showChrome(); });
+      listen(wrapper, 'focusin', showChrome);
+      listen(wrapper, 'keydown', showChrome);
+      listen(controls, 'pointerenter', event => { if (event.pointerType === 'mouse') controlsHovered = true; });
+      listen(controls, 'pointerleave', () => { controlsHovered = false; showChrome(); });
+      listen(settings, 'toggle', showChrome);
+      // Looping/rebuffering emits playing without a user interaction. It must
+      // not continuously reset the inactivity timer.
+      ['play', 'pause', 'ended'].forEach(kind => listen(video, kind, showChrome));
       listen(play, 'click', togglePlayback);
       listen(video, 'click', event => {
+        if (fullscreenActive() && event.pointerType === 'touch') {
+          if (touchChromeIdle ?? wrapper.classList.contains('vod-player--idle')) showChrome();
+          else if (!video.paused) { clearTimeout(chromeTimer); wrapper.classList.add('vod-player--idle'); }
+          touchChromeIdle=null;
+          return;
+        }
         if (!video.controls && !event.defaultPrevented && event.button === 0) togglePlayback();
       });
       listen(video, 'keydown', event => {
@@ -5070,10 +5301,11 @@
       });
       listen(mute, 'click', () => { video.muted = !video.muted; });
       listen(volume, 'input', () => { video.volume = Number(volume.value); video.muted = video.volume === 0; });
+      listen(settingsVolume, 'input', () => { video.volume = Number(settingsVolume.value); video.muted = video.volume === 0; });
       listen(speed, 'change', () => { video.playbackRate = Number(speed.value); });
       const pointerPosition = event => {
         const bounds = seek.getBoundingClientRect();
-        return clamp((event.clientX - bounds.left) / bounds.width * duration);
+        return clamp(rangeStart + (event.clientX - bounds.left) / bounds.width * (duration - rangeStart));
       };
       listen(seek, 'pointerdown', event => {
         if (event.button !== 0 || dragging) return;
@@ -5111,7 +5343,7 @@
         const selected = tracks.findIndex(track => track.mode === 'showing');
         captions.replaceChildren(new Option(labels.off, '-1'));
         tracks.forEach((track, index) => captions.add(new Option(track.label || track.language || labels.captions, String(index))));
-        captions.value = String(selected); captions.hidden = tracks.length === 0;
+        captions.value = String(selected); captionField.hidden = tracks.length === 0;
       };
       listen(captions, 'change', () => {
         Array.from(video.textTracks).filter(track => ['captions', 'subtitles'].includes(track.kind))
@@ -5126,11 +5358,12 @@
         catch { video.controls = false; }
       });
       listen(video, 'webkitendfullscreen', () => { video.controls = false; sync(); });
-      listen(document, 'fullscreenchange', sync);
+      listen(document, 'fullscreenchange', () => { hidePreview(); sync(); placeSettings(); showChrome(); });
       ['webkitbeginfullscreen', 'enterpictureinpicture', 'leavepictureinpicture', 'webkitpresentationmodechanged'].forEach(kind => listen(video, kind, sync));
       ['play', 'pause', 'playing', 'ended', 'timeupdate', 'volumechange', 'ratechange', 'seeked'].forEach(kind => listen(video, kind, sync));
       const syncMetadata = () => {
-        if (!Number.isFinite(video.duration)) return dispose();
+        if (isLive) { syncCaptions(); sync(); return; }
+        if (!Number.isFinite(video.duration)) return;
         // WebKit can expose zero while completing an MP4 range read. Keep
         // the known storyboard duration until the finite media duration lands.
         if (video.duration <= 0) return;
@@ -5155,18 +5388,20 @@
       const previousTabIndex = video.getAttribute('tabindex');
       const dispose = () => {
         if (disposed) return;
-        disposed = true; release(); owner.abort();
+        disposed = true; release(); clearTimeout(chromeTimer); owner.abort();
         if (!video.isConnected) { video.pause(); hlsCleanup.get(video)?.(); }
         if (spriteUrl) URL.revokeObjectURL(spriteUrl);
-        video.controls = true; gallery.hidden = false;
+        video.controls = true; gallery.hidden = !gallery.matches('details');
         if (previousTabIndex === null) video.removeAttribute('tabindex'); else video.setAttribute('tabindex', previousTabIndex);
-        const quality = options.querySelector('.video-quality'); if (quality) figure.append(quality);
+        const quality = options.querySelector('.video-quality');
+        if (quality && quality.dataset.qualityPending !== 'true') figure.append(quality);
+        if (standard) { standard.classList.remove('vod-controls__standard'); standardSlot.replaceWith(standard); }
+        if (goLive) liveSlot.replaceWith(goLive);
         if (wrapper.parentNode) { wrapper.before(video); wrapper.remove(); }
         vodControllers.delete(video);
       };
       // Bind every handler before removing the working native controls.
       video.before(wrapper); wrapper.append(video, controls);
-      const quality = figure.querySelector('.video-quality'); if (quality) options.append(quality);
       video.tabIndex = 0; syncCaptions(); sync(); gallery.hidden = true; video.controls = false;
       vodControllers.set(video, dispose);
     });
@@ -5710,14 +5945,65 @@
     tone.stop(now + 0.13);
   }
 
-  function showLiveNotification() {
-    document.querySelectorAll("[data-notification-nav] .bell").forEach((bell) => {
-      if (!bell.querySelector(".bell__dot")) {
-        const dot = document.createElement("span");
-        dot.className = "bell__dot";
-        bell.append(dot);
-      }
-    });
+  function updateInboxBadge(link, unread) {
+    const bell = link.querySelector('.bell');
+    if (!bell) return;
+    if (unread && !bell.querySelector('.bell__dot')) {
+      const dot = document.createElement('span'); dot.className = 'bell__dot'; bell.append(dot);
+    } else if (!unread) bell.querySelector('.bell__dot')?.remove();
+    const label = unread ? link.dataset.inboxUnread : link.dataset.inboxLabel;
+    if (label) { link.setAttribute('aria-label', label); if (link.hasAttribute('title')) link.title = label; }
+  }
+
+  function bindInboxState() {
+    if (!document.querySelector('[data-notification-nav]')) return;
+    let refreshing = false;
+    const refresh = async () => {
+      if (refreshing || document.hidden) return;
+      refreshing = true;
+      try {
+        const response = await fetch('/web/inbox/state', {credentials: 'same-origin', cache: 'no-store'});
+        if (!response.ok || response.redirected) return;
+        const state = await response.json();
+        for (const [selector, unread] of [['[data-notification-nav]', state.notifications], ['[data-message-nav]', state.messages]]) {
+          document.querySelectorAll(selector).forEach(link => {
+            updateInboxBadge(link, unread);
+          });
+        }
+        // Keep the list's read marker and its menu consistent with the bell
+        // when another tab opens a conversation. Reuse the authorized HTML
+        // representation; do not infer individual read state from a total.
+        const conversations=document.querySelector('.conversations');
+        if(conversations && location.pathname==='/conversations') {
+          const page=await fetch(location.href,{credentials:'same-origin',cache:'no-store'});
+          if(page.ok && !page.redirected) {
+            const parsed=new DOMParser().parseFromString(await page.text(),'text/html');
+            const fresh=new Map([...parsed.querySelectorAll('[data-conversation-id]')].map(row=>[row.dataset.conversationId,row]));
+            conversations.querySelectorAll('[data-conversation-id]').forEach(row=>{
+              const next=fresh.get(row.dataset.conversationId);
+              if(next && row.classList.contains('is-unread')!==next.classList.contains('is-unread') && !row.contains(document.activeElement)) {
+                row.replaceWith(next); enhance(next);
+              }
+            });
+          }
+        }
+      } catch { /* A normal navigation also refreshes the unread state. */ }
+      finally { refreshing = false; }
+    };
+    window.addEventListener('pageshow', refresh);
+    document.addEventListener('plamenu:inbox-refresh', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    if ('BroadcastChannel' in window) {
+      const channel = new BroadcastChannel('plamenu-inbox-state');
+      channel.addEventListener('message', refresh);
+      channel.postMessage('refresh');
+      window.addEventListener('pagehide', () => channel.close(), {once: true});
+    }
+  }
+
+  function showLiveNotification(note) {
+    const direct = note?.status?.visibility === "direct";
+    document.querySelectorAll(direct ? "[data-message-nav]" : "[data-notification-nav]").forEach(link => updateInboxBadge(link, true));
     playNotificationCue();
   }
 
@@ -5755,7 +6041,10 @@
       nextSocket.addEventListener("message", (event) => {
         try {
           const message = JSON.parse(event.data);
-          if (message.event === "notification") showLiveNotification();
+          if (message.event === "notification") {
+            const note = typeof message.payload === "string" ? JSON.parse(message.payload) : message.payload;
+            showLiveNotification(note);
+          }
         } catch (_err) {
           // Ignore protocol noise or an extension event this client does not
           // understand; the socket remains usable.
@@ -6604,6 +6893,177 @@
     } catch { /* storage is optional */ }
   }
 
+  // Keep the actual player node alive while navigating the listening workspace.
+  // Every intercepted link/form retains its normal server-rendered fallback.
+  let musicNavigationPending = false;
+  let musicDock;
+  function dockMusicPlayer(player) {
+    if (musicDock) return musicDock;
+    musicDock = player;
+    player.classList.add('music-dock');
+    player.setAttribute('role','region');
+    player.setAttribute('aria-label', player.querySelector('h1')?.textContent || 'Music player');
+    const tools = document.createElement('div'); tools.className = 'music-dock__actions';
+    for (const action of ['previous','next']) {
+      const button = document.createElement('button'); button.type = 'button';
+      const existing = player.querySelector(`form.music-player-command input[name=action][value=${action}]`)?.form.querySelector('button');
+      button.textContent = existing?.textContent || action;
+      button.className = 'button--quiet';
+      button.addEventListener('click', () => player.querySelector('audio.music-player-audio').dispatchEvent(new CustomEvent('plamenu:music-command', {detail:action})));
+      tools.append(button);
+    }
+    const queue = document.createElement('button'); queue.type = 'button'; queue.className = 'button--quiet';
+    queue.dataset.musicQueueToggle = '';
+    queue.textContent = player.dataset.queueLabel || 'Queue'; queue.setAttribute('aria-expanded','false');
+    queue.addEventListener('click', () => setMusicQueue(player,!player.classList.contains('music-dock--expanded')));
+    const details = player.querySelector('.music-player-detail');
+    if(details) {details.classList.add('button--quiet'); tools.append(details);}
+    tools.append(queue);
+    const close = document.createElement('button'); close.type = 'button'; close.className = 'button--quiet';
+    close.textContent = player.dataset.closeLabel || 'Close player';
+    close.addEventListener('click', () => {
+      // Keep the controller's references valid; this also preserves its queue.
+      player.querySelector('audio.music-player-audio').pause();
+      player.hidden = true; document.body.classList.remove('has-music-dock');
+    });
+    tools.append(close); player.querySelector('.music-player-media').append(tools);
+    document.body.append(player); document.body.classList.add('has-music-dock');
+    history.scrollRestoration = 'manual';
+    let scrollTimer;
+    window.addEventListener('scroll',()=>{clearTimeout(scrollTimer);scrollTimer=setTimeout(()=>history.replaceState({...history.state,scrollY:window.scrollY},'',location.href),100);},{passive:true});
+    bindMusicPlayer();
+    return player;
+  }
+  function setMusicQueue(player, open) {
+    player.classList.toggle('music-dock--expanded',open);
+    player.querySelector('[data-music-queue-toggle]').setAttribute('aria-expanded',String(open));
+    const queue=player.querySelector('.music-player-queue'); if(queue)queue.open=open;
+  }
+  function restoreMusicDock() {
+    if (!musicDock) return;
+    musicDock.hidden = false; document.body.classList.add('has-music-dock');
+  }
+  function musicNavigationUrl(url) {
+    if (url.origin !== location.origin || url.hash || /\/(stream|downloads?|artwork|export)(\/|$)/.test(url.pathname)) return false;
+    return url.pathname === '/' || /^\/(music(?:\/|$)|@|public$|notifications(?:\/|$)|conversations$)/.test(url.pathname);
+  }
+  async function showMusicDocument(response, push = true) {
+    const target = new URL(response.url);
+    if (target.origin !== location.origin || target.pathname === '/login') { location.assign(target); return; }
+    const parsed = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const incoming = parsed.querySelector('main.app-main');
+    if (!response.ok || !incoming) throw new Error('Navigation unavailable');
+    if (incoming.querySelector('.music-player-page') && musicDock) {
+      restoreMusicDock(); setMusicQueue(musicDock,true);
+      return;
+    }
+    const main = document.querySelector('main.app-main');
+    if (!main) { location.assign(target); return; }
+    main.querySelectorAll('audio,video').forEach(media => media.pause());
+    main.replaceChildren(...incoming.childNodes);
+    document.title = parsed.title;
+    if (push) history.pushState({musicNavigation:true, scrollY:0}, '', target.pathname + target.search);
+    enhance(main); watchPager(main);
+    main.focus({preventScroll:true}); window.scrollTo(0,push ? 0 : history.state?.scrollY || 0);
+    document.dispatchEvent(new Event('plamenu:inbox-refresh'));
+    document.querySelectorAll('details[data-drawer]').forEach(drawer => drawer.open=false);
+  }
+  async function musicNavigate(url, options = {}, push = true) {
+    if (musicNavigationPending) return;
+    if (push) history.replaceState({...history.state, scrollY:window.scrollY}, '', location.href);
+    musicNavigationPending = true;
+    const main = document.querySelector('main.app-main'); main?.setAttribute('aria-busy','true');
+    try {
+      const response = await fetch(url, {credentials:'same-origin', cache:'no-store', ...options});
+      await showMusicDocument(response,push);
+    } catch {
+      if (!options.method) location.assign(url);
+      else {
+        const error = musicDock?.querySelector('.music-player-error');
+        if (error) error.textContent = error.dataset.error;
+      }
+    } finally { musicNavigationPending=false; main?.removeAttribute('aria-busy'); }
+  }
+  function bindMusicWorkspace() {
+    document.addEventListener('submit', async event => {
+      const form = event.target;
+      if (event.defaultPrevented || !(form instanceof HTMLFormElement)) return;
+      if (form.matches('.music-play-now')) {
+        event.preventDefault();
+        const button = event.submitter; if (button) button.disabled=true;
+        try {
+          const data = new URLSearchParams(new FormData(form));
+          const response = await fetch(form.action,{method:'POST',body:data,credentials:'same-origin'});
+          const parsed = new DOMParser().parseFromString(await response.text(),'text/html');
+          const player = parsed.querySelector('.music-player-page');
+          if (!response.ok || !player || !player.querySelector('.music-player')?.dataset.current) throw new Error('Playback unavailable');
+          const existing = document.querySelector('.music-player-page:has(audio.music-player-audio)');
+          if (!musicDock && existing) dockMusicPlayer(existing);
+          if (musicDock) {
+            restoreMusicDock();
+            musicDock.querySelector('audio.music-player-audio').dispatchEvent(new Event('plamenu:music-refresh'));
+          } else {
+            dockMusicPlayer(player);
+            player.querySelector('audio.music-player-audio').play().catch(()=>{});
+          }
+        } catch {
+          let error=form.querySelector('[role=alert]');
+          if (!error) {error=document.createElement('p');error.setAttribute('role','alert');form.append(error);}
+          error.textContent=form.dataset.error || 'Could not play this track. Try again.';
+        } finally { if(button) button.disabled=false; }
+        return;
+      }
+      if (!musicDock || musicDock.contains(form)) return;
+      const action = new URL(form.action);
+      if (form.method.toLowerCase()==='get' && musicNavigationUrl(action)) {
+        event.preventDefault(); action.search=new URLSearchParams(new FormData(form)).toString(); musicNavigate(action);
+      } else if (action.origin===location.origin && action.pathname.startsWith('/web/music/') && ![...new FormData(form).values()].some(value=>value instanceof File && value.size)) {
+        event.preventDefault(); const data = new URLSearchParams(new FormData(form));
+        if(event.submitter?.name) data.set(event.submitter.name,event.submitter.value);
+        musicNavigate(action,{method:'POST',body:data});
+      }
+    });
+    document.addEventListener('click', event => {
+      if(event.defaultPrevented || event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link=event.target.closest('a[href]');
+      if(!link || link.hasAttribute('download') || (link.target && link.target!=='_self')) return;
+      const url=new URL(link.href);
+      let player=musicDock || document.querySelector('.music-player-page:has(audio.music-player-audio)');
+      if(!player || !musicNavigationUrl(url)) return;
+      if(!musicDock) player=dockMusicPlayer(player);
+      event.preventDefault();
+      if(url.pathname==='/music/player' && !url.searchParams.size){restoreMusicDock();setMusicQueue(player,!player.classList.contains('music-dock--expanded'));return;}
+      musicNavigate(url);
+    });
+    window.addEventListener('popstate',()=>{if(musicDock && musicNavigationUrl(new URL(location.href))) musicNavigate(location.href,{},false);});
+  }
+
+  function bindMessageRecipients(root) {
+    root.querySelectorAll('[data-compose-recipients]').forEach(panel=>{
+      if(panel.dataset.bound) return;
+      panel.dataset.bound='true';
+      const form=panel.closest('form'), input=panel.querySelector('input'), list=panel.querySelector('datalist');
+      const visibility=form.elements.namedItem('visibility');
+      const sync=()=>{const direct=visibility?.value==='direct';panel.hidden=!direct;input.disabled=!direct;input.required=direct;const submit=form.querySelector('[data-compose-submit]');if(submit)submit.textContent=direct?form.dataset.i18nSend:submit.dataset.defaultLabel;};
+      visibility?.addEventListener('change',sync);sync();
+      let request, timer;
+      input.addEventListener('input',()=>{
+        clearTimeout(timer);request?.abort();
+        const parts=input.value.split(',');const query=parts.pop().trim().replace(/^@/,'');
+        if(!query){list.replaceChildren();return;}
+        timer=setTimeout(async()=>{
+          request=new AbortController();
+          try {
+            const response=await fetch('/web/compose/suggestions?type=accounts&q='+encodeURIComponent(query),{signal:request.signal,credentials:'same-origin'});
+            if(!response.ok)return;
+            const choices=await response.json();
+            list.replaceChildren(...choices.map(person=>new Option(person.display_name||person.acct,[...parts,'@'+person.acct].join(', '))));
+          }catch{/* Handles can also be entered manually. */}
+        },180);
+      });
+    });
+  }
+
   // ---- Wiring -----------------------------------------------------------
   function enhance(root) {
     bindVideoPosterPicker(root);
@@ -6644,9 +7104,11 @@
     bindVideoHistory(root);
     bindPlaylistClips(root);
     bindPlaylistMoves(root);
+    bindPodcastEpisodes(root);
     bindCaptionTranscript(root);
     bindMediaWarmup(root);
     bindCompose(root);
+    bindMessageRecipients(root);
     bindComposeCombo(root);
     bindLanguageControls(root);
     bindSettingsDeps(root);
@@ -6660,6 +7122,8 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     registerAppWorker();
+    bindInboxState();
+    bindMusicWorkspace();
     enhance(document);
     watchPager(document);
     setInterval(() => refreshTimes(document), 60000);
@@ -6716,4 +7180,477 @@ document.addEventListener("click", (event) => {
   });
 });
 
+// The optional player lives in its own ordinary window. Browsing the main
+// window never replaces its media element; queue forms still work without JS.
+function musicDevice() {
+  try {
+    let device = localStorage.getItem("plamenu-music-device");
+    if (!device || !/^[a-zA-Z0-9_-]{1,64}$/.test(device)) {
+      device = crypto.randomUUID();
+      localStorage.setItem("plamenu-music-device", device);
+    }
+    return device;
+  } catch { return "web"; }
+}
+document.querySelectorAll("a.music-player-open").forEach(link => {
+  const url = new URL(link.href, location.href);
+  url.searchParams.set("device", musicDevice());
+  link.href = url.href;
+  link.addEventListener("click", event => {
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button) return;
+    const player = window.open("", "plamenu-music-player", `popup,width=${Math.min(640, window.innerWidth)},height=${Math.min(800, window.innerHeight)}`);
+    if (player) {
+      event.preventDefault();
+      try {
+        if (player.location.origin === location.origin && player.document.querySelector(".music-player")) {
+          player.postMessage({ type: "plamenu-music-source", url: link.href }, location.origin);
+        } else player.location.href = link.href;
+      } catch { player.location.href = link.href; }
+      player.focus();
+    }
+  });
+});
+function bindMusicPlayer() {
+const musicAudio = document.querySelector("audio.music-player-audio");
+if (musicAudio && !musicAudio.dataset.playerBound) {
+  musicAudio.dataset.playerBound = "true";
+  const error = document.querySelector(".music-player-error");
+  const now = document.querySelector(".music-player-now");
+  const device = document.querySelector(".music-player").dataset.device;
+  const playerUrl = new URL("/music/player", location.origin);
+  playerUrl.searchParams.set("device", device);
+  let current = document.querySelector(".music-player").dataset.current;
+  let pending = Promise.resolve();
+  let saving = false;
+  let lastSaved = Date.now();
+  let refreshing = false;
+  let manualBusy = 0;
+  function busyButtons() {
+    document.querySelector(".music-player-page").setAttribute("aria-busy", String(manualBusy > 0));
+    document.querySelectorAll("form.music-player-command button").forEach(button => {
+      if (manualBusy > 0) {
+        if (!button.dataset.playerDisabled) button.dataset.playerDisabled = button.disabled ? "yes" : "no";
+        button.disabled = true;
+      } else if (button.dataset.playerDisabled) {
+        button.disabled = button.dataset.playerDisabled === "yes";
+        delete button.dataset.playerDisabled;
+      }
+    });
+  }
+  function formKey(form) {
+    return ["action", "entry_id", "direction", "asset_id", "status_id", "episode_id", "remote_id", "collection_id", "podcast_id", "offset", "oldest"].map(key => form.elements.namedItem(key)?.value || "").join(":");
+  }
+  function preserveDrafts(old, next) {
+    let focus = null;
+    for (const form of old.querySelectorAll("form.music-player-command")) {
+      const replacement = [...next.querySelectorAll("form.music-player-command")].find(other => formKey(form) === formKey(other));
+      if (!replacement) continue;
+      if (form.dataset.playerDirty) {
+        for (const field of form.querySelectorAll("input:not([type=hidden]), select, textarea")) {
+          const target = replacement.elements.namedItem(field.name);
+          if (!target) continue;
+          target.value = field.value;
+          if (field.type === "checkbox") target.checked = field.checked;
+        }
+        replacement.dataset.playerDirty = "1";
+      }
+      const active = document.activeElement;
+      if (form.contains(active)) {
+        focus = active.name ? replacement.elements.namedItem(active.name) : replacement.querySelector("button");
+      }
+    }
+    return focus;
+  }
+  function reportError() { error.textContent = error.dataset.error; }
+  function formData(action) {
+    const form = document.querySelector("form.music-player-command");
+    if (!form) return null;
+    const data = new URLSearchParams();
+    for (const key of ["csrf", "device", "revision"]) data.set(key, form.elements.namedItem(key).value);
+    data.set("action", action);
+    return data;
+  }
+  async function refresh(action, url = playerUrl) {
+    const response = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok || response.redirected) throw new Error("Player unavailable");
+    const parsed = new DOMParser().parseFromString(await response.text(), "text/html");
+    const next = parsed.querySelector("section.music-player");
+    if (!next) throw new Error("Player unavailable");
+    const changed = current !== next.dataset.current;
+    const wasPlaying = !musicAudio.paused;
+    const previous = document.querySelector("section.music-player");
+    for (const opened of previous.querySelectorAll("details[open]")) {
+      const label = opened.querySelector("summary")?.textContent;
+      const entry=opened.closest("[data-entry-id]")?.dataset.entryId;
+      const replacement = [...next.querySelectorAll("details")].find(detail => detail.querySelector("summary")?.textContent === label && detail.closest("[data-entry-id]")?.dataset.entryId === entry);
+      if (replacement) replacement.open = true;
+    }
+    const focus = preserveDrafts(previous, next);
+    previous.replaceWith(next);
+    busyButtons();
+    if (focus) focus.focus({ preventScroll: true });
+    now.textContent = next.dataset.title;
+    if(next.dataset.url)now.href=next.dataset.url;else now.removeAttribute("href");
+    const detail = document.querySelector(".music-player-detail");
+    detail.hidden = !next.dataset.url;
+    if (next.dataset.url) detail.href = next.dataset.url;
+    else detail.removeAttribute("href");
+    const cover = document.querySelector(".music-player-artwork");
+    cover.hidden = !next.dataset.image;
+    if (next.dataset.image) { cover.src = next.dataset.image; cover.alt = next.dataset.title; }
+    else cover.removeAttribute("src");
+    if ("mediaSession" in navigator && "MediaMetadata" in window) {
+      navigator.mediaSession.metadata = next.dataset.current ? new MediaMetadata({ title: next.dataset.title }) : null;
+    }
+    if (changed) {
+      current = next.dataset.current;
+      musicAudio.pause();
+      if (next.dataset.stream) musicAudio.src = next.dataset.stream;
+      else musicAudio.removeAttribute("src");
+      musicAudio.replaceChildren();
+      musicAudio.load();
+    }
+    if (changed || ["seek", "select", "next", "previous"].includes(action)) {
+      const position = Number(next.dataset.position);
+      if (musicAudio.readyState >= 1) musicAudio.currentTime = position;
+      else musicAudio.addEventListener("loadedmetadata", () => { musicAudio.currentTime = position; }, { once: true });
+    }
+    if (["select", "next", "previous"].includes(action)) {
+      reportListen(listening, true);
+      listening = null;
+    }
+    if (current && (wasPlaying || ["select", "next", "previous"].includes(action))) {
+      musicAudio.play().then(startListening).catch(() => { /* Native play controls remain available. */ });
+    }
+    bindQueueForms();
+    if (["add", "collection"].includes(action)) history.replaceState(null, "", playerUrl);
+    error.textContent = "";
+  }
+  function submit(data, action) {
+    const manual = action !== "save";
+    if (manual) { manualBusy++; busyButtons(); }
+    // Read the revision when the command runs, after preceding commands commit.
+    pending = pending.catch(() => {}).then(async () => {
+      const fields = formData(action);
+      if (!fields) return;
+      if (action === "save" && document.querySelector(".music-player").dataset.current !== data.get("entry_id")) return;
+      data.set("revision", fields.get("revision"));
+      const response = await fetch("/web/music/player", {
+        method: "POST", body: data, credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok || response.redirected) {
+        musicAudio.pause();
+        await refresh();
+        throw new Error("Queue command rejected");
+      }
+      await refresh(action);
+    }).catch(reportError).finally(() => {
+      if (manual) { manualBusy--; busyButtons(); }
+    });
+    return pending;
+  }
+  function bindQueueForms() {
+    document.querySelectorAll("form.music-player-command").forEach(form => {
+      if (form.dataset.playerBound) return;
+      form.dataset.playerBound = "1";
+      form.addEventListener("input", () => { form.dataset.playerDirty = "1"; });
+      form.addEventListener("change", () => { form.dataset.playerDirty = "1"; });
+      form.addEventListener("submit", event => {
+        event.preventDefault();
+        const data = new URLSearchParams(new FormData(form));
+        delete form.dataset.playerDirty;
+        submit(data, data.get("action"));
+      });
+    });
+  }
+  function savePosition() {
+    if (!current || saving || !Number.isFinite(musicAudio.currentTime)) return;
+    const data = formData("seek");
+    if (!data) return;
+    data.set("seconds", String(musicAudio.currentTime));
+    data.set("entry_id", current);
+    saving = true;
+    lastSaved = Date.now();
+    submit(data, "save").finally(() => { saving = false; });
+  }
+  // Only real playback events start a history session. Metadata, byte ranges
+  // and queue reads never report a listen. Credit time advances, not seeks.
+  let listening = null;
+  const historyFeedback = document.querySelector(".music-history-feedback");
+  function listeningData() {
+    const form = document.querySelector("form.music-player-command");
+    if (!form) return null;
+    return new URLSearchParams({ csrf: form.elements.namedItem("csrf").value });
+  }
+  function startListening() {
+    if (!current) return;
+    if (listening && listening.entry === current && !listening.finished) {
+      listening.previous = musicAudio.currentTime;
+      listening.wall = performance.now();
+      return;
+    }
+    const previous = listening;
+    if (previous) reportListen(previous, true);
+    const data = listeningData();
+    if (!data) return;
+    const session = { entry: current, total: 0, previous: musicAudio.currentTime,
+      wall: performance.now(), lastReport: Date.now(), counted: false, finished: false,
+      reporting: Promise.resolve() };
+    data.set("request_key", crypto.randomUUID());
+    data.set("queue_device", device);
+    data.set("queue_entry_id", current);
+    session.start = fetch("/web/music/listening/start", {
+      method: "POST", body: data, credentials: "same-origin", headers: { Accept: "application/json" },
+    }).then(async response => {
+      if (!response.ok || response.redirected) return null;
+      const result = await response.json();
+      return result.enabled ? result.token : null;
+    }).catch(() => null);
+    listening = session;
+    if (historyFeedback) historyFeedback.textContent = "";
+  }
+  function advanceListen() {
+    const session = listening;
+    if (!session || session.finished || session.entry !== current) return;
+    const now = performance.now();
+    const delta = musicAudio.currentTime - session.previous;
+    const wall = Math.max(0, (now - session.wall) / 1000);
+    if (!musicAudio.seeking && delta > 0 && delta < 5) session.total += Math.min(delta, wall);
+    session.previous = musicAudio.currentTime;
+    session.wall = now;
+  }
+  function reportListen(session, finish = false) {
+    if (!session || session.finished || (!finish && session.counted)) return;
+    if (finish) session.finished = true;
+    session.lastReport = Date.now();
+    const total = session.total;
+    session.reporting = session.reporting.then(async () => {
+      const token = await session.start;
+      const data = listeningData();
+      if (!token || !data) return;
+      data.set("played_seconds", String(total));
+      data.set("finish", String(finish));
+      const response = await fetch("/web/music/listening/" + encodeURIComponent(token), {
+        method: "POST", body: data, credentials: "same-origin", headers: { Accept: "application/json" },
+      });
+      if (!response.ok || response.redirected) return;
+      const result = await response.json();
+      session.counted = result.counted;
+      if (result.counted && session === listening && historyFeedback) historyFeedback.textContent = historyFeedback.dataset.recorded;
+    }).catch(() => {});
+  }
+  musicAudio.addEventListener("play", startListening);
+  musicAudio.addEventListener("seeking", () => {
+    if (!listening) return;
+    listening.previous = musicAudio.currentTime;
+    listening.wall = performance.now();
+  });
+  musicAudio.addEventListener("seeked", () => {
+    if (!listening) return;
+    listening.previous = musicAudio.currentTime;
+    listening.wall = performance.now();
+  });
+  musicAudio.addEventListener("timeupdate", () => {
+    if (!listening || musicAudio.paused) return;
+    advanceListen();
+    if (Date.now() - listening.lastReport >= 5000) reportListen(listening);
+  });
+  musicAudio.addEventListener("pause", () => {
+    advanceListen();
+    reportListen(listening, !current || listening?.entry !== current);
+  });
+  musicAudio.addEventListener("ended", () => {
+    advanceListen();
+    reportListen(listening, true);
+  });
+  window.addEventListener("pagehide", () => {
+    if (!listening || !navigator.sendBeacon) return;
+    advanceListen();
+    const session = listening;
+    session.start.then(token => {
+      const data = listeningData();
+      if (!token || !data) return;
+      data.set("played_seconds", String(session.total)); data.set("finish", "true");
+      navigator.sendBeacon("/web/music/listening/" + encodeURIComponent(token), data);
+    });
+  });
+  const volumeKey = "plamenu-music-volume:" + device;
+  const muteKey = "plamenu-music-muted:" + device;
+  try {
+    const saved = localStorage.getItem(volumeKey);
+    if (saved !== null && Number.isFinite(Number(saved))) musicAudio.volume = Math.min(1, Math.max(0, Number(saved)));
+    musicAudio.muted = localStorage.getItem(muteKey) === "true";
+  } catch { /* Storage and software volume are optional on some devices. */ }
+  musicAudio.addEventListener("volumechange", () => {
+    try { localStorage.setItem(volumeKey, String(musicAudio.volume)); localStorage.setItem(muteKey, String(musicAudio.muted)); } catch {}
+  });
+  if ("mediaSession" in navigator) {
+    const handlers = {
+      play: () => musicAudio.play().catch(reportError),
+      pause: () => musicAudio.pause(),
+      nexttrack: () => { const data = formData("next"); if (data) submit(data, "next"); },
+      previoustrack: () => { const data = formData("previous"); if (data) submit(data, "previous"); },
+      seekto: detail => { if (Number.isFinite(detail.seekTime)) musicAudio.currentTime = detail.seekTime; },
+    };
+    for (const [action, handler] of Object.entries(handlers)) {
+      try { navigator.mediaSession.setActionHandler(action, handler); } catch {}
+    }
+    musicAudio.addEventListener("play", () => { navigator.mediaSession.playbackState = "playing"; });
+    musicAudio.addEventListener("pause", () => { navigator.mediaSession.playbackState = "paused"; });
+  }
+  const restoredPosition = Number(musicAudio.dataset.position);
+  musicAudio.addEventListener("loadedmetadata", () => {
+    if (restoredPosition > 0) musicAudio.currentTime = restoredPosition;
+  }, { once: true });
+  musicAudio.addEventListener("timeupdate", () => {
+    if (!musicAudio.paused && Date.now() - lastSaved > 5000) savePosition();
+  });
+  musicAudio.addEventListener("pause", () => { if (!refreshing) savePosition(); });
+  musicAudio.addEventListener("ended", () => {
+    const data = formData("next");
+    if (!data) return;
+    data.set("ended", "true");
+    submit(data, "next");
+  });
+  // An idle player also notices source revocation and edits. Reading a queue
+  // has no listening-history side effects and cannot start idle playback.
+  setInterval(() => {
+    if (saving || refreshing) return;
+    refreshing = true;
+    pending = pending.catch(() => {}).then(() => refresh()).catch(() => {
+      musicAudio.pause(); reportError();
+    }).finally(() => { refreshing = false; });
+  }, 15000);
+  window.addEventListener("message", event => {
+    if (event.origin !== location.origin || event.data?.type !== "plamenu-music-source") return;
+    let source;
+    try { source = new URL(event.data.url); } catch { return; }
+    if (source.origin !== location.origin || source.pathname !== "/music/player") return;
+    source.searchParams.set("device", device);
+    pending = pending.catch(() => {}).then(() => refresh(undefined, source)).catch(reportError);
+  });
+  musicAudio.addEventListener('plamenu:music-command', event => {
+    if (!['next','previous'].includes(event.detail)) return;
+    const data = formData(event.detail);
+    if (data) submit(data, event.detail);
+  });
+  musicAudio.addEventListener('plamenu:music-refresh', () => {
+    pending = pending.catch(() => {}).then(() => refresh('select')).catch(reportError);
+  });
+  bindQueueForms();
+}
+
+}
+
+bindMusicPlayer();
+
+// Episode-page playback uses the same elapsed-time protocol as the persistent
+// player. Loading metadata and requesting audio bytes never starts a session.
+function bindPodcastEpisodes(root) {
+root.querySelectorAll("audio[data-podcast-episode]:not([data-listening-bound])").forEach(audio => {
+  audio.dataset.listeningBound = "true";
+  let session = null;
+  const fields = () => new URLSearchParams({ csrf: audio.dataset.csrf });
+  function counted() {
+    const state = document.querySelector(".podcast-played-state");
+    if (state) state.textContent = state.dataset.played;
+    const form = document.querySelector("form.podcast-played-toggle");
+    if (form) {
+      form.elements.namedItem("enabled").value = "false";
+      const button = form.querySelector("button");
+      if (button) button.textContent = button.dataset.played;
+    }
+  }
+  function begin() {
+    if (session && !session.finished) {
+      session.previous = audio.currentTime; session.wall = performance.now();
+      return;
+    }
+    const data = fields();
+    data.set("request_key", crypto.randomUUID());
+    data.set("episode_id", audio.dataset.podcastEpisode);
+    session = { total: 0, previous: audio.currentTime, wall: performance.now(),
+      lastReport: Date.now(), counted: false, finished: false, pending: Promise.resolve() };
+    session.start = fetch("/web/music/listening/start", {
+      method: "POST", body: data, credentials: "same-origin", headers: { Accept: "application/json" },
+    }).then(async response => {
+      if (!response.ok || response.redirected) return null;
+      const result = await response.json();
+      return result.enabled ? result.token : null;
+    }).catch(() => null);
+  }
+  function advance() {
+    if (!session || session.finished || audio.paused) return;
+    const now = performance.now(), delta = audio.currentTime - session.previous;
+    if (!audio.seeking && delta > 0 && delta < 5) session.total += Math.min(delta, Math.max(0, (now - session.wall) / 1000));
+    session.previous = audio.currentTime; session.wall = now;
+  }
+  function report(finish = false) {
+    const current = session;
+    if (!current || current.finished || (!finish && current.counted)) return;
+    if (finish) current.finished = true;
+    current.lastReport = Date.now();
+    const total = current.total;
+    current.pending = current.pending.then(async () => {
+      const token = await current.start;
+      if (!token) return;
+      const data = fields(); data.set("played_seconds", String(total)); data.set("finish", String(finish));
+      const response = await fetch("/web/music/listening/" + encodeURIComponent(token), {
+        method: "POST", body: data, credentials: "same-origin", headers: { Accept: "application/json" },
+      });
+      if (!response.ok || response.redirected) return;
+      const result = await response.json();
+      if (result.counted) { current.counted = true; counted(); }
+    }).catch(() => {});
+  }
+  audio.addEventListener("play", begin);
+  audio.addEventListener("timeupdate", () => { advance(); if (session && Date.now() - session.lastReport >= 5000) report(); });
+  audio.addEventListener("seeking", () => { if (session) { session.previous = audio.currentTime; session.wall = performance.now(); } });
+  audio.addEventListener("pause", () => report());
+  audio.addEventListener("ended", () => report(true));
+  window.addEventListener("pagehide", () => {
+    if (!session || session.finished) return;
+    const current = session; current.finished = true;
+    current.start.then(token => {
+      if (!token) return;
+      const data = fields(); data.set("played_seconds", String(current.total)); data.set("finish", "true");
+      navigator.sendBeacon("/web/music/listening/" + encodeURIComponent(token), data);
+    });
+  });
+  // Native controls can start playback before this deferred script arrives.
+  // Count only the actual playback observed from initialization onward.
+  if (!audio.paused && !audio.ended) begin();
+});
+}
+bindPodcastEpisodes(document);
+
 })();
+
+// Refresh a running private download; native refresh links remain usable.
+{
+  let panel = document.querySelector(".music-download-detail");
+  const controller = new AbortController();
+  let timer;
+  let submitting = false;
+  const pending = () => panel && ["queued", "running"].includes(panel.dataset.state);
+  const schedule = () => { if (pending() && !controller.signal.aborted) timer = setTimeout(refreshDownload, 3000); };
+  async function refreshDownload() {
+    if (!pending() || controller.signal.aborted) return;
+    if (document.hidden || submitting || panel.contains(document.activeElement) && document.activeElement.closest("form")) { schedule(); return; }
+    try {
+      const response = await fetch(location.href, {credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      if (!response.ok || response.redirected) return;
+      const next = new DOMParser().parseFromString(await response.text(), "text/html").querySelector(".music-download-detail");
+      if (!next) return;
+      panel.replaceWith(next);
+      panel = next;
+      schedule();
+    } catch { /* The native refresh link handles lost connections. */ }
+  }
+  if (panel) {
+    document.addEventListener("submit", event => { if (panel.contains(event.target)) submitting = true; });
+    window.addEventListener("pagehide", () => { clearTimeout(timer); controller.abort(); }, {once: true});
+    schedule();
+  }
+}

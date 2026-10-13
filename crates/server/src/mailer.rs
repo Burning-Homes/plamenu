@@ -111,6 +111,9 @@ pub async fn send_test(config: &SmtpConfig, recipient: &str) -> Result<(), Strin
 /// Claims and attempts one batch of due messages; returns how many jobs were
 /// claimed (0 = the queue is currently drained).
 pub async fn run_due(state: &AppState, smtp: &Smtp) -> u64 {
+    if let Err(error) = crate::notification_mail::enqueue_due(state).await {
+        tracing::error!(%error,"failed to enqueue notification summaries");
+    }
     let jobs = match email::claim_due(&state.pool, BATCH_SIZE).await {
         Ok(jobs) => jobs,
         Err(error) => {
@@ -126,25 +129,71 @@ pub async fn run_due(state: &AppState, smtp: &Smtp) -> u64 {
 }
 
 async fn process(state: &AppState, smtp: &Smtp, job: &EmailJob) {
-    let message = match build_message(&smtp.from_address, job) {
-        Ok(message) => message,
-        // A malformed address or body cannot become sendable by retrying.
+    let prepared = match crate::notification_mail::prepare(state, job).await {
+        Ok(prepared) => prepared,
         Err(error) => {
-            tracing::warn!(%error, recipient = %job.recipient, "dropping unbuildable e-mail");
-            let _ = email::complete(&state.pool, job.id).await;
+            retry(state, job, &error.to_string(), true).await;
             return;
         }
     };
-    match smtp.transport.send(message).await {
+    if matches!(prepared, Some(None)) {
+        let _ = crate::notification_mail::finish(state, job, false, &[]).await;
+        return;
+    }
+    let managed = prepared.is_some();
+    let prepared = prepared.flatten();
+    let current = prepared.as_ref().map_or(job, |p| &p.job);
+    let message = match build_message(&smtp.from_address, current) {
+        Ok(message) => message,
+        Err(error) => {
+            tracing::warn!(%error,"dropping unbuildable e-mail");
+            complete_job(state, job, false, managed, &[]).await;
+            return;
+        }
+    };
+    let result = if managed {
+        if let Ok(result) =
+            tokio::time::timeout(Duration::from_secs(15), smtp.transport.send(message)).await
+        {
+            result
+        } else {
+            retry(state, job, "notification SMTP timeout", true).await;
+            return;
+        }
+    } else {
+        smtp.transport.send(message).await
+    };
+    match result {
         Ok(_) => {
-            let _ = email::complete(&state.pool, job.id).await;
+            complete_job(
+                state,
+                job,
+                true,
+                managed,
+                prepared
+                    .as_ref()
+                    .map_or(&[], |p| p.notification_ids.as_slice()),
+            )
+            .await;
         }
-        // A permanent (5xx) SMTP rejection: retrying cannot help.
         Err(error) if error.is_permanent() => {
-            tracing::warn!(%error, recipient = %job.recipient, "e-mail rejected; dropping");
-            let _ = email::complete(&state.pool, job.id).await;
+            tracing::warn!(%error,"e-mail rejected; dropping");
+            complete_job(state, job, false, managed, &[]).await;
         }
-        Err(error) => retry(state, job, &error.to_string()).await,
+        Err(error) => retry(state, job, &error.to_string(), managed).await,
+    }
+}
+async fn complete_job(
+    state: &AppState,
+    job: &EmailJob,
+    accepted: bool,
+    managed: bool,
+    ids: &[i64],
+) {
+    if managed {
+        let _ = crate::notification_mail::finish(state, job, accepted, ids).await;
+    } else {
+        let _ = email::complete(&state.pool, job.id).await;
     }
 }
 
@@ -160,7 +209,7 @@ fn build_message(
         .body(job.body.clone())?)
 }
 
-async fn retry(state: &AppState, job: &EmailJob, reason: &str) {
+async fn retry(state: &AppState, job: &EmailJob, reason: &str, managed: bool) {
     if job.attempts >= email::MAX_SEND_ATTEMPTS {
         tracing::warn!(
             reason,
@@ -168,7 +217,7 @@ async fn retry(state: &AppState, job: &EmailJob, reason: &str) {
             attempts = job.attempts,
             "dropping undeliverable e-mail"
         );
-        let _ = email::complete(&state.pool, job.id).await;
+        complete_job(state, job, false, managed, &[]).await;
     } else {
         tracing::debug!(
             reason,
@@ -176,7 +225,11 @@ async fn retry(state: &AppState, job: &EmailJob, reason: &str) {
             attempts = job.attempts,
             "e-mail send failed; will retry"
         );
-        let _ = email::retry_later(&state.pool, job.id, job.attempts).await;
+        if managed {
+            let _ = email::retry_current(&state.pool, job).await;
+        } else {
+            let _ = email::retry_later(&state.pool, job.id, job.attempts).await;
+        }
     }
 }
 

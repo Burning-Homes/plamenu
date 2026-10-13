@@ -56,6 +56,7 @@ pub async fn create(
     let (stored, _) = crate::actions::post_status_for_application(
         &state,
         PostParams {
+            music: None,
             username: &current.account.username,
             text: form.body.as_deref().unwrap_or_default(),
             visibility: "public",

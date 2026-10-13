@@ -84,7 +84,7 @@ pub async fn collect_status_keys(
     conn: &mut PgConnection,
     status_id: i64,
 ) -> Result<Vec<String>, DbError> {
-    let keys = sqlx::query_scalar!(
+    let mut keys = sqlx::query_scalar!(
         r#"
         WITH attachments AS MATERIALIZED (
             SELECT id, file_name, small_file_name
@@ -105,6 +105,7 @@ pub async fn collect_status_keys(
     )
     .fetch_all(&mut *conn)
     .await?;
+    keys.retain(|key| !key.starts_with("music"));
     Ok(keys)
 }
 
@@ -138,6 +139,7 @@ pub async fn collect_status_keys_many(
     .fetch_all(&mut *conn)
     .await?;
     keys.extend(hls);
+    keys.retain(|key| !key.starts_with("music"));
     Ok(keys)
 }
 
@@ -150,45 +152,31 @@ pub async fn collect_account_keys(
     conn: &mut PgConnection,
     account_id: i64,
 ) -> Result<Vec<String>, DbError> {
-    let attachments = sqlx::query!(
-        "SELECT file_name, small_file_name FROM media_attachments WHERE account_id = $1",
-        account_id,
+    // Capture the same originals, previews, HLS, profile, emoji and managed
+    // Music keys in one snapshot before the caller removes their rows.
+    let keys = sqlx::query_scalar::<_, String>(
+        r"
+        SELECT key FROM (
+            SELECT unnest(ARRAY[file_name,small_file_name]) AS key
+            FROM media_attachments WHERE account_id=$1
+            UNION ALL
+            SELECT s.cache_file FROM media_hls_segments s
+            JOIN media_attachments m ON m.id=s.media_id WHERE m.account_id=$1
+            UNION ALL
+            SELECT unnest(ARRAY[avatar_file_name,header_file_name])
+            FROM accounts WHERE id=$1
+            UNION ALL
+            SELECT image_file_name FROM custom_emojis WHERE owner_account_id=$1
+            UNION ALL
+            SELECT original_file FROM music_assets WHERE owner_id=$1 AND NOT indexed_original
+            UNION ALL
+            SELECT stream_file FROM music_assets WHERE owner_id=$1 AND stream_bytes>0
+        ) files WHERE key IS NOT NULL
+        ",
     )
+    .bind(account_id)
     .fetch_all(&mut *conn)
     .await?;
-    let mut keys: Vec<String> = Vec::new();
-    for row in attachments {
-        keys.extend(row.file_name);
-        keys.extend(row.small_file_name);
-    }
-    let hls = sqlx::query_scalar!(
-        "SELECT s.cache_file
-         FROM media_hls_segments s
-         JOIN media_attachments m ON m.id = s.media_id
-         WHERE m.account_id = $1",
-        account_id,
-    )
-    .fetch_all(&mut *conn)
-    .await?;
-    keys.extend(hls);
-    let profile = sqlx::query!(
-        "SELECT avatar_file_name, header_file_name FROM accounts WHERE id = $1",
-        account_id,
-    )
-    .fetch_optional(&mut *conn)
-    .await?;
-    if let Some(profile) = profile {
-        keys.extend(profile.avatar_file_name);
-        keys.extend(profile.header_file_name);
-    }
-    let emoji = sqlx::query_scalar!(
-        "SELECT image_file_name AS \"image_file_name!\" FROM custom_emojis
-         WHERE owner_account_id = $1 AND image_file_name IS NOT NULL",
-        account_id,
-    )
-    .fetch_all(&mut *conn)
-    .await?;
-    keys.extend(emoji);
     Ok(keys)
 }
 
@@ -298,6 +286,13 @@ pub async fn referenced_keys(pool: &PgPool) -> Result<Vec<String>, DbError> {
     keys.extend(sqlx::query_scalar::<_, String>(
         "SELECT file_name FROM video_mirror_assets UNION SELECT file_name FROM media_cleanup_jobs WHERE mirror_bytes>0",
     ).fetch_all(pool).await?);
+    keys.extend(
+        sqlx::query_scalar::<_, String>(
+            "SELECT original_file FROM music_assets WHERE NOT indexed_original UNION SELECT stream_file FROM music_assets WHERE stream_bytes>0 UNION SELECT file_name FROM music_renditions WHERE file_name IS NOT NULL AND state IN ('running','ready')",
+        )
+        .fetch_all(pool)
+        .await?,
+    );
     Ok(keys)
 }
 

@@ -12,9 +12,9 @@ use futures_util::{StreamExt, stream};
 use plamenu_ap::acct::Acct;
 use plamenu_ap::actor::RemoteActor;
 use plamenu_federation::{
-    FederationClient, FederationError, FetchedActivityPub, FetchedMedia, FetchedMediaFile,
-    FetchedMediaRange, FetchedPage, HttpMethod, RequestSigner, ResolvedAcct, ServiceResponse,
-    SignatureStyle,
+    FederationClient, FederationError, FetchedActivityPub, FetchedEnclosure, FetchedFeed,
+    FetchedMedia, FetchedMediaFile, FetchedMediaRange, FetchedPage, HttpMethod, MentionPage,
+    RequestSigner, ResolvedAcct, ServiceResponse, SignatureStyle,
 };
 use serde_json::Value;
 use tokio::sync::Semaphore;
@@ -189,6 +189,55 @@ pub trait FederationApi: Send + Sync {
         url: &'a str,
         accept: &'a str,
     ) -> BoxFuture<'a, Result<FetchedPage, FederationError>>;
+    /// Complete bounded unsigned HTML, with discovery headers. Defaults fail closed
+    /// rather than treating a truncated preview as a verified or removed mention.
+    fn fetch_mention_page<'a>(
+        &'a self,
+        url: &'a str,
+    ) -> BoxFuture<'a, Result<MentionPage, FederationError>> {
+        Box::pin(async move { Err(FederationError::InvalidUrl(url.into())) })
+    }
+    fn send_webmention<'a>(
+        &'a self,
+        endpoint: &'a str,
+        source: &'a str,
+        target: &'a str,
+    ) -> BoxFuture<'a, Result<(), FederationError>> {
+        let _ = (source, target);
+        Box::pin(async move { Err(FederationError::InvalidUrl(endpoint.into())) })
+    }
+    /// Conditional generic RSS/Atom fetch, never an actor-authenticated request.
+    fn fetch_feed<'a>(
+        &'a self,
+        url: &'a str,
+        etag: Option<&'a str>,
+        last_modified: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<FetchedFeed, FederationError>> {
+        let _ = (etag, last_modified);
+        Box::pin(async move {
+            let fetched = self.fetch_media_limited(url, 2 * 1024 * 1024).await?;
+            Ok(FetchedFeed {
+                final_url: fetched.final_url,
+                bytes: Some(fetched.bytes),
+                etag: None,
+                last_modified: None,
+            })
+        })
+    }
+    fn fetch_feed_image<'a>(
+        &'a self,
+        url: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<u8>, FederationError>> {
+        Box::pin(async move { Ok(self.fetch_media_limited(url, 2 * 1024 * 1024).await?.bytes) })
+    }
+    fn fetch_enclosure<'a>(
+        &'a self,
+        url: &'a str,
+        range: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<FetchedEnclosure, FederationError>> {
+        let _ = (url, range);
+        Box::pin(async { Err(FederationError::Status(404)) })
+    }
     /// Downloads a remote media file for local caching (SSRF-guarded per
     /// redirect hop, size-capped). See [`FederationClient::fetch_media`].
     fn fetch_media<'a>(
@@ -678,6 +727,77 @@ impl FederationApi for HttpFederation {
         accept: &'a str,
     ) -> BoxFuture<'a, Result<FetchedPage, FederationError>> {
         Box::pin(self.guarded(url, self.client.fetch_page(url, accept)))
+    }
+
+    fn fetch_mention_page<'a>(
+        &'a self,
+        url: &'a str,
+    ) -> BoxFuture<'a, Result<MentionPage, FederationError>> {
+        Box::pin(self.guarded(
+            url,
+            self.client.fetch_mention_page_with_guard(url, move |next| {
+                let next = next.to_owned();
+                async move {
+                    crate::instance_policy::can_federate_url(&self.pool, &self.local_domain, &next)
+                        .await
+                        .map_err(|e| FederationError::Admission(e.to_string()))
+                }
+            }),
+        ))
+    }
+    fn send_webmention<'a>(
+        &'a self,
+        endpoint: &'a str,
+        source: &'a str,
+        target: &'a str,
+    ) -> BoxFuture<'a, Result<(), FederationError>> {
+        Box::pin(
+            self.guarded(
+                endpoint,
+                self.client
+                    .send_webmention_with_guard(endpoint, source, target, move |next| {
+                        let next = next.to_owned();
+                        async move {
+                            crate::instance_policy::can_federate_url(
+                                &self.pool,
+                                &self.local_domain,
+                                &next,
+                            )
+                            .await
+                            .map_err(|e| FederationError::Admission(e.to_string()))
+                        }
+                    }),
+            ),
+        )
+    }
+
+    fn fetch_feed<'a>(
+        &'a self,
+        url: &'a str,
+        etag: Option<&'a str>,
+        last_modified: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<FetchedFeed, FederationError>> {
+        Box::pin(
+            self.guarded(
+                url,
+                self.client
+                    .fetch_feed(url, etag, last_modified, 2 * 1024 * 1024),
+            ),
+        )
+    }
+
+    fn fetch_feed_image<'a>(
+        &'a self,
+        url: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<u8>, FederationError>> {
+        Box::pin(self.guarded(url, self.client.fetch_feed_image(url)))
+    }
+    fn fetch_enclosure<'a>(
+        &'a self,
+        url: &'a str,
+        range: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<FetchedEnclosure, FederationError>> {
+        Box::pin(self.guarded(url, self.client.fetch_enclosure(url, range)))
     }
 
     fn fetch_media<'a>(

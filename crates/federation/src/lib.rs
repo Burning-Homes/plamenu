@@ -16,9 +16,9 @@ pub mod rfc9421;
 pub mod signature;
 
 pub use client::{
-    FederationClient, FederationError, FetchedActivityPub, FetchedMedia, FetchedMediaFile,
-    FetchedMediaRange, FetchedPage, HttpMethod, ProxyConfig, ResolvedAcct, ServiceResponse,
-    SignatureStyle, WebfingerCandidate,
+    FederationClient, FederationError, FetchedActivityPub, FetchedEnclosure, FetchedFeed,
+    FetchedMedia, FetchedMediaFile, FetchedMediaRange, FetchedPage, HttpMethod, MentionPage,
+    ProxyConfig, ResolvedAcct, ServiceResponse, SignatureStyle, WebfingerCandidate,
 };
 pub use network::{
     Network, guess_protocol, is_federation_url, is_hidden_service, is_i2p, is_onion, network_type,

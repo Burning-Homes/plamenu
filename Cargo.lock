@@ -131,9 +131,9 @@ dependencies = [
 
 [[package]]
 name = "ammonia"
-version = "4.1.4"
+version = "4.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc6d763210e2eb7670d1a5183a08bebefa3f97db2a738a684f2ce00bd49f681d"
+checksum = "36322ccf536de7b7afd259098615203e4cc5caca1b78482b58334a720c66e40a"
 dependencies = [
  "cssparser 0.37.0",
  "html5ever 0.39.0",
@@ -3301,6 +3301,7 @@ dependencies = [
  "criterion",
  "csv",
  "ed25519-dalek",
+ "encoding_rs",
  "fluent-bundle",
  "futures-util",
  "getrandom 0.4.2",
@@ -3308,12 +3309,14 @@ dependencies = [
  "hmac 0.13.0",
  "html5ever 0.40.1",
  "http-body-util",
+ "httpdate",
  "hyper",
  "hyper-util",
  "image",
  "jiff",
  "lettre",
  "maud",
+ "md-5",
  "mimalloc",
  "ml-dsa",
  "p256 0.14.0",
@@ -3325,6 +3328,7 @@ dependencies = [
  "quick_html2md",
  "regex",
  "reqwest",
+ "roxmltree",
  "rtmp-rs",
  "rustix",
  "serde",
@@ -3941,6 +3945,15 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "roxmltree"
+version = "0.21.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1964b10c76125c36f8afe190065a4bf9a87bf324842c05701330bba9f1cacbb"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

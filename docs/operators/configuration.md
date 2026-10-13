@@ -170,3 +170,68 @@ proxy is an advanced deployment that requires its own egress controls. Read the
 Use the admin interface for registration, retention, media limits, federation
 policy, trends, and moderation settings. The TOML file configures identity,
 networking, database, storage, encryption, mail transport, and outbound routing.
+
+### Mounted music roots
+
+Configure approved roots at the top level with `[[music_local_roots]]`:
+
+```toml
+[[music_local_roots]]
+id = "archive"
+label = "Music archive"
+path = "/srv/music"
+allow_tag_writeback = false
+allow_rename = false
+allow_delete = false
+```
+
+Roots require unique IDs, absolute server paths and readable directories. Up to
+32 roots may be configured. The absolute paths remain private; management APIs
+return IDs and labels. The service account needs write access only when the
+corresponding source mutations are enabled. Original files are not media-store
+objects, and media cleanup never unlinks them.
+
+An operator with both settings and user management permission assigns a root or
+relative subfolder to a local account by username through Music → Local folders, or
+`POST /api/v1/admin/music/folders` with `owner_id`, `root_id`, `directory`,
+`name`, and `watch`. OAuth callers also need `admin:write`. New libraries are
+private. Owners can manage their scans using the native forms or
+`PUT /api/v1/music/folders/{id}` with the current revision, `enabled` and `watch`. An optional `options` object
+sets `recursive`, `extensions`, and `exclude`; the native form exposes these
+under Files to include. Default extensions match the seven Songhive audio
+formats. Exclusions match root-relative paths or basenames; manifest extensions
+are refused. Empty extensions disable indexing while leaving originals intact.
+
+The supervised worker scans at most 10,000 tracks and 10,000 directories per
+assignment and polls watched folders every minute. Scan and indexing leases
+fence cancelled or reclaimed work. Incomplete scans report an error rather than
+declaring unseen files missing. Directory traversal, child symlinks and special
+files are rejected. Replacing a root mount requires an operator reassignment;
+its saved device and inode prevent silently treating a different mount as the
+approved library.
+
+## Notification delivery and retention
+
+Members choose in-app, immediate email and daily email digests per notification
+kind at `/settings/notification-delivery`. Email channels default off and require
+a confirmed, approved, enabled account and configured SMTP. Queued summaries
+recheck the current recipient, sender policy, channel choices and post access;
+receipts are recorded only after SMTP accepts a message.
+
+An optional top-level table controls the UTC schedules:
+
+```toml
+[notifications]
+retention_days = 90
+purge_hour = 3
+digest_hour = 8
+```
+
+Hours must be 0–23; retention must be 1–365000 days. Starting at `purge_hour`,
+the hourly maintenance worker removes at most 2000 old seen notifications per
+tick, draining a backlog over successive ticks. Unseen notifications, including
+explicit unread overrides below the shared read marker, are preserved. Clearing
+or expiring notifications does not erase the current permanent mention archive.
+
+SMTP delivery is at least once: a crash after the relay accepts a message but
+before its receipt commits can cause a duplicate after retry.

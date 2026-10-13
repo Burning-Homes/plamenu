@@ -77,7 +77,7 @@
       ]
     },
     "nullable": [
-      true,
+      null,
       true,
       true,
       true,

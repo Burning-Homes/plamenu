@@ -75,9 +75,46 @@ fn event_params_of(
     }))
 }
 
+fn compose_text(fields: &ComposeFields) -> String {
+    if fields.visibility != "direct" || fields.recipients.trim().is_empty() {
+        return fields.status.trim().to_owned();
+    }
+    let recipients = fields
+        .recipients
+        .split([',', ' ', '\n'])
+        .filter(|v| !v.trim().is_empty())
+        .map(|handle| format!("@{}", handle.trim().trim_start_matches('@')))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("{recipients}\n\n{}", fields.status.trim())
+}
+
+async fn validate_recipients(state: &AppState, fields: &ComposeFields) -> Result<bool, ApiError> {
+    if fields.visibility != "direct" || fields.recipients.trim().is_empty() {
+        return Ok(true);
+    }
+    if fields.recipients.len() > 1000 {
+        return Ok(false);
+    }
+    for handle in fields
+        .recipients
+        .split([',', ' ', '\n'])
+        .filter(|v| !v.trim().is_empty())
+    {
+        let text = format!("@{}", handle.trim().trim_start_matches('@'));
+        let resolved =
+            crate::compose::compose(state, &text, crate::compose::PostFormat::Plain).await?;
+        if resolved.mentions.len() != 1 {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// The explicit post kind used by the preview.
 fn preview_kind(fields: &ComposeFields) -> plamenu_ap::activity::PostKind {
     match fields.post_kind.trim() {
+        "audio" => plamenu_ap::activity::PostKind::Audio,
         "article" => plamenu_ap::activity::PostKind::Article,
         "event" => plamenu_ap::activity::PostKind::Event,
         _ => plamenu_ap::activity::PostKind::Note,
@@ -132,6 +169,7 @@ fn truthy(value: &str) -> bool {
 /// inline box and the full compose page share a handler.
 #[derive(Default)]
 struct ComposeFields {
+    music: plamenu_db::music::Metadata,
     csrf: String,
     status: String,
     visibility: String,
@@ -151,6 +189,7 @@ struct ComposeFields {
     external_url: String,
     /// Only the explicit selector chooses the post kind.
     post_kind: String,
+    recipients: String,
     event_start: String,
     event_end: String,
     /// The selected zone used to interpret both event times.
@@ -176,6 +215,7 @@ fn apply_compose_pair(fields: &mut ComposeFields, key: &str, value: &str) {
     match key {
         "csrf" => value.clone_into(&mut fields.csrf),
         "status" => value.clone_into(&mut fields.status),
+        "recipients" => value.clone_into(&mut fields.recipients),
         "visibility" => value.clone_into(&mut fields.visibility),
         "sensitive" => {
             fields.sensitive = truthy(value);
@@ -193,6 +233,16 @@ fn apply_compose_pair(fields: &mut ComposeFields, key: &str, value: &str) {
         "content_type" if !value.trim().is_empty() => value.clone_into(&mut fields.content_type),
         "group_id" if !value.trim().is_empty() => fields.group_id = Some(value.to_owned()),
         "title" if !value.trim().is_empty() => value.clone_into(&mut fields.title),
+        "music_artist" => value.clone_into(&mut fields.music.artist),
+        "music_album" => value.clone_into(&mut fields.music.album),
+        "music_genre" => value.clone_into(&mut fields.music.genre),
+        "music_release_year" => fields.music.release_year = music_number(value),
+        "music_track_number" => fields.music.track_number = music_number(value),
+        "music_disc_number" => fields.music.disc_number = music_number(value),
+        "music_musicbrainz_id" => {
+            fields.music.musicbrainz_id =
+                (!value.trim().is_empty()).then(|| value.trim().to_owned());
+        }
         "external_url" => value.clone_into(&mut fields.external_url),
         "scheduled_at" => value.clone_into(&mut fields.scheduled_at),
         // Preserve conflicting duplicate values for validation.
@@ -560,13 +610,19 @@ pub async fn compose(State(state): State<AppState>, user: WebUser, request: Requ
     let Ok(media_keep) = parse_media_keep(&pairs) else {
         return (StatusCode::BAD_REQUEST, "invalid attachment").into_response();
     };
-    let reconciled =
-        match reconcile_compose_media(&state, user.current.account.id, &pairs, &media_keep, files)
-            .await
-        {
-            Ok(ids) => ids,
-            Err(err) => return err.into_response(),
-        };
+    let reconciled = match reconcile_compose_media(
+        &state,
+        user.current.account.id,
+        &pairs,
+        &media_keep,
+        files,
+        !fragment,
+    )
+    .await
+    {
+        Ok(ids) => ids,
+        Err(err) => return err.into_response(),
+    };
     let media_ids = reconciled.ids;
     if fields.post_kind.trim() == "article" {
         for (token, id) in reconciled.upload_tokens {
@@ -616,6 +672,32 @@ pub async fn compose(State(state): State<AppState>, user: WebUser, request: Requ
             fragment,
         )
         .await;
+    }
+
+    match validate_recipients(&state, &fields).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return render_composer_response(
+                &state,
+                &user,
+                &fields,
+                &media_ids,
+                None,
+                Some(&user.locale.text("compose-recipients-unresolved")),
+            )
+            .await;
+        }
+        Err(error) => {
+            return render_composer_response(
+                &state,
+                &user,
+                &fields,
+                &media_ids,
+                None,
+                Some(&error.to_string()),
+            )
+            .await;
+        }
     }
 
     let (Ok(in_reply_to_id), Ok(quoted_status_id), Ok(group_id)) = (
@@ -691,7 +773,7 @@ pub async fn compose(State(state): State<AppState>, user: WebUser, request: Requ
                         crate::routes::scheduled_statuses::ScheduledDraft {
                             kind: preview_kind(&fields),
                             title: (!fields.title.trim().is_empty()).then(|| fields.title.trim()),
-                            text: fields.status.trim(),
+                            text: &compose_text(&fields),
                             content_type: crate::compose::PostFormat::from_media_type(
                                 &fields.content_type,
                             )
@@ -727,6 +809,7 @@ pub async fn compose(State(state): State<AppState>, user: WebUser, request: Requ
     // Reject conflicting or unknown kinds submitted by a malformed form.
     let kind = match fields.post_kind.trim() {
         "" | "note" => plamenu_ap::activity::PostKind::Note,
+        "audio" => plamenu_ap::activity::PostKind::Audio,
         "article" => plamenu_ap::activity::PostKind::Article,
         "event" => plamenu_ap::activity::PostKind::Event,
         _ => {
@@ -758,8 +841,9 @@ pub async fn compose(State(state): State<AppState>, user: WebUser, request: Requ
     let result = actions::post_status(
         &state,
         PostParams {
+            music: (kind == plamenu_ap::activity::PostKind::Audio).then_some(&fields.music),
             username: &user.current.account.username,
-            text: fields.status.trim(),
+            text: &compose_text(&fields),
             visibility: &fields.visibility,
             in_reply_to_id,
             media_ids: &media_ids,
@@ -817,9 +901,18 @@ async fn reconcile_compose_media(
     pairs: &[(String, String)],
     media_keep: &[i64],
     files: Vec<UploadPart>,
+    copy_reused: bool,
 ) -> Result<ReconciledMedia, ApiError> {
     let limits = state.settings_cache.get(&state.pool).await?;
-    actions::ensure_media_count(media_keep.len() + files.len(), limits.max_media_attachments)?;
+    let reused: Vec<_> = pairs
+        .iter()
+        .filter(|(key, _)| key == "reuse_media[]")
+        .map(|(_, value)| value.as_str())
+        .collect();
+    actions::ensure_media_count(
+        media_keep.len() + files.len() + reused.len(),
+        limits.max_media_attachments,
+    )?;
     // One statement for the whole kept set. `update_attributes_many` only
     // touches the caller's own unattached uploads, so a forged `media_keep`
     // id changes nothing here (and fails at post).
@@ -870,6 +963,11 @@ async fn reconcile_compose_media(
     let new_uploads = store_compose_media(state, account_id, files).await?;
     let mut media_ids = media_keep.to_vec();
     media_ids.extend(new_uploads.iter().map(|upload| upload.id));
+    if copy_reused {
+        for key in reused {
+            media_ids.push(super::compose_media::reuse(state, account_id, key).await?);
+        }
+    }
     let mut inline_ids: Vec<i64> = media_keep
         .iter()
         .copied()
@@ -948,8 +1046,9 @@ async fn build_compose_preview_card(
     has_local_media: bool,
 ) -> Result<Markup, ApiError> {
     let limits = state.settings_cache.get(&state.pool).await?;
+    let message_text = compose_text(fields);
     let (text, spoiler_text, sensitive) = actions::apply_spoiler_rules(
-        fields.status.trim(),
+        &message_text,
         fields.spoiler_text.trim(),
         fields.sensitive,
         fields.quoted_status_id.is_some(),
@@ -1013,6 +1112,10 @@ async fn build_compose_preview_card(
         },
     )
     .await?;
+    if kind == plamenu_ap::activity::PostKind::Audio {
+        crate::audio::validate_metadata(&fields.music)?;
+        value["music"] = serde_json::json!(fields.music);
+    }
     if let Some(event) = event_params_of(user, fields)? {
         actions::validate_event(&event)?;
         value["event"] = serde_json::json!({
@@ -1061,7 +1164,9 @@ async fn render_composer_response(
         Err(err) => return err.into_response(),
     };
     let echo = pages::ComposerEcho {
+        recipients: &fields.recipients,
         kind: &fields.post_kind,
+        music: &fields.music,
         event: super::view::EventCompose {
             start: &fields.event_start,
             end: &fields.event_end,
@@ -1359,6 +1464,7 @@ pub async fn cancel_event(
         &user.current.account,
         id,
         actions::EditParams {
+            music: None,
             media_accessibility: Vec::new(),
             title: None,
             text: None,
@@ -1800,6 +1906,10 @@ async fn build_edit_preview_card(
     )
     .await?;
 
+    value["music"] = prepared.music.map_or_else(
+        || current["music"].clone(),
+        |music| serde_json::json!(music),
+    );
     // The preview serializer reads current media rows. Overlay submitted alt
     // text in memory so Preview shows what Save changes would publish without
     // updating the attachment itself.
@@ -1874,6 +1984,35 @@ async fn build_edit_preview_card(
     Ok((card, media))
 }
 
+// Invalid nonempty numbers survive as zero for shared validation; they must not
+// silently erase stored metadata or disappear from a publication.
+fn music_number(value: &str) -> Option<i32> {
+    (!value.trim().is_empty()).then(|| value.trim().parse().unwrap_or(0))
+}
+fn edit_music(pairs: &[(String, String)]) -> Option<plamenu_db::music::Metadata> {
+    field(pairs, "music_artist")?;
+    Some(plamenu_db::music::Metadata {
+        artist: field(pairs, "music_artist")
+            .unwrap_or_default()
+            .trim()
+            .into(),
+        album: field(pairs, "music_album")
+            .unwrap_or_default()
+            .trim()
+            .into(),
+        genre: field(pairs, "music_genre")
+            .unwrap_or_default()
+            .trim()
+            .into(),
+        release_year: music_number(field(pairs, "music_release_year").unwrap_or_default()),
+        track_number: music_number(field(pairs, "music_track_number").unwrap_or_default()),
+        disc_number: music_number(field(pairs, "music_disc_number").unwrap_or_default()),
+        musicbrainz_id: field(pairs, "music_musicbrainz_id")
+            .filter(|v| !v.trim().is_empty())
+            .map(|v| v.trim().to_owned()),
+    })
+}
+
 struct EditPreviewPage<'a> {
     pairs: &'a [(String, String)],
     sensitive: bool,
@@ -1902,11 +2041,13 @@ async fn render_edit_preview_page(
         .unwrap_or(&source.content_type);
     let language = field(page.pairs, "language").filter(|value| !value.trim().is_empty());
     let quote_policy = field(page.pairs, "quote_policy").filter(|value| !value.trim().is_empty());
+    let music = edit_music(page.pairs);
     match pages::render_edit_composer(
         state,
         user,
         stored,
         pages::EditComposerEcho {
+            music: music.as_ref(),
             title: field(page.pairs, "title"),
             text,
             spoiler_text,
@@ -2050,6 +2191,7 @@ pub async fn edit(
         None => None,
     };
     let params = actions::EditParams {
+        music: edit_music(&pairs),
         // The edit form carries the headline of a titled post (long-form or a
         // group thread); an untitled post submits no such field.
         title: field(&pairs, "title"),

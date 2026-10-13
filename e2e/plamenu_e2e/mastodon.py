@@ -416,9 +416,10 @@ def add_alias(username: str, acct: str) -> str:
     (via a rails runner — Mastodon has no API for aliases). Resolves `acct`
     over live webfinger, so the aliased peer must be up. Returns the alias
     URI Mastodon stored (what its actor doc now lists in `alsoKnownAs`)."""
+    # Preserved fleets may attach the shared proxy network after creation.
+    # A one-off container lacks that attachment and resolves *.local to itself.
     out = shell.masto_compose(
-        "run",
-        "--rm",
+        "exec",
         "-T",
         "web",
         "bin/rails",

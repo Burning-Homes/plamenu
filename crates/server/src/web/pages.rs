@@ -11,12 +11,10 @@ use axum::response::{IntoResponse, Redirect, Response};
 use fluent_bundle::FluentArgs;
 use maud::{Markup, html};
 use plamenu_db::account::{self, Account};
-use plamenu_db::notification::{self, NotificationFilter};
 use plamenu_db::status::{self, Status, StatusSearch};
 use plamenu_db::user::{self, ReadingExpandMedia, TimelineOrder, UserSettings};
 use plamenu_db::{
-    bookmark, favourite, follow, instance_policy, marker, mention, pin, quote, remote_history,
-    rule, tag,
+    bookmark, favourite, follow, instance_policy, mention, pin, quote, remote_history, rule, tag,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -28,8 +26,8 @@ use super::session::{MaybeWebUser, WebUser};
 use super::{actions, layout, reactions, view};
 use crate::entities::{
     account_json, allow_direct_media, can_view, filter_viewable, media_json_hls, relationship_json,
-    render_accounts, render_accounts_by_ids, render_conversations, render_notifications,
-    render_status, render_status_history, render_statuses,
+    render_accounts, render_accounts_by_ids, render_conversations, render_status,
+    render_status_history, render_statuses,
 };
 use crate::error::ApiError;
 use crate::languages;
@@ -3202,6 +3200,7 @@ async fn history_page(
 /// Submitted edit-composer state echoed across a no-JS preview or validation
 /// error. `media: None` uses the status' current attachments (the GET path).
 pub(crate) struct EditComposerEcho<'a> {
+    pub music: Option<&'a plamenu_db::music::Metadata>,
     pub title: Option<&'a str>,
     pub text: &'a str,
     pub spoiler_text: &'a str,
@@ -3240,7 +3239,10 @@ pub(crate) async fn render_edit_composer(
         .or_else(|| status.quote_policy_value())
         .unwrap_or("nobody");
     let media = echo.media.unwrap_or_else(|| status.media());
+    let stored_music: Option<plamenu_db::music::Metadata> =
+        serde_json::from_value(entity["music"].clone()).ok();
     let prefill = view::EditComposePrefill {
+        music: echo.music.or(stored_music.as_ref()),
         title: echo.title.or(stored.title.as_deref()),
         text: echo.text,
         spoiler_text: echo.spoiler_text,
@@ -3291,6 +3293,7 @@ pub async fn edit_page(
         &user,
         &stored,
         EditComposerEcho {
+            music: None,
             title: None,
             text: &source.text,
             spoiler_text: &stored.spoiler_text,
@@ -4045,7 +4048,7 @@ async fn apply_focus_translation(
 #[allow(clippy::too_many_lines)] // the thread page's one assembly point
 pub(crate) async fn thread_view(
     state: &AppState,
-    session: Option<WebUser>,
+    mut session: Option<WebUser>,
     request_locale: Locale,
     focus: Status,
     translate: bool,
@@ -4082,6 +4085,16 @@ pub(crate) async fn thread_view(
     {
         plamenu_db::conversation::mark_read_conversation(&state.pool, viewer, conversation_id)
             .await?;
+        if let Some(user) = session.as_mut() {
+            user.unread_conversations =
+                plamenu_db::conversation::has_unread(&state.pool, viewer).await?;
+            user.unread_notifications = plamenu_db::notification::has_unread_activity(
+                &state.pool,
+                user.current.user.id,
+                viewer,
+            )
+            .await?;
+        }
     }
 
     // Load settings once for both the thread-order preference and the render
@@ -4230,6 +4243,7 @@ pub(crate) async fn thread_view(
 
     let body = html! {
         section.column {
+            @if focus.visibility=="direct" {nav {a href="/conversations" {(locale.text("page-private-mentions"))}}}
             @if !ancestor_entities.is_empty() {
                 div.thread__ancestors { (view::feed(&ancestor_entities, &ctx)) }
             } @else if let Some(uri) = view::Status(&focus_entity).in_reply_to_uri() {
@@ -4306,87 +4320,6 @@ pub(crate) async fn thread_view(
     .into_response())
 }
 
-/// `GET /notifications` — the viewer's notifications as a flat list. Opening
-/// the page reads it all: the first page advances the shared `notifications`
-/// marker (the same one `/api/v1/markers` serves) to the newest notification,
-/// clearing the bell's unread dot here and in API clients alike.
-pub async fn notifications(
-    State(state): State<AppState>,
-    mut user: WebUser,
-    Query(page): Query<Page>,
-) -> Result<Markup, ApiError> {
-    let viewer_id = user.current.account.id;
-    let items = notification::list(
-        &state.pool,
-        viewer_id,
-        page.max_id,
-        None,
-        None,
-        NotificationFilter {
-            kinds: None,
-            from_account_id: None,
-            ..Default::default()
-        },
-        LIMIT,
-    )
-    .await?;
-    // Advance-only, so loading older pages — or a marker an API client
-    // already pushed further — never rewinds the read position.
-    if page.max_id.is_none()
-        && let Some(newest) = items.first()
-    {
-        marker::advance(
-            &state.pool,
-            user.current.user.id,
-            "notifications",
-            newest.id,
-        )
-        .await?;
-        // The dot was computed before the marker moved; this render is the
-        // read that clears it.
-        user.unread_notifications = false;
-    }
-    let entities =
-        render_notifications(&state.pool, &state.config.domain, &items, viewer_id).await?;
-    let next = items
-        .last()
-        .filter(|_| items.len() >= usize::try_from(LIMIT).unwrap_or(usize::MAX))
-        .map(|n| format!("/notifications?max_id={}", n.id));
-    let viewer = viewer_id.to_string();
-    let ctx = view::Ctx {
-        csrf: Some(&user.csrf),
-        viewer_id: Some(&viewer),
-        return_to: "/notifications",
-        filter_context: Some(view::FilterContext::Notifications),
-        prefs: view_prefs(&state, Some(&user)).await?,
-        locale: user.locale,
-        clock: user.clock.clone(),
-        admin: user.admin_capabilities(),
-    };
-    let body = html! {
-        section.column {
-            h1 { (user.locale.text("page-notifications")) }
-            @if entities.is_empty() {
-                p.empty { (user.locale.text("page-notifications-empty")) }
-            } @else {
-                div.notifications data-paged {
-                    @for note in &entities {
-                        (view::notification_item(note, &ctx))
-                    }
-                }
-            }
-            @if let Some(href) = next {
-                nav.pager { a.pager__more href=(href) { (user.locale.text("pager-older")) } }
-            }
-        }
-    };
-    Ok(layout::shell(
-        &user.locale.text("page-notifications"),
-        Some(&user),
-        &body,
-    ))
-}
-
 /// The handles a direct reply will reach: the parent's author plus everyone
 /// it addressed (silent recipients included — the audience the reply inherits
 /// server-side), minus the viewer. Feeds the composer's "will be seen by"
@@ -4455,14 +4388,13 @@ pub async fn conversations(
     };
     let body = html! {
         section.column {
-            h1 { (user.locale.text("page-private-mentions")) }
-            p.conversations__hint {
-                (user.locale.text("page-private-mentions-help"))
+            header.inbox-heading {
+                h1 { (user.locale.text("page-private-mentions")) }
+                a.button href="/compose?visibility=direct" { (user.locale.text("page-private-mentions-new")) }
             }
-            p.conversations__new {
-                a.conversation__reply href="/compose?visibility=direct" {
-                    (user.locale.text("page-private-mentions-new"))
-                }
+            details.conversations__privacy {
+                summary { (user.locale.text("conversation-privacy")) }
+                p { (user.locale.text("page-private-mentions-help")) }
             }
             @if entities.is_empty() {
                 p.empty { (user.locale.text("page-private-mentions-empty")) }
@@ -4884,6 +4816,7 @@ pub async fn tag(
 
 #[derive(Deserialize)]
 pub struct ComposeQuery {
+    kind: Option<String>,
     webxdc: Option<i64>,
     reply: Option<i64>,
     quote: Option<i64>,
@@ -5045,6 +4978,12 @@ pub async fn compose_page(
             )))
         });
     let prefill = view::ComposePrefill {
+        available_media: super::compose_media::choices(&state, viewer_id).await?,
+        kind: query
+            .kind
+            .as_deref()
+            .filter(|k| matches!(*k, "audio" | "article" | "event" | "video" | "live"))
+            .unwrap_or("note"),
         invitation,
         text,
         spoiler_text,
@@ -5085,6 +5024,7 @@ pub async fn compose_page(
             h1 {
                 @if quote.is_some() { (user.locale.text("compose-quote")) }
                 @else if reply.is_some() { (user.locale.text("compose-reply")) }
+                @else if defaults.visibility == "direct" { (user.locale.text("page-private-mentions-new")) }
                 @else { (user.locale.text("compose-new")) }
             }
             @if let Some(note) = &group_note {
@@ -5134,6 +5074,8 @@ async fn resolve_group_target(
 /// preview or a validation error, so the form comes back exactly as the
 /// user left it and (on a preview) shows the rendered post below.
 pub(crate) struct ComposerEcho<'a> {
+    pub recipients: &'a str,
+    pub music: &'a plamenu_db::music::Metadata,
     pub kind: &'a str,
     pub event: view::EventCompose<'a>,
     pub text: &'a str,
@@ -5292,8 +5234,11 @@ pub(crate) async fn render_composer(
             )))
         });
     let prefill = view::ComposePrefill {
+        available_media: super::compose_media::choices(state, user.current.account.id).await?,
         invitation,
         kind: echo.kind,
+        recipients: echo.recipients,
+        music: Some(echo.music),
         title: echo.title,
         event: echo.event,
         text: echo.text,

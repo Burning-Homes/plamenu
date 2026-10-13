@@ -112,6 +112,33 @@ pub fn check_url_syntax(url: &Url, allow_private: bool) -> Result<(), Federation
     Ok(())
 }
 
+/// RSS/Atom producers may use HTTP; only this generic feed lane admits it.
+/// The request still uses `SafeResolver` and rejects private IP literals,
+/// credentials, missing hosts and every non-HTTP scheme before a connection.
+pub fn check_feed_url_syntax(url: &Url, allow_private: bool) -> Result<(), FederationError> {
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(FederationError::InvalidUrl(
+            "Invalid podcast feed URL".into(),
+        ));
+    }
+    let literal = match url.host() {
+        Some(url::Host::Ipv4(ip)) => Some(IpAddr::V4(ip)),
+        Some(url::Host::Ipv6(ip)) => Some(IpAddr::V6(ip)),
+        _ => None,
+    };
+    if !allow_private
+        && let Some(ip) = literal
+        && is_private_ip(ip)
+    {
+        return Err(FederationError::PrivateAddress(ip.to_string()));
+    }
+    Ok(())
+}
+
 /// `true` for addresses that must never be dialed by federation traffic.
 #[must_use]
 pub fn is_private_ip(addr: IpAddr) -> bool {

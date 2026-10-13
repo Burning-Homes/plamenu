@@ -73,6 +73,8 @@ pub struct PageMeta {
     /// so RSS/Atom readers autodiscover it from the profile page (Mastodon does
     /// the same with its per-account RSS feed).
     pub feed_url: Option<String>,
+    /// An RSS alternative for native music/feed-reader discovery.
+    pub rss_feed_url: Option<String>,
     /// `noindex, noarchive` — the page subject opted out of search-engine
     /// indexing (Mastodon's `user_prefers_noindex?` header tag).
     pub noindex: bool,
@@ -99,6 +101,9 @@ impl PageMeta {
             }
             @if let Some(feed) = &self.feed_url {
                 link rel="alternate" type="application/atom+xml" title="Atom feed" href=(feed);
+            }
+            @if let Some(feed) = &self.rss_feed_url {
+                link rel="alternate" type="application/rss+xml" title="RSS feed" href=(feed);
             }
             @if let Some(description) = &self.description {
                 meta name="description" content=(description);
@@ -170,6 +175,7 @@ fn head(title: &str, meta: &PageMeta) -> Markup {
             meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1419";
             title { (title) " — Plamenu" }
             link rel="manifest" href="/manifest.webmanifest";
+            link rel="webmention" href="/webmentions";
             link rel="apple-touch-icon" sizes="180x180" href="/pwa/apple-touch-icon.png";
             // The operator's favicon upload; the route serves an embedded
             // brand-mark default until one exists, so this never 404s.
@@ -227,6 +233,17 @@ impl AnonNav {
 /// block; the anonymous-access flags are irrelevant here.
 pub fn shell(title: &str, user: Option<&WebUser>, content: &Markup) -> Markup {
     render(title, user, AnonNav::all(), content, &PageMeta::default())
+}
+
+/// Native subject pages use the ordinary navigation with feed/preview metadata.
+pub fn shell_with_metadata(
+    title: &str,
+    user: Option<&WebUser>,
+    content: &Markup,
+    meta: &PageMeta,
+    locale: Locale,
+) -> Markup {
+    render_with_locale(title, user, AnonNav::all(), content, meta, locale)
 }
 
 /// Wraps `content` for a page that renders for both signed-in and anonymous
@@ -355,7 +372,7 @@ pub fn focused_shell_p2p(
 /// A single navigation entry: an icon plus a label.
 fn nav_link(href: &str, name: &str, label: &str) -> Markup {
     html! {
-        a.nav-link href=(href) {
+        a.nav-link href=(href) aria-label=(label) title=(label) {
             (icon(name))
             span.nav-link__label { (label) }
         }
@@ -389,7 +406,7 @@ fn primary_nav(user: &WebUser) -> Markup {
         (nav_link("/", "home", &locale.text("nav-home")))
         (nav_link("/public", "feeds", &locale.text("nav-live-feeds")))
         (nav_link("/search", "search", &locale.text("nav-search")))
-        a.nav-link href="/notifications" data-notification-nav {
+        a.nav-link href="/notifications" data-notification-nav data-inbox-label=(locale.text("nav-notifications")) data-inbox-unread=(format!("{} ({})",locale.text("nav-notifications"),locale.text("nav-new"))) aria-label=(if user.unread_notifications {format!("{} ({})",locale.text("nav-notifications"),locale.text("nav-new"))} else {locale.text("nav-notifications")}) {
             (bell_icon(user.unread_notifications))
             span.nav-link__label {
                 (locale.text("nav-notifications"))
@@ -398,7 +415,7 @@ fn primary_nav(user: &WebUser) -> Markup {
                 }
             }
         }
-        a.nav-link href="/conversations" {
+        a.nav-link href="/conversations" data-message-nav data-inbox-label=(locale.text("nav-private-mentions")) data-inbox-unread=(format!("{} ({})",locale.text("nav-private-mentions"),locale.text("nav-new"))) aria-label=(if user.unread_conversations {format!("{} ({})",locale.text("nav-private-mentions"),locale.text("nav-new"))} else {locale.text("nav-private-mentions")}) {
             (dotted_icon("mention", user.unread_conversations))
             span.nav-link__label {
                 (locale.text("nav-private-mentions"))
@@ -411,6 +428,7 @@ fn primary_nav(user: &WebUser) -> Markup {
         (nav_link("/favourites", "favourite", &locale.text("nav-favourites")))
         (nav_link("/lists", "list", &locale.text("nav-lists")))
         (nav_link("/groups", "group", &locale.text("nav-groups")))
+        (nav_link("/music", "music", &locale.text("music-title")))
         (nav_link("/videos/explore", "video", &locale.text("videos-title")))
         (nav_link("/webxdc", "apps", &locale.text("nav-webxdc")))
         (nav_link("/people", "profile", &locale.text("nav-people")))
@@ -432,6 +450,7 @@ fn anon_primary_nav(anon: AnonNav, locale: Locale) -> Markup {
         (nav_link("/", "home", &locale.text("nav-home")))
         @if anon.trends { (nav_link("/explore", "explore", &locale.text("nav-trending"))) }
         @if anon.feeds { (nav_link("/public", "feeds", &locale.text("nav-live-feeds"))) }
+        @if anon.videos { (nav_link("/music", "music", &locale.text("music-title"))) }
         @if anon.videos { (nav_link("/videos/explore", "video", &locale.text("videos-title"))) }
         @if anon.people { (nav_link("/people", "profile", &locale.text("nav-people"))) }
         @if anon.groups { (nav_link("/groups", "group", &locale.text("nav-groups"))) }
@@ -494,10 +513,10 @@ fn sidebar(user: Option<&WebUser>, anon: AnonNav, locale: Locale) -> Markup {
                 }
             }
             @if let Some(user) = user {
-                a.compose-btn href="/compose" { (icon("compose")) span { (locale.text("nav-new-post")) } }
+                a.compose-btn href="/compose" aria-label=(locale.text("nav-new-post")) { (icon("compose")) span { (locale.text("nav-new-post")) } }
                 (account_block(user))
             } @else {
-                a.compose-btn href="/login" { (icon("profile")) span { (locale.text("nav-sign-in")) } }
+                a.compose-btn href="/login" aria-label=(locale.text("nav-sign-in")) { (icon("profile")) span { (locale.text("nav-sign-in")) } }
             }
         }
     }
@@ -516,7 +535,7 @@ fn tabbar(user: Option<&WebUser>, anon: AnonNav, locale: Locale) -> Markup {
             @if let Some(user) = user {
                 a.tabbar__link href="/public" title=(locale.text("nav-live-feeds")) { (icon("feeds")) }
                 a.tabbar__link.tabbar__link--accent href="/compose" title=(locale.text("nav-new-post")) { (icon("compose")) }
-                a.tabbar__link href="/notifications" data-notification-nav
+                a.tabbar__link href="/notifications" data-notification-nav data-inbox-label=(locale.text("nav-notifications")) data-inbox-unread=(format!("{} ({})",locale.text("nav-notifications"),locale.text("nav-new")))
                     title=(locale.text("nav-notifications")) {
                     (bell_icon(user.unread_notifications))
                 }
@@ -545,7 +564,7 @@ fn drawer(user: Option<&WebUser>, anon: AnonNav, locale: Locale) -> Markup {
     };
     html! {
         details.drawer data-drawer {
-            summary.tabbar__link.drawer__toggle title=(menu_title) aria-label=(menu_title) {
+            summary.tabbar__link.drawer__toggle data-message-nav data-inbox-label=(locale.text("nav-menu")) data-inbox-unread=(locale.text("nav-menu-new-private")) title=(menu_title) aria-label=(menu_title) {
                 (dotted_icon("menu", unread))
             }
             div.drawer__scrim data-drawer-scrim {
@@ -562,10 +581,10 @@ fn drawer(user: Option<&WebUser>, anon: AnonNav, locale: Locale) -> Markup {
                         }
                     }
                     @if let Some(user) = user {
-                        a.compose-btn href="/compose" { (icon("compose")) span { (locale.text("nav-new-post")) } }
+                        a.compose-btn href="/compose" aria-label=(locale.text("nav-new-post")) { (icon("compose")) span { (locale.text("nav-new-post")) } }
                         (account_block(user))
                     } @else {
-                        a.compose-btn href="/login" { (icon("profile")) span { (locale.text("nav-sign-in")) } }
+                        a.compose-btn href="/login" aria-label=(locale.text("nav-sign-in")) { (icon("profile")) span { (locale.text("nav-sign-in")) } }
                     }
                 }
             }

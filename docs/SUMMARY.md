@@ -6,6 +6,7 @@
 
 - [Web interface](members/index.md)
   - [Posting](members/posting.md)
+  - [Audio and music](members/music.md)
   - [Account settings and safety](members/account-and-safety.md)
   - [Accessible video metadata](VIDEO_ACCESSIBILITY.md)
   - [Native Video publishing](VIDEO_PUBLISHING.md)
@@ -71,3 +72,7 @@
 - [Release procedure](RELEASING.md)
 - [Maintainer setup](MAINTAINERS.md)
 - [CI/CD](CI-CD.md)
+
+- [Songhive parity design](SONGHIVE_PARITY.md)
+  - [Songhive completion checklist](SONGHIVE_COMPLETION_CHECKLIST.md)
+  - [Songhive native contract review](SONGHIVE_NATIVE_REVIEW.md)

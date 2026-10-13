@@ -17,9 +17,17 @@ use plamenu_ap::keys::{self, KeyPairPem};
 use plamenu_db::account::{self, Account, NewLocalAccount};
 use plamenu_db::{PgPool, instance_settings};
 use plamenu_federation::{
-    FederationError, FetchedActivityPub, FetchedMedia, FetchedMediaFile, FetchedMediaRange,
-    FetchedPage, RequestSigner, ResolvedAcct, ServiceResponse, WebfingerCandidate,
+    FederationError, FetchedActivityPub, FetchedEnclosure, FetchedFeed, FetchedMedia,
+    FetchedMediaFile, FetchedMediaRange, FetchedPage, RequestSigner, ResolvedAcct, ServiceResponse,
+    WebfingerCandidate,
 };
+
+#[derive(Debug)]
+pub struct PodcastFetch {
+    pub url: String,
+    pub etag: Option<String>,
+    pub modified: Option<String>,
+}
 
 pub const TEST_DOMAIN: &str = "plamenu.test";
 
@@ -76,10 +84,20 @@ pub struct StubFederation {
     pub webhook_status: Mutex<Option<u16>>,
     /// Web pages served to `fetch_page` (link previews), keyed by URL.
     pub pages: Mutex<HashMap<String, FetchedPage>>,
+    pub mention_pages: Mutex<HashMap<String, plamenu_federation::MentionPage>>,
+    pub mention_posts: Mutex<Vec<(String, String, String)>>,
+    pub mention_failures: Mutex<HashMap<String, u16>>,
+    pub mention_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
+    pub mention_started: tokio::sync::Notify,
     /// Every `fetch_page` URL requested, in order.
     pub page_fetches: Mutex<Vec<String>>,
     /// Binary media served to `fetch_media` (remote-media caching), keyed by URL.
     pub media: Mutex<HashMap<String, FetchedMedia>>,
+    pub enclosure_chunking: Mutex<Option<(usize, u64)>>,
+    pub enclosure_active: Arc<AtomicUsize>,
+    pub enclosure_chunks_sent: Arc<AtomicUsize>,
+    pub podcast_feeds: Mutex<HashMap<String, FetchedFeed>>,
+    pub podcast_fetches: Mutex<Vec<PodcastFetch>>,
     /// Every `fetch_media` URL requested, in order.
     pub media_fetches: Mutex<Vec<String>>,
     /// Hold ordinary playlist/integrity fetches for in-flight revocation tests.
@@ -87,6 +105,8 @@ pub struct StubFederation {
     /// Native source-import tests can hold a whole-file stream until it is
     /// cancelled, without replacing the production download/lease controller.
     pub media_download_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
+    /// A polled whole-file origin download has started, before waiting at its gate.
+    pub media_download_started: tokio::sync::Notify,
     /// Canned `(status, body)` replies for `service_request` (translation
     /// backend), keyed by request URL.
     pub service_responses: Mutex<HashMap<String, (u16, String)>>,
@@ -110,6 +130,12 @@ pub struct StubFederation {
     pub suppress_object_fetches: Mutex<bool>,
 }
 
+struct EnclosureLease(Arc<AtomicUsize>);
+impl Drop for EnclosureLease {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 impl StubFederation {
     /// The permalink-following lookup shared by `fetch_object_following` and
     /// its budget-ignoring probe: serve the body at `uri`, then if its `id`
@@ -461,6 +487,161 @@ impl FederationApi for StubFederation {
         Box::pin(async move { result })
     }
 
+    fn fetch_mention_page<'a>(
+        &'a self,
+        url: &'a str,
+    ) -> BoxFuture<'a, Result<plamenu_federation::MentionPage, FederationError>> {
+        let result = if let Some(status) = self.mention_failures.lock().unwrap().get(url) {
+            Err(FederationError::Status(*status))
+        } else {
+            self.mention_pages
+                .lock()
+                .unwrap()
+                .get(url)
+                .cloned()
+                .ok_or(FederationError::Status(404))
+        };
+        let gate = self.mention_gate.lock().unwrap().clone();
+        Box::pin(async move {
+            self.mention_started.notify_one();
+            if let Some(gate) = gate {
+                let _permit = gate.acquire().await.unwrap();
+            }
+            result
+        })
+    }
+    fn send_webmention<'a>(
+        &'a self,
+        endpoint: &'a str,
+        source: &'a str,
+        target: &'a str,
+    ) -> BoxFuture<'a, Result<(), FederationError>> {
+        self.mention_posts
+            .lock()
+            .unwrap()
+            .push((endpoint.into(), source.into(), target.into()));
+        Box::pin(async { Ok(()) })
+    }
+
+    fn fetch_enclosure<'a>(
+        &'a self,
+        url: &'a str,
+        range: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<FetchedEnclosure, FederationError>> {
+        self.media_fetches.lock().unwrap().push(url.to_owned());
+        let fetched = self
+            .media
+            .lock()
+            .unwrap()
+            .get(url)
+            .cloned()
+            .ok_or(FederationError::Status(404));
+        let range = range.map(str::to_owned);
+        let chunking = *self.enclosure_chunking.lock().unwrap();
+        let active = self.enclosure_active.clone();
+        let sent = self.enclosure_chunks_sent.clone();
+        Box::pin(async move {
+            let fetched = fetched?;
+            let total = fetched.bytes.len() as u64;
+            let bounds = range
+                .as_deref()
+                .and_then(|v| v.strip_prefix("bytes="))
+                .and_then(|v| v.split_once('-'))
+                .and_then(|(start, end)| {
+                    Some((
+                        start.parse::<u64>().ok()?,
+                        if end.is_empty() {
+                            total - 1
+                        } else {
+                            end.parse::<u64>().ok()?.min(total - 1)
+                        },
+                    ))
+                });
+            let (status, start, end, content_range) = if let Some((start, end)) = bounds {
+                if start >= total || end < start {
+                    return Err(FederationError::Status(416));
+                }
+                (
+                    206,
+                    start,
+                    end,
+                    Some(format!("bytes {start}-{end}/{total}")),
+                )
+            } else {
+                (200, 0, total - 1, None)
+            };
+            let start = usize::try_from(start).map_err(|_| FederationError::Status(416))?;
+            let end = usize::try_from(end).map_err(|_| FederationError::Status(416))?;
+            let bytes = fetched.bytes[start..=end].to_vec();
+            let len = bytes.len() as u64;
+            active.fetch_add(1, Ordering::SeqCst);
+            let lease = EnclosureLease(active);
+            let stream: std::pin::Pin<
+                Box<dyn futures_util::Stream<Item = Result<Vec<u8>, FederationError>> + Send>,
+            > = if let Some((size, delay)) = chunking {
+                let chunks = bytes
+                    .chunks(size.max(1))
+                    .map(<[u8]>::to_vec)
+                    .collect::<std::collections::VecDeque<_>>();
+                Box::pin(futures_util::stream::try_unfold(
+                    (chunks, lease, sent),
+                    move |(mut chunks, lease, sent)| async move {
+                        if let Some(chunk) = chunks.pop_front() {
+                            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                            sent.fetch_add(1, Ordering::SeqCst);
+                            Ok(Some((chunk, (chunks, lease, sent))))
+                        } else {
+                            Ok(None)
+                        }
+                    },
+                ))
+            } else {
+                Box::pin(futures_util::stream::once(async move {
+                    let _lease = lease;
+                    Ok(bytes)
+                }))
+            };
+            Ok(FetchedEnclosure {
+                status,
+                content_type: fetched.content_type,
+                content_length: Some(len),
+                content_range,
+                bytes: stream,
+            })
+        })
+    }
+
+    fn fetch_feed<'a>(
+        &'a self,
+        url: &'a str,
+        etag: Option<&'a str>,
+        modified: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<FetchedFeed, FederationError>> {
+        self.podcast_fetches.lock().unwrap().push(PodcastFetch {
+            url: url.to_owned(),
+            etag: etag.map(str::to_owned),
+            modified: modified.map(str::to_owned),
+        });
+        let result = self
+            .podcast_feeds
+            .lock()
+            .unwrap()
+            .get(url)
+            .cloned()
+            .ok_or(FederationError::Status(404));
+        let gate = self.media_fetch_gate.lock().unwrap().clone();
+        Box::pin(async move {
+            if let Some(gate) = gate {
+                let permit = gate
+                    .acquire_owned()
+                    .await
+                    .map_err(|_| FederationError::Status(503))?;
+                permit.forget();
+            }
+            result
+        })
+    }
+
     fn fetch_media<'a>(
         &'a self,
         url: &'a str,
@@ -503,6 +684,7 @@ impl FederationApi for StubFederation {
             .ok_or(FederationError::Status(404));
         let dest = dest.to_path_buf();
         Box::pin(async move {
+            self.media_download_started.notify_one();
             if let Some(gate) = gate {
                 gate.acquire().await.unwrap().forget();
             }
@@ -711,6 +893,9 @@ pub fn test_config() -> Config {
         live_ingest_bind: "127.0.0.1:0".parse().unwrap(),
         live_rtmps: None,
         native_video: plamenu::config::NativeVideoConfig::default(),
+        music: plamenu::config::MusicConfig::default(),
+        notifications: plamenu::notification_config::NotificationsConfig::default(),
+        music_local_roots: Vec::new(),
         video_offload: Vec::new(),
         smtp: None,
         trusted_proxies: vec!["127.0.0.0/8".to_owned(), "::1/128".to_owned()],

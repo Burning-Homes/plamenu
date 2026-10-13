@@ -67,7 +67,7 @@ fi
 PEER_ROOT=${PLAMENU_PEER_ROOT:-"$ROOT/e2e/peers"}
 PEER_DEV=${PLAMENU_PEER_DEV:-"$PEER_ROOT/dev"}
 PEER_PROVISIONER=${PLAMENU_PEER_PROVISIONER:-"$ROOT/e2e/peers/provision.sh"}
-PEERS=(mastodon discourse hubzilla funkwhale pleroma sharkey gotosocial mitra lemmy peertube owncast)
+PEERS=(mastodon discourse hubzilla funkwhale songhive pleroma sharkey gotosocial mitra lemmy peertube owncast)
 # These fixtures are deliberately excluded from bulk `up peers`/`up all`, but
 # the documented `./dev up PEER` and `./dev down PEER` forms must still reach
 # them through the configured helper.
@@ -367,6 +367,7 @@ full_peer_preflight() {
     "owncast|${OWNCAST_URL:-https://owncast.local}/api/status"
     "discourse|${DISCOURSE_URL:-https://discourse.local}/about.json"
     "hubzilla|${HUBZILLA_URL:-https://hubzilla.local}/"
+    "songhive|${SONGHIVE_URL:-https://songhive.local}/.well-known/nodeinfo"
     "funkwhale|${FUNKWHALE_URL:-https://funkwhale.local}/api/v2/instance/nodeinfo/2.1/"
   )
   local check name url
@@ -537,7 +538,7 @@ case "$action" in
     ;;
   sqlx-check)
     db_up
-    cargo sqlx prepare --workspace --check -- --all-targets
+    python3 "$ROOT/scripts/check-sqlx.py"
     ;;
   # `--bench hot_paths` on purpose: without it, `cargo bench` also runs the
   # contention driver, which takes its settings from the environment rather

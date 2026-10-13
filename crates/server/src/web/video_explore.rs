@@ -217,6 +217,13 @@ pub async fn page(
     let body = html! {
         section.column.video-explore {
             h1 { (&page_title) }
+            @if session.is_some() {
+                nav.media-create-nav aria-label=(locale.text("studio-create")) {
+                    a href="/videos/upload" {(locale.text("studio-upload"))}
+                    a href="/videos/live/new" {(locale.text("media-create-live"))}
+                    a href="/videos" {(locale.text("studio-library"))}
+                }
+            }
             @if let Some(channel) = channel.as_ref() {
                 nav.video-explore__links aria-label=(locale.text("videos-explore-navigation")) {
                     a href="/videos/explore" { (locale.text("videos-explore-all")) }
@@ -237,8 +244,7 @@ pub async fn page(
             } @else {
                 p { (locale.text("videos-explore-intro")) }
                 @if session.is_some() {
-                    p { a href="/videos" { (locale.text("videos-explore-publish")) }
-                        " · " a href="/videos/channels" { (locale.text("video-channel-manage")) }
+                    p { a href="/videos/channels" { (locale.text("video-channel-manage")) }
                         " · " a href="/videos/playlists" { (locale.text("playlist-title")) }
                         " · " a href="/videos/history" { (locale.text("video-history-title")) }
                         " · " a href="/videos/settings" { (locale.text("video-viewer-settings")) }

@@ -21,6 +21,7 @@ so the two instances federate over real HTTPS exactly as foreign peers do
 
 import os
 import secrets
+import socket
 import subprocess
 import tempfile
 import time
@@ -28,6 +29,7 @@ from pathlib import Path
 
 import psycopg
 import requests
+import tomllib
 from psycopg import sql
 
 from . import candidate, config, plamenu, unique
@@ -83,6 +85,7 @@ class Instance:
         # Resolve/validate an explicit candidate before any fixture mutations;
         # ordinary development still builds the current default executable.
         candidate.prepare_binary()
+        self._assert_bind_available()
         # A fresh database every start: a previous run left accounts, follows
         # and (for doomed) a half-destroyed instance behind on purpose.
         with psycopg.connect(config.DB_DSN, autocommit=True) as conn:
@@ -141,16 +144,81 @@ class Instance:
         print(f"   {self.domain} starting (pid {self._proc.pid}, log {log_path})")
         deadline = time.monotonic() + timeout
         while True:
-            try:
-                if requests.get(f"{self.url}/health", verify=False, timeout=5).ok:
-                    return
-            except requests.RequestException:
-                pass
             if self._proc.poll() is not None or time.monotonic() >= deadline:
                 raise RuntimeError(
                     f"{self.domain} did not come up; log tail:\n{self.log_tail()}"
                 )
+            try:
+                if self._ready():
+                    return
+            except (requests.RequestException, psycopg.Error, OSError):
+                pass
             time.sleep(0.5)
+
+    def _assert_bind_available(self) -> None:
+        """Do not reset a database if a different server owns the fixture port."""
+        address, port = self.bind.rsplit(":", 1)
+        address = address.strip("[]")
+        family = socket.AF_INET6 if ":" in address else socket.AF_INET
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as listener:
+                listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                listener.bind((address, int(port)))
+                listener.listen(1)
+        except OSError as error:
+            raise RuntimeError(
+                f"{self.domain} fixture port {self.bind} is occupied; "
+                "stop the existing owner before starting this disposable peer"
+            ) from error
+
+    def _owns_listener(self) -> bool:
+        """A foreign healthy service cannot establish this child's readiness."""
+        if self._proc is None or self._proc.poll() is not None:
+            return False
+        proc = Path(f"/proc/{self._proc.pid}")
+        sockets = set()
+        for descriptor in (proc / "fd").glob("*"):
+            try:
+                target = descriptor.readlink().as_posix()
+            except OSError:
+                continue
+            if target.startswith("socket:[") and target.endswith("]"):
+                sockets.add(target[8:-1])
+        # Fault drills move the child behind a proxy while keeping its public
+        # URL unchanged. Verify the child's configured listener, not the proxy.
+        bind = (
+            tomllib.loads(self._config_path.read_text())["bind"]
+            if self._dir is not None
+            else self.bind
+        )
+        port = int(bind.rsplit(":", 1)[1])
+        for protocol in ("tcp", "tcp6"):
+            try:
+                rows = (proc / "net" / protocol).read_text().splitlines()[1:]
+            except OSError:
+                continue
+            for row in rows:
+                fields = row.split()
+                if (
+                    len(fields) > 9
+                    and fields[3] == "0A"
+                    and int(fields[1].rsplit(":", 1)[1], 16) == port
+                    and fields[9] in sockets
+                ):
+                    return True
+        return False
+
+    def _ready(self) -> bool:
+        if not self._owns_listener():
+            return False
+        with psycopg.connect(self.dsn, autocommit=True) as conn:
+            initialized = conn.execute(
+                "SELECT to_regclass('public.instance_settings') IS NOT NULL"
+            ).fetchone()[0]
+        if not initialized:
+            return False
+        healthy = requests.get(f"{self.url}/health", verify=False, timeout=5).ok
+        return healthy and self._proc.poll() is None
 
     def restart_process_after_crash(self, timeout: float = 120.0) -> None:
         """Kill only the server process and relaunch against the same DB/media.

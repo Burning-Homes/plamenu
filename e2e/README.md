@@ -247,3 +247,26 @@ the normal rate limits and delivery assertions intact.
 
 See [`docs/INTEROPERABILITY.md`](../docs/INTEROPERABILITY.md) for the scope of
 the release matrix and how to report a peer-specific correctness gap.
+
+## Songhive music peer
+
+`./dev up songhive` starts the digest-pinned Songhive 0.4.9 application,
+PostgreSQL, Redis and its Celery delivery worker. `./dev down songhive` stops
+only this fixture. Source provisioning checks out the exact upstream revision
+in `peers/sources.lock`; the image and source are recorded separately.
+The standing disposable login is `sylvia` / `songhive-sylvia-pass-123`.
+
+The shared Caddy proxy serves `https://songhive.local`; provisioning installs
+the hostname and Docker alias. Both Songhive processes trust the shared local
+CA. The fixture-only `sitecustomize.py` allows Songhive's explicit remote
+lookup to reach five exact HTTPS peer origins on the private test network.
+All other origins keep its upstream fetch guard, and TLS and signature
+verification remain active. This overlay is not shipped in Plamenu or applied
+to the upstream source. It must never be used in a production deployment.
+
+`tests/test_songhive_federation.py` drives the actual public Songhive API.
+It covers signed account and music-library follows, native Audio delivery and
+withdrawal, metadata and decoded audio in both directions. Library delivery is
+observed before explicit URL lookup so a lookup cannot hide a broken subscription. The fixture is required by
+`e2e-full`, which rejects unexpected skips. Product parity and the remaining
+feature contracts are tracked in [Songhive parity](../docs/SONGHIVE_PARITY.md).

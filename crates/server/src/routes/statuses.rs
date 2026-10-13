@@ -449,3 +449,45 @@ pub async fn get_quote_authorization(
         Json(stamp),
     ))
 }
+
+/// Dereference the music entities embedded in a local Audio object under the
+/// same signature, visibility and canonical actor checks as its parent.
+pub async fn get_music_entity(
+    State(state): State<AppState>,
+    Path((username, id, entity)): Path<(String, i64, String)>,
+    headers: HeaderMap,
+    uri: Uri,
+) -> Result<Response, ApiError> {
+    require_ap_accept(&headers)?;
+    let (author, stored) = dereferenceable_status(&state, &username, &uri, id).await?;
+    if stored.object_type.as_deref() != Some("Audio")
+        || status::is_deleted(&state.pool, stored.id).await?
+    {
+        return Err(ApiError::NotFound);
+    }
+    let object = note_for_status(&state, &stored, &author).await?;
+    let value = match entity.as_str() {
+        "track" => object["track"].clone(),
+        "artist" => object["track"]["artists"][0].clone(),
+        "album" => object["track"]["album"].clone(),
+        _ => return Err(ApiError::NotFound),
+    };
+    if value.is_null() {
+        return Err(ApiError::NotFound);
+    }
+    if let Some(canonical) = value["id"].as_str()
+        && crate::music_entities::local_id(&state.config.domain, canonical).is_some()
+    {
+        return Ok(axum::response::Redirect::temporary(canonical).into_response());
+    }
+    let mut value = value;
+    value["@context"] = json!([
+        "https://www.w3.org/ns/activitystreams",
+        "https://funkwhale.audio/ns"
+    ]);
+    Ok((
+        [(header::CONTENT_TYPE, plamenu_ap::ACTIVITY_JSON_UTF8)],
+        Json(value),
+    )
+        .into_response())
+}

@@ -56,6 +56,7 @@ pub async fn publish_claimed(
         hide_totals: row.poll_hide_totals,
     });
     let params = PostParams {
+        music: None,
         username: &author.username,
         text: &row.text,
         visibility: &row.visibility,

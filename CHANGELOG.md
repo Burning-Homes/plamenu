@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Simplify JavaScript video playback with a compact control bar and labeled
+  settings popover. Show adaptive quality before playback, populate resolutions
+  after stream discovery, and retain keyboard controls and native fallback.
+
+- Add native Audio publication, structured music metadata and a searchable
+  music catalogue, public actor libraries and independent music subscriptions.
+  Add a digest-pinned Songhive 0.4.9 interoperability peer.
+  Add retained tracks, reusable artists and albums, artwork, named libraries
+  and ordered playlists, a persistent music player, listening history and
+  statistics, radio records, independent saved references and music favourites.
+  Album details and explicitly shared tracks have separate access controls;
+  account retirement revokes music grants and scoped subscriptions atomically.
+
 - Add a searchable, paged video workspace with dedicated upload and channel
   creation, video management, and accessible player settings. Simplify video
   and live authoring with optional sections, readable language choices,

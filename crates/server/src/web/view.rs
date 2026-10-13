@@ -1410,6 +1410,9 @@ pub fn account_privileged_menu(
 #[allow(clippy::too_many_lines)]
 pub fn icon(name: &str) -> Markup {
     let path = match name {
+        "music" => {
+            r#"<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>"#
+        }
         "video" => r#"<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/>"#,
         "reply" => r#"<path d="M9 17l-5-5 5-5"/><path d="M4 12h11a5 5 0 0 1 5 5v1"/>"#,
         "boost" => {
@@ -1935,7 +1938,9 @@ fn status_body(status: &Status, ctx: &Ctx, detail: bool, verdict: &FilterVerdict
             @if status.poll().is_some() {
                 (poll_view(status, ctx))
             }
+            (music_metadata(status, ctx))
             (media_section(status, ctx, &verdict.blur))
+            (music_actions(status, ctx))
             (webxdc_invitation_card(status.0.get("webxdc_invitation")))
             (preview_card(status))
         } @else {
@@ -1952,7 +1957,9 @@ fn status_body(status: &Status, ctx: &Ctx, detail: bool, verdict: &FilterVerdict
                 @if status.poll().is_some() {
                     (poll_view(status, ctx))
                 }
+                (music_metadata(status, ctx))
                 (blur_gated_gallery(status, ctx, &verdict.blur))
+                (music_actions(status, ctx))
                 (webxdc_invitation_card(status.0.get("webxdc_invitation")))
                 (preview_card(status))
             }
@@ -3446,11 +3453,29 @@ fn media_history(item: &Value, url: &str, ctx: &Ctx) -> Markup {
 }
 
 fn media_seek_previews(item: &Value, video_url: &str, locale: Locale) -> Markup {
+    // Playback chrome is independent of optional local thumbnail generation.
+    // Remote media may only reveal its duration after the first Play.
+    let duration = item["meta"]["original"]["duration"]
+        .as_f64()
+        .filter(|duration| duration.is_finite() && *duration > 0.0 && *duration <= 604_800.0);
+    let mut config = serde_json::json!({"duration": duration,
+            "labels": {
+                "play": locale.text("video-player-play"), "pause": locale.text("video-player-pause"),
+                "seek": locale.text("video-player-seek"), "mute": locale.text("video-player-mute"),
+                "unmute": locale.text("video-player-unmute"), "volume": locale.text("video-player-volume"),
+                "captions": locale.text("status-captions"), "off": locale.text("video-player-off"),
+                "fullscreen": locale.text("video-player-fullscreen"), "settings": locale.text("video-player-settings"),
+                "speed": locale.text("video-player-speed"), "pip": locale.text("video-player-pip"),
+                "live": locale.text("status-live-badge"),
+            }
+    });
+    let controls = |config: &Value| Some(config.to_string());
+    let fallback = || html! { span hidden data-vod-controls=[controls(&config)] {} };
     let Some(board) = item.get("storyboard") else {
-        return html! {};
+        return fallback();
     };
     let Some(url) = board.get("url").and_then(Value::as_str) else {
-        return html! {};
+        return fallback();
     };
     let columns = board["columns"].as_i64().unwrap_or(0);
     let rows = board["rows"].as_i64().unwrap_or(0);
@@ -3462,24 +3487,14 @@ fn media_seek_previews(item: &Value, video_url: &str, locale: Locale) -> Markup 
         || count > columns * rows
         || !(1..=604_800).contains(&interval)
     {
-        return html! {};
+        return fallback();
     }
-    let controls = item["meta"]["original"]["duration"]
-        .as_f64()
-        .filter(|duration| duration.is_finite() && *duration > 0.0 && *duration <= 604_800.0)
-        .filter(|_| item.get("live").is_none())
-        .map(|duration| serde_json::json!({
-            "url": url, "columns": columns, "rows": rows, "count": count,
-            "interval": interval, "duration": duration,
-            "labels": {
-                "play": locale.text("video-player-play"), "pause": locale.text("video-player-pause"),
-                "seek": locale.text("video-player-seek"), "mute": locale.text("video-player-mute"),
-                "unmute": locale.text("video-player-unmute"), "volume": locale.text("video-player-volume"),
-                "captions": locale.text("status-captions"), "off": locale.text("video-player-off"),
-                "fullscreen": locale.text("video-player-fullscreen"), "settings": locale.text("video-player-settings"),
-                "speed": locale.text("video-player-speed"), "pip": locale.text("video-player-pip"),
-            }
-        }).to_string());
+    config["url"] = url.into();
+    config["columns"] = columns.into();
+    config["rows"] = rows.into();
+    config["count"] = count.into();
+    config["interval"] = interval.into();
+    let controls = controls(&config);
     html! {
         details.media__transcript.media__chapters.media__seek-previews data-vod-controls=[controls] {
             summary { (locale.text("videos-seek-previews")) }
@@ -4196,6 +4211,8 @@ pub struct ComposeDefaults<'a> {
 /// shows the rendered post below. All-default = a fresh composer.
 #[derive(Default)]
 pub struct ComposePrefill<'a> {
+    pub recipients: &'a str,
+    pub music: Option<&'a plamenu_db::music::Metadata>,
     pub invitation: Option<Markup>,
     pub kind: &'a str,
     pub title: &'a str,
@@ -4212,6 +4229,7 @@ pub struct ComposePrefill<'a> {
     /// Already-uploaded attachments, as `MediaAttachment` entities — rendered
     /// as removable "Keep" cards (the no-JS media survives a preview as ids).
     pub media: &'a [Value],
+    pub available_media: Vec<Value>,
     /// The rendered preview card (a `Preview` submit produced it); `None` on a
     /// fresh composer or a plain error re-render.
     pub preview: Option<Markup>,
@@ -4684,6 +4702,7 @@ fn attachment_keep_row(item: &Value, locale: Locale, article: bool, fixed: bool)
                     img.edit-media__thumb src=(preview) alt="" loading="lazy";
                 }
                 None => a.edit-media__thumb.edit-media__thumb--file
+                    aria-label=(locale.text("compose-open-attachment"))
                     href=(url) target="_blank" rel="noopener noreferrer" {
                     (icon("upload"))
                 }
@@ -4848,6 +4867,17 @@ fn event_compose_details(event: &EventCompose, active: bool, locale: Locale) -> 
     }
 }
 
+pub(super) fn media_creation_navigation(locale: Locale, active: &str) -> Markup {
+    html! {details.compose-kind-menu {
+        summary {(locale.text("compose-post-type")) ": " (locale.text(if active=="live" {"media-create-live"} else {"media-create-video"}))}
+        nav aria-label=(locale.text("media-create-title")) {
+            @for (href, label) in [("/compose", "compose-kind-note"), ("/compose?kind=article", "compose-kind-article"), ("/compose?kind=event", "compose-event"), ("/compose?kind=audio", "compose-kind-audio"), ("/videos/upload", "media-create-video"), ("/videos/live/new", "media-create-live")] {
+                a href=(href) {(locale.text(label))}
+            }
+        }
+    }}
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)] // one flat form covering every compose surface
 pub fn full_compose_form(
     csrf: &str,
@@ -4861,8 +4891,11 @@ pub fn full_compose_form(
     locale: Locale,
 ) -> Markup {
     let kind = match (reply.is_some(), prefill.kind) {
+        (false, "audio") => "audio",
         (false, "article") => "article",
         (false, "event") => "event",
+        (false, "video") => "video",
+        (false, "live") => "live",
         _ => "note",
     };
     let placeholder_id = if quote.is_some() {
@@ -4876,6 +4909,7 @@ pub fn full_compose_form(
     };
     let note_placeholder = locale.text(placeholder_id);
     let placeholder = match kind {
+        "audio" => locale.text("compose-placeholder-audio"),
         "article" => locale.text("compose-placeholder-article"),
         "event" => locale.text("compose-placeholder-event"),
         _ => note_placeholder.clone(),
@@ -4910,9 +4944,13 @@ pub fn full_compose_form(
         locale.text_with("compose-schedule-help", &args)
     };
     html! {
-        form.compose-form data-compose
+        form.compose-form data-compose data-i18n-send=(locale.text("compose-send"))
             data-i18n-media-add=(locale.text("compose-media-add"))
+            data-i18n-audio-add=(locale.text("compose-audio-add"))
+            data-i18n-audio-file=(locale.text("compose-audio-file-error"))
+            data-i18n-audio-description=(locale.text("compose-audio-attachment-description"))
             data-i18n-media-drop-help=(locale.text("compose-media-drop-help"))
+            data-i18n-media-details=(locale.text("compose-media-details"))
             data-i18n-alt-description=(locale.text("compose-alt-description"))
             data-i18n-alt-named=(locale.text("compose-alt-named-template"))
             data-i18n-decorative=(locale.text("compose-decorative"))
@@ -4952,27 +4990,16 @@ pub fn full_compose_form(
             @if reply.is_none() {
                 div.compose__type-row {
                     label.compose__kind {
-                        span.visually-hidden { (locale.text("compose-post-type")) }
+                        span { (locale.text("compose-post-type")) }
                         select name="post_kind" data-compose-kind {
-                            @for (value, message) in [("note", "compose-kind-note"), ("article", "compose-kind-article"), ("event", "compose-event")] {
-                                option value=(value) selected[kind == value] { (locale.text(message)) }
-                            }
-                        }
-                    }
-                    details.compose__compatibility {
-                        summary { (locale.text("compose-compatibility")) }
-                        @for (value, message) in [
-                            ("note", if group.is_some() { "compose-compatibility-group" } else { "compose-compatibility-note" }),
-                            ("article", "compose-compatibility-article"),
-                            ("event", "compose-compatibility-event"),
-                        ] {
-                            ul data-compose-compatibility=(value) hidden[kind != value] {
-                                @for line in locale.text(message).lines().filter(|line| !line.trim().is_empty()) {
-                                    li { (line) }
+                            @for (value, message) in [("note", "compose-kind-note"), ("article", "compose-kind-article"), ("event", "compose-event"), ("audio", "compose-kind-audio"), ("video", "media-create-video"), ("live", "media-create-live")] {
+                                @if group.is_none() || matches!(value,"note"|"article") {
+                                    option value=(value) selected[kind == value] { (locale.text(message)) }
                                 }
                             }
                         }
                     }
+
                 }
                 noscript {
                     button type="submit" name="op" value="change_kind" formnovalidate {
@@ -4983,8 +5010,13 @@ pub fn full_compose_form(
                 input type="hidden" name="post_kind" value="note";
             }
 
+            div.compose__workflow data-compose-workflow hidden[!matches!(kind,"video"|"live")] {
+                p data-compose-workflow-hint data-video=(locale.text("compose-video-workflow")) data-live=(locale.text("compose-live-workflow")) {(locale.text(if kind=="live" {"compose-live-workflow"} else {"compose-video-workflow"}))}
+                a.button data-compose-workflow-link href=(if kind=="live" {"/videos/live/new"} else {"/videos/upload"}) {(locale.text("compose-continue"))}
+                p.compose__hint {(locale.text("compose-attachment-hint"))}
+            }
             @if let Some(invitation) = &prefill.invitation { (invitation) }
-            div.compose.compose--full.compose--direct[direct.is_some()] {
+            div.compose.compose--full.compose--direct[direct.is_some()] data-compose-editor hidden[matches!(kind,"video"|"live")] {
                 // A submit that failed validation re-renders the whole composer with
                 // this banner rather than the old bare error page.
                 @if let Some(error) = prefill.error {
@@ -5010,15 +5042,26 @@ pub fn full_compose_form(
                     }
                 }
 
+                @if direct.is_none() && group.is_none() {
+                    div.compose__recipients data-compose-recipients hidden[defaults.visibility!="direct"] {
+                        label.compose__field {
+                            span.compose__legend {(locale.text("compose-recipients"))}
+                            input type="text" name="recipients" value=(prefill.recipients) list="message-recipients" maxlength="1000" autocomplete="off" placeholder="@name@example.org" required[defaults.visibility=="direct"] disabled[defaults.visibility!="direct"];
+                        }
+                        datalist id="message-recipients" {}
+                        p.compose__hint {(locale.text("compose-recipients-hint"))}
+                    }
+                }
                 fieldset.compose__type-fields data-compose-title-fields
                     hidden[kind == "note" && group.is_none()]
                     disabled[kind == "note" && group.is_none()] {
                     label.compose__field {
                         span.compose__legend data-compose-title-label
                             data-note=(locale.text("compose-title"))
+                            data-audio=(locale.text("compose-audio-title"))
                             data-article=(locale.text("compose-long-form-title"))
                             data-event=(locale.text("compose-event-title")) {
-                            (locale.text(if kind == "event" { "compose-event-title" } else { "compose-title" }))
+                            (locale.text(match kind {"audio" => "compose-audio-title", "event" => "compose-event-title", _ => "compose-title"}))
                         }
                         input type="text" name="title" value=(group.map_or(prefill.title, |g| g.title))
                             maxlength="200" autocomplete="off" data-compose-title
@@ -5055,15 +5098,17 @@ pub fn full_compose_form(
                 label.compose__field.compose__text {
                     span.compose__legend.visually-hidden[kind == "note"] data-compose-body-label
                         data-note=(locale.text("compose-post-text"))
+                        data-audio=(locale.text("compose-audio-description"))
                         data-article=(locale.text("compose-article-body"))
                         data-event=(locale.text("compose-event-description")) {
-                        (locale.text(match kind { "article" => "compose-article-body", "event" => "compose-event-description", _ => "compose-post-text" }))
+                        (locale.text(match kind { "audio" => "compose-audio-description", "article" => "compose-article-body", "event" => "compose-event-description", _ => "compose-post-text" }))
                     }
                     textarea name="status" rows=(if kind == "article" { 12 } else { 5 }) data-autogrow
                         maxlength=(limits.textarea_maxlength())
                         data-max-chars=(limits.max_characters)
                         data-max-chars-long-form=(limits.max_characters_long_form)
                         data-placeholder-note=(note_placeholder)
+                        data-placeholder-audio=(locale.text("compose-placeholder-audio"))
                         data-placeholder-article=(locale.text("compose-placeholder-article"))
                         data-placeholder-event=(locale.text("compose-placeholder-event"))
                         placeholder=(placeholder) { (prefill.text) }
@@ -5082,7 +5127,7 @@ pub fn full_compose_form(
                     }
                 }
 
-                div.compose__section data-compose-section="media"
+                div.compose__section.is-open data-compose-section="media"
                     data-media-max=(media_slots) {
                     span.compose__legend { (locale.text("compose-media")) }
                     div.compose__media-body {
@@ -5096,7 +5141,7 @@ pub fn full_compose_form(
                         // order so the backend parsing is unchanged.
                         @if media_slots > 0 {
                             div.compose__media-static data-media-static {
-                                @for index in 0..media_slots {
+                                @for index in 0..(if kind=="audio" {(1-attached).max(0)} else {media_slots}) {
                                     div.compose__media-slot {
                                         label.compose__field {
                                             span.visually-hidden {
@@ -5139,18 +5184,37 @@ pub fn full_compose_form(
                                                 (numbered("compose-file", index + 1))
                                             }
                                             input type="file" name="media[]"
-                                                accept="image/*,video/*,audio/*";
+                                                accept=(if kind=="audio" {"audio/*"} else {"image/*,video/*,audio/*"});
                                         }
                                     }
                                 }
                             }
                         }
-                        label.compose__inline {
+                        @if !prefill.available_media.is_empty() {
+                            details.compose__existing {
+                                summary {(locale.text("compose-use-existing"))}
+                                p.compose__hint {(locale.text("compose-use-existing-hint"))}
+                                div.compose__existing-list {
+                                    @for item in &prefill.available_media {
+                                        label {input type="checkbox" name="reuse_media[]" value=(item["key"].as_str().unwrap_or_default()) data-existing-media=(item["media"].to_string()); span{(item["name"].as_str().unwrap_or_default())}}
+                                    }
+                                }
+                            }
+                        }
+                        label.compose__inline data-compose-sensitive {
                             input type="hidden" name="sensitive" value="false";
                             input type="checkbox" name="sensitive" value="true"
                                 checked[defaults.sensitive];
                             span { (locale.text("compose-sensitive")) }
                         }
+                    }
+                }
+
+                fieldset.compose__type-fields data-compose-audio-only hidden[kind != "audio"] disabled[kind != "audio"] {
+                    legend.visually-hidden {(locale.text("music-metadata"))}
+                    details.compose__music-details {
+                        summary {(locale.text("music-metadata-more"))}
+                        (music_fields(&prefill.music.cloned().unwrap_or_default(), locale))
                     }
                 }
 
@@ -5209,12 +5273,31 @@ pub fn full_compose_form(
                     (event_compose_details(&prefill.event, kind == "event", locale))
                 }
 
+                @if reply.is_none() {
+                    details.compose__compatibility {
+                        summary { (locale.text("compose-compatibility")) }
+                        @for (value, message) in [
+                            ("note", if group.is_some() { "compose-compatibility-group" } else { "compose-compatibility-note" }),
+                            ("audio", "compose-compatibility-audio"),
+                            ("article", "compose-compatibility-article"),
+                            ("event", "compose-compatibility-event"),
+                        ] {
+                            ul data-compose-compatibility=(value) hidden[kind != value] {
+                                @for line in locale.text(message).lines().filter(|line| !line.trim().is_empty()) {
+                                    li { (line) }
+                                }
+                            }
+                        }
+                    }
+
+                }
+
                 // Schedule for later: a filled time queues the draft instead
                 // of publishing. Group posts can't be scheduled (membership is
                 // checked at publish time), so the group composer drops the field.
                 @if group.is_none() {
                     fieldset.compose__section.compose__type-fields data-compose-section="schedule"
-                        data-compose-schedulable hidden[kind == "event"] disabled[kind == "event"] {
+                        data-compose-schedulable hidden[matches!(kind,"event"|"audio")] disabled[matches!(kind,"event"|"audio")] {
                         span.compose__legend { (locale.text("compose-schedule")) }
                         div.compose__schedule-body {
                             label.compose__inline {
@@ -5234,12 +5317,11 @@ pub fn full_compose_form(
 
                 div.compose__toolbar {
                     div.compose__tools {
-                        (compose_toggle("media", "upload", &locale.text("compose-attach-media")))
                         span data-compose-note-only hidden[kind != "note"] {
                             (compose_toggle("poll", "poll", &locale.text("compose-poll")))
                         }
                         @if group.is_none() {
-                            span data-compose-schedulable hidden[kind == "event"] {
+                            span data-compose-schedulable hidden[matches!(kind,"event"|"audio")] {
                                 (compose_toggle("schedule", "calendar", &locale.text("compose-schedule-later")))
                             }
                         }
@@ -5267,8 +5349,9 @@ pub fn full_compose_form(
                             formnovalidate data-compose-preview-btn {
                                 (locale.text("compose-preview"))
                             }
-                        button.compose__publish type="submit" name="op" value="post" {
-                            @if group.is_some() { (locale.text("compose-post-to-group")) }
+                        button.compose__publish type="submit" name="op" value="post" data-compose-submit data-default-label=(locale.text(if group.is_some(){"compose-post-to-group"}else if reply.is_some(){"compose-reply"}else{"compose-publish"})) {
+                            @if defaults.visibility=="direct" {(locale.text("compose-send"))}
+                            @else if group.is_some() { (locale.text("compose-post-to-group")) }
                             @else if reply.is_some() { (locale.text("compose-reply")) }
                             @else { (locale.text("compose-publish")) }
                         }
@@ -5287,6 +5370,40 @@ pub fn full_compose_form(
     }
 }
 
+fn music_fields(metadata: &plamenu_db::music::Metadata, locale: Locale) -> Markup {
+    html! {
+        @for (name, key, value) in [
+            ("music_artist", "music-artist", metadata.artist.as_str()),
+            ("music_album", "music-album", metadata.album.as_str()),
+        ] {
+            label.compose__field { span.compose__legend {(locale.text(key))}
+                input type="text" name=(name) value=(value) maxlength="200";
+            }
+        }
+        (music_extra_fields(metadata, locale))
+    }
+}
+
+fn music_extra_fields(metadata: &plamenu_db::music::Metadata, locale: Locale) -> Markup {
+    html! {
+        label.compose__field { span.compose__legend {(locale.text("music-genre"))}
+            input type="text" name="music_genre" value=(metadata.genre) maxlength="200";
+        }
+        @for (name, key, value) in [
+            ("music_release_year", "music-year", metadata.release_year),
+            ("music_track_number", "music-track-number", metadata.track_number),
+            ("music_disc_number", "music-disc-number", metadata.disc_number),
+        ] {
+            label.compose__field {span.compose__legend {(locale.text(key))}
+                input type="number" name=(name) value=(value.map(|n|n.to_string()).unwrap_or_default()) min="1" max="9999";
+            }
+        }
+        label.compose__field {span.compose__legend {(locale.text("music-mbid"))}
+            input type="text" name="music_musicbrainz_id" value=(metadata.musicbrainz_id.as_deref().unwrap_or_default()) maxlength="36";
+        }
+    }
+}
+
 /// The composer in edit mode: the same shell as [`full_compose_form`]
 /// prefilled from the post's raw source, submitting to
 /// `POST /web/statuses/{id}/edit`. What an edit cannot change stays out of the
@@ -5294,6 +5411,7 @@ pub fn full_compose_form(
 /// new media or polls can be added — attachments are kept/removed via
 /// checkboxes, each with an editable alt text.
 pub struct EditComposePrefill<'a> {
+    pub music: Option<&'a plamenu_db::music::Metadata>,
     pub title: Option<&'a str>,
     pub text: &'a str,
     pub spoiler_text: &'a str,
@@ -5331,6 +5449,7 @@ fn video_edit_links(media_id: &str, locale: Locale) -> Markup {
 
 #[allow(
     clippy::too_many_arguments,
+    clippy::too_many_lines,
     reason = "one flat edit form mirroring the full composer"
 )]
 pub fn edit_compose_form(
@@ -5367,6 +5486,9 @@ pub fn edit_compose_form(
 
             @if let Some(title) = prefill.title {
                 (edit_title_field(title, status.object_type() == Some("Video"), locale))
+            }
+            @if let Some(metadata) = prefill.music {
+                (music_fields(metadata, locale))
             }
             @if status.object_type() == Some("Video") {
                 @if let Some(media_id) = prefill.media.first().and_then(|item| item["id"].as_str()) {
@@ -5793,6 +5915,10 @@ fn notification_label(kind: &str) -> &'static str {
         "follow" => "followed you",
         "follow_request" => "requested to follow you",
         "favourite" => "favourited your post",
+        "music.favourite" => "favourited your music",
+        "music.share" => "shared music with you",
+        "music.download" => "prepared your music download",
+        "webmention" => "mentioned you on a website",
         "reblog" => "boosted your post",
         "mention" => "mentioned you",
         "status" => "posted",
@@ -6005,9 +6131,46 @@ fn system_notification(kind: &str) -> Markup {
     }
 }
 
+fn music_download_notification(note: &Value, ctx: &Ctx) -> Markup {
+    html! {article.notification data-kind="music.download" {
+        p.notification__label{span.notification__icon{(icon("music"))}span.notification__label-body{(ctx.locale.text("music-download-notification"))}}
+        @if let Some(url)=note["music_resource"]["url"].as_str() {p{a href=(url){(ctx.locale.text("music-download-open"))}}} @else {p{(ctx.locale.text("music-download-unavailable"))}}
+    }}
+}
+fn music_share_notification(note: &Value, actor: &Account, ctx: &Ctx) -> Markup {
+    html! {article.notification data-kind="music.share"{
+        p.notification__label{span.notification__icon{(icon("music"))}span.notification__label-body{a.notification__actor href=(actor.profile_path()){(actor.name_markup())}span.notification__label-detail{(ctx.locale.text("music-shares-notification"))}}}
+        @if let Some(source)=note.get("music_resource").filter(|v|v.is_object()){@if let Some(url)=source["url"].as_str(){p{a href=(url){(source["name"].as_str().or_else(||source["title"].as_str()).unwrap_or_default())}}}}@else{p{(ctx.locale.text("music-saved-unavailable"))}}
+    }}
+}
+fn music_favourite_notification(note: &Value, actor: &Account, ctx: &Ctx) -> Markup {
+    html! {article.notification data-kind=("music.favourite"){
+        p.notification__label{span.notification__icon{(icon("favourite"))}span.notification__label-body{
+            a.notification__actor href=(actor.profile_path()){(actor.name_markup())}
+            span.notification__label-detail{(ctx.locale.text("music-favourites-notification"))}
+        }}
+        @if let Some(track)=note.get("music_track").filter(|v|v.is_object()){
+            @if let (Some(url),Some(title))=(track["url"].as_str(),track["title"].as_str()){
+                p{a href=(url){(title)} " — " (track["artist"].as_str().unwrap_or_default())}
+            }
+        }@else{p{(ctx.locale.text("music-favourites-unavailable"))}}
+    }}
+}
+
 /// One notification entity (`entities::render_notifications`): an actor line
 /// plus, when the notification carries one, the related status card. Pure
 /// account notifications (follow / follow request) show the account card.
+fn music_notification(note: &Value, actor: &Account, ctx: &Ctx, kind: &str) -> Option<Markup> {
+    match kind {
+        "webmention" => Some(
+            html! {article.notification data-kind="webmention" {p.notification__label{(ctx.locale.text("webmentions-notification"))}p{a href="/webmentions/archive"{(ctx.locale.text("webmentions-title"))}}}},
+        ),
+        "music.download" => Some(music_download_notification(note, ctx)),
+        "music.share" => Some(music_share_notification(note, actor, ctx)),
+        "music.favourite" => Some(music_favourite_notification(note, actor, ctx)),
+        _ => None,
+    }
+}
 pub fn notification_item(note: &Value, ctx: &Ctx) -> Markup {
     let kind = note.get("type").and_then(Value::as_str).unwrap_or_default();
     let actor = Account(&note["account"]);
@@ -6048,6 +6211,9 @@ pub fn notification_item(note: &Value, ctx: &Ctx) -> Markup {
     }
     if matches!(kind, "added_to_collection" | "collection_update") {
         return collection_notification(note, &actor, ctx, kind);
+    }
+    if let Some(item) = music_notification(note, &actor, ctx, kind) {
+        return item;
     }
     if kind == "admin.report" {
         return admin_report_notification(note, &actor, ctx);
@@ -6166,7 +6332,7 @@ pub fn conversation_row(conversation: &Value, ctx: &Ctx) -> Markup {
                         span.conversation__dot aria-hidden="true" {}
                         span.visually-hidden { "Unread: " }
                     }
-                    "With " (names)
+                    (names)
                 }
                 @if let Some(csrf) = ctx.csrf {
                     details.status__menu.conversation__menu data-status-menu {
@@ -6188,12 +6354,18 @@ pub fn conversation_row(conversation: &Value, ctx: &Ctx) -> Markup {
                 }
             }
             @if let Some(status) = &last_status {
-                (status_card(status, ctx))
-                nav.conversation__actions {
-                    a.conversation__open href=(status.permalink_anchored()) { "Open conversation" }
-                    a.conversation__reply
-                        href=(format!("/compose?reply={}&visibility=direct", status.id())) {
-                        "Reply"
+                a.conversation__open href=(status.permalink_anchored()) {
+                    span.conversation__preview {
+                        @if !status.spoiler_text().is_empty() { (status.spoiler_text()) }
+                        @else {
+                            @let text=crate::filters::plain_text(status.content_html());
+                            @if text.trim().is_empty() { (ctx.locale.text("conversation-media")) }
+                            @else { (text) }
+                        }
+                    }
+                    span.conversation__meta {
+                        (ctx.locale.text("conversation-open")) " · "
+                        (ctx.clock.element_absolute_iso(status.created_at()))
                     }
                 }
             } @else {
@@ -6261,6 +6433,70 @@ pub fn webxdc_invitation_card(invitation: Option<&Value>) -> Markup {
             span.webxdc-invitation__icon aria-hidden="true" { (icon("apps")) }
             span { strong { (name) } span.webxdc-muted { "App invitation · View session" } }
             span.webxdc-invitation__arrow aria-hidden="true" { "→" }
+        }
+    }
+}
+
+fn music_metadata(status: &Status, ctx: &Ctx<'_>) -> Markup {
+    let locale = ctx.locale;
+    if status.object_type() != Some("Audio") {
+        return Markup::default();
+    }
+    let metadata = status.0.get("music").unwrap_or(&Value::Null);
+    html! { @if metadata.is_object(){dl.status__music {
+        @for (field,label) in [("artist","music-artist"),("album","music-album"),("genre","music-genre")] {
+            @if let Some(value)=metadata[field].as_str().filter(|s|!s.is_empty()) {
+                dt {(locale.text(label))} dd {(value)}
+            }
+        }
+        @for (field,label) in [("release_year","music-year"),("track_number","music-track-number"),("disc_number","music-disc-number")] {
+            @if let Some(value)=metadata[field].as_i64().filter(|v|*v>0) {
+                dt {(locale.text(label))} dd {(value)}
+            }
+        }
+        @if let Some(value)=metadata["musicbrainz_id"].as_str().filter(|v|!v.is_empty()) {
+            dt {(locale.text("music-mbid"))} dd {(value)}
+        }
+    }
+    }
+    }
+}
+
+/// Native attachment controls are the post's primary player. Queue, library
+/// and subscription controls remain available without competing with listening.
+fn music_actions(status: &Status, ctx: &Ctx<'_>) -> Markup {
+    if status.object_type() != Some("Audio") || ctx.viewer_id.is_none() {
+        return Markup::default();
+    }
+    let Some(csrf) = ctx.csrf else {
+        return Markup::default();
+    };
+    let locale = ctx.locale;
+    let has_audio = status.media().iter().any(|item| {
+        item["type"].as_str() == Some("audio")
+            && item["url"].as_str().is_some_and(|url| !url.is_empty())
+    });
+    html! {
+        @if !has_audio {
+            (super::music_player::source_play_form(locale,csrf,"status",status.id()))
+        }
+        details.status__music-tools {
+            summary{(locale.text("music-post-options"))}
+            p{a.music-player-open href=(format!("/music/player?status_id={}",status.id())) target="plamenu-music-player"{(locale.text("music-player-open"))}}
+            div.status__music-tools__actions {
+                (super::music_favourites::form(locale,csrf,None,Some(status.id()),false,ctx.return_to))
+                @if ctx.viewer_id.is_some_and(|viewer|viewer!=status.account().id()) {
+                    (super::music_saved::source_form(locale,csrf,&crate::music_saved::Reference{kind:crate::music_saved::Kind::Audio,id:status.id().to_owned()},false,ctx.return_to))
+                }
+                @if matches!(status.visibility(),"public"|"unlisted") && ctx.viewer_id.is_some_and(|viewer|viewer!=status.account().id()) {
+                    form method="post" action="/web/music/follows" {
+                        input type="hidden" name="csrf" value=(csrf);
+                        input type="hidden" name="operation" value="follow";
+                        input type="hidden" name="url" value=(status.uri());
+                        button type="submit" {(locale.text("music-follow-track"))}
+                    }
+                }
+            }
         }
     }
 }
@@ -6369,8 +6605,8 @@ mod tests {
         let markup =
             media_seek_previews(&value, "/media/7.draft.mp4", Locale::default()).into_string();
         assert!(
-            !markup.contains("data-vod-controls="),
-            "Unknown duration keeps native controls"
+            markup.contains("data-vod-controls="),
+            "Unknown duration still offers controls; seeking waits for metadata"
         );
         value["meta"]["original"]["duration"] = json!(60.5);
         let enhanced =
@@ -6379,7 +6615,7 @@ mod tests {
         for duration in [0.0, -1.0, 604_801.0] {
             value["meta"]["original"]["duration"] = json!(duration);
             assert!(
-                !media_seek_previews(&value, "/media/7.draft.mp4", Locale::default())
+                media_seek_previews(&value, "/media/7.draft.mp4", Locale::default())
                     .into_string()
                     .contains("data-vod-controls=")
             );
@@ -6387,7 +6623,7 @@ mod tests {
         value["meta"]["original"]["duration"] = json!(60.5);
         value["live"] = json!({"state":"live"});
         assert!(
-            !media_seek_previews(&value, "/media/7.draft.mp4", Locale::default())
+            media_seek_previews(&value, "/media/7.draft.mp4", Locale::default())
                 .into_string()
                 .contains("data-vod-controls=")
         );
@@ -6408,10 +6644,20 @@ mod tests {
             assert!(
                 media_seek_previews(&value, "/media/7.draft.mp4", Locale::default())
                     .into_string()
-                    .is_empty()
+                    .contains("data-vod-controls=")
             );
             value["storyboard"][field] = previous;
         }
+    }
+
+    #[test]
+    fn remote_video_without_storyboard_gets_the_same_playback_controls() {
+        let value = json!({"media_attachments":[{"type":"video", "url":"/media/play/9/video.mp4",
+            "hls":{"master":"/media/hls/9/master.m3u8"}}]});
+        let markup = media_gallery(&Status(&value), &view_ctx(None, None)).into_string();
+        assert!(markup.contains("data-vod-controls="));
+        assert!(markup.contains("controls playsinline"));
+        assert!(!markup.contains("media__seek-grid"));
     }
 
     #[test]
@@ -6813,6 +7059,48 @@ mod tests {
             clock: ViewerClock::utc(Locale::default()),
             admin: AdminCapabilities::default(),
         }
+    }
+
+    #[test]
+    fn audio_posts_play_without_optional_music_metadata() {
+        let mut value =
+            json!({"id":"42","object_type":"Audio","visibility":"private","account":{"id":"7"}});
+        let mut ctx = view_ctx(None, Some("7"));
+        ctx.csrf = Some("listener-csrf");
+        let rendered = music_actions(&Status(&value), &ctx).into_string();
+        assert!(rendered.contains("action=\"/web/music/play\""));
+        assert!(rendered.contains("value=\"listener-csrf\""));
+        assert!(rendered.contains("name=\"status_id\" value=\"42\""));
+        assert!(!rendered.contains("<dl"));
+        assert!(
+            music_actions(&Status(&value), &view_ctx(None, None))
+                .into_string()
+                .is_empty()
+        );
+        value["object_type"] = json!("Note");
+        assert!(
+            music_actions(&Status(&value), &ctx)
+                .into_string()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn audio_attachment_is_the_only_primary_post_player() {
+        let value = json!({
+            "id":"42", "object_type":"Audio", "visibility":"public",
+            "uri":"https://plamenu.test/audio/42", "account":{"id":"8"},
+            "media_attachments":[{"type":"audio","url":"/media/song.m4a"}]
+        });
+        let mut ctx = view_ctx(None, Some("7"));
+        ctx.csrf = Some("listener-csrf");
+        let rendered = music_actions(&Status(&value), &ctx).into_string();
+        assert!(!rendered.contains("action=\"/web/music/play\""));
+        assert!(rendered.contains("<details class=\"status__music-tools\">"));
+        assert!(!rendered.contains(" open"));
+        assert!(rendered.contains("Open in music player"));
+        assert!(rendered.contains("Save to your library"));
+        assert!(rendered.contains("Subscribe to track updates"));
     }
 
     fn notification_account(id: &str, username: &str, name: &str) -> Value {

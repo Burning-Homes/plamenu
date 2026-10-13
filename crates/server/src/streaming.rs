@@ -979,7 +979,7 @@ async fn route_notification(
     {
         return Ok(());
     }
-    let Some(item) = notification::find_by_id(&state.pool, account_id, notification_id).await?
+    let Some(mut item) = notification::find_by_id(&state.pool, account_id, notification_id).await?
     else {
         return Ok(());
     };
@@ -990,6 +990,15 @@ async fn route_notification(
     }
     if events::notification_filtered(&state.pool, account_id, item.from_account_id).await? {
         return Ok(());
+    }
+    if let Some(kinds) =
+        plamenu_db::notification_delivery::in_app_kinds(&state.pool, account_id, None).await?
+    {
+        let reasons = notification::reasons(&state.pool, item.id).await?;
+        let Some(kind) = reasons.into_iter().find(|r| kinds.contains(r)) else {
+            return Ok(());
+        };
+        item.kind = kind;
     }
     let rendered = crate::entities::render_notifications(
         &state.pool,

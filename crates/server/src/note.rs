@@ -200,6 +200,8 @@ const SELF_REPLY_PREVIEW: i64 = 5;
 /// batch built from the same slice.
 #[derive(Default)]
 pub struct NoteBatch {
+    music: HashMap<i64, plamenu_db::music::Metadata>,
+    music_entities: HashMap<i64, crate::music_entities::Snapshot>,
     parent_uris: HashMap<i64, String>,
     media: HashMap<i64, Vec<plamenu_db::media::Media>>,
     mentions: HashMap<i64, Vec<Account>>,
@@ -285,6 +287,13 @@ impl NoteBatch {
         }
         let domain = &state.config.domain;
         let ids: Vec<i64> = items.iter().map(|item| item.id).collect();
+        let audio_ids: Vec<i64> = items
+            .iter()
+            .filter(|s| s.object_type.as_deref() == Some("Audio"))
+            .map(|s| s.id)
+            .collect();
+        batch.music = plamenu_db::music::for_statuses(&mut *conn, &audio_ids).await?;
+        batch.music_entities = crate::music_entities::snapshots_conn(conn, &audio_ids).await?;
 
         // Parents, for `inReplyTo`. On a replies collection all 60 rows share
         // one parent and one parent author, which used to be 120 lookups of the
@@ -803,6 +812,12 @@ pub fn note_in_batch(
     }
     if let Some((_, session_uri, session_name)) = batch.webxdc_invitations.get(&item.id) {
         crate::webxdc::enhance_invitation(&mut note, session_uri, session_name);
+    }
+    if item.object_type.as_deref() == Some("Audio") {
+        crate::audio::enrich(&mut note, batch.music.get(&item.id));
+        if let Some(entities) = batch.music_entities.get(&item.id) {
+            entities.enrich(&state.config.domain, &mut note);
+        }
     }
     Ok(note)
 }

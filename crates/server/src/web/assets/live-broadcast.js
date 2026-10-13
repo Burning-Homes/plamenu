@@ -7,13 +7,15 @@
   const camera = root.querySelector('[data-live-camera]');
   const screen = root.querySelector('[data-live-screen]');
   const stopButton = root.querySelector('[data-live-stop]');
+  const startButton = root.querySelector('[data-live-start]');
+  const cancelButton = root.querySelector('[data-live-cancel]');
   const preview = root.querySelector('[data-live-preview]');
   const status = root.querySelector('[data-live-status]');
   const devicesFieldset = root.querySelector('[data-live-devices]');
   const cameraDevice = root.querySelector('[data-live-camera-device]');
   const micDevice = root.querySelector('[data-live-mic-device]');
   const screenAudio = root.querySelector('[data-live-screen-audio]');
-  if (!camera || !screen || !stopButton || !preview || !status ||
+  if (!camera || !screen || !stopButton || !startButton || !cancelButton || !preview || !status ||
       !devicesFieldset || !cameraDevice || !micDevice || !screenAudio) return;
 
   const supported = !!(window.MediaRecorder && window.WebSocket &&
@@ -80,6 +82,10 @@
     camera.disabled = busy || (active && activeKind === 'camera');
     screen.disabled = busy || (active && activeKind === 'screen') || !navigator.mediaDevices.getDisplayMedia;
     stopButton.hidden = !active;
+    startButton.hidden = active || !stream;
+    cancelButton.hidden = active || !stream;
+    startButton.disabled = busy;
+    cancelButton.disabled = busy;
   }
   camera.defaultText = camera.textContent;
   screen.defaultText = screen.textContent;
@@ -300,12 +306,11 @@
     }
   }
 
-  async function start(kind) {
+  async function prepare(kind) {
+    releaseTracks();
     buttons(false, true);
-    stopButton.hidden = true;
     stopping = false;
     tell(root.dataset.requesting);
-    let phase = 'capture';
     let captured = null;
     try {
       captured = await capture(kind);
@@ -313,9 +318,26 @@
       refreshDevices();
       await setupOutput(captured, kind);
       captured = null;
+      if (stopping) { releaseTracks(); return; }
+      if (!chosenMime(stream)) throw new Error(root.dataset.unsupported);
+      preview.srcObject = stream;
+      preview.hidden = false;
+      preview.play().catch(() => {});
+      buttons(false);
+      tell(root.dataset.previewReady);
+      startButton.focus();
+    } catch (error) {
+      if (captured) captured.getTracks().forEach(track => track.stop());
+      releaseTracks(); buttons(false); tell(captureError(error));
+    }
+  }
+
+  async function start() {
+    if (!stream || recorder) return;
+    buttons(false, true);
+    stopping = false;
+    try {
       const mime = chosenMime(stream);
-      if (!mime) throw new Error(root.dataset.unsupported);
-      phase = 'connect';
       await connect(mime);
       if (!socket || socket.readyState !== WebSocket.OPEN || stopping) {
         throw new Error(root.dataset.connectionError);
@@ -374,13 +396,12 @@
       buttons(true);
       tell(onAir());
     } catch (error) {
-      if (captured) captured.getTracks().forEach(track => track.stop());
       if (socket) socket.close();
       socket = null;
       recorder = null;
       releaseTracks();
       buttons(false);
-      tell(phase === 'capture' ? captureError(error) : error.message || root.dataset.startError);
+      tell(error.message || root.dataset.startError);
     }
   }
 
@@ -404,11 +425,14 @@
       releaseTracks();
       buttons(false);
       stopButton.disabled = false;
+      if (status.textContent === root.dataset.previewReady) tell(root.dataset.previewCancelled);
     }
   }
 
-  camera.addEventListener('click', () => recorder ? switchSource('camera') : start('camera'));
-  screen.addEventListener('click', () => recorder ? switchSource('screen') : start('screen'));
+  camera.addEventListener('click', () => recorder ? switchSource('camera') : prepare('camera'));
+  screen.addEventListener('click', () => recorder ? switchSource('screen') : prepare('screen'));
+  startButton.addEventListener('click', start);
+  cancelButton.addEventListener('click', () => { stop(); tell(root.dataset.previewCancelled); camera.focus(); });
   stopButton.addEventListener('click', stop);
   window.addEventListener('pagehide', stop);
 })();

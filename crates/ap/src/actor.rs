@@ -300,6 +300,9 @@ pub struct Actor {
     /// Public Video playlists (`PeerTube` collection discovery).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub playlists: Option<String>,
+    /// Public music library (Funkwhale vocabulary).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub library: Option<String>,
     /// RFC 3339 timestamp of account creation.
     pub published: String,
     pub manually_approves_followers: bool,
@@ -617,6 +620,7 @@ impl Actor {
             featured_tags: urls.featured_tags,
             featured_collections: urls.featured_collections,
             playlists: None,
+            library: None,
             published: params.published.clone(),
             manually_approves_followers: params.locked,
             discoverable: params.discoverable,

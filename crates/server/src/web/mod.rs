@@ -17,6 +17,7 @@ mod cleanup;
 pub(crate) mod clock;
 mod collapse;
 mod collections;
+mod compose_media;
 mod confirmation;
 mod explore;
 mod export;
@@ -34,8 +35,38 @@ pub(crate) mod layout;
 mod lists;
 mod live;
 mod live_calendar;
+mod mentions;
 mod meta;
 mod migration;
+mod music;
+mod music_activity;
+mod music_album_access;
+mod music_artworks;
+mod music_assets;
+mod music_browse;
+mod music_clients;
+mod music_collections;
+mod music_discovery;
+mod music_downloads;
+pub(crate) mod music_embeds;
+mod music_entities;
+mod music_favourites;
+mod music_history;
+#[cfg(unix)]
+mod music_local;
+mod music_outputs;
+mod music_player;
+mod music_podcasts;
+mod music_radios;
+mod music_remote;
+mod music_renditions;
+mod music_saved;
+mod music_shares;
+mod music_stats;
+mod music_terms;
+mod music_track_details;
+pub(crate) mod notification_delivery;
+mod notification_inbox;
 mod notification_requests;
 pub(crate) mod pages;
 pub(crate) mod password;
@@ -71,6 +102,7 @@ mod video_workspace;
 mod videos;
 mod view;
 pub(crate) mod webauthn;
+mod webmentions;
 pub(crate) mod webxdc;
 
 use axum::Router;
@@ -117,6 +149,254 @@ pub fn router() -> Router<AppState> {
             get(caption_transcripts::show),
         )
         .route("/", get(pages::home))
+        .route("/music", get(music::index))
+        .route("/music/open", get(music_discovery::open))
+        .route("/music/discover", get(music_discovery::browse))
+        .route("/web/music/remote/{id}/play", post(music_remote::play))
+        .route("/music/embed/{kind}/{id}", get(music_embeds::frame))
+        .route("/music/embed-code/{kind}/{id}", get(music_embeds::code))
+        .route("/music/embed.js", get(music_embeds::script))
+        .route("/music/embed-frame.js", get(music_embeds::frame_script))
+        .route(
+            "/music/embed/assets/{id}/audio",
+            get(music_embeds::audio).options(music_embeds::media_preflight),
+        )
+        .route(
+            "/music/embed/artwork/{id}",
+            get(music_embeds::artwork).options(music_embeds::media_preflight),
+        )
+        .route("/music/tags/{name}", get(music_terms::tags))
+        .route("/music/genres/{name}", get(music_terms::genres))
+        .route("/music/player", get(music_player::index))
+        .route("/music/history", get(music_history::index))
+        .route("/music/stats", get(music_stats::index))
+        .route("/music/favourites", get(music_favourites::index))
+        .route("/music/mine", get(music_saved::index))
+        .route("/music/saved", get(music_saved::manager))
+        .route("/music/remote/{id}", get(music_remote::show))
+        .route("/music/{kind}/{id}/activities", get(music_activity::show))
+        .route("/web/music/remote/import", post(music_remote::import))
+        .route(
+            "/web/music/remote/{id}/collect",
+            post(music_remote::collect),
+        )
+        .route("/webmentions/archive", get(webmentions::archive))
+        .route(
+            "/web/webmentions/{id}/interact",
+            post(webmentions::interact),
+        )
+        .route("/webmentions/posts/{id}", get(webmentions::source))
+        .route("/music/downloads", get(music_downloads::index))
+        .route("/music/downloads/{id}", get(music_downloads::show))
+        .route("/web/music/downloads/create", post(music_downloads::create))
+        .route(
+            "/web/music/downloads/{id}/cancel",
+            post(music_downloads::cancel),
+        )
+        .route(
+            "/web/music/downloads/{id}/delete",
+            post(music_downloads::delete),
+        )
+        .merge(music_local_router())
+        .route("/music/clients", get(music_clients::index))
+        .route("/web/music/clients/create", post(music_clients::create))
+        .route(
+            "/web/music/clients/{id}/revoke",
+            post(music_clients::revoke),
+        )
+        .route("/music/streams", get(music_outputs::index))
+        .route("/music/streams/{id}", get(music_outputs::show))
+        .route("/web/music/streams/create", post(music_outputs::create))
+        .route(
+            "/web/music/streams/{id}/update",
+            post(music_outputs::update),
+        )
+        .route(
+            "/web/music/streams/{id}/command",
+            post(music_outputs::command),
+        )
+        .route("/web/music/streams/{id}/token", post(music_outputs::rotate))
+        .route(
+            "/web/music/streams/{id}/delete",
+            post(music_outputs::delete),
+        )
+        .route("/music/podcasts", get(music_podcasts::index))
+        .route("/music/podcasts/opml", get(music_podcasts::opml))
+        .route("/music/podcasts/{id}", get(music_podcasts::show))
+        .route(
+            "/music/podcasts/episodes/{id}",
+            get(music_podcasts::episode),
+        )
+        .route(
+            "/web/music/podcasts/subscribe",
+            post(music_podcasts::subscribe),
+        )
+        .route("/web/music/podcasts/import", post(music_podcasts::import))
+        .route(
+            "/web/music/podcasts/import-file",
+            post(music_podcasts::import_file),
+        )
+        .route(
+            "/web/music/podcasts/{id}/unsubscribe",
+            post(music_podcasts::unsubscribe),
+        )
+        .route(
+            "/web/music/podcasts/{id}/refresh",
+            post(music_podcasts::refresh),
+        )
+        .route(
+            "/web/music/podcasts/{id}/played",
+            post(music_podcasts::played_page),
+        )
+        .route(
+            "/web/music/podcasts/episodes/{id}/played",
+            post(music_podcasts::played),
+        )
+        .route(
+            "/web/music/podcasts/episodes/{id}/collect",
+            post(music_podcasts::collect),
+        )
+        .route(
+            "/web/music/podcasts/{id}/collect",
+            post(music_podcasts::collect_page),
+        )
+        .route("/music/shares", get(music_shares::manager))
+        .route("/music/shares/new", get(music_shares::new_link))
+        .route("/music/share", get(music_shares::preview))
+        .route("/web/music/share-links", post(music_shares::create))
+        .route("/web/music/shares/revoke", post(music_shares::revoke))
+        .route("/web/music/saved", post(music_saved::change))
+        .route("/web/music/saved/remove", post(music_saved::remove))
+        .route("/web/music/favourites", post(music_favourites::change))
+        .route(
+            "/web/music/history/preferences",
+            post(music_history::preferences),
+        )
+        .route("/web/music/history/erase", post(music_history::erase))
+        .route("/web/music/listening/start", post(music_history::start))
+        .route(
+            "/web/music/listening/{token}",
+            post(music_history::progress),
+        )
+        .route("/web/music/player", post(music_player::command))
+        .route("/web/music/play", post(music_player::play))
+        .merge(music_artworks::router())
+        .route("/music/artists", get(music_entities::artists))
+        .route("/music/artists/new", get(music_entities::new_artist))
+        .route("/music/albums/new", get(music_entities::new_album))
+        .route(
+            "/web/music/artists/create",
+            post(music_entities::create_artist),
+        )
+        .route(
+            "/web/music/albums/create",
+            post(music_entities::create_album),
+        )
+        .route("/music/artists/{id}", get(music_entities::artist))
+        .route("/music/albums", get(music_entities::albums))
+        .route("/music/albums/{id}", get(music_entities::album))
+        .route("/music/albums/{id}/access", get(music_album_access::show))
+        .route(
+            "/web/music/albums/{id}/access",
+            post(music_album_access::update),
+        )
+        .route(
+            "/web/music/albums/{id}/grant",
+            post(music_album_access::grant),
+        )
+        .route(
+            "/web/music/artists/{id}/edit",
+            post(music_entities::edit_artist),
+        )
+        .route(
+            "/web/music/albums/{id}/edit",
+            post(music_entities::edit_album),
+        )
+        .route(
+            "/web/music/artists/{id}/delete",
+            post(music_entities::delete_artist),
+        )
+        .route(
+            "/web/music/albums/{id}/delete",
+            post(music_entities::delete_album),
+        )
+        .route("/music/assets/{id}/album", get(music_track_details::albums))
+        .route(
+            "/web/music/assets/{id}/album",
+            post(music_track_details::set_album),
+        )
+        .route(
+            "/web/music/assets/{id}/details",
+            post(music_track_details::update),
+        )
+        .route("/music/assets", get(music_assets::index))
+        .route("/music/collections", get(music_collections::index))
+        .route("/music/radios", get(music_radios::index))
+        .route("/music/radios/{id}", get(music_radios::show))
+        .route("/web/music/radios/create", post(music_radios::create))
+        .route("/web/music/radios/{id}/edit", post(music_radios::edit))
+        .route("/web/music/radios/{id}/delete", post(music_radios::delete))
+        .route("/web/music/radios/{id}/grant", post(music_radios::grant))
+        .route("/music/collections/{id}", get(music_collections::show))
+        .route(
+            "/web/music/collections/{id}/contents-sharing",
+            post(music_collections::contents_sharing),
+        )
+        .route(
+            "/web/music/collections/{id}/grant",
+            post(music_collections::grant),
+        )
+        .route(
+            "/web/music/collections/{id}/tags",
+            post(music_collections::tags),
+        )
+        .route(
+            "/web/music/collections/create",
+            post(music_collections::create),
+        )
+        .route(
+            "/web/music/collections/{id}/edit",
+            post(music_collections::edit),
+        )
+        .route(
+            "/web/music/collections/{id}/delete",
+            post(music_collections::delete),
+        )
+        .route(
+            "/web/music/collections/{id}/add",
+            post(music_collections::add),
+        )
+        .route(
+            "/web/music/collections/{id}/entry",
+            post(music_collections::entry),
+        )
+        .route("/music/assets/{id}", get(music_assets::show))
+        .route("/music/assets/{id}/renditions", get(music_renditions::page))
+        .route(
+            "/music/assets/{id}/renditions/play",
+            get(music_renditions::play),
+        )
+        .route(
+            "/web/music/assets/{id}/renditions",
+            post(music_renditions::prepare),
+        )
+        .route(
+            "/web/music/assets/{id}/renditions/{job}/remove",
+            post(music_renditions::remove),
+        )
+        .route(
+            "/web/music/assets/{id}/publish",
+            post(music_assets::publish),
+        )
+        .route(
+            "/web/music/assets/{id}/withdraw",
+            post(music_assets::withdraw),
+        )
+        .merge(music_asset_upload_route())
+        .route("/web/music/assets/{id}/edit", post(music_assets::edit))
+        .route("/web/music/assets/{id}/delete", post(music_assets::delete))
+        .route("/web/music/assets/{id}/grant", post(music_assets::grant))
+        .route("/web/music/follows", post(music::follow_action))
         .route("/videos/settings", get(video_history::settings))
         .route("/videos/{id}/sharing", get(video_distribution::page))
         .route("/web/videos/{id}/sharing", post(video_distribution::save))
@@ -181,7 +461,19 @@ pub fn router() -> Router<AppState> {
             "/web/announcements/{id}/dismiss",
             post(announcements::dismiss_action),
         )
-        .route("/notifications", get(pages::notifications))
+        .route("/notifications", get(notification_inbox::page))
+        .route("/notifications/inbox", get(notification_inbox::page))
+        .route("/web/inbox/state", get(notification_inbox::unread_state))
+        .route(
+            "/settings/notification-delivery",
+            get(notification_delivery::page),
+        )
+        .route(
+            "/web/settings/notification-delivery",
+            post(notification_delivery::action),
+        )
+        .route("/mentions", get(mentions::page))
+        .route("/web/notifications/inbox", post(notification_inbox::action))
         .route("/notifications/requests", get(notification_requests::page))
         .route(
             "/web/notifications/requests/{id}/accept",
@@ -869,6 +1161,44 @@ fn compose_route() -> Router<AppState> {
     Router::new()
         .route("/web/compose", post(actions::compose))
         .layer(axum::extract::DefaultBodyLimit::disable())
+}
+
+fn music_asset_upload_route() -> Router<AppState> {
+    Router::new()
+        .route("/web/music/assets/import", post(music_assets::import))
+        .layer(axum::extract::DefaultBodyLimit::max(
+            crate::media_processing::MAX_AV_UPLOAD_BYTES + 1024 * 1024,
+        ))
+}
+
+fn music_local_router() -> Router<AppState> {
+    #[cfg(unix)]
+    {
+        Router::new()
+            .route("/music/folders", get(music_local::index))
+            .route("/music/folders/{id}/files", get(music_local::files))
+            .route(
+                "/web/music/folders/{folder}/files/{file}/mutate",
+                post(music_local::mutate_file),
+            )
+            .route(
+                "/web/music/folders/{id}/disconnect",
+                post(music_local::disconnect),
+            )
+            .route(
+                "/web/music/folders/{folder}/files/{file}/restore",
+                post(music_local::restore),
+            )
+            .route("/web/music/folders/assign", post(music_local::assign))
+            .route(
+                "/web/music/folders/{id}/refresh",
+                post(music_local::refresh),
+            )
+    }
+    #[cfg(not(unix))]
+    {
+        Router::new()
+    }
 }
 
 #[cfg(test)]
