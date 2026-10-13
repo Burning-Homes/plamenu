@@ -79,6 +79,196 @@ const AUDIO: &str =
     "https://remote.example/static/streaming-playlists/hls/vid/vid-audio-fragmented.mp4";
 const AUDIO_PLAYLIST: &str =
     "https://remote.example/static/streaming-playlists/hls/vid/vid-audio.m3u8";
+const SUBTITLE_PLAYLIST: &str = "https://remote.example/static/streaming-playlists/hls/vid/nn.m3u8";
+const SUBTITLE: &str = "https://remote.example/captions/nn.vtt";
+const WEBVTT: &[u8] = b"WEBVTT\n\n00:00:00.000 --> 00:00:20.000\nCaption from PeerTube\n";
+
+fn subtitle_uri(media: i64, origin: &str, parent: &str) -> String {
+    format!(
+        "/media/hls/{media}/caption.vtt?u={}&p={}",
+        B64.encode(origin),
+        B64.encode(parent)
+    )
+}
+
+fn serve_subtitle_playlist(stub: &StubFederation, origin: &str) {
+    stub.serve_media(
+        SUBTITLE_PLAYLIST,
+        "application/vnd.apple.mpegurl",
+        format!("#EXTM3U\n#EXT-X-TARGETDURATION:20\n#EXTINF:20,\n{origin}\n#EXT-X-ENDLIST\n")
+            .into_bytes(),
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn hls_captions_serve_advertised_whole_webvtt_outside_video_directory(pool: PgPool) {
+    let account = create_local_account(&pool, "captionviewer", "Caption viewer").await;
+    let media = hls_media_row(&pool, account.id).await;
+    let stub = StubFederation::with_actors([]);
+    serve_subtitle_playlist(&stub, SUBTITLE);
+    stub.serve_media(SUBTITLE, "text/vtt", WEBVTT.to_vec());
+    let app = test_app_with(pool, stub.clone());
+    let parent = format!("/media/hls/{media}/pl?u={}", B64.encode(SUBTITLE_PLAYLIST));
+    let (status, body) = get(&app, &parent).await;
+    assert_eq!(status, StatusCode::OK);
+    let uri = subtitle_uri(media, SUBTITLE, SUBTITLE_PLAYLIST);
+    assert!(
+        String::from_utf8(body)
+            .unwrap()
+            .lines()
+            .any(|line| line == uri)
+    );
+    let response = request(&app, "GET", &uri, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/vtt; charset=utf-8"
+    );
+    assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+    assert_eq!(
+        response.into_body().collect().await.unwrap().to_bytes(),
+        WEBVTT
+    );
+    assert_eq!(stub.media_fetches(), vec![SUBTITLE_PLAYLIST, SUBTITLE]);
+    assert!(
+        stub.range_fetches().is_empty(),
+        "captions are a bounded whole text file"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn hls_captions_keep_exact_reference_origin_and_parent_fences(pool: PgPool) {
+    let account = create_local_account(&pool, "captionfences", "Caption fences").await;
+    let media = hls_media_row(&pool, account.id).await;
+    let stub = StubFederation::with_actors([]);
+    serve_subtitle_playlist(&stub, SUBTITLE);
+    let app = test_app_with(pool, stub.clone());
+    for (origin, parent) in [
+        (
+            "https://remote.example/captions/unlisted.vtt",
+            SUBTITLE_PLAYLIST,
+        ),
+        ("https://evil.example/captions/nn.vtt", SUBTITLE_PLAYLIST),
+        (SUBTITLE, "https://remote.example/other/nn.m3u8"),
+        (
+            SUBTITLE,
+            "https://evil.example/static/streaming-playlists/hls/vid/nn.m3u8",
+        ),
+        (RENDITION, SUBTITLE_PLAYLIST),
+    ] {
+        stub.serve_media(origin, "text/vtt", WEBVTT.to_vec());
+        assert_eq!(
+            get(&app, &subtitle_uri(media, origin, parent)).await.0,
+            StatusCode::NOT_FOUND
+        );
+    }
+    assert_eq!(
+        stub.media_fetches(),
+        vec![SUBTITLE_PLAYLIST],
+        "no unlisted resource is fetched"
+    );
+    // Ordinary media remains range-only: a subtitle capability must not turn
+    // the video segment route into a whole-file downloader.
+    assert_eq!(
+        get(
+            &app,
+            &format!("/media/hls/{media}/seg?u={}", B64.encode(RENDITION))
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert!(stub.range_fetches().is_empty());
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn hls_captions_accept_empty_intervals_and_reject_bad_or_oversized_payloads(pool: PgPool) {
+    let account = create_local_account(&pool, "captionpayloads", "Caption payloads").await;
+    let media = hls_media_row(&pool, account.id).await;
+    let stub = StubFederation::with_actors([]);
+    serve_subtitle_playlist(&stub, SUBTITLE);
+    let app = test_app_with(pool.clone(), stub.clone());
+    let uri = subtitle_uri(media, SUBTITLE, SUBTITLE_PLAYLIST);
+    for body in [b"WEBVTT\r\n\r\n".to_vec(), WEBVTT.to_vec()] {
+        stub.serve_media(SUBTITLE, "text/vtt", body.clone());
+        let (status, served) = get(&app, &uri).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(served, body);
+    }
+    for body in [
+        b"<html>Error</html>".to_vec(),
+        b"WEBVTT\n\0".to_vec(),
+        vec![0xff],
+        [b"WEBVTT\n".as_slice(), &vec![b' '; 256 * 1024]].concat(),
+    ] {
+        stub.serve_media(SUBTITLE, "text/vtt", body);
+        assert_eq!(get(&app, &uri).await.0, StatusCode::NOT_FOUND);
+    }
+    stub.serve_media(SUBTITLE, "text/vtt", WEBVTT.to_vec());
+    stub.media
+        .lock()
+        .unwrap()
+        .get_mut(SUBTITLE)
+        .unwrap()
+        .final_url = "https://evil.example/captions/nn.vtt".to_owned();
+    assert_eq!(get(&app, &uri).await.0, StatusCode::NOT_FOUND);
+    let failures: i64 = sqlx::query_scalar("SELECT count(*) FROM media_fetch_failures WHERE target_id=$1 AND kind IN ('hls-segment','hls-playlist')")
+        .bind(media).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        failures, 0,
+        "caption failure must not suppress audio or video requests"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn hls_caption_parent_respects_the_existing_playlist_failure_budget(pool: PgPool) {
+    let account = create_local_account(&pool, "captionparent", "Caption parent").await;
+    let media = hls_media_row(&pool, account.id).await;
+    let stub = StubFederation::with_actors([]);
+    let app = test_app_with(pool, stub.clone());
+    let uri = subtitle_uri(media, SUBTITLE, SUBTITLE_PLAYLIST);
+    assert_eq!(get(&app, &uri).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(get(&app, &uri).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(stub.media_fetches(), vec![SUBTITLE_PLAYLIST]);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn hls_caption_fetch_cannot_complete_after_lane_revocation(pool: PgPool) {
+    let account = create_local_account(&pool, "captionrevocation", "Caption revocation").await;
+    let media = hls_media_row(&pool, account.id).await;
+    let stub = StubFederation::with_actors([]);
+    serve_subtitle_playlist(&stub, SUBTITLE);
+    stub.serve_media(SUBTITLE, "text/vtt", WEBVTT.to_vec());
+    let app = test_app_with(pool.clone(), stub.clone());
+    assert_eq!(
+        get(
+            &app,
+            &format!("/media/hls/{media}/pl?u={}", B64.encode(SUBTITLE_PLAYLIST))
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    *stub.media_fetch_gate.lock().unwrap() = Some(gate.clone());
+    let pending_app = app.clone();
+    let uri = subtitle_uri(media, SUBTITLE, SUBTITLE_PLAYLIST);
+    let pending = tokio::spawn(async move { get(&pending_app, &uri).await });
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while !stub.media_fetches().iter().any(|url| url == SUBTITLE) {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    sqlx::query("UPDATE media_attachments SET hls_master_url=NULL WHERE id=$1")
+        .bind(media)
+        .execute(&pool)
+        .await
+        .unwrap();
+    gate.add_permits(1);
+    assert_eq!(pending.await.unwrap().0, StatusCode::NOT_FOUND);
+}
 
 /// Inserts a minimal HLS video media row (as ingest would), returning its id.
 async fn hls_media_row(pool: &PgPool, account_id: i64) -> i64 {

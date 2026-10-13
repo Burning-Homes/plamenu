@@ -61,18 +61,18 @@
   --measure: 40rem; /* main column width */
   --sidebar: 15rem; /* desktop nav width */
 
-  /* Navigation density. The whole sidebar/drawer chrome sizes itself from
-     these seven tokens and nothing else, so the short-viewport breakpoints at
-     the end of this file can retune the column's vertical footprint by
-     overriding them — no duplicated component rules, and a theme can retune
-     the density the same way. Values here are the comfortable default. */
-  --nav-edge: var(--space-5); /* the column's own top/bottom padding */
-  --nav-gap: var(--space-1); /* between nav links, and between chrome blocks */
-  --nav-section: var(--space-3); /* around the nav list and compose button */
-  --nav-pad: var(--space-3); /* vertical padding inside a link/button */
+  /* Preferred navigation spacing. Intrinsic flex sizing reduces the gaps and
+     rows toward their minimums when the current menu needs more room, without
+     viewport breakpoints, item counts or a JavaScript measurement pass. */
+  --nav-edge: var(--space-5);
+  --nav-edge-min: var(--space-2);
+  --nav-gap: var(--space-1);
+  --nav-section: var(--space-3);
+  --nav-pad: var(--space-3);
+  --nav-pad-min: 0.35rem;
   --nav-icon: 1.5rem;
-  --nav-brand: 2rem; /* the square brand mark */
-  --nav-avatar: 2rem; /* the account row's avatar */
+  --nav-brand: 2rem;
+  --nav-avatar: 2rem;
 
   /* Palette resolves per active colour scheme. */
   --bg: light-dark(#f4f6f9, #0f1419);
@@ -123,6 +123,8 @@ html {
      `clip` (not `hidden`) doesn't establish a scroll container, so the sticky
      sidebar keeps sticking to the viewport. */
   overflow-x: clip;
+  /* A long feed must not move the centered chrome when its scrollbar appears. */
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -413,32 +415,22 @@ img.emoji {
   position: sticky;
   top: 0;
   align-self: start;
-  /* Fixed to the viewport height so the account row's `margin-block-start:auto`
-     can pin it to the bottom (a bare `max-block-size` would collapse to content
-     height and drop that anchor). `overflow-y:auto` then lets the column scroll
-     on its own whenever its content is taller than the viewport — a short or
-     zoomed screen, a large font, or the extra staff "Admin" row — so the
-     compose button and the account/sign-out row can never become unreachable.
-     It is the floor, not the first answer: the short-viewport steps at the end
-     of this file tighten the column's density first, and this catches whatever
-     is still too tall for the screen after that.
-     `overscroll-behavior:contain` stops that scroll from chaining to the feed.
-     `padding-inline` is required BECAUSE of the scroll: with `overflow-x`
-     defaulting to `visible`, setting `overflow-y:auto` promotes the used
-     `overflow-x` to `auto` too (CSS Overflow 3), so the flush-to-edge nav
-     links / brand / compose button would otherwise have their 2px+2px
-     `:focus-visible` outline (and the compose pill's shadow) clipped at the
-     scrollport edge. The inset keeps the full focus ring visible and clears
-     the scrollbar gutter — the same reason the drawer panel carries it. */
+  /* Keep the account row anchored to the viewport. Navigation normally shrinks
+     to fit this column and scrolls in its own slot only after reaching readable
+     minimum row sizes. This outer scrollport also covers extremely short windows
+     whose brand, compose and account controls cannot themselves fit. Horizontal
+     insets protect focus outlines from clipping at either scrollport edge. */
   block-size: 100dvh;
   display: flex;
   flex-direction: column;
-  gap: var(--nav-gap);
-  padding-block: var(--nav-edge);
+  gap: 0;
+  padding-block: 0;
   padding-inline: var(--space-2);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
+
+  > * { flex-shrink: 1; }
 }
 
 .brand {
@@ -4987,6 +4979,9 @@ img.reaction__emoji {
     --sidebar: 4.5rem;
   }
 
+  .sidebar { padding-inline: var(--space-1); }
+  .sidebar .nav-link { padding-inline: var(--space-2); }
+
   .brand__name,
   .nav-link__label,
   .compose-btn span,
@@ -5001,55 +4996,73 @@ img.reaction__emoji {
   }
 }
 
-/* ---- Responsive: short viewports -------------------------------------- */
+/* ---- Intrinsic navigation sizing ------------------------------------- */
 
-/* The nav column is a fixed list of destinations, so its height is nearly
-   constant while the viewport's is not: at the comfortable spacing above it
-   measures 57rem signed in with the staff row, more than a laptop, a split
-   window or a zoomed page usually has. Rather than let the column silently
-   scroll the compose button and the account row out of reach, it tightens in
-   two steps as the viewport gets shorter, retuning only the density tokens —
-   every link keeps its icon, its label, its order and its position, so the
-   muscle memory of anyone already fluent with the full-height column survives
-   the switch intact.
+/* Preferred sizes are flex bases rather than padding that cannot shrink.
+   The browser resolves every row from the available space before painting,
+   equally with and without scripts. Content-based minimums preserve wrapped
+   translations and enlarged text; arbitrary future menus need no calibration. */
+:is(.sidebar, .drawer__panel) {
+  > * { flex-shrink: 1; }
 
-   Each step engages just before the previous one stops fitting, so a step is
-   never taken for nothing and never taken too late: 57rem of content at the
-   comfortable default, 47rem at step one, 39rem at step two (all measured
-   signed in, staff row present — the tallest the column gets). Below 39rem it
-   scrolls, exactly as it did before (see `.sidebar`); so does a large font,
-   which scales these rem tokens along with everything else.
-
-   Step one also applies to the drawer panel, which a phone held sideways
-   otherwise reads about seven links deep. Step two does not: the drawer is a
-   touch surface, so it stops at the roomier of the two densities. */
-@media (max-height: 58rem) {
-  .sidebar,
-  .drawer__panel {
-    --nav-edge: var(--space-3);
-    --nav-gap: 0.125rem;
-    --nav-section: var(--space-2);
-    --nav-pad: var(--space-2); /* 2.5rem rows — still a comfortable target */
-  }
-}
-
-@media (max-height: 47rem) {
-  .sidebar {
-    --nav-edge: var(--space-2);
-    --nav-gap: 0;
-    --nav-section: 0.375rem;
-    --nav-pad: 0.35rem; /* ~2.2rem rows */
-    --nav-icon: 1.35rem;
-    --nav-brand: 1.75rem;
-    --nav-avatar: 1.75rem;
+  &::before,
+  &::after {
+    content: "";
+    flex: 0 1 var(--nav-edge);
+    min-block-size: var(--nav-edge-min);
   }
 
-  /* The one size the tokens can't carry: the wordmark's own type, which would
-     otherwise out-measure the shrunken mark beside it. */
-  .sidebar .brand {
-    padding-block: var(--space-1);
-    font-size: var(--text-base);
+  &::before {
+    flex-basis: calc(var(--nav-edge) + env(safe-area-inset-top, 0px));
+    min-block-size: calc(var(--nav-edge-min) + env(safe-area-inset-top, 0px));
   }
+
+  &::after {
+    flex-basis: calc(var(--nav-edge) + env(safe-area-inset-bottom, 0px));
+    min-block-size: calc(var(--nav-edge-min) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .brand {
+    flex: 0 1 calc(max(1lh, var(--nav-brand)) + 2 * var(--space-2));
+    padding-block: 0;
+  }
+
+  .brand__mark { flex-shrink: 0; }
+
+  .nav {
+    flex: 0 1 auto;
+    /* Keep at least one complete minimum-size row available to scroll/focus. */
+    min-block-size: calc(max(1lh, var(--nav-icon)) + 2 * var(--nav-pad-min) + 2 * var(--space-1));
+    margin-block-start: 0;
+    gap: 0;
+    padding: var(--space-1);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+
+    &::before,
+    &::after {
+      content: "";
+      flex: 0 1 var(--nav-section);
+      min-block-size: 0;
+    }
+  }
+
+  .nav-link {
+    flex: 0 1 calc(max(1lh, var(--nav-icon)) + 2 * var(--nav-pad) + var(--nav-gap));
+    padding-block: var(--nav-pad-min);
+  }
+
+  .compose-btn {
+    flex: 0 1 calc(1lh + 2 * var(--nav-pad));
+    padding-block: var(--nav-pad-min);
+    margin-block: 0;
+  }
+
+  .account { flex-shrink: 0; }
+
+  /* Author-hidden destinations must override the links' flex display. */
+  [hidden] { display: none; }
 }
 
 /* ---- Settings --------------------------------------------------------- */
@@ -6297,14 +6310,15 @@ a.settings-button--plain {
 .drawer__panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  --nav-pad-min: var(--space-2); /* preserve touch targets */
+  --nav-edge-min: var(--space-3);
+  gap: 0;
   inline-size: min(20rem, 82vw);
   block-size: 100%;
   max-block-size: 100dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--space-5) var(--space-4)
-    calc(var(--space-5) + env(safe-area-inset-bottom, 0px));
+  padding: 0 var(--space-4);
   background: var(--surface);
   border-inline-end: 1px solid var(--border);
   box-shadow: 0 0 40px rgb(0 0 0 / 0.3);
@@ -8611,18 +8625,11 @@ a.settings-button--plain {
    cutouts and home-indicator areas. Keep actual controls/content inside those
    insets while preserving the ordinary browser layout when not installed. */
 @media (display-mode: standalone) {
-  .sidebar {
-    padding-block-start: calc(var(--nav-edge) + env(safe-area-inset-top, 0px));
-  }
-
   .focused-main {
     padding-block-start: calc(var(--space-4) + env(safe-area-inset-top, 0px));
     padding-block-end: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
   }
 
-  .drawer__panel {
-    padding-block-start: calc(var(--space-5) + env(safe-area-inset-top, 0px));
-  }
 }
 
 @media (display-mode: standalone) and (max-width: 40rem) {

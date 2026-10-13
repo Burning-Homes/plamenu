@@ -1426,6 +1426,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/media/hls/{media_id}/pl", get(hls::playlist))
         .route("/media/hls/{media_id}/seg", get(hls::segment))
+        .route("/media/hls/{media_id}/caption.vtt", get(hls::caption))
         // Live children keep the origin's extension on the path, so players
         // and demuxers that infer a container from the URL get it right.
         .route("/media/hls/{media_id}/live/{name}", get(hls::live_child))

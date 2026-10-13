@@ -3420,6 +3420,9 @@
       // Opening the viewer adds one same-page history entry. This lets the
       // browser Back gesture close the viewer before leaving the page.
       historyActive: false,
+      historyClosing: false,
+      scrollRestoration: null,
+      scrollRestorationTimer: null,
     };
     box.prev.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -3454,7 +3457,16 @@
     window.addEventListener("popstate", () => {
       if (!box.historyActive) return;
       box.historyActive = false;
+      box.historyClosing = false;
       closeLightbox(true);
+      // Native restoration follows popstate. Keep it disabled through that
+      // traversal, then return ownership to the page (including a music dock
+      // that already uses manual restoration). A fresh open cancels this task.
+      box.scrollRestorationTimer = setTimeout(() => {
+        history.scrollRestoration = box.scrollRestoration;
+        box.scrollRestoration = null;
+        box.scrollRestorationTimer = null;
+      }, 0);
     });
     lightbox = box;
     return box;
@@ -3466,6 +3478,14 @@
     box.items = items;
     box.opener = opener;
     if (!box.historyActive) {
+      clearTimeout(box.scrollRestorationTimer);
+      box.scrollRestorationTimer = null;
+      if (box.scrollRestoration === null) {
+        box.scrollRestoration = history.scrollRestoration;
+      }
+      // Set the underlying entry's mode *before* pushing the viewer entry.
+      // Otherwise closing can restore its old reply-anchor scroll position.
+      history.scrollRestoration = "manual";
       history.pushState(history.state, "", location.href);
       box.historyActive = true;
     }
@@ -3475,12 +3495,22 @@
     showLightboxItem(
       Number.isInteger(index) && index >= 0 && index < items.length ? index : 0,
     );
-    box.close.focus();
+    box.close.focus({ preventScroll: true });
   }
 
   function closeLightbox(fromHistory = false) {
     const box = lightbox;
     if (!box || box.el.hidden) return;
+    // All close paths finish in popstate, with restoration still disabled.
+    // Keep the overlay until then and ignore duplicate closes so rapid input
+    // cannot consume another page's history entry.
+    if (box.historyActive && !fromHistory) {
+      if (!box.historyClosing) {
+        box.historyClosing = true;
+        history.back();
+      }
+      return;
+    }
     box.el.hidden = true;
     box.track.querySelectorAll("video").forEach((video) => {
       video.pause();
@@ -3496,14 +3526,8 @@
     });
     document.body.style.overflow = "";
     document.removeEventListener("keydown", onLightboxKey, true);
-    if (box.opener) box.opener.focus();
+    if (box.opener) box.opener.focus({ preventScroll: true });
     box.opener = null;
-    // Button, backdrop and Escape closes must remove the entry that opening
-    // added. A popstate close is already moving past that entry.
-    if (box.historyActive && !fromHistory) {
-      box.historyActive = false;
-      history.back();
-    }
   }
 
   function showLightboxItem(index) {
@@ -4549,6 +4573,10 @@
   }
 
   const hlsCleanup = new WeakMap();
+  function hlsSubtitleError(data) {
+    return data?.frag?.type === 'subtitle' || data?.context?.type === 'subtitleTrack'
+      || data?.details?.startsWith('subtitleTrack') || data?.details?.startsWith('subtitleFrag');
+  }
   function catchUpBufferedLive(video, hls, rewound) {
     if (rewound || video.paused || video.readyState < 2) return false;
     const target = hls.liveSyncPosition;
@@ -4574,6 +4602,20 @@
     let originalFallback = false;
     let hlsPlayer = null;
     let retired = false;
+    let externalTrackModes = null;
+    const trackKey = track => JSON.stringify([track.src, track.kind, track.srclang]);
+    const rememberExternalTracks = () => {
+      externalTrackModes = new Map([...video.querySelectorAll('track[src]')]
+        .map(track => [trackKey(track), track.track.mode]));
+    };
+    video.addEventListener('plamenu:captions-choice', rememberExternalTracks);
+    video.addEventListener('loadedmetadata', () => {
+      if (!externalTrackModes) return;
+      video.querySelectorAll('track[src]').forEach(track => {
+        const mode = externalTrackModes.get(trackKey(track));
+        if (mode !== undefined) track.track.mode = mode;
+      });
+    });
     // Opt-in numeric E2E observations; no engine control or URI export.
     const profiling = window.__ownedVideoProfile === true;
     let profileLevelCount = null;
@@ -4811,8 +4853,11 @@
     // preserve the viewer's selected mode rather than forcing captions on.
     const reloadExternalTracks = () => {
       video.querySelectorAll("track[src]").forEach((track) => {
-        const mode = track.track.mode;
+        const mode = externalTrackModes?.get(trackKey(track)) ?? track.track.mode;
         const fresh = track.cloneNode(true);
+        // A stale default attribute can reselect the first language after
+        // media.load(), overriding a choice made before HLS attaches.
+        if (['captions', 'subtitles'].includes(track.kind)) fresh.default = mode === 'showing';
         track.replaceWith(fresh);
         fresh.track.mode = mode;
       });
@@ -4821,6 +4866,7 @@
       "play",
       function onPlay() {
         if (retired) return;
+        if (externalTrackModes === null) rememberExternalTracks();
         adaptiveStarted = true;
         // The progressive source existed only to keep the native control
         // actionable. Stop its just-started request before selecting HLS, so a
@@ -4906,8 +4952,20 @@
               reloadExternalTracks();
               video.play().catch(() => {});
             });
+            hls.on(Hls.Events.ERROR, (_event, data) => {
+              if (!data?.fatal || !hlsSubtitleError(data)) return;
+              // hls.js can stop every loader after a subtitle HTTP failure.
+              // Disable that track and resume media loading after its error
+              // handlers finish, keeping the buffers, time and pause state.
+              queueMicrotask(() => {
+                if (retired || vodFallback || hlsPlayer !== hls) return;
+                hls.subtitleTrack = -1;
+                hls.startLoad(-1);
+              });
+            });
             if (!live) {
               hls.on(Hls.Events.ERROR, (_event,data) => {
+                if (hlsSubtitleError(data)) return;
                 if (data?.fatal) standardVideo(data.type === Hls.ErrorTypes.NETWORK_ERROR
                   ? 'fatal-hls-network' : data.type === Hls.ErrorTypes.MEDIA_ERROR ? 'fatal-hls-media' : 'fatal-hls-other');
               });
@@ -4948,7 +5006,7 @@
                 recoveryDeadline = null;
               });
               hls.on(Hls.Events.ERROR, (_evt, data) => {
-                if (failed || !data) return;
+                if (failed || !data || hlsSubtitleError(data)) return;
                 // A live playlist can keep loading successfully while every
                 // segment fails. hls.js calls these errors non-fatal and may
                 // retry forever, so bound the time to a buffered fragment.
@@ -5346,8 +5404,10 @@
         captions.value = String(selected); captionField.hidden = tracks.length === 0;
       };
       listen(captions, 'change', () => {
+        const selected = Number(captions.value);
         Array.from(video.textTracks).filter(track => ['captions', 'subtitles'].includes(track.kind))
-          .forEach((track, index) => { track.mode = index === Number(captions.value) ? 'showing' : 'disabled'; });
+          .forEach((track, index) => { track.mode = index === selected ? 'showing' : 'disabled'; });
+        video.dispatchEvent(new Event('plamenu:captions-choice'));
       });
       ['addtrack', 'removetrack', 'change'].forEach(kind => listen(video.textTracks, kind, syncCaptions));
       fullscreen.hidden = !wrapper.requestFullscreen && !video.webkitEnterFullscreen;
@@ -7035,7 +7095,12 @@
       if(url.pathname==='/music/player' && !url.searchParams.size){restoreMusicDock();setMusicQueue(player,!player.classList.contains('music-dock--expanded'));return;}
       musicNavigate(url);
     });
-    window.addEventListener('popstate',()=>{if(musicDock && musicNavigationUrl(new URL(location.href))) musicNavigate(location.href,{},false);});
+    window.addEventListener('popstate', () => {
+      // The viewer consumes its own same-page entry; it isn't workspace
+      // navigation and must not replace the document or restore saved scroll.
+      if (lightbox?.historyActive) return;
+      if (musicDock && musicNavigationUrl(new URL(location.href))) musicNavigate(location.href, {}, false);
+    });
   }
 
   function bindMessageRecipients(root) {

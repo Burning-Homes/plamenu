@@ -223,6 +223,12 @@ pub struct SegQuery {
     l: Option<u64>,
 }
 
+#[derive(Deserialize)]
+pub struct CaptionQuery {
+    u: String,
+    p: String,
+}
+
 /// `GET /media/hls/{media_id}/master.m3u8` — the player's entry point: fetch
 /// the origin master playlist and serve a rewritten copy whose rendition and
 /// audio-group URIs all point back through this proxy.
@@ -492,6 +498,76 @@ pub async fn segment(
     ensure_current(&state, media_id, &lane).await?;
     note_hls_result(&state, "hls-segment", media_id, result.is_ok()).await;
     result
+}
+
+/// A whole `WebVTT` segment advertised by a subtitle playlist. `PeerTube` stores
+/// these outside the HLS directory and without a byte range. Verify the exact
+/// reference in a fenced parent playlist rather than widening the video proxy.
+pub async fn caption(
+    State(state): State<AppState>,
+    Path(media_id): Path<i64>,
+    Query(q): Query<CaptionQuery>,
+) -> Result<Response, ApiError> {
+    let lane = lane(&state, media_id).await?;
+    ensure_on_air(&lane)?;
+    let parent = decode_child(&q.p, &dir_prefix(&lane.master_url))
+        .filter(|url| is_m3u8(url))
+        .ok_or(ApiError::NotFound)?;
+    let origin = String::from_utf8(B64.decode(&q.u).map_err(|_| ApiError::NotFound)?)
+        .map_err(|_| ApiError::NotFound)?;
+    let url = url::Url::parse(&origin).map_err(|_| ApiError::NotFound)?;
+    let master = url::Url::parse(&lane.master_url).map_err(|_| ApiError::NotFound)?;
+    if !plamenu_federation::is_federation_url(&origin)
+        || url.origin() != master.origin()
+        || origin_extension(&origin) != ".vtt"
+        || hls_disabled(&state).await?
+    {
+        return Err(ApiError::NotFound);
+    }
+    if hls_suppressed(&state, "hls-playlist", media_id).await? {
+        return Err(ApiError::NotFound);
+    }
+    let playlist = load_playlist(&state, media_id, &parent, lane.live).await;
+    note_hls_result(&state, "hls-playlist", media_id, playlist.is_ok()).await;
+    let playlist = playlist?;
+    let expected = caption_url(media_id, &origin, &parent);
+    if !playlist.lines().any(|line| line == expected) {
+        return Err(ApiError::NotFound);
+    }
+    let fetched = state
+        .federation
+        .fetch_media_limited(&origin, crate::web::actions::MAX_CAPTION_BYTES as u64)
+        .await
+        .map_err(|_| ApiError::NotFound)?;
+    let final_url = url::Url::parse(&fetched.final_url).map_err(|_| ApiError::NotFound)?;
+    if final_url.origin() != url.origin() || !valid_caption_segment(&fetched.bytes) {
+        return Err(ApiError::NotFound);
+    }
+    ensure_current(&state, media_id, &lane).await?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/vtt; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        fetched.bytes,
+    )
+        .into_response())
+}
+
+fn valid_caption_segment(bytes: &[u8]) -> bool {
+    // Empty timed intervals are valid HLS subtitle segments; unlike an
+    // uploaded sidecar, they need not contain a cue.
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let header = text
+        .trim_start_matches('\u{feff}')
+        .lines()
+        .next()
+        .unwrap_or_default();
+    (header == "WEBVTT" || header.starts_with("WEBVTT ") || header.starts_with("WEBVTT\t"))
+        && !text.contains('\0')
+        && bytes.len() <= crate::web::actions::MAX_CAPTION_BYTES
 }
 
 /// `GET /media/hls/{media_id}/live/{name}` — a live broadcast's child
@@ -945,8 +1021,20 @@ async fn serve_playlist(
     url: &str,
     live: bool,
 ) -> Result<Response, ApiError> {
+    Ok(playlist_response(
+        load_playlist(state, media_id, url, live).await?,
+        live,
+    ))
+}
+
+async fn load_playlist(
+    state: &AppState,
+    media_id: i64,
+    url: &str,
+    live: bool,
+) -> Result<String, ApiError> {
     if let Some(memoized) = playlist_memo_get(media_id, url, live) {
-        return Ok(playlist_response(memoized, live));
+        return Ok(memoized);
     }
     // Coalesce concurrent cold fetches of the same playlist (the same
     // single-flight set the segments use, distinct key space).
@@ -956,7 +1044,7 @@ async fn serve_playlist(
         for _ in 0..30 {
             tokio::time::sleep(Duration::from_millis(100)).await;
             if let Some(memoized) = playlist_memo_get(media_id, url, live) {
-                return Ok(playlist_response(memoized, live));
+                return Ok(memoized);
             }
             if !SegGuard::running(&key) {
                 break; // the winner finished (or died) unmemoized
@@ -964,7 +1052,7 @@ async fn serve_playlist(
         }
         // Re-check, then fall through to fetching ourselves.
         if let Some(memoized) = playlist_memo_get(media_id, url, live) {
-            return Ok(playlist_response(memoized, live));
+            return Ok(memoized);
         }
     }
     let bytes = if !live
@@ -1009,7 +1097,7 @@ async fn serve_playlist(
     }
     let rewritten = rewrite_playlist(body, url, media_id, live);
     playlist_memo_put(media_id, url, &rewritten);
-    Ok(playlist_response(rewritten, live))
+    Ok(rewritten)
 }
 
 fn playlist_response(rewritten: String, live: bool) -> Response {
@@ -1083,6 +1171,9 @@ fn rewrite_playlist(body: &str, base_url: &str, media_id: i64, is_live: bool) ->
         }
         // A bare URI line: a child media playlist (.m3u8) or a segment.
         match resolve(base.as_ref(), line) {
+            Some(abs) if pending_range.is_none() && origin_extension(&abs) == ".vtt" => {
+                out.push_str(&caption_url(media_id, &abs, base_url));
+            }
             Some(abs) if is_live => out.push_str(&child(&abs)),
             Some(abs) if is_m3u8(&abs) => out.push_str(&pl_url(media_id, &abs)),
             Some(abs) => {
@@ -1498,6 +1589,14 @@ async fn decode_rendition(
 
 fn pl_url(media_id: i64, abs: &str) -> String {
     format!("/media/hls/{media_id}/pl?u={}", B64.encode(abs.as_bytes()))
+}
+
+fn caption_url(media_id: i64, origin: &str, parent: &str) -> String {
+    format!(
+        "/media/hls/{media_id}/caption.vtt?u={}&p={}",
+        B64.encode(origin.as_bytes()),
+        B64.encode(parent.as_bytes()),
+    )
 }
 
 /// The proxied URL of a live playlist or segment.

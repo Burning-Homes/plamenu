@@ -33,11 +33,36 @@ const labels = {play:'Play',pause:'Pause',seek:'Seek',mute:'Mute',unmute:'Unmute
   captions:'Captions',off:'Off',fullscreen:'Fullscreen',settings:'Playback settings',speed:'Playback speed',pip:'Picture in picture'};
 async function fixture(page, options = {}) {
   const requests = {sprite:0, media:0};
+  // Exercise the current bundle rather than whichever build the fixture
+  // server happens to be running.
+  for (const [name, contentType] of [['app.js','text/javascript'], ['app.css','text/css']]) {
+    await page.route(`**/assets/${name}*`, route => route.fulfill({contentType,
+      body:readFileSync(new URL(`../../crates/server/src/web/assets/${name}`,import.meta.url))}));
+  }
+  if (options.externalCaptions) await page.route('**/controls-captions/*.vtt', route => {
+    const language=new URL(route.request().url()).pathname.split('/').pop().slice(0,2);
+    return route.fulfill({contentType:'text/vtt',body:`WEBVTT\n\n00:00:00.000 --> 00:00:20.000\n${language==='en'?'Native English captions':'Sous-titres natifs'}\n`});
+  });
   if (options.hls) {
     requests.hls=0; requests.library=0;
     await page.route('**/controls-hls/**', async route => {
       requests.hls++;
       const name=new URL(route.request().url()).pathname.split('/').pop();
+      if (options.captions) {
+        if (name === 'master.m3u8') {
+          const subtitles = ['en','fr'].map(language => `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="captions",NAME="${language}",LANGUAGE="${language}",AUTOSELECT=NO,URI="${language}.m3u8"`).join('\n');
+          const master = hlsFiles.get(name).toString().replace(/(#EXT-X-STREAM-INF:[^\n]*)/g, '$1,SUBTITLES="captions"');
+          return route.fulfill({contentType:'application/vnd.apple.mpegurl',body:master.replace('#EXTM3U',`#EXTM3U\n${subtitles}`)});
+        }
+        if (/^(en|fr)\.m3u8$/.test(name)) return route.fulfill({contentType:'application/vnd.apple.mpegurl',
+          body:`#EXTM3U\n#EXT-X-TARGETDURATION:20\n#EXTINF:20,\n${name.replace('.m3u8','.vtt')}\n#EXT-X-ENDLIST\n`});
+        if (/^(en|fr)\.vtt$/.test(name)) {
+          const language=name.slice(0,2);
+          requests[language]=(requests[language]||0)+1;
+          return route.fulfill({status:options.brokenCaptions && language==='en'?404:200,contentType:'text/vtt',
+            body:`WEBVTT\nX-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:126000\n\n00:00:00.000 --> 00:00:20.000\n${language==='en'?'Hello from captions':'Bonjour des sous-titres'}\n`});
+        }
+      }
       await route.fulfill({status:hlsFiles.has(name)?200:404,
         contentType:name.endsWith('.m3u8')?'application/vnd.apple.mpegurl':'video/mp2t',
         body:hlsFiles.get(name) || ''});
@@ -70,7 +95,8 @@ async function fixture(page, options = {}) {
     <body><main><h1>VOD controls</h1><div class="status__media" data-count="1"><figure class="media media--video">
     <video controls playsinline preload="none" src="/controls-video.mp4" ${options.live ? 'data-live="live"' : ''}
       ${options.hls ? 'data-hls="/controls-hls/master.m3u8" data-src="/controls-video.mp4"' : ''}
-      ${options.standard ? 'data-src="/controls-video.mp4" data-original="/controls-original.mp4"' : ''}></video>
+      ${options.standard ? 'data-src="/controls-video.mp4" data-original="/controls-original.mp4"' : ''}>
+      ${options.externalCaptions ? '<track kind="captions" src="/controls-captions/en.vtt" srclang="en" label="English" default><track kind="captions" src="/controls-captions/fr.vtt" srclang="fr" label="French">' : ''}</video>
     ${options.standard ? '<p><a href="/controls-video.mp4">Open standard video (MP4, 720p)</a></p>' : ''}
     <details class="media__seek-previews" data-vod-controls='${JSON.stringify(board)}'><summary>Seek previews</summary>
       <a href="/controls-video.mp4#t=1">0:01</a></details></figure></div></main><script src="/assets/app.js"></script></body></html>`}));
@@ -84,7 +110,10 @@ async function fixture(page, options = {}) {
         if (window.controlEvents.length>=80) return;
         window.controlEvents.push({kind,value:document.querySelector('[aria-label="Seek"]')?.value,
           time:video?.currentTime,ready:video?.readyState,seeking:video?.seeking,duration:video?.duration,
-          seekable:video?.seekable.length,error:video?.error?.code,key:event.key,repeat:event.repeat,
+          // Reading seekable before metadata can interrupt WebKit's native
+          // pipeline startup. Keep diagnostics from initiating that query.
+          seekable:video?.readyState>=1 ? video.seekable.length : undefined,
+          error:video?.error?.code,key:event.key,repeat:event.repeat,
           paused:video?.paused,ended:video?.ended,muted:video?.muted,controls:video?.controls,
           frames:video?.getVideoPlaybackQuality().totalVideoFrames});
       },true);
@@ -277,6 +306,99 @@ test('VOD captions follow replaced tracks and playback state', async ({page}) =>
   await player.evaluate(video => {const track=document.createElement('track');track.kind='captions';track.label='French';
     track.srclang='fr';video.append(track);track.track.mode='showing';track.remove();});
   await expect(captions.locator('option')).toHaveCount(2);
+});
+
+test('HLS caption languages display real cues while playback continues and can be disabled', async ({page}) => {
+  const requests=await fixture(page,{hls:true,captions:true});
+  const player=page.locator('video');
+  await player.evaluate(video=>{video.muted=true;video.loop=true;});
+  await page.getByRole('button',{name:'Play',exact:true}).click();
+  await expect.poll(()=>player.evaluate(video=>video.currentTime)).toBeGreaterThan(.25);
+  await page.locator('.vod-controls__menu > summary').click();
+  const captions=page.getByRole('combobox',{name:'Captions',exact:true});
+  await expect(captions.locator('option')).toHaveCount(3);
+  for (const [value,language,text] of [['0','en','Hello from captions'],['1','fr','Bonjour des sous-titres']]) {
+    await captions.selectOption(value);
+    await expect.poll(()=>player.evaluate((video,language)=>{
+      const track=[...video.textTracks].find(track=>track.language===language);
+      return [...(track?.activeCues||[])].map(cue=>cue.text).join('\n');
+    },language)).toBe(text);
+    expect(await player.evaluate((video,language)=>[...video.textTracks]
+      .find(track=>track.language===language)?.mode,language)).toBe('showing');
+    expect(requests[language]).toBeGreaterThan(0);
+    expect(await player.evaluate(video=>video.error?.code??null)).toBeNull();
+    expect(await player.evaluate(video=>video.paused)).toBe(false);
+    await expect(page.locator('.vod-controls')).toBeVisible();
+    await expect(page.locator('.media__live-recovery')).toHaveCount(0);
+  }
+  await player.screenshot({path:test.info().outputPath('hls-captions.png')});
+  await captions.selectOption('-1');
+  await expect.poll(()=>player.evaluate(video=>[...video.textTracks].some(track=>track.mode==='showing'))).toBe(false);
+  expect(await player.evaluate(video=>video.currentSrc.startsWith('blob:'))).toBe(true);
+});
+
+test('an unavailable HLS caption track does not retire the player or break another language', async ({page}) => {
+  await fixture(page,{hls:true,captions:true,brokenCaptions:true});
+  const player=page.locator('video');
+  await player.evaluate(video=>{video.muted=true;video.loop=true;});
+  await page.getByRole('button',{name:'Play',exact:true}).click();
+  await expect.poll(()=>player.evaluate(video=>video.currentTime)).toBeGreaterThan(.25);
+  await page.locator('.vod-controls__menu > summary').click();
+  const captions=page.getByRole('combobox',{name:'Captions',exact:true});
+  await expect(captions.locator('option')).toHaveCount(3);
+  await captions.selectOption('0');
+  await expect(captions).toHaveValue('-1');
+  await expect(page.locator('.vod-controls')).toBeVisible();
+  await expect(page.locator('.media__live-recovery')).toHaveCount(0);
+  expect(await player.evaluate(video=>video.error?.code??null)).toBeNull();
+  expect(await player.evaluate(video=>video.paused)).toBe(false);
+  await captions.selectOption('1');
+  await expect.poll(()=>player.evaluate(video=>[...video.textTracks].find(track=>track.language==='fr')?.activeCues?.[0]?.text)).toBe('Bonjour des sous-titres');
+  await player.evaluate(video=>video.pause());
+  await captions.selectOption('0');
+  await expect(captions).toHaveValue('-1');
+  expect(await player.evaluate(video=>video.paused)).toBe(true);
+});
+
+test('external caption files load real cues and switch languages on progressive video', async ({page}) => {
+  await fixture(page,{externalCaptions:true,long:true});
+  const player=page.locator('video');
+  await player.evaluate(video=>{video.muted=true;});
+  await page.getByRole('button',{name:'Play',exact:true}).click();
+  await expect.poll(()=>player.evaluate(video=>video.currentTime)).toBeGreaterThan(.25);
+  await page.locator('.vod-controls__menu > summary').click();
+  const captions=page.getByRole('combobox',{name:'Captions',exact:true});
+  for (const [value,language,text] of [['0','en','Native English captions'],['1','fr','Sous-titres natifs']]) {
+    await captions.selectOption(value);
+    await expect.poll(()=>player.evaluate((video,language)=>[...video.textTracks].find(track=>track.language===language)?.activeCues?.[0]?.text,language)).toBe(text);
+    expect(await player.evaluate(video=>video.error?.code??null)).toBeNull();
+    expect(await player.evaluate(video=>video.paused)).toBe(false);
+  }
+});
+
+test('external captions selected before HLS startup survive the media source replacement', async ({page}) => {
+  await fixture(page,{externalCaptions:true,hls:true});
+  const player=page.locator('video');
+  await player.evaluate(video=>{video.muted=true;});
+  await page.locator('.vod-controls__menu > summary').click();
+  const captions=page.getByRole('combobox',{name:'Captions',exact:true});
+  await captions.selectOption('1');
+  await page.getByRole('button',{name:'Play',exact:true}).click();
+  await expect.poll(()=>player.evaluate(video=>video.currentTime)).toBeGreaterThan(.25);
+  await expect(page.locator('select[aria-label="Captions"] option:checked')).toHaveText('French');
+  await expect.poll(()=>player.evaluate(video=>[...video.textTracks].find(track=>track.language==='fr')?.activeCues?.[0]?.text)).toBe('Sous-titres natifs');
+  expect(await player.evaluate(video=>video.error?.code??null)).toBeNull();
+});
+
+test('@no-js native captions load and display without the enhancement bundle', async ({page}) => {
+  await fixture(page,{externalCaptions:true,long:true});
+  const player=page.locator('video');
+  expect(await player.evaluate(video=>video.controls)).toBe(true);
+  await player.evaluate(video=>{video.muted=true;return video.play();});
+  await expect.poll(()=>player.evaluate(video=>video.currentTime)).toBeGreaterThan(.25);
+  await expect.poll(()=>player.evaluate(video=>video.textTracks[0]?.activeCues?.[0]?.text)).toBe('Native English captions');
+  expect(await player.evaluate(video=>video.error?.code??null)).toBeNull();
+  await expect(page.locator('.vod-controls')).toHaveCount(0);
 });
 
 test('VOD compact controls keep mobile settings reachable with keyboard and touch', async ({page}) => {

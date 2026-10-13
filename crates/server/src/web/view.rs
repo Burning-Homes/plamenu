@@ -1920,6 +1920,8 @@ fn status_main(
 
 /// Everything a warn filter collapses: the reply context and the post's
 /// title, content, quote, poll, media, external link and preview card.
+/// Keep automatic direction on text, so missing/wrong language metadata does
+/// not prevent RTL rendering or reverse the card header and actions.
 fn status_body(status: &Status, ctx: &Ctx, detail: bool, verdict: &FilterVerdict) -> Markup {
     html! {
         // reply_context renders for a locally-resolved parent *and* for an
@@ -1931,7 +1933,7 @@ fn status_body(status: &Status, ctx: &Ctx, detail: bool, verdict: &FilterVerdict
             // The title heading and external-link pill are folded into `content`
             // by the entity serializer (so stock Mastodon clients see them too),
             // so the card renders them straight out of the content markup.
-            div.status__content lang=[status.rendered_language()] {
+            div.status__content dir="auto" lang=[status.rendered_language()] {
                 (status.content_markup(ctx.viewer_id.is_some()))
             }
             (quote_section(status, ctx, detail))
@@ -1948,10 +1950,10 @@ fn status_body(status: &Status, ctx: &Ctx, detail: bool, verdict: &FilterVerdict
             // poll and media all live inside one toggle, so a sensitive post
             // never shows a second, separate media spoiler.
             details.status__cw open[ctx.prefs.expand_spoilers] {
-                summary lang=[status.rendered_language()] { (status.spoiler_markup()) }
+                summary dir="auto" lang=[status.rendered_language()] { (status.spoiler_markup()) }
                 (event_box(status, ctx))
                 // Title/link folded into `content` (see the non-CW branch).
-                div.status__content lang=[status.rendered_language()] {
+                div.status__content dir="auto" lang=[status.rendered_language()] {
                     (status.content_markup(ctx.viewer_id.is_some()))
                 }
                 @if status.poll().is_some() {
@@ -2626,7 +2628,7 @@ fn cited_status_card_with(status: &Status, signed_in: bool, tail: &Markup) -> Ma
                 span.quote-card__name { (account.name_markup()) }
                 span.quote-card__acct { (account.handle_prefix()) (account.acct()) }
             }
-            div.status__content lang=[status.rendered_language()] { (status.content_markup(signed_in)) }
+            div.status__content dir="auto" lang=[status.rendered_language()] { (status.content_markup(signed_in)) }
             (tail)
         }
     }
@@ -3567,7 +3569,7 @@ pub(crate) fn poll_view(status: &Status, ctx: &Ctx) -> Markup {
                     @for (index, option) in options.iter().enumerate() {
                         label.poll__choice {
                             input type=(input) name="choices[]" value=(index);
-                            span lang=[status.rendered_language()] {
+                            span dir="auto" lang=[status.rendered_language()] {
                                 (emojify_text(option.get("title").and_then(Value::as_str).unwrap_or_default(), status.emojis()))
                             }
                         }
@@ -3582,7 +3584,7 @@ pub(crate) fn poll_view(status: &Status, ctx: &Ctx) -> Markup {
                         @let mine = own.contains(&i64::try_from(index).unwrap_or(-1));
                         div class=(if mine { "poll__result is-own" } else { "poll__result" }) {
                             div.poll__bar style=(format!("--pct:{pct}%")) {}
-                            span.poll__title lang=[status.rendered_language()] {
+                            span.poll__title dir="auto" lang=[status.rendered_language()] {
                                 (emojify_text(option.get("title").and_then(Value::as_str).unwrap_or_default(), status.emojis()))
                             }
                             span.poll__pct { (pct) "%" }
@@ -5606,11 +5608,11 @@ pub fn edit_history(versions: &[Value], clock: &ViewerClock, locale: Locale) -> 
                         (clock.element_absolute_iso(&when))
                     }
                     @if !spoiler.is_empty() {
-                        p.history__spoiler lang=[version.get("language").and_then(Value::as_str)] {
+                        p.history__spoiler dir="auto" lang=[version.get("language").and_then(Value::as_str)] {
                             (emojify_text(&spoiler, emojis))
                         }
                     }
-                    div.status__content lang=[version.get("language").and_then(Value::as_str)] {
+                    div.status__content dir="auto" lang=[version.get("language").and_then(Value::as_str)] {
                         (emojify(&field(version, "content"), emojis))
                     }
                     @let media = version
@@ -7409,15 +7411,18 @@ mod tests {
         assert!(!card.contains("Sensitive content"));
         assert!(!card.contains("More options"));
         assert!(
-            card.contains(r#"<summary lang="ru">Предупреждение</summary>"#),
+            card.contains(r#"<summary dir="auto" lang="ru">Предупреждение</summary>"#),
             "content warning language: {card}"
         );
         assert!(
-            card.contains(r#"<div class="status__content" lang="ru"><p>Привет</p></div>"#),
+            card.contains(
+                r#"<div class="status__content" dir="auto" lang="ru"><p>Привет</p></div>"#
+            ),
             "status language: {card}"
         );
         assert_eq!(
-            card.matches(r#"class="poll__title" lang="ru""#).count(),
+            card.matches(r#"class="poll__title" dir="auto" lang="ru""#)
+                .count(),
             2,
             "poll option languages: {card}"
         );
@@ -7425,6 +7430,31 @@ mod tests {
             card.contains(r#"alt="описание" lang="ru""#),
             "media description language: {card}"
         );
+    }
+
+    #[test]
+    fn status_text_direction_is_automatic_without_reversing_card_chrome() {
+        // Remote RTL content can be labelled English, as in the reported quote.
+        let mut value = filtered_status("warn", &["home"]);
+        value["language"] = json!("en");
+        value["content"] = json!("<p>كيف نقدر نوسّع مساحة الترجمة؟</p>");
+        let ctx = view_ctx(None, None);
+        let content_start = r#"<div class="status__content" dir="auto" lang="en">"#;
+        let normal = status_card(&Status(&value), &ctx).into_string();
+        assert!(normal.contains(content_start), "{normal}");
+        assert_eq!(normal.matches(r#"dir="auto""#).count(), 1, "{normal}");
+
+        let quote = cited_status_card(&Status(&value), false).into_string();
+        assert!(quote.contains(content_start), "{quote}");
+        assert_eq!(quote.matches(r#"dir="auto""#).count(), 1, "{quote}");
+
+        value["spoiler_text"] = json!("تنبيه");
+        let warning = status_card(&Status(&value), &ctx).into_string();
+        assert!(warning.contains(content_start), "{warning}");
+        assert!(warning.contains(r#"<summary dir="auto" lang="en">تنبيه</summary>"#));
+        let history = edit_history(&[value], &ctx.clock, ctx.locale).into_string();
+        assert!(history.contains(content_start), "{history}");
+        assert!(history.contains(r#"<p class="history__spoiler" dir="auto" lang="en">"#));
     }
 
     #[test]
