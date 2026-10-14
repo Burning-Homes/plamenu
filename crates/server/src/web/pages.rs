@@ -1072,6 +1072,8 @@ async fn profile_tab_view_sorted(
     }
     let identity_proofs = crate::identity::list(state, &account).await?;
     let manage_group = group_manage_href(state, session.as_ref(), &account).await?;
+    let actor_connections =
+        super::actor_profiles::panel(state, &account, session.as_ref(), locale).await?;
     // A moderator of this (local) group gets the per-post Moderate actions in
     // every card's overflow menu, so moderation works from the group feed, not
     // just a post's own thread page.
@@ -1082,7 +1084,8 @@ async fn profile_tab_view_sorted(
     let body = html! {
         section.column {
             @if silenced { (silenced_notice(locale)) }
-            (profile_header(&account_entity, session.as_ref(), relation.as_ref(), &sanctions, &posted_languages, manage_group.as_deref(), &ctx.clock, locale))
+            (profile_header(&account_entity, session.as_ref(), relation.as_ref(), &sanctions, &posted_languages, None, &ctx.clock, locale))
+            (actor_connections)
             @if video_channel && account.is_local() {
                 p {
                     a href=(format!("/videos/explore?channel={}", account.id)) {
@@ -1110,7 +1113,7 @@ async fn profile_tab_view_sorted(
                     (view::standalone_media(&account_live_media, &ctx))
                 }
             }
-            @if let Some(facts) = &facts { (community_panel(facts)) }
+            @if let Some(facts) = &facts { (community_panel(facts, account.is_local())) }
             @if let Some(form) = &group_post_form { (form) }
             @if history_eligible {
                 div data-remote-history-region {
@@ -1378,7 +1381,7 @@ async fn community_facts(
 /// The community panel: NSFW marking, who may post, and the moderator roster.
 /// Rendered for every group profile, so a consumed community reads the way a
 /// hosted one does.
-fn community_panel(facts: &CommunityFacts) -> Markup {
+fn community_panel(facts: &CommunityFacts, hosted: bool) -> Markup {
     let posting_note = match (facts.posting, facts.hosted()) {
         (plamenu_db::group::PostingPolicy::Mods, _) => Some("Only moderators can start threads."),
         (plamenu_db::group::PostingPolicy::Members, true) => {
@@ -1391,7 +1394,7 @@ fn community_panel(facts: &CommunityFacts) -> Markup {
         }
         (plamenu_db::group::PostingPolicy::Anyone, _) => None,
     };
-    if !facts.sensitive && posting_note.is_none() && facts.moderators.is_empty() {
+    if !facts.sensitive && posting_note.is_none() && (hosted || facts.moderators.is_empty()) {
         return html! {};
     }
     html! {
@@ -1402,7 +1405,7 @@ fn community_panel(facts: &CommunityFacts) -> Markup {
             @if let Some(note) = posting_note {
                 p.community-facts__note { (note) }
             }
-            @if !facts.moderators.is_empty() {
+            @if !hosted && !facts.moderators.is_empty() {
                 details.community-facts__mods {
                     summary { "Moderators (" (facts.moderators.len()) ")" }
                     ul.relationships-list {

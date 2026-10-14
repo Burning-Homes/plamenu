@@ -28,8 +28,42 @@ pub struct Prepared {
     pub job: EmailJob,
     pub notification_ids: Vec<i64>,
 }
+async fn actor_labels(
+    pool: &plamenu_db::PgPool,
+    domain: &str,
+    ids: &[i64],
+) -> Result<std::collections::HashMap<i64, String>, ApiError> {
+    let contexts = plamenu_db::actor_notification::load(pool, ids).await?;
+    let actor_ids = contexts
+        .values()
+        .flatten()
+        .map(|c| c.actor_account_id)
+        .collect::<Vec<_>>();
+    let actors = plamenu_db::account::find_by_ids(pool, &actor_ids).await?;
+    Ok(contexts
+        .into_iter()
+        .map(|(id, rows)| {
+            let mut text = String::new();
+            for actor in rows
+                .iter()
+                .filter_map(|c| actors.iter().find(|a| a.id == c.actor_account_id))
+            {
+                let _ = write!(
+                    text,
+                    " — {} https://{domain}/@{}",
+                    actor.display_name, actor.username
+                );
+            }
+            (id, text)
+        })
+        .collect())
+}
 /// None means this is a security email: its existing envelope stays intact.
 /// Some(None) means a managed notification batch has no current deliverable rows.
+#[allow(
+    clippy::too_many_lines,
+    reason = "keep current-recipient checks and bounded mail construction in one auditable flow"
+)]
 pub async fn prepare(
     state: &AppState,
     job: &EmailJob,
@@ -81,7 +115,7 @@ pub async fn prepare(
             WHERE CASE WHEN $2='email' THEN p.email ELSE p.email_digest END
         )) AS kind,n.created_at,n.status_id
         FROM notification_mail_receipts r JOIN notifications n ON n.id=r.notification_id
-        WHERE r.email_job_id=$1 AND NOT n.filtered AND NOT sender_filtered(n.account_id,n.from_account_id)
+        WHERE r.email_job_id=$1 AND NOT n.filtered AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered(n.account_id,n.from_account_id)
           AND EXISTS(SELECT 1 FROM notification_delivery_preferences p WHERE p.account_id=n.account_id AND p.kind=ANY(n.reasons) AND CASE WHEN $2='email' THEN p.email ELSE p.email_digest END)
           AND (n.status_id IS NULL OR EXISTS(SELECT 1 FROM statuses s WHERE s.id=n.status_id AND s.deleted_at IS NULL)) -- STUBFILTER
         ORDER BY n.id LIMIT 500
@@ -106,12 +140,17 @@ pub async fn prepare(
     let l = crate::web::i18n::Locale::for_user(&state.pool, recipient.id).await?;
     let mut body = l.text("notification-delivery-mail-intro");
     body.push_str("\n\n");
-    let notification_ids = valid.iter().map(|item| item.id).collect();
+    let notification_ids: Vec<i64> = valid.iter().map(|item| item.id).collect();
+    let actor_labels = actor_labels(&state.pool, &state.config.domain, &notification_ids).await?;
     for item in valid {
         let _ = writeln!(
             body,
-            "- {} ({})",
+            "- {}{} ({})",
             crate::web::notification_delivery::label(l, &item.kind),
+            actor_labels
+                .get(&item.id)
+                .map(String::as_str)
+                .unwrap_or_default(),
             crate::entities::rfc3339(item.created_at)?
         );
     }

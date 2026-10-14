@@ -51,6 +51,18 @@ pub async fn create(pool: &PgPool, report: NewReport<'_>) -> Result<Report, DbEr
     create_scoped(pool, report, None).await
 }
 
+/// Receiving a report notification does not retain authority after a role
+/// change. Shared with the SQL predicates used by listings and delivery.
+pub async fn visible_to(pool: &PgPool, report: i64, viewer: i64) -> Result<bool, DbError> {
+    Ok(
+        sqlx::query_scalar("SELECT notification_report_visible($1, $2)")
+            .bind(viewer)
+            .bind(report)
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
 /// Files a report scoped to a local group: `group_account_id` routes it
 /// to the group's moderators instead of (or, for a local target, in addition
 /// to) instance staff. `create` is this with `None`.

@@ -66,7 +66,7 @@ pub async fn index(
                                 @else if let Some(role)=roles.get(&channel.id) {(locale.text(&format!("video-channel-role-{role}")))}
                             }
                         }
-                        a.video-channel__view href=(format!("/videos/explore?channel={}",channel.id)) aria-label=(format!("{}: {}",locale.text("studio-view-channel"),channel.display_name)) {(locale.text("studio-view-channel"))}
+                        a.video-channel__view href=(format!("/@{}",channel.username)) aria-label=(format!("{}: {}",locale.text("studio-view-channel"),channel.display_name)) {(locale.text("studio-view-channel"))}
                     }
                 }
             }
@@ -132,8 +132,9 @@ async fn render(
         section.column.video-channel.video-form {
             h1 { (locale.text("video-channel-manage")) " — " (channel.display_name) }
             p { a href="/videos/channels" { (locale.text("video-channel-manage")) } " · "
-                a href=(format!("/videos/explore?channel={id}")) { (locale.text("videos-explore-browse")) }
+                a href=(format!("/@{}",channel.username)) { (locale.text("studio-view-channel")) }
                 @if role.as_deref().is_some_and(|role| matches!(role,"owner" | "editor")) {
+                    " · " a href=(format!("/videos/channels/{id}/requests")) {(locale.text("actor-profile-follow-requests"))}
                     " · " a href=(format!("/videos/channels/{id}/analytics")) { (locale.text("video-analytics-title")) }
                 }
             }
@@ -182,6 +183,11 @@ async fn render(
                         a href="/videos/channels" {(locale.text("studio-cancel"))}
                     }
                     }
+                }
+            }
+            @if matches!(role.as_deref(),Some("editor"|"publisher")) {
+                details {summary {(locale.text("actor-channel-leave"))}
+                    (action_button(id,&user.csrf,"refuse",&locale.text("actor-channel-leave")))
                 }
             }
             @if role.as_deref()==Some("owner") {

@@ -612,6 +612,27 @@ async fn notifications_stream_to_user_and_notification_channels(pool: PgPool) {
     assert_eq!(on_notifications["stream"], json!(["user:notification"]));
     assert_eq!(on_notifications["event"], "notification");
     assert_eq!(payload_json(&on_notifications)["type"], "favourite");
+
+    plamenu_db::custom_emoji::create_local(&pool, "party", "party.png", "image/png", 1, None)
+        .await
+        .unwrap()
+        .unwrap();
+    actions::react_with_emoji(&state, &bob, post_row.id, "party")
+        .await
+        .unwrap();
+    let reaction = payload_json(&next_json(&mut notification_socket).await);
+    assert_eq!(reaction["type"], "pleroma:emoji_reaction");
+    assert_eq!(reaction["emoji"], ":party:");
+    assert_eq!(
+        reaction["emoji_url"],
+        "https://plamenu.test/media/party.png"
+    );
+    assert_eq!(reaction["status"]["id"], post_row.id.to_string());
+    assert_eq!(reaction["status"]["emojis"][0]["shortcode"], "party");
+    assert_eq!(
+        reaction["status"]["emojis"][0]["url"],
+        reaction["emoji_url"]
+    );
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

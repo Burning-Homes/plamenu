@@ -2,9 +2,13 @@ import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import {signIn,freshMusicAudio} from '../session.mjs';
 
-async function audit(page) {
-  const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();
-  expect(result.violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)}))).toEqual([]);
+async function audit(page, scripted = true) {
+  // Axe executes page scripts; disabled-script clients still get the layout
+  // and native interaction checks without enabling application JavaScript.
+  if (scripted) {
+    const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();
+    expect(result.violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)}))).toEqual([]);
+  }
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(await page.evaluate(()=>innerWidth));
 }
 async function publish(page,text) {
@@ -51,7 +55,7 @@ for(const mediaType of ['audio','video']) test(`a Note accepts new and existing 
   }
 });
 
-test('notifications and messages form distinct readable inboxes with synchronized read actions',async({page,browser},info)=>{
+for (const prefix of ['', '@no-js ']) test(`${prefix}notifications and messages form distinct readable inboxes with synchronized read actions`,async({page,browser},info)=>{
   test.setTimeout(180000);
   await signIn(page);
   const me={username:(await page.locator('.account__handle').first().textContent()).trim().replace(/^@/,'')};
@@ -74,6 +78,12 @@ test('notifications and messages form distinct readable inboxes with synchronize
     await page.goto('/notifications');
     await expect(page.locator('.notification__label').filter({hasText:'mentioned you'})).toBeVisible();
     await expect(page.locator('main')).not.toContainText(privateText);
+    await expect(page.locator('.notification-inbox-actions, .notification-inbox-item, .inbox-tabs')).toHaveCount(0);
+    await expect(page.locator('[data-notification-nav] .bell__dot')).toHaveCount(0);
+    await page.locator('.inbox-options > summary').click();
+    await expect(page.getByRole('link',{name:'Filtered notifications',exact:true})).toBeVisible();
+    await expect(page.locator('.inbox-options')).not.toContainText('Opening this inbox');
+    await page.locator('.inbox-options > summary').click();
     for(const width of [320,390,768,1440]){
       await page.setViewportSize({width,height:900});
       await page.screenshot({path:info.outputPath(`notifications-${width}.png`),fullPage:true,animations:'disabled',timeout:30000});
@@ -81,9 +91,9 @@ test('notifications and messages form distinct readable inboxes with synchronize
         const line=await page.locator('.notification__label').first().evaluate(el=>({actor:el.querySelector('.notification__actor').getClientRects()[0].top,action:el.querySelector('.notification__label-detail').getClientRects()[0].top}));
         expect(Math.abs(line.actor-line.action)).toBeLessThan(3);
       }
-      await audit(page);
+      await audit(page, !prefix);
     }
-    await page.getByRole('button',{name:'Mark all read',exact:true}).click();
+    await expect(page.getByRole('button',{name:'Mark all read',exact:true})).toHaveCount(0);
     let unread=await (await page.request.get('/web/inbox/state')).json();
     expect(unread.notifications).toBe(false);expect(unread.messages).toBe(true);
     await page.goto('/conversations');
@@ -97,12 +107,13 @@ test('notifications and messages form distinct readable inboxes with synchronize
     unread=await (await page.request.get('/web/inbox/state')).json();
     expect(unread.notifications).toBe(false);expect(unread.messages).toBe(false);
     await second.bringToFront();
+    if (prefix) await second.reload();
     await expect(second.locator('[data-message-nav] .bell__dot')).toHaveCount(0);
     await expect(second.locator('.conversation').filter({hasText:privateText})).not.toHaveClass(/is-unread/);
     for(const width of [320,390,768,1440]){
       await second.setViewportSize({width,height:900});
       await second.screenshot({path:info.outputPath(`messages-${width}.png`),fullPage:true,animations:'disabled',timeout:30000});
-      await audit(second);
+      await audit(second, !prefix);
     }
     await second.close();
   } finally {await senderContext.close();}

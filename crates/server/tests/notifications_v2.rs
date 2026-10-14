@@ -199,6 +199,325 @@ async fn seed_grouped(pool: &PgPool) -> (Account, String, String, [String; 3]) {
     )
 }
 
+/// Grouped reactions carry the same emoji and image URL as v1, including
+/// when the reacted post's text contains no emoji of its own.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn reaction_notifications_keep_emoji_images_in_v1_and_v2(pool: PgPool) {
+    let (alice, token) = user_with_token(&pool, "alice").await;
+    let (bob, bob_token) = user_with_token(&pool, "bob").await;
+    let bob_id = bob.id.to_string();
+    let remote = RemoteUser::new("remote.example", "carol");
+    let stub = StubFederation::with_actors([remote.actor.clone()]);
+    let app = || test_app_with(pool.clone(), stub.clone());
+    let post = post_status(&pool, &token, json!({"status": "react to this plain text"})).await;
+    let post_id = post["id"].as_str().unwrap();
+    assert_eq!(post["emojis"], json!([]));
+    plamenu_db::custom_emoji::create_local(&pool, "party", "party.png", "image/png", 1, None)
+        .await
+        .unwrap()
+        .unwrap();
+    for emoji in ["%F0%9F%8E%89", "party"] {
+        let (code, _) = api(
+            app(),
+            "PUT",
+            &format!("/api/v1/pleroma/statuses/{post_id}/reactions/{emoji}"),
+            Some(&bob_token),
+            None,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK);
+    }
+    let activity = json!({
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": format!("{}#reactions/party", remote.actor.id),
+        "type": "EmojiReact",
+        "actor": remote.actor.id,
+        "content": ":party:",
+        "object": format!("https://{TEST_DOMAIN}/users/alice/statuses/{post_id}"),
+        "tag": [{
+            "type": "Emoji", "name": ":party:",
+            "icon": {"type": "Image", "url": "https://remote.example/emoji/party.png"},
+        }],
+    });
+    assert_eq!(
+        post_signed(app(), "/inbox", &activity, &remote.signer()).await,
+        StatusCode::ACCEPTED
+    );
+
+    let (code, v1) = api(app(), "GET", "/api/v1/notifications", Some(&token), None).await;
+    assert_eq!(code, StatusCode::OK);
+    let v1 = v1.as_array().unwrap();
+    assert_eq!(v1.len(), 3);
+    let (code, v2) = api(app(), "GET", "/api/v2/notifications", Some(&token), None).await;
+    assert_eq!(code, StatusCode::OK);
+    let groups = v2["notification_groups"].as_array().unwrap();
+    assert_eq!(groups.len(), 3);
+    assert_eq!(v2["statuses"].as_array().unwrap().len(), 1);
+
+    for notification in v1 {
+        let group = groups
+            .iter()
+            .find(|g| g["most_recent_notification_id"] == notification["id"])
+            .unwrap();
+        assert_eq!(group["type"], "pleroma:emoji_reaction");
+        assert_eq!(group["emoji"], notification["emoji"]);
+        assert_eq!(group["status_id"], post_id);
+        assert_eq!(notification["status"]["id"], post_id);
+        assert_eq!(group["notifications_count"], 1);
+        assert_eq!(
+            group["sample_account_ids"],
+            json!([notification["account"]["id"]])
+        );
+        if notification["emoji"] == "🎉" {
+            assert!(notification.get("emoji_url").is_none());
+            assert!(group.get("emoji_url").is_none());
+        } else {
+            let url = notification["emoji_url"].as_str().unwrap();
+            if notification["account"]["id"] == bob_id {
+                assert_eq!(notification["emoji"], ":party@plamenu.test:");
+                assert_eq!(url, "https://plamenu.test/media/party.png");
+            } else {
+                assert_eq!(notification["emoji"], ":party@remote.example:");
+                assert!(
+                    url.starts_with("https://plamenu.test/media/proxy/emoji/"),
+                    "{url}"
+                );
+                assert!(!url.contains("remote.example"), "{url}");
+            }
+            assert_eq!(group["emoji_url"], url);
+            assert_reaction_image_fallback(notification, &notification["status"]);
+            assert_reaction_image_fallback(group, &v2["statuses"][0]);
+        }
+
+        let id = notification["id"].as_str().unwrap();
+        let (code, single) = api(
+            app(),
+            "GET",
+            &format!("/api/v1/notifications/{id}"),
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(single["emoji"], notification["emoji"]);
+        assert_eq!(single["emoji_url"], notification["emoji_url"]);
+        let key = group["group_key"].as_str().unwrap();
+        let (code, single_group) = api(
+            app(),
+            "GET",
+            &format!("/api/v2/notifications/{key}"),
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(
+            single_group["notification_groups"][0]["emoji"],
+            notification["emoji"]
+        );
+        assert_eq!(
+            single_group["notification_groups"][0]["emoji_url"],
+            notification["emoji_url"]
+        );
+    }
+    assert_eq!(alice.id.to_string(), post["account"]["id"]);
+}
+
+fn assert_reaction_image_fallback(notification: &Value, status: &Value) {
+    // The actual Phanpy renderer performs this lookup after masto.js converts
+    // emoji_url to emojiUrl. It must select the same image as the primary field.
+    let code = notification["emoji"].as_str().unwrap().trim_matches(':');
+    let emoji = status["emojis"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|emoji| emoji["shortcode"] == code)
+        .expect("reaction image in emoji dictionary");
+    assert_eq!(emoji["url"], notification["emoji_url"]);
+    assert_eq!(emoji["static_url"], emoji["url"]);
+    assert_eq!(emoji["visible_in_picker"], false);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn reaction_image_fallback_preserves_text_emoji_and_handles_shared_image_hosts(pool: PgPool) {
+    let (_, token) = user_with_token(&pool, "alice").await;
+    plamenu_db::custom_emoji::create_local(&pool, "party", "text.png", "image/png", 1, None)
+        .await
+        .unwrap()
+        .unwrap();
+    let post = post_status(
+        &pool,
+        &token,
+        json!({"status": "Text :party: should keep its own image"}),
+    )
+    .await;
+    let id = post["id"].as_str().unwrap();
+    let bob = RemoteUser::new("bob.example", "bob");
+    let carol = RemoteUser::new("carol.example", "carol");
+    let stub = StubFederation::with_actors([bob.actor.clone(), carol.actor.clone()]);
+    let app = || test_app_with(pool.clone(), stub.clone());
+    for (remote, image) in [(&bob, "bob.png"), (&carol, "carol.png")] {
+        let activity = json!({
+            "@context": "https://www.w3.org/ns/activitystreams",
+            "id": format!("{}#reaction/party", remote.actor.id),
+            "type": "EmojiReact", "actor": remote.actor.id,
+            "content": ":party:", "object": format!("https://{TEST_DOMAIN}/users/alice/statuses/{id}"),
+            "tag": [{"type":"Emoji", "name":":party:",
+                "icon":{"type":"Image", "url":format!("https://cdn.example/{image}")}}],
+        });
+        assert_eq!(
+            post_signed(app(), "/inbox", &activity, &remote.signer()).await,
+            StatusCode::ACCEPTED
+        );
+    }
+    let (_, v1) = api(app(), "GET", "/api/v1/notifications", Some(&token), None).await;
+    let (_, v2) = api(app(), "GET", "/api/v2/notifications", Some(&token), None).await;
+    let notifications = v1.as_array().unwrap();
+    assert_eq!(notifications.len(), 2);
+    assert_ne!(notifications[0]["emoji"], notifications[1]["emoji"]);
+    assert_ne!(notifications[0]["emoji_url"], notifications[1]["emoji_url"]);
+    for notification in notifications {
+        let status = &notification["status"];
+        assert_eq!(status["content"], post["content"]);
+        assert_eq!(status["emojis"][0], post["emojis"][0]);
+        let emojis = status["emojis"].as_array().unwrap();
+        let codes: std::collections::HashSet<_> = emojis
+            .iter()
+            .map(|e| e["shortcode"].as_str().unwrap())
+            .collect();
+        assert_eq!(codes.len(), emojis.len(), "no ambiguous shortcode entries");
+        assert_reaction_image_fallback(notification, status);
+        let group = v2["notification_groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|g| g["most_recent_notification_id"] == notification["id"])
+            .unwrap();
+        assert_reaction_image_fallback(group, &v2["statuses"][0]);
+    }
+    let (_, standalone) = api(
+        app(),
+        "GET",
+        &format!("/api/v1/statuses/{id}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(
+        standalone["emojis"], post["emojis"],
+        "compatibility metadata is limited to notification responses"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn grouped_notification_id_roundtrips_through_markers_without_phantom_unread(pool: PgPool) {
+    use plamenu_db::{notification, notification_read};
+
+    let (alice, token) = user_with_token(&pool, "alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    notification::create(&pool, alice.id, bob.id, "follow", None)
+        .await
+        .unwrap();
+    // A real snowflake whose JavaScript Number -> String round trip ends in
+    // ...260. It must remain ...264 when Phanpy saves its grouped head ID.
+    let exact_id = 117_432_729_242_763_264_i64;
+    let updated = sqlx::query("UPDATE notifications SET id=$1 WHERE account_id=$2")
+        .bind(exact_id)
+        .bind(alice.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(updated.rows_affected(), 1);
+    let app = || test_app(pool.clone());
+    let (code, body) = api(app(), "GET", "/api/v2/notifications", Some(&token), None).await;
+    assert_eq!(code, StatusCode::OK);
+    let groups = body["notification_groups"].as_array().unwrap();
+    assert_eq!(groups.len(), 1);
+    let read_id = &groups[0]["most_recent_notification_id"];
+    assert_eq!(read_id.as_str(), Some(exact_id.to_string().as_str()));
+
+    // Phanpy posts the newest group's ID, then polls v1 since that same ID.
+    let (code, saved) = api(
+        app(),
+        "POST",
+        "/api/v1/markers",
+        Some(&token),
+        Some(json!({"notifications":{"last_read_id":read_id}})),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(saved["notifications"]["last_read_id"], *read_id);
+    let (code, newer) = api(
+        app(),
+        "GET",
+        &format!("/api/v1/notifications?limit=1&since_id={exact_id}"),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(newer, json!([]));
+    for version in ["v1", "v2"] {
+        let (code, count) = api(
+            app(),
+            "GET",
+            &format!("/api/{version}/notifications/unread_count"),
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(count["count"], 0);
+    }
+    let uid = user::find_by_account_id(&pool, alice.id)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+    assert!(
+        !notification::has_unread_activity(&pool, uid, alice.id)
+            .await
+            .unwrap()
+    );
+    assert!(
+        notification_read::read_states(&pool, uid, alice.id, &[exact_id])
+            .await
+            .unwrap()[&exact_id]
+    );
+
+    // A genuinely new notification must still light both clients' badges.
+    let carol = create_local_account(&pool, "carol", "Carol").await;
+    notification::create(&pool, alice.id, carol.id, "follow", None)
+        .await
+        .unwrap();
+    let updated =
+        sqlx::query("UPDATE notifications SET id=$1 WHERE account_id=$2 AND from_account_id=$3")
+            .bind(exact_id + 16)
+            .bind(alice.id)
+            .bind(carol.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    assert_eq!(updated.rows_affected(), 1);
+    for version in ["v1", "v2"] {
+        let (code, count) = api(
+            app(),
+            "GET",
+            &format!("/api/{version}/notifications/unread_count"),
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(count["count"], 1);
+    }
+    assert!(
+        notification::has_unread_activity(&pool, uid, alice.id)
+            .await
+            .unwrap()
+    );
+}
+
 #[sqlx::test(migrations = "../db/migrations")]
 async fn grouped_index_collapses_favourites_into_one_group(pool: PgPool) {
     let (_alice, alice_token, post_id, [bob_id, carol_id, dave_id]) = seed_grouped(&pool).await;
@@ -242,11 +561,12 @@ async fn grouped_index_collapses_favourites_into_one_group(pool: PgPool) {
         json!([dave_id, carol_id, bob_id])
     );
     assert_eq!(favs["status_id"], json!(post_id));
-    // Page fields: strings, anchored to the group's notification ids.
-    assert!(favs["most_recent_notification_id"].is_number());
+    // Every notification ID is an opaque string, including grouped heads.
+    assert!(mention["most_recent_notification_id"].is_string());
+    assert!(favs["most_recent_notification_id"].is_string());
     assert_eq!(
         favs["page_max_id"].as_str().unwrap(),
-        favs["most_recent_notification_id"].to_string()
+        favs["most_recent_notification_id"].as_str().unwrap()
     );
     assert!(favs["page_min_id"].is_string());
     assert!(favs["latest_page_notification_at"].is_string());

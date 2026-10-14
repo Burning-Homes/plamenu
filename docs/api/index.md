@@ -204,3 +204,62 @@ The verification method must be the subject DID or its canonical `#z6Mk…`
 fragment. The statement must name the exact actor ID in `alsoKnownAs`.
 Expired proofs are excluded from responses. Ethereum and legacy prehashed
 Minisign proofs are not supported.
+
+
+## Emoji reaction notifications
+
+`pleroma:emoji_reaction` notifications carry `emoji`: Unicode text or a
+colon-wrapped custom emoji shortcode. Custom reactions also carry `emoji_url`,
+using the instance's media URL or proxy. These fields are present on both v1
+notification entities and v2 notification groups. V2 includes the reacted
+`status_id` and the post in `statuses`, including on the single-group endpoint.
+Streaming uses the v1 entity shape.
+
+Use the notification's `emoji_url` to display a custom reaction. Libraries
+that convert response keys to camel case expose this as `emojiUrl`.
+
+Notification responses also include reaction images in the reacted post's
+`emojis` dictionary for clients that use that fallback. The post's text emoji
+are preserved. If a reaction shortcode names a different image, `emoji` uses a
+separate display alias from that dictionary. These aliases are not picker
+entries or identifiers for reaction actions; those use `emoji_reactions.name`.
+Ordinary status endpoints and stored/federated content are unaffected.
+Scoped channel/group reaction fallbacks include the emoji in their HTML title.
+
+## Managed actor notifications
+
+`GET /api/v1/notifications` and `/api/v2/notifications` include Plamenu's
+`plamenu:actor.*` extension types: `follow`, `follow_request`, `favourite`,
+`reblog`, `emoji_reaction`, `comment`, `mention`, `quote`, `status`, `invitation`,
+and `transfer`. The recipient is a real local user; the notification's `account`
+remains the person who performed the action. Never interpret a channel request
+as a personal `/api/v1/follow_requests/{person}/authorize` operation.
+
+An `actor_contexts` array identifies each relevant hosted actor. Each entry has
+`actor` (public Account), `kind` (`channel` or `group`), `event` (the suffix above),
+and an absolute `action_url`. Native review destinations authenticate the current
+viewer and check their current role and CSRF token. Notification possession does
+not grant permission. Post-bearing types embed `status` in v1 and use the ordinary
+`status_id`/top-level `statuses` relationship in v2. A personal mention or quote
+and a channel reason for the same post share one canonical notification ID;
+channel reasons take presentation priority.
+
+These extension types carry Mastodon's `fallback` object (`title`, `summary`,
+`details`) with escaped HTML and ordinary links. It is also included when
+`supported_types[]` is absent, so streaming and push-triggered single-notification
+fetches remain readable. Phanpy already supports this fallback contract; its
+source does not need modification. Clients with their own extension UI can use
+`actor_contexts` instead. Group-scoped `admin.report` events also supply a safe
+fallback and a public group context. Notification reports use Mastodon’s public
+Report/Account shape, including for staff; administrative email/IP information
+stays on the separately authorized administration endpoints.
+
+Scoped kinds are individually selectable in notification delivery preferences.
+For Web Push, an explicit scoped alert switch wins; otherwise its existing
+Mastodon switch applies (`comment` maps to `mention`, invitations/transfers to
+`follow_request`). Other channel events map to their corresponding standard
+switch. Withdrawals remove all recipients' copies of that exact source event,
+without removing unrelated personal notifications. Notifications stranded on
+hosted actors before this feature are reassigned to their current owner while
+preserving IDs/timestamps and avoiding fresh push deliveries; historical editor
+eligibility is not inferred.

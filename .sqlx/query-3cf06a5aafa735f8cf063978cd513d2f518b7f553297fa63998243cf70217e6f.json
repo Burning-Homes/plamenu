@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE notifications accepted SET\n            reasons = ARRAY(SELECT DISTINCT reason FROM unnest(accepted.reasons||filtered.reasons) reason ORDER BY reason),\n            kind = notification_kind_for(accepted.reasons||filtered.reasons,NULL)\n        FROM notifications filtered\n        WHERE accepted.account_id = $1\n          AND accepted.from_account_id = $2\n          AND NOT accepted.filtered\n          AND filtered.account_id = accepted.account_id\n          AND filtered.from_account_id = accepted.from_account_id\n          AND filtered.status_id = accepted.status_id\n          AND filtered.filtered\n          AND accepted.kind IN ('mention', 'quote', 'status', 'plamenu:actor.comment', 'plamenu:actor.mention', 'plamenu:actor.quote', 'plamenu:actor.status')\n          AND filtered.kind IN ('mention', 'quote', 'status', 'plamenu:actor.comment', 'plamenu:actor.mention', 'plamenu:actor.quote', 'plamenu:actor.status')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3cf06a5aafa735f8cf063978cd513d2f518b7f553297fa63998243cf70217e6f"
+}

@@ -1809,9 +1809,10 @@ pub async fn ingest_remote_note_delivery(
     Ok(result)
 }
 
-/// Delivery ingest with mention/quote notifications returned to the caller.
+/// Delivery ingest with mention/quote candidates returned to the caller.
 /// The inbox uses this form so it can add notify-on-post recipients before one
-/// canonical notification write; other callers use [`ingest_remote_note_delivery`]
+/// canonical notification write, including hosted channel comment context;
+/// other callers use [`ingest_remote_note_delivery`]
 /// and retain its established notification side effects.
 pub(crate) async fn ingest_remote_note_delivery_deferred(
     state: &AppState,
@@ -1877,7 +1878,7 @@ async fn create_deferred_post_notifications(
             ..notification::PostNotification::default()
         });
     }
-    notification::create_post_notifications_many(
+    notification::create_post_notifications_for_delivery(
         &state.pool,
         &candidates,
         result.status.account_id,

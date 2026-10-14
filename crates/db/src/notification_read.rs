@@ -79,18 +79,69 @@ pub async fn mark_all_read(pool: &PgPool, user_id: i64, account_id: i64) -> Resu
     Ok(())
 }
 
-/// The web activity inbox leaves Messages alone. Compatibility APIs still
-/// expose direct mentions and use `mark_all_read` above.
-pub async fn mark_activity_read(pool: &PgPool, account_id: i64) -> Result<(), DbError> {
-    sqlx::query(
-        "INSERT INTO lemmy_notification_read_overrides(account_id,notification_id,read)
-        SELECT $1,n.id,TRUE FROM notifications n WHERE n.account_id=$1
-        AND NOT EXISTS(SELECT 1 FROM statuses s WHERE s.id=n.status_id AND s.visibility='direct')
-        ON CONFLICT(account_id,notification_id) DO UPDATE SET read=TRUE",
+/// The activity inbox reads only through the head observed when it was opened.
+pub async fn activity_head(pool: &PgPool, account_id: i64) -> Result<Option<i64>, DbError> {
+    Ok(sqlx::query_scalar(
+        "SELECT max(n.id) FROM notifications n WHERE n.account_id=$1
+        AND NOT EXISTS(SELECT 1 FROM statuses s WHERE s.id=n.status_id AND s.visibility='direct')",
     )
     .bind(account_id)
-    .execute(pool)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// Advance the shared marker without consuming direct messages. Preserve their
+/// effective read state as sparse overrides before moving past them. Newer
+/// activity and overrides remain untouched, including when an API client has
+/// already advanced the marker beyond this page's snapshot.
+pub async fn mark_activity_read(
+    pool: &PgPool,
+    user_id: i64,
+    account_id: i64,
+    through: i64,
+) -> Result<(), DbError> {
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "INSERT INTO markers(user_id,timeline) VALUES($1,'notifications') ON CONFLICT DO NOTHING",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
     .await?;
+    let previous: i64 = sqlx::query_scalar(
+        "SELECT last_read_id FROM markers WHERE user_id=$1 AND timeline='notifications' FOR UPDATE",
+    )
+    .bind(user_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO lemmy_notification_read_overrides(account_id,notification_id,read)
+        SELECT $1,n.id,FALSE FROM notifications n JOIN statuses s ON s.id=n.status_id
+        WHERE n.account_id=$1 AND s.visibility='direct' AND n.id>$2 AND n.id<=$3
+        ON CONFLICT(account_id,notification_id) DO NOTHING",
+    )
+    .bind(account_id)
+    .bind(previous)
+    .bind(through)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "DELETE FROM lemmy_notification_read_overrides o USING notifications n
+        WHERE o.account_id=$1 AND n.account_id=$1 AND o.notification_id=n.id AND n.id<=$2
+        AND NOT EXISTS(SELECT 1 FROM statuses s WHERE s.id=n.status_id AND s.visibility='direct')",
+    )
+    .bind(account_id)
+    .bind(through)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE markers SET last_read_id=$2,version=version+1,updated_at=now()
+        WHERE user_id=$1 AND timeline='notifications' AND last_read_id<$2",
+    )
+    .bind(user_id)
+    .bind(through)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -138,7 +189,7 @@ pub async fn list(
     sqlx::query_as::<_, Notification>(
         r"
         WITH delivery_kinds AS MATERIALIZED (
-            SELECT ARRAY(SELECT kind FROM unnest(ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[]) k(kind)
+            SELECT ARRAY(SELECT kind FROM unnest(ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite','plamenu:actor.follow','plamenu:actor.follow_request','plamenu:actor.favourite','plamenu:actor.reblog','plamenu:actor.emoji_reaction','plamenu:actor.comment','plamenu:actor.mention','plamenu:actor.quote','plamenu:actor.status','plamenu:actor.invitation','plamenu:actor.transfer']::text[]) k(kind)
                 WHERE ($5::text[] IS NULL OR kind=ANY($5))
                 AND CASE WHEN $6 THEN EXISTS (
                     SELECT 1 FROM notification_delivery_preferences p
@@ -158,7 +209,7 @@ pub async fn list(
         WHERE n.account_id=$2 AND ($3::bigint IS NULL OR n.id<$3)
           AND (NOT $4 OR NOT COALESCE(o.read,n.id<=COALESCE(m.last_read_id,0)))
           AND notification_kind_for(n.reasons,(SELECT kinds FROM delivery_kinds)) IS NOT NULL
-          AND NOT n.filtered AND NOT sender_filtered($2,n.from_account_id)
+          AND NOT n.filtered AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered($2,n.from_account_id)
           AND (NOT $7 OR NOT EXISTS (SELECT 1 FROM statuses s WHERE s.id=n.status_id AND s.visibility='direct'))
         ORDER BY n.id DESC LIMIT 41
     ",

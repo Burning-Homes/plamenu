@@ -214,16 +214,18 @@ async fn request_json(
         account_json(&state.pool, &state.config.domain, &from, Some(viewer)).await?;
     let last_status = match request.last_status_id {
         Some(status_id) => match status::find_by_id(&state.pool, status_id).await? {
-            Some(item) => render_statuses(
-                &state.pool,
-                &state.config.domain,
-                std::slice::from_ref(&item),
-                Some(viewer),
-            )
-            .await?
-            .pop()
-            .unwrap_or(Value::Null),
-            None => Value::Null,
+            Some(item) if crate::entities::can_view(&state.pool, &item, Some(viewer)).await? => {
+                render_statuses(
+                    &state.pool,
+                    &state.config.domain,
+                    std::slice::from_ref(&item),
+                    Some(viewer),
+                )
+                .await?
+                .pop()
+                .unwrap_or(Value::Null)
+            }
+            _ => Value::Null,
         },
         None => Value::Null,
     };

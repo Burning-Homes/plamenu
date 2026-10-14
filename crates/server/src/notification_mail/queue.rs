@@ -30,7 +30,7 @@ pub async fn enqueue_due(state: &AppState) -> Result<u64, ApiError> {
         WHERE a.deleted_at IS NULL AND a.suspended_at IS NULL
           AND u.confirmed_at IS NOT NULL AND u.approved AND NOT u.disabled
           AND u.email IS NOT NULL
-          AND NOT n.filtered AND NOT sender_filtered(n.account_id,n.from_account_id)
+          AND NOT n.filtered AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered(n.account_id,n.from_account_id)
           AND CASE WHEN c.channel='email' THEN p.email AND n.created_at>=p.email_since
               ELSE p.email_digest AND CASE WHEN d.next_digest_at IS NULL THEN EXTRACT(hour FROM now() AT TIME ZONE 'UTC') >= $1::int ELSE d.next_digest_at<=now() END END
           AND NOT EXISTS(SELECT 1 FROM notification_mail_batches b WHERE b.account_id=n.account_id AND b.channel=c.channel)
@@ -41,7 +41,7 @@ pub async fn enqueue_due(state: &AppState) -> Result<u64, ApiError> {
     for (account, channel) in recipients {
         let ids:Vec<i64>=sqlx::query_scalar(r"
             SELECT n.id FROM notifications n WHERE n.account_id=$1 AND NOT n.filtered
-              AND NOT sender_filtered($1,n.from_account_id)
+              AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered($1,n.from_account_id)
               AND EXISTS(SELECT 1 FROM notification_delivery_preferences p WHERE p.account_id=$1 AND p.kind=ANY(n.reasons) AND CASE WHEN $2='email' THEN p.email AND n.created_at>=p.email_since ELSE p.email_digest END)
               AND NOT EXISTS(SELECT 1 FROM notification_mail_receipts r WHERE r.notification_id=n.id AND r.channel=$2 AND (r.sent_at IS NOT NULL OR r.email_job_id IS NOT NULL OR r.retry_at>now()))
             ORDER BY n.id LIMIT 500

@@ -2720,24 +2720,23 @@ async fn unread_dot_lights_the_bell_until_the_page_is_opened(pool: PgPool) {
     assert!(home.body.contains("bell__dot"), "bell lights up");
     assert!(home.body.contains("(new)"));
 
-    // Both inbox URLs share explicit read behavior. Opening one does not
-    // silently consume unread activity; the visible Mark all read action does.
+    // Opening either inbox URL reads activity in the server response, before
+    // the chrome renders. No JavaScript or second request is needed.
     let page = get(&app, "/notifications", Some(&cookie)).await;
     assert_eq!(page.status, StatusCode::OK);
-    assert!(page.body.contains("bell__dot"));
-    let csrf = csrf_of(&page.body);
-    let read = post_form(
-        &app,
-        "/web/notifications/inbox",
-        &cookie,
-        &[("csrf", &csrf), ("operation", "all")],
-    )
-    .await;
-    assert_eq!(read.status, StatusCode::SEE_OTHER);
+    assert!(!page.body.contains("bell__dot"));
 
     // And it stays cleared afterwards.
     let home = get(&app, "/", Some(&cookie)).await;
     assert!(!home.body.contains("bell__dot"), "bell stays quiet");
+    plamenu_db::notification::create(&pool, alice.id, bob.id, "webmention", None)
+        .await
+        .unwrap();
+    let home = get(&app, "/", Some(&cookie)).await;
+    assert!(home.body.contains("bell__dot"), "new activity relights it");
+    let page = get(&app, "/notifications/inbox", Some(&cookie)).await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(!page.body.contains("bell__dot"));
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

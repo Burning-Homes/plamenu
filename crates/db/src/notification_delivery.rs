@@ -37,6 +37,17 @@ pub const TYPES: &[&str] = &[
     "event.rejected",
     "event.changed",
     "event.invite",
+    "plamenu:actor.follow",
+    "plamenu:actor.follow_request",
+    "plamenu:actor.favourite",
+    "plamenu:actor.reblog",
+    "plamenu:actor.emoji_reaction",
+    "plamenu:actor.comment",
+    "plamenu:actor.mention",
+    "plamenu:actor.quote",
+    "plamenu:actor.status",
+    "plamenu:actor.invitation",
+    "plamenu:actor.transfer",
 ];
 #[derive(Clone, Debug, Deserialize, Serialize, sqlx::FromRow)]
 #[serde(deny_unknown_fields)]

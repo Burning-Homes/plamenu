@@ -270,7 +270,15 @@ pub async fn dismiss(
 /// Kinds whose group entity carries a `status_id` — Mastodon's
 /// `NotificationGroupSerializer#status_type?`.
 const STATUS_ID_KINDS: &[&str] = &[
+    "plamenu:actor.comment",
+    "plamenu:actor.mention",
+    "plamenu:actor.quote",
+    "plamenu:actor.status",
+    "plamenu:actor.favourite",
+    "plamenu:actor.reblog",
+    "plamenu:actor.emoji_reaction",
     "favourite",
+    "pleroma:emoji_reaction",
     "reblog",
     "status",
     "mention",
@@ -362,9 +370,17 @@ async fn render_grouped_page(
         .iter()
         .filter_map(|id| found_by_id.remove(id))
         .collect();
+    let statuses = crate::entities::filter_viewable(&state.pool, &statuses, Some(viewer)).await?;
     let found_statuses: std::collections::HashSet<i64> = statuses.iter().map(|s| s.id).collect();
-    let rendered_statuses =
+    let mut rendered_statuses =
         render_statuses(&state.pool, &state.config.domain, &statuses, Some(viewer)).await?;
+    for status in &mut rendered_statuses {
+        crate::entities::notification_reaction_emojis(status, &state.config.domain);
+    }
+    let statuses_by_id: HashMap<i64, &Value> = rendered_statuses
+        .iter()
+        .filter_map(|entity| Some((entity["id"].as_str()?.parse().ok()?, entity)))
+        .collect();
 
     // Target collections for `added_to_collection`/`collection_update` groups —
     // Mastodon inlines the full `CollectionSerializer` (incl. `items`, the data
@@ -484,6 +500,8 @@ async fn render_grouped_page(
         .map(|n| n.id)
         .collect::<Vec<_>>();
     let mentions = crate::webmentions::notification_sources(state, &mention_ids, viewer).await?;
+    let actor_presentations =
+        crate::actor_notifications::render(&state.pool, &state.config.domain, page, viewer).await?;
     let mut groups = Vec::with_capacity(page.len());
     for item in page {
         let key = effective_group_key(item, grouped_kinds);
@@ -496,6 +514,27 @@ async fn render_grouped_page(
             &rendered_collections,
             &rendered_warnings,
         )?;
+        if item.kind == "admin.report" {
+            let Some(report_id) = item.report_id else {
+                continue;
+            };
+            let Some(report) = plamenu_db::report::find_by_id(&state.pool, report_id).await? else {
+                continue;
+            };
+            let Some(entity) = crate::entities::notification_report_json(
+                &state.pool,
+                &state.config.domain,
+                &report,
+                viewer,
+            )
+            .await?
+            else {
+                continue;
+            };
+            group["fallback"] =
+                crate::actor_notifications::report_fallback(&entity, &state.config.domain);
+            group["report"] = entity;
+        }
         if item.kind == "music.favourite" {
             group["music_track"] = music_tracks
                 .get(&item.id)
@@ -513,6 +552,19 @@ async fn render_grouped_page(
         if item.kind == "webmention" {
             group["webmention"] = mentions.get(&item.id).cloned().unwrap_or(Value::Null);
         }
+        if item.kind.starts_with("plamenu:actor.") {
+            let Some(presentation) = actor_presentations.get(&item.id) else {
+                continue;
+            };
+            group["actor_contexts"] = presentation.contexts.clone();
+            group["fallback"] = presentation.fallback.clone();
+        }
+        crate::entities::notification_reaction_fields(
+            &mut group,
+            item,
+            item.status_id
+                .and_then(|id| statuses_by_id.get(&id).copied()),
+        );
         groups.push(group);
     }
 
@@ -573,7 +625,7 @@ fn group_entity(
         "group_key": key,
         "notifications_count": count,
         "type": head.kind,
-        "most_recent_notification_id": most_recent,
+        "most_recent_notification_id": most_recent.to_string(),
         "sample_account_ids": samples.iter().map(ToString::to_string).collect::<Vec<_>>(),
     });
     if include_page_fields {

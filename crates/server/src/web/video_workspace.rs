@@ -38,6 +38,7 @@ pub struct LibraryQuery {
     view: LibraryKind,
     q: Option<String>,
     before: Option<i64>,
+    channel: Option<i64>,
 }
 #[derive(sqlx::FromRow)]
 struct Entry {
@@ -131,25 +132,26 @@ async fn entries(
               AND (ch.owner_account_id=$1 OR EXISTS(SELECT 1 FROM video_channel_grants g
                 WHERE g.channel_id=ch.account_id AND g.account_id=$1 AND g.accepted AND (g.role='editor' OR s.account_id=$1)))
               AND ($2='' OR position(lower($2) in lower(COALESCE(s.title,'')))>0)
-              AND ($3::bigint IS NULL OR v.status_id<$3) ORDER BY v.status_id DESC LIMIT 21\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
+              AND ($4::bigint IS NULL OR v.channel_id=$4) AND ($3::bigint IS NULL OR v.status_id<$3) ORDER BY v.status_id DESC LIMIT 21\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
         LibraryKind::Drafts=>"SELECT d.media_id AS id,d.media_id,NULL::bigint AS status_id,d.title,
             COALESCE(NULLIF(a.display_name,''),a.username) AS channel,
             CASE WHEN d.expires_at<=now() THEN 'expired' ELSE d.state END AS state,NULL::text AS preview
             FROM video_drafts d JOIN media_attachments m ON m.id=d.media_id JOIN accounts a ON a.id=d.channel_id
             WHERE d.account_id=$1 AND m.account_id=$1 AND m.status_id IS NULL
               AND ($2='' OR position(lower($2) in lower(d.title))>0)
-              AND ($3::bigint IS NULL OR d.media_id<$3) ORDER BY d.media_id DESC LIMIT 21",
+              AND ($4::bigint IS NULL OR d.channel_id=$4) AND ($3::bigint IS NULL OR d.media_id<$3) ORDER BY d.media_id DESC LIMIT 21",
         LibraryKind::Live=>"SELECT b.status_id AS id,b.media_id,b.status_id,COALESCE(s.title,'Video') AS title,
             COALESCE(NULLIF(a.display_name,''),a.username) AS channel,b.state,NULL::text AS preview
             FROM native_live_broadcasts b JOIN statuses s ON s.id=b.status_id JOIN accounts a ON a.id=b.channel_id
             WHERE b.owner_account_id=$1 AND s.deleted_at IS NULL
               AND ($2='' OR position(lower($2) in lower(COALESCE(s.title,'')))>0)
-              AND ($3::bigint IS NULL OR b.status_id<$3) ORDER BY b.status_id DESC LIMIT 21\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
+              AND ($4::bigint IS NULL OR b.channel_id=$4) AND ($3::bigint IS NULL OR b.status_id<$3) ORDER BY b.status_id DESC LIMIT 21\n-- STUBFILTER: exclude deleted statuses directly or through public_native_videos",
     };
     Ok(sqlx::query_as::<_, Entry>(sql)
         .bind(actor)
         .bind(query.q.as_deref().unwrap_or_default())
         .bind(query.before)
+        .bind(query.channel)
         .fetch_all(&state.pool)
         .await
         .map_err(plamenu_db::DbError::from)?)
@@ -166,6 +168,21 @@ pub async fn library(
     {
         return Err(ApiError::BadRequest("Invalid video library filter".into()));
     }
+    let selected_channel = if let Some(id) = query.channel {
+        if plamenu_db::video_channel_access::role(&state.pool, id, user.current.account.id)
+            .await?
+            .is_none()
+        {
+            return Err(ApiError::NotFound);
+        }
+        plamenu_db::account::find_by_id(&state.pool, id).await?
+    } else {
+        None
+    };
+    let channel_param = query
+        .channel
+        .map(|id| format!("&channel={id}"))
+        .unwrap_or_default();
     let mut rows = entries(&state, user.current.account.id, &query).await?;
     let more = rows.len() > 20;
     rows.truncate(20);
@@ -174,7 +191,9 @@ pub async fn library(
         header.video-workspace__header { h1 {(locale.text("studio-title"))} p {(locale.text("studio-intro"))} }
         (primary_actions(locale))
         (navigation("/videos",locale))
+        @if let Some(channel)=&selected_channel {p {a href=(format!("/@{}",channel.username)) {(channel.display_name)}}}
         form.video-workspace__search method="get" action="/videos" {
+            @if let Some(id)=query.channel {input type="hidden" name="channel" value=(id);}
             input type="hidden" name="view" value=(query.view.value());
             label { span.visually-hidden {(locale.text("studio-search"))} input type="search" name="q" maxlength="200" placeholder=(locale.text("studio-search")) value=(query.q.as_deref().unwrap_or_default()); }
             button type="submit" {(locale.text("studio-search-submit"))}
@@ -182,7 +201,7 @@ pub async fn library(
         nav.video-workspace__tabs aria-label=(locale.text("studio-content")) {
             @for kind in [LibraryKind::Published,LibraryKind::Drafts,LibraryKind::Live] {
                 @let params=serde_urlencoded::to_string([("view",kind.value()),("q",query.q.as_deref().unwrap_or_default())]).unwrap_or_default();
-                a href=(format!("/videos?{params}")) aria-current=[(kind.value()==query.view.value()).then_some("page")] {(locale.text(kind.label()))}
+                a href=(format!("/videos?{params}{channel_param}")) aria-current=[(kind.value()==query.view.value()).then_some("page")] {(locale.text(kind.label()))}
             }
         }
         h2.visually-hidden {(locale.text(query.view.label()))}
@@ -213,7 +232,7 @@ pub async fn library(
         }
         @if more && let Some(last)=rows.last() {
             @let params=serde_urlencoded::to_string([("view",query.view.value().to_owned()),("q",query.q.clone().unwrap_or_default()),("before",last.id.to_string())]).unwrap_or_default();
-            a.pager__more href=(format!("/videos?{params}")) {(locale.text("studio-older"))}
+            a.pager__more href=(format!("/videos?{params}{channel_param}")) {(locale.text("studio-older"))}
         }
     }};
     Ok(private(

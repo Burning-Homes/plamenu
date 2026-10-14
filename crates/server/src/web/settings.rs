@@ -507,6 +507,57 @@ fn time_zone_field(current: &str, locale: Locale) -> Markup {
 /// fresh subscription starts with it on. Edit notifications default off —
 /// they are the noisy ones.
 pub(super) const PUSH_ALERTS: &[(&str, &str, bool)] = &[
+    (
+        "plamenu:actor.comment",
+        "actor-notification-kind-comment",
+        true,
+    ),
+    (
+        "plamenu:actor.mention",
+        "actor-notification-kind-mention",
+        true,
+    ),
+    ("plamenu:actor.quote", "actor-notification-kind-quote", true),
+    (
+        "plamenu:actor.status",
+        "actor-notification-kind-status",
+        true,
+    ),
+    (
+        "plamenu:actor.follow",
+        "actor-notification-kind-follow",
+        true,
+    ),
+    (
+        "plamenu:actor.follow_request",
+        "actor-notification-kind-follow_request",
+        true,
+    ),
+    (
+        "plamenu:actor.favourite",
+        "actor-notification-kind-favourite",
+        true,
+    ),
+    (
+        "plamenu:actor.reblog",
+        "actor-notification-kind-reblog",
+        true,
+    ),
+    (
+        "plamenu:actor.emoji_reaction",
+        "actor-notification-kind-emoji_reaction",
+        true,
+    ),
+    (
+        "plamenu:actor.invitation",
+        "actor-notification-kind-invitation",
+        true,
+    ),
+    (
+        "plamenu:actor.transfer",
+        "actor-notification-kind-transfer",
+        true,
+    ),
     ("mention", "settings-push-mention", true),
     ("follow", "settings-push-follow", true),
     ("follow_request", "settings-push-follow-request", true),

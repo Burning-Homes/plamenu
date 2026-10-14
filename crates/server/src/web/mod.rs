@@ -8,11 +8,13 @@
 //! API.
 
 pub(crate) mod actions;
+mod actor_profiles;
 mod admin;
 mod announcements;
 mod applications;
 mod assets;
 mod caption_transcripts;
+mod channel_requests;
 mod cleanup;
 pub(crate) mod clock;
 mod collapse;
@@ -829,6 +831,14 @@ pub fn router() -> Router<AppState> {
         .route("/web/video-channels", post(videos::create_channel))
         .route("/videos/channels", get(video_channels::index))
         .route("/videos/channels/{id}", get(video_channels::manage))
+        .route(
+            "/videos/channels/{id}/requests",
+            get(channel_requests::index),
+        )
+        .route(
+            "/web/video-channels/{id}/requests",
+            post(channel_requests::action),
+        )
         .route(
             "/videos/channels/{id}/analytics",
             get(video_analytics::page),

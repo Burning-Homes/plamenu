@@ -285,9 +285,20 @@ fn schedule_picker(locale: Locale) -> Markup {
     }
 }
 
-pub async fn new_page(State(state): State<AppState>, user: WebUser) -> Response {
+pub async fn new_page(
+    State(state): State<AppState>,
+    user: WebUser,
+    Query(selection): Query<super::actor_profiles::ChannelSelection>,
+) -> Response {
+    if let Err(error) = selection.validate(&state, &user).await {
+        return error.into_response();
+    }
+    let pairs = selection
+        .channel
+        .map(|id| vec![("channel".to_owned(), id.to_string())])
+        .unwrap_or_default();
     private(
-        creation_form(&state, &user, &[], None)
+        creation_form(&state, &user, &pairs, None)
             .await
             .map(IntoResponse::into_response),
     )

@@ -2899,13 +2899,11 @@ async fn handle_follow(
     // A locked target, or a sender limited by account/domain moderation, holds
     // the request for manual review; no Accept yet.  This prevents a silenced
     // actor from bypassing limited visibility by following every local user.
-    // group's join requests wait in its moderation queue (the group has no user
-    // of its own to notify); an ordinary locked account notifies itself.
+    // Managed actors route this task to their current controllers; the action
+    // still approves the original actor's edge, never a controller's own follow.
     if local.locked || account::effectively_silenced(&state.pool, sender.id).await? {
         follow::create_request(&state.pool, sender.id, local.id, activity.id.as_deref()).await?;
-        if !local.is_group() {
-            notification::create(&state.pool, local.id, sender.id, "follow_request", None).await?;
-        }
+        notification::create(&state.pool, local.id, sender.id, "follow_request", None).await?;
         tracing::info!(follower = %sender.username, target = %local.username, "new follow request");
         return Ok(());
     }
@@ -3375,7 +3373,7 @@ async fn handle_create(
             .into_iter()
             .map(notification::PostNotification::status),
     );
-    notification::create_post_notifications_many(
+    notification::create_post_notifications_for_delivery(
         &state.pool,
         &post_notifications,
         stored.account_id,

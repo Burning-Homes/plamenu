@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notifications\n         WHERE id IN (SELECT notification_id FROM notification_source_ids($1,ARRAY[$2::bigint])) AND status_id = $3\n           AND notification_base_kind(kind) = 'pleroma:emoji_reaction' AND emoji = ANY($4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fb8048858e58a464da8c2a51c9c019172c365d891f7167a8f8689d2c57a19f3f"
+}

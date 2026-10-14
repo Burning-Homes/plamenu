@@ -147,6 +147,7 @@ pub async fn change(
     {
         return Err(ApiError::NotFound);
     }
+    let mut offer = None;
     match input.operation.as_str() {
         "accept" | "refuse" => {
             let accepted = input.operation == "accept";
@@ -263,6 +264,17 @@ pub async fn change(
                                     "A channel can invite at most 50 collaborators",
                                 ));
                             }
+                            let previous: Option<String> = sqlx::query_scalar("SELECT role FROM video_channel_grants WHERE channel_id=$1 AND account_id=$2")
+                                .bind(channel_id).bind(target.id).fetch_optional(&mut *tx).await.map_err(plamenu_db::DbError::from)?;
+                            if previous.as_deref() != Some(role) {
+                                // Replacing a pending offer invalidates its old action.
+                                sqlx::query("DELETE FROM notifications n USING notification_actor_contexts c WHERE c.notification_id=n.id AND c.actor_account_id=$1 AND n.account_id=$2 AND c.event='invitation'")
+                                    .bind(channel_id).bind(target.id).execute(&mut *tx).await.map_err(plamenu_db::DbError::from)?;
+                                offer = Some((
+                                    target.id,
+                                    plamenu_db::actor_notification::Event::Invitation,
+                                ));
+                            }
                             // Changing a role requires fresh consent; especially
                             // an upgrade must not silently expand authority.
                             sqlx::query("INSERT INTO video_channel_grants(channel_id,account_id,role) VALUES($1,$2,$3) ON CONFLICT(channel_id,account_id) DO UPDATE SET role=EXCLUDED.role,accepted=CASE WHEN video_channel_grants.role=EXCLUDED.role THEN video_channel_grants.accepted ELSE false END")
@@ -272,6 +284,14 @@ pub async fn change(
                             sqlx::query("DELETE FROM video_channel_grants WHERE channel_id=$1 AND account_id=$2").bind(channel_id).bind(target.id).execute(&mut *tx).await.map_err(plamenu_db::DbError::from)?;
                         }
                         "transfer" => {
+                            if transfer_to != Some(target.id) {
+                                sqlx::query("DELETE FROM notifications n USING notification_actor_contexts c WHERE c.notification_id=n.id AND c.actor_account_id=$1 AND c.event='transfer'")
+                                    .bind(channel_id).execute(&mut *tx).await.map_err(plamenu_db::DbError::from)?;
+                                offer = Some((
+                                    target.id,
+                                    plamenu_db::actor_notification::Event::Transfer,
+                                ));
+                            }
                             sqlx::query(
                                 "UPDATE video_channels SET transfer_to=$2 WHERE account_id=$1",
                             )
@@ -287,6 +307,24 @@ pub async fn change(
             }
         }
         _ => return Err(invalid("Unknown channel action")),
+    }
+    // Remove resolved work items in the authority transaction. This clears
+    // every recipient's pending badge, including queued push/email jobs.
+    sqlx::query("DELETE FROM notifications n USING notification_actor_contexts c WHERE c.notification_id=n.id AND c.actor_account_id=$1 AND c.event IN ('invitation','transfer','follow_request') AND NOT notification_visible(n.account_id,n.id,n.report_id)")
+        .bind(channel_id).execute(&mut *tx).await.map_err(plamenu_db::DbError::from)?;
+    if let Some((recipient, event)) = offer {
+        plamenu_db::notification::create_for_actor(
+            &state.pool,
+            &mut tx,
+            recipient,
+            actor.id,
+            plamenu_db::actor_notification::Context {
+                actor_id: channel_id,
+                source_account_id: channel_id,
+                event,
+            },
+        )
+        .await?;
     }
     tx.commit().await.map_err(plamenu_db::DbError::from)?;
     Ok(())

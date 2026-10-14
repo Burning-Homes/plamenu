@@ -11,7 +11,13 @@ use crate::{DbError, id};
 
 /// Kinds that roll up into a request — Mastodon's `update_notification_request!`
 /// only fires for `mention` and `quote`.
-const REQUESTABLE_KINDS: [&str; 2] = ["mention", "quote"];
+const REQUESTABLE_KINDS: [&str; 5] = [
+    "mention",
+    "quote",
+    "plamenu:actor.comment",
+    "plamenu:actor.mention",
+    "plamenu:actor.quote",
+];
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct NotificationRequest {
@@ -244,27 +250,27 @@ pub async fn accept(pool: &PgPool, account_id: i64, from_account_id: i64) -> Res
     .execute(&mut *tx)
     .await?;
     backfill_conversations(&mut tx, account_id, &direct_statuses).await?;
+    // Move context before deleting the filtered twin of an accepted post.
+    sqlx::query(
+        "INSERT INTO notification_actor_contexts(notification_id,actor_account_id,source_account_id,event)
+         SELECT accepted.id,c.actor_account_id,c.source_account_id,c.event
+         FROM notifications filtered JOIN notifications accepted
+           ON accepted.account_id=filtered.account_id AND accepted.from_account_id=filtered.from_account_id
+          AND accepted.status_id=filtered.status_id AND NOT accepted.filtered
+         JOIN notification_actor_contexts c ON c.notification_id=filtered.id
+         WHERE filtered.account_id=$1 AND filtered.from_account_id=$2 AND filtered.filtered
+           AND notification_base_kind(accepted.kind) IN ('mention','quote','status')
+           AND notification_base_kind(filtered.kind) IN ('mention','quote','status')
+         ON CONFLICT(notification_id,actor_account_id,event) DO NOTHING",
+    ).bind(account_id).bind(from_account_id).execute(&mut *tx).await?;
     // A filtered mention/quote and an accepted notify-on-post reason may share
     // one logical post. Merge the request-side reason into the existing main
     // row before unfiltering, preserving the one-row invariant.
     sqlx::query!(
         r#"
         UPDATE notifications accepted SET
-            reasons = ARRAY_REMOVE(ARRAY[
-                CASE WHEN 'mention' = ANY(accepted.reasons)
-                           OR 'mention' = ANY(filtered.reasons) THEN 'mention' END,
-                CASE WHEN 'quote' = ANY(accepted.reasons)
-                           OR 'quote' = ANY(filtered.reasons) THEN 'quote' END,
-                CASE WHEN 'status' = ANY(accepted.reasons)
-                           OR 'status' = ANY(filtered.reasons) THEN 'status' END
-            ], NULL),
-            kind = CASE
-                WHEN 'mention' = ANY(accepted.reasons)
-                  OR 'mention' = ANY(filtered.reasons) THEN 'mention'
-                WHEN 'quote' = ANY(accepted.reasons)
-                  OR 'quote' = ANY(filtered.reasons) THEN 'quote'
-                ELSE 'status'
-            END
+            reasons = ARRAY(SELECT DISTINCT reason FROM unnest(accepted.reasons||filtered.reasons) reason ORDER BY reason),
+            kind = notification_kind_for(accepted.reasons||filtered.reasons,NULL)
         FROM notifications filtered
         WHERE accepted.account_id = $1
           AND accepted.from_account_id = $2
@@ -273,8 +279,8 @@ pub async fn accept(pool: &PgPool, account_id: i64, from_account_id: i64) -> Res
           AND filtered.from_account_id = accepted.from_account_id
           AND filtered.status_id = accepted.status_id
           AND filtered.filtered
-          AND accepted.kind IN ('mention', 'quote', 'status')
-          AND filtered.kind IN ('mention', 'quote', 'status')
+          AND accepted.kind IN ('mention', 'quote', 'status', 'plamenu:actor.comment', 'plamenu:actor.mention', 'plamenu:actor.quote', 'plamenu:actor.status')
+          AND filtered.kind IN ('mention', 'quote', 'status', 'plamenu:actor.comment', 'plamenu:actor.mention', 'plamenu:actor.quote', 'plamenu:actor.status')
         "#,
         account_id,
         from_account_id,
@@ -292,8 +298,8 @@ pub async fn accept(pool: &PgPool, account_id: i64, from_account_id: i64) -> Res
           AND filtered.from_account_id = accepted.from_account_id
           AND filtered.status_id = accepted.status_id
           AND filtered.filtered
-          AND accepted.kind IN ('mention', 'quote', 'status')
-          AND filtered.kind IN ('mention', 'quote', 'status')
+          AND accepted.kind IN ('mention', 'quote', 'status', 'plamenu:actor.comment', 'plamenu:actor.mention', 'plamenu:actor.quote', 'plamenu:actor.status')
+          AND filtered.kind IN ('mention', 'quote', 'status', 'plamenu:actor.comment', 'plamenu:actor.mention', 'plamenu:actor.quote', 'plamenu:actor.status')
         "#,
         account_id,
         from_account_id,
@@ -521,7 +527,7 @@ async fn filtered_direct_statuses(
         WHERE n.account_id = $1
           AND n.from_account_id = $2
           AND n.filtered
-          AND n.kind = 'mention'
+          AND notification_base_kind(n.kind) = 'mention'
           AND s.visibility = 'direct'
         ORDER BY s.id ASC
         "#,

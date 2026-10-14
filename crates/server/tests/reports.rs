@@ -874,6 +874,10 @@ async fn filing_a_report_notifies_managing_staff_with_the_report_embedded(pool: 
     // can jump straight to the moderation queue entry.
     assert_eq!(n["report"]["id"], filed["id"]);
     assert_eq!(n["report"]["comment"], "spam");
+    assert_eq!(n["report"]["target_account"]["id"], target.id.to_string());
+    assert!(n["report"]["target_account"].get("account").is_none());
+    assert!(n["report"]["target_account"].get("email").is_none());
+    assert!(n["report"]["status_ids"].is_array());
 
     // A non-staff account — the reporter included — hears nothing.
     let (code, own) = api(

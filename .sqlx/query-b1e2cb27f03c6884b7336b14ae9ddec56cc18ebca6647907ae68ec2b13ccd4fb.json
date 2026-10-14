@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM notifications\n         WHERE id IN (SELECT notification_id FROM notification_source_ids($1,ARRAY[$2::bigint])) AND notification_base_kind(kind) = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b1e2cb27f03c6884b7336b14ae9ddec56cc18ebca6647907ae68ec2b13ccd4fb"
+}

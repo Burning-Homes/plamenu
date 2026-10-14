@@ -507,6 +507,51 @@ async fn notification_body(
     Ok(truncate(&decode_entities(&strip_tags(&body_source)), 140))
 }
 
+async fn prepare_title(
+    state: &AppState,
+    notification: &notification::Notification,
+    push_kind: &str,
+    from_account: &account::Account,
+    target_status: Option<&status::Status>,
+) -> Result<String, AttemptError> {
+    let permanent = |reason: &str| AttemptError::Permanent(reason.to_owned());
+    if let Some(status) = target_status
+        && !crate::entities::can_view(&state.pool, status, Some(notification.account_id))
+            .await
+            .map_err(|e| AttemptError::Transient(e.to_string()))?
+    {
+        return Err(permanent("notification status no longer visible"));
+    }
+    let domain = &state.config.domain;
+    let name = if from_account.display_name.is_empty() {
+        &from_account.username
+    } else {
+        &from_account.display_name
+    };
+    let title = if push_kind.starts_with("plamenu:actor.") {
+        let mut projected = notification.clone();
+        projected.kind = push_kind.to_owned();
+        crate::actor_notifications::render(
+            &state.pool,
+            domain,
+            std::slice::from_ref(&projected),
+            notification.account_id,
+        )
+        .await
+        .map_err(|e| AttemptError::Transient(e.to_string()))?
+        .remove(&notification.id)
+        .map(|p| p.title)
+    } else {
+        title(push_kind, name)
+    }
+    .ok_or_else(|| permanent("kind has no push rendering"))?;
+    Ok(title)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "one push delivery attempt with current policy checks and response handling"
+)]
 async fn attempt(
     state: &AppState,
     vapid: &Vapid,
@@ -572,12 +617,14 @@ async fn attempt(
     };
 
     let domain = &state.config.domain;
-    let name = if from_account.display_name.is_empty() {
-        &from_account.username
-    } else {
-        &from_account.display_name
-    };
-    let title = title(push_kind, name).ok_or_else(|| permanent("kind has no push rendering"))?;
+    let title = prepare_title(
+        state,
+        &notification,
+        push_kind,
+        &from_account,
+        target_status.as_ref(),
+    )
+    .await?;
     let body =
         notification_body(state, &notification, target_status.as_ref(), &from_account).await?;
     // Push icons route through the proxy; the last-resort direct fallback does

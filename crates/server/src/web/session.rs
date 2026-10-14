@@ -567,18 +567,66 @@ impl FromRequestParts<AppState> for MaybeWebUser {
     }
 }
 
+// Only safe GET destinations used by managed-actor review links are carried
+// across login. This cookie conveys navigation intent, never authority.
+const ACTOR_RETURN_COOKIE: &str = "__Host-plamenu_actor_return";
+fn actor_return_path(path: &str) -> bool {
+    let parts = path.split('/').collect::<Vec<_>>();
+    let positive_id = |id: &str| id.parse::<i64>().is_ok_and(|id| id > 0);
+    match parts.as_slice() {
+        ["", "videos", "channels", id]
+        | ["", "videos", "channels", id, "requests" | "analytics"]
+        | [
+            "",
+            "groups",
+            id,
+            "manage" | "members" | "requests" | "reports" | "moderators",
+        ] => positive_id(id),
+        _ => false,
+    }
+}
+fn actor_login_destination(headers: &HeaderMap) -> &str {
+    cookie_value(headers, ACTOR_RETURN_COOKIE)
+        .filter(|path| actor_return_path(path))
+        .unwrap_or("/")
+}
+fn clear_actor_return(mut response: Response, headers: &HeaderMap) -> Response {
+    if cookie_value(headers, ACTOR_RETURN_COOKIE).is_some() {
+        response.headers_mut().append(
+            header::SET_COOKIE,
+            format!("{ACTOR_RETURN_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0")
+                .parse()
+                .expect("constant cookie"),
+        );
+    }
+    response
+}
+
 impl FromRequestParts<AppState> for WebUser {
     /// A missing or invalid session sends the browser to the sign-in page
     /// rather than returning the API's JSON 401.
-    type Rejection = Redirect;
+    type Rejection = Response;
 
     async fn from_request_parts(
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        resolve(parts, state)
-            .await
-            .ok_or_else(|| Redirect::to("/login"))
+        if let Some(user) = resolve(parts, state).await {
+            return Ok(user);
+        }
+        let mut response = Redirect::to("/login").into_response();
+        if parts.method == axum::http::Method::GET && actor_return_path(parts.uri.path()) {
+            response.headers_mut().append(
+                header::SET_COOKIE,
+                format!(
+                    "{ACTOR_RETURN_COOKIE}={}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=600",
+                    parts.uri.path()
+                )
+                .parse()
+                .expect("validated internal path"),
+            );
+        }
+        Err(response)
     }
 }
 
@@ -603,7 +651,10 @@ pub async fn login_form(
     Query(query): Query<LoginQuery>,
 ) -> Response {
     if session.is_some() && query.switch.is_none() {
-        return Redirect::to("/").into_response();
+        return clear_actor_return(
+            Redirect::to(actor_login_destination(&headers)).into_response(),
+            &headers,
+        );
     }
     let accounts = chooser_accounts(&state, &headers, session.as_ref()).await;
     let mascot = mascot_url(&state).await;
@@ -1343,15 +1394,19 @@ pub(crate) async fn complete_login(
         Err(err) => return err.into_response(),
     };
     let (active, roster) = session_cookies(state, app, headers, user_id, raw).await;
-    (
+    let response = (
         StatusCode::SEE_OTHER,
         AppendHeaders([
-            (header::LOCATION, "/".to_owned()),
+            (
+                header::LOCATION,
+                actor_login_destination(headers).to_owned(),
+            ),
             (header::SET_COOKIE, active),
             (header::SET_COOKIE, roster),
         ]),
     )
-        .into_response()
+        .into_response();
+    clear_actor_return(response, headers)
 }
 
 /// Completes a fetch-driven sign-in (the `WebAuthn` login ceremony): the session
@@ -1369,12 +1424,13 @@ pub(crate) async fn complete_login_json(
         Err(err) => return err.into_response(),
     };
     let (active, roster) = session_cookies(state, app, headers, user_id, raw).await;
-    (
+    let response = (
         StatusCode::OK,
         AppendHeaders([(header::SET_COOKIE, active), (header::SET_COOKIE, roster)]),
-        axum::Json(serde_json::json!({ "redirect": "/" })),
+        axum::Json(serde_json::json!({ "redirect": actor_login_destination(headers) })),
     )
-        .into_response()
+        .into_response();
+    clear_actor_return(response, headers)
 }
 
 #[derive(Deserialize)]
@@ -1503,14 +1559,18 @@ pub async fn switch_account(
         )
             .into_response();
     }
-    (
+    let response = (
         StatusCode::SEE_OTHER,
         AppendHeaders([
-            (header::LOCATION, "/".to_owned()),
+            (
+                header::LOCATION,
+                actor_login_destination(&headers).to_owned(),
+            ),
             (header::SET_COOKIE, set_cookie(&entry.token)),
         ]),
     )
-        .into_response()
+        .into_response();
+    clear_actor_return(response, &headers)
 }
 
 /// `POST /logout` body — the shell's logout button submits the session-bound

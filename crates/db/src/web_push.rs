@@ -362,12 +362,24 @@ pub fn preferred_alert_kind<'a>(
     reasons: &'a [String],
 ) -> Option<&'a str> {
     let enabled = |reason: &str| {
-        subscription
-            .alert_kinds
-            .iter()
-            .zip(&subscription.alert_values)
-            .any(|(stored_kind, enabled)| stored_kind == reason && *enabled)
+        let setting = |reason: &str| {
+            subscription
+                .alert_kinds
+                .iter()
+                .zip(&subscription.alert_values)
+                .find(|(stored_kind, _)| stored_kind.as_str() == reason)
+                .map(|(_, enabled)| *enabled)
+        };
+        setting(reason)
+            .or_else(|| setting(crate::actor_notification::base_kind(reason)))
+            .unwrap_or(false)
     };
+    if let Some(reason) = reasons
+        .iter()
+        .find(|reason| reason.starts_with("plamenu:actor.") && enabled(reason))
+    {
+        return Some(reason);
+    }
     ["mention", "quote", "status"]
         .into_iter()
         .find(|kind| reasons.iter().any(|reason| reason == kind) && enabled(kind))
@@ -580,6 +592,29 @@ mod tests {
         ];
 
         assert_eq!(preferred_alert_kind(&subscription, &reasons), Some("quote"));
+    }
+    #[test]
+    fn managed_actor_notification_push_uses_existing_switches_and_explicit_overrides() {
+        for kind in crate::actor_notification::KINDS {
+            let mut subscription = Subscription {
+                id: 1,
+                user_id: 1,
+                access_token_id: 1,
+                access_token: String::new(),
+                endpoint: String::new(),
+                key_p256dh: String::new(),
+                key_auth: String::new(),
+                standard: true,
+                policy: "all".into(),
+                alert_kinds: vec![crate::actor_notification::base_kind(kind).into()],
+                alert_values: vec![true],
+            };
+            let reasons = vec![(*kind).to_owned()];
+            assert_eq!(preferred_alert_kind(&subscription, &reasons), Some(*kind));
+            subscription.alert_kinds.push((*kind).to_owned());
+            subscription.alert_values.push(false);
+            assert_eq!(preferred_alert_kind(&subscription, &reasons), None);
+        }
     }
     use crate::{notification, oauth, user};
 

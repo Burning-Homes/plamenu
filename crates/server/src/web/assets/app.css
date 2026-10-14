@@ -9264,9 +9264,6 @@ html { scrollbar-gutter: stable; }
 .webmention-card h2 { font-size: 1.05rem; }
 .webmention-photo { object-fit: cover; border-radius: 50%; }
 
-.notification-inbox-item { border-block-end: 1px solid var(--border-color); padding-block: .75rem; }
-.notification-inbox-item[data-seen="false"] { border-inline-start: .2rem solid currentColor; padding-inline-start: .5rem; }
-
 @layer app {
 /* Listening actions stay visible; specialist Music tools are secondary. */
 .music-primary {
@@ -9409,16 +9406,6 @@ html:has(.vod-player:fullscreen) { scrollbar-gutter: auto; }
 .inbox-options__body { position: absolute; z-index: 15; inset-inline-end: 0; inline-size: min(19rem, calc(100vw - 2.5rem)); display: grid; gap: .75rem; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
 .inbox-options__body p { margin: 0; color: var(--text-muted); font-size: .875rem; }
 .inbox-options__body form { display: grid; gap: .75rem; }
-.notification-inbox-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: visible; }
-.notification-inbox-item[data-seen="false"] { border-inline-start: 3px solid var(--accent); }
-.notification-inbox-item > .notification { border: 0; background: transparent; box-shadow: none; }
-.notification-inbox-actions { display: flex; justify-content: flex-end; align-items: center; gap: .4rem; padding: 0 .75rem .5rem; }
-.notification-inbox-actions form { margin: 0; }
-.notification-inbox-actions .button--quiet { border: 0; font-size: .8rem; }
-.inbox-item-menu { position: relative; }
-.inbox-item-menu > summary { display: flex; align-items: center; justify-content: center; inline-size: 40px; block-size: 40px; cursor: pointer; list-style: none; }
-.inbox-item-menu > summary::-webkit-details-marker { display: none; }
-.inbox-item-menu > form { position: absolute; inset-inline-end: 0; z-index: 10; padding: .25rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .conversations__privacy { color: var(--text-muted); font-size: .875rem; }
 .conversations__privacy > summary { cursor: pointer; padding-block: .5rem; }
 .conversation__open { display: grid; gap: .5rem; color: var(--text); text-decoration: none; }
@@ -9561,3 +9548,12 @@ html:has(.vod-player:fullscreen) { scrollbar-gutter: auto; }
   .music-library-filter:has(select) { display: grid; grid-template-columns: minmax(0,1fr) auto; }
   .music-library-filter select { grid-column: 1 / -1; }
 }
+
+/* Relationship disclosures fit their content and work before scripts load. */
+.actor-connections { display: flex; flex-wrap: wrap; align-items: start; gap: .5rem 1rem; margin-block: .5rem; }
+.actor-connections details { min-width: 0; max-width: 100%; }
+.actor-connections summary { cursor: pointer; font-weight: 600; }
+.actor-connections ul { list-style: none; padding-inline-start: 0; margin-block: .5rem; }
+.actor-connections li { overflow-wrap: anywhere; }
+.actor-connections nav { display: flex; flex-wrap: wrap; gap: .5rem 1rem; padding-block: .5rem; }
+.actor-connections nav a { overflow-wrap: anywhere; }

@@ -12,7 +12,7 @@ The owner can invite an active local person as a **Publisher** or **Editor**.
 Publishers upload videos and manage their own publications. Editors can also
 change the channel profile and edit/delete any of its videos. Only the owner
 controls invitations, ownership and channel deletion. Pending invitations appear
-in the recipient's channel list; they grant nothing until explicitly accepted.
+in the recipient's channel list and notifications; they grant nothing until explicitly accepted.
 Changing a role requires new acceptance. Owners can revoke access immediately,
 including the ability to edit the collaborator's previous channel publications.
 Connected encoder and browser broadcasts detect revoked authority within their
@@ -25,6 +25,43 @@ using the same accessible confirmation flow as ordinary posts. Edits stay signed
 by the publication's original author and preserve its URL and discussion.
 PeerTube presents videos under the channel's current owner; Plamenu's canonical
 ActivityPub object additionally preserves the actual uploader.
+
+## Profiles and notifications
+
+The channel profile's **Controllers** disclosure links to its owner and accepted
+editors/publishers, with each role labelled. Pending invitations stay private.
+A person's **Channels & groups** disclosure links back to the channels they own
+and groups they own or moderate. **Manage** exposes the actions their current
+role permits. Channel links open its library or preselect it in upload/live
+forms. Editors and publishers can leave collaboration from the channel manager.
+All of these controls work without JavaScript.
+
+Routine channel activity reaches the owner and every accepted editor, subject
+to each recipient's notification preferences, filtering and blocks/mutes.
+Publishers retain the personal notifications relevant to their own posts; their
+role alone does not subscribe them to every channel event. Channel notifications
+identify the channel. When a comment also mentions its owner, the owner sees one
+notification with channel context rather than two competing alerts.
+
+A delivered comment in a hosted video's reply thread is a channel event even
+when it has no Mention tag. This does not create Mention tags, interpret generic
+`to`/`cc` as a request to notify, or notify on ordinary unmentioned Note replies.
+History imports and duplicate deliveries do not create new comment alerts.
+Private replies reach only controllers who can already read that reply; a
+channel role never expands its audience.
+
+Channel follow requests link to **Follow requests**, where owners and accepted
+editors accept/reject as the channel. Personal follow requests remain separate.
+Collaboration and ownership invitations link to their consent forms. Resolved
+or withdrawn requests disappear, and revoking a role immediately removes access
+to its pending work. Public activity already received can remain in history.
+Groups use their own membership/moderation controls; following does not grant a
+management role. Group reports go to the people currently allowed to review
+them, without exposing administrative account details to group-only moderators.
+
+Existing clients that support Mastodon's notification fallback can display these
+extensions and follow their review links. Plamenu does not require a modified
+Phanpy client. See [the API contract](api/index.md#managed-actor-notifications).
 
 ## Delivery analytics
 

@@ -2271,7 +2271,7 @@ async fn post_status_transaction(
             "post-commit follower notification audience failed"
         ),
     }
-    if let Err(err) = notification::create_post_notifications_many(
+    if let Err(err) = notification::create_post_notifications_for_delivery(
         &state.pool,
         &post_notifications,
         author.id,
@@ -4836,6 +4836,12 @@ pub async fn follow_account(
     if account_domain_block::blocks_account_domain(&state.pool, target.id, actor.id).await? {
         return Err(ApiError::Forbidden("This action is not allowed".into()));
     }
+    if target.is_group()
+        && group::affiliation_of(&state.pool, target.id, actor.id).await?
+            == Some(group::Affiliation::Outcast)
+    {
+        return Err(ApiError::Forbidden("This action is not allowed".into()));
+    }
     if follow::find(&state.pool, actor.id, target.id)
         .await?
         .is_some()
@@ -4849,9 +4855,7 @@ pub async fn follow_account(
             follow::create_request(&state.pool, actor.id, target.id, None).await?;
             // A group's join request waits in its moderation queue, not a
             // notification to the group account itself.
-            if !target.is_group() {
-                notify_after_commit(state, target.id, actor.id, "follow_request", None).await;
-            }
+            notify_after_commit(state, target.id, actor.id, "follow_request", None).await;
         } else {
             follow::create(&state.pool, actor.id, target.id, None).await?;
             notify_after_commit(state, target.id, actor.id, "follow", None).await;

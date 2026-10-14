@@ -1,6 +1,7 @@
 //! HTTP server assembly for Plamenu.
 
 pub mod actions;
+pub mod actor_notifications;
 pub mod actor_reconciliation;
 pub mod admin_log;
 pub mod altcha;

@@ -448,13 +448,25 @@ pub(super) async fn page(
     ))
 }
 
-pub async fn index(State(state): State<AppState>, user: WebUser) -> Result<Response, ApiError> {
+pub async fn index(
+    State(state): State<AppState>,
+    user: WebUser,
+    axum::extract::Query(selection): axum::extract::Query<super::actor_profiles::ChannelSelection>,
+) -> Result<Response, ApiError> {
+    selection.validate(&state, &user).await?;
+    let draft = Draft {
+        channel: selection
+            .channel
+            .map(|id| id.to_string())
+            .unwrap_or_default(),
+        ..Default::default()
+    };
     Ok((
         [
             (header::CACHE_CONTROL, "private, no-store"),
             (header::VARY, "Cookie"),
         ],
-        page(&state, &user, &Draft::default(), None).await?,
+        page(&state, &user, &draft, None).await?,
     )
         .into_response())
 }

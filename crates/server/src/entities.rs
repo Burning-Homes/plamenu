@@ -1329,6 +1329,56 @@ pub async fn admin_report_json(
     }))
 }
 
+/// Community moderation grants access to its case, not the instance's private
+/// account records. Recheck current authority even for an old notification.
+pub(crate) async fn notification_report_json(
+    pool: &PgPool,
+    domain: &str,
+    report: &Report,
+    viewer: i64,
+) -> Result<Option<Value>, ApiError> {
+    if !plamenu_db::report::visible_to(pool, report.id, viewer).await? {
+        return Ok(None);
+    }
+    let staff = plamenu_db::role::for_account(pool, viewer)
+        .await?
+        .is_some_and(|role| role.can(plamenu_db::role::permission::MANAGE_REPORTS));
+    let group_moderator = if let Some(group_id) = report.group_account_id {
+        matches!(
+            plamenu_db::group::affiliation_of(pool, group_id, viewer).await?,
+            Some(plamenu_db::group::Affiliation::Owner | plamenu_db::group::Affiliation::Moderator)
+        )
+    } else {
+        false
+    };
+    if !staff && !group_moderator {
+        return Ok(None);
+    }
+    // Mastodon notifications embed REST::ReportSerializer, not the separate
+    // Admin::Report serializer. Even staff notifications use public Accounts;
+    // administrative email/IP/assignment data belongs on the gated review page.
+    let mut entity = report_json(pool, domain, report).await?;
+    if let Some(group_id) = report.group_account_id {
+        entity["group"] = render_accounts_by_ids(pool, domain, &[group_id], Some(viewer))
+            .await?
+            .into_iter()
+            .next()
+            .unwrap_or(Value::Null);
+    }
+    let statuses = status::find_by_ids(pool, &report.status_ids).await?;
+    let statuses = filter_viewable(pool, &statuses, Some(viewer)).await?;
+    entity["statuses"] = json!(render_statuses(pool, domain, &statuses, Some(viewer)).await?);
+    entity["action_url"] = json!(if group_moderator {
+        format!(
+            "https://{domain}/groups/{}/reports",
+            report.group_account_id.unwrap_or_default()
+        )
+    } else {
+        format!("https://{domain}/admin/reports/{}", report.id)
+    });
+    Ok(Some(entity))
+}
+
 /// The Mastodon `Admin::DomainBlock` entity.
 pub fn admin_domain_block_json(block: &DomainBlock) -> Result<Value, ApiError> {
     Ok(json!({
@@ -5788,6 +5838,13 @@ pub async fn apply_redraft_source(
 /// The Mastodon `Notification` entity.
 /// Notification types that carry a `status` (Mastodon's `status_type?`).
 const NOTIFICATION_STATUS_TYPES: &[&str] = &[
+    "plamenu:actor.comment",
+    "plamenu:actor.mention",
+    "plamenu:actor.quote",
+    "plamenu:actor.status",
+    "plamenu:actor.favourite",
+    "plamenu:actor.reblog",
+    "plamenu:actor.emoji_reaction",
     "favourite",
     "reblog",
     "status",
@@ -5854,7 +5911,11 @@ pub async fn render_notifications(
         ids
     };
     let statuses = status::find_by_ids(pool, &status_ids).await?;
-    let rendered_statuses = render_statuses(pool, domain, &statuses, Some(viewer)).await?;
+    let statuses = filter_viewable(pool, &statuses, Some(viewer)).await?;
+    let mut rendered_statuses = render_statuses(pool, domain, &statuses, Some(viewer)).await?;
+    for status in &mut rendered_statuses {
+        notification_reaction_emojis(status, domain);
+    }
     let statuses_by_id: HashMap<i64, Value> = rendered_statuses
         .into_iter()
         .filter_map(|value| {
@@ -5912,8 +5973,10 @@ pub async fn render_notifications(
     };
     let mut reports_by_id: HashMap<i64, Value> = HashMap::new();
     for report_id in report_ids {
-        if let Some(report) = plamenu_db::report::find_by_id(pool, report_id).await? {
-            reports_by_id.insert(report_id, admin_report_json(pool, domain, &report).await?);
+        if let Some(report) = plamenu_db::report::find_by_id(pool, report_id).await?
+            && let Some(entity) = notification_report_json(pool, domain, &report, viewer).await?
+        {
+            reports_by_id.insert(report_id, entity);
         }
     }
 
@@ -5938,8 +6001,17 @@ pub async fn render_notifications(
     let downloads =
         crate::music_downloads::notification_sources(pool, &download_ids, viewer).await?;
 
+    let actor_presentations =
+        crate::actor_notifications::render(pool, domain, items, viewer).await?;
     let mut result = Vec::with_capacity(items.len());
     for item in items {
+        if item.kind == "admin.report"
+            && item
+                .report_id
+                .is_none_or(|id| !reports_by_id.contains_key(&id))
+        {
+            continue;
+        }
         // A dangling sender is a 404, exactly like the per-item
         // `find_by_id(...).ok_or(NotFound)` this replaced.
         let from_entity = accounts_by_id
@@ -5984,6 +6056,8 @@ pub async fn render_notifications(
                 .report_id
                 .and_then(|id| reports_by_id.get(&id).cloned())
                 .unwrap_or(Value::Null);
+            entity["fallback"] =
+                crate::actor_notifications::report_fallback(&entity["report"], domain);
         }
         if item.kind == "music.favourite" {
             entity["music_track"] = music_tracks
@@ -6003,37 +6077,185 @@ pub async fn render_notifications(
         if item.filtered {
             entity["filtered"] = json!(true);
         }
-        // Pleroma's `pleroma:emoji_reaction` notification carries the reacted
-        // emoji, plus `emoji_url` when it's a custom emoji — the embedded
-        // status' reaction groups already hold the client-facing image URL,
-        // so match the shortcode there (group names may carry an `@host`
-        // suffix for remote emoji; the notification's shortcode never does).
-        if let Some(emoji) = &item.emoji {
-            entity["emoji"] = json!(emoji);
-            let code = emoji.strip_prefix(':').and_then(|e| e.strip_suffix(':'));
-            let url = code.and_then(|code| {
-                item.status_id
-                    .and_then(|id| statuses_by_id.get(&id))
-                    .and_then(|status| status.get("emoji_reactions"))
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .find(|group| {
-                        group
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .is_some_and(|name| name.split('@').next() == Some(code))
-                    })
-                    .and_then(|group| group.get("url"))
-                    .cloned()
-            });
-            if let Some(url) = url {
-                entity["emoji_url"] = url;
-            }
+        if item.kind.starts_with("plamenu:actor.") {
+            let Some(presentation) = actor_presentations.get(&item.id) else {
+                continue;
+            };
+            entity["actor_contexts"] = presentation.contexts.clone();
+            // Include the fallback on push fetches and streaming too, where
+            // clients cannot negotiate supported_types on each event.
+            entity["fallback"] = presentation.fallback.clone();
         }
+        notification_reaction_fields(
+            &mut entity,
+            item,
+            item.status_id.and_then(|id| statuses_by_id.get(&id)),
+        );
         result.push(entity);
     }
     Ok(result)
+}
+
+fn reaction_emoji_alias(code: &str, url: &str) -> String {
+    let digest = crate::auth::hash_secret(&format!("{code}\0{url}"));
+    format!("reaction_{}", &digest[..16])
+}
+
+/// Supply the post's already-rendered reaction images in its emoji dictionary
+/// on notification responses. Phanpy's notification renderer uses this as a
+/// fallback when it misses the SDK's camel-cased `emojiUrl` field. Preserve
+/// text emoji and disambiguate names rather than substituting another image.
+pub(crate) fn notification_reaction_emojis(status: &mut Value, domain: &str) {
+    let Some(groups) = status["emoji_reactions"].as_array() else {
+        return;
+    };
+    let mut emojis = status["emojis"].as_array().cloned().unwrap_or_default();
+    let mut by_shortcode: HashMap<String, String> = emojis
+        .iter()
+        .filter_map(|emoji| {
+            Some((
+                emoji["shortcode"].as_str()?.to_owned(),
+                emoji["url"].as_str()?.to_owned(),
+            ))
+        })
+        .collect();
+    let mut images: HashMap<&str, HashSet<&str>> = HashMap::new();
+    let mut names: HashMap<&str, HashSet<&str>> = HashMap::new();
+    for emoji in &emojis {
+        if let (Some(code), Some(url)) = (emoji["shortcode"].as_str(), emoji["url"].as_str()) {
+            images.entry(code).or_default().insert(url);
+        }
+    }
+    for group in groups {
+        if let (Some(name), Some(url)) = (group["name"].as_str(), group["url"].as_str()) {
+            images
+                .entry(name.split('@').next().unwrap_or(name))
+                .or_default()
+                .insert(url);
+            names.entry(name).or_default().insert(url);
+        }
+    }
+    // Own the collision set before extending the dictionary it references.
+    let collisions: HashSet<String> = images
+        .into_iter()
+        .filter(|(_, urls)| urls.len() > 1)
+        .map(|(code, _)| code.to_owned())
+        .collect();
+    for group in groups {
+        let (Some(name), Some(url)) = (group["name"].as_str(), group["url"].as_str()) else {
+            continue;
+        };
+        if url.is_empty() {
+            continue;
+        }
+        let code = name.split('@').next().unwrap_or(name);
+        if by_shortcode.get(code).is_some_and(|image| image == url) {
+            continue;
+        }
+        let mut shortcode = if collisions.contains(code) {
+            if name.contains('@') {
+                name.to_owned()
+            } else {
+                format!("{name}@{domain}")
+            }
+        } else {
+            code.to_owned()
+        };
+        if by_shortcode
+            .get(&shortcode)
+            .is_some_and(|image| image != url)
+            || names.get(name).is_some_and(|urls| urls.len() > 1)
+        {
+            shortcode = reaction_emoji_alias(code, url);
+        }
+        let base = shortcode.clone();
+        let mut suffix = 0;
+        while by_shortcode
+            .get(&shortcode)
+            .is_some_and(|image| image != url)
+        {
+            suffix += 1;
+            shortcode = format!("{base}_{suffix}");
+        }
+        if !by_shortcode.contains_key(&shortcode) {
+            by_shortcode.insert(shortcode.clone(), url.to_owned());
+            emojis.push(json!({
+                "shortcode": shortcode, "url": url, "static_url": url,
+                "visible_in_picker": false,
+            }));
+        }
+    }
+    status["emojis"] = json!(emojis);
+}
+
+/// Pleroma reaction fields shared by v1/streaming and v2 notification groups.
+/// Reuse the rendered status' client-safe URL, matching the reactor as well
+/// as the shortcode: different servers can use the same shortcode on a post.
+pub(crate) fn notification_reaction_fields(
+    entity: &mut Value,
+    notification: &Notification,
+    status: Option<&Value>,
+) {
+    let Some(emoji) = &notification.emoji else {
+        return;
+    };
+    entity["emoji"] = json!(emoji);
+    let sender_id = notification.from_account_id.to_string();
+    let code = emoji.strip_prefix(':').and_then(|e| e.strip_suffix(':'));
+    let url = code.and_then(|code| {
+        status
+            .and_then(|status| status.get("emoji_reactions"))
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .find(|group| {
+                group["name"]
+                    .as_str()
+                    .is_some_and(|name| name.split('@').next() == Some(code))
+                    && group["account_ids"].as_array().is_some_and(|ids| {
+                        ids.iter().any(|id| id.as_str() == Some(sender_id.as_str()))
+                    })
+            })
+            .and_then(|group| group["url"].as_str())
+            .filter(|url| !url.is_empty())
+    });
+    if let Some(url) = url {
+        entity["emoji_url"] = json!(url);
+        if let Some(code) = code {
+            let alias = reaction_emoji_alias(code, url);
+            let shortcode = status
+                .and_then(|s| s["emojis"].as_array())
+                .into_iter()
+                .flatten()
+                .find(|e| {
+                    e["url"] == url
+                        && e["shortcode"].as_str().is_some_and(|s| {
+                            s == code
+                                || s.split('@').next() == Some(code)
+                                || s == alias
+                                || s.starts_with(&format!("{alias}_"))
+                        })
+                })
+                .and_then(|e| e["shortcode"].as_str());
+            if let Some(shortcode) = shortcode {
+                entity["emoji"] = json!(format!(":{shortcode}:"));
+            }
+        }
+    }
+    if notification.kind == "plamenu:actor.emoji_reaction"
+        && let Some(title) = entity["fallback"]["title"].as_str()
+    {
+        let suffix = maud::html! {
+            " "
+            @if let Some(url) = url {
+                img class="shortcode-emoji emoji" src=(url) alt=(emoji)
+                    width="16" height="16" loading="lazy" decoding="async";
+            } @else {
+                (emoji)
+            }
+        };
+        entity["fallback"]["title"] = json!(format!("{title}{}", suffix.into_string()));
+    }
 }
 
 /// The Mastodon `AccountWarning` entity a `moderation_warning` notification

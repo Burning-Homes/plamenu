@@ -1,4 +1,4 @@
-//! Explicit seen/unseen controls do not mark a page read merely by opening it.
+//! Opening the activity inbox reads notifications before rendering its chrome.
 use super::{layout, pages, session::WebUser, settings, view};
 use crate::{AppState, error::ApiError, routes::notification_inbox::Page};
 use axum::{
@@ -9,15 +9,22 @@ use axum::{
 };
 use maud::html;
 use plamenu_db::{notification, notification_read};
-#[allow(clippy::too_many_lines)] // one flat inbox template keeps controls with their read state
+#[allow(clippy::too_many_lines)] // one flat inbox template keeps the filter and Options together
 pub async fn page(
     State(state): State<AppState>,
-    user: WebUser,
+    mut user: WebUser,
     Query(page): Query<Page>,
 ) -> Result<Response, ApiError> {
     user.current.require_scope("read:notifications")?;
     let kinds = page.kinds()?;
     let unread = page.unread.unwrap_or(false);
+    // Snapshot the head before loading the page. An arrival while it renders
+    // stays unread, and paging back through history does not read new activity.
+    let head = if page.before.is_none() {
+        notification_read::activity_head(&state.pool, user.current.account.id).await?
+    } else {
+        None
+    };
     let mut rows = notification_read::list(
         &state.pool,
         user.current.user.id,
@@ -37,13 +44,6 @@ pub async fn page(
     } else {
         None
     };
-    let states = notification_read::read_states(
-        &state.pool,
-        user.current.user.id,
-        user.current.account.id,
-        &rows.iter().map(|n| n.id).collect::<Vec<_>>(),
-    )
-    .await?;
     let items = crate::entities::render_notifications(
         &state.pool,
         &state.config.domain,
@@ -51,6 +51,21 @@ pub async fn page(
         user.current.account.id,
     )
     .await?;
+    if let Some(head) = head {
+        notification_read::mark_activity_read(
+            &state.pool,
+            user.current.user.id,
+            user.current.account.id,
+            head,
+        )
+        .await?;
+        user.unread_notifications = notification::has_unread_activity(
+            &state.pool,
+            user.current.user.id,
+            user.current.account.id,
+        )
+        .await?;
+    }
     let back = format!(
         "/notifications?{}",
         serde_urlencoded::to_string([
@@ -82,18 +97,12 @@ pub async fn page(
     let body = html! {section.column.activity-inbox {
         header.inbox-heading {
             h1 {(l.text("page-notifications"))}
-            form method="post" action="/web/notifications/inbox" {
-                input type="hidden" name="csrf" value=(user.csrf);
-                input type="hidden" name="return_to" value=(&back);
-                button.button--quiet name="operation" value="all" {(l.text("notification-inbox-seen-all"))}
-            }
             details.inbox-options {
                 summary {(l.text("inbox-options"))}
                 div.inbox-options__body {
                     a href="/settings/notification-delivery" {(l.text("notification-delivery-title"))}
                     a href="/notifications/inbox?mail=true" {(l.text("notification-delivery-email"))}
-                    a href="/notifications/requests" {(l.text("settings-privacy-filtered-notifications"))}
-                    p {(l.text("notification-inbox-hint"))}
+                    a href="/notifications/requests" {(l.text("notification-requests-title"))}
                     details {
                         summary {(l.text("notification-inbox-delete-all"))}
                         form method="post" action="/web/notifications/inbox" {
@@ -105,11 +114,6 @@ pub async fn page(
                     }
                 }
             }
-        }
-        nav.inbox-tabs aria-label=(l.text("page-notifications")) {
-            a href="/notifications" aria-current=[(!unread && page.kind.as_deref().is_none_or(str::is_empty) && !page.mail.unwrap_or(false)).then_some("page")] {(l.text("notification-inbox-all"))}
-            a href="/notifications?unread=true" aria-current=[unread.then_some("page")] {(l.text("notification-inbox-unseen"))}
-            a href="/notifications?kind=mention" aria-current=[(page.kind.as_deref()==Some("mention")).then_some("page")] {(l.text("mentions-title"))}
         }
         form.inbox-filter method="get" action="/notifications" {
             @if unread {input type="hidden" name="unread" value="true";}
@@ -127,32 +131,7 @@ pub async fn page(
         @if items.is_empty() {p.empty {(l.text("page-notifications-empty"))}}
         div.notifications data-paged {
             @for note in &items {
-                @let content=view::notification_item(note,&ctx);
-                @if let Some(id)=note["id"].as_str().and_then(|id|id.parse::<i64>().ok()) && !content.0.is_empty() {
-                    @let seen=states.get(&id).copied().unwrap_or(false);
-                    div.notification-inbox-item data-seen=(seen) {
-                        (content)
-                        footer.notification-inbox-actions {
-                            form method="post" action="/web/notifications/inbox" {
-                                input type="hidden" name="csrf" value=(user.csrf);
-                                input type="hidden" name="return_to" value=(&back);
-                                input type="hidden" name="id" value=(id);
-                                button.button--quiet name="operation" value=(if seen {"unseen"} else {"seen"}) {
-                                    (l.text(if seen {"notification-inbox-mark-unseen"} else {"notification-inbox-mark-seen"}))
-                                }
-                            }
-                            details.inbox-item-menu {
-                                summary aria-label=(l.text("inbox-options")) {(view::icon("more"))}
-                                form method="post" action="/web/notifications/inbox" {
-                                    input type="hidden" name="csrf" value=(user.csrf);
-                                    input type="hidden" name="return_to" value=(&back);
-                                    input type="hidden" name="id" value=(id);
-                                    button.button--quiet name="operation" value="delete" {(l.text("notification-inbox-delete"))}
-                                }
-                            }
-                        }
-                    }
-                }
+                (view::notification_item(note,&ctx))
             }
         }
         @if let Some(before)=before {nav.pager {a.pager__more href=(format!("{back}&before={before}")) {(l.text("pager-older"))}}}
@@ -178,7 +157,17 @@ pub async fn action(
     user.current.require_scope("write:notifications")?;
     match settings::field(&pairs, "operation").unwrap_or_default() {
         "all" => {
-            notification_read::mark_activity_read(&state.pool, user.current.account.id).await?;
+            if let Some(head) =
+                notification_read::activity_head(&state.pool, user.current.account.id).await?
+            {
+                notification_read::mark_activity_read(
+                    &state.pool,
+                    user.current.user.id,
+                    user.current.account.id,
+                    head,
+                )
+                .await?;
+            }
         }
         "clear" => {
             if settings::field(&pairs, "confirm") != Some("true") {

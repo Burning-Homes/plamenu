@@ -1,6 +1,6 @@
 //! Notifications for local accounts.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use sqlx::{PgExecutor, PgPool};
 use time::OffsetDateTime;
@@ -16,7 +16,7 @@ pub struct Notification {
     /// `follow` | `follow_request` | `favourite` | `reblog` | `mention` |
     /// `quote` | `update` | `quoted_update` | `poll` | `added_to_collection` |
     /// `collection_update` | `pleroma:emoji_reaction` | `admin.sign_up` |
-    /// `admin.report` | `moderation_warning` | `live`.
+    /// `admin.report` | `moderation_warning` | `live` | `plamenu:actor.*`.
     pub kind: String,
     pub status_id: Option<i64>,
     /// The collection a `added_to_collection`/`collection_update` notification
@@ -80,32 +80,14 @@ impl PostNotification {
     }
 }
 
-#[derive(Default)]
-struct PostNotificationRows {
-    ids: Vec<i64>,
-    accounts: Vec<i64>,
-    mentions: Vec<bool>,
-    quotes: Vec<bool>,
-    statuses: Vec<bool>,
-    filtered: Vec<bool>,
-}
-
-impl PostNotificationRows {
-    fn push(&mut self, notification: PostNotification, filtered: bool) {
-        if !(notification.mention || notification.quote || notification.status) {
-            return;
-        }
-        self.ids.push(id::next());
-        self.accounts.push(notification.account_id);
-        self.mentions.push(notification.mention);
-        self.quotes.push(notification.quote);
-        self.statuses.push(notification.status);
-        self.filtered.push(filtered);
-    }
-
-    fn is_empty(&self) -> bool {
-        self.accounts.is_empty()
-    }
+#[derive(serde::Serialize)]
+struct PostNotificationRow {
+    id: i64,
+    account_id: i64,
+    reasons: Vec<String>,
+    filtered: bool,
+    #[serde(skip)]
+    contexts: Vec<crate::actor_notification::Context>,
 }
 
 /// A group stops absorbing new notifications once it spans this many hours
@@ -206,20 +188,27 @@ fn merge_post_notifications(
 async fn build_post_notification_rows(
     pool: &PgPool,
     merged: &BTreeMap<i64, PostNotification>,
+    contexts: &crate::actor_notification::PostContexts,
     from_account_id: i64,
     status_id: i64,
-) -> Result<(PostNotificationRows, Vec<i64>), DbError> {
+) -> Result<(Vec<PostNotificationRow>, Vec<i64>), DbError> {
+    use crate::notification_policy::Disposition;
+    let has_reason = |id: i64, reason: &str| {
+        contexts
+            .get(&id)
+            .is_some_and(|rows| rows.iter().any(|c| c.event.policy_kind() == reason))
+    };
     let mention_targets: Vec<i64> = merged
         .values()
-        .filter(|candidate| candidate.mention)
-        .map(|candidate| candidate.account_id)
+        .filter(|c| c.mention || has_reason(c.account_id, "mention"))
+        .map(|c| c.account_id)
         .collect();
     let quote_targets: Vec<i64> = merged
         .values()
-        .filter(|candidate| candidate.quote)
-        .map(|candidate| candidate.account_id)
+        .filter(|c| c.quote || has_reason(c.account_id, "quote"))
+        .map(|c| c.account_id)
         .collect();
-    let mention_dispositions = crate::notification_policy::evaluate_many(
+    let mentions = crate::notification_policy::evaluate_many(
         pool,
         &mention_targets,
         from_account_id,
@@ -227,7 +216,7 @@ async fn build_post_notification_rows(
         Some(status_id),
     )
     .await?;
-    let quote_dispositions = crate::notification_policy::evaluate_many(
+    let quotes = crate::notification_policy::evaluate_many(
         pool,
         &quote_targets,
         from_account_id,
@@ -235,42 +224,61 @@ async fn build_post_notification_rows(
         Some(status_id),
     )
     .await?;
-    let mut rows = PostNotificationRows::default();
+    let mut rows = Vec::new();
     let mut filtered_accounts = Vec::new();
     for candidate in merged.values() {
-        let mention = mention_dispositions
-            .get(&candidate.account_id)
-            .copied()
-            .unwrap_or(crate::notification_policy::Disposition::Accept);
-        let quote = quote_dispositions
-            .get(&candidate.account_id)
-            .copied()
-            .unwrap_or(crate::notification_policy::Disposition::Accept);
-        rows.push(
-            PostNotification {
+        let disposition = |kind: &str| match kind {
+            "mention" => mentions
+                .get(&candidate.account_id)
+                .copied()
+                .unwrap_or(Disposition::Accept),
+            "quote" => quotes
+                .get(&candidate.account_id)
+                .copied()
+                .unwrap_or(Disposition::Accept),
+            _ => Disposition::Accept,
+        };
+        for filtered in [false, true] {
+            let selected = if filtered {
+                Disposition::Filter
+            } else {
+                Disposition::Accept
+            };
+            let row_contexts: Vec<_> = contexts
+                .get(&candidate.account_id)
+                .into_iter()
+                .flatten()
+                .filter(|context| disposition(context.event.policy_kind()) == selected)
+                .copied()
+                .collect();
+            let mut reasons: Vec<String> = row_contexts
+                .iter()
+                .map(|c| c.event.kind().to_owned())
+                .collect();
+            for (enabled, kind) in [
+                (candidate.mention, "mention"),
+                (candidate.quote, "quote"),
+                (candidate.status, "status"),
+            ] {
+                if enabled && disposition(kind) == selected {
+                    reasons.push(kind.to_owned());
+                }
+            }
+            reasons.sort_unstable();
+            reasons.dedup();
+            if reasons.is_empty() {
+                continue;
+            }
+            if filtered {
+                filtered_accounts.push(candidate.account_id);
+            }
+            rows.push(PostNotificationRow {
+                id: id::next(),
                 account_id: candidate.account_id,
-                mention: candidate.mention
-                    && mention == crate::notification_policy::Disposition::Accept,
-                quote: candidate.quote && quote == crate::notification_policy::Disposition::Accept,
-                status: candidate.status,
-            },
-            false,
-        );
-        let filtered_mention =
-            candidate.mention && mention == crate::notification_policy::Disposition::Filter;
-        let filtered_quote =
-            candidate.quote && quote == crate::notification_policy::Disposition::Filter;
-        if filtered_mention || filtered_quote {
-            rows.push(
-                PostNotification {
-                    account_id: candidate.account_id,
-                    mention: filtered_mention,
-                    quote: filtered_quote,
-                    status: false,
-                },
-                true,
-            );
-            filtered_accounts.push(candidate.account_id);
+                reasons,
+                filtered,
+                contexts: row_contexts,
+            });
         }
     }
     Ok((rows, filtered_accounts))
@@ -278,93 +286,190 @@ async fn build_post_notification_rows(
 
 async fn insert_post_notification_rows(
     pool: &PgPool,
-    rows: &PostNotificationRows,
+    rows: &[PostNotificationRow],
     from_account_id: i64,
     status_id: i64,
 ) -> Result<(), DbError> {
-    sqlx::query!(
-        r#"
-        INSERT INTO notifications
-            (id, account_id, from_account_id, kind, status_id, filtered, reasons)
-        SELECT v.id, v.account_id, $7,
-               CASE WHEN v.mention THEN 'mention'
-                    WHEN v.quote THEN 'quote' ELSE 'status' END,
-               $8, v.filtered,
-               ARRAY_REMOVE(ARRAY[
-                   CASE WHEN v.mention THEN 'mention' END,
-                   CASE WHEN v.quote THEN 'quote' END,
-                   CASE WHEN v.status THEN 'status' END
-               ], NULL)
-        FROM unnest(
-            $1::bigint[], $2::bigint[], $3::boolean[], $4::boolean[],
-            $5::boolean[], $6::boolean[]
-        ) AS v(id, account_id, mention, quote, status, filtered)
-        ON CONFLICT (account_id, from_account_id, status_id, filtered)
-            WHERE status_id IS NOT NULL AND kind IN ('mention', 'quote', 'status')
-        DO UPDATE SET
-            reasons = ARRAY_REMOVE(ARRAY[
-                CASE WHEN 'mention' = ANY(notifications.reasons)
-                           OR 'mention' = ANY(EXCLUDED.reasons) THEN 'mention' END,
-                CASE WHEN 'quote' = ANY(notifications.reasons)
-                           OR 'quote' = ANY(EXCLUDED.reasons) THEN 'quote' END,
-                CASE WHEN 'status' = ANY(notifications.reasons)
-                           OR 'status' = ANY(EXCLUDED.reasons) THEN 'status' END
-            ], NULL),
-            kind = CASE
-                WHEN 'mention' = ANY(notifications.reasons)
-                  OR 'mention' = ANY(EXCLUDED.reasons) THEN 'mention'
-                WHEN 'quote' = ANY(notifications.reasons)
-                  OR 'quote' = ANY(EXCLUDED.reasons) THEN 'quote'
-                ELSE 'status'
-            END
-        "#,
-        &rows.ids,
-        &rows.accounts,
-        &rows.mentions,
-        &rows.quotes,
-        &rows.statuses,
-        &rows.filtered,
-        from_account_id,
-        status_id,
-    )
-    .execute(pool)
-    .await?;
+    let values = serde_json::to_value(rows).expect("notification rows are serializable");
+    let mut tx = pool.begin().await?;
+    let inserted: Vec<(i64,i64,bool)> = sqlx::query_as(
+        "WITH incoming AS (
+            SELECT id,account_id,filtered,ARRAY(SELECT jsonb_array_elements_text(reasons)) AS reasons
+            FROM jsonb_to_recordset($1) AS v(id bigint,account_id bigint,filtered boolean,reasons jsonb)
+         ) INSERT INTO notifications(id,account_id,from_account_id,kind,status_id,filtered,reasons)
+         SELECT id,account_id,$2,notification_kind_for(reasons,NULL),$3,filtered,reasons FROM incoming
+         ON CONFLICT(account_id,from_account_id,status_id,filtered)
+             WHERE status_id IS NOT NULL AND kind IN (
+                 'mention','quote','status','plamenu:actor.comment','plamenu:actor.mention','plamenu:actor.quote','plamenu:actor.status'
+             )
+         DO UPDATE SET
+             reasons=ARRAY(SELECT DISTINCT reason FROM unnest(notifications.reasons||EXCLUDED.reasons) reason ORDER BY reason),
+             kind=notification_kind_for(notifications.reasons||EXCLUDED.reasons,NULL)
+         RETURNING id,account_id,filtered",
+    ).bind(values).bind(from_account_id).bind(status_id).fetch_all(&mut *tx).await?;
+    let by_recipient: HashMap<_, _> = rows
+        .iter()
+        .map(|row| ((row.account_id, row.filtered), row))
+        .collect();
+    let mut attached = Vec::new();
+    for (id, account, filtered) in inserted {
+        if let Some(row) = by_recipient.get(&(account, filtered)) {
+            attached.extend(row.contexts.iter().map(|context| (id, *context)));
+        }
+    }
+    crate::actor_notification::attach(&mut tx, &attached).await?;
+    // Streaming and push see the canonical row and its context together.
+    tx.commit().await?;
     Ok(())
 }
 
-/// Stores one canonical notification per `(recipient, actor, status, policy
-/// surface)`, retaining every contributing post reason. The canonical label is
-/// `mention`, then `quote`, then `status`. Policy-filtered mention/quote reasons
-/// remain in the requests surface and never hide an accepted status reason.
+/// Canonical post notifications retain each contributing reason. Managed actor
+/// context wins presentation; it never changes the post's actual Mention tags.
 pub async fn create_post_notifications_many(
     pool: &PgPool,
     candidates: &[PostNotification],
     from_account_id: i64,
     status_id: i64,
 ) -> Result<(), DbError> {
-    let mut merged = merge_post_notifications(candidates, from_account_id);
+    create_post_notifications(pool, candidates, from_account_id, status_id, false).await
+}
+
+/// Only a fresh delivered/published post may generate a channel-comment event.
+/// History imports, edits and parent backfills use the ordinary entry point.
+pub async fn create_post_notifications_for_delivery(
+    pool: &PgPool,
+    candidates: &[PostNotification],
+    from_account_id: i64,
+    status_id: i64,
+) -> Result<(), DbError> {
+    create_post_notifications(pool, candidates, from_account_id, status_id, true).await
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "one canonical audience calculation before a single batched write"
+)]
+async fn create_post_notifications(
+    pool: &PgPool,
+    candidates: &[PostNotification],
+    from_account_id: i64,
+    status_id: i64,
+    delivery: bool,
+) -> Result<(), DbError> {
+    use crate::actor_notification::{self, Context, Event};
+    let mut direct = Vec::new();
+    let mut contexts = actor_notification::PostContexts::new();
+    let targets: Vec<i64> = candidates
+        .iter()
+        .map(|candidate| candidate.account_id)
+        .collect();
+    let managed = crate::managed_actor::notification_recipient_map(pool, &targets).await?;
+    for candidate in candidates {
+        if let Some(recipients) = managed.get(&candidate.account_id) {
+            let event = if candidate.mention {
+                Event::Mention
+            } else if candidate.quote {
+                Event::Quote
+            } else {
+                Event::Status
+            };
+            let context = Context {
+                actor_id: candidate.account_id,
+                source_account_id: candidate.account_id,
+                event,
+            };
+            for recipient in recipients {
+                actor_notification::add_context(&mut contexts, *recipient, context);
+            }
+        } else {
+            direct.push(*candidate);
+        }
+    }
+    if delivery {
+        let publication = actor_notification::publication(pool, status_id).await?;
+        let reply = actor_notification::reply_publication(pool, status_id).await?;
+        if let Some((actor_id, author)) = reply.or(publication) {
+            let event = if reply.is_some() {
+                Event::Comment
+            } else {
+                Event::Status
+            };
+            let context = Context {
+                actor_id,
+                source_account_id: author,
+                event,
+            };
+            for recipient in crate::managed_actor::notification_recipients(pool, actor_id).await? {
+                actor_notification::add_context(&mut contexts, recipient, context);
+            }
+            for candidate in &direct {
+                // An original publisher keeps a real personal entitlement
+                // (for example an explicit Mention), with the same channel
+                // context. Their role alone does not add a new recipient.
+                if (publication.is_some() && candidate.status)
+                    || (reply.is_some()
+                        && candidate.account_id == author
+                        && (candidate.mention || candidate.quote || candidate.status))
+                {
+                    actor_notification::add_context(&mut contexts, candidate.account_id, context);
+                }
+            }
+        }
+    }
+    if candidates.iter().any(|candidate| candidate.quote) {
+        let publication: Option<(i64,i64)> = sqlx::query_as(
+            "SELECT v.channel_id,target.account_id FROM quotes q
+             JOIN statuses source ON source.id=q.status_id JOIN video_publications v ON v.status_id=q.quoted_status_id
+             JOIN statuses target ON target.id=v.status_id
+             WHERE q.status_id=$1 AND q.state='accepted' AND source.visibility IN ('public','unlisted')
+               AND source.deleted_at IS NULL AND target.deleted_at IS NULL LIMIT 1",
+        ).bind(status_id).fetch_optional(pool).await?;
+        if let Some((actor_id, author)) = publication {
+            let context = Context {
+                actor_id,
+                source_account_id: author,
+                event: Event::Quote,
+            };
+            for recipient in crate::managed_actor::notification_recipients(pool, actor_id).await? {
+                actor_notification::add_context(&mut contexts, recipient, context);
+            }
+            for candidate in &direct {
+                if candidate.quote && candidate.account_id == author {
+                    actor_notification::add_context(&mut contexts, author, context);
+                }
+            }
+        }
+    }
+    let mut merged = merge_post_notifications(&direct, from_account_id);
+    contexts.remove(&from_account_id);
+    let context_recipients: Vec<i64> = contexts.keys().copied().collect();
+    let readable: HashSet<i64> =
+        actor_notification::readable_recipients(pool, status_id, &context_recipients)
+            .await?
+            .into_iter()
+            .collect();
+    contexts.retain(|recipient, _| readable.contains(recipient));
+    for recipient in contexts.keys() {
+        merged.entry(*recipient).or_insert(PostNotification {
+            account_id: *recipient,
+            ..PostNotification::default()
+        });
+    }
     if merged.is_empty() {
         return Ok(());
     }
-
     let recipients: Vec<i64> = merged.keys().copied().collect();
     let muted: HashSet<i64> = crate::conversation::status_muted_of(pool, &recipients, status_id)
         .await?
         .into_iter()
         .collect();
-    merged.retain(|account_id, _| !muted.contains(account_id));
-    if merged.is_empty() {
-        return Ok(());
-    }
-
+    merged.retain(|account, _| !muted.contains(account));
     let (rows, mut filtered_accounts) =
-        build_post_notification_rows(pool, &merged, from_account_id, status_id).await?;
+        build_post_notification_rows(pool, &merged, &contexts, from_account_id, status_id).await?;
     if rows.is_empty() {
         return Ok(());
     }
-
     insert_post_notification_rows(pool, &rows, from_account_id, status_id).await?;
-
     filtered_accounts.sort_unstable();
     filtered_accounts.dedup();
     crate::notification_request::record_filtered_many(
@@ -562,6 +667,68 @@ async fn create_inner(
         return create_post_notifications_many(pool, &[candidate], from_account_id, status_id)
             .await;
     }
+    for (recipient, context) in
+        crate::actor_notification::interaction_routes(pool, account_id, kind, status_id).await?
+    {
+        create_one(
+            pool,
+            recipient,
+            from_account_id,
+            kind,
+            status_id,
+            emoji,
+            report_id,
+            context,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Explicit work items (invitations and ownership offers) already have an
+/// authorized recipient. Insert the event and its context in the caller's
+/// authority transaction so an invitation cannot commit without its notification.
+pub async fn create_for_actor(
+    pool: &PgPool,
+    conn: &mut crate::PgConnection,
+    recipient: i64,
+    sender: i64,
+    context: crate::actor_notification::Context,
+) -> Result<(), DbError> {
+    if recipient == sender {
+        return Ok(());
+    }
+    let disposition = crate::notification_policy::evaluate(
+        pool,
+        recipient,
+        sender,
+        context.event.policy_kind(),
+        None,
+    )
+    .await?;
+    if disposition == crate::notification_policy::Disposition::Drop {
+        return Ok(());
+    }
+    let notification_id = id::next();
+    sqlx::query("INSERT INTO notifications(id,account_id,from_account_id,kind,reasons,filtered) VALUES($1,$2,$3,$4,ARRAY[$4],$5)")
+        .bind(notification_id).bind(recipient).bind(sender).bind(context.event.kind())
+        .bind(disposition==crate::notification_policy::Disposition::Filter).execute(&mut *conn).await?;
+    crate::actor_notification::attach(conn, &[(notification_id, context)]).await?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn create_one(
+    pool: &PgPool,
+    account_id: i64,
+    from_account_id: i64,
+    policy_kind: &str,
+    status_id: Option<i64>,
+    emoji: Option<&str>,
+    report_id: Option<i64>,
+    context: Option<crate::actor_notification::Context>,
+) -> Result<(), DbError> {
+    let kind = context.map_or(policy_kind, |context| context.event.kind());
     if account_id == from_account_id && kind != "poll" {
         return Ok(());
     }
@@ -576,20 +743,27 @@ async fn create_inner(
     // Notification filtering policy (Mastodon's NotifyService): a matching
     // sender is either dropped (no row) or stored hidden (`filtered = TRUE`)
     // and rolled up into a per-sender request.
-    let disposition =
-        crate::notification_policy::evaluate(pool, account_id, from_account_id, kind, status_id)
-            .await?;
+    let disposition = crate::notification_policy::evaluate(
+        pool,
+        account_id,
+        from_account_id,
+        policy_kind,
+        status_id,
+    )
+    .await?;
     if disposition == crate::notification_policy::Disposition::Drop {
         return Ok(());
     }
     let filtered = disposition == crate::notification_policy::Disposition::Filter;
     let group_key = next_group_key(pool, account_id, kind, status_id).await?;
+    let notification_id = id::next();
+    let mut tx = pool.begin().await?;
     sqlx::query!(
         r#"
         INSERT INTO notifications (id, account_id, from_account_id, kind, status_id, emoji, group_key, filtered, report_id, reasons)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$4])
         "#,
-        id::next(),
+        notification_id,
         account_id,
         from_account_id,
         kind,
@@ -599,8 +773,12 @@ async fn create_inner(
         filtered,
         report_id,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    if let Some(context) = context {
+        crate::actor_notification::attach(&mut tx, &[(notification_id, context)]).await?;
+    }
+    tx.commit().await?;
     if filtered {
         crate::notification_request::record_filtered(
             pool,
@@ -649,8 +827,8 @@ pub async fn clear_reaction(
 ) -> Result<(), DbError> {
     sqlx::query!(
         "DELETE FROM notifications
-         WHERE account_id = $1 AND from_account_id = $2 AND status_id = $3
-           AND kind = 'pleroma:emoji_reaction' AND emoji = $4",
+         WHERE id IN (SELECT notification_id FROM notification_source_ids($1,ARRAY[$2::bigint])) AND status_id = $3
+           AND notification_base_kind(kind) = 'pleroma:emoji_reaction' AND emoji = $4",
         account_id,
         from_account_id,
         status_id,
@@ -675,8 +853,8 @@ pub async fn clear_reactions(
     }
     sqlx::query!(
         "DELETE FROM notifications
-         WHERE account_id = $1 AND from_account_id = $2 AND status_id = $3
-           AND kind = 'pleroma:emoji_reaction' AND emoji = ANY($4)",
+         WHERE id IN (SELECT notification_id FROM notification_source_ids($1,ARRAY[$2::bigint])) AND status_id = $3
+           AND notification_base_kind(kind) = 'pleroma:emoji_reaction' AND emoji = ANY($4)",
         account_id,
         from_account_id,
         status_id,
@@ -792,7 +970,7 @@ pub async fn list(
                 SELECT 1 FROM notification_delivery_preferences
                 WHERE account_id=$1 AND NOT in_app
             ) THEN $5::text[] ELSE ARRAY(
-                SELECT kind FROM unnest(COALESCE($5::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)
+                SELECT kind FROM unnest(COALESCE($5::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite','plamenu:actor.follow','plamenu:actor.follow_request','plamenu:actor.favourite','plamenu:actor.reblog','plamenu:actor.emoji_reaction','plamenu:actor.comment','plamenu:actor.mention','plamenu:actor.quote','plamenu:actor.status','plamenu:actor.invitation','plamenu:actor.transfer']::text[])) AS k(kind)
                 WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p
                     WHERE p.account_id=$1 AND p.kind=k.kind AND NOT p.in_app)
             ) END AS kinds
@@ -806,7 +984,7 @@ pub async fn list(
               AND notification_kind_for(reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
               AND ($6::bigint IS NULL OR from_account_id = $6)
               AND ($7 OR NOT filtered)
-              AND NOT sender_filtered($1, n.from_account_id)
+              AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered($1, n.from_account_id)
             ORDER BY id ASC
             LIMIT $4
             "#,
@@ -831,7 +1009,7 @@ pub async fn list(
                 SELECT 1 FROM notification_delivery_preferences
                 WHERE account_id=$1 AND NOT in_app
             ) THEN $5::text[] ELSE ARRAY(
-                SELECT kind FROM unnest(COALESCE($5::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)
+                SELECT kind FROM unnest(COALESCE($5::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite','plamenu:actor.follow','plamenu:actor.follow_request','plamenu:actor.favourite','plamenu:actor.reblog','plamenu:actor.emoji_reaction','plamenu:actor.comment','plamenu:actor.mention','plamenu:actor.quote','plamenu:actor.status','plamenu:actor.invitation','plamenu:actor.transfer']::text[])) AS k(kind)
                 WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p
                     WHERE p.account_id=$1 AND p.kind=k.kind AND NOT p.in_app)
             ) END AS kinds
@@ -846,7 +1024,7 @@ pub async fn list(
           AND notification_kind_for(reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
           AND ($6::bigint IS NULL OR from_account_id = $6)
           AND ($7 OR NOT filtered)
-          AND NOT sender_filtered($1, n.from_account_id)
+          AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered($1, n.from_account_id)
         ORDER BY id DESC
         LIMIT $4
         "#,
@@ -897,7 +1075,7 @@ pub async fn list_grouped(
                 SELECT 1 FROM notification_delivery_preferences
                 WHERE account_id=$1 AND NOT in_app
             ) THEN $6::text[] ELSE ARRAY(
-                SELECT kind FROM unnest(COALESCE($6::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)
+                SELECT kind FROM unnest(COALESCE($6::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite','plamenu:actor.follow','plamenu:actor.follow_request','plamenu:actor.favourite','plamenu:actor.reblog','plamenu:actor.emoji_reaction','plamenu:actor.comment','plamenu:actor.mention','plamenu:actor.quote','plamenu:actor.status','plamenu:actor.invitation','plamenu:actor.transfer']::text[])) AS k(kind)
                 WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p
                     WHERE p.account_id=$1 AND p.kind=k.kind AND NOT p.in_app)
             ) END AS kinds
@@ -917,7 +1095,7 @@ pub async fn list_grouped(
                   AND notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
                   AND ($7::bigint IS NULL OR n.from_account_id = $7)
                   AND ($8 OR NOT n.filtered)
-                  AND NOT sender_filtered($1, n.from_account_id)
+                  AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered($1, n.from_account_id)
                 ORDER BY n.id DESC
                 LIMIT 1
             )
@@ -940,7 +1118,7 @@ pub async fn list_grouped(
                   AND notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
                   AND ($7::bigint IS NULL OR n.from_account_id = $7)
                   AND ($8 OR NOT n.filtered)
-                  AND NOT sender_filtered($1, n.from_account_id)
+                  AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered($1, n.from_account_id)
                   AND COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) = ANY($5)
                                     THEN n.group_key END,
                                'ungrouped-' || n.id) <> ALL(wt.seen)
@@ -990,7 +1168,7 @@ pub async fn list_grouped_above(
                 SELECT 1 FROM notification_delivery_preferences
                 WHERE account_id=$1 AND NOT in_app
             ) THEN $6::text[] ELSE ARRAY(
-                SELECT kind FROM unnest(COALESCE($6::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)
+                SELECT kind FROM unnest(COALESCE($6::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite','plamenu:actor.follow','plamenu:actor.follow_request','plamenu:actor.favourite','plamenu:actor.reblog','plamenu:actor.emoji_reaction','plamenu:actor.comment','plamenu:actor.mention','plamenu:actor.quote','plamenu:actor.status','plamenu:actor.invitation','plamenu:actor.transfer']::text[])) AS k(kind)
                 WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p
                     WHERE p.account_id=$1 AND p.kind=k.kind AND NOT p.in_app)
             ) END AS kinds
@@ -1009,7 +1187,7 @@ pub async fn list_grouped_above(
                   AND notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
                   AND ($7::bigint IS NULL OR n.from_account_id = $7)
                   AND ($8 OR NOT n.filtered)
-                  AND NOT sender_filtered($1, n.from_account_id)
+                  AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered($1, n.from_account_id)
                 ORDER BY n.id ASC
                 LIMIT 1
             )
@@ -1032,7 +1210,7 @@ pub async fn list_grouped_above(
                   AND notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
                   AND ($7::bigint IS NULL OR n.from_account_id = $7)
                   AND ($8 OR NOT n.filtered)
-                  AND NOT sender_filtered($1, n.from_account_id)
+                  AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered($1, n.from_account_id)
                   AND COALESCE(CASE WHEN $5::text[] IS NULL OR notification_kind_for(n.reasons, (SELECT kinds FROM delivery_kinds)) = ANY($5)
                                     THEN n.group_key END,
                                'ungrouped-' || n.id) <> ALL(wt.seen)
@@ -1217,13 +1395,19 @@ pub async fn find(pool: &PgPool, id: i64) -> Result<Option<Notification>, DbErro
     )
     .fetch_optional(pool)
     .await?;
+    if let Some(row) = &notification
+        && !crate::actor_notification::visible(pool, row.id, row.account_id, row.report_id).await?
+    {
+        return Ok(None);
+    }
     Ok(notification)
 }
 
 /// Contributing reasons of one canonical notification, in presentation order.
 pub async fn reasons(pool: &PgPool, id: i64) -> Result<Vec<String>, DbError> {
     Ok(sqlx::query_scalar!(
-        r#"SELECT unnest(reasons) AS "reason!" FROM notifications WHERE id = $1"#,
+        r#"SELECT reason AS "reason!" FROM notifications CROSS JOIN LATERAL unnest(reasons) AS reason
+           WHERE id = $1 ORDER BY notification_reason_priority(reason), reason"#,
         id,
     )
     .fetch_all(pool)
@@ -1259,6 +1443,9 @@ async fn in_app_notification(
     let Some(mut row) = row else {
         return Ok(None);
     };
+    if !crate::actor_notification::visible(pool, row.id, account, row.report_id).await? {
+        return Ok(None);
+    }
     if let Some(kinds) = crate::notification_delivery::in_app_kinds(pool, account, None).await? {
         let Some(kind) = reasons(pool, row.id)
             .await?
@@ -1348,7 +1535,7 @@ pub async fn clear_kind_from<'e, E: PgExecutor<'e>>(
 ) -> Result<(), DbError> {
     sqlx::query!(
         "DELETE FROM notifications
-         WHERE account_id = $1 AND from_account_id = $2 AND kind = $3",
+         WHERE id IN (SELECT notification_id FROM notification_source_ids($1,ARRAY[$2::bigint])) AND notification_base_kind(kind) = $3",
         account_id,
         from_account_id,
         kind,
@@ -1372,7 +1559,7 @@ pub async fn clear_kind_from_many<'e, E: PgExecutor<'e>>(
     }
     sqlx::query!(
         "DELETE FROM notifications
-         WHERE account_id = $1 AND from_account_id = ANY($2) AND kind = $3",
+         WHERE id IN (SELECT notification_id FROM notification_source_ids($1,$2)) AND notification_base_kind(kind) = $3",
         account_id,
         from_account_ids,
         kind,
@@ -1416,7 +1603,7 @@ pub async fn clear_kind_for_status<'e, E: sqlx::PgExecutor<'e>>(
 ) -> Result<(), DbError> {
     sqlx::query!(
         "DELETE FROM notifications
-         WHERE account_id = $1 AND from_account_id = $2 AND kind = $3 AND status_id = $4",
+         WHERE id IN (SELECT notification_id FROM notification_source_ids($1,ARRAY[$2::bigint])) AND notification_base_kind(kind) = $3 AND status_id = $4",
         account_id,
         from_account_id,
         kind,
@@ -1446,7 +1633,7 @@ pub async fn unread_count(
                 SELECT 1 FROM notification_delivery_preferences
                 WHERE account_id=$1 AND NOT in_app
             ) THEN $4::text[] ELSE ARRAY(
-                SELECT kind FROM unnest(COALESCE($4::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)
+                SELECT kind FROM unnest(COALESCE($4::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite','plamenu:actor.follow','plamenu:actor.follow_request','plamenu:actor.favourite','plamenu:actor.reblog','plamenu:actor.emoji_reaction','plamenu:actor.comment','plamenu:actor.mention','plamenu:actor.quote','plamenu:actor.status','plamenu:actor.invitation','plamenu:actor.transfer']::text[])) AS k(kind)
                 WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p
                     WHERE p.account_id=$1 AND p.kind=k.kind AND NOT p.in_app)
             ) END AS kinds
@@ -1459,7 +1646,7 @@ pub async fn unread_count(
               AND notification_kind_for(reasons, (SELECT kinds FROM delivery_kinds)) IS NOT NULL
               AND ($5::bigint IS NULL OR from_account_id = $5)
               AND ($6 OR NOT filtered)
-              AND NOT sender_filtered($1, n.from_account_id)
+              AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered($1, n.from_account_id)
             LIMIT $3
         ) AS capped
         "#,
@@ -1508,6 +1695,7 @@ pub async fn lemmy_unread_counts(
             SELECT n.id, n.status_id, n.from_account_id, n.filtered
             FROM notifications n CROSS JOIN marker_value m
             WHERE n.account_id = $2
+              AND notification_visible(n.account_id,n.id,n.report_id)
               AND 'mention' = ANY(n.reasons)
               AND n.id > m.last_read_id
               AND NOT EXISTS (
@@ -1523,6 +1711,7 @@ pub async fn lemmy_unread_counts(
             CROSS JOIN marker_value m
             WHERE o.account_id = $2 AND NOT o.read
               AND n.account_id = $2 AND 'mention' = ANY(n.reasons)
+              AND notification_visible(n.account_id,n.id,n.report_id)
               AND n.id <= m.last_read_id
         ), mention_counts AS (
             SELECT
@@ -1593,7 +1782,7 @@ async fn has_unread_filtered(
                 SELECT 1 FROM notification_delivery_preferences
                 WHERE account_id=$2 AND NOT in_app
             ) THEN $3::text[] ELSE ARRAY(
-                SELECT kind FROM unnest(COALESCE($3::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite']::text[])) AS k(kind)
+                SELECT kind FROM unnest(COALESCE($3::text[],ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite','plamenu:actor.follow','plamenu:actor.follow_request','plamenu:actor.favourite','plamenu:actor.reblog','plamenu:actor.emoji_reaction','plamenu:actor.comment','plamenu:actor.mention','plamenu:actor.quote','plamenu:actor.status','plamenu:actor.invitation','plamenu:actor.transfer']::text[])) AS k(kind)
                 WHERE NOT EXISTS (SELECT 1 FROM notification_delivery_preferences p
                     WHERE p.account_id=$2 AND p.kind=k.kind AND NOT p.in_app)
             ) END AS kinds
@@ -1604,14 +1793,14 @@ async fn has_unread_filtered(
             SELECT 1 FROM notifications n CROSS JOIN marker_value m
             WHERE n.account_id=$2 AND n.id>m.id AND NOT n.filtered
               AND (NOT $4 OR NOT EXISTS(SELECT 1 FROM statuses s WHERE s.id=n.status_id AND s.visibility='direct'))
-              AND NOT sender_filtered($2,n.from_account_id) AND notification_kind_for(n.reasons,(SELECT kinds FROM delivery_kinds)) IS NOT NULL
+              AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered($2,n.from_account_id) AND notification_kind_for(n.reasons,(SELECT kinds FROM delivery_kinds)) IS NOT NULL
               AND NOT EXISTS(SELECT 1 FROM lemmy_notification_read_overrides o WHERE o.account_id=$2 AND o.notification_id=n.id AND o.read)
             UNION ALL
             SELECT 1 FROM lemmy_notification_read_overrides o
             JOIN notifications n ON n.id=o.notification_id CROSS JOIN marker_value m
             WHERE o.account_id=$2 AND NOT o.read AND n.account_id=$2 AND n.id<=m.id
               AND (NOT $4 OR NOT EXISTS(SELECT 1 FROM statuses s WHERE s.id=n.status_id AND s.visibility='direct'))
-              AND NOT n.filtered AND NOT sender_filtered($2,n.from_account_id) AND notification_kind_for(n.reasons,(SELECT kinds FROM delivery_kinds)) IS NOT NULL
+              AND NOT n.filtered AND notification_visible(n.account_id,n.id,n.report_id) AND NOT sender_filtered($2,n.from_account_id) AND notification_kind_for(n.reasons,(SELECT kinds FROM delivery_kinds)) IS NOT NULL
         )
     ").bind(user_id).bind(account_id).bind(Option::<Vec<String>>::None).bind(exclude_direct).fetch_one(pool).await?;
     Ok(unread)

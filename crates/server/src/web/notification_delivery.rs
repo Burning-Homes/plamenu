@@ -10,6 +10,9 @@ use axum::{
 use maud::html;
 use plamenu_db::notification_delivery::{self, Preference};
 pub(crate) fn label(l: Locale, kind: &str) -> String {
+    if let Some(event) = kind.strip_prefix("plamenu:actor.") {
+        return l.text(&format!("actor-notification-kind-{event}"));
+    }
     if let Some((_, key, _)) = settings::PUSH_ALERTS.iter().find(|(k, _, _)| *k == kind) {
         return l.text(key);
     }

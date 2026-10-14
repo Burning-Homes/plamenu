@@ -6045,7 +6045,9 @@ fn report_category(category: &str) -> &'static str {
 /// the reporter's ordinary profile card.
 fn admin_report_notification(note: &Value, actor: &Account, ctx: &Ctx) -> Markup {
     let report = note.get("report").filter(|value| value.is_object());
-    let target_value = report.and_then(|value| value.pointer("/target_account/account"));
+    let target_value = report
+        .and_then(|value| value.get("target_account"))
+        .map(|target| target.get("account").unwrap_or(target));
     let target = target_value.map(Account);
     let report_id = report
         .and_then(|value| value.get("id"))
@@ -6059,7 +6061,7 @@ fn admin_report_notification(note: &Value, actor: &Account, ctx: &Ctx) -> Markup
         .and_then(Value::as_str)
         .unwrap_or_default();
     let cited = report
-        .and_then(|value| value.get("statuses"))
+        .and_then(|value| value.get("status_ids").or_else(|| value.get("statuses")))
         .and_then(Value::as_array)
         .map_or(0, Vec::len);
     html! {
@@ -6076,6 +6078,9 @@ fn admin_report_notification(note: &Value, actor: &Account, ctx: &Ctx) -> Markup
                             "an account"
                         }
                         " for " (report_category(category))
+                        @if let Some(group)=report.and_then(|r|r.get("group")).filter(|g|g.is_object()) {
+                            " · " a href=(Account(group).profile_path()) {(Account(group).name_markup())}
+                        }
                     }
                 }
             }
@@ -6086,7 +6091,11 @@ fn admin_report_notification(note: &Value, actor: &Account, ctx: &Ctx) -> Markup
             @if !comment.is_empty() {
                 blockquote.notification__report-comment { (comment) }
             }
-            @if ctx.admin.manage_reports && let Some(id) = report_id {
+            @if let Some(href) = report.and_then(|value| value.get("action_url")).and_then(Value::as_str) {
+                nav.notification__actions aria-label="Report actions" {
+                    a.notification__action href=(href) { "Review report" }
+                }
+            } @else if ctx.admin.manage_reports && let Some(id) = report_id {
                 nav.notification__actions aria-label="Report actions" {
                     a.notification__action href=(format!("/admin/reports/{id}")) { "Review report" }
                 }
@@ -6173,6 +6182,33 @@ fn music_notification(note: &Value, actor: &Account, ctx: &Ctx, kind: &str) -> O
         _ => None,
     }
 }
+fn actor_notification(
+    note: &Value,
+    actor: &Account,
+    status: Option<&Value>,
+    ctx: &Ctx,
+    kind: &str,
+) -> Markup {
+    html! { article.notification data-kind=(kind) {
+        p.notification__label {
+            span.notification__icon {(icon(notification_icon(plamenu_db::actor_notification::base_kind(kind))))}
+            span.notification__label-body {
+                // This HTML is assembled exclusively by our escaped
+                // server-side template, never remote notification input.
+                (PreEscaped(note["fallback"]["title"].as_str().unwrap_or_default()))
+            }
+        }
+        @if let Some(status) = status { (status_card(&Status(status), ctx)) }
+        @else { (account_card(actor)) }
+        @if let Some(contexts) = note["actor_contexts"].as_array() {
+            @for context in contexts {
+                @if matches!(context["event"].as_str(), Some("follow_request" | "invitation" | "transfer")) {
+                    p.notification__warning-link { a href=(context["action_url"].as_str().unwrap_or_default()) { (ctx.locale.text("actor-notification-review")) } }
+                }
+            }
+        }
+    }}
+}
 pub fn notification_item(note: &Value, ctx: &Ctx) -> Markup {
     let kind = note.get("type").and_then(Value::as_str).unwrap_or_default();
     let actor = Account(&note["account"]);
@@ -6216,6 +6252,9 @@ pub fn notification_item(note: &Value, ctx: &Ctx) -> Markup {
     }
     if let Some(item) = music_notification(note, &actor, ctx, kind) {
         return item;
+    }
+    if kind.starts_with("plamenu:actor.") {
+        return actor_notification(note, &actor, status, ctx, kind);
     }
     if kind == "admin.report" {
         return admin_report_notification(note, &actor, ctx);

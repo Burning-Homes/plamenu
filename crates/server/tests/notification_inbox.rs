@@ -221,7 +221,9 @@ async fn inbox_api_supports_scoped_bulk_read_delete_filters_and_preserves_foreig
     assert_eq!(r.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 #[sqlx::test(migrations = "../db/migrations")]
-async fn native_inbox_does_not_auto_read_and_forms_require_csrf_and_confirmation(pool: PgPool) {
+async fn native_inbox_auto_reads_without_scripts_and_clear_requires_csrf_and_confirmation(
+    pool: PgPool,
+) {
     let (state, owner, uid, _, ids) = fixture(pool).await;
     let app = plamenu::build_router(state.clone());
     let login = app
@@ -266,12 +268,32 @@ async fn native_inbox_does_not_auto_read_and_forms_require_csrf_and_confirmation
     let text =
         String::from_utf8(r.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
     assert!(text.contains("/web/notifications/inbox"));
-    assert!(text.contains("data-seen=\"false\""));
+    assert!(text.contains("class=\"inbox-filter\""));
+    assert!(text.contains("class=\"inbox-options\""));
+    assert!(text.contains("href=\"/notifications/requests\">Filtered notifications</a>"));
+    assert!(text.contains("class=\"notification\""));
+    for removed in [
+        "Mark all read",
+        "Mark unread",
+        "Mark read",
+        "Opening this inbox",
+        "notification-inbox-item",
+        "notification-inbox-actions",
+        "inbox-tabs",
+        "bell__dot",
+    ] {
+        assert!(!text.contains(removed), "unexpected {removed}");
+    }
     assert!(
-        notification::has_unread(&state.pool, uid, owner)
+        !notification::has_unread(&state.pool, uid, owner)
             .await
             .unwrap()
     );
+    let shared = marker::find(&state.pool, uid, "notifications")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(shared.last_read_id, ids[2]);
     for (body, status) in [
         (
             format!("csrf=wrong&operation=seen&id={}", ids[0]),
@@ -304,5 +326,146 @@ async fn native_inbox_does_not_auto_read_and_forms_require_csrf_and_confirmation
         notification::has_unread(&state.pool, uid, owner)
             .await
             .unwrap()
+    );
+    for (path, expected) in [
+        (format!("/notifications?before={}", ids[2]), StatusCode::OK),
+        (
+            "/notifications?kind=unknown".into(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get(path)
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+        assert!(
+            notification::has_unread(&state.pool, uid, owner)
+                .await
+                .unwrap()
+        );
+    }
+    // Kind filtering stays available, without changing read-on-open behavior.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get("/notifications?kind=follow")
+                .header("cookie", &cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let text = String::from_utf8(
+        response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert_eq!(text.matches("<article class=\"notification\"").count(), 1);
+    assert!(text.contains("value=\"follow\" selected"));
+    assert!(
+        !notification::has_unread(&state.pool, uid, owner)
+            .await
+            .unwrap()
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn activity_read_is_bounded_preserves_messages_and_never_rewinds_the_marker(pool: PgPool) {
+    use plamenu_db::status::{self, NewLocalStatus};
+    let (state, owner, uid, other, ids) = fixture(pool).await;
+    let direct = status::create_local(
+        &state.pool,
+        NewLocalStatus::new(other, "A private message", "direct", None),
+    )
+    .await
+    .unwrap();
+    notification::create(&state.pool, owner, other, "mention", Some(direct.id))
+        .await
+        .unwrap();
+    let message: i64 =
+        sqlx::query_scalar("SELECT id FROM notifications WHERE account_id=$1 AND status_id=$2")
+            .bind(owner)
+            .bind(direct.id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    notification::create(&state.pool, owner, other, "music.share", None)
+        .await
+        .unwrap();
+    let head = notification_read::activity_head(&state.pool, owner)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(head > message);
+    notification_read::set_read(&state.pool, owner, ids[0], false)
+        .await
+        .unwrap();
+    // A newer arrival must survive completion of an already-open page.
+    notification::create(&state.pool, owner, other, "music.download", None)
+        .await
+        .unwrap();
+    let newer = notification_read::activity_head(&state.pool, owner)
+        .await
+        .unwrap()
+        .unwrap();
+    notification_read::mark_activity_read(&state.pool, uid, owner, head)
+        .await
+        .unwrap();
+    let states =
+        notification_read::read_states(&state.pool, uid, owner, &[ids[0], head, message, newer])
+            .await
+            .unwrap();
+    assert!(states[&ids[0]]);
+    assert!(states[&head]);
+    assert!(!states[&message]);
+    assert!(!states[&newer]);
+    assert_eq!(
+        marker::find(&state.pool, uid, "notifications")
+            .await
+            .unwrap()
+            .unwrap()
+            .last_read_id,
+        head
+    );
+
+    // A concurrent API marker advance and a read message must survive an
+    // older page finishing. Explicit unread activity beyond its head does too.
+    marker::advance(&state.pool, uid, "notifications", newer)
+        .await
+        .unwrap();
+    notification_read::set_read(&state.pool, owner, message, true)
+        .await
+        .unwrap();
+    notification_read::set_read(&state.pool, owner, newer, false)
+        .await
+        .unwrap();
+    notification_read::mark_activity_read(&state.pool, uid, owner, head)
+        .await
+        .unwrap();
+    let states = notification_read::read_states(&state.pool, uid, owner, &[message, newer])
+        .await
+        .unwrap();
+    assert!(states[&message]);
+    assert!(!states[&newer]);
+    assert_eq!(
+        marker::find(&state.pool, uid, "notifications")
+            .await
+            .unwrap()
+            .unwrap()
+            .last_read_id,
+        newer
     );
 }
