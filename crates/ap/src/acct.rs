@@ -73,21 +73,30 @@ impl fmt::Display for Acct {
     }
 }
 
-/// Remote usernames use Mastodon's federated rule: ASCII alphanumerics and
-/// underscores, with dot/hyphen separator runs between non-separator segments.
-/// Local account creation keeps its stricter `[a-z0-9_]+`, 30-char rule in the
-/// server crate.
-fn is_valid_username(s: &str) -> bool {
+/// Characters allowed in remote usernames, shared with mention tokenization.
+/// Unicode letters, numbers and combining marks preserve the spelling supplied
+/// by the remote server; dot/hyphen separators support bridged handles.
+#[must_use]
+pub fn is_username_char(c: char) -> bool {
+    c.is_alphanumeric()
+        || unicode_normalization::char::is_combining_mark(c)
+        || matches!(c, '_' | '.' | '-')
+}
+
+/// Remote account names are independent of local registration constraints.
+/// Local account creation applies its ASCII and length limits in the server
+/// crate instead of imposing them on federated names.
+#[must_use]
+pub fn is_valid_username(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 2048
-        && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'))
-        && s.bytes()
-            .next()
-            .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
-        && s.bytes()
+        && s.chars().all(is_username_char)
+        && s.chars().next().is_some_and(|c| {
+            !unicode_normalization::char::is_combining_mark(c) && (c.is_alphanumeric() || c == '_')
+        })
+        && s.chars()
             .last()
-            .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
+            .is_some_and(|c| is_username_char(c) && !matches!(c, '.' | '-'))
 }
 
 fn is_valid_domain(s: &str) -> bool {
@@ -144,6 +153,38 @@ mod tests {
 
         let hyphenated: Acct = "blue-sky.bridge_user@example.com".parse().unwrap();
         assert_eq!(hyphenated.username(), "blue-sky.bridge_user");
+    }
+
+    #[test]
+    fn accepts_unicode_and_long_remote_usernames_without_changing_spelling() {
+        for username in [
+            "GrüneGera",
+            "Gru\u{308}neGera",
+            "用户",
+            "مستخدم",
+            "npub1600yr4qg5vcfp7svf6ysj0008tn7aphnu0gjs6lw5hjn74n0laasjx889v",
+        ] {
+            let acct = Acct::new(username, "Remote.EXAMPLE").unwrap();
+            assert_eq!(acct.username(), username);
+            assert_eq!(acct.domain(), "remote.example");
+        }
+        assert!(Acct::new(&"a".repeat(2048), "remote.example").is_ok());
+        assert_eq!(
+            Acct::new(&"a".repeat(2049), "remote.example"),
+            Err(AcctError::InvalidUsername)
+        );
+        for username in [
+            "\u{308}alice",
+            "al\u{200b}ice",
+            "alice\n",
+            "ali/ce",
+            "ali@ce",
+        ] {
+            assert_eq!(
+                Acct::new(username, "remote.example"),
+                Err(AcctError::InvalidUsername)
+            );
+        }
     }
 
     #[test]

@@ -27,15 +27,16 @@ async fn fixture(pool: &PgPool) -> (AppState, Arc<StubFederation>, RemoteUser, i
 fn update(bob: &RemoteUser, name: &str, sequence: u64) -> Value {
     json!({
         "id": format!("{}#updates/{sequence}", bob.actor.id), "type": "Update", "actor": bob.actor.id,
-        "object": {"id": bob.actor.id, "type": "Person", "preferredUsername": bob.actor.preferred_username, "name": name,
+        "object": {"id": bob.actor.id, "type": bob.actor.kind, "preferredUsername": bob.actor.preferred_username, "name": name,
             "summary": "<p>inline</p>", "inbox": bob.actor.inbox,
             "publicKey": {"id": bob.actor.public_key.id, "owner": bob.actor.id, "publicKeyPem": bob.actor.public_key.public_key_pem}}
     })
 }
 
 fn origin_document(actor: &plamenu_ap::actor::RemoteActor) -> Value {
-    json!({"id":actor.id,"type":"Person","preferredUsername":actor.preferred_username,
+    json!({"id":actor.id,"type":actor.kind,"preferredUsername":actor.preferred_username,
         "name":actor.name,"summary":actor.summary,"inbox":actor.inbox,"suspended":actor.suspended,
+        "mediaType":actor.media_type,"playlists":actor.playlists,
         "assertionMethod": actor.assertion_method,
         "publicKey":{"id":actor.public_key.id,"owner":actor.public_key.owner,"publicKeyPem":actor.public_key.public_key_pem}})
 }
@@ -72,6 +73,40 @@ async fn idle(state: &AppState) {
     .expect("bounded reconciliation should finish");
 }
 
+#[sqlx::test(migrations = "../db/migrations")]
+async fn channel_reconciliation_keeps_plain_name_and_markdown_summary(pool: PgPool) {
+    let channel = RemoteUser::channel("video.example", "forum_demos");
+    let stub = StubFederation::with_actors([channel.actor.clone()]);
+    let state = test_state_with(pool.clone(), stub.clone());
+    let stored = plamenu::remote::refresh_remote_actor(&state, &channel.actor)
+        .await
+        .unwrap();
+    let mut origin = channel.actor.clone();
+    origin.name = Some("Current Demos & Keynotes".into());
+    origin.summary = Some("[Current playlist](https://video.example/playlist)".into());
+    stub.objects
+        .lock()
+        .unwrap()
+        .insert(channel.actor.id.clone(), origin_document(&origin));
+    assert_eq!(
+        send(&state, &channel, &update(&channel, "Stale", 1)).await,
+        StatusCode::ACCEPTED
+    );
+    idle(&state).await;
+    let after = account::find_by_id(&pool, stored.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(after.is_group());
+    assert_eq!(after.display_name, "Current Demos & Keynotes");
+    assert!(
+        after
+            .note
+            .contains("href=\"https://video.example/playlist\"")
+    );
+    assert!(!after.note.contains("[Current playlist]"));
+}
+
 async fn actor_fetch_started(stub: &StubFederation, uri: &str, initial: usize) {
     tokio::time::timeout(Duration::from_secs(5), async {
         while stub.fetches().iter().filter(|f| f.as_str() == uri).count() <= initial {
@@ -87,7 +122,7 @@ async fn stale_inline_text_converges_without_identity_or_key_rewrite(pool: PgPoo
     let (state, stub, bob, id) = fixture(&pool).await;
     let before = account::find_by_id(&pool, id).await.unwrap().unwrap();
     let mut origin = bob.actor.clone();
-    origin.name = Some("Current <b>name</b>".into());
+    origin.name = Some("Current & <b>name</b>".into());
     origin.summary = Some("<p>Current bio</p><script>alert(1)</script>".into());
     // Even a changed unverified handle claim cannot rename the stored account.
     origin.preferred_username = "unverified-rename".into();
@@ -114,7 +149,7 @@ async fn stale_inline_text_converges_without_identity_or_key_rewrite(pool: PgPoo
     );
     idle(&state).await;
     let after = account::find_by_id(&pool, id).await.unwrap().unwrap();
-    assert_eq!(after.display_name, "Current name");
+    assert_eq!(after.display_name, "Current & name");
     assert_eq!(after.note, "<p>Current bio</p>");
     assert_eq!(after.username, before.username);
     assert_eq!(after.domain, before.domain);

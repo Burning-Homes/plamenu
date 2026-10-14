@@ -474,6 +474,53 @@ async fn exact_acct_match_resolves_with_webfinger(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn unicode_and_long_bridge_handles_resolve_and_search(pool: PgPool) {
+    let mut unicode = RemoteUser::new("loops.example", "unicode");
+    unicode.actor.preferred_username = "GrüneGera".to_owned();
+    unicode.acct = "GrüneGera@loops.example".to_owned();
+    let bridge = RemoteUser::new(
+        "bridge.example",
+        "npub1600yr4qg5vcfp7svf6ysj0008tn7aphnu0gjs6lw5hjn74n0laasjx889v",
+    );
+    let stub = StubFederation::with_users(&[&unicode, &bridge]);
+    let (_, token) = user_with_token(&pool, "searcher", "read write").await;
+    for remote in [&unicode, &bridge] {
+        let query = serde_urlencoded::to_string([("q", format!("@{}", remote.acct))]).unwrap();
+        let (code, fresh) = api(
+            test_app_with(pool.clone(), stub.clone()),
+            "GET",
+            &format!("/api/v2/search?{query}&resolve=true"),
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{fresh}");
+        assert_eq!(section(&fresh, "accounts").len(), 1, "{fresh}");
+        assert_eq!(fresh["accounts"][0]["acct"], remote.acct);
+        assert!(stub.fetches().contains(&remote.actor.id));
+
+        let fetches = stub.fetches();
+        let query = serde_urlencoded::to_string([("q", remote.acct.to_lowercase())]).unwrap();
+        let (code, cached) = api(
+            test_app_with(pool.clone(), stub.clone()),
+            "GET",
+            &format!("/api/v1/accounts/search?{query}&resolve=false"),
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{cached}");
+        assert_eq!(cached.as_array().unwrap().len(), 1, "{cached}");
+        assert_eq!(cached[0]["id"], fresh["accounts"][0]["id"]);
+        assert_eq!(stub.fetches(), fetches, "cached search should not refetch");
+    }
+    assert!(
+        stub.deliveries().is_empty(),
+        "search does not send activities"
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn url_search_resolves_local_and_remote_resources(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_users(&[&bob]);

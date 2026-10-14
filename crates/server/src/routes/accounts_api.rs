@@ -818,6 +818,7 @@ pub async fn statuses(
             .sort
             .as_deref()
             .filter(|sort| matches!(*sort, "top" | "hot"))
+        && !plamenu_db::video::is_channel(&state.pool, account_id).await?
     {
         let offset = query.page.unwrap_or(0).max(0) * limit;
         let ranked = match sort {

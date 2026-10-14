@@ -3055,6 +3055,71 @@ async fn compose_suggestions_complete_mentions_and_hashtags(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn unicode_and_bridge_mentions_work_in_suggestions_and_no_js_compose(pool: PgPool) {
+    seed_alice(&pool).await;
+    let mut unicode = RemoteUser::new("loops.example", "unicode");
+    unicode.actor.preferred_username = "GrüneGera".to_owned();
+    unicode.acct = "GrüneGera@loops.example".to_owned();
+    let bridge = RemoteUser::new(
+        "bridge.example",
+        "npub1600yr4qg5vcfp7svf6ysj0008tn7aphnu0gjs6lw5hjn74n0laasjx889v",
+    );
+    let stub = StubFederation::with_users(&[&unicode, &bridge]);
+    let state = common::test_state_with(pool.clone(), stub.clone());
+    let app = build_router(state.clone());
+    let cookie = login(&app).await;
+    let text = format!("hi @{} and @{}", unicode.acct, bridge.acct);
+    // The ordinary multipart form path needs no client script to resolve,
+    // render, persist or address either mention. Federation is entirely stubbed.
+    let permalink = compose(&app, &cookie, &text).await;
+    let post_id: i64 = permalink.rsplit('/').next().unwrap().parse().unwrap();
+    let mut by_post = plamenu_db::mention::for_statuses(&pool, &[post_id], true)
+        .await
+        .unwrap();
+    let mentions = by_post.remove(&post_id).unwrap_or_default();
+    assert_eq!(mentions.len(), 2);
+    let post = get(&app, &permalink, Some(&cookie)).await;
+    assert_eq!(post.status, StatusCode::OK);
+    for remote in [&unicode, &bridge] {
+        assert!(
+            mentions
+                .iter()
+                .any(|account| account.uri.as_deref() == Some(remote.actor.id.as_str()))
+        );
+        assert!(post.body.contains(&format!("href=\"/@{}\"", remote.acct)));
+        // Follow the actual in-app link, including UTF-8 URL encoding, without
+        // browser scripting. The profile route must find the same account.
+        let profile_url =
+            url::Url::parse(&format!("https://plamenu.test/@{}", remote.acct)).unwrap();
+        let profile = get(&app, profile_url.path(), Some(&cookie)).await;
+        assert_eq!(profile.status, StatusCode::OK, "{}", profile.body);
+        assert!(profile.body.contains(&remote.acct));
+        let query = serde_urlencoded::to_string([("q", &remote.acct)]).unwrap();
+        let suggestions = get(
+            &app,
+            &format!("/web/compose/suggestions?type=accounts&{query}"),
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(suggestions.status, StatusCode::OK);
+        let items: serde_json::Value = serde_json::from_str(&suggestions.body).unwrap();
+        assert_eq!(items.as_array().unwrap().len(), 1, "{items}");
+        assert_eq!(items[0]["acct"], remote.acct);
+        let search = get(&app, &format!("/search?{query}"), Some(&cookie)).await;
+        assert_eq!(search.status, StatusCode::OK);
+        assert!(search.body.contains(&remote.acct));
+    }
+    assert_eq!(plamenu::delivery::run_due(&state).await, 2);
+    assert_eq!(stub.deliveries().len(), 2);
+    assert!(
+        stub.deliveries()
+            .iter()
+            .all(|sent| sent.inbox_url.starts_with("https://loops.example/")
+                || sent.inbox_url.starts_with("https://bridge.example/"))
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn search_page_is_open_to_anonymous_visitors(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let resp = get(&app, "/search", None).await;

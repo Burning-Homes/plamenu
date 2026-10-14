@@ -53,8 +53,7 @@ async fn person_and_group_collision_resolves_by_type(pool: PgPool) {
     let uris: HashSet<_> = both.iter().filter_map(|a| a.uri.clone()).collect();
     assert!(uris.contains(PERSON_URI) && uris.contains(GROUP_URI));
 
-    // `@collision@host` (PersonLike) → the Person. This is the path composer
-    // mentions take, so `@name@host` always targets the Person, never the Group.
+    // `@collision@host` prefers the Person when both actor classes exist.
     let p = resolve_remote_account(&state, &acct, ActorClass::PersonLike)
         .await
         .unwrap()

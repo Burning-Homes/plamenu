@@ -651,8 +651,8 @@ async fn store_remote_actor_with_handle(
     {
         tracing::warn!(%error, host, "failed to record FEP-844e rfc9421 capability");
     }
-    let display_name = plamenu_ap::text::sanitize_remote_text(actor.name.as_deref().unwrap_or(""));
-    let note = plamenu_ap::text::sanitize_remote_html(actor.summary.as_deref().unwrap_or(""));
+    let display_name = plamenu_ap::text::sanitize_remote_plain(actor.name.as_deref().unwrap_or(""));
+    let note = profile_summary_html(actor);
     let remote_image = |value: &Option<Value>| {
         value
             .as_ref()
@@ -883,6 +883,34 @@ const FEATURED_TAGS_SYNC_LIMIT: usize = 100;
 /// costs a dereference, so an attacker-authored collection is capped here
 /// rather than allowed to walk us through its whole instance.
 const GROUP_MODERATORS_SYNC_LIMIT: usize = 50;
+
+/// Actor summaries default to HTML. `PeerTube` instead publishes its Markdown
+/// description without a media type; recognize its actor/playlist shape only,
+/// so ordinary community HTML is never reinterpreted as Markdown.
+pub(crate) fn profile_summary_html(actor: &RemoteActor) -> String {
+    let summary = actor.summary.as_deref().unwrap_or("");
+    let peertube_profile = actor
+        .playlists
+        .as_ref()
+        .and_then(plamenu_ap::activity::id_of)
+        .is_some_and(|uri| uri == format!("{}/playlists", actor.id.trim_end_matches('/')))
+        && url::Url::parse(&actor.id).is_ok_and(|url| {
+            let prefix = match actor.kind.as_str() {
+                "Group" => "/video-channels/",
+                "Person" => "/accounts/",
+                _ => return false,
+            };
+            url.path()
+                .strip_prefix(prefix)
+                .is_some_and(|name| !name.is_empty() && !name.contains('/'))
+        });
+    match actor.media_type.as_deref() {
+        Some("text/markdown") => crate::compose::markdown_to_sanitized_html(summary, true),
+        Some("text/plain") => plamenu_ap::text::plain_to_html(summary),
+        None if peertube_profile => crate::compose::markdown_to_sanitized_html(summary, true),
+        _ => plamenu_ap::text::sanitize_remote_html(summary),
+    }
+}
 
 /// Who may start threads in a remote community, resolved from what its actor
 /// publishes. Our own `postingPolicy` term wins when present (only another

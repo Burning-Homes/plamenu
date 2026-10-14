@@ -210,8 +210,8 @@ async fn reconcile(
     {
         return Ok(());
     }
-    let display_name = plamenu_ap::text::sanitize_remote_text(actor.name.as_deref().unwrap_or(""));
-    let note = plamenu_ap::text::sanitize_remote_html(actor.summary.as_deref().unwrap_or(""));
+    let display_name = plamenu_ap::text::sanitize_remote_plain(actor.name.as_deref().unwrap_or(""));
+    let note = crate::remote::profile_summary_html(&actor);
     // Every intervening account write rejects this optional correction. In
     // particular, never retry with a new xmin: identical-text selfUpdates are
     // indistinguishable from unrelated churn before their generation admission.

@@ -8,7 +8,7 @@
 //! over the HTML's text runs (never inside `a`/`code`/`pre`), so rich posts
 //! get the same anchors, mention rows and tag records as plain ones.
 
-use plamenu_ap::acct::Acct;
+use plamenu_ap::acct::{Acct, is_username_char, is_valid_username};
 use plamenu_ap::text::{
     escape_html, inline_html_to_paragraphs, sanitize_remote_html, shortened_link_anchor,
 };
@@ -76,8 +76,8 @@ enum Segment<'a> {
     Url(&'a str),
 }
 
-fn is_username_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
+fn is_word_char(c: char) -> bool {
+    is_username_char(c) && !matches!(c, '.' | '-')
 }
 
 fn is_domain_byte(b: u8) -> bool {
@@ -198,6 +198,9 @@ fn tokenize(text: &str) -> Vec<Segment<'_>> {
     let mut literal_start = 0;
     let mut i = 0;
     while i < bytes.len() {
+        let previous = text[..i].chars().next_back();
+        // Preserve URL/hashtag boundaries, including URLs immediately after
+        // CJK text. Mentions need a separate Unicode-aware word boundary.
         let at_boundary = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
         // URLs first: an `@` or `#` inside a URL is part of it, not a token.
         if at_boundary
@@ -212,37 +215,55 @@ fn tokenize(text: &str) -> Vec<Segment<'_>> {
             literal_start = i;
             continue;
         }
-        if at_boundary && bytes[i] == b'@' {
+        if previous.is_none_or(|c| !is_word_char(c) && !matches!(c, '/' | '@')) && bytes[i] == b'@'
+        {
             let name_start = i + 1;
             let mut j = name_start;
-            while j < bytes.len() && is_username_byte(bytes[j]) {
-                j += 1;
+            for c in text[name_start..]
+                .chars()
+                .take_while(|&c| is_username_char(c))
+            {
+                j += c.len_utf8();
             }
-            if j > name_start && j - name_start <= 30 {
+            let qualified = bytes.get(j) == Some(&b'@');
+            let (username, domain, end, valid) = if qualified {
                 let username = &text[name_start..j];
-                // Optional @domain part.
-                let (domain, end) = if j < bytes.len() && bytes[j] == b'@' {
-                    let domain_start = j + 1;
-                    let mut k = domain_start;
-                    while k < bytes.len() && is_domain_byte(bytes[k]) {
-                        k += 1;
-                    }
-                    // A domain needs at least one dot to be plausible.
-                    if k > domain_start && text[domain_start..k].contains('.') {
-                        (Some(text[domain_start..k].trim_end_matches('.')), k)
-                    } else {
-                        (None, j)
-                    }
-                } else {
-                    (None, j)
-                };
+                let domain_start = j + 1;
+                let mut k = domain_start;
+                while k < bytes.len() && is_domain_byte(bytes[k]) {
+                    k += 1;
+                }
+                let domain = text[domain_start..k].trim_end_matches('.');
+                let complete = text[k..]
+                    .chars()
+                    .next()
+                    .is_none_or(|c| !is_word_char(c) && c != '@');
+                let valid = complete && domain.contains('.') && Acct::new(username, domain).is_ok();
+                (username, Some(domain), domain_start + domain.len(), valid)
+            } else {
+                // A sentence-ending dot/hyphen is punctuation. Interior
+                // separators belong to the name; never mention its prefix.
+                let username = text[name_start..j].trim_end_matches(['.', '-']);
+                let valid = !username.is_empty()
+                    && username.len() <= 30
+                    && username
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_');
+                (username, None, name_start + username.len(), valid)
+            };
+            if valid && is_valid_username(username) {
                 if literal_start < i {
                     segments.push(Segment::Text(&text[literal_start..i]));
                 }
                 segments.push(Segment::Mention { username, domain });
-                let consumed = domain.map_or(end, |d| j + 1 + d.len());
-                i = consumed;
+                i = end;
                 literal_start = i;
+                continue;
+            }
+            // Invalid qualified names stay literal as a whole. In particular
+            // a malformed @name.@host must not notify local @host instead.
+            if qualified {
+                i = end.max(j + 1);
                 continue;
             }
         }
@@ -264,7 +285,7 @@ fn tokenize(text: &str) -> Vec<Segment<'_>> {
                 continue;
             }
         }
-        i += 1;
+        i += text[i..].chars().next().expect("not at end").len_utf8();
     }
     if literal_start < text.len() {
         segments.push(Segment::Text(&text[literal_start..]));
@@ -303,15 +324,26 @@ async fn resolve_mention(
     let Ok(acct) = Acct::new(username, domain) else {
         return Ok(None);
     };
-    // A `@name@host` mention targets a person-like actor, never a Group.
+    // Match account search: prefer a person when a handle names both a Person
+    // and a Group, but allow a channel/community when it is the only match.
     if !fetch_remote {
-        return account::find_remote_person_by_acct(&state.pool, acct.username(), acct.domain())
+        let person =
+            account::find_remote_person_by_acct(&state.pool, acct.username(), acct.domain())
+                .await?;
+        if person.is_some() {
+            return Ok(person);
+        }
+        return account::find_remote_group_by_acct(&state.pool, acct.username(), acct.domain())
             .await
             .map_err(Into::into);
     }
     // Known remote or best-effort fresh resolution; failures degrade to
     // plain text.
-    resolve_remote_account(state, &acct, account::ActorClass::PersonLike)
+    let person = resolve_remote_account(state, &acct, account::ActorClass::PersonLike).await?;
+    if person.is_some() {
+        return Ok(person);
+    }
+    resolve_remote_account(state, &acct, account::ActorClass::Group)
         .await
         .map_err(Into::into)
 }
@@ -672,6 +704,53 @@ mod tests {
     }
 
     #[test]
+    fn tokenizer_accepts_complete_remote_handles() {
+        for username in [
+            "GrüneGera",
+            "Gru\u{308}neGera",
+            "用户",
+            "مستخدم",
+            "blue-sky.bsky.social",
+            "npub1600yr4qg5vcfp7svf6ysj0008tn7aphnu0gjs6lw5hjn74n0laasjx889v",
+        ] {
+            assert_eq!(
+                kinds(&format!("hi @{username}@remote.example.")),
+                [
+                    "T(hi )".to_owned(),
+                    format!("M({username},remote.example)"),
+                    "T(.)".to_owned()
+                ]
+            );
+            assert_eq!(
+                countable_length("", &format!("@{username}@remote.example")),
+                unicode_segmentation::UnicodeSegmentation::graphemes(username, true).count() + 1
+            );
+        }
+        // Local handles retain their registration grammar and punctuation.
+        assert_eq!(kinds("@alice."), ["M(alice,-)", "T(.)"]);
+        // Do not turn emails, malformed remote handles or username prefixes
+        // into mentions of unrelated local accounts.
+        for text in [
+            "é@alice",
+            "a\u{308}@alice",
+            "_@alice",
+            "@@alice",
+            "/@alice",
+            "@GrüneGera",
+            "@bob.bsky.social",
+            "@bob@",
+            "@bob@invalid",
+            "@bob.@remote.example",
+            "@bob@remote.example_suffix",
+            "@bob@remote.example@other",
+        ] {
+            assert_eq!(kinds(text), [format!("T({text})")], "{text}");
+        }
+        let oversized = format!("@{}@remote.example", "a".repeat(2049));
+        assert_eq!(kinds(&oversized), [format!("T({oversized})")]);
+    }
+
+    #[test]
     fn tokenizer_finds_urls_and_trims_trailing_punctuation() {
         assert_eq!(
             kinds("see https://example.com/a?b=c#d, ok"),
@@ -694,6 +773,10 @@ mod tests {
         assert_eq!(
             kinds("end of sentence https://example.com."),
             ["T(end of sentence )", "U(https://example.com)", "T(.)"]
+        );
+        assert_eq!(
+            kinds("看看https://example.com 中文#Rust"),
+            ["T(看看)", "U(https://example.com)", "T( 中文)", "H(Rust)"]
         );
     }
 

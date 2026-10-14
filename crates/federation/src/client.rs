@@ -2848,6 +2848,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn unicode_webfinger_resource_is_utf8_encoded_in_the_request_url() {
+        let acct = Acct::new("GrüneGera", "loops.example").unwrap();
+        let url = Url::parse(&webfinger_url(&acct)).unwrap();
+        assert_eq!(
+            url.query(),
+            Some("resource=acct:Gr%C3%BCneGera@loops.example")
+        );
+        assert_eq!(
+            url.query_pairs().next().unwrap().1,
+            "acct:GrüneGera@loops.example"
+        );
+    }
+
     /// Lane selection: hidden-service hosts ride their network's proxied
     /// client, `no_proxy` hosts the unproxied one, everything else the
     /// default. Compared by pool identity (`reqwest::Client` is a cheap

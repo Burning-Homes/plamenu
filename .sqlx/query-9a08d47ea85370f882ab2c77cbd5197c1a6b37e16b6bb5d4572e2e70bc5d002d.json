@@ -1,0 +1,256 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH publications AS MATERIALIZED (\n            SELECT status_id FROM video_publications WHERE channel_id = $1\n            UNION SELECT status_id FROM remote_video_channels WHERE channel_id = $1\n        ), scoped AS MATERIALIZED (\n            SELECT s.id FROM statuses s WHERE s.account_id = $1\n              AND NOT EXISTS (SELECT 1 FROM publications p WHERE p.status_id = s.reblog_of_id)\n            UNION\n            SELECT s.id FROM publications p JOIN statuses s ON s.id = p.status_id\n            WHERE s.object_type = 'Video' AND s.reblog_of_id IS NULL\n              AND s.visibility IN ('public', 'unlisted')\n        )\n        SELECT s.id, s.uri, s.account_id, s.content, s.created_at, s.updated_at,\n               s.visibility, s.in_reply_to_id, s.reblog_of_id, s.edited_at,\n               s.spoiler_text, s.sensitive, s.language, s.url, s.quote_approval_policy, s.application_id,\n               s.title, s.object_type, s.external_url\n        FROM scoped JOIN statuses s ON s.id = scoped.id\n        JOIN accounts author ON author.id = s.account_id\n        JOIN accounts channel ON channel.id = $1\n        LEFT JOIN video_channels vc ON vc.account_id = channel.id\n        LEFT JOIN accounts owner ON owner.id = vc.owner_account_id\n        WHERE s.deleted_at IS NULL -- STUBFILTER: exclude soft-deleted statuses\n          AND author.deleted_at IS NULL AND channel.deleted_at IS NULL\n          AND NOT account_hidden($2, author.id) AND NOT account_hidden($2, channel.id)\n          AND (author.portable OR instance_domain_allowed(author.domain))\n          AND (channel.portable OR instance_domain_allowed(channel.domain))\n          AND (vc.account_id IS NULL OR (owner.deleted_at IS NULL\n               AND NOT account_hidden($2, owner.id)))\n          AND ($2::bigint IS NOT NULL OR (NOT account_silenced(author.id)\n               AND NOT account_silenced(channel.id)))\n          AND ($2::bigint IS NOT NULL OR s.ingest_provenance <> 'history'\n               OR NOT EXISTS (SELECT 1 FROM remote_history_states h\n                   WHERE h.account_id IN (s.account_id, $1)\n                     AND h.anonymous_visibility = 'restricted'))\n          AND (s.reblog_of_id IS NULL OR EXISTS (\n              SELECT 1 FROM statuses target JOIN accounts a ON a.id = target.account_id\n              WHERE target.id = s.reblog_of_id AND target.deleted_at IS NULL\n                AND a.deleted_at IS NULL AND NOT account_hidden($2, a.id)\n                AND (a.portable OR instance_domain_allowed(a.domain))))\n          AND (s.visibility IN ('public', 'unlisted') OR $2::bigint = s.account_id\n               OR ($2::bigint IS NOT NULL AND s.visibility = 'local'\n                   AND (author.domain IS NULL OR author.portable))\n               OR ($2::bigint IS NOT NULL AND (\n                   (s.visibility = 'private' AND EXISTS (SELECT 1 FROM follows f\n                    WHERE f.account_id = $2 AND f.target_account_id = s.account_id AND NOT f.pending))\n                   OR EXISTS (SELECT 1 FROM status_mentions m\n                              WHERE m.status_id = s.id AND m.account_id = $2))))\n          AND (NOT $3 OR s.in_reply_to_id IS NULL OR EXISTS (SELECT 1 FROM statuses p\n               WHERE p.id = s.in_reply_to_id AND p.account_id = s.account_id))\n          AND (NOT $4 OR s.reblog_of_id IS NULL)\n          AND (NOT $5 OR EXISTS (SELECT 1 FROM media_attachments m\n               WHERE m.status_id = CASE WHEN $7 AND s.reblog_of_id IS NOT NULL\n                                       THEN s.reblog_of_id ELSE s.id END))\n          AND ($6::text IS NULL OR EXISTS (SELECT 1 FROM status_tags st\n               JOIN tags t ON t.id = st.tag_id WHERE st.status_id = s.id AND lower(t.name) = lower($6)))\n          AND ($8::bigint IS NULL OR ($12 AND s.id < $8)\n               OR (NOT $12 AND (s.sort_at, s.id) < ($10::timestamptz, $8)))\n          AND ($9::bigint IS NULL OR ($12 AND s.id > $9)\n               OR (NOT $12 AND (s.sort_at, s.id) > ($11::timestamptz, $9)))\n        ORDER BY CASE WHEN $12 THEN s.id END DESC,\n                 CASE WHEN NOT $12 THEN s.sort_at END DESC, s.id DESC\n        LIMIT $13",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "content",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "in_reply_to_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "in_reply_to_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "reblog_of_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "reblog_of_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "edited_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "edited_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "spoiler_text",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "spoiler_text"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "sensitive",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "sensitive"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "quote_approval_policy",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "quote_approval_policy"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "application_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "application_id"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "object_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "object_type"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "external_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "statuses",
+            "name": "external_url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool",
+        "Bool",
+        "Bool",
+        "Text",
+        "Bool",
+        "Int8",
+        "Int8",
+        "Timestamptz",
+        "Timestamptz",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "9a08d47ea85370f882ab2c77cbd5197c1a6b37e16b6bb5d4572e2e70bc5d002d"
+}

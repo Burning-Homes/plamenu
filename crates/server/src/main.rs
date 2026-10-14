@@ -1183,7 +1183,10 @@ async fn account_add(
     email: Option<&str>,
     password: Option<&str>,
 ) -> Result<(), AnyError> {
-    // Validates the username with the same rules webfinger lookups use.
+    // Local creation retains ASCII names; remote discovery also accepts Unicode.
+    if !username.is_ascii() {
+        return Err(plamenu_ap::acct::AcctError::InvalidUsername.into());
+    }
     let acct = Acct::new(username, &state.config.account_domain)?;
     let keypair = keys::generate_keypair()?;
     let ed25519 = keys::generate_ed25519_keypair();

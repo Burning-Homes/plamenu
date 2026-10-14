@@ -2827,6 +2827,8 @@ pub struct AccountStatusesFilter {
 /// `direct` posts only for the author and mentioned accounts (Mastodon's
 /// `AccountStatusesFilter`). `exclude_replies` keeps self-replies, like
 /// Mastodon's `without_replies`.
+/// Verified video channels also list their uploader-authored publications,
+/// deduplicating the channel's Announce without changing ordinary Group feeds.
 ///
 /// Honors the viewer's [`TimelineOrder`], like the home/public/list/tag
 /// timelines: `Received` reads newest-ingested first (the snowflake `id`
@@ -2843,6 +2845,9 @@ pub async fn by_account(
     order: TimelineOrder,
     limit: i64,
 ) -> Result<Vec<Status>, DbError> {
+    if crate::video::is_channel(pool, account_id).await? {
+        return by_video_channel(pool, account_id, viewer, filter, order, limit).await;
+    }
     match order {
         TimelineOrder::Published => {
             let max_anchor = sort_anchor(pool, filter.max_id).await?;
@@ -2862,6 +2867,103 @@ pub async fn by_account(
             by_account_received(pool, account_id, viewer, filter, limit).await
         }
     }
+}
+
+/// A channel profile includes verified publications even when their uploader
+/// was fetched without the channel's Announce. Return the actual authored Video
+/// once, suppressing only this channel's redundant publication wrapper. Other
+/// channel activity remains in its ordinary account feed. Cold history keeps
+/// its author's audience restrictions and never becomes a delivery here.
+async fn by_video_channel(
+    pool: &PgPool,
+    account_id: i64,
+    viewer: Option<i64>,
+    filter: &AccountStatusesFilter,
+    order: TimelineOrder,
+    limit: i64,
+) -> Result<Vec<Status>, DbError> {
+    let received = matches!(order, TimelineOrder::Received);
+    let max_anchor = sort_anchor(pool, filter.max_id).await?;
+    let since_anchor = sort_anchor(pool, filter.since_id).await?;
+    Ok(sqlx::query_as!(
+        Status,
+        r#"WITH publications AS MATERIALIZED (
+            SELECT status_id FROM video_publications WHERE channel_id = $1
+            UNION SELECT status_id FROM remote_video_channels WHERE channel_id = $1
+        ), scoped AS MATERIALIZED (
+            SELECT s.id FROM statuses s WHERE s.account_id = $1
+              AND NOT EXISTS (SELECT 1 FROM publications p WHERE p.status_id = s.reblog_of_id)
+            UNION
+            SELECT s.id FROM publications p JOIN statuses s ON s.id = p.status_id
+            WHERE s.object_type = 'Video' AND s.reblog_of_id IS NULL
+              AND s.visibility IN ('public', 'unlisted')
+        )
+        SELECT s.id, s.uri, s.account_id, s.content, s.created_at, s.updated_at,
+               s.visibility, s.in_reply_to_id, s.reblog_of_id, s.edited_at,
+               s.spoiler_text, s.sensitive, s.language, s.url, s.quote_approval_policy, s.application_id,
+               s.title, s.object_type, s.external_url
+        FROM scoped JOIN statuses s ON s.id = scoped.id
+        JOIN accounts author ON author.id = s.account_id
+        JOIN accounts channel ON channel.id = $1
+        LEFT JOIN video_channels vc ON vc.account_id = channel.id
+        LEFT JOIN accounts owner ON owner.id = vc.owner_account_id
+        WHERE s.deleted_at IS NULL -- STUBFILTER: exclude soft-deleted statuses
+          AND author.deleted_at IS NULL AND channel.deleted_at IS NULL
+          AND NOT account_hidden($2, author.id) AND NOT account_hidden($2, channel.id)
+          AND (author.portable OR instance_domain_allowed(author.domain))
+          AND (channel.portable OR instance_domain_allowed(channel.domain))
+          AND (vc.account_id IS NULL OR (owner.deleted_at IS NULL
+               AND NOT account_hidden($2, owner.id)))
+          AND ($2::bigint IS NOT NULL OR (NOT account_silenced(author.id)
+               AND NOT account_silenced(channel.id)))
+          AND ($2::bigint IS NOT NULL OR s.ingest_provenance <> 'history'
+               OR NOT EXISTS (SELECT 1 FROM remote_history_states h
+                   WHERE h.account_id IN (s.account_id, $1)
+                     AND h.anonymous_visibility = 'restricted'))
+          AND (s.reblog_of_id IS NULL OR EXISTS (
+              SELECT 1 FROM statuses target JOIN accounts a ON a.id = target.account_id
+              WHERE target.id = s.reblog_of_id AND target.deleted_at IS NULL
+                AND a.deleted_at IS NULL AND NOT account_hidden($2, a.id)
+                AND (a.portable OR instance_domain_allowed(a.domain))))
+          AND (s.visibility IN ('public', 'unlisted') OR $2::bigint = s.account_id
+               OR ($2::bigint IS NOT NULL AND s.visibility = 'local'
+                   AND (author.domain IS NULL OR author.portable))
+               OR ($2::bigint IS NOT NULL AND (
+                   (s.visibility = 'private' AND EXISTS (SELECT 1 FROM follows f
+                    WHERE f.account_id = $2 AND f.target_account_id = s.account_id AND NOT f.pending))
+                   OR EXISTS (SELECT 1 FROM status_mentions m
+                              WHERE m.status_id = s.id AND m.account_id = $2))))
+          AND (NOT $3 OR s.in_reply_to_id IS NULL OR EXISTS (SELECT 1 FROM statuses p
+               WHERE p.id = s.in_reply_to_id AND p.account_id = s.account_id))
+          AND (NOT $4 OR s.reblog_of_id IS NULL)
+          AND (NOT $5 OR EXISTS (SELECT 1 FROM media_attachments m
+               WHERE m.status_id = CASE WHEN $7 AND s.reblog_of_id IS NOT NULL
+                                       THEN s.reblog_of_id ELSE s.id END))
+          AND ($6::text IS NULL OR EXISTS (SELECT 1 FROM status_tags st
+               JOIN tags t ON t.id = st.tag_id WHERE st.status_id = s.id AND lower(t.name) = lower($6)))
+          AND ($8::bigint IS NULL OR ($12 AND s.id < $8)
+               OR (NOT $12 AND (s.sort_at, s.id) < ($10::timestamptz, $8)))
+          AND ($9::bigint IS NULL OR ($12 AND s.id > $9)
+               OR (NOT $12 AND (s.sort_at, s.id) > ($11::timestamptz, $9)))
+        ORDER BY CASE WHEN $12 THEN s.id END DESC,
+                 CASE WHEN NOT $12 THEN s.sort_at END DESC, s.id DESC
+        LIMIT $13"#,
+        account_id,
+        viewer,
+        filter.exclude_replies,
+        filter.exclude_reblogs,
+        filter.only_media,
+        filter.tagged.as_deref(),
+        filter.media_through_reblog,
+        filter.max_id,
+        filter.since_id,
+        max_anchor.map(|anchor| anchor.0),
+        since_anchor.map(|anchor| anchor.0),
+        received,
+        limit,
+    )
+    .fetch_all(pool)
+    .await?)
 }
 
 // The two orderings are separate compile-checked queries whose visibility/

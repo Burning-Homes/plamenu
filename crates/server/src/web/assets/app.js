@@ -886,7 +886,9 @@
   // backend will accept rather than raw `.length`.
   const URL_PLACEHOLDER = "xxxxxxxxxxxxxxxxxxxxxxx"; // 23 chars
   const URL_RE = /https?:\/\/\S+/gi;
-  const MENTION_RE = /(^|[^/\w])@(([a-z0-9_]+)@[a-z0-9.-]+[a-z0-9]+)/gi;
+  const MENTION_RE = /(^|[^/\p{Alphabetic}\p{N}\p{M}_@])@([\p{Alphabetic}\p{N}\p{M}_.-]+)@([a-z0-9.-]+)/giu;
+  const MENTION_WORD_RE = /^[\p{Alphabetic}\p{N}\p{M}_@]/u;
+  const usernameEncoder = new TextEncoder();
   const segmenter =
     typeof Intl !== "undefined" && Intl.Segmenter ? new Intl.Segmenter() : null;
 
@@ -901,7 +903,17 @@
   function weightedLength(spoiler, text) {
     const countable = text
       .replace(URL_RE, URL_PLACEHOLDER)
-      .replace(MENTION_RE, "$1@$3");
+      .replace(MENTION_RE, (whole, prefix, username, host, offset, source) => {
+        const domain = host.replace(/\.+$/, "");
+        // Keep invalid handles whole, just as the server does: neither a
+        // username prefix nor a partial host is a mention of another account.
+        if (/^[.\-\p{M}]|[.\-]$/u.test(username)
+          || usernameEncoder.encode(username).length > 2048
+          || !domain.includes(".") || domain.length > 253 || !/^[a-z0-9.-]+$/i.test(domain)
+          || domain.split(".").some((label) => !label || label.length > 63)
+          || MENTION_WORD_RE.test(source.slice(offset + whole.length))) return whole;
+        return `${prefix}@${username}${host.slice(domain.length)}`;
+      });
     return graphemeCount(spoiler + countable);
   }
 

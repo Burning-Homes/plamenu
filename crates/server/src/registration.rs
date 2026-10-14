@@ -369,7 +369,7 @@ async fn validate(
             "ERR_TOO_LONG",
             &format!("is too long (maximum is {USERNAME_LENGTH_LIMIT} characters)"),
         ));
-    } else if Acct::new(username, &state.config.domain).is_err() {
+    } else if !username.is_ascii() || Acct::new(username, &state.config.domain).is_err() {
         errors.push(field_error("username", "ERR_INVALID", "is invalid"));
     } else if account::local_username_reserved(&state.pool, username).await? {
         errors.push(field_error(

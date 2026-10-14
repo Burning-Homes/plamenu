@@ -1257,6 +1257,22 @@ pub struct RemoteUser {
 }
 
 impl RemoteUser {
+    /// A `PeerTube` channel: a Group actor with its own key and playlists.
+    pub fn channel(domain: &str, username: &str) -> Self {
+        let mut channel = Self::new(domain, username);
+        let id = format!("https://{domain}/video-channels/{username}");
+        "Group".clone_into(&mut channel.actor.kind);
+        channel.actor.inbox = format!("{id}/inbox");
+        channel.actor.followers = Some(serde_json::json!(format!("{id}/followers")));
+        channel.actor.following = Some(serde_json::json!(format!("{id}/following")));
+        channel.actor.outbox = Some(serde_json::json!(format!("{id}/outbox")));
+        channel.actor.public_key.id = format!("{id}#main-key");
+        channel.actor.public_key.owner.clone_from(&id);
+        channel.actor.playlists = Some(serde_json::json!(format!("{id}/playlists")));
+        channel.actor.id = id;
+        channel
+    }
+
     pub fn new(domain: &str, username: &str) -> Self {
         let keys = keys::generate_keypair().unwrap();
         let id = format!("https://{domain}/users/{username}");
@@ -1270,6 +1286,8 @@ impl RemoteUser {
             outbox: Some(serde_json::Value::String(format!("{id}/outbox"))),
             name: None,
             summary: None,
+            media_type: None,
+            playlists: None,
             published: Some("2026-01-01T00:00:00Z".to_owned()),
             url: None,
             endpoints: Some(RemoteEndpoints {

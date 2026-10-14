@@ -4,6 +4,21 @@ use sqlx::{PgConnection, PgExecutor};
 
 use crate::DbError;
 
+/// Native or independently verified imported video-channel identity. Ordinary
+/// community Groups keep their announce-based profile semantics.
+pub async fn is_channel(pool: &sqlx::PgPool, account_id: i64) -> Result<bool, DbError> {
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+             SELECT 1 FROM accounts a WHERE a.id = $1 AND a.actor_type = 'Group'
+               AND (EXISTS (SELECT 1 FROM video_channels c WHERE c.account_id = a.id)
+                    OR EXISTS (SELECT 1 FROM remote_video_channels r WHERE r.channel_id = a.id))
+           ) AS "channel!""#,
+        account_id,
+    )
+    .fetch_one(pool)
+    .await?)
+}
+
 /// A public Video and the actor a viewer subscribes to for future videos.
 /// Native publications and verified remote Videos use their channel; other
 /// remote Videos fall back to their author.

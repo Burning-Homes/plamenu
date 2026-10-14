@@ -768,6 +768,13 @@ pub struct RemoteActor {
     pub name: Option<String>,
     #[serde(default)]
     pub summary: Option<String>,
+    /// Explicit format of the summary; an absent media type defaults to HTML.
+    #[serde(default)]
+    pub media_type: Option<String>,
+    /// `PeerTube` publishes playlists on both account and channel actors.
+    /// Kept raw like the other remote collection references.
+    #[serde(default)]
+    pub playlists: Option<Value>,
     /// Origin account-creation time. Older/minimal implementations may omit
     /// it, so ingest treats this as optional rather than inventing a value.
     #[serde(default)]

@@ -155,7 +155,7 @@ pub async fn create_group(
     if name.chars().count() > NAME_LENGTH_LIMIT {
         return Err(CreateInvalid::NameTooLong.into());
     }
-    if Acct::new(name, &state.config.domain).is_err() {
+    if !name.is_ascii() || Acct::new(name, &state.config.domain).is_err() {
         return Err(CreateInvalid::NameInvalid.into());
     }
     if params.enforce_username_blocklist

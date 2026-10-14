@@ -14,6 +14,7 @@ On a split-domain installation, use the hosting domain (for example,
 
 - [OAuth and authentication](authentication.md)
 - [Lemmy API](../LEMMY_API_COMPATIBILITY.md)
+- [Phanpy feature parity audit](../PHANPY_PARITY.md)
 
 Test authentication, timelines, posting, uploads, and notifications against the
 exact Plamenu version you intend to support. Plamenu-specific APIs may change

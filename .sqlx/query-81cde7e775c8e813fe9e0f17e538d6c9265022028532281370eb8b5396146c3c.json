@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM accounts a WHERE a.id = $1 AND a.actor_type = 'Group'\n               AND (EXISTS (SELECT 1 FROM video_channels c WHERE c.account_id = a.id)\n                    OR EXISTS (SELECT 1 FROM remote_video_channels r WHERE r.channel_id = a.id))\n           ) AS \"channel!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "81cde7e775c8e813fe9e0f17e538d6c9265022028532281370eb8b5396146c3c"
+}

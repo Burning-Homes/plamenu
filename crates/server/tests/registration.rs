@@ -703,6 +703,32 @@ async fn signup_validation_errors_use_mastodon_shape(pool: PgPool) {
     assert_eq!(details["email"][0]["error"], "ERR_INVALID");
     assert_eq!(details["password"][0]["error"], "ERR_BLANK");
 
+    // Accepting Unicode and long remote names must not widen local signup.
+    for (username, expected) in [
+        ("GrüneGera", "ERR_INVALID"),
+        (
+            "npub1600yr4qg5vcfp7svf6ysj0008tn7aphnu0gjs6lw5hjn74n0laasjx889v",
+            "ERR_TOO_LONG",
+        ),
+    ] {
+        let (status, body) = api(
+            &app,
+            "POST",
+            "/api/v1/accounts",
+            Some(&app_token),
+            Some(signup_body(username, "invalid@example.com")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["details"]["username"][0]["error"], expected);
+        assert!(
+            account::find_local_by_username(&pool, username)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
     // Nothing was created and no mail was queued by the failed attempts.
     assert!(
         account::find_local_by_username(&pool, "bad name!")

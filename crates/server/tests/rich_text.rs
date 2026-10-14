@@ -7,7 +7,7 @@ mod common;
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
-use common::{StubFederation, create_local_account, test_app, test_state_with};
+use common::{RemoteUser, StubFederation, create_local_account, test_app, test_state_with};
 use http_body_util::BodyExt;
 use plamenu::auth::hash_password;
 use plamenu_db::account::Account;
@@ -111,6 +111,209 @@ async fn api(
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, value)
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn unicode_and_bridge_mentions_render_and_deliver_in_all_post_formats(pool: PgPool) {
+    let (_, token) = user_with_token(&pool, "alice").await;
+    // A prefix account catches accidental partial matching of @GrüneGera.
+    let prefix = create_local_account(&pool, "Gr", "Wrong prefix").await;
+    let mut unicode = RemoteUser::new("loops.example", "unicode");
+    unicode.actor.preferred_username = "GrüneGera".to_owned();
+    unicode.acct = "GrüneGera@loops.example".to_owned();
+    let mut combining = RemoteUser::new("unicode.example", "combining");
+    combining.actor.preferred_username = "Gru\u{308}neGera".to_owned();
+    combining.acct = "Gru\u{308}neGera@unicode.example".to_owned();
+    let bridge = RemoteUser::new(
+        "bridge.example",
+        "npub1600yr4qg5vcfp7svf6ysj0008tn7aphnu0gjs6lw5hjn74n0laasjx889v",
+    );
+    let dotted = RemoteUser::new("bridge.example", "blue-sky.bsky.social");
+    let remotes = [&unicode, &combining, &bridge, &dotted];
+    let stub = StubFederation::with_users(&remotes);
+    let state = test_state_with(pool.clone(), stub.clone());
+    let app = plamenu::build_router(state.clone());
+    let text = remotes
+        .iter()
+        .map(|r| format!("@{}", r.acct))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for (content_type, draft) in [
+        ("text/plain", format!("{text}. @{}", unicode.acct)),
+        (
+            "text/markdown",
+            format!(
+                "**{text}** `@ignored@code.example` [@ignored@link.example](https://link.example/)"
+            ),
+        ),
+        (
+            "text/html",
+            format!(
+                "<p><em>{text}</em></p><code>@ignored@code.example</code><a href=\"https://link.example/\">@ignored@link.example</a>"
+            ),
+        ),
+    ] {
+        let (code, post) = api(
+            app.clone(),
+            "POST",
+            "/api/v1/statuses",
+            Some(&token),
+            Some(json!({"status": draft, "content_type": content_type})),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{post}");
+        let mentions = post["mentions"].as_array().unwrap();
+        assert_eq!(mentions.len(), remotes.len(), "{post}");
+        let content = post["content"].as_str().unwrap();
+        for remote in remotes {
+            assert!(
+                mentions
+                    .iter()
+                    .any(|mention| mention["acct"] == remote.acct),
+                "{post}"
+            );
+            assert!(
+                content.contains(&format!("href=\"{}\"", remote.actor.id)),
+                "{content}"
+            );
+        }
+        assert!(
+            !mentions
+                .iter()
+                .any(|mention| mention["acct"] == prefix.username)
+        );
+        assert_eq!(
+            plamenu::delivery::run_due(&state).await,
+            u64::try_from(remotes.len()).unwrap()
+        );
+        for sent in stub.deliveries().iter().rev().take(remotes.len()) {
+            let tags = sent.activity["object"]["tag"].as_array().unwrap();
+            assert_eq!(tags.len(), remotes.len());
+            for remote in remotes {
+                assert!(tags.iter().any(|tag| tag["type"] == "Mention"
+                    && tag["href"] == remote.actor.id
+                    && tag["name"] == format!("@{}", remote.acct)));
+                assert!(
+                    sent.activity["cc"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&json!(remote.actor.id))
+                );
+            }
+            assert!(remotes.iter().any(|r| r.actor.inbox == sent.inbox_url));
+        }
+    }
+    assert_eq!(stub.deliveries().len(), remotes.len() * 3);
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM notifications WHERE account_id = $1")
+        .bind(prefix.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0, "a username prefix must not receive notifications");
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn channel_mentions_deliver_without_group_submission_and_keep_person_preference(
+    pool: PgPool,
+) {
+    let (_, token) = user_with_token(&pool, "alice").await;
+    let channel = RemoteUser::channel("video.example", "forum_demos");
+    let mut community = RemoteUser::channel("lemmy.example", "collision");
+    community.actor.playlists = None;
+    let person = RemoteUser::new("lemmy.example", "collision");
+    // The Group is advertised first and cached before the Person. Neither
+    // ordering may make an @collision mention select it instead of the Person.
+    let stub = StubFederation::with_users(&[&channel, &community, &person]);
+    let state = test_state_with(pool.clone(), stub.clone());
+    plamenu::remote::refresh_remote_actor(&state, &community.actor)
+        .await
+        .unwrap();
+    let app = plamenu::build_router(state.clone());
+    for (format, text) in [
+        (
+            "text/plain",
+            "@forum_demos@video.example @collision@lemmy.example @forum_demos@video.example",
+        ),
+        (
+            "text/markdown",
+            "**@forum_demos@video.example** @collision@lemmy.example `@ignored@video.example`",
+        ),
+        (
+            "text/html",
+            "<p>@forum_demos@video.example @collision@lemmy.example</p><code>@ignored@video.example</code>",
+        ),
+    ] {
+        let (code, post) = api(
+            app.clone(),
+            "POST",
+            "/api/v1/statuses",
+            Some(&token),
+            Some(json!({"status":text,"content_type":format})),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{post}");
+        let mentions = post["mentions"].as_array().unwrap();
+        assert_eq!(mentions.len(), 2, "{post}");
+        for remote in [&channel, &person] {
+            assert!(mentions.iter().any(|m| m["acct"] == remote.acct), "{post}");
+            assert!(
+                post["content"]
+                    .as_str()
+                    .unwrap()
+                    .contains(&format!("href=\"{}\"", remote.actor.id))
+            );
+        }
+        assert!(
+            !post["content"]
+                .as_str()
+                .unwrap()
+                .contains(&community.actor.id)
+        );
+        assert_eq!(plamenu::delivery::run_due(&state).await, 2);
+        for sent in stub.deliveries().iter().rev().take(2) {
+            let object = &sent.activity["object"];
+            assert_eq!(
+                object["type"], "Note",
+                "a mention must not become a group submission"
+            );
+            assert_eq!(object["attributedTo"], "https://plamenu.test/users/alice");
+            for remote in [&channel, &person] {
+                assert!(
+                    object["tag"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|tag| tag["type"] == "Mention" && tag["href"] == remote.actor.id)
+                );
+                assert!(
+                    sent.activity["cc"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&json!(remote.actor.id))
+                );
+            }
+            assert!(
+                !sent.activity["cc"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!(community.actor.id))
+            );
+        }
+    }
+    // Stored-text rendering (used without remote discovery) must keep the same
+    // person-first/channel fallback behavior and never start network requests.
+    let fetches = stub.fetches().len();
+    let rendered = plamenu::compose::compose_local(
+        &state,
+        "@forum_demos@video.example @collision@lemmy.example",
+    )
+    .await
+    .unwrap();
+    assert_eq!(rendered.mentions.len(), 2);
+    assert!(rendered.html.contains(&channel.actor.id));
+    assert!(rendered.html.contains(&person.actor.id));
+    assert!(!rendered.html.contains(&community.actor.id));
+    assert_eq!(stub.fetches().len(), fetches);
 }
 
 async fn ap_object(app: Router, path: &str) -> Value {
