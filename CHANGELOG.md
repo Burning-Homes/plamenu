@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Offer the existing Translate control regardless of a post's declared
+  language. Detect the source from the text for web and API translation,
+  including the no-JS flow, and refresh translations cached with forced labels.
+
+- Support exact Chat Completions URLs and nested provider request options for
+  OpenAI-compatible translation services, including reasoning settings and
+  configurable token budgets. Preserve existing endpoint configurations.
+
 - Simplify JavaScript video playback with a compact control bar and labeled
   settings popover. Show adaptive quality before playback, populate resolutions
   after stream discovery, and retain keyboard controls and native fallback.

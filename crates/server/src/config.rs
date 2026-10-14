@@ -260,6 +260,21 @@ encryption_secret_version = 1
 # model = "hy-mt2-1.8b"
 # api_key = "optional-bearer-token"
 
+# For other OpenAI-compatible providers, use an exact URL instead of endpoint:
+# [translation]
+# backend = "openai"
+# chat_completions_url = "https://llm.example.com/api/chat/completions"
+# model = "your-translation-model"
+# api_key = "replace-with-your-provider-key"
+# languages = ["en", "es", "de", "ru"]
+# [translation.request_options]
+# reasoning_effort = "low"
+# thinking = { type = "enabled" }
+# max_tokens = 4096
+# Options depend on the provider. model, messages and stream are managed by
+# Plamenu and cannot be overridden. Use only one of max_tokens and
+# max_completion_tokens; the latter replaces the default max_tokens budget.
+
 # Outbound proxy routing. Most deployments never need this section; its main
 # use is federating with .onion/.i2p instances through a local Tor/I2P
 # daemon's SOCKS proxy. Proxy URLs must be socks5h:// (the `h` makes the proxy
@@ -629,19 +644,21 @@ pub enum TranslationConfig {
         endpoint: String,
         api_key: Option<String>,
     },
-    /// An OpenAI-compatible chat-completions server hosting a translation
-    /// model — in practice llama.cpp's `llama-server` running Hy-MT2.
+    /// An OpenAI-compatible chat-completions server hosting a translation model.
     OpenAi {
-        /// Base URL, e.g. `http://10.0.0.5:8080`; `/v1/chat/completions` is
-        /// appended.
-        endpoint: String,
+        /// Resolved URL: either explicitly configured or built by appending
+        /// `/v1/chat/completions` to the legacy `endpoint` base URL.
+        chat_completions_url: String,
         /// Sent as the `model` field and shown as the attribution provider.
         model: String,
         /// Optional bearer token.
         api_key: Option<String>,
         /// Language codes the model translates between (any → any); defaults
-        /// to Hy-MT2's 33 supported languages.
+        /// to the legacy Hy-MT2 language list.
         languages: Vec<String>,
+        /// Extra JSON body fields, including nested provider-specific options.
+        /// Validated at load time; cannot override model, messages or stream.
+        request_options: serde_json::Map<String, serde_json::Value>,
     },
 }
 
@@ -1031,9 +1048,12 @@ enum FileTranslationConfig {
     },
     Openai {
         endpoint: Option<String>,
+        chat_completions_url: Option<String>,
         model: Option<String>,
         api_key: Option<String>,
         languages: Option<Vec<String>>,
+        #[serde(default)]
+        request_options: serde_json::Map<String, serde_json::Value>,
     },
 }
 
@@ -1367,26 +1387,94 @@ impl FileTranslationConfig {
             }),
             Self::Openai {
                 endpoint,
+                chat_completions_url,
                 model,
                 api_key,
                 languages,
+                request_options,
             } => Ok(TranslationConfig::OpenAi {
-                endpoint: required(endpoint, "translation.endpoint")?
-                    .trim_end_matches('/')
-                    .to_owned(),
+                chat_completions_url: openai_chat_completions_url(endpoint, chat_completions_url)?,
                 model: required(model, "translation.model")?,
                 api_key: nonempty(api_key),
                 languages: match languages {
                     Some(list) if !list.is_empty() => list,
                     _ => HY_MT2_LANGUAGES.iter().map(|&l| l.to_owned()).collect(),
                 },
+                request_options: validate_openai_request_options(request_options)?,
             }),
         }
     }
 }
 
-/// The 33 languages Hy-MT2 (the model the `openai` backend is built around)
-/// translates between, from its model card. Overridable per deployment via
+fn openai_chat_completions_url(
+    endpoint: Option<String>,
+    chat_completions_url: Option<String>,
+) -> Result<String, ConfigError> {
+    let (url, key, exact) = match (nonempty(endpoint), nonempty(chat_completions_url)) {
+        (Some(_), Some(_)) => {
+            return Err(ConfigError::Invalid(
+                "translation.chat_completions_url",
+                "use either endpoint or chat_completions_url, not both".to_owned(),
+            ));
+        }
+        (None, Some(url)) => (url, "translation.chat_completions_url", true),
+        (Some(endpoint), None) => (endpoint, "translation.endpoint", false),
+        (None, None) => return Err(ConfigError::Missing("translation.endpoint")),
+    };
+    let parsed = url::Url::parse(&url)
+        .map_err(|_| ConfigError::Invalid(key, "must be an absolute HTTP(S) URL".to_owned()))?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.fragment().is_some()
+        || (!exact && parsed.query().is_some())
+    {
+        return Err(ConfigError::Invalid(
+            key,
+            "must be an absolute HTTP(S) URL without userinfo or a fragment; queries require chat_completions_url; use api_key for bearer authentication".to_owned(),
+        ));
+    }
+    if exact {
+        Ok(url)
+    } else {
+        Ok(format!("{}/v1/chat/completions", url.trim_end_matches('/')))
+    }
+}
+
+fn validate_openai_request_options(
+    options: serde_json::Map<String, serde_json::Value>,
+) -> Result<serde_json::Map<String, serde_json::Value>, ConfigError> {
+    if ["model", "messages", "stream"]
+        .iter()
+        .any(|key| options.contains_key(*key))
+    {
+        return Err(ConfigError::Invalid(
+            "translation.request_options",
+            "model, messages and stream are managed by Plamenu".to_owned(),
+        ));
+    }
+    if options.contains_key("max_tokens") && options.contains_key("max_completion_tokens") {
+        return Err(ConfigError::Invalid(
+            "translation.request_options",
+            "use only one of max_tokens and max_completion_tokens".to_owned(),
+        ));
+    }
+    for key in ["max_tokens", "max_completion_tokens"] {
+        if let Some(value) = options.get(key)
+            && value.as_u64().is_none_or(|tokens| tokens == 0)
+        {
+            return Err(ConfigError::Invalid(
+                "translation.request_options",
+                format!("{key} must be a positive integer"),
+            ));
+        }
+    }
+    Ok(options)
+}
+
+/// The legacy Hy-MT2 language list, retained for existing deployments.
+/// Overridable per deployment via
 /// `translation.languages`.
 const HY_MT2_LANGUAGES: &[&str] = &[
     "zh", "zh-Hant", "yue", "en", "fr", "pt", "es", "ja", "tr", "ru", "ar", "ko", "th", "it", "de",
@@ -1997,19 +2085,112 @@ mod tests {
         .unwrap();
         let config = Config::from_parsed(file).unwrap();
         let Some(TranslationConfig::OpenAi {
-            endpoint,
+            chat_completions_url,
             model,
             api_key,
             languages,
+            request_options,
         }) = config.translation
         else {
             panic!("openai backend expected");
         };
-        assert_eq!(endpoint, "http://mt.local:8080");
+        assert_eq!(
+            chat_completions_url,
+            "http://mt.local:8080/v1/chat/completions"
+        );
         assert_eq!(model, "hy-mt2-1.8b");
         assert_eq!(api_key, None);
         assert!(languages.iter().any(|l| l == "uk"));
         assert_eq!(languages.len(), HY_MT2_LANGUAGES.len());
+        assert!(request_options.is_empty());
+    }
+
+    #[test]
+    fn openai_backend_accepts_an_exact_url_and_nested_request_options() {
+        let file: FileConfig = toml::from_str(&format!(
+            r#"{}[translation]
+backend = "openai"
+chat_completions_url = "https://llm.example/api/coding/v4/chat/completions?api-version=1"
+model = "translation-model"
+api_key = "secret-sentinel"
+languages = ["en", "ru"]
+[translation.request_options]
+reasoning_effort = "low"
+thinking = {{ type = "enabled" }}
+max_tokens = 8192
+temperature = 0.3
+custom = {{ values = ["a", "b"], enabled = true, secret = "secret-sentinel" }}
+"#,
+            valid_minimal(),
+        ))
+        .unwrap();
+        let config = Config::from_parsed(file).unwrap();
+        assert!(!format!("{config:?}").contains("secret-sentinel"));
+        let Some(TranslationConfig::OpenAi {
+            chat_completions_url,
+            request_options,
+            languages,
+            ..
+        }) = config.translation
+        else {
+            panic!("openai backend expected");
+        };
+        assert_eq!(
+            chat_completions_url,
+            "https://llm.example/api/coding/v4/chat/completions?api-version=1"
+        );
+        assert_eq!(languages, ["en", "ru"]);
+        assert_eq!(
+            serde_json::Value::Object(request_options),
+            serde_json::json!({
+                "reasoning_effort": "low", "thinking": {"type": "enabled"},
+                "max_tokens": 8192, "temperature": 0.3,
+                "custom": {"values": ["a", "b"], "enabled": true, "secret": "secret-sentinel"},
+            }),
+        );
+    }
+
+    #[test]
+    fn openai_backend_rejects_ambiguous_or_invalid_urls_without_echoing_secrets() {
+        let both = openai_chat_completions_url(
+            Some("https://llm.example".to_owned()),
+            Some("https://llm.example/chat/completions".to_owned()),
+        );
+        assert!(matches!(both, Err(ConfigError::Invalid(_, _))));
+        assert!(matches!(
+            openai_chat_completions_url(Some("https://llm.example?api-version=1".to_owned()), None),
+            Err(ConfigError::Invalid("translation.endpoint", _))
+        ));
+        for invalid in [
+            "relative/secret-sentinel",
+            "ftp://llm.example/secret-sentinel",
+            "https://user:secret-sentinel@llm.example/chat/completions",
+            "https://llm.example/chat/completions#secret-sentinel",
+        ] {
+            let error = openai_chat_completions_url(None, Some(invalid.to_owned())).unwrap_err();
+            assert!(matches!(error, ConfigError::Invalid(_, _)));
+            assert!(!error.to_string().contains("secret-sentinel"));
+        }
+    }
+
+    #[test]
+    fn openai_backend_rejects_request_options_that_break_the_protocol() {
+        for invalid in [
+            serde_json::json!({"model": "another-model"}),
+            serde_json::json!({"messages": []}),
+            serde_json::json!({"stream": true}),
+            serde_json::json!({"max_tokens": 0}),
+            serde_json::json!({"max_tokens": -1}),
+            serde_json::json!({"max_completion_tokens": "4096"}),
+            serde_json::json!({"max_completion_tokens": 1.5}),
+            serde_json::json!({"max_tokens": 4096, "max_completion_tokens": 4096}),
+        ] {
+            let error = validate_openai_request_options(invalid.as_object().unwrap().clone());
+            assert!(matches!(
+                error,
+                Err(ConfigError::Invalid("translation.request_options", _))
+            ));
+        }
     }
 
     #[test]

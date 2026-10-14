@@ -181,22 +181,16 @@ pub async fn translate_status(
     };
 
     let languages = language_map(state).await?;
-    let source_key = status.language.as_deref().unwrap_or(AUTO_KEY);
-
-    // Permitted only for a distributable post the backend can translate into
-    // the requested language (Mastodon's permit rule).
+    // A post's language is untrusted metadata: it can match the viewer's
+    // language while the text is in another language. Let the backend detect
+    // the source, and check only whether it supports the requested target.
     if !is_distributable(status) {
         return Err(ApiError::Forbidden("This action is not allowed".to_owned()));
     }
-    let Some(target) = permitted_target(&languages, source_key, target_language) else {
-        // Specific enough to act on — "unavailable right now" hid the fact
-        // that e.g. Finnish simply isn't in the backend's inventory.
-        let source = status
-            .language
-            .as_deref()
-            .map_or_else(|| "an undetected language".to_owned(), language_name);
+    let Some(target) = permitted_target(&languages, target_language) else {
         return Err(ApiError::Forbidden(format!(
-            "Translating from {source} is not supported by the translation service"
+            "Translating into {} is not supported by the translation service",
+            language_name(target_language),
         )));
     };
 
@@ -250,8 +244,7 @@ pub async fn translate_status(
                 .translation_cache
                 .backend_gate(state.translation_backend_concurrency().await);
             let permit = gate.acquire().await;
-            let result =
-                backend_translate(state, backend, status, &sources, source_key, &target).await;
+            let result = backend_translate(state, backend, &sources, &target).await;
             drop(permit);
             let parts = result?;
             store_row(state, status, &target, &source_hash, &parts).await?;
@@ -270,41 +263,42 @@ pub async fn translate_status(
 async fn backend_translate(
     state: &AppState,
     backend: &TranslationConfig,
-    status: &Status,
     sources: &[Source],
-    source_key: &str,
     target: &str,
 ) -> Result<TranslationParts, ApiError> {
     let texts: Vec<&str> = sources.iter().map(|s| s.sent.as_str()).collect();
     let translations = match backend {
         TranslationConfig::LibreTranslate { endpoint, api_key } => {
-            libre_translate(
+            libre_translate(state, endpoint, api_key.as_deref(), &texts, target).await?
+        }
+        TranslationConfig::DeepL { plan, api_key } => {
+            deepl_translate(state, *plan, api_key, &texts, target).await?
+        }
+        TranslationConfig::OpenAi {
+            chat_completions_url,
+            model,
+            api_key,
+            request_options,
+            ..
+        } => {
+            openai_translate(
                 state,
-                endpoint,
+                chat_completions_url,
+                model,
                 api_key.as_deref(),
+                request_options,
                 &texts,
-                source_key,
                 target,
             )
             .await?
         }
-        TranslationConfig::DeepL { plan, api_key } => {
-            deepl_translate(state, *plan, api_key, &texts, source_key, target).await?
-        }
-        TranslationConfig::OpenAi {
-            endpoint,
-            model,
-            api_key,
-            ..
-        } => openai_translate(state, endpoint, model, api_key.as_deref(), &texts, target).await?,
     };
     if translations.len() != sources.len() {
         return Err(TranslationError::Unexpected.into());
     }
     let detected = translations
         .first()
-        .and_then(|t| t.detected_source_language.as_deref())
-        .or(status.language.as_deref());
+        .and_then(|t| t.detected_source_language.as_deref());
     Ok(assemble_parts(&translations, sources, detected))
 }
 
@@ -376,18 +370,16 @@ fn is_distributable(status: &Status) -> bool {
     matches!(status.visibility.as_str(), "public" | "unlisted")
 }
 
-/// Whether the backend can translate `source_key` (a language code or
-/// [`AUTO_KEY`]) into `target_language`, returning the (possibly
-/// base-subtag-narrowed) target it should ask for. Shared by the translate
-/// path and the web UI's button eligibility, so the control is only offered
-/// when a request would be permitted.
+/// Whether the backend can auto-detect text and translate into
+/// `target_language`, returning the (possibly base-subtag-narrowed) target.
+/// Shared by the API and web UI; a post's declared source never gates a
+/// user's explicit translation request.
 #[must_use]
 pub fn permitted_target(
     languages: &BTreeMap<String, Vec<String>>,
-    source_key: &str,
     target_language: &str,
 ) -> Option<String> {
-    let targets = languages.get(source_key)?;
+    let targets = languages.get(AUTO_KEY)?;
     // Narrow `pt-BR` → `pt` when the backend only lists the base language.
     if targets.iter().any(|t| t == target_language) {
         return Some(target_language.to_owned());
@@ -661,6 +653,9 @@ fn parts_to_entity(status: &Status, target: &str, parts: &TranslationParts) -> V
 /// persistent row's `source_hash` — an edit changes it, invalidating both.
 fn fragments_hash(sources: &[Source]) -> Vec<u8> {
     let mut hasher = Sha256::new();
+    // Do not reuse translations made with a possibly incorrect forced source
+    // or attribution inferred from the post's declared language.
+    hasher.update(b"auto-source-v1\0");
     for source in sources {
         hasher.update(u64::to_be_bytes(source.sent.len() as u64));
         hasher.update(source.sent.as_bytes());
@@ -676,17 +671,11 @@ async fn libre_translate(
     endpoint: &str,
     api_key: Option<&str>,
     texts: &[&str],
-    source_language: &str,
     target_language: &str,
 ) -> Result<Vec<Translated>, TranslationError> {
-    let source = if source_language.is_empty() {
-        "auto"
-    } else {
-        source_language
-    };
     let body = json!({
         "q": texts,
-        "source": source,
+        "source": "auto",
         "target": target_language,
         "format": "html",
         "api_key": api_key.unwrap_or_default(),
@@ -717,8 +706,7 @@ async fn libre_translate(
                 .and_then(|d| d.get(index))
                 .and_then(|entry| entry.get("language"))
                 .and_then(Value::as_str)
-                .map(str::to_owned)
-                .or_else(|| (!source_language.is_empty()).then(|| source_language.to_owned())),
+                .map(str::to_owned),
             provider: "LibreTranslate".to_owned(),
         })
         .collect())
@@ -780,7 +768,7 @@ fn libre_ok(response: &ServiceResponse) -> Result<String, TranslationError> {
 }
 
 // ---------------------------------------------------------------------------
-// OpenAI-compatible backend (llama.cpp llama-server, built for Hy-MT2)
+// OpenAI-compatible chat-completions backend
 
 /// Translates the fragments with as few chat completions as possible: a
 /// multi-fragment post is sent as ONE structured-JSON request (Hy-MT2's
@@ -789,16 +777,24 @@ fn libre_ok(response: &ServiceResponse) -> Result<String, TranslationError> {
 /// Single fragments use the plain prompt directly.
 async fn openai_translate(
     state: &AppState,
-    endpoint: &str,
+    chat_completions_url: &str,
     model: &str,
     api_key: Option<&str>,
+    request_options: &serde_json::Map<String, Value>,
     texts: &[&str],
     target_language: &str,
 ) -> Result<Vec<Translated>, TranslationError> {
     if texts.len() >= 2
-        && let Some(results) =
-            openai_translate_structured(state, endpoint, model, api_key, texts, target_language)
-                .await?
+        && let Some(results) = openai_translate_structured(
+            state,
+            chat_completions_url,
+            model,
+            api_key,
+            request_options,
+            texts,
+            target_language,
+        )
+        .await?
     {
         return Ok(results);
     }
@@ -810,11 +806,19 @@ async fn openai_translate(
              explanation**:\n\n{text}",
             language_english_name(target_language),
         );
-        let reply = openai_chat(state, endpoint, model, api_key, &prompt).await?;
+        let reply = openai_chat(
+            state,
+            chat_completions_url,
+            model,
+            api_key,
+            request_options,
+            &prompt,
+        )
+        .await?;
         results.push(Translated {
             text: reply.trim().to_owned(),
-            // Chat models don't report a detected source; callers fall back
-            // to the status' declared language.
+            // This protocol does not report a detected source. Do not infer
+            // one from the post's potentially incorrect language metadata.
             detected_source_language: None,
             provider: model.to_owned(),
         });
@@ -828,9 +832,10 @@ async fn openai_translate(
 /// (retrying wouldn't help those).
 async fn openai_translate_structured(
     state: &AppState,
-    endpoint: &str,
+    chat_completions_url: &str,
     model: &str,
     api_key: Option<&str>,
+    request_options: &serde_json::Map<String, Value>,
     texts: &[&str],
     target_language: &str,
 ) -> Result<Option<Vec<Translated>>, TranslationError> {
@@ -850,7 +855,15 @@ async fn openai_translate_structured(
         target = language_english_name(target_language),
         data = Value::Object(data),
     );
-    let reply = openai_chat(state, endpoint, model, api_key, &prompt).await?;
+    let reply = openai_chat(
+        state,
+        chat_completions_url,
+        model,
+        api_key,
+        request_options,
+        &prompt,
+    )
+    .await?;
     // Tolerate a code fence or stray prose around the object.
     let (Some(start), Some(end)) = (reply.find('{'), reply.rfind('}')) else {
         return Ok(None);
@@ -876,16 +889,22 @@ async fn openai_translate_structured(
 /// assistant text.
 async fn openai_chat(
     state: &AppState,
-    endpoint: &str,
+    chat_completions_url: &str,
     model: &str,
     api_key: Option<&str>,
+    request_options: &serde_json::Map<String, Value>,
     prompt: &str,
 ) -> Result<String, TranslationError> {
-    let body = json!({
-        "model": model,
-        "max_tokens": 4096,
-        "messages": [{ "role": "user", "content": prompt }],
-    });
+    let mut body = request_options.clone();
+    if !body.contains_key("max_completion_tokens") {
+        body.entry("max_tokens").or_insert(json!(4096));
+    }
+    body.insert("model".to_owned(), json!(model));
+    body.insert(
+        "messages".to_owned(),
+        json!([{ "role": "user", "content": prompt }]),
+    );
+    body.insert("stream".to_owned(), json!(false));
     let mut headers = vec![("Content-Type".to_owned(), "application/json".to_owned())];
     if let Some(key) = api_key {
         headers.push(("Authorization".to_owned(), format!("Bearer {key}")));
@@ -894,9 +913,9 @@ async fn openai_chat(
         .federation
         .service_request(ServiceRequest {
             method: HttpMethod::Post,
-            url: format!("{endpoint}/v1/chat/completions"),
+            url: chat_completions_url.to_owned(),
             headers,
-            body: Some(body.to_string()),
+            body: Some(Value::Object(body).to_string()),
             timeout_secs: Some(TRANSLATE_TIMEOUT_SECS),
         })
         .await?;
@@ -958,16 +977,12 @@ async fn deepl_translate(
     plan: DeepLPlan,
     api_key: &str,
     texts: &[&str],
-    source_language: &str,
     target_language: &str,
 ) -> Result<Vec<Translated>, TranslationError> {
     let mut form: Vec<(&str, String)> = texts
         .iter()
         .map(|text| ("text", (*text).to_owned()))
         .collect();
-    if !source_language.is_empty() {
-        form.push(("source_lang", source_language.to_uppercase()));
-    }
     form.push(("target_lang", target_language.to_owned()));
     form.push(("tag_handling", "html".to_owned()));
     let body = serde_urlencoded::to_string(&form).map_err(|_| TranslationError::Unexpected)?;

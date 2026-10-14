@@ -3999,17 +3999,12 @@ async fn reply_mention_prefill(
     ))
 }
 
-/// The primary language subtag ("pt" of "pt-BR"), for the translate-offer
-/// language-mismatch gate — the backend narrows regions the same way.
-fn primary_language(tag: &str) -> &str {
-    tag.split(['-', '_']).next().unwrap_or(tag)
-}
-
 /// The web Translate control on a thread's focus post: offered when a
 /// translation backend is configured, the viewer is signed in, and the post
-/// (public/unlisted, with text) isn't already in the viewer's language — the
-/// API's own gates re-check on request. The target is the viewer's dedicated
-/// translate-to preference, falling back to their default posting language.
+/// has distributable text. The declared language does not determine whether
+/// translation is useful; the API re-checks target support. The target is the
+/// viewer's dedicated translate-to preference, falling back to their default
+/// posting language.
 /// With `translate` set the translation is applied onto the rendered entity.
 /// Returns the user-facing error line when a requested translation failed
 /// (the page shows the original with that notice).
@@ -4030,12 +4025,7 @@ async fn apply_focus_translation(
     // A title-only Page has empty `content` but a translatable title.
     let has_text =
         !focus.content.is_empty() || focus.title.as_deref().is_some_and(|t| !t.trim().is_empty());
-    let translatable = matches!(focus.visibility.as_str(), "public" | "unlisted")
-        && has_text
-        && focus
-            .language
-            .as_deref()
-            .is_none_or(|lang| primary_language(lang) != primary_language(target));
+    let translatable = matches!(focus.visibility.as_str(), "public" | "unlisted") && has_text;
     if !(translate && translatable) {
         return None;
     }

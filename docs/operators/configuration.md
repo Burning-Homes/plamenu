@@ -79,6 +79,79 @@ Configure the relay, restart Plamenu, and test delivery before allowing those
 workflows. Keep relay credentials out of version control and limit the sender's
 permissions at the provider.
 
+## Status translation
+
+Translation is disabled unless `[translation]` is configured. The `openai`
+backend accepts an OpenAI-compatible Chat Completions API, including local
+translation models and hosted reasoning models. Configure the exact request
+URL, model, bearer key and languages your model supports:
+
+```toml
+[translation]
+backend = "openai"
+chat_completions_url = "https://llm.example.com/api/chat/completions"
+model = "your-translation-model"
+api_key = "replace-with-your-provider-key"
+languages = ["en", "es", "de", "ru"]
+
+[translation.request_options]
+reasoning_effort = "low"
+thinking = { type = "enabled" }
+max_tokens = 4096
+```
+
+`chat_completions_url` is used exactly as supplied, including its path and
+optional query string. Existing configurations can keep
+`endpoint = "http://127.0.0.1:8080"`, which appends `/v1/chat/completions`.
+Choose one of these settings. Authentication uses `api_key`; URLs with userinfo
+or fragments are rejected. Omit `api_key` for a service that needs no bearer key.
+
+`request_options` is an optional TOML table of JSON body fields. Nested tables,
+arrays, numbers, booleans and strings are forwarded to the provider. Choose
+parameters and values accepted by that provider and model; Plamenu does not
+translate reasoning levels between providers. Options apply to both the
+structured request for a post's title, content, content warning and other
+fragments, and any fallback requests for individual fragments.
+
+Plamenu supplies `model`, `messages` and `stream = false`; configuring those
+fields in `request_options` is rejected at startup. The token budget defaults
+to `max_tokens = 4096`. Override it with a positive integer, or configure
+`max_completion_tokens` to use that field instead. Supplying both budget fields
+is rejected. The API must return translated text in
+`choices[0].message.content`; separate reasoning content is not shown to users.
+
+`languages` controls the capabilities advertised to clients and the targets
+accepted by the translation endpoint. If omitted or empty, it retains the
+legacy Hy-MT2 language list. Set it explicitly for a different model. Keep the key in the
+protected server configuration and restart Plamenu after changing settings.
+The existing access checks, rate limits and persistent translation cache apply.
+The existing Translate control is offered regardless of a post's declared
+language, including when it matches the reader's target. The provider detects
+the source from the text; only its supported target languages gate an explicit
+request. Attribution names a source language only when the provider reports one.
+
+For example, the [Z.ai Coding Chat Completions API](https://docs.z.ai/devpack/quick-start)
+can be configured through these generic options:
+
+```toml
+[translation]
+backend = "openai"
+chat_completions_url = "https://api.z.ai/api/coding/paas/v4/chat/completions"
+model = "glm-5.3-flash"
+api_key = "replace-with-your-provider-key"
+languages = ["en", "ru"]
+
+[translation.request_options]
+reasoning_effort = "low"
+thinking = { type = "enabled" }
+max_tokens = 4096
+```
+
+Extend the example's language list after checking the required translations.
+For GLM-5.3, `low` is the lowest supported reasoning level and thinking stays
+enabled; see the provider's [thinking parameters](https://docs.z.ai/guides/capabilities/thinking).
+Model availability depends on the provider account.
+
 ## Optional encrypted live encoder ingest
 
 Live broadcasting works without another service: Plamenu accepts local

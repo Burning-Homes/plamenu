@@ -1,6 +1,6 @@
 //! Status translation (M25): the `POST /statuses/{id}/translate` endpoint and
 //! the `translation_languages` / `translation.enabled` instance surface,
-//! against a stubbed `LibreTranslate` / `DeepL` backend.
+//! against stubbed `LibreTranslate`, `DeepL` and OpenAI-compatible backends.
 
 mod common;
 
@@ -13,7 +13,7 @@ use common::{StubFederation, TEST_DOMAIN, create_local_account, test_app, test_s
 use http_body_util::BodyExt;
 use plamenu::auth::{generate_secret, hash_password, hash_secret};
 use plamenu::build_router;
-use plamenu::config::{DeepLPlan, TranslationConfig};
+use plamenu::config::{Config, DeepLPlan, TranslationConfig};
 use plamenu_db::account::Account;
 use plamenu_db::{PgPool, oauth, poll, status, user};
 use serde_json::{Value, json};
@@ -58,8 +58,7 @@ async fn user_with_token(pool: &PgPool, username: &str) -> (Account, String) {
     (account, token)
 }
 
-/// A local status with an explicit language (translation is source-language
-/// keyed).
+/// A local status with explicit source-language metadata.
 async fn post_es(
     pool: &PgPool,
     account_id: i64,
@@ -164,6 +163,13 @@ async fn translate_public_status_libre(pool: PgPool) {
         urls.contains(&format!("{LIBRE_ENDPOINT}/translate")),
         "{urls:?}"
     );
+    let requests = fed.service_requests();
+    let request = requests
+        .iter()
+        .find(|r| r.url.ends_with("/translate"))
+        .unwrap();
+    let sent: Value = serde_json::from_str(request.body.as_deref().unwrap()).unwrap();
+    assert_eq!(sent["source"], "auto");
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
@@ -423,12 +429,80 @@ async fn translate_with_deepl_backend(pool: PgPool) {
     );
     let body = translate.body.unwrap();
     assert!(body.contains("tag_handling=html"), "{body}");
-    assert!(body.contains("source_lang=ES"), "{body}");
+    assert!(!body.contains("source_lang="), "auto-detect source: {body}");
     let _ = TEST_DOMAIN;
 }
 
 // ---------------------------------------------------------------------------
 // Persistent cache
+
+/// Cached results made with a forced source label are refreshed once, rather
+/// than preserving an incorrect translation or source attribution forever.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn translation_refreshes_cache_from_forced_source_policy(pool: PgPool) {
+    use plamenu_db::status_translation::{self, NewStatusTranslation};
+    use sha2::{Digest, Sha256};
+
+    let (alice, token) = user_with_token(&pool, "alice").await;
+    let content = "<p>Обращаем ваше внимание</p>";
+    let post = post_es(&pool, alice.id, content, "public").await;
+    // The old fingerprint contained only length-prefixed fragments.
+    let mut old_hash = Sha256::new();
+    old_hash.update((content.len() as u64).to_be_bytes());
+    old_hash.update(content.as_bytes());
+    let old_hash = old_hash.finalize();
+    status_translation::upsert(
+        &pool,
+        &NewStatusTranslation {
+            status_id: post.id,
+            target_language: "en",
+            source_hash: &old_hash,
+            provider: "LibreTranslate",
+            detected_source_language: Some("es"),
+            title: "",
+            content: "<p>Incorrect old translation</p>",
+            spoiler_text: "",
+            poll_options: &[],
+            media_ids: &[],
+            media_descriptions: &[],
+        },
+    )
+    .await
+    .unwrap();
+    let fed: Arc<StubFederation> = Arc::default();
+    serve_libre_languages(&fed);
+    fed.serve_service(
+        &format!("{LIBRE_ENDPOINT}/translate"),
+        200,
+        &json!({
+            "translatedText": ["<p>Please note</p>"],
+            "detectedLanguage": [{"language": "ru", "confidence": 100}],
+        })
+        .to_string(),
+    );
+    let app = build_router(test_state_translation(pool, fed.clone(), libre()));
+    for _ in 0..2 {
+        let (code, body) = api_on(
+            app.clone(),
+            "POST",
+            &format!("/api/v1/statuses/{}/translate", post.id),
+            Some(&token),
+            Some("en"),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{body}");
+        assert_eq!(body["content"], "<p>Please note</p>");
+        assert_eq!(body["detected_source_language"], "ru");
+    }
+    assert_eq!(
+        fed.service_requests()
+            .iter()
+            .filter(|r| r.url.ends_with("/translate"))
+            .count(),
+        1,
+        "refresh once, then reuse the corrected cache entry",
+    );
+}
 
 /// A second server instance (fresh in-memory caches, same database) serves a
 /// stored translation without touching the backend.
@@ -586,11 +660,57 @@ const OPENAI_ENDPOINT: &str = "http://mt.test";
 
 fn openai() -> TranslationConfig {
     TranslationConfig::OpenAi {
-        endpoint: OPENAI_ENDPOINT.to_owned(),
+        chat_completions_url: format!("{OPENAI_ENDPOINT}/v1/chat/completions"),
         model: "hy-mt2-1.8b".to_owned(),
         api_key: None,
         languages: vec!["en".to_owned(), "es".to_owned(), "de".to_owned()],
+        request_options: serde_json::Map::new(),
     }
+}
+
+/// Load the same TOML an operator supplies, using an arbitrary provider URL.
+fn configured_openai(options: &str) -> TranslationConfig {
+    use std::io::Write as _;
+
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    write!(
+        file,
+        r#"domain = "plamenu.test"
+database_url = "postgres://unused/config-test"
+encryption_secret = "translation-test-encryption-secret"
+[translation]
+backend = "openai"
+chat_completions_url = "https://llm.test/api/coding/v4/chat/completions"
+model = "reasoning-translation-model"
+api_key = "test-bearer-token"
+languages = ["en", "es", "ru"]
+[translation.request_options]
+reasoning_effort = "low"
+thinking = {{ type = "enabled" }}
+{options}
+"#,
+    )
+    .unwrap();
+    Config::from_file(file.path()).unwrap().translation.unwrap()
+}
+
+const CUSTOM_CHAT_URL: &str = "https://llm.test/api/coding/v4/chat/completions";
+
+fn assert_custom_chat_request(request: &plamenu::federation::ServiceRequest) -> Value {
+    assert_eq!(request.url, CUSTOM_CHAT_URL);
+    assert_eq!(request.timeout_secs, Some(180));
+    assert!(
+        request
+            .headers
+            .iter()
+            .any(|(key, value)| { key == "Authorization" && value == "Bearer test-bearer-token" })
+    );
+    let sent: Value = serde_json::from_str(request.body.as_deref().unwrap()).unwrap();
+    assert_eq!(sent["model"], "reasoning-translation-model");
+    assert_eq!(sent["stream"], false);
+    assert_eq!(sent["reasoning_effort"], "low");
+    assert_eq!(sent["thinking"], json!({"type": "enabled"}));
+    sent
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
@@ -621,8 +741,9 @@ async fn translate_with_openai_backend(pool: PgPool) {
     assert_eq!(code, StatusCode::OK, "{body}");
     assert_eq!(body["content"], "<p>Hello world</p>");
     assert_eq!(body["provider"], "hy-mt2-1.8b");
-    // No detection support: falls back to the status' declared language.
-    assert_eq!(body["detected_source_language"], "es");
+    // The protocol does not report detection; do not attribute the translation
+    // to an unverified source-language label.
+    assert_eq!(body["detected_source_language"], Value::Null);
 
     // The prompt named the target language in English and carried the text;
     // the request asked for the configured model.
@@ -633,9 +754,55 @@ async fn translate_with_openai_backend(pool: PgPool) {
         .expect("chat completion requested");
     let sent: Value = serde_json::from_str(translate.body.as_deref().unwrap()).unwrap();
     assert_eq!(sent["model"], "hy-mt2-1.8b");
+    assert_eq!(sent["max_tokens"], 4096);
+    assert_eq!(sent["stream"], false);
+    assert!(sent.get("reasoning_effort").is_none());
     let prompt = sent["messages"][0]["content"].as_str().unwrap();
     assert!(prompt.contains("into English"), "{prompt}");
     assert!(prompt.contains("Hola mundo"), "{prompt}");
+}
+
+/// Exact URL and provider options reach the plain request; internal reasoning
+/// stays out of the translated status returned to the client.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn configured_openai_translates_with_provider_options(pool: PgPool) {
+    let (alice, token) = user_with_token(&pool, "alice").await;
+    let status = post_es(&pool, alice.id, "<p>Hola mundo</p>", "public").await;
+    let fed: Arc<StubFederation> = Arc::default();
+    fed.serve_service(
+        CUSTOM_CHAT_URL,
+        200,
+        &json!({"model": "reasoning-translation-model", "choices": [{"message": {
+            "role": "assistant", "content": "<p>Привет, мир!</p>",
+            "reasoning_content": "Internal reasoning must not be returned."
+        }}]})
+        .to_string(),
+    );
+    let app = build_router(test_state_translation(
+        pool,
+        fed.clone(),
+        configured_openai("max_tokens = 8192\ntemperature = 0.2"),
+    ));
+    let (code, body) = api_on(
+        app,
+        "POST",
+        &format!("/api/v1/statuses/{}/translate", status.id),
+        Some(&token),
+        Some("ru"),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    assert_eq!(body["content"], "<p>Привет, мир!</p>");
+    assert_eq!(body["provider"], "reasoning-translation-model");
+    assert!(!body.to_string().contains("Internal reasoning"));
+    let requests = fed.service_requests();
+    assert_eq!(requests.len(), 1);
+    let sent = assert_custom_chat_request(&requests[0]);
+    assert_eq!(sent["max_tokens"], 8192);
+    assert_eq!(sent["temperature"], 0.2);
+    let prompt = sent["messages"][0]["content"].as_str().unwrap();
+    assert!(prompt.contains("into Russian"));
+    assert!(prompt.contains("<p>Hola mundo</p>"));
 }
 
 /// The `languages` list drives the instance surface without a backend call.
@@ -657,11 +824,67 @@ async fn openai_language_map_is_static(pool: PgPool) {
     assert!(fed.service_requests().is_empty(), "no backend calls");
 }
 
-/// A post whose language the backend doesn't list is refused with a specific
-/// message, not a generic failure — the fediverse speaks more languages than
-/// any backend inventory.
+/// Source labels do not gate explicit requests, including a label matching
+/// the viewer, a regional match, an unsupported label and missing metadata.
 #[sqlx::test(migrations = "../db/migrations")]
-async fn unsupported_source_language_is_a_specific_403(pool: PgPool) {
+async fn translate_ignores_self_reported_source_language(pool: PgPool) {
+    let (alice, token) = user_with_token(&pool, "alice").await;
+    let fed: Arc<StubFederation> = Arc::default();
+    serve_libre_languages(&fed);
+    fed.serve_service(
+        &format!("{LIBRE_ENDPOINT}/translate"),
+        200,
+        &json!({
+            "translatedText": ["<p>Please note</p>"],
+            "detectedLanguage": [{"language": "ru", "confidence": 100}],
+        })
+        .to_string(),
+    );
+    let app = build_router(test_state_translation(pool.clone(), fed.clone(), libre()));
+    for language in [Some("en"), Some("en-US"), Some("fi"), None] {
+        let post = status::create_local(
+            &pool,
+            status::NewLocalStatus {
+                language,
+                ..status::NewLocalStatus::new(
+                    alice.id,
+                    "<p>Обращаем ваше внимание</p>",
+                    "public",
+                    None,
+                )
+            },
+        )
+        .await
+        .unwrap();
+        let (code, body) = api_on(
+            app.clone(),
+            "POST",
+            &format!("/api/v1/statuses/{}/translate", post.id),
+            Some(&token),
+            Some("en-US"),
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{language:?}: {body}");
+        assert_eq!(body["content"], "<p>Please note</p>");
+        assert_eq!(body["language"], "en");
+        assert_eq!(body["detected_source_language"], "ru");
+    }
+    let requests = fed.service_requests();
+    let translations: Vec<_> = requests
+        .iter()
+        .filter(|r| r.url.ends_with("/translate"))
+        .collect();
+    assert_eq!(translations.len(), 4);
+    for request in translations {
+        let sent: Value = serde_json::from_str(request.body.as_deref().unwrap()).unwrap();
+        assert_eq!(sent["source"], "auto");
+        assert_eq!(sent["target"], "en");
+    }
+}
+
+/// An unsupported target is still refused before any provider translation.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn unsupported_target_language_is_a_specific_403(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = status::create_local(
         &pool,
@@ -676,19 +899,24 @@ async fn unsupported_source_language_is_a_specific_403(pool: PgPool) {
 
     let fed: Arc<StubFederation> = Arc::default();
     serve_libre_languages(&fed); // en/es/de only
-    let app = build_router(test_state_translation(pool, fed, libre()));
+    let app = build_router(test_state_translation(pool, fed.clone(), libre()));
     let (code, body) = api_on(
         app,
         "POST",
         &format!("/api/v1/statuses/{}/translate", status.id),
         Some(&token),
-        Some("en"),
+        Some("fi"),
     )
     .await;
     assert_eq!(code, StatusCode::FORBIDDEN);
     assert_eq!(
         body["error"],
-        "Translating from Finnish is not supported by the translation service"
+        "Translating into Finnish is not supported by the translation service"
+    );
+    assert!(
+        fed.service_requests()
+            .iter()
+            .all(|r| !r.url.ends_with("/translate"))
     );
 }
 
@@ -712,7 +940,7 @@ async fn openai_translates_title_and_fragments_in_one_request(pool: PgPool) {
 
     let fed: Arc<StubFederation> = Arc::default();
     fed.serve_service(
-        &format!("{OPENAI_ENDPOINT}/v1/chat/completions"),
+        CUSTOM_CHAT_URL,
         200,
         &json!({
             "choices": [{ "message": { "role": "assistant", "content":
@@ -720,7 +948,11 @@ async fn openai_translates_title_and_fragments_in_one_request(pool: PgPool) {
         })
         .to_string(),
     );
-    let app = build_router(test_state_translation(pool, fed.clone(), openai()));
+    let app = build_router(test_state_translation(
+        pool,
+        fed.clone(),
+        configured_openai("max_completion_tokens = 8192"),
+    ));
     let (code, body) = api_on(
         app,
         "POST",
@@ -739,11 +971,12 @@ async fn openai_translates_title_and_fragments_in_one_request(pool: PgPool) {
     let requests = fed.service_requests();
     let chats: Vec<_> = requests
         .iter()
-        .filter(|r| r.url.ends_with("/v1/chat/completions"))
+        .filter(|r| r.url == CUSTOM_CHAT_URL)
         .collect();
     assert_eq!(chats.len(), 1, "one structured request");
-    assert_eq!(chats[0].timeout_secs, Some(180));
-    let sent: Value = serde_json::from_str(chats[0].body.as_deref().unwrap()).unwrap();
+    let sent = assert_custom_chat_request(chats[0]);
+    assert_eq!(sent["max_completion_tokens"], 8192);
+    assert!(sent.get("max_tokens").is_none());
     let prompt = sent["messages"][0]["content"].as_str().unwrap();
     assert!(prompt.contains("\"f1\""), "{prompt}");
     assert!(prompt.contains("Un título importante"), "{prompt}");
@@ -770,14 +1003,18 @@ async fn openai_structured_failure_falls_back_per_fragment(pool: PgPool) {
     // No braces at all: the structured parse gives up, the per-fragment
     // path then treats the same canned reply as the translated text.
     fed.serve_service(
-        &format!("{OPENAI_ENDPOINT}/v1/chat/completions"),
+        CUSTOM_CHAT_URL,
         200,
         &json!({
             "choices": [{ "message": { "role": "assistant", "content": "not json at all" } }],
         })
         .to_string(),
     );
-    let app = build_router(test_state_translation(pool, fed.clone(), openai()));
+    let app = build_router(test_state_translation(
+        pool,
+        fed.clone(),
+        configured_openai("max_tokens = 8192"),
+    ));
     let (code, body) = api_on(
         app,
         "POST",
@@ -787,12 +1024,16 @@ async fn openai_structured_failure_falls_back_per_fragment(pool: PgPool) {
     )
     .await;
     assert_eq!(code, StatusCode::OK, "{body}");
-    let chats = fed
-        .service_requests()
+    let requests = fed.service_requests();
+    let chats: Vec<_> = requests
         .iter()
-        .filter(|r| r.url.ends_with("/v1/chat/completions"))
-        .count();
-    assert_eq!(chats, 3, "structured attempt + one per fragment");
+        .filter(|r| r.url == CUSTOM_CHAT_URL)
+        .collect();
+    assert_eq!(chats.len(), 3, "structured attempt + one per fragment");
+    for chat in chats {
+        let sent = assert_custom_chat_request(chat);
+        assert_eq!(sent["max_tokens"], 8192);
+    }
 }
 
 /// A title-only Page (Lemmy's common shape) translates its title.

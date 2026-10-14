@@ -16078,7 +16078,7 @@ async fn private_note_saves_and_clears_on_the_profile(pool: PgPool) {
 // ---------------------------------------------------------------------------
 // Status translation on the thread page
 
-/// The thread page offers Translate on a foreign-language focus post,
+/// The thread page offers Translate independently of language metadata,
 /// `?translate=1` renders the translated content with attribution and a
 /// Show-original link, and a backend failure falls back with a notice.
 #[sqlx::test(migrations = "../db/migrations")]
@@ -16160,40 +16160,47 @@ async fn thread_translate_link_translates_the_focus_post(pool: PgPool) {
     assert!(translated.body.contains("LibreTranslate"));
     assert!(translated.body.contains("Show original"));
 
-    // A post already in the viewer's language gets no offer.
-    let english = status::create_local(
-        &pool,
-        status::NewLocalStatus {
-            content: "<p>plain english</p>",
-            language: Some("en"),
-            ..status::NewLocalStatus::new(alice.id, "<p>plain english</p>", "public", None)
-        },
-    )
-    .await
-    .unwrap();
-    let page = get(&app, &format!("/@alice/{}", english.id), Some(&cookie)).await;
-    assert!(
-        !page.body.contains("data-translate"),
-        "no offer on same-language post"
-    );
-
-    // A language the backend doesn't list gets no offer either — a
-    // confident-but-wrong translation is worse than none.
-    let finnish = status::create_local(
-        &pool,
-        status::NewLocalStatus {
-            content: "<p>Sää on tänään kamala</p>",
-            language: Some("fi"),
-            ..status::NewLocalStatus::new(alice.id, "<p>Sää on tänään kamala</p>", "public", None)
-        },
-    )
-    .await
-    .unwrap();
-    let page = get(&app, &format!("/@alice/{}", finnish.id), Some(&cookie)).await;
-    assert!(
-        !page.body.contains("data-translate"),
-        "no offer on an unsupported-language post"
-    );
+    // Russian text can be labelled English (including a regional English
+    // tag), an unsupported language, or have no language at all. Every case
+    // gets the same Translate form on both the thread and the timeline.
+    for language in [Some("en"), Some("en-US"), Some("fi"), None] {
+        let post = status::create_local(
+            &pool,
+            status::NewLocalStatus {
+                language,
+                ..status::NewLocalStatus::new(
+                    alice.id,
+                    "<p>Обращаем ваше внимание</p>",
+                    "public",
+                    None,
+                )
+            },
+        )
+        .await
+        .unwrap();
+        let action = format!("/web/statuses/{}/translate", post.id);
+        let page = get(&app, &format!("/@alice/{}", post.id), Some(&cookie)).await;
+        assert!(
+            page.body.contains(&action),
+            "thread {language:?} offers Translate"
+        );
+        let timeline = get(&app, "/", Some(&cookie)).await;
+        assert!(
+            timeline.body.contains(&action),
+            "timeline {language:?} offers Translate"
+        );
+        let translated = get(
+            &app,
+            &format!("/@alice/{}?translate=1", post.id),
+            Some(&cookie),
+        )
+        .await;
+        assert!(
+            translated.body.contains("Hello world"),
+            "no-JS {language:?} translates"
+        );
+        assert!(translated.body.contains("Show original"));
+    }
 
     // A failing backend degrades to the original with a notice.
     fed.serve_service(&format!("{ENDPOINT}/translate"), 500, "boom");
@@ -16254,7 +16261,7 @@ async fn translate_button_posts_json_in_place(pool: PgPool) {
     );
     let app = build_router(common::test_state_translation(
         pool.clone(),
-        fed,
+        fed.clone(),
         plamenu::config::TranslationConfig::LibreTranslate {
             endpoint: ENDPOINT.to_owned(),
             api_key: None,
@@ -16265,7 +16272,8 @@ async fn translate_button_posts_json_in_place(pool: PgPool) {
         &pool,
         status::NewLocalStatus {
             content: "<p>Hola mundo</p>",
-            language: Some("es"),
+            // A same-language label must not block either form submission.
+            language: Some("en"),
             ..status::NewLocalStatus::new(alice.id, "<p>Hola mundo</p>", "public", None)
         },
     )
@@ -16313,6 +16321,17 @@ async fn translate_button_posts_json_in_place(pool: PgPool) {
     assert_eq!(
         posted.location.as_deref(),
         Some(format!("/@alice/{}?translate=1", spanish.id).as_str())
+    );
+    let translated = get(&app, posted.location.as_deref().unwrap(), Some(&cookie)).await;
+    assert!(translated.body.contains("Hello world"));
+    assert!(translated.body.contains("Show original"));
+    assert_eq!(
+        fed.service_requests()
+            .iter()
+            .filter(|r| r.url.ends_with("/translate"))
+            .count(),
+        1,
+        "JS and no-JS submissions share the translation cache",
     );
 }
 

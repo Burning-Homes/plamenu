@@ -2013,16 +2013,11 @@ fn translation_note(status: &Status, ctx: &Ctx) -> Markup {
         return html! {};
     };
     // `content` is the folded form, so a title-only Page still counts as
-    // having text. The backend-support check keeps the control off posts in
-    // languages the backend can't translate (a confident-but-wrong
-    // translation is worse than none).
+    // having text. Only the target language matters: a post's declared
+    // language can be wrong, including when it matches the viewer's.
     let eligible = matches!(status.visibility(), "public" | "unlisted")
         && !status.content_html().is_empty()
-        && status
-            .language()
-            .is_none_or(|lang| primary_language(lang) != primary_language(target))
-        && crate::translation::permitted_target(languages, status.language().unwrap_or(""), target)
-            .is_some();
+        && crate::translation::permitted_target(languages, target).is_some();
     if !eligible {
         return html! {};
     }
