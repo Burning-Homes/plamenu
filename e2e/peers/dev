@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ActivityPub dev environment manager.
 #
-#   ./dev up [mastodon|plamenu|pleroma|plup|sharkey|gotosocial|mitra|lemmy|peertube|owncast|mobilizon|discourse|hubzilla|funkwhale|onion|all]   start services
-#   ./dev down [mastodon|plamenu|pleroma|plup|sharkey|gotosocial|mitra|lemmy|peertube|owncast|mobilizon|discourse|hubzilla|funkwhale|onion|all] stop services
+#   ./dev up [mastodon|plamenu|pleroma|plup|sharkey|gotosocial|mitra|lemmy|peertube|owncast|mobilizon|discourse|hubzilla|funkwhale|songhive|bookwyrm|onion|all]   start services
+#   ./dev down [mastodon|plamenu|pleroma|plup|sharkey|gotosocial|mitra|lemmy|peertube|owncast|mobilizon|discourse|hubzilla|funkwhale|songhive|bookwyrm|onion|all] stop services
 #   (`onion` = Tor + hidden-service Mitra; needs the real Tor network, so it
 #   is not part of `all`.)
 #   ./dev status                                                 show status of everything
@@ -1477,13 +1477,14 @@ case "$action" in
       discourse)  discourse_up ;;
       hubzilla)   hubzilla_up ;;
       songhive)   "$PWD/songhive-test/peer" "$action" ;;
+      bookwyrm)   "$PWD/bookwyrm-test/peer" "$action" ;;
       funkwhale)  funkwhale_up ;;
       plup)       plup_up ;;
       onion)      onion_up ;;
       # `onion` is deliberately not in `all`: it is the only rig that needs
       # the real Tor network, and full-stack boots must stay offline-safe.
-      all)        masto_up; discourse_up; hubzilla_up; funkwhale_up; "$PWD/songhive-test/peer" up; plamenu_up; pleroma_up; sharkey_up; gts_up; mitra_up; lemmy_up; peertube_up; owncast_up; mobilizon_up; plup_up ;;
-      *)          echo "unknown target: $target (use mastodon, plamenu, pleroma, plup, sharkey, gotosocial, mitra, lemmy, peertube, owncast, mobilizon, discourse, hubzilla, funkwhale, onion, or all)"; exit 1 ;;
+      all)        masto_up; discourse_up; hubzilla_up; funkwhale_up; "$PWD/songhive-test/peer" up; "$PWD/bookwyrm-test/peer" up; plamenu_up; pleroma_up; sharkey_up; gts_up; mitra_up; lemmy_up; peertube_up; owncast_up; mobilizon_up; plup_up ;;
+      *)          echo "unknown target: $target (use mastodon, plamenu, pleroma, plup, sharkey, gotosocial, mitra, lemmy, peertube, owncast, mobilizon, discourse, hubzilla, funkwhale, songhive, bookwyrm, onion, or all)"; exit 1 ;;
     esac
     ;;
 
@@ -1502,11 +1503,12 @@ case "$action" in
       discourse)  discourse_down ;;
       hubzilla)   hubzilla_down ;;
       songhive)   "$PWD/songhive-test/peer" "$action" ;;
+      bookwyrm)   "$PWD/bookwyrm-test/peer" "$action" ;;
       funkwhale)  funkwhale_down ;;
       plup)       plup_down ;;
       onion)      onion_down ;;
-      all)        onion_down; plup_down; mobilizon_down; owncast_down; peertube_down; lemmy_down; mitra_down; gts_down; sharkey_down; pleroma_down; plamenu_down; "$PWD/songhive-test/peer" down; funkwhale_down; hubzilla_down; discourse_down; masto_down ;;
-      *)          echo "unknown target: $target (use mastodon, plamenu, pleroma, plup, sharkey, gotosocial, mitra, lemmy, peertube, owncast, mobilizon, discourse, hubzilla, funkwhale, onion, or all)"; exit 1 ;;
+      all)        onion_down; plup_down; mobilizon_down; owncast_down; peertube_down; lemmy_down; mitra_down; gts_down; sharkey_down; pleroma_down; plamenu_down; "$PWD/bookwyrm-test/peer" down; "$PWD/songhive-test/peer" down; funkwhale_down; hubzilla_down; discourse_down; masto_down ;;
+      *)          echo "unknown target: $target (use mastodon, plamenu, pleroma, plup, sharkey, gotosocial, mitra, lemmy, peertube, owncast, mobilizon, discourse, hubzilla, funkwhale, songhive, bookwyrm, onion, or all)"; exit 1 ;;
     esac
     ;;
 
@@ -1524,6 +1526,7 @@ case "$action" in
     discourse_status
     hubzilla_status
     "$PWD/songhive-test/peer" status
+    "$PWD/bookwyrm-test/peer" status
     funkwhale_status
     plup_status
     onion_status
@@ -1555,6 +1558,7 @@ case "$action" in
     echo "hubzilla   https://hubzilla.local"
     hubzilla_creds
     echo "songhive   https://songhive.local (sylvia / songhive-sylvia-pass-123)"
+    echo "bookwyrm   https://bookwyrm.local (lena / bookwyrm-lena-pass-123)"
     echo "funkwhale  https://funkwhale.local"
     funkwhale_creds
     echo "plup       https://plup.local"
@@ -1576,15 +1580,16 @@ case "$action" in
       discourse)  shift 1; discourse_logs "$@" ;;
       hubzilla)   shift 1; hubzilla_logs "$@" ;;
       songhive)   shift 1; "$PWD/songhive-test/peer" logs "$@" ;;
+      bookwyrm)   shift 1; "$PWD/bookwyrm-test/peer" logs "$@" ;;
       funkwhale)  shift 1; funkwhale_logs "$@" ;;
       plup)       shift 1; plup_logs "$@" ;;
       onion)      onion_logs ;;
-      *)          echo "usage: ./dev logs [mastodon|plamenu|pleroma|plup|sharkey|gotosocial|mitra|lemmy|peertube|owncast|mobilizon|discourse|hubzilla|funkwhale|onion]"; exit 1 ;;
+      *)          echo "usage: ./dev logs [mastodon|plamenu|pleroma|plup|sharkey|gotosocial|mitra|lemmy|peertube|owncast|mobilizon|discourse|hubzilla|funkwhale|songhive|bookwyrm|onion]"; exit 1 ;;
     esac
     ;;
 
   *)
-    echo "usage: ./dev {up|down|status|logs|creds} [mastodon|plamenu|pleroma|plup|sharkey|gotosocial|mitra|lemmy|peertube|owncast|mobilizon|discourse|hubzilla|funkwhale|all]"
+    echo "usage: ./dev {up|down|status|logs|creds} [mastodon|plamenu|pleroma|plup|sharkey|gotosocial|mitra|lemmy|peertube|owncast|mobilizon|discourse|hubzilla|funkwhale|songhive|bookwyrm|all]"
     exit 1
     ;;
 esac

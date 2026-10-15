@@ -1381,6 +1381,31 @@ fn candidate_matches_class(
     }
 }
 
+/// A cached handle lookup shared by the API and native profile routes. IDNA
+/// normalization must precede local-domain checks and database matching.
+pub(crate) async fn find_known_account(
+    state: &AppState,
+    handle: &str,
+    group_wanted: bool,
+) -> Result<Option<Account>, DbError> {
+    if !handle.contains('@') {
+        return account::find_public_local_account_by_username(&state.pool, handle).await;
+    }
+    let Ok(acct) = handle.parse::<Acct>() else {
+        return Ok(None);
+    };
+    if state.config.is_local_domain(acct.domain()) {
+        return account::find_public_local_account_by_username(&state.pool, acct.username()).await;
+    }
+    if !group_wanted
+        && let Some(person) =
+            account::find_remote_person_by_acct(&state.pool, acct.username(), acct.domain()).await?
+    {
+        return Ok(Some(person));
+    }
+    account::find_remote_group_by_acct(&state.pool, acct.username(), acct.domain()).await
+}
+
 /// Resolves `user@domain` to every stored account matching `class`: known rows
 /// (re-webfingered once stale, Mastodon's 1-day TTL) plus any actor freshly
 /// discovered through `WebFinger`. Best effort — the network is allowed to be

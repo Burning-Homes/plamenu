@@ -26,9 +26,9 @@ pub async fn site_name(state: &AppState) -> Result<String, ApiError> {
 /// The full `user@domain` handle: entity `acct` values omit the domain for
 /// local accounts, but `og:title`/`profile:username` always carry it.
 fn full_handle(account: &view::Account, local_domain: &str) -> String {
-    let acct = account.acct();
+    let acct = account.display_acct();
     if acct.contains('@') {
-        acct.to_owned()
+        acct.into_owned()
     } else {
         format!("{acct}@{local_domain}")
     }

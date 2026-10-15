@@ -1061,7 +1061,10 @@ pub async fn profile_section(
 
 /// The `@user` / `@user@host` handle of an account.
 fn account_handle(domain: &str, account: &Account) -> String {
-    format!("@{}", crate::entities::account_acct(domain, account))
+    format!(
+        "@{}",
+        crate::entities::account_display_acct(domain, account)
+    )
 }
 
 /// The local profile path for an account (`/@user`, `/@user@host`, or

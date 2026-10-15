@@ -80,8 +80,10 @@ fn is_word_char(c: char) -> bool {
     is_username_char(c) && !matches!(c, '.' | '-')
 }
 
-fn is_domain_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'.' || b == b'-'
+fn is_domain_char(c: char) -> bool {
+    c.is_alphanumeric()
+        || unicode_normalization::char::is_combining_mark(c)
+        || matches!(c, '.' | '-' | '\u{3002}' | '\u{ff0e}' | '\u{ff61}')
 }
 
 fn is_hashtag_byte(b: u8) -> bool {
@@ -230,15 +232,19 @@ fn tokenize(text: &str) -> Vec<Segment<'_>> {
                 let username = &text[name_start..j];
                 let domain_start = j + 1;
                 let mut k = domain_start;
-                while k < bytes.len() && is_domain_byte(bytes[k]) {
-                    k += 1;
+                for c in text[domain_start..]
+                    .chars()
+                    .take_while(|&c| is_domain_char(c))
+                {
+                    k += c.len_utf8();
                 }
                 let domain = text[domain_start..k].trim_end_matches('.');
                 let complete = text[k..]
                     .chars()
                     .next()
                     .is_none_or(|c| !is_word_char(c) && c != '@');
-                let valid = complete && domain.contains('.') && Acct::new(username, domain).is_ok();
+                let valid = complete
+                    && Acct::new(username, domain).is_ok_and(|acct| acct.domain().contains('.'));
                 (username, Some(domain), domain_start + domain.len(), valid)
             } else {
                 // A sentence-ending dot/hyphen is punctuation. Interior
@@ -304,7 +310,17 @@ async fn resolve_mention(
     domain: Option<&str>,
     fetch_remote: bool,
 ) -> Result<Option<Account>, ApiError> {
-    if domain.is_none_or(|domain| state.config.is_local_domain(domain)) {
+    let acct = match domain {
+        Some(domain) => match Acct::new(username, domain) {
+            Ok(acct) => Some(acct),
+            Err(_) => return Ok(None),
+        },
+        None => None,
+    };
+    if acct
+        .as_ref()
+        .is_none_or(|acct| state.config.is_local_domain(acct.domain()))
+    {
         let account = account::find_local_account_by_username(&state.pool, username).await?;
         let Some(account) = account else {
             return Ok(None);
@@ -320,10 +336,7 @@ async fn resolve_mention(
         }
         return Ok(Some(account));
     }
-    let domain = domain.expect("checked above");
-    let Ok(acct) = Acct::new(username, domain) else {
-        return Ok(None);
-    };
+    let acct = acct.expect("remote domain checked above");
     // Match account search: prefer a person when a handle names both a Person
     // and a Group, but allow a channel/community when it is the only match.
     if !fetch_remote {
@@ -748,6 +761,34 @@ mod tests {
         }
         let oversized = format!("@{}@remote.example", "a".repeat(2049));
         assert_eq!(kinds(&oversized), [format!("T({oversized})")]);
+    }
+
+    #[test]
+    fn tokenizer_accepts_unicode_domains_without_partial_mentions() {
+        for domain in [
+            "лемми.опенсорс.рус",
+            "лемми.опенсорс.xn--p1acf",
+            "bücher.example",
+            "bu\u{308}cher.example",
+            "bücher。example",
+        ] {
+            assert_eq!(
+                kinds(&format!("hi @Аим_Нискажуя@{domain}.")),
+                [
+                    "T(hi )".to_owned(),
+                    format!("M(Аим_Нискажуя,{domain})"),
+                    "T(.)".to_owned(),
+                ]
+            );
+            assert_eq!(countable_length("", &format!("@Аим_Нискажуя@{domain}")), 13);
+        }
+        for text in [
+            "@bob@лемми.опенсорс.рус_suffix",
+            "@bob@лемми.опенсорс.рус@other",
+            "@bob@xn--.example",
+        ] {
+            assert_eq!(kinds(text), [format!("T({text})")]);
+        }
     }
 
     #[test]

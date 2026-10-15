@@ -28,6 +28,7 @@ services:
           - hubzilla.local
           - funkwhale.local
           - songhive.local
+          - bookwyrm.local
           - doomed.local
           - plamenu2.local
 

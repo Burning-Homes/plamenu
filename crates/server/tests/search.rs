@@ -482,10 +482,22 @@ async fn unicode_and_long_bridge_handles_resolve_and_search(pool: PgPool) {
         "bridge.example",
         "npub1600yr4qg5vcfp7svf6ysj0008tn7aphnu0gjs6lw5hjn74n0laasjx889v",
     );
-    let stub = StubFederation::with_users(&[&unicode, &bridge]);
+    let mut idn = RemoteUser::new("xn--e1aghfa.xn--e1aqbccjfc.xn--p1acf", "unicode_user");
+    idn.actor.preferred_username = "Аим_Нискажуя".into();
+    idn.acct = "Аим_Нискажуя@xn--e1aghfa.xn--e1aqbccjfc.xn--p1acf".into();
+    let mut cjk = RemoteUser::new("i18n.example", "%E4%BD%A0%E5%A5%BD");
+    cjk.actor.preferred_username = "你好".into();
+    cjk.actor.kind = "Application".into();
+    cjk.acct = "你好@i18n.example".into();
+    let channel = RemoteUser::channel("peertube.xn--gribschi-o4a.example", "groeibschi");
+    let stub = StubFederation::with_users(&[&unicode, &bridge, &idn, &cjk, &channel]);
     let (_, token) = user_with_token(&pool, "searcher", "read write").await;
-    for remote in [&unicode, &bridge] {
-        let query = serde_urlencoded::to_string([("q", format!("@{}", remote.acct))]).unwrap();
+    for remote in [&unicode, &bridge, &idn, &cjk, &channel] {
+        let query = serde_urlencoded::to_string([(
+            "q",
+            format!("@{}", plamenu_ap::acct::display_acct(&remote.acct)),
+        )])
+        .unwrap();
         let (code, fresh) = api(
             test_app_with(pool.clone(), stub.clone()),
             "GET",
@@ -513,6 +525,23 @@ async fn unicode_and_long_bridge_handles_resolve_and_search(pool: PgPool) {
         assert_eq!(cached.as_array().unwrap().len(), 1, "{cached}");
         assert_eq!(cached[0]["id"], fresh["accounts"][0]["id"]);
         assert_eq!(stub.fetches(), fetches, "cached search should not refetch");
+        let query = serde_urlencoded::to_string([(
+            "acct",
+            plamenu_ap::acct::display_acct(&remote.acct).as_ref(),
+        )])
+        .unwrap();
+        let (code, lookup) = api(
+            test_app_with(pool.clone(), stub.clone()),
+            "GET",
+            &format!("/api/v1/accounts/lookup?{query}"),
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK, "{lookup}");
+        assert_eq!(lookup["id"], fresh["accounts"][0]["id"]);
+        assert_eq!(lookup["acct"], remote.acct, "API handles remain canonical");
+        assert_eq!(stub.fetches(), fetches, "lookup must stay offline");
     }
     assert!(
         stub.deliveries().is_empty(),

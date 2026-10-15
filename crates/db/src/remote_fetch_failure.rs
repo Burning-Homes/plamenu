@@ -117,6 +117,49 @@ mod tests {
     use super::*;
 
     #[sqlx::test(migrations = "./migrations")]
+    async fn slash_actor_alias_migration_clears_only_the_old_identity_mismatch(pool: PgPool) {
+        let alias = "https://books.example/user/instance/";
+        let mismatch = format!(
+            "invalid actor document: actor id https://books.example/user/instance does not match fetched uri {alias}"
+        );
+        for _ in 0..MAX_ATTEMPTS {
+            record_failure(&pool, "resource", alias, &mismatch)
+                .await
+                .unwrap();
+        }
+        for (scope, uri, error) in [
+            ("resource-instance", alias, mismatch.as_str()),
+            (
+                "resource",
+                "https://books.example/user/other/",
+                "remote answered 404",
+            ),
+            (
+                "resource",
+                "https://books.example/user/foreign/",
+                "invalid actor document: actor id https://other.example/user/instance does not match fetched uri https://books.example/user/foreign/",
+            ),
+        ] {
+            record_failure(&pool, scope, uri, error).await.unwrap();
+        }
+        assert!(!should_attempt(&pool, "resource", alias).await.unwrap());
+        sqlx::raw_sql(include_str!(
+            "../migrations/0184_clear_slash_actor_fetch_failures.sql"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(should_attempt(&pool, "resource", alias).await.unwrap());
+        for (scope, uri) in [
+            ("resource-instance", alias),
+            ("resource", "https://books.example/user/other/"),
+            ("resource", "https://books.example/user/foreign/"),
+        ] {
+            assert!(!should_attempt(&pool, scope, uri).await.unwrap());
+        }
+    }
+
+    #[sqlx::test(migrations = "./migrations")]
     async fn failure_budget_becomes_terminal_and_success_clears(pool: PgPool) {
         for attempt in 1..=MAX_ATTEMPTS {
             record_failure(&pool, "resource", "https://dead.example/actor", "gone")

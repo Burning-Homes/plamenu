@@ -27,6 +27,172 @@ fn sender() -> RemoteUser {
     RemoteUser::new("remote.example", "bob")
 }
 
+fn bookwyrm_status(user: &RemoteUser, slug: &str, kind: &str) -> Value {
+    json!({
+        "id": format!("{}/status/{slug}", user.actor.id),
+        "type": kind,
+        "attributedTo": user.actor.id,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "published": "2026-01-01T00:00:00Z",
+        "content": "<p>Original book discussion</p>",
+    })
+}
+
+fn bookwyrm_activity(user: &RemoteUser, kind: &str, object: &Value) -> Value {
+    json!({
+        "id": format!("{}#{kind}", object["id"].as_str().unwrap()),
+        "type": kind,
+        "actor": user.actor.id,
+        "object": object,
+    })
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn bookwyrm_native_edits_refresh_the_standard_book_representation(pool: PgPool) {
+    create_local_account(&pool, "alice", "Alice").await;
+    let bob = sender();
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    for (native, standard) in [
+        ("Review", "Article"),
+        ("Comment", "Note"),
+        ("Quotation", "Note"),
+    ] {
+        let original = bookwyrm_status(&bob, native, standard);
+        let create = bookwyrm_activity(&bob, "Create", &original);
+        assert_eq!(
+            post_signed(test_app_with(pool.clone(), stub.clone()), &create, &bob).await,
+            StatusCode::ACCEPTED
+        );
+        let mut canonical = original.clone();
+        canonical["content"] = json!(
+            "<p>Edited discussion of <a href='https://remote.example/book/1'>Fixture book</a>, rated 4.5</p>"
+        );
+        canonical["name"] = json!("A revised review of Fixture book (4.5 stars)");
+        canonical["updated"] = json!("2026-01-02T00:00:00Z");
+        let uri = original["id"].as_str().unwrap();
+        stub.objects
+            .lock()
+            .unwrap()
+            .insert(uri.into(), canonical.clone());
+        if native == "Review" {
+            let mut previous_edit = original.clone();
+            previous_edit["updated"] = json!("2026-01-01T12:00:00Z");
+            stub.object_snapshots
+                .lock()
+                .unwrap()
+                .insert(uri.into(), [original.clone(), previous_edit].into());
+        }
+        let mut native_object = canonical.clone();
+        native_object["type"] = json!(native);
+        native_object["content"] = json!("<p>Native content without book context</p>");
+        let update = bookwyrm_activity(&bob, "Update", &native_object);
+        assert_eq!(
+            post_signed(test_app_with(pool.clone(), stub.clone()), &update, &bob).await,
+            StatusCode::ACCEPTED
+        );
+        let stored = stored_object(&pool, &create).await;
+        assert!(
+            stored.content.contains("Edited discussion"),
+            "{native}: {}",
+            stored.content
+        );
+        assert!(stored.content.contains("Fixture book"));
+        assert!(!stored.content.contains("Native content"));
+        assert_eq!(stored.object_type.as_deref().unwrap_or("Note"), standard);
+        assert!(stored.edited_at.is_some());
+        assert_eq!(
+            stub.fetches().iter().filter(|f| *f == uri).count(),
+            if native == "Review" { 3 } else { 1 },
+            "missing and older revisions are retried before applying the edit"
+        );
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn bookwyrm_native_edits_require_known_owner_and_valid_canonical_fallback(pool: PgPool) {
+    create_local_account(&pool, "alice", "Alice").await;
+    let bob = sender();
+    let mallory = RemoteUser::new("other.example", "mallory");
+    let stub = StubFederation::with_actors([bob.actor.clone(), mallory.actor.clone()]);
+    for mode in [
+        "unknown",
+        "foreign_sender",
+        "foreign_author",
+        "foreign_id",
+        "unsupported",
+        "unavailable",
+        "stale_snapshot",
+    ] {
+        let original = bookwyrm_status(&bob, mode, "Article");
+        let uri = original["id"].as_str().unwrap();
+        let create = bookwyrm_activity(&bob, "Create", &original);
+        if mode != "unknown" {
+            assert_eq!(
+                post_signed(test_app_with(pool.clone(), stub.clone()), &create, &bob).await,
+                StatusCode::ACCEPTED
+            );
+        }
+        let mut canonical = original.clone();
+        canonical["content"] = json!("<p>Must not replace the stored body</p>");
+        match mode {
+            "foreign_author" => canonical["attributedTo"] = json!(mallory.actor.id),
+            "foreign_id" => canonical["id"] = json!(format!("{}/different", bob.actor.id)),
+            "unsupported" => canonical["type"] = json!("Work"),
+            _ => {}
+        }
+        if mode != "unavailable" {
+            stub.objects.lock().unwrap().insert(uri.into(), canonical);
+        }
+        let mut native_object = original.clone();
+        native_object["type"] = json!("Review");
+        if mode == "stale_snapshot" {
+            native_object["updated"] = json!("2026-01-02T00:00:00Z");
+        }
+        let author = if mode == "foreign_sender" {
+            &mallory
+        } else {
+            &bob
+        };
+        if mode == "foreign_sender" {
+            native_object["attributedTo"] = json!(mallory.actor.id);
+        }
+        let update = bookwyrm_activity(author, "Update", &native_object);
+        let response =
+            post_signed(test_app_with(pool.clone(), stub.clone()), &update, author).await;
+        assert_eq!(
+            response,
+            if matches!(mode, "unavailable" | "stale_snapshot") {
+                StatusCode::BAD_GATEWAY
+            } else {
+                StatusCode::ACCEPTED
+            },
+            "{mode}"
+        );
+        let stored = status::find_by_uri(&pool, uri).await.unwrap();
+        if mode == "unknown" {
+            assert!(stored.is_none());
+        } else {
+            assert!(
+                stored.unwrap().content.contains("Original book discussion"),
+                "{mode}"
+            );
+        }
+        let fetches = stub.fetches().iter().filter(|f| *f == uri).count();
+        if mode == "stale_snapshot" {
+            assert!(
+                (2..=4).contains(&fetches),
+                "stale retries are bounded: {fetches}"
+            );
+        } else {
+            assert_eq!(
+                fetches,
+                usize::from(!matches!(mode, "unknown" | "foreign_sender")),
+                "{mode}"
+            );
+        }
+    }
+}
+
 async fn post_signed(app: Router, body: &Value, user: &RemoteUser) -> StatusCode {
     let bytes = serde_json::to_vec(body).unwrap();
     let signed_headers = user

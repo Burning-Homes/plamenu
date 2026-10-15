@@ -2424,8 +2424,11 @@ fn unquote(value: &str) -> String {
 fn webfinger_url(acct: &Acct) -> String {
     let domain = acct.domain();
     let host = domain.rsplit_once(':').map_or(domain, |(host, _)| host);
+    let query = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("resource", &acct.to_uri())
+        .finish();
     format!(
-        "{}://{domain}/.well-known/webfinger?resource=acct:{acct}",
+        "{}://{domain}/.well-known/webfinger?{query}",
         crate::network::guess_protocol(host)
     )
 }
@@ -2839,12 +2842,12 @@ mod tests {
         let clearnet: Acct = "user@remote.example".parse().unwrap();
         assert_eq!(
             webfinger_url(&clearnet),
-            "https://remote.example/.well-known/webfinger?resource=acct:user@remote.example"
+            "https://remote.example/.well-known/webfinger?resource=acct%3Auser%40remote.example"
         );
         let onion: Acct = "user@xyz.onion".parse().unwrap();
         assert_eq!(
             webfinger_url(&onion),
-            "http://xyz.onion/.well-known/webfinger?resource=acct:user@xyz.onion"
+            "http://xyz.onion/.well-known/webfinger?resource=acct%3Auser%40xyz.onion"
         );
     }
 
@@ -2854,12 +2857,58 @@ mod tests {
         let url = Url::parse(&webfinger_url(&acct)).unwrap();
         assert_eq!(
             url.query(),
-            Some("resource=acct:Gr%C3%BCneGera@loops.example")
+            Some("resource=acct%3AGr%25C3%25BCneGera%40loops.example")
         );
         assert_eq!(
             url.query_pairs().next().unwrap().1,
-            "acct:GrüneGera@loops.example"
+            "acct:Gr%C3%BCneGera@loops.example"
         );
+        let acct = Acct::new("Аим_Нискажуя", "лемми.опенсорс.рус").unwrap();
+        let url = Url::parse(&webfinger_url(&acct)).unwrap();
+        assert_eq!(url.host_str(), Some("xn--e1aghfa.xn--e1aqbccjfc.xn--p1acf"));
+        assert_eq!(url.query_pairs().next().unwrap().1, acct.to_uri());
+    }
+
+    #[tokio::test]
+    async fn webfinger_url_validation_reports_invalid_authorities_without_panicking() {
+        // DNS/IDNA syntax can be valid while URL parsing rejects a numeric
+        // final label as a malformed IPv4 address. Never panic on that input.
+        let acct = Acct::new("alice", "example.123").unwrap();
+        let client = FederationClient::new("plamenu-test", true).unwrap();
+        assert!(matches!(
+            client.resolve_acct(&acct).await,
+            Err(FederationError::InvalidUrl(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn webfinger_transport_accepts_encoded_unicode_subjects_without_redirecting() {
+        // Exercise the actual HTTP/JRD boundary, rather than a resolver stub
+        // that returns an already-parsed Acct and hides URI encoding errors.
+        let subject = "acct:%E4%BD%A0%E5%A5%BD@i18n.onion";
+        let actor_uri = "https://i18n.example/%E4%BD%A0%E5%A5%BD";
+        let body = json!({"subject":subject,"links":[{
+            "rel":"self","type":ACTIVITY_JSON,"href":actor_uri
+        }]})
+        .to_string();
+        let (url, job) = feed_server(format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/jrd+json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()
+        )).await;
+        let mut client = FederationClient::new("plamenu-test", true).unwrap();
+        client.http = reqwest::Client::builder()
+            .no_proxy()
+            .proxy(reqwest::Proxy::http(&url).unwrap())
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let acct = Acct::new("你好", "i18n.onion").unwrap();
+        let resolved = client.resolve_acct(&acct).await.unwrap();
+        assert_eq!(resolved.acct, acct);
+        assert_eq!(resolved.actor_uri, actor_uri);
+        let request = job.await.unwrap();
+        let target = request.split_whitespace().nth(1).unwrap();
+        let request_url = Url::parse(target).unwrap();
+        assert_eq!(request_url.query_pairs().next().unwrap().1, subject);
     }
 
     /// Lane selection: hidden-service hosts ride their network's proxied

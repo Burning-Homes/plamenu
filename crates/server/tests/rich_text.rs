@@ -129,17 +129,25 @@ async fn unicode_and_bridge_mentions_render_and_deliver_in_all_post_formats(pool
         "npub1600yr4qg5vcfp7svf6ysj0008tn7aphnu0gjs6lw5hjn74n0laasjx889v",
     );
     let dotted = RemoteUser::new("bridge.example", "blue-sky.bsky.social");
-    let remotes = [&unicode, &combining, &bridge, &dotted];
+    let mut idn = RemoteUser::new("xn--e1aghfa.xn--e1aqbccjfc.xn--p1acf", "unicode_user");
+    idn.actor.preferred_username = "Аим_Нискажуя".into();
+    idn.acct = "Аим_Нискажуя@xn--e1aghfa.xn--e1aqbccjfc.xn--p1acf".into();
+    let mut cjk = RemoteUser::new("i18n.example", "%E4%BD%A0%E5%A5%BD");
+    cjk.actor.preferred_username = "你好".into();
+    cjk.actor.kind = "Application".into();
+    cjk.acct = "你好@i18n.example".into();
+    let channel = RemoteUser::channel("peertube.xn--gribschi-o4a.example", "groeibschi");
+    let remotes = [&unicode, &combining, &bridge, &dotted, &idn, &cjk, &channel];
     let stub = StubFederation::with_users(&remotes);
     let state = test_state_with(pool.clone(), stub.clone());
     let app = plamenu::build_router(state.clone());
     let text = remotes
         .iter()
-        .map(|r| format!("@{}", r.acct))
+        .map(|r| format!("@{}", plamenu_ap::acct::display_acct(&r.acct)))
         .collect::<Vec<_>>()
         .join(" ");
     for (content_type, draft) in [
-        ("text/plain", format!("{text}. @{}", unicode.acct)),
+        ("text/plain", format!("{text}. @{}", idn.acct)),
         (
             "text/markdown",
             format!(
@@ -210,6 +218,30 @@ async fn unicode_and_bridge_mentions_render_and_deliver_in_all_post_formats(pool
         .await
         .unwrap();
     assert_eq!(count, 0, "a username prefix must not receive notifications");
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn unicode_domain_alias_of_local_account_never_webfingers(pool: PgPool) {
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let stub = StubFederation::with_users(&[]);
+    let mut state = test_state_with(pool, stub.clone());
+    std::sync::Arc::make_mut(&mut state.config).account_domain = "xn--bcher-kva.example".into();
+    for domain in ["bücher.example", "xn--bcher-kva.example"] {
+        let text = format!("@bob@{domain}");
+        let cached = plamenu::compose::compose_local(&state, &text)
+            .await
+            .unwrap();
+        let fresh = plamenu::compose::compose(&state, &text, plamenu::compose::PostFormat::Plain)
+            .await
+            .unwrap();
+        for composed in [cached, fresh] {
+            assert_eq!(composed.mentions.len(), 1);
+            assert_eq!(composed.mentions[0].id, bob.id);
+            assert_eq!(composed.tag_json[0]["name"], "@bob@xn--bcher-kva.example");
+        }
+    }
+    assert!(stub.fetches().is_empty());
+    assert!(stub.deliveries().is_empty());
 }
 
 #[sqlx::test(migrations = "../db/migrations")]

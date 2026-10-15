@@ -1,0 +1,115 @@
+# Official prebuilt BookWyrm 0.9.3, with no upstream source modifications.
+name: bookwyrm-test
+
+x-app: &app
+  image: ghcr.io/bookwyrm-social/bookwyrm:v0.9.3@sha256:593acc3dae084371939cbdc847f887db481551c03ff5b91bb85ae2f446f42b3f
+  restart: unless-stopped
+  environment:
+    DOMAIN: bookwyrm.local
+    DEBUG: "false"
+    SECRET_KEY: bookwyrm-disposable-plamenu-e2e-fixture-not-a-production-secret
+    POSTGRES_HOST: bookwyrm-db
+    POSTGRES_USER: bookwyrm
+    POSTGRES_PASSWORD: bookwyrm
+    POSTGRES_DB: bookwyrm
+    REDIS_ACTIVITY_URL: redis://bookwyrm-redis:6379/0
+    REDIS_BROKER_URL: redis://bookwyrm-redis:6379/1
+    EMAIL_BACKEND: django.core.mail.backends.locmem.EmailBackend
+    EMAIL_HOST: localhost
+    EMAIL_HOST_USER: ""
+    EMAIL_HOST_PASSWORD: ""
+    EMAIL_USE_TLS: "false"
+    ENABLE_PREVIEW_IMAGES: "false"
+    QUERY_TIMEOUT: "10"
+    SEARCH_TIMEOUT: "10"
+    REQUESTS_CA_BUNDLE: /etc/ssl/local/ca-bundle.crt
+    SSL_CERT_FILE: /etc/ssl/local/ca-bundle.crt
+  volumes:
+    - static:/app/static
+    - media:/app/images
+    - exports:/app/exports
+    - ../mastodon-test/ca-bundle.crt:/etc/ssl/local/ca-bundle.crt:ro
+  networks: [default, shared]
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bookwyrm
+      POSTGRES_PASSWORD: bookwyrm
+      POSTGRES_DB: bookwyrm
+    volumes: [db:/var/lib/postgresql/data]
+    networks:
+      default:
+        aliases: [bookwyrm-db]
+    healthcheck:
+      test: [CMD, pg_isready, -U, bookwyrm]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+  redis:
+    image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    restart: unless-stopped
+    networks:
+      default:
+        aliases: [bookwyrm-redis]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+  bookwyrm:
+    <<: *app
+    command: [gunicorn, bookwyrm.wsgi:application, --bind, "0.0.0.0:8000"]
+    healthcheck:
+      test: [CMD, curl, -fs, "http://localhost:8000/.well-known/nodeinfo"]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 60
+  bookwyrm-worker:
+    <<: *app
+    command: [celery, -A, celerywyrm, worker, --pool=threads, --concurrency=4, -l, info, -Q, "high_priority,medium_priority,low_priority,streams,images,suggested_users,email,connectors,lists,inbox,imports,import_triggered,broadcast,misc"]
+    depends_on:
+      bookwyrm:
+        condition: service_healthy
+  bookwyrm-front:
+    image: nginx:1.30.1-alpine@sha256:c819f83c54b0361f5557601bf5eb4943d09360e7a7fdf426afc466570f45874d
+    restart: unless-stopped
+    networks:
+      default: {}
+      shared:
+        aliases: [bookwyrm-web]
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - static:/app/static:ro
+      - media:/app/images:ro
+    depends_on:
+      bookwyrm:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test: [CMD, wget, -qO-, "http://127.0.0.1/.well-known/nodeinfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${BOOKWYRM_TEST_SUBNET:-10.234.240.0/24}
+  shared:
+    external: true
+    name: mastodon-test_internal
+volumes:
+  db:
+  static:
+  media:
+  exports:

@@ -3390,6 +3390,45 @@ async fn handle_create(
     Ok(())
 }
 
+async fn fetch_standard_status_update(
+    state: &AppState,
+    sender: &Account,
+    uri: &str,
+    announced_updated: Option<time::OffsetDateTime>,
+) -> Result<Option<Value>, ApiError> {
+    // BookWyrm queues the broadcast inside its publication transaction. A
+    // fast receiver can fetch before that transaction commits. Never accept
+    // an older snapshot as the announced edit; allow a bounded commit window.
+    for attempt in 0..4 {
+        let object = state
+            .federation
+            .fetch_object(uri)
+            .await
+            .map_err(|error| ApiError::BadGateway(error.to_string()))?;
+        if id_of(&object) != Some(uri)
+            || !is_ingestible_note(&object)
+            || !attributed_to_ids(&object).any(|author| Some(author) == sender.uri.as_deref())
+        {
+            return Ok(None);
+        }
+        let fetched_updated = object
+            .get("updated")
+            .and_then(Value::as_str)
+            .and_then(|stamp| time::OffsetDateTime::parse(stamp, &Rfc3339).ok());
+        if announced_updated
+            .is_none_or(|announced| fetched_updated.is_some_and(|fetched| fetched >= announced))
+        {
+            return Ok(Some(object));
+        }
+        if attempt < 3 {
+            tokio::time::sleep(std::time::Duration::from_millis(250 << attempt)).await;
+        }
+    }
+    Err(ApiError::BadGateway(
+        "Remote status has not caught up with its announced edit".into(),
+    ))
+}
+
 /// Inbound `Update`: a profile change (embedded actor) or a status edit.
 /// The signature-verified sender may only update itself and its own posts.
 async fn handle_update(
@@ -3405,7 +3444,12 @@ async fn handle_update(
                 crate::video_playlists_remote::import(state, uri, Some(sender)).await?;
             }
         }
-        _ if is_ingestible_note(object) => {
+        _ if is_ingestible_note(object)
+            || matches!(
+                object.get("type").and_then(Value::as_str),
+                Some("Review" | "Comment" | "Quotation")
+            ) =>
+        {
             let Some(object_uri) = id_of(object) else {
                 return Ok(());
             };
@@ -3439,6 +3483,24 @@ async fn handle_update(
             {
                 return Ok(());
             }
+            // BookWyrm sends standard Article/Note Creates to other software,
+            // but native Review/Comment/Quotation Updates even to those same
+            // recipients. Refetch the standard representation of an already
+            // known, sender-owned status instead of discarding the edit or
+            // flattening a native payload without its book/rating context.
+            let fallback;
+            let object = if is_ingestible_note(object) {
+                object
+            } else {
+                let Some(standard) =
+                    fetch_standard_status_update(state, sender, object_uri, incoming_updated)
+                        .await?
+                else {
+                    return Ok(());
+                };
+                fallback = standard;
+                &fallback
+            };
             // Update storage refreshes poll tallies inside the shared object
             // write guard, after reloading and checking the current revision.
             update_remote_note_and_publish(state, sender, &existing, object, raw).await?;

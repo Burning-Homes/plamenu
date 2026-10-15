@@ -75,42 +75,6 @@ fn event_params_of(
     }))
 }
 
-fn compose_text(fields: &ComposeFields) -> String {
-    if fields.visibility != "direct" || fields.recipients.trim().is_empty() {
-        return fields.status.trim().to_owned();
-    }
-    let recipients = fields
-        .recipients
-        .split([',', ' ', '\n'])
-        .filter(|v| !v.trim().is_empty())
-        .map(|handle| format!("@{}", handle.trim().trim_start_matches('@')))
-        .collect::<Vec<_>>()
-        .join(" ");
-    format!("{recipients}\n\n{}", fields.status.trim())
-}
-
-async fn validate_recipients(state: &AppState, fields: &ComposeFields) -> Result<bool, ApiError> {
-    if fields.visibility != "direct" || fields.recipients.trim().is_empty() {
-        return Ok(true);
-    }
-    if fields.recipients.len() > 1000 {
-        return Ok(false);
-    }
-    for handle in fields
-        .recipients
-        .split([',', ' ', '\n'])
-        .filter(|v| !v.trim().is_empty())
-    {
-        let text = format!("@{}", handle.trim().trim_start_matches('@'));
-        let resolved =
-            crate::compose::compose(state, &text, crate::compose::PostFormat::Plain).await?;
-        if resolved.mentions.len() != 1 {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
 /// The explicit post kind used by the preview.
 fn preview_kind(fields: &ComposeFields) -> plamenu_ap::activity::PostKind {
     match fields.post_kind.trim() {
@@ -189,7 +153,6 @@ struct ComposeFields {
     external_url: String,
     /// Only the explicit selector chooses the post kind.
     post_kind: String,
-    recipients: String,
     event_start: String,
     event_end: String,
     /// The selected zone used to interpret both event times.
@@ -215,7 +178,6 @@ fn apply_compose_pair(fields: &mut ComposeFields, key: &str, value: &str) {
     match key {
         "csrf" => value.clone_into(&mut fields.csrf),
         "status" => value.clone_into(&mut fields.status),
-        "recipients" => value.clone_into(&mut fields.recipients),
         "visibility" => value.clone_into(&mut fields.visibility),
         "sensitive" => {
             fields.sensitive = truthy(value);
@@ -674,32 +636,6 @@ pub async fn compose(State(state): State<AppState>, user: WebUser, request: Requ
         .await;
     }
 
-    match validate_recipients(&state, &fields).await {
-        Ok(true) => {}
-        Ok(false) => {
-            return render_composer_response(
-                &state,
-                &user,
-                &fields,
-                &media_ids,
-                None,
-                Some(&user.locale.text("compose-recipients-unresolved")),
-            )
-            .await;
-        }
-        Err(error) => {
-            return render_composer_response(
-                &state,
-                &user,
-                &fields,
-                &media_ids,
-                None,
-                Some(&error.to_string()),
-            )
-            .await;
-        }
-    }
-
     let (Ok(in_reply_to_id), Ok(quoted_status_id), Ok(group_id)) = (
         parse_id(fields.in_reply_to_id.as_deref()),
         parse_id(fields.quoted_status_id.as_deref()),
@@ -773,7 +709,7 @@ pub async fn compose(State(state): State<AppState>, user: WebUser, request: Requ
                         crate::routes::scheduled_statuses::ScheduledDraft {
                             kind: preview_kind(&fields),
                             title: (!fields.title.trim().is_empty()).then(|| fields.title.trim()),
-                            text: &compose_text(&fields),
+                            text: fields.status.trim(),
                             content_type: crate::compose::PostFormat::from_media_type(
                                 &fields.content_type,
                             )
@@ -843,7 +779,7 @@ pub async fn compose(State(state): State<AppState>, user: WebUser, request: Requ
         PostParams {
             music: (kind == plamenu_ap::activity::PostKind::Audio).then_some(&fields.music),
             username: &user.current.account.username,
-            text: &compose_text(&fields),
+            text: fields.status.trim(),
             visibility: &fields.visibility,
             in_reply_to_id,
             media_ids: &media_ids,
@@ -1046,9 +982,8 @@ async fn build_compose_preview_card(
     has_local_media: bool,
 ) -> Result<Markup, ApiError> {
     let limits = state.settings_cache.get(&state.pool).await?;
-    let message_text = compose_text(fields);
     let (text, spoiler_text, sensitive) = actions::apply_spoiler_rules(
-        &message_text,
+        fields.status.trim(),
         fields.spoiler_text.trim(),
         fields.sensitive,
         fields.quoted_status_id.is_some(),
@@ -1164,7 +1099,6 @@ async fn render_composer_response(
         Err(err) => return err.into_response(),
     };
     let echo = pages::ComposerEcho {
-        recipients: &fields.recipients,
         kind: &fields.post_kind,
         music: &fields.music,
         event: super::view::EventCompose {

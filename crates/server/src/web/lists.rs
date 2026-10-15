@@ -704,7 +704,7 @@ pub async fn account_lists_form(
         };
     let handle = format!(
         "@{}",
-        crate::entities::account_acct(&state.config.domain, &account)
+        crate::entities::account_display_acct(&state.config.domain, &account)
     );
     let back = safe_return(query.return_to.as_deref(), "/lists");
     let locale = user.locale;

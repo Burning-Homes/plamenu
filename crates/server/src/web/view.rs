@@ -327,6 +327,10 @@ impl Account<'_> {
         self.s("acct")
     }
 
+    pub fn display_acct(&self) -> std::borrow::Cow<'_, str> {
+        plamenu_ap::acct::display_acct(self.acct())
+    }
+
     /// The display name, falling back to `@username` when unset.
     pub fn name(&self) -> &str {
         let display = self.s("display_name");
@@ -1322,7 +1326,7 @@ struct AdminTargetLinks {
 
 impl AdminTargetLinks {
     fn for_account(account: &Account, admin: AdminCapabilities, locale: Locale) -> Self {
-        let handle = format!("{}{}", account.handle_prefix(), account.acct());
+        let handle = format!("{}{}", account.handle_prefix(), account.display_acct());
         let target = if account.group() && !account.video_channel() && !account.is_remote() {
             admin.manage_groups.then(|| {
                 (
@@ -1839,7 +1843,7 @@ fn status_main(
 ) -> Markup {
     let account = status.account();
     let mut profile_args = FluentArgs::new();
-    profile_args.set("account", account.acct());
+    profile_args.set("account", account.display_acct());
     let profile_label = ctx.locale.text_with("status-view-profile", &profile_args);
     // A warn-filter match keeps the author line and action bar but collapses
     // everything the post says behind the "Filtered" bar, like Mastodon.
@@ -1857,7 +1861,7 @@ fn status_main(
             div.status__author {
                 a.status__name href=(account.profile_path()) { (account.name_markup()) }
                 span.status__handle {
-                    a.status__acct href=(account.profile_path()) { (account.handle_prefix()) (account.acct()) }
+                    a.status__acct href=(account.profile_path()) { (account.handle_prefix()) (account.display_acct()) }
                     @if account.video_channel() {
                         span.status__flag title=(ctx.locale.text("profile-video-channel")) { (icon("video")) }
                     } @else if account.group() {
@@ -2450,6 +2454,7 @@ fn reply_context(status: &Status, locale: Locale) -> Markup {
 /// before swapping known shortcodes for images).
 fn reply_peek(parent: &str, peek: &Value, locale: Locale) -> Markup {
     let field = |key: &str| peek.get(key).and_then(Value::as_str).unwrap_or_default();
+    let acct = plamenu_ap::acct::display_acct(field("acct"));
     let emojis: &[Value] = peek
         .get("emojis")
         .and_then(Value::as_array)
@@ -2457,7 +2462,7 @@ fn reply_peek(parent: &str, peek: &Value, locale: Locale) -> Markup {
     let mut args = FluentArgs::new();
     // The handle, not the display name: the tooltip is the same sentence the
     // plain reply line shows, and that one names the account.
-    args.set("account", format!("@{}", field("acct")));
+    args.set("account", format!("@{acct}"));
     html! {
         a.status__reply-peek href=(format!("/web/statuses/{parent}"))
             title=(locale.text_with("status-replying-to", &args)) {
@@ -2466,7 +2471,7 @@ fn reply_peek(parent: &str, peek: &Value, locale: Locale) -> Markup {
                 img.status__reply-peek-avatar src=(field("avatar")) alt="" loading="lazy";
             }
             span.status__reply-peek-author { (emojify_text(field("name"), emojis)) }
-            span.status__reply-peek-handle { "@" (field("acct")) }
+            span.status__reply-peek-handle { "@" (acct) }
             span.status__reply-peek-text { (emojify_text(field("excerpt"), emojis)) }
         }
     }
@@ -2621,7 +2626,7 @@ fn cited_status_card_with(status: &Status, signed_in: bool, tail: &Markup) -> Ma
             a.quote-card__head href=(status.permalink_anchored()) {
                 img.quote-card__avatar src=(account.avatar()) alt="" width="20" height="20" loading="lazy";
                 span.quote-card__name { (account.name_markup()) }
-                span.quote-card__acct { (account.handle_prefix()) (account.acct()) }
+                span.quote-card__acct { (account.handle_prefix()) (account.display_acct()) }
             }
             div.status__content dir="auto" lang=[status.rendered_language()] { (status.content_markup(signed_in)) }
             (tail)
@@ -3799,9 +3804,9 @@ fn overflow_menu(status: &Status, ctx: &Ctx) -> Markup {
                             action: format!("/web/accounts/{}/mute", account.id()),
                             undo_action: format!("/web/accounts/{}/unmute", account.id()),
                             label: localized_arg(ctx.locale, "status-mute-account",
-                                "account", account.acct()),
+                                "account", account.display_acct().as_ref()),
                             undo_label: localized_arg(ctx.locale, "status-unmute-account",
-                                "account", account.acct()),
+                                "account", account.display_acct().as_ref()),
                             account: Some(account.id()),
                             domain: None,
                             confirm: None,
@@ -3811,20 +3816,20 @@ fn overflow_menu(status: &Status, ctx: &Ctx) -> Markup {
                             action: format!("/web/accounts/{}/block", account.id()),
                             undo_action: format!("/web/accounts/{}/unblock", account.id()),
                             label: localized_arg(ctx.locale, "status-block-account",
-                                "account", account.acct()),
+                                "account", account.display_acct().as_ref()),
                             undo_label: localized_arg(ctx.locale, "status-unblock-account",
-                                "account", account.acct()),
+                                "account", account.display_acct().as_ref()),
                             account: Some(account.id()),
                             domain: None,
                             confirm: Some(localized_arg(ctx.locale,
-                                "status-block-account-confirm", "account", account.acct())),
+                                "status-block-account-confirm", "account", account.display_acct().as_ref())),
                         }, csrf, ctx.return_to))
                         @let report_query = serde_urlencoded::to_string(
                             [("return_to", ctx.return_to)]).unwrap_or_default();
                         a.status__menu-item.is-danger
                             href=(format!("/web/statuses/{}/report?{report_query}", status.id())) {
                             (localized_arg(ctx.locale, "status-report-account",
-                                "account", account.acct()))
+                                "account", account.display_acct().as_ref()))
                         }
                         @if let Some(domain) = status.remote_domain() {
                             (moderation_form(&ModForm {
@@ -4208,7 +4213,6 @@ pub struct ComposeDefaults<'a> {
 /// shows the rendered post below. All-default = a fresh composer.
 #[derive(Default)]
 pub struct ComposePrefill<'a> {
-    pub recipients: &'a str,
     pub music: Option<&'a plamenu_db::music::Metadata>,
     pub invitation: Option<Markup>,
     pub kind: &'a str,
@@ -4941,7 +4945,7 @@ pub fn full_compose_form(
         locale.text_with("compose-schedule-help", &args)
     };
     html! {
-        form.compose-form data-compose data-i18n-send=(locale.text("compose-send"))
+        form.compose-form data-compose
             data-i18n-media-add=(locale.text("compose-media-add"))
             data-i18n-audio-add=(locale.text("compose-audio-add"))
             data-i18n-audio-file=(locale.text("compose-audio-file-error"))
@@ -5039,16 +5043,6 @@ pub fn full_compose_form(
                     }
                 }
 
-                @if direct.is_none() && group.is_none() {
-                    div.compose__recipients data-compose-recipients hidden[defaults.visibility!="direct"] {
-                        label.compose__field {
-                            span.compose__legend {(locale.text("compose-recipients"))}
-                            input type="text" name="recipients" value=(prefill.recipients) list="message-recipients" maxlength="1000" autocomplete="off" placeholder="@name@example.org" required[defaults.visibility=="direct"] disabled[defaults.visibility!="direct"];
-                        }
-                        datalist id="message-recipients" {}
-                        p.compose__hint {(locale.text("compose-recipients-hint"))}
-                    }
-                }
                 fieldset.compose__type-fields data-compose-title-fields
                     hidden[kind == "note" && group.is_none()]
                     disabled[kind == "note" && group.is_none()] {
@@ -5346,9 +5340,8 @@ pub fn full_compose_form(
                             formnovalidate data-compose-preview-btn {
                                 (locale.text("compose-preview"))
                             }
-                        button.compose__publish type="submit" name="op" value="post" data-compose-submit data-default-label=(locale.text(if group.is_some(){"compose-post-to-group"}else if reply.is_some(){"compose-reply"}else{"compose-publish"})) {
-                            @if defaults.visibility=="direct" {(locale.text("compose-send"))}
-                            @else if group.is_some() { (locale.text("compose-post-to-group")) }
+                        button.compose__publish type="submit" name="op" value="post" {
+                            @if group.is_some() { (locale.text("compose-post-to-group")) }
                             @else if reply.is_some() { (locale.text("compose-reply")) }
                             @else { (locale.text("compose-publish")) }
                         }
@@ -5900,7 +5893,7 @@ pub fn account_card(account: &Account) -> Markup {
             img.account-card__avatar src=(account.avatar()) alt="" width="40" height="40" loading="lazy";
             span.account-card__body {
                 span.account-card__name { (account.name_markup()) }
-                span.account-card__acct { (account.handle_prefix()) (account.acct()) }
+                span.account-card__acct { (account.handle_prefix()) (account.display_acct()) }
             }
         }
     }

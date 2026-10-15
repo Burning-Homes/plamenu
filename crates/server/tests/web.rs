@@ -3064,23 +3064,35 @@ async fn unicode_and_bridge_mentions_work_in_suggestions_and_no_js_compose(pool:
         "bridge.example",
         "npub1600yr4qg5vcfp7svf6ysj0008tn7aphnu0gjs6lw5hjn74n0laasjx889v",
     );
-    let stub = StubFederation::with_users(&[&unicode, &bridge]);
+    let mut idn = RemoteUser::new("xn--e1aghfa.xn--e1aqbccjfc.xn--p1acf", "unicode_user");
+    idn.actor.preferred_username = "Аим_Нискажуя".into();
+    idn.acct = "Аим_Нискажуя@xn--e1aghfa.xn--e1aqbccjfc.xn--p1acf".into();
+    let mut cjk = RemoteUser::new("i18n.example", "%E4%BD%A0%E5%A5%BD");
+    cjk.actor.preferred_username = "你好".into();
+    cjk.actor.kind = "Application".into();
+    cjk.acct = "你好@i18n.example".into();
+    let remotes = [&unicode, &bridge, &idn, &cjk];
+    let stub = StubFederation::with_users(&remotes);
     let state = common::test_state_with(pool.clone(), stub.clone());
     let app = build_router(state.clone());
     let cookie = login(&app).await;
-    let text = format!("hi @{} and @{}", unicode.acct, bridge.acct);
+    let text = remotes
+        .iter()
+        .map(|remote| format!("@{}", plamenu_ap::acct::display_acct(&remote.acct)))
+        .collect::<Vec<_>>()
+        .join(" and ");
     // The ordinary multipart form path needs no client script to resolve,
-    // render, persist or address either mention. Federation is entirely stubbed.
+    // render, persist or address these mentions. Federation is entirely stubbed.
     let permalink = compose(&app, &cookie, &text).await;
     let post_id: i64 = permalink.rsplit('/').next().unwrap().parse().unwrap();
     let mut by_post = plamenu_db::mention::for_statuses(&pool, &[post_id], true)
         .await
         .unwrap();
     let mentions = by_post.remove(&post_id).unwrap_or_default();
-    assert_eq!(mentions.len(), 2);
+    assert_eq!(mentions.len(), remotes.len());
     let post = get(&app, &permalink, Some(&cookie)).await;
     assert_eq!(post.status, StatusCode::OK);
-    for remote in [&unicode, &bridge] {
+    for remote in remotes {
         assert!(
             mentions
                 .iter()
@@ -3093,8 +3105,23 @@ async fn unicode_and_bridge_mentions_work_in_suggestions_and_no_js_compose(pool:
             url::Url::parse(&format!("https://plamenu.test/@{}", remote.acct)).unwrap();
         let profile = get(&app, profile_url.path(), Some(&cookie)).await;
         assert_eq!(profile.status, StatusCode::OK, "{}", profile.body);
-        assert!(profile.body.contains(&remote.acct));
-        let query = serde_urlencoded::to_string([("q", &remote.acct)]).unwrap();
+        let display_acct = plamenu_ap::acct::display_acct(&remote.acct);
+        assert!(
+            profile
+                .body
+                .contains(&format!("class=\"profile__acct\">@{display_acct}</span>")),
+            "{}",
+            profile.body
+        );
+        let alias_url = url::Url::parse(&format!("https://plamenu.test/@{display_acct}")).unwrap();
+        let alias = get(&app, alias_url.path(), Some(&cookie)).await;
+        assert_eq!(alias.status, StatusCode::OK);
+        assert!(
+            alias
+                .body
+                .contains(&format!("class=\"profile__acct\">@{display_acct}</span>"))
+        );
+        let query = serde_urlencoded::to_string([("q", display_acct.as_ref())]).unwrap();
         let suggestions = get(
             &app,
             &format!("/web/compose/suggestions?type=accounts&{query}"),
@@ -3105,17 +3132,28 @@ async fn unicode_and_bridge_mentions_work_in_suggestions_and_no_js_compose(pool:
         let items: serde_json::Value = serde_json::from_str(&suggestions.body).unwrap();
         assert_eq!(items.as_array().unwrap().len(), 1, "{items}");
         assert_eq!(items[0]["acct"], remote.acct);
+        assert_eq!(items[0]["display_acct"], display_acct.as_ref());
         let search = get(&app, &format!("/search?{query}"), Some(&cookie)).await;
         assert_eq!(search.status, StatusCode::OK);
         assert!(search.body.contains(&remote.acct));
     }
-    assert_eq!(plamenu::delivery::run_due(&state).await, 2);
-    assert_eq!(stub.deliveries().len(), 2);
+    assert_eq!(
+        plamenu::delivery::run_due(&state).await,
+        u64::try_from(remotes.len()).unwrap()
+    );
+    assert_eq!(stub.deliveries().len(), remotes.len());
     assert!(
         stub.deliveries()
             .iter()
-            .all(|sent| sent.inbox_url.starts_with("https://loops.example/")
-                || sent.inbox_url.starts_with("https://bridge.example/"))
+            .all(|sent| remotes
+                .iter()
+                .any(|remote| sent.inbox_url == remote.actor.inbox
+                    || remote
+                        .actor
+                        .endpoints
+                        .as_ref()
+                        .and_then(|e| e.shared_inbox.as_deref())
+                        == Some(sent.inbox_url.as_str())))
     );
 }
 
@@ -14884,6 +14922,107 @@ async fn direct_reply_composer_is_locked(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn private_mentions_use_inline_addresses_through_preview_and_publish(pool: PgPool) {
+    seed_user(&pool, "alice", EMAIL, PASSWORD).await;
+    seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
+    seed_user(&pool, "carol", "carol@example.com", PASSWORD).await;
+    let app = common::test_app(pool.clone());
+    let alice = login(&app).await;
+    let page = get(&app, "/compose?visibility=direct", Some(&alice)).await;
+    assert!(!page.body.contains("name=\"recipients\""));
+    let csrf = csrf_of(&page.body);
+    let preview = post_multipart(
+        &app,
+        "/web/compose",
+        &alice,
+        &[
+            ("csrf", &csrf),
+            ("visibility", "direct"),
+            ("status", "@bob A private draft"),
+            ("op", "preview"),
+        ],
+    )
+    .await;
+    assert_eq!(preview.status, StatusCode::OK);
+    assert!(preview.body.contains("compose__preview-heading"));
+    assert!(preview.body.contains("@bob A private draft</textarea>"));
+    assert!(!preview.body.contains("name=\"recipients\""));
+    // Changing the inline address after preview changes the actual audience;
+    // there is no separate recipient field to keep an old address alive.
+    let text = "@carol A private draft";
+    let thread = compose_direct(&app, &alice, text).await;
+    let status_id = thread.rsplit('/').next().unwrap().parse().unwrap();
+    assert_eq!(
+        status::source_of(&pool, status_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .text,
+        text
+    );
+    let carol = login_as(&app, "carol@example.com", PASSWORD).await;
+    assert_eq!(
+        get(&app, &thread, Some(&carol)).await.status,
+        StatusCode::OK
+    );
+    let bob = login_as(&app, "bob@example.com", PASSWORD).await;
+    assert_eq!(
+        get(&app, &thread, Some(&bob)).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(get(&app, &thread, None).await.status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn public_thread_reply_can_become_a_private_mention_without_a_to_field(pool: PgPool) {
+    seed_user(&pool, "alice", EMAIL, PASSWORD).await;
+    seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
+    seed_user(&pool, "carol", "carol@example.com", PASSWORD).await;
+    let app = common::test_app(pool.clone());
+    let bob = login_as(&app, "bob@example.com", PASSWORD).await;
+    let root = compose(&app, &bob, "A public conversation").await;
+    let root_id = root.rsplit('/').next().unwrap().to_owned();
+    let alice = login(&app).await;
+    let carol = login_as(&app, "carol@example.com", PASSWORD).await;
+    for route in [root, format!("/compose?reply={root_id}")] {
+        let page = get(&app, &route, Some(&alice)).await;
+        assert!(page.body.contains("@bob </textarea>"));
+        assert!(!page.body.contains("name=\"recipients\""));
+        let csrf = csrf_of(&page.body);
+        let mut fields = vec![
+            ("csrf", csrf.as_str()),
+            ("in_reply_to_id", root_id.as_str()),
+            ("visibility", "direct"),
+            ("status", "@bob A private reply in a public thread"),
+            ("op", "preview"),
+        ];
+        let preview = post_multipart(&app, "/web/compose", &alice, &fields).await;
+        assert_eq!(preview.status, StatusCode::OK);
+        assert!(
+            preview
+                .body
+                .contains("@bob A private reply in a public thread</textarea>")
+        );
+        assert!(preview.body.contains("value=\"direct\" selected"));
+        assert!(!preview.body.contains("name=\"recipients\""));
+        fields.pop();
+        let sent = post_multipart(&app, "/web/compose", &alice, &fields).await;
+        assert_eq!(sent.status, StatusCode::SEE_OTHER, "{}", sent.body);
+        let thread = sent.location.unwrap();
+        let status_id = thread.rsplit('/').next().unwrap().parse().unwrap();
+        let stored = status::find_by_id(&pool, status_id).await.unwrap().unwrap();
+        assert_eq!(stored.visibility, "direct");
+        assert_eq!(stored.in_reply_to_id, Some(root_id.parse().unwrap()));
+        assert_eq!(get(&app, &thread, Some(&bob)).await.status, StatusCode::OK);
+        assert_eq!(
+            get(&app, &thread, Some(&carol)).await.status,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(get(&app, &thread, None).await.status, StatusCode::NOT_FOUND);
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn role_form_round_trips_manage_groups(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -16907,6 +17046,101 @@ async fn reply_composer_prefills_thread_mentions(pool: PgPool) {
     );
 }
 
+#[sqlx::test(migrations = "../db/migrations")]
+async fn unicode_handles_stay_readable_in_reply_and_account_management_forms(pool: PgPool) {
+    seed_alice(&pool).await;
+    let mut chinese = RemoteUser::new("i18n.example", "%E4%BD%A0%E5%A5%BD");
+    chinese.actor.preferred_username = "你好".into();
+    chinese.actor.kind = "Application".into();
+    chinese.acct = "你好@i18n.example".into();
+    let mut idn = RemoteUser::new("xn--e1aghfa.xn--e1aqbccjfc.xn--p1acf", "unicode_user");
+    idn.actor.preferred_username = "Аим_Нискажуя".into();
+    idn.acct = "Аим_Нискажуя@xn--e1aghfa.xn--e1aqbccjfc.xn--p1acf".into();
+    let stub = StubFederation::with_users(&[&chinese, &idn]);
+    let state = common::test_state_with(pool.clone(), stub.clone());
+    let app = build_router(state.clone());
+    let cookie = login(&app).await;
+    let text = "@你好@i18n.example @Аим_Нискажуя@лемми.опенсорс.рус";
+    let thread = compose(&app, &cookie, text).await;
+    let post_id = thread.rsplit('/').next().unwrap();
+    for route in [thread.clone(), format!("/compose?reply={post_id}")] {
+        let page = get(&app, &route, Some(&cookie)).await;
+        assert_eq!(page.status, StatusCode::OK);
+        assert!(
+            page.body.contains(&format!("{text} </textarea>")),
+            "{route}"
+        );
+    }
+    for remote in [&chinese, &idn] {
+        let stored = account::find_by_uri(&pool, &remote.actor.id)
+            .await
+            .unwrap()
+            .unwrap();
+        let display = plamenu_ap::acct::display_acct(&remote.acct);
+        for panel in ["lists", "collections"] {
+            let page = get(
+                &app,
+                &format!("/web/accounts/{}/{panel}", stored.id),
+                Some(&cookie),
+            )
+            .await;
+            assert_eq!(page.status, StatusCode::OK);
+            let heading = page
+                .body
+                .split("<h1")
+                .nth(1)
+                .unwrap()
+                .split("</h1>")
+                .next()
+                .unwrap();
+            assert!(heading.contains(&format!("@{display}")), "{heading}");
+            assert!(!heading.contains("xn--"), "{heading}");
+        }
+    }
+    // A no-JS preview preserves the Unicode draft, and a reply resolves the
+    // copied handles back to exactly the same canonical actor identities.
+    let page = get(&app, "/compose", Some(&cookie)).await;
+    let csrf = csrf_of(&page.body);
+    let fields = [
+        ("csrf", csrf.as_str()),
+        ("in_reply_to_id", post_id),
+        ("status", text),
+        ("visibility", "direct"),
+    ];
+    let mut preview_fields = fields.to_vec();
+    preview_fields.push(("op", "preview"));
+    let preview = post_multipart(&app, "/web/compose", &cookie, &preview_fields).await;
+    assert_eq!(preview.status, StatusCode::OK);
+    assert!(preview.body.contains(&format!("{text}</textarea>")));
+    let sent = post_multipart(&app, "/web/compose", &cookie, &fields).await;
+    assert_eq!(sent.status, StatusCode::SEE_OTHER);
+    let reply_id = sent
+        .location
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let mentions = plamenu_db::mention::for_statuses(&pool, &[reply_id], true)
+        .await
+        .unwrap()
+        .remove(&reply_id)
+        .unwrap();
+    assert_eq!(mentions.len(), 2);
+    for remote in [&chinese, &idn] {
+        assert!(
+            mentions
+                .iter()
+                .any(|a| a.uri.as_deref() == Some(remote.actor.id.as_str()))
+        );
+    }
+    assert!(
+        stub.deliveries().is_empty(),
+        "only local stubs may receive test activities"
+    );
+}
+
 /// Both reply entry points inherit a declared language from the post being
 /// answered instead of retaining the viewer's default posting language.
 #[sqlx::test(migrations = "../db/migrations")]
@@ -17823,7 +18057,7 @@ async fn client_messages_have_one_badge_and_shared_read_state(pool: PgPool) {
     let app = common::test_app(pool.clone());
     let sender = login(&app).await;
     let page = get(&app, "/compose?visibility=direct", Some(&sender)).await;
-    assert!(page.body.contains("name=\"recipients\""));
+    assert!(!page.body.contains("name=\"recipients\""));
     let csrf = csrf_of(&page.body);
     let sent = post_multipart(
         &app,
@@ -17833,8 +18067,7 @@ async fn client_messages_have_one_badge_and_shared_read_state(pool: PgPool) {
             ("csrf", &csrf),
             ("post_kind", "note"),
             ("visibility", "direct"),
-            ("recipients", "@bob"),
-            ("status", "A message without handles in its body"),
+            ("status", "@bob A message addressed with an inline mention"),
         ],
     )
     .await;
@@ -17845,7 +18078,7 @@ async fn client_messages_have_one_badge_and_shared_read_state(pool: PgPool) {
     assert!(
         messages
             .body
-            .contains("A message without handles in its body")
+            .contains("A message addressed with an inline mention")
     );
     assert!(messages.body.contains("is-unread"));
     assert!(
@@ -17854,7 +18087,9 @@ async fn client_messages_have_one_badge_and_shared_read_state(pool: PgPool) {
     );
     let inbox = get(&app, "/notifications", Some(&recipient)).await;
     assert!(
-        !inbox.body.contains("A message without handles in its body"),
+        !inbox
+            .body
+            .contains("A message addressed with an inline mention"),
         "Direct messages are not duplicated in activity"
     );
     let uid = user::find_by_account_id(&pool, bob.id)
@@ -18037,44 +18272,4 @@ async fn client_first_video_and_live_setup_do_not_require_channel_address_creati
             .len(),
         1
     );
-}
-
-#[sqlx::test(migrations = "../db/migrations")]
-async fn client_unknown_message_recipient_keeps_the_draft(pool: PgPool) {
-    let alice = seed_user(&pool, "alice", EMAIL, PASSWORD).await;
-    let app = build_router(common::test_state_with(
-        pool.clone(),
-        StubFederation::with_actors([]),
-    ));
-    let cookie = login(&app).await;
-    let csrf = csrf_of(
-        &get(&app, "/compose?visibility=direct", Some(&cookie))
-            .await
-            .body,
-    );
-    let result = post_multipart(
-        &app,
-        "/web/compose",
-        &cookie,
-        &[
-            ("csrf", &csrf),
-            ("visibility", "direct"),
-            ("recipients", "@unavailable_person"),
-            ("status", "Please send me the recording."),
-        ],
-    )
-    .await;
-    assert!(
-        result.body.contains("A recipient could not be found"),
-        "{}",
-        result.body
-    );
-    assert!(result.body.contains("Please send me the recording."));
-    assert!(result.body.contains("@unavailable_person"));
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM statuses WHERE account_id=$1")
-        .bind(alice.id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(count, 0);
 }

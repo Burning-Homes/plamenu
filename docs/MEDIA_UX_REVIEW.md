@@ -45,8 +45,10 @@ pickers, or exposing catalogue administration before someone can listen.
   notifications share read state with conversations. Opening a direct thread
   updates the returned navigation immediately and refreshes other open tabs.
   Message rows show participants and a preview rather than nested social cards.
-  New message has an explicit recipient field with suggestions; unknown
-  recipients cannot silently publish a message only the sender can see.
+  Private mentions use inline `@mentions` in the message, including replies
+  within public threads. The separate recipient field introduced in this
+  review was reverted on 15 October after it disrupted that workflow. Existing
+  private-thread replies retain their fixed audience and visibility protection.
 
 ## Review method
 

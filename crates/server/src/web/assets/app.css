@@ -9470,8 +9470,6 @@ html:has(.vod-player:fullscreen) { scrollbar-gutter: auto; }
 .compose__existing-list { display: grid; gap: .35rem; max-block-size: 16rem; overflow: auto; padding: .35rem; border: 1px solid var(--border); border-radius: var(--radius); }
 .compose__existing-list label { display: flex; align-items: center; gap: .6rem; padding: .5rem; min-block-size: 44px; overflow-wrap: anywhere; }
 .compose__existing-list label:has(:checked) { background: var(--surface-2); }
-.compose__recipients { padding-block-end: .75rem; }
-.compose__recipients[hidden] { display: none; }
 .music-dock { position: fixed; z-index: 35; inset-block-end: 0; inset-inline: 0; display: block; padding: .5rem 1rem; background: var(--surface); border-block-start: 1px solid var(--border); box-shadow: 0 -3px 20px rgb(0 0 0 / .15); }
 .music-dock[hidden] { display: none; }
 .music-dock .music-player-media { display: grid; grid-template-columns: 2.75rem minmax(6rem,1fr) minmax(15rem,25rem) auto; align-items: center; gap: .75rem; max-inline-size: 80rem; margin-inline: auto; }

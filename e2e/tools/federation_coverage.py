@@ -18,7 +18,7 @@ Marker contract (`@pytest.mark.federation(...)`):
   - Exactly one of {reverse_of, one_way_reason} when direction in
     {inbound, outbound}; NEITHER when direction == "both".
   - peer: optional {mastodon,pleroma,plup,sharkey,gts,mitra,onion,lemmy,peertube,
-    owncast,mobilizon,discourse,plamenu2}; inferred from the filename when omitted.
+    owncast,mobilizon,discourse,bookwyrm,plamenu2}; inferred from the filename when omitted.
 
 Run standalone (no stack needed) for a per-peer coverage table + violations:
     uv run python tools/federation_coverage.py
@@ -42,6 +42,7 @@ OPPOSITE = {"inbound": "outbound", "outbound": "inbound"}
 # Fixtures that inject a live remote peer; a test taking any of these federates
 # and must be marked (or explicitly allowlisted in LOCAL_EXCEPTIONS).
 PEER_FIXTURES = {
+    "bookwyrm",
     "alice",  # Mastodon
     "pleroma_bob",
     "plup_mari",  # upstream Pleroma (real 2.10.2)
@@ -60,6 +61,7 @@ PEER_FIXTURES = {
 
 # Filename -> peer inference (checked as a prefix on the module basename).
 PEER_BY_PREFIX = {
+    "test_bookwyrm": "bookwyrm",
     # Checked longest-prefix-first below, so `test_plamenu2_*` never falls
     # through to another peer.
     "test_plamenu2": "plamenu2",

@@ -248,6 +248,34 @@ the normal rate limits and delivery assertions intact.
 See [`docs/INTEROPERABILITY.md`](../docs/INTEROPERABILITY.md) for the scope of
 the release matrix and how to report a peer-specific correctness gap.
 
+## BookWyrm reading peer
+
+`./dev up bookwyrm` starts and seeds BookWyrm 0.9.3 at
+`https://bookwyrm.local`, using its official digest-pinned GHCR image, PostgreSQL,
+Redis, a Celery worker and nginx behind the shared Caddy proxy. No application
+image build or upstream source modifications are needed. Its matching source
+revision is shallow-cloned by provisioning. The disposable login is `lena` /
+`bookwyrm-lena-pass-123`; the fixture also creates one local Work and Edition.
+`./dev down bookwyrm` preserves its named volumes for subsequent starts.
+
+The private database network defaults to `10.234.240.0/24`; set
+`BOOKWYRM_TEST_SUBNET` if that subnet is already in use. The application and
+worker use the shared local CA bundle. Host resolution needs the provisioning
+entry `127.0.0.1 bookwyrm.local`, plus the Caddy Docker network alias.
+
+`tests/test_bookwyrm_federation.py` uses real browser login, CSRF-protected
+search/follow/publication/edit/deletion forms and HTTPS federation. Database
+queries only observe results; they do not manufacture follows or delivery events. Its
+Plamenu endpoint is a disposable `doomed.local` instance, leaving the standing
+`plamenu2.local` peer alone. Run it with the current local candidate:
+
+```sh
+PLAMENU_BINARY="$PWD/target/debug/plamenu" ./dev e2e tests/test_bookwyrm_federation.py -v
+```
+
+See [BookWyrm interoperability](../docs/INTEROPERABILITY.md#bookwyrm) for the
+supported exchanges and deliberate peer limitations.
+
 ## Songhive music peer
 
 `./dev up songhive` starts the digest-pinned Songhive 0.4.9 application,

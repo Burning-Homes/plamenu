@@ -60,7 +60,7 @@ for (const prefix of ['', '@no-js ']) test(`${prefix}notifications and messages 
   await signIn(page);
   const me={username:(await page.locator('.account__handle').first().textContent()).trim().replace(/^@/,'')};
   expect(me.username).not.toBe('');
-  const senderContext=await browser.newContext({baseURL:process.env.A11Y_BASE_URL,extraHTTPHeaders:info.project.use.extraHTTPHeaders});
+  const senderContext=await browser.newContext({baseURL:process.env.A11Y_BASE_URL,extraHTTPHeaders:info.project.use.extraHTTPHeaders,javaScriptEnabled:!prefix});
   const sender=await senderContext.newPage();
   try {
     await sender.goto('/login');
@@ -71,10 +71,9 @@ for (const prefix of ['', '@no-js ']) test(`${prefix}notifications and messages 
     await sender.goto('/compose');
     await publish(sender,`@${me.username} Can you share that song?`);
     await sender.goto('/compose?visibility=direct');
-    await expect(sender.getByRole('button',{name:'Send',exact:true})).toBeVisible();
-    await sender.getByLabel('To',{exact:true}).fill('@'+me.username);
+    await expect(sender.locator('[name=recipients]')).toHaveCount(0);
     const privateText='Private listening plans '+Date.now().toString(36);
-    const thread=await publish(sender,privateText);
+    const thread=await publish(sender,`@${me.username} ${privateText}`);
     await page.goto('/notifications');
     await expect(page.locator('.notification__label').filter({hasText:'mentioned you'})).toBeVisible();
     await expect(page.locator('main')).not.toContainText(privateText);

@@ -105,7 +105,7 @@ fi
 HOSTS=(
   mastodon.local plamenu.local webxdc.plamenu.local pleroma.local plup.local
   sharkey.local gotosocial.local mitra.local lemmy.local peertube.local
-  owncast.local mobilizon.local discourse.local hubzilla.local funkwhale.local songhive.local
+  owncast.local mobilizon.local discourse.local hubzilla.local funkwhale.local songhive.local bookwyrm.local
   doomed.local plamenu2.local webxdc.plamenu2.local
 )
 missing_hosts=()
@@ -170,7 +170,7 @@ done
 
 if [[ "$START" == true ]]; then
   echo ">> Starting and seeding the required federation matrix"
-  for peer in discourse hubzilla funkwhale songhive pleroma sharkey gotosocial mitra lemmy peertube owncast; do
+  for peer in discourse hubzilla funkwhale songhive bookwyrm pleroma sharkey gotosocial mitra lemmy peertube owncast; do
     "$ROOT/dev" up "$peer"
   done
 fi

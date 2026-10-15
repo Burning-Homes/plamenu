@@ -375,6 +375,91 @@ async fn authorized_fetch_resolves_gotosocial_main_key_without_poisoning_fallbac
     assert_eq!(stub.fetches().len(), 2, "cached key avoids a second fetch");
 }
 
+fn bookwyrm_actor_document(remote: &RemoteUser) -> Value {
+    json!({
+        "id": remote.actor.id,
+        "type": "Person",
+        "preferredUsername": remote.actor.preferred_username,
+        "inbox": remote.actor.inbox,
+        "publicKey": {
+            "id": remote.actor.public_key.id,
+            "owner": remote.actor.public_key.owner,
+            "publicKeyPem": remote.actor.public_key.public_key_pem,
+        },
+    })
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn authorized_fetch_resolves_bookwyrm_slash_key_and_caches_canonical_actor(pool: PgPool) {
+    create_local_account(&pool, "alice", "Alice").await;
+    let mut remote = RemoteUser::new("books.example", "lena");
+    remote.actor.public_key.id = format!("{}/#main-key", remote.actor.id);
+    let stub = StubFederation::with_actors([]);
+    let document = bookwyrm_actor_document(&remote);
+    let alias = format!("{}/", remote.actor.id);
+    stub.objects.lock().unwrap().extend([
+        (alias.clone(), document.clone()),
+        (remote.actor.id.clone(), document),
+    ]);
+    let app = || test_app_secure(pool.clone(), stub.clone());
+    let (status, doc) = get_signed(app(), "/users/alice", &remote.signer()).await;
+    assert_eq!(status, StatusCode::OK, "{doc}");
+    assert_eq!(stub.fetches(), vec![alias.clone(), remote.actor.id.clone()]);
+    assert!(account::find_by_uri(&pool, &alias).await.unwrap().is_none());
+    assert!(
+        account::find_by_uri(&pool, &remote.actor.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let (status, _) = get_signed(app(), "/users/alice/followers", &remote.signer()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(stub.fetches().len(), 2, "canonical actor key is cached");
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn authorized_fetch_slash_alias_requires_canonical_key_ownership_and_signature(pool: PgPool) {
+    create_local_account(&pool, "alice", "Alice").await;
+    for mode in [
+        "unadvertised",
+        "wrong_owner",
+        "bad_signature",
+        "missing_canonical",
+    ] {
+        let mut remote = RemoteUser::new("books.example", mode);
+        remote.actor.public_key.id = format!("{}/#main-key", remote.actor.id);
+        let signer = remote.signer();
+        let mut document = bookwyrm_actor_document(&remote);
+        match mode {
+            "unadvertised" => {
+                document["publicKey"]["id"] = json!(format!("{}#other", remote.actor.id));
+            }
+            "wrong_owner" => {
+                document["publicKey"]["owner"] = json!("https://other.example/user/lena");
+            }
+            "bad_signature" => {
+                document["publicKey"]["publicKeyPem"] =
+                    json!(plamenu_ap::keys::generate_keypair().unwrap().public_pem);
+            }
+            _ => {}
+        }
+        let stub = StubFederation::with_actors([]);
+        stub.objects
+            .lock()
+            .unwrap()
+            .insert(format!("{}/", remote.actor.id), document.clone());
+        if mode != "missing_canonical" {
+            stub.objects
+                .lock()
+                .unwrap()
+                .insert(remote.actor.id.clone(), document);
+        }
+        let (status, doc) =
+            get_signed(test_app_secure(pool.clone(), stub), "/users/alice", &signer).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{mode}: {doc}");
+    }
+}
+
 #[sqlx::test(migrations = "../db/migrations")]
 async fn authorized_fetch_rejects_bad_signatures(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;

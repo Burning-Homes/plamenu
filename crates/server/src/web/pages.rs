@@ -1928,7 +1928,7 @@ async fn silenced_stub_page(
 ) -> Result<Response, ApiError> {
     let account_value = account_json(&state.pool, &state.config.domain, account, None).await?;
     let account_entity = view::Account(&account_value);
-    let handle = account_entity.acct();
+    let handle = account_entity.display_acct();
     let url = account_entity.url();
     let can_view_original = account_entity.is_remote() && !url.is_empty();
     let body = html! {
@@ -1954,7 +1954,7 @@ async fn silenced_stub_page(
         ..layout::PageMeta::default()
     };
     Ok(layout::shell_visitor_subject_localized(
-        handle,
+        &handle,
         None,
         anon_nav(state).await,
         &body,
@@ -2219,7 +2219,7 @@ fn profile_header(
                         (profile_menu(account, user, relation, locale))
                     }
                     p.profile__meta {
-                        span.profile__acct { (account.handle_prefix()) (account.acct()) }
+                        span.profile__acct { (account.handle_prefix()) (account.display_acct()) }
                         @if !account.created_at().is_empty() {
                             @let joined = clock.tooltip_iso(account.created_at());
                             span.profile__joined title=(joined) {
@@ -2328,7 +2328,7 @@ fn profile_menu(
     locale: Locale,
 ) -> Markup {
     let url = account.url();
-    let acct = account.acct();
+    let acct = account.display_acct();
     let return_to = account.profile_path();
     let has_actions = user.is_some() && relation.is_some();
     let can_view_original = account.is_remote() && !url.is_empty();
@@ -2388,7 +2388,7 @@ fn profile_menu(
                             &locale.text("profile-feature"), false, None, &user.csrf, &return_to))
                     }
                     @let mut account_args = FluentArgs::new();
-                    @let () = account_args.set("account", acct);
+                    @let () = account_args.set("account", acct.as_ref());
                     @if flag("muting") {
                         (view::menu_form(&format!("/web/accounts/{}/unmute", account.id()),
                             &locale.text_with("status-unmute-account", &account_args),
@@ -3370,7 +3370,7 @@ pub async fn report_page(
     let Some(target) = account::find_by_id(&state.pool, stored.account_id).await? else {
         return Ok(not_found(&state, Some(&user), user.locale).await);
     };
-    let acct = crate::entities::account_acct(&state.config.domain, &target);
+    let acct = crate::entities::account_display_acct(&state.config.domain, &target);
     let back = actions::safe_return(query.return_to.as_deref(), "/");
 
     if query.done.is_some() {
@@ -3430,7 +3430,7 @@ pub async fn report_account_page(
     let Some(target) = target else {
         return Ok(not_found(&state, Some(&user), user.locale).await);
     };
-    let acct = crate::entities::account_acct(&state.config.domain, &target);
+    let acct = crate::entities::account_display_acct(&state.config.domain, &target);
     let back = actions::safe_return(query.return_to.as_deref(), "/");
 
     if query.done.is_some() {
@@ -3955,15 +3955,10 @@ fn mention_prefill_text<'a>(
         }
         seen.push(account.id);
         text.push('@');
-        text.push_str(&account.username);
-        if let Some(domain) = account
-            .domain
-            .as_ref()
-            .filter(|_| !account.is_portable_on(local_domain))
-        {
-            text.push('@');
-            text.push_str(domain);
-        }
+        text.push_str(&crate::entities::account_display_acct(
+            local_domain,
+            account,
+        ));
         text.push(' ');
     }
     text
@@ -4339,7 +4334,7 @@ async fn direct_participants(
         }
         let handle = format!(
             "@{}",
-            crate::entities::account_acct(&state.config.domain, &account)
+            crate::entities::account_display_acct(&state.config.domain, &account)
         );
         if !handles.contains(&handle) {
             handles.push(handle);
@@ -4707,6 +4702,7 @@ pub async fn compose_suggestions(
                 let acct = crate::entities::account_acct(&state.config.domain, account);
                 items.push(serde_json::json!({
                     "acct": acct,
+                    "display_acct": plamenu_ap::acct::display_acct(&acct),
                     "display_name": account.display_name,
                     "avatar": crate::entities::avatar_url(&state.config.domain, account, false),
                 }));
@@ -5067,7 +5063,6 @@ async fn resolve_group_target(
 /// preview or a validation error, so the form comes back exactly as the
 /// user left it and (on a preview) shows the rendered post below.
 pub(crate) struct ComposerEcho<'a> {
-    pub recipients: &'a str,
     pub music: &'a plamenu_db::music::Metadata,
     pub kind: &'a str,
     pub event: view::EventCompose<'a>,
@@ -5230,7 +5225,6 @@ pub(crate) async fn render_composer(
         available_media: super::compose_media::choices(state, user.current.account.id).await?,
         invitation,
         kind: echo.kind,
-        recipients: echo.recipients,
         music: Some(echo.music),
         title: echo.title,
         event: echo.event,
@@ -5295,21 +5289,7 @@ pub(super) async fn resolve_handle(
     } else {
         return Ok(None);
     };
-    let account = match acct.split_once('@') {
-        None => account::find_public_local_account_by_username(&state.pool, acct).await?,
-        Some((username, domain)) if state.config.is_local_domain(domain) => {
-            account::find_public_local_account_by_username(&state.pool, username).await?
-        }
-        Some((username, domain)) if group_wanted => {
-            account::find_remote_group_by_acct(&state.pool, username, domain).await?
-        }
-        Some((username, domain)) => {
-            match account::find_remote_person_by_acct(&state.pool, username, domain).await? {
-                Some(person) => Some(person),
-                None => account::find_remote_group_by_acct(&state.pool, username, domain).await?,
-            }
-        }
-    };
+    let account = crate::remote::find_known_account(state, acct, group_wanted).await?;
     let Some(account) = account else {
         return Ok(None);
     };

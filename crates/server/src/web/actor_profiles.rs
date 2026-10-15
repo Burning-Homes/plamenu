@@ -46,7 +46,7 @@ pub async fn panel(
                                 a href=(person.profile_path()) {
                                     (person.name_markup())
                                     @if value["display_name"].as_str().is_some_and(|name|!name.is_empty() && name!=person.acct()) {
-                                        small {" @" (person.acct())}
+                                        small {" @" (person.display_acct())}
                                     }
                                 }
                                 " · " (locale.text(&format!("actor-role-{}",row.role)))

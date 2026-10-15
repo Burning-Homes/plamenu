@@ -1,7 +1,7 @@
 //! Shared fixtures: an in-memory federation stub and account helpers.
 #![allow(dead_code)] // each test binary uses a different subset
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -122,6 +122,8 @@ pub struct StubFederation {
     /// opens it — a "slow origin" gate for proving the remote-refresh fan-out
     /// stays bounded while outbound object fetches hang.
     pub object_fetch_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
+    /// Successive snapshots from an origin committing a just-announced edit.
+    pub object_snapshots: Mutex<HashMap<String, VecDeque<serde_json::Value>>>,
     /// Captures then holds actor responses, for reconciliation ordering tests.
     pub activitypub_fetch_gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
     /// When set, `fetch_object_following` answers with a budget suppression
@@ -357,11 +359,12 @@ impl FederationApi for StubFederation {
         self.fetches.lock().unwrap().push(uri.to_owned());
         let gate = self.object_fetch_gate.lock().unwrap().clone();
         let result = self
-            .objects
+            .object_snapshots
             .lock()
             .unwrap()
-            .get(uri)
-            .cloned()
+            .get_mut(uri)
+            .and_then(VecDeque::pop_front)
+            .or_else(|| self.objects.lock().unwrap().get(uri).cloned())
             .ok_or(FederationError::Status(404));
         Box::pin(async move {
             if let Some(gate) = gate {

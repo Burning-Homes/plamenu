@@ -141,6 +141,12 @@ funkwhale.local {
 	reverse_proxy funkwhale-web:80
 }
 
+# BookWyrm's official prebuilt application, with static/media served by nginx.
+bookwyrm.local {
+	tls internal
+	reverse_proxy bookwyrm-web:80
+}
+
 # Ephemeral second Plamenu instance, started (and destroyed) by the e2e
 # self-destruct test on host port 8421. Nothing answers here outside that
 # test's runtime.

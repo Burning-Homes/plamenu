@@ -692,21 +692,7 @@ pub async fn lookup(
     // the behavior Mastodon's first-link WebFinger already gives for those.
     let group_wanted = raw.starts_with('!');
     let acct = raw.trim_start_matches(['@', '!']);
-    let account = match acct.split_once('@') {
-        None => account::find_public_local_account_by_username(&state.pool, acct).await?,
-        Some((username, domain)) if state.config.is_local_domain(domain) => {
-            account::find_public_local_account_by_username(&state.pool, username).await?
-        }
-        Some((username, domain)) if group_wanted => {
-            account::find_remote_group_by_acct(&state.pool, username, domain).await?
-        }
-        Some((username, domain)) => {
-            match account::find_remote_person_by_acct(&state.pool, username, domain).await? {
-                Some(person) => Some(person),
-                None => account::find_remote_group_by_acct(&state.pool, username, domain).await?,
-            }
-        }
-    };
+    let account = crate::remote::find_known_account(&state, acct, group_wanted).await?;
     let account = account.ok_or(ApiError::NotFound)?;
     if !crate::instance_policy::account_visible(&state.pool, &state.config.domain, &account).await?
     {

@@ -3120,19 +3120,12 @@ compose-use-existing = Choose from your uploads
 
 compose-use-existing-hint = Recent uploads and library tracks. Selected media is copied into this post.
 
-compose-recipients = To
-
-compose-recipients-hint = Enter one or more @handles, separated by commas. People named here or @mentioned in the message can see it.
-
 compose-media-details = Description and accessibility
 
 music-upload-save-private = Save privately
 music-manage-track = Manage track
 music-manage-catalogue = Manage catalogue
 
-compose-recipients-unresolved = A recipient could not be found. Check the handles in To before sending.
-
-compose-send = Send
 music-stations-all = All stations
 music-stations-saved = Saved stations
 music-stations-search = Search radio stations

@@ -771,7 +771,7 @@ async fn chooser_page(
                                     width="40" height="40" loading="lazy";
                                 span.account-card__body {
                                     span.account-card__name { (account.name_markup()) }
-                                    span.account-card__acct { (account.handle_prefix()) (account.acct()) }
+                                    span.account-card__acct { (account.handle_prefix()) (account.display_acct()) }
                                 }
                                 span.account-chooser__badge { (locale.text("auth-current-account")) }
                             }
@@ -786,7 +786,7 @@ async fn chooser_page(
                                         width="40" height="40" loading="lazy";
                                     span.account-card__body {
                                         span.account-card__name { (account.name_markup()) }
-                                        span.account-card__acct { (account.handle_prefix()) (account.acct()) }
+                                        span.account-card__acct { (account.handle_prefix()) (account.display_acct()) }
                                     }
                                 }
                             }
@@ -997,7 +997,7 @@ fn oauth_current_account(entry: &ChooserAccount, locale: Locale) -> Markup {
                 width="40" height="40" loading="lazy";
             span.account-card__body {
                 span.account-card__name { (account.name_markup()) }
-                span.account-card__acct { (account.handle_prefix()) (account.acct()) }
+                span.account-card__acct { (account.handle_prefix()) (account.display_acct()) }
             }
             span.account-chooser__badge { (locale.text("auth-current-account")) }
         }
@@ -1057,7 +1057,7 @@ fn oauth_switch_accounts(
                             span.account-card__body {
                                 span.account-card__name { (account.name_markup()) }
                                 span.account-card__acct {
-                                    (account.handle_prefix()) (account.acct())
+                                    (account.handle_prefix()) (account.display_acct())
                                 }
                             }
                         }

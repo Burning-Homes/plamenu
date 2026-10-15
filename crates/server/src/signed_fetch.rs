@@ -302,11 +302,13 @@ async fn fetch_get_signer_actor(
     key_id: &str,
     actor_uri: &str,
 ) -> Result<RemoteActor, ApiError> {
-    // A GoToSocial `/main-key` endpoint is deliberately an incomplete actor
-    // stub. Trying to parse it as an actor first both cannot succeed and, in
-    // the real transport, records a resource failure that suppresses the
-    // canonical-object fallback below. Resolve the stub in one guarded fetch.
-    if actor_uri != key_id || !key_id.ends_with("/main-key") {
+    // Some key URLs are aliases rather than exact actor IDs: BookWyrm uses
+    // `<actor>/#main-key`, and GoToSocial serves an incomplete `/main-key`
+    // stub. Follow those to a separately fetched, id-validated canonical
+    // document. A failed exact-actor fetch would poison the failure budget
+    // before the canonical lookup could run.
+    let alias = (actor_uri != key_id && actor_uri.ends_with('/')) || key_id.ends_with("/main-key");
+    if !alias {
         match state.federation.fetch_actor(actor_uri).await {
             Ok(actor) => return Ok(actor),
             Err(err) if actor_uri != key_id => {
@@ -318,12 +320,12 @@ async fn fetch_get_signer_actor(
         }
     }
 
-    // GoToSocial keyIds use `/main-key` instead of a `#main-key` fragment. The
-    // key endpoint is a public stub whose `id` is the owning actor, so follow
-    // that id once and parse the final actor document.
+    // Never trim a slash and assume identity. The canonical document must
+    // independently name this exact key, and its signature must verify in
+    // the caller before any account or audience privileges are granted.
     let object = state
         .federation
-        .fetch_object_following(key_id)
+        .fetch_object_following(actor_uri)
         .await
         .map_err(|e| ApiError::Unauthorized(format!("cannot dereference signer: {e}")))?;
     let actor = serde_json::from_value::<RemoteActor>(object)

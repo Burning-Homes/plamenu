@@ -886,7 +886,7 @@
   // backend will accept rather than raw `.length`.
   const URL_PLACEHOLDER = "xxxxxxxxxxxxxxxxxxxxxxx"; // 23 chars
   const URL_RE = /https?:\/\/\S+/gi;
-  const MENTION_RE = /(^|[^/\p{Alphabetic}\p{N}\p{M}_@])@([\p{Alphabetic}\p{N}\p{M}_.-]+)@([a-z0-9.-]+)/giu;
+  const MENTION_RE = /(^|[^/\p{Alphabetic}\p{N}\p{M}_@])@([\p{Alphabetic}\p{N}\p{M}_.-]+)@([\p{Alphabetic}\p{N}\p{M}.\-\u3002\uff0e\uff61]+)/giu;
   const MENTION_WORD_RE = /^[\p{Alphabetic}\p{N}\p{M}_@]/u;
   const usernameEncoder = new TextEncoder();
   const segmenter =
@@ -905,12 +905,19 @@
       .replace(URL_RE, URL_PLACEHOLDER)
       .replace(MENTION_RE, (whole, prefix, username, host, offset, source) => {
         const domain = host.replace(/\.+$/, "");
+        if (!/[.\u3002\uff0e\uff61]/u.test(domain)) return whole;
+        let asciiDomain;
+        try {
+          asciiDomain = new URL(`https://${domain}/`).hostname;
+        } catch (_) {
+          return whole;
+        }
         // Keep invalid handles whole, just as the server does: neither a
         // username prefix nor a partial host is a mention of another account.
         if (/^[.\-\p{M}]|[.\-]$/u.test(username)
           || usernameEncoder.encode(username).length > 2048
-          || !domain.includes(".") || domain.length > 253 || !/^[a-z0-9.-]+$/i.test(domain)
-          || domain.split(".").some((label) => !label || label.length > 63)
+          || !asciiDomain.includes(".") || asciiDomain.length > 253 || !/^[a-z0-9.-]+$/i.test(asciiDomain)
+          || asciiDomain.split(".").some((label) => !label || label.length > 63)
           || MENTION_WORD_RE.test(source.slice(offset + whole.length))) return whole;
         return `${prefix}@${username}${host.slice(domain.length)}`;
       });
@@ -2336,7 +2343,8 @@
     }
 
     function accountOption(item) {
-      return option(`@${item.acct}`, (button) => {
+      const displayAcct = item.display_acct || item.acct;
+      return option(`@${displayAcct}`, (button) => {
         const img = document.createElement("img");
         img.className = "compose__suggest-avatar";
         img.alt = "";
@@ -2347,7 +2355,7 @@
         name.textContent = item.display_name || item.acct.split("@")[0];
         const handle = document.createElement("span");
         handle.className = "compose__suggest-detail";
-        handle.textContent = `@${item.acct}`;
+        handle.textContent = `@${displayAcct}`;
         button.append(img, name, handle);
       });
     }
@@ -7115,32 +7123,6 @@
     });
   }
 
-  function bindMessageRecipients(root) {
-    root.querySelectorAll('[data-compose-recipients]').forEach(panel=>{
-      if(panel.dataset.bound) return;
-      panel.dataset.bound='true';
-      const form=panel.closest('form'), input=panel.querySelector('input'), list=panel.querySelector('datalist');
-      const visibility=form.elements.namedItem('visibility');
-      const sync=()=>{const direct=visibility?.value==='direct';panel.hidden=!direct;input.disabled=!direct;input.required=direct;const submit=form.querySelector('[data-compose-submit]');if(submit)submit.textContent=direct?form.dataset.i18nSend:submit.dataset.defaultLabel;};
-      visibility?.addEventListener('change',sync);sync();
-      let request, timer;
-      input.addEventListener('input',()=>{
-        clearTimeout(timer);request?.abort();
-        const parts=input.value.split(',');const query=parts.pop().trim().replace(/^@/,'');
-        if(!query){list.replaceChildren();return;}
-        timer=setTimeout(async()=>{
-          request=new AbortController();
-          try {
-            const response=await fetch('/web/compose/suggestions?type=accounts&q='+encodeURIComponent(query),{signal:request.signal,credentials:'same-origin'});
-            if(!response.ok)return;
-            const choices=await response.json();
-            list.replaceChildren(...choices.map(person=>new Option(person.display_name||person.acct,[...parts,'@'+person.acct].join(', '))));
-          }catch{/* Handles can also be entered manually. */}
-        },180);
-      });
-    });
-  }
-
   // ---- Wiring -----------------------------------------------------------
   function enhance(root) {
     bindVideoPosterPicker(root);
@@ -7185,7 +7167,6 @@
     bindCaptionTranscript(root);
     bindMediaWarmup(root);
     bindCompose(root);
-    bindMessageRecipients(root);
     bindComposeCombo(root);
     bindLanguageControls(root);
     bindSettingsDeps(root);

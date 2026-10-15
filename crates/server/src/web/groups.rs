@@ -494,7 +494,7 @@ pub struct ManageQuery {
 
 /// An account's handle for display: `name` locally, `name@domain` for remotes.
 fn handle_of(domain: &str, account: &Account) -> String {
-    crate::entities::account_acct(domain, account)
+    crate::entities::account_display_acct(domain, account)
 }
 
 /// Loads a group and asserts the signed-in user moderates it, returning the

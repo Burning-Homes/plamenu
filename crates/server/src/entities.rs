@@ -126,6 +126,13 @@ pub fn account_acct(domain: &str, account: &Account) -> String {
     }
 }
 
+/// Human-facing handle. API identity fields and profile paths keep using
+/// [`account_acct`]; labels and editable mention text use Unicode IDN labels.
+#[must_use]
+pub fn account_display_acct(domain: &str, account: &Account) -> String {
+    plamenu_ap::acct::display_acct(&account_acct(domain, account)).into_owned()
+}
+
 /// The account-level `canFeature` bitmap Mastodon exposes as
 /// `feature_approval`: local accounts derive it from discoverability and lock
 /// state, while remote accounts use the parsed actor policy.

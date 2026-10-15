@@ -60,11 +60,13 @@ async fn subject_for(state: &AppState, uri: &str) -> Subject {
     match resolve_url_known(state, uri, None).await {
         Ok(KnownUrl::Found(UrlResource::Account(found))) => Subject::Account {
             path: account_local_path(&found, &state.config.domain),
-            acct: crate::entities::account_acct(&state.config.domain, &found),
+            acct: crate::entities::account_display_acct(&state.config.domain, &found),
         },
         Ok(KnownUrl::Found(UrlResource::Status(found))) => {
             let acct = match account::find_by_id(&state.pool, found.account_id).await {
-                Ok(Some(author)) => crate::entities::account_acct(&state.config.domain, &author),
+                Ok(Some(author)) => {
+                    crate::entities::account_display_acct(&state.config.domain, &author)
+                }
                 _ => String::new(),
             };
             match status_local_path(state, &found).await {

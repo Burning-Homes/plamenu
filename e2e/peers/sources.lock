@@ -1,4 +1,6 @@
 # destination|repository|commit
+# bookwyrm-source: stable v0.9.3; official prebuilt fixture image, source for protocol investigation.
+bookwyrm-source|https://github.com/bookwyrm-social/bookwyrm.git|3557c58c3f676813ae261ab5049ec65bb1574c42
 # discourse-source: stable v2026.9.0; verified 2026-10-01
 discourse-source|https://github.com/discourse/discourse.git|343b20f97ef5f6bd70826ee0e993ba348b210fd5
 # ActivityPub dependency has no upstream tags/releases; immutable latest compatible candidate, runtime verification required.

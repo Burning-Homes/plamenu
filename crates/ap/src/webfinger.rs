@@ -116,7 +116,7 @@ impl Jrd {
         ];
         links.extend(interaction_links(actor_domain));
         Self {
-            subject: format!("acct:{acct}"),
+            subject: acct.to_uri(),
             // Mastodon lists the web URL first, then the AP id.
             aliases: vec![urls.web_url, urls.id],
             links,

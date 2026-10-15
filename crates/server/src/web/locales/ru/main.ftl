@@ -3142,19 +3142,12 @@ compose-use-existing = Выбрать из своих загрузок
 
 compose-use-existing-hint = Недавние загрузки и песни из медиатеки. Выбранные файлы будут скопированы в эту публикацию.
 
-compose-recipients = Кому
-
-compose-recipients-hint = Введите один или несколько @адресов через запятую. Сообщение увидят только эти люди.
-
 compose-media-details = Описание и доступность
 
 music-upload-save-private = Сохранить для себя
 music-manage-track = Управление треком
 music-manage-catalogue = Управление каталогом
 
-compose-recipients-unresolved = Получатель не найден. Проверьте адреса в поле «Кому» перед отправкой.
-
-compose-send = Отправить
 music-stations-all = Все станции
 music-stations-saved = Сохранённые станции
 music-stations-search = Поиск радиостанций

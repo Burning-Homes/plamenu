@@ -25,6 +25,7 @@ MOBILIZON_URL = os.environ.get("MOBILIZON_URL", "https://mobilizon.local")
 DISCOURSE_URL = os.environ.get("DISCOURSE_URL", "https://discourse.local")
 HUBZILLA_URL = os.environ.get("HUBZILLA_URL", "https://hubzilla.local")
 SONGHIVE_URL = os.environ.get("SONGHIVE_URL", "https://songhive.local")
+BOOKWYRM_URL = os.environ.get("BOOKWYRM_URL", "https://bookwyrm.local")
 FUNKWHALE_URL = os.environ.get("FUNKWHALE_URL", "https://funkwhale.local")
 # Upstream Pleroma (real 2.10.2), a SEPARATE peer from the Akkoma `pleroma` one.
 PLUP_URL = os.environ.get("PLUP_URL", "https://plup.local")
@@ -42,6 +43,7 @@ MOBILIZON_DOMAIN = MOBILIZON_URL.removeprefix("https://")
 DISCOURSE_DOMAIN = DISCOURSE_URL.removeprefix("https://")
 HUBZILLA_DOMAIN = HUBZILLA_URL.removeprefix("https://")
 FUNKWHALE_DOMAIN = FUNKWHALE_URL.removeprefix("https://")
+BOOKWYRM_DOMAIN = BOOKWYRM_URL.removeprefix("https://")
 PLUP_DOMAIN = PLUP_URL.removeprefix("https://")
 
 DB_DSN = os.environ.get(
@@ -83,6 +85,7 @@ HUBZILLA_DIR = Path(os.environ.get("HUBZILLA_FIXTURE_DIR", PEER_ROOT / "hubzilla
 FUNKWHALE_DIR = Path(
     os.environ.get("FUNKWHALE_FIXTURE_DIR", PEER_ROOT / "funkwhale-test")
 )
+BOOKWYRM_DIR = Path(os.environ.get("BOOKWYRM_FIXTURE_DIR", PEER_ROOT / "bookwyrm-test"))
 PLUP_DIR = Path(os.environ.get("PLUP_FIXTURE_DIR", PEER_ROOT / "pleroma-upstream-test"))
 
 # Standing test account on the Mastodon side (created by the mastodon-test

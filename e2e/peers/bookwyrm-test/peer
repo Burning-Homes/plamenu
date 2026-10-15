@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+compose() { docker compose -f "$ROOT/compose.dev.yml" "$@"; }
+case "${1:-up}" in
+  up)
+    compose up -d --wait
+    compose exec -T bookwyrm python manage.py shell < "$ROOT/seed.py"
+    ;;
+  down) compose down ;;
+  status) compose ps ;;
+  logs) shift; compose logs -f "$@" ;;
+  *) echo 'usage: peer {up|down|status|logs}' >&2; exit 2 ;;
+esac
