@@ -942,8 +942,8 @@ async fn quote_allowed(
 /// Mastodon's `TextFormatter#add_quote_fallback`: the compatibility paragraph
 /// is part of the post body itself, not presentation-only markup. That makes
 /// the stored body, the served `ActivityPub` object and every Create/Update carry
-/// the same `RE:` link. Quote-aware rendering removes it only once an accepted
-/// native quote card is available.
+/// the same `RE:` link. Quote-aware rendering removes it when a native quote
+/// card is available, including while approval is pending.
 fn add_quote_fallback(content: &str, quoted_url: &str) -> String {
     if quoted_url.is_empty() || content.contains(quoted_url) || content.contains("quote-inline") {
         return content.to_owned();

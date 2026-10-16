@@ -306,8 +306,8 @@ pub fn shortened_link_anchor(url: &str) -> String {
     )
 }
 
-/// Removes the compatibility link from the rendered content of an accepted
-/// quote. The original stored content stays untouched: pending, rejected and
+/// Removes the compatibility link when a native quote card is rendered.
+/// The original stored content stays untouched: unavailable, rejected and
 /// revoked quotes still need this link when there is no native quote card.
 ///
 /// Deployed senders put the fallback in several places: Mastodon prepends a

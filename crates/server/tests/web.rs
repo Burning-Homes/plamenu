@@ -4973,10 +4973,18 @@ async fn thread_focus_shows_detail_metadata(pool: PgPool) {
     assert!(!home.body.contains("status__detail-meta"));
 }
 
-/// Quote attachments that aren't an embedded accepted card render an
-/// explanatory placeholder instead of disappearing.
+/// Pending quotes render the same card as accepted quotes. Explicit removals
+/// retain their placeholder and fallback link, even if the sender omitted it.
 #[sqlx::test(migrations = "../db/migrations")]
-async fn non_embedded_quote_states_render_placeholders(pool: PgPool) {
+async fn pending_quotes_embed_and_rejected_quotes_keep_fallbacks(pool: PgPool) {
+    fn focused_post(body: &str, id: i64) -> &str {
+        body.split_once(&format!(r#"id="post-{id}""#))
+            .expect("focused post")
+            .1
+            .split("</article>")
+            .next()
+            .unwrap()
+    }
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
     let original = compose(&app, &cookie, "the original thought").await;
@@ -4996,16 +5004,18 @@ async fn non_embedded_quote_states_render_placeholders(pool: PgPool) {
     )
     .await;
     let permalink = posted.location.expect("quoting post");
+    let quoting_id: i64 = permalink.rsplit('/').next().unwrap().parse().unwrap();
 
     sqlx::query!("UPDATE quotes SET state = 'pending'")
         .execute(&pool)
         .await
         .unwrap();
     let pending = get(&app, &permalink, Some(&cookie)).await;
-    assert!(pending.body.contains("Quote pending approval"));
-    assert!(!pending.body.contains("the original thought"));
-    assert!(pending.body.contains("RE:"));
-    assert!(pending.body.contains(r#"class="quote-inline""#));
+    assert!(!pending.body.contains("Quote pending approval"));
+    assert!(pending.body.contains("the original thought"));
+    assert!(pending.body.contains(r#"class="quote-card""#));
+    assert!(!pending.body.contains("RE:"));
+    assert!(!pending.body.contains(r#"class="quote-inline""#));
 
     sqlx::query("UPDATE quotes SET state = 'rejected'")
         .execute(&pool)
@@ -5019,6 +5029,51 @@ async fn non_embedded_quote_states_render_placeholders(pool: PgPool) {
     );
     assert!(rejected.body.contains("RE:"));
     assert!(rejected.body.contains(r#"class="quote-inline""#));
+    assert_eq!(
+        focused_post(&rejected.body, quoting_id)
+            .matches("RE:")
+            .count(),
+        1
+    );
+    assert!(!rejected.body.contains("the original thought"));
+
+    let rows = plamenu_db::quote::for_statuses(&pool, &[quoting_id])
+        .await
+        .unwrap();
+    let fallback_uri = rows[&quoting_id].quoted_uri.as_deref().unwrap();
+    // Incoming quotes can lack the fallback entirely. The shared entity adds
+    // one for both signed-in and anonymous web views without changing storage.
+    sqlx::query("UPDATE statuses SET content = '<p>my hot take</p>' WHERE id = $1")
+        .bind(quoting_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for state in ["rejected", "revoked"] {
+        sqlx::query("UPDATE quotes SET state = $1")
+            .bind(state)
+            .execute(&pool)
+            .await
+            .unwrap();
+        for viewer in [None, Some(cookie.as_str())] {
+            let shown = get(&app, &permalink, viewer).await;
+            assert_eq!(shown.status, StatusCode::OK);
+            assert!(shown.body.contains("The quote was removed by its author"));
+            assert_eq!(
+                focused_post(&shown.body, quoting_id).matches("RE:").count(),
+                1
+            );
+            let href = if viewer.is_some() {
+                format!(
+                    "/web/go?{}",
+                    serde_urlencoded::to_string([("url", fallback_uri)]).unwrap()
+                )
+            } else {
+                fallback_uri.to_owned()
+            };
+            assert!(focused_post(&shown.body, quoting_id).contains(&format!(r#"href="{href}""#)));
+            assert!(!shown.body.contains("the original thought"));
+        }
+    }
 }
 
 /// The first-party UI reflects the same quote policy enforced by the posting

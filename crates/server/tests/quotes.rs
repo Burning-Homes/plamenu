@@ -563,10 +563,10 @@ async fn outbound_quote_of_remote_post_completes_the_handshake(pool: PgPool) {
     )
     .await;
     assert_eq!(code, StatusCode::OK, "{posted}");
-    assert_eq!(posted["quote"]["state"], "pending");
-    assert!(
-        posted["quote"]["quoted_status"].is_null(),
-        "pending quotes hide the target"
+    assert_eq!(posted["quote"]["state"], "accepted");
+    assert_eq!(
+        posted["quote"]["quoted_status"]["content"],
+        "<p>bob's wisdom</p>"
     );
     let quoting_id: i64 = posted["id"].as_str().unwrap().parse().unwrap();
     let stored_quote = status::find_by_id(&pool, quoting_id)
@@ -585,7 +585,33 @@ async fn outbound_quote_of_remote_post_completes_the_handshake(pool: PgPool) {
             .content
             .contains("https://remote.example/@bob/7")
     );
-    assert!(posted["content"].as_str().unwrap().contains("RE:"));
+    assert!(!posted["content"].as_str().unwrap().contains("RE:"));
+    let rows = quote::for_statuses(&pool, &[quoting_id]).await.unwrap();
+    assert_eq!(
+        rows[&quoting_id].state, "pending",
+        "rendering must not grant consent"
+    );
+    for viewer in [None, Some(carol_token.as_str())] {
+        let (code, shown) = api(
+            test_app_with(pool.clone(), stub.clone()),
+            "GET",
+            &format!("/api/v1/statuses/{quoting_id}"),
+            viewer,
+            None,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(shown["quote"]["state"], "accepted");
+        assert_eq!(
+            shown["quote"]["quoted_status"]["id"],
+            posted["quote"]["quoted_status"]["id"]
+        );
+        assert_eq!(
+            shown["quote"]["quoted_status"]["content"],
+            posted["quote"]["quoted_status"]["content"]
+        );
+        assert_eq!(shown["content"], posted["content"]);
+    }
 
     // The QuoteRequest reaches bob's inbox with our post inlined.
     delivery::run_due(&state).await;
@@ -777,8 +803,7 @@ async fn third_party_quotes_are_verified_via_the_stamp(pool: PgPool) {
     // content of every quote post. Some compatible servers link the target's
     // human web URL there even though the structural quote names its distinct
     // ActivityPub id. Plamenu keeps it at ingest (only the marker class is
-    // dropped by the sanitizer) so a quote still shows its context when native
-    // rendering is pending or denied.
+    // dropped by the sanitizer) so unavailable or denied quotes retain context.
     let dave_create = json!({
         "type": "Create",
         "actor": dave.actor.id,
@@ -890,11 +915,16 @@ async fn third_party_quotes_are_verified_via_the_stamp(pool: PgPool) {
         None,
     )
     .await;
-    assert_eq!(shown["quote"]["state"], "pending");
-    assert!(shown["quote"]["quoted_status"].is_null());
-    let pending_content = shown["content"].as_str().unwrap();
-    assert!(pending_content.contains("RE:"), "{pending_content}");
-    assert!(pending_content.contains(&bob_note_uri), "{pending_content}");
+    assert_eq!(shown["quote"]["state"], "accepted");
+    assert_eq!(
+        shown["quote"]["quoted_status"]["content"],
+        "<p>worth quoting</p>"
+    );
+    assert_eq!(shown["content"], "<p>unauthorized quote</p>");
+    let rows = quote::for_statuses(&pool, &[forged_status.id])
+        .await
+        .unwrap();
+    assert_eq!(rows[&forged_status.id].state, "pending");
 
     // Self-quotes need no stamp at all.
     let self_note_uri = format!("{}/statuses/43", bob.actor.id);
@@ -1928,9 +1958,8 @@ async fn verify_worker_recovers_stamp_from_origin(pool: PgPool) {
 
 /// Misskey-style legacy quotes name the quoted post via `quoteUrl` (one of
 /// Mastodon's four accepted aliases) and never carry a stamp — the quote row
-/// must still be created, it stays `pending` like on Mastodon, and (also like
-/// Mastodon's `Quote#acceptable?`) the entity omits the quote entirely rather
-/// than rendering an eternal "pending" placeholder.
+/// stays `pending` in storage while clients display the resolved target,
+/// just like other pending quotes.
 #[sqlx::test(migrations = "../db/migrations")]
 async fn legacy_quoteurl_alias_creates_pending_quote(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
@@ -1988,8 +2017,7 @@ async fn legacy_quoteurl_alias_creates_pending_quote(pool: PgPool) {
         .unwrap();
     assert_eq!(queued, 0);
 
-    // The rendered status carries no quote attachment at all — the post
-    // shows plain, like on Mastodon, instead of a "pending" placeholder.
+    // Legacy quotes use the same optimistic presentation as FEP-044f quotes.
     let (_, shown) = api(
         app(),
         "GET",
@@ -1998,11 +2026,12 @@ async fn legacy_quoteurl_alias_creates_pending_quote(pool: PgPool) {
         None,
     )
     .await;
-    assert!(
-        shown["quote"].is_null(),
-        "legacy pending quote must be omitted: {}",
-        shown["quote"]
+    assert_eq!(shown["quote"]["state"], "accepted");
+    assert_eq!(
+        shown["quote"]["quoted_status"]["content"],
+        "<p>original</p>"
     );
+    assert_eq!(shown["content"], "<p>check this</p>");
 }
 
 /// A `quoteAuthorization` whose stamp is permanently gone at the origin
@@ -2053,4 +2082,71 @@ async fn permanently_gone_stamp_rejects_the_quote(pool: PgPool) {
         .unwrap();
     let row = &quote::for_statuses(&pool, &[stored.id]).await.unwrap()[&stored.id];
     assert_eq!(row.state, "rejected");
+
+    // This sender supplied no compatibility link. Rejected quotes still give
+    // API clients a way to reach the original, even if it was never resolved.
+    for state in ["rejected", "revoked"] {
+        quote::set_state(&pool, row.id, state).await.unwrap();
+        let (code, shown) = api(
+            app(),
+            "GET",
+            &format!("/api/v1/statuses/{}", stored.id),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(shown["quote"]["state"], state);
+        assert!(shown["quote"]["quoted_status"].is_null());
+        let content = shown["content"].as_str().unwrap();
+        assert!(content.contains("RE:"), "{content}");
+        assert!(
+            content.contains(&format!(r#"href="{bob_note_uri}""#)),
+            "{content}"
+        );
+        assert!(content.ends_with("<p>sneaky</p>"), "{content}");
+    }
+    let unchanged = status::find_by_id(&pool, stored.id).await.unwrap().unwrap();
+    assert_eq!(
+        unchanged.content, stored.content,
+        "fallback is presentation-only"
+    );
+}
+
+/// Pending quotes share the accepted nesting cap and leave the inner fallback
+/// available when its target is referenced only by id.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn pending_quote_chain_keeps_the_nesting_cap(pool: PgPool) {
+    let (_alice, token) = user_with_token(&pool, "alice").await;
+    let app = || test_app(pool.clone());
+    let mut ids: Vec<String> = Vec::new();
+    for text in ["original", "middle", "outer"] {
+        let mut body = json!({"status": text});
+        if let Some(id) = ids.last() {
+            body["quoted_status_id"] = Value::String(id.clone());
+        }
+        let (code, shown) = api(app(), "POST", "/api/v1/statuses", Some(&token), Some(body)).await;
+        assert_eq!(code, StatusCode::OK, "{shown}");
+        ids.push(shown["id"].as_str().unwrap().to_owned());
+    }
+    sqlx::query("UPDATE quotes SET state = 'pending'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, shown) = api(
+        app(),
+        "GET",
+        &format!("/api/v1/statuses/{}", ids[2]),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(shown["quote"]["state"], "accepted");
+    assert!(!shown["content"].as_str().unwrap().contains("RE:"));
+    let inner = &shown["quote"]["quoted_status"];
+    assert_eq!(inner["id"], ids[1]);
+    assert_eq!(inner["quote"]["state"], "accepted");
+    assert_eq!(inner["quote"]["quoted_status_id"], ids[0]);
+    assert!(inner["quote"]["quoted_status"].is_null());
+    assert!(inner["content"].as_str().unwrap().contains("RE:"));
 }

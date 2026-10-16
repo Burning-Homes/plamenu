@@ -25,8 +25,8 @@ pub struct Quote {
     /// later Update or verification retry can still fetch it.
     pub quoted_uri: Option<String>,
     /// Arrived without the FEP-044f `quote` property (Misskey-style): no
-    /// consent handshake exists, so a non-accepted legacy quote is omitted
-    /// from rendering (Mastodon likewise renders them only once accepted).
+    /// consent handshake exists. Pending legacy quotes are still displayed;
+    /// this flag controls verification rather than client presentation.
     pub legacy: bool,
     pub created_at: OffsetDateTime,
 }

@@ -2551,8 +2551,8 @@ fn detail_meta(status: &Status, ctx: &Ctx) -> Markup {
 
 /// The quote attachment in all its states: an embedded card when the quoted
 /// status is present, a link through the status resolver for the shallow
-/// (nesting-capped) shape, and an explanatory placeholder for the pending /
-/// deleted / revoked states, which previously rendered nothing at all.
+/// (nesting-capped) shape, and an explanatory placeholder for unavailable /
+/// deleted / revoked states. Pending quotes use the same card as accepted ones.
 fn quote_section(status: &Status, ctx: &Ctx, detail: bool) -> Markup {
     let Some(state) = status.quote_state() else {
         return html! {};

@@ -3049,12 +3049,12 @@ struct SharedMaps {
     /// flag is derived from each group's reactor ids at assembly, so one pass
     /// serves every viewer.
     reactions: HashMap<i64, Vec<reaction::ReactionGroup>>,
-    /// Accepted quote target links keyed by quoting status: both the `ActivityPub`
+    /// Quote target links keyed by quoting status: both the `ActivityPub`
     /// object id and the target's canonical human-facing URL when they differ.
     /// The stored content retains its cross-software `RE:` fallback for
-    /// failed/pending states; successful native quote renders remove it from
+    /// unavailable states; successful native quote renders remove it from
     /// client-facing content.
-    accepted_quote_links: HashMap<i64, Vec<String>>,
+    quote_links: HashMap<i64, Vec<String>>,
     applications: HashMap<i64, Value>,
     show_application: HashMap<i64, bool>,
     /// Status ids that are soft-deleted stubs — rendered as a "deleted status"
@@ -3466,7 +3466,7 @@ pub async fn render_statuses(
 }
 
 /// The viewer-independent half of the `quote` render: the quote rows and the
-/// accepted quoted statuses, fetched once for the whole viewer set. The
+/// quoted targets, fetched once for the whole viewer set. The
 /// quoted statuses themselves render through one recursive viewer-set pass —
 /// nesting stays capped exactly as before (past `depth` 0 the quoted status
 /// is referenced by id only, which also breaks quote cycles).
@@ -3482,14 +3482,9 @@ async fn quote_shared_fetch(pool: &PgPool, all_ids: &[i64]) -> Result<QuoteShare
     let rows: Vec<(i64, quote::Quote)> = quote::for_statuses(pool, all_ids)
         .await?
         .into_iter()
-        // A non-accepted legacy quote (Misskey-style, no consent handshake)
-        // renders as a plain post, not an eternal "pending" placeholder —
-        // Mastodon's `Quote#acceptable?` gate.
-        .filter(|(_, row)| !(row.legacy && row.state != "accepted"))
         .collect();
     let quoted_ids: Vec<i64> = rows
         .iter()
-        .filter(|(_, row)| row.state == "accepted")
         .filter_map(|(_, row)| row.quoted_status_id)
         .collect();
     let quoted_by_id: HashMap<i64, Status> = if quoted_ids.is_empty() {
@@ -3501,7 +3496,15 @@ async fn quote_shared_fetch(pool: &PgPool, all_ids: &[i64]) -> Result<QuoteShare
             .map(|s| (s.id, s))
             .collect()
     };
-    let quoted_batch: Vec<Status> = quoted_by_id.values().cloned().collect();
+    let displayed_ids: HashSet<i64> = rows
+        .iter()
+        .filter(|(_, row)| matches!(row.state.as_str(), "accepted" | "pending"))
+        .filter_map(|(_, row)| row.quoted_status_id)
+        .collect();
+    let quoted_batch: Vec<Status> = displayed_ids
+        .iter()
+        .filter_map(|id| quoted_by_id.get(id).cloned())
+        .collect();
     Ok(QuoteShared {
         rows,
         quoted_by_id,
@@ -3524,7 +3527,10 @@ fn assemble_quote_map(
     }
     let mut quotes = HashMap::new();
     for (status_id, row) in &shared.rows {
-        let value = if row.state == "accepted" {
+        // Client presentation is optimistic until the quote is explicitly
+        // rejected/revoked. Keep the persisted consent state and handshake
+        // intact; Mastodon clients require `accepted` to display the card.
+        let value = if matches!(row.state.as_str(), "accepted" | "pending") {
             match row
                 .quoted_status_id
                 .filter(|id| shared.quoted_by_id.contains_key(id))
@@ -4646,23 +4652,20 @@ async fn render_statuses_for_viewer_set(
     // The searchable text of each item is viewer-independent: one precompute
     // serves every viewer's filter pass.
     let searchables = filter_searchables(items, &targets, &poll_rows, &media_descriptions);
-    let accepted_quote_links = quote_shared
+    let quote_links = quote_shared
         .rows
         .iter()
-        .filter(|(_, row)| row.state == "accepted")
         .filter_map(|(status_id, row)| {
             let mut links = Vec::with_capacity(3);
-            if let Some(uri) = &row.quoted_uri {
-                links.push(uri.clone());
-            }
             if let Some(target) = row
                 .quoted_status_id
                 .and_then(|quoted_id| quote_shared.quoted_by_id.get(&quoted_id))
             {
-                links.extend(target.uri.iter().cloned());
+                // Prefer the human-facing URL when adding a missing fallback.
                 links.extend(target.url.iter().cloned());
+                links.extend(target.uri.iter().cloned());
             }
-            links.sort_unstable();
+            links.extend(row.quoted_uri.iter().cloned());
             links.dedup();
             (!links.is_empty()).then_some((*status_id, links))
         })
@@ -4696,7 +4699,7 @@ async fn render_statuses_for_viewer_set(
         mentions,
         tags,
         reactions,
-        accepted_quote_links,
+        quote_links,
         applications,
         show_application,
         deleted,
@@ -5307,8 +5310,8 @@ fn render_plain(domain: &str, item: &Status, maps: &RenderMaps<'_>) -> Result<Va
         None => None,
     };
     // Remove the compatibility link only when this response actually embeds
-    // the accepted quote card. An accepted row whose target is gone (or a
-    // nested quote represented only by id) still needs the fallback link.
+    // the quote card (including a pending quote). A missing target or a nested
+    // quote represented only by id still needs the fallback link.
     let quote_is_shown = maps
         .viewer_maps
         .quotes
@@ -5321,9 +5324,29 @@ fn render_plain(domain: &str, item: &Status, maps: &RenderMaps<'_>) -> Result<Va
                     .is_some_and(|status| !status.is_null())
         });
     let visible_content = if quote_is_shown {
-        maps.shared.accepted_quote_links.get(&item.id).map_or_else(
+        maps.shared.quote_links.get(&item.id).map_or_else(
             || item.content.clone(),
             |quoted_links| plamenu_ap::text::strip_quote_fallback(&item.content, quoted_links),
+        )
+    } else if maps
+        .viewer_maps
+        .quotes
+        .get(&item.id)
+        .and_then(|quote| quote.get("state"))
+        .and_then(Value::as_str)
+        .is_some_and(|state| matches!(state, "rejected" | "revoked"))
+        && let Some(links) = maps.shared.quote_links.get(&item.id)
+        && let Some(url) = links.iter().find(|url| {
+            url::Url::parse(url).is_ok_and(|parsed| matches!(parsed.scheme(), "http" | "https"))
+        })
+        && plamenu_ap::text::strip_quote_fallback(&item.content, links) == item.content
+    {
+        // Remote senders need not include compatibility markup. Supply it in
+        // the shared client entity so both web and API users can open the post.
+        format!(
+            r#"<p class="quote-inline">RE: {}</p>{}"#,
+            plamenu_ap::text::shortened_link_anchor(url),
+            item.content,
         )
     } else {
         item.content.clone()
