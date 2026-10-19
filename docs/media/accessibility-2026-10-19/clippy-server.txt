@@ -1,0 +1,92 @@
+   Compiling plamenu-db v0.7.0 (./crates/db)
+    Checking plamenu-ap v0.7.0 (./crates/ap)
+   Compiling plamenu v0.7.0 (./crates/server)
+    Checking plamenu-federation v0.7.0 (./crates/federation)
+error: this argument is passed by value, but not consumed in the function body
+ --> crates/server/src/discovery/presentation.rs:8:16
+  |
+8 | fn database(e: plamenu_db::DbError) -> FederationError {
+  |                ^^^^^^^^^^^^^^^^^^^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#needless_pass_by_value
+  = note: `-D clippy::needless-pass-by-value` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(clippy::needless_pass_by_value)]`
+help: consider taking a reference instead
+  |
+8 | fn database(e: &plamenu_db::DbError) -> FederationError {
+  |                +
+
+error: this function has too many lines (116/100)
+  --> crates/server/src/discovery/presentation.rs:20:1
+   |
+20 | pub(super) async fn server_icon(state: &AppState, lease: &Lease) -> Result<(), FederationError> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#too_many_lines
+   = note: `-D clippy::too-many-lines` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::too_many_lines)]`
+
+error: this function has too many lines (105/100)
+   --> crates/server/src/discovery/outbox.rs:102:1
+    |
+102 | pub async fn fetch(state: &AppState, lease: &Lease) -> Result<(), FederationError> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#too_many_lines
+
+error: casting `i64` to `usize` may truncate the value on targets with 32-bit wide pointers
+  --> crates/server/src/discovery/search.rs:50:33
+   |
+50 |             if results.len() >= limit.min(80) as usize {
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#cast_possible_truncation
+   = note: `-D clippy::cast-possible-truncation` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::cast_possible_truncation)]`
+help: ... or use `try_from` and handle the error accordingly
+   |
+50 -             if results.len() >= limit.min(80) as usize {
+50 +             if results.len() >= usize::try_from(limit.min(80)) {
+   |
+
+error: casting `i64` to `usize` may lose the sign of the value
+  --> crates/server/src/discovery/search.rs:50:33
+   |
+50 |             if results.len() >= limit.min(80) as usize {
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#cast_sign_loss
+   = note: `-D clippy::cast-sign-loss` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::cast_sign_loss)]`
+
+error: this function has too many lines (104/100)
+  --> crates/server/src/routes/search.rs:66:1
+   |
+66 | / pub async fn search_v2(
+67 | |     State(state): State<AppState>,
+68 | |     viewer: MaybeUser,
+69 | |     Query(query): Query<SearchV2Query>,
+70 | | ) -> Result<Json<Value>, ApiError> {
+   | |__________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#too_many_lines
+
+error: `format!` in `format!` args
+   --> crates/server/src/web/discovery/posts.rs:114:9
+    |
+114 | /         format!(
+115 | |             "/discover/posts?{}&{}",
+116 | |             serde_urlencoded::to_string(cursor).unwrap_or_default(),
+117 | |             format!(
+...   |
+122 | |         )
+    | |_________^
+    |
+    = help: combine the `format!(..)` arguments with the outer `format!(..)` call
+    = help: or consider changing `format!` to `format_args!`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#format_in_format_args
+    = note: `-D clippy::format-in-format-args` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::format_in_format_args)]`
+
+error: could not compile `plamenu` (lib) due to 7 previous errors

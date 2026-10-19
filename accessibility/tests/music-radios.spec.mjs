@@ -39,8 +39,8 @@ async function journey(page, browser, info, noScript) {
   await page.getByRole('button', { name: 'Create station', exact: true }).press('Enter');
   await page.waitForURL(url => /^\/music\/radios\/\d+$/.test(url.pathname));
   const stationUrl = page.url();
-  const anonymous = await browser.newContext({ baseURL: process.env.A11Y_BASE_URL, ignoreHTTPSErrors: false, javaScriptEnabled: !noScript });
-  const viewer = await browser.newContext({ baseURL: process.env.A11Y_BASE_URL, ignoreHTTPSErrors: false, javaScriptEnabled: !noScript, extraHTTPHeaders: info.project.use.extraHTTPHeaders });
+  const anonymous = await browser.newContext({ ...info.project.use, baseURL: process.env.A11Y_BASE_URL });
+  const viewer = await browser.newContext({ ...info.project.use, baseURL: process.env.A11Y_BASE_URL });
   try {
     expect((await anonymous.request.get(stationUrl)).status()).toBe(404);
     const invalid = await page.request.post('/web/music/radios/create', { form: { csrf: 'invalid', name: 'Must not exist', visibility: 'public' } });

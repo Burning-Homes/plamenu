@@ -1,0 +1,178 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "3bec4207c13bcc49d67ecb6e407bf87b7cec4bf8",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T04:54:04.096Z",
+  "completed_at": "2026-10-19T04:55:21.453Z",
+  "status": "failed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 2,
+      "failed": 1,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 2,
+      "failed": 1,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 3664
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 1675
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "passed",
+      "duration_ms": 2656
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 3168
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 1537
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "passed",
+      "duration_ms": 2443
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 4599
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 2100
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "passed",
+      "duration_ms": 3152
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 4463
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 2111
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "passed",
+      "duration_ms": 2922
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 6010
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 2841
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "passed",
+      "duration_ms": 4736
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 4174
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 2232
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "failed",
+      "duration_ms": 3569
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > conversation-journey.spec.mjs > @no-js private mentions support reply, read state and native removal",
+      "status": "passed",
+      "duration_ms": 2013
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > conversation-language.spec.mjs > @no-js private-message previews preserve declared language",
+      "status": "passed",
+      "duration_ms": 1292
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > conversation-targets.spec.mjs > @no-js long inbox participant names retain usable targets",
+      "status": "failed",
+      "duration_ms": 11263
+    }
+  ]
+}

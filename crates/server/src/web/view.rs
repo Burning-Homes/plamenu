@@ -2249,19 +2249,19 @@ pub(crate) fn rsvp_cluster(status: &Status, event: &Value, ctx: &Ctx) -> Markup 
             data-rsvp-network-failed=(ctx.locale.text("status-event-rsvp-network-failed")) {
             @match state {
                 Some("accepted") => {
-                    span.status__event-going { (ctx.locale.text("status-event-going")) }
+                    span.status__event-going role="status" { (ctx.locale.text("status-event-going")) }
                     (post("unparticipate", "status-event-cancel-rsvp"))
                 }
                 Some("pending") => {
-                    span.status__event-pending { (ctx.locale.text("status-event-pending")) }
+                    span.status__event-pending role="status" { (ctx.locale.text("status-event-pending")) }
                     (post("unparticipate", "status-event-withdraw-rsvp"))
                 }
                 Some("rejected") => {
-                    span.status__event-refused { (ctx.locale.text("status-event-refused")) }
+                    span.status__event-refused role="status" { (ctx.locale.text("status-event-refused")) }
                 }
                 // An invitation we haven't acted on: the button is the point.
                 Some("invited") => {
-                    span.status__event-invited { (ctx.locale.text("status-event-invited")) }
+                    span.status__event-invited role="status" { (ctx.locale.text("status-event-invited")) }
                     (post("participate", "status-event-rsvp"))
                 }
                 _ => {
@@ -2273,7 +2273,7 @@ pub(crate) fn rsvp_cluster(status: &Status, event: &Value, ctx: &Ctx) -> Markup 
                             }
                         }
                     } @else if let Some(reason) = refusal {
-                        span.status__event-closed {
+                        span.status__event-closed role="status" {
                             (ctx.locale.text(match reason {
                                 "invite_only" => "status-event-invite-only",
                                 "full" => "status-event-full",
@@ -3597,6 +3597,15 @@ pub(crate) fn poll_view(status: &Status, ctx: &Ctx) -> Markup {
     }
 }
 
+/// A count alone is not a useful accessible name for an icon control.
+fn action_label(locale: Locale, message: &str, count: Option<i64>) -> String {
+    let label = locale.text(message);
+    match count {
+        Some(count) => format!("{label} ({count})"),
+        None => label,
+    }
+}
+
 /// The action bar: one row in Mastodon's order — reply / boost /
 /// quote / favourite / react / bookmark / shield / "…" — every counter attached
 /// to its icon, secondary verbs behind the trailing overflow menu. The shield
@@ -3608,6 +3617,7 @@ fn action_row(status: &Status, ctx: &Ctx) -> Markup {
     html! {
         footer.status__actions {
             a.action href=(status.permalink_anchored())
+                aria-label=(action_label(ctx.locale, "status-action-reply", Some(status.replies_count())))
                 title=(ctx.locale.text("status-action-reply")) {
                 (icon("reply")) span.action__count { (status.replies_count()) }
             }
@@ -3624,6 +3634,7 @@ fn action_row(status: &Status, ctx: &Ctx) -> Markup {
                     }
                     @if status.quotable() {
                         a.action.action--quote href=(format!("/compose?quote={}", status.id()))
+                            aria-label=(action_label(ctx.locale, "status-action-quote", Some(status.quotes_count())))
                             title=(ctx.locale.text("status-action-quote")) {
                             (icon("quote")) span.action__count { (status.quotes_count()) }
                         }
@@ -3650,20 +3661,24 @@ fn action_row(status: &Status, ctx: &Ctx) -> Markup {
                     // remote-interaction interstitial.
                     @let interact = super::interact::interact_href(status.uri());
                     a.action href=(interact)
+                        aria-label=(action_label(ctx.locale, "status-action-boost-remote", Some(status.reblogs_count())))
                         title=(ctx.locale.text("status-action-boost-remote")) {
                         (icon("boost")) span.action__count { (status.reblogs_count()) }
                     }
                     a.action href=(interact)
+                        aria-label=(action_label(ctx.locale, "status-action-quote-remote", Some(status.quotes_count())))
                         title=(ctx.locale.text("status-action-quote-remote")) {
                         (icon("quote")) span.action__count { (status.quotes_count()) }
                     }
                     @if status.group_post() {
                         a.action href=(interact)
+                            aria-label=(action_label(ctx.locale, "status-action-vote-remote", Some(status.score())))
                             title=(ctx.locale.text("status-action-vote-remote")) {
                             (icon("upvote")) span.action__count { (status.score()) }
                         }
                     } @else {
                         a.action href=(interact)
+                            aria-label=(action_label(ctx.locale, "status-action-favourite-remote", Some(status.favourites_count())))
                             title=(ctx.locale.text("status-action-favourite-remote")) {
                             (icon("favourite")) span.action__count { (status.favourites_count()) }
                         }
@@ -4057,10 +4072,12 @@ fn action_form(
     };
     let message = action_message(active);
     html! {
-        form.action-form method="post" action=(path) data-action=(action) {
+        form.action-form method="post" action=(path) data-action=(action)
+            data-error=(locale.text("status-action-failed")) {
             input type="hidden" name="csrf" value=(csrf);
             input type="hidden" name="return_to" value=(return_to);
             button type="submit" class=(class) aria-pressed=(active)
+                aria-label=(action_label(locale, message, count))
                 title=(locale.text(message))
                 data-inactive-title=(locale.text(action_message(false)))
                 data-active-title=(locale.text(action_message(true))) {
@@ -5021,7 +5038,7 @@ pub fn full_compose_form(
                 // A submit that failed validation re-renders the whole composer with
                 // this banner rather than the old bare error page.
                 @if let Some(error) = prefill.error {
-                    p.compose__error role="alert" { (error) }
+                    p.compose__error role="alert" tabindex="-1" autofocus { (error) }
                 }
 
                 // Who a private mention reaches, up front — the "who's included"
@@ -6341,12 +6358,14 @@ pub fn conversation_row(conversation: &Value, ctx: &Ctx) -> Markup {
     }
     // "A", "A and B", "A, B and N more" — the Tusky recipe.
     let extra = accounts.len().saturating_sub(2);
+    let mut extra_args = FluentArgs::new();
+    extra_args.set("count", i64::try_from(extra).unwrap_or(i64::MAX));
     let names = html! {
         @for (i, account) in accounts.iter().take(2).enumerate() {
-            @if i > 0 { @if extra == 0 { " and " } @else { ", " } }
+            @if i > 0 { span.conversation__separator { @if extra == 0 { " " (ctx.locale.text("conversation-and")) " " } @else { ", " } } }
             a.conversation__participant href=(account.profile_path()) { (account.name_markup()) }
         }
-        @if extra > 0 { " and " (extra) " more" }
+        @if extra > 0 { span.conversation__extra { " " (ctx.locale.text_with("conversation-more", &extra_args)) } }
     };
     html! {
         article.conversation.is-unread[unread] data-conversation-id=(row_id) {
@@ -6359,24 +6378,24 @@ pub fn conversation_row(conversation: &Value, ctx: &Ctx) -> Markup {
                 p.conversation__with {
                     @if unread {
                         span.conversation__dot aria-hidden="true" {}
-                        span.visually-hidden { "Unread: " }
+                        span.visually-hidden { (ctx.locale.text("conversation-unread")) " " }
                     }
-                    (names)
+                    span.conversation__names { (names) }
                 }
                 @if let Some(csrf) = ctx.csrf {
                     details.status__menu.conversation__menu data-status-menu {
-                        summary.action title="Conversation options" { (icon("more")) }
+                        summary.action title=(ctx.locale.text("conversation-options")) { (icon("more")) }
                         div.status__menu-pop {
                             @if unread {
                                 (menu_form(&format!("/web/conversations/{row_id}/read"),
-                                    "Mark as read", false, None, csrf, ctx.return_to))
+                                    &ctx.locale.text("conversation-mark-read"), false, None, csrf, ctx.return_to))
                             } @else {
                                 (menu_form(&format!("/web/conversations/{row_id}/unread"),
-                                    "Mark as unread", false, None, csrf, ctx.return_to))
+                                    &ctx.locale.text("conversation-mark-unread"), false, None, csrf, ctx.return_to))
                             }
                             (menu_form(&format!("/web/conversations/{row_id}/remove"),
-                                "Remove from inbox", true,
-                                Some("Hide this conversation from your inbox? A new message brings it back."),
+                                &ctx.locale.text("conversation-remove"), true,
+                                Some(&ctx.locale.text("conversation-remove-confirm")),
                                 csrf, ctx.return_to))
                         }
                     }
@@ -6384,13 +6403,18 @@ pub fn conversation_row(conversation: &Value, ctx: &Ctx) -> Markup {
             }
             @if let Some(status) = &last_status {
                 a.conversation__open href=(status.permalink_anchored()) {
-                    span.conversation__preview {
-                        @if !status.spoiler_text().is_empty() { (status.spoiler_text()) }
-                        @else {
-                            @let text=crate::filters::plain_text(status.content_html());
-                            @if text.trim().is_empty() { (ctx.locale.text("conversation-media")) }
-                            @else { (text) }
-                        }
+                    @let preview = if status.spoiler_text().is_empty() {
+                        crate::filters::plain_text(status.content_html())
+                    } else {
+                        status.spoiler_text().to_owned()
+                    };
+                    // This preview uses original text, not the optional translated
+                    // body. The media fallback belongs to the interface language.
+                    @let has_preview = !status.spoiler_text().is_empty() || !preview.trim().is_empty();
+                    @let language = if has_preview { status.language() } else { None };
+                    span.conversation__preview lang=[language] {
+                        @if has_preview { (preview) }
+                        @else { (ctx.locale.text("conversation-media")) }
                     }
                     span.conversation__meta {
                         (ctx.locale.text("conversation-open")) " · "
@@ -6400,7 +6424,7 @@ pub fn conversation_row(conversation: &Value, ctx: &Ctx) -> Markup {
             } @else {
                 // Never drop the row: a vanished last message must not orphan
                 // the thread (the Tusky/Phanpy mistake).
-                p.empty { "The latest message in this conversation was deleted." }
+                p.empty { (ctx.locale.text("conversation-last-deleted")) }
             }
         }
     }
@@ -7088,6 +7112,80 @@ mod tests {
             clock: ViewerClock::utc(Locale::default()),
             admin: AdminCapabilities::default(),
         }
+    }
+
+    #[test]
+    fn conversation_row_localizes_controls_and_participant_summary() {
+        let mut ctx = view_ctx(None, Some("7"));
+        ctx.csrf = Some("fixture-csrf");
+        ctx.locale = Locale::negotiate(Some("ru"), None);
+        let mut value = json!({"id":"17", "unread":true, "accounts":[
+            {"id":"1", "acct":"alice", "display_name":"Alice"},
+            {"id":"2", "acct":"bob", "display_name":"Bob"}
+        ], "last_status":null});
+        let rendered = conversation_row(&value, &ctx).into_string();
+        assert!(rendered.contains(r#"<span class="conversation__separator"> и </span>"#));
+        for text in [
+            "Непрочитано:",
+            "Действия с перепиской",
+            "Отметить прочитанной",
+            "Убрать из входящих",
+            "Новое сообщение вернёт её обратно.",
+            "Последнее сообщение в этой переписке удалено.",
+        ] {
+            assert!(rendered.contains(text), "{text}");
+        }
+        value["accounts"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id":"3", "acct":"carol"}));
+        value["unread"] = json!(false);
+        let rendered = conversation_row(&value, &ctx).into_string();
+        assert!(rendered.contains("и ещё"));
+        assert!(rendered.contains("Отметить непрочитанной"));
+        assert!(!rendered.contains("Непрочитано:"));
+    }
+
+    #[test]
+    fn conversation_preview_marks_original_text_language_without_relabeling_ui() {
+        let mut ctx = view_ctx(None, Some("7"));
+        ctx.locale = Locale::negotiate(Some("ru"), None);
+        let mut value = json!({"id":"17", "accounts":[], "last_status":{
+            "id":"23", "language":"fr", "content":"<p>Bonjour</p>",
+            "_translation":{"language":"en", "content":"<p>Hello</p>"}
+        }});
+        let rendered = conversation_row(&value, &ctx).into_string();
+        assert!(
+            rendered.contains(r#"<span class="conversation__preview" lang="fr"> Bonjour </span>"#)
+        );
+        assert!(rendered.contains(r#"<span class="conversation__meta">Открыть разговор"#));
+        assert!(!rendered.contains(r#"lang="en""#));
+        value["last_status"]["spoiler_text"] = json!("Attention <ici>");
+        let rendered = conversation_row(&value, &ctx).into_string();
+        assert!(rendered.contains(
+            r#"<span class="conversation__preview" lang="fr">Attention &lt;ici&gt;</span>"#
+        ));
+        value["last_status"]["language"] = Value::Null;
+        let rendered = conversation_row(&value, &ctx).into_string();
+        assert!(
+            rendered
+                .contains(r#"<span class="conversation__preview">Attention &lt;ici&gt;</span>"#)
+        );
+    }
+
+    #[test]
+    fn conversation_media_fallback_inherits_the_interface_language() {
+        let mut ctx = view_ctx(None, Some("7"));
+        ctx.locale = Locale::negotiate(Some("ru"), None);
+        let value = json!({"id":"17", "accounts":[], "last_status":{
+            "id":"23", "language":"fr", "content":"<p> </p>"
+        }});
+        let rendered = conversation_row(&value, &ctx).into_string();
+        assert!(rendered.contains(&format!(
+            r#"<span class="conversation__preview">{}</span>"#,
+            ctx.locale.text("conversation-media")
+        )));
+        assert!(!rendered.contains("lang="));
     }
 
     #[test]

@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "f0a0c25d5f689392f2b2571492bbab0cfa61e08d",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T03:22:33.857Z",
+  "completed_at": "2026-10-19T03:23:06.727Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 3615
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 3171
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 4558
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 4431
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 6003
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 4300
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > conversation-journey.spec.mjs > @no-js private mentions support reply, read state and native removal",
+      "status": "passed",
+      "duration_ms": 2073
+    }
+  ]
+}

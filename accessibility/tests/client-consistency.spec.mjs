@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import {signIn,freshMusicAudio} from '../session.mjs';
+import {signIn,signInParticipant,freshMusicAudio} from '../session.mjs';
 
 async function audit(page, scripted = true) {
   // Axe executes page scripts; disabled-script clients still get the layout
@@ -9,7 +9,7 @@ async function audit(page, scripted = true) {
     const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();
     expect(result.violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)}))).toEqual([]);
   }
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(await page.evaluate(()=>innerWidth));
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(await page.evaluate(()=>document.documentElement.clientWidth));
 }
 async function publish(page,text) {
   await page.locator('textarea[name=status]').fill(text);
@@ -57,17 +57,13 @@ for(const mediaType of ['audio','video']) test(`a Note accepts new and existing 
 
 for (const prefix of ['', '@no-js ']) test(`${prefix}notifications and messages form distinct readable inboxes with synchronized read actions`,async({page,browser},info)=>{
   test.setTimeout(180000);
-  await signIn(page);
+  await signInParticipant(page);
   const me={username:(await page.locator('.account__handle').first().textContent()).trim().replace(/^@/,'')};
   expect(me.username).not.toBe('');
-  const senderContext=await browser.newContext({baseURL:process.env.A11Y_BASE_URL,extraHTTPHeaders:info.project.use.extraHTTPHeaders,javaScriptEnabled:!prefix});
+  const senderContext=await browser.newContext({...info.project.use,baseURL:process.env.A11Y_BASE_URL,javaScriptEnabled:!prefix});
   const sender=await senderContext.newPage();
   try {
-    await sender.goto('/login');
-    await sender.locator('[name=identifier]').fill('channel_editor');
-    await sender.locator('[name=password]').fill(process.env.A11Y_PASSWORD||'plamenu-development-only');
-    await sender.getByRole('button',{name:'Sign in',exact:true}).click();
-    await expect(sender).toHaveURL(url=>url.pathname==='/');
+    await signIn(sender);
     await sender.goto('/compose');
     await publish(sender,`@${me.username} Can you share that song?`);
     await sender.goto('/compose?visibility=direct');

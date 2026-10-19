@@ -398,3 +398,142 @@ async fn sign_in_logging_records_the_forwarded_client_ip(pool: PgPool) {
             .unwrap();
     assert_eq!(recorded.as_deref(), Some("203.0.113.42"));
 }
+
+fn login_document_request(identifier: &str, accept: &str, language: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri("/login")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(header::ACCEPT, accept)
+        .header(header::ACCEPT_LANGUAGE, language)
+        .body(Body::from(
+            serde_urlencoded::to_string([
+                ("identifier", identifier),
+                ("password", "fixture-password-must-not-be-echoed"),
+            ])
+            .unwrap(),
+        ))
+        .unwrap()
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn browser_login_throttle_preserves_admission_headers_and_json_clients(pool: PgPool) {
+    sqlx::query!("UPDATE instance_settings SET rate_limit_login_attempts = 2, rate_limit_app_registrations = 2")
+        .execute(&pool).await.unwrap();
+    let app = test_app(pool);
+    let request = |identifier, accept, language| {
+        from_ip(
+            login_document_request(identifier, accept, language),
+            "198.51.100.44",
+        )
+    };
+    for identifier in ["first@example.test", "second@example.test"] {
+        assert_eq!(
+            send(app.clone(), request(identifier, "text/html", "en"))
+                .await
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    let blocked = send(
+        app.clone(),
+        request("third@example.test", "text/html", "ru"),
+    )
+    .await;
+    assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(
+        blocked.headers()[header::CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .starts_with("text/html")
+    );
+    let (limit, remaining, _) = ratelimit_headers(&blocked).unwrap();
+    assert_eq!((limit.as_str(), remaining.as_str()), ("2", "0"));
+    assert!(
+        blocked.headers()[header::CACHE_CONTROL]
+            .to_str()
+            .unwrap()
+            .contains("no-store")
+    );
+    assert!(
+        blocked
+            .headers()
+            .contains_key(header::CONTENT_SECURITY_POLICY)
+    );
+    let body = String::from_utf8(
+        blocked
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(body.contains("lang=\"ru\""));
+    assert!(body.contains("Слишком много попыток входа"));
+    assert!(
+        body.contains("id=\"login-rate-limit-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    assert!(body.contains("href=\"/login\""));
+    assert!(!body.contains("fixture-password-must-not-be-echoed"));
+    for accept in ["application/json", "application/json, text/html;q=0"] {
+        let blocked = send(app.clone(), request("fourth@example.test", accept, "en")).await;
+        assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(body_json(blocked).await["error"], "Too many requests");
+    }
+    // An API endpoint keeps its JSON contract even when HTML is accepted.
+    for index in 0..3 {
+        let mut api = apps_request();
+        api.headers_mut()
+            .insert(header::ACCEPT, "text/html".parse().unwrap());
+        let response = send(app.clone(), from_ip(api, "198.51.100.45")).await;
+        if index == 2 {
+            assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+            assert_eq!(body_json(response).await["error"], "Too many requests");
+        } else {
+            assert_ne!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        }
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn browser_login_throttle_covers_identifier_budget_without_an_ip(pool: PgPool) {
+    sqlx::query!("UPDATE instance_settings SET rate_limit_login_attempts = 1")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app = test_app(pool);
+    let request = || login_document_request("same@example.test", "text/html;q=0.9", "en");
+    assert_eq!(
+        send(app.clone(), request()).await.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let blocked = send(app.clone(), request()).await;
+    assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
+    let body = String::from_utf8(
+        blocked
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(body.contains("Too many sign-in attempts"));
+    assert!(body.contains("Return to sign in"));
+    let form = send(
+        app.clone(),
+        Request::builder()
+            .uri("/login")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(form.status(), StatusCode::OK);
+    assert_eq!(
+        send(app, request()).await.status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+}

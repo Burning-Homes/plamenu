@@ -575,7 +575,7 @@ async fn over_row_limit_is_rejected(pool: PgPool) {
     assert_eq!(resp.status, StatusCode::SEE_OTHER);
     assert_eq!(
         resp.location.as_deref(),
-        Some("/settings/export?error=too_many")
+        Some("/settings/export?error=too_many&type=blocking&mode=merge")
     );
     // Nothing was stored.
     assert!(
@@ -856,6 +856,74 @@ async fn import_and_export_page_uses_stored_russian_locale(pool: PgPool) {
 /// A refused upload redirects with a stable `?error=` code; the page re-states
 /// it from the catalog, and anything else in that parameter renders nothing.
 #[sqlx::test(migrations = "../db/migrations")]
+async fn upload_refusal_preserves_type_and_mode_through_review(pool: PgPool) {
+    let alice = seed_alice(&pool).await;
+    let (_state, app) = state_and_app(pool.clone());
+    let cookie = login(&app).await;
+    let refused = upload(
+        &app,
+        &cookie,
+        "domain_blocking",
+        "overwrite",
+        "blocked_domains.csv",
+        "",
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        refused.location.as_deref(),
+        Some("/settings/export?error=empty&type=domain_blocking&mode=overwrite")
+    );
+    let page = get(&app, refused.location.as_deref().unwrap(), &cookie).await;
+    assert!(
+        page.body
+            .contains("id=\"import-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    assert!(page.body.contains("value=\"domain_blocking\" selected"));
+    assert!(page.body.contains("value=\"overwrite\" checked"));
+    assert!(!page.body.contains("value=\"merge\" checked"));
+    assert!(page.body.contains("Choose the CSV file again."));
+    assert!(
+        bulk_import::recent_for_account(&pool, alice.id, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let accepted = upload(
+        &app,
+        &cookie,
+        "domain_blocking",
+        "overwrite",
+        "blocked_domains.csv",
+        "blocked.example\n",
+    )
+    .await;
+    assert_eq!(accepted.status, StatusCode::SEE_OTHER);
+    let import = bulk_import::recent_for_account(&pool, alice.id, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(import.import_type, "domain_blocking");
+    assert!(import.overwrite);
+    assert_eq!(import.state, "unconfirmed");
+    assert_eq!(import.total_items, 1);
+    let review = get(&app, accepted.location.as_deref().unwrap(), &cookie).await;
+    assert!(review.body.contains("Domain blocking list"));
+    assert!(review.body.contains("Overwrite"));
+    assert!(review.body.contains("Confirm import"));
+    let unknown = get(
+        &app,
+        "/settings/export?error=empty&type=unknown&mode=unknown",
+        &cookie,
+    )
+    .await;
+    assert!(unknown.body.contains("value=\"following\" selected"));
+    assert!(unknown.body.contains("value=\"merge\" checked"));
+    assert!(!unknown.body.contains("id=\"import-error\""));
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn upload_refusals_are_codes_restated_in_the_readers_language(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let stored = user::find_by_account_id(&pool, alice.id)
@@ -872,12 +940,19 @@ async fn upload_refusals_are_codes_restated_in_the_readers_language(pool: PgPool
     assert_eq!(refused.status, StatusCode::SEE_OTHER);
     assert_eq!(
         refused.location.as_deref(),
-        Some("/settings/export?error=empty"),
+        Some("/settings/export?error=empty&type=following&mode=merge"),
         "the refusal travels as a code, not a sentence"
     );
 
-    let page = get(&app, "/settings/export?error=empty", &cookie).await;
+    let page = get(&app, refused.location.as_deref().unwrap(), &cookie).await;
     assert!(page.body.contains("В этом файле нет строк для импорта."));
+    assert!(page.body.contains("Тип и режим импорта сохранены."));
+    assert!(
+        page.body
+            .contains("id=\"import-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    assert!(page.body.contains("value=\"following\" selected"));
+    assert!(page.body.contains("value=\"merge\" checked"));
 
     // An unknown code — the only thing an outside caller can put here — is
     // dropped rather than echoed into the alert.

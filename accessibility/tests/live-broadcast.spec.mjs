@@ -237,9 +237,13 @@ test('browser camera and screen publish through one stable broadcast', async ({ 
   for (const button of ['Use camera and microphone', 'Share screen']) {
     if (button === 'Share screen') {
       await openDetailsFor(publisher.getByLabel(/Request screen audio/));
-  await publisher.getByRole('checkbox', { name: /Request screen audio/ }).uncheck();
+      await publisher.getByRole('checkbox', { name: /Request screen audio/ }).uncheck();
     }
     await publisher.getByRole('button', { name: button }).click();
+    // Selecting capture starts the existing private preview, not publication.
+    await expect(publisher.getByRole('status')).toContainText('Preview only');
+    expect(await liveState(page, id)).toBe('waiting');
+    await publisher.locator('[data-live-start]').press('Enter');
     await expect(publisher.getByRole('status')).toContainText('Broadcasting now', { timeout: 30_000 });
     const capture = await page.evaluate(() => window.__lastLiveCapture);
     if (button === 'Use camera and microphone') {

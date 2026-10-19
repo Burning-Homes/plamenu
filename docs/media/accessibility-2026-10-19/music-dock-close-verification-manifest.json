@@ -1,0 +1,16 @@
+{
+  "base_commit": "ea402c3",
+  "candidate_executable_sha256": "a739c2e48698c28d9ad2867e0e00f63b0dc0477abac830ac53e910dd93c10720",
+  "baseline_executable_commit": "abb1a71",
+  "baseline_executable_sha256": "7f9a76ca3d2544aa00bed929f85f981b15659c95f548b461e7dd719f80fb44ac",
+  "candidate_files_at_start": {
+    "crates/server/src/web/assets/app.js": "5a0844482a70d8d9af52a6fe5cebb0d0bd24ed7254421ad6329c780d615453a0",
+    "accessibility/tests/music-dock-close.spec.mjs": "a8f275434ee203a142f25b0bbc2d80fc0afe9fb822439e4c28bba10a5af9362f",
+    "accessibility/tests/music-dock-focus.spec.mjs": "5d576431f81ced7482d4b79f8fdf28a7e66d4d0e8686761b805b2a5ecde3ac0e",
+    "accessibility/tests/music-listener-journey.spec.mjs": "b4d2c6c44df8c96508a49b8cc4edca4fbf64e8f1e56e0d8ffb770e157b3e2c41",
+    "accessibility/session.mjs": "40082a3c368d18fc0129607f5747fc03109238fffa7df81a6a4d8e9e9fb87020",
+    "accessibility/playwright.config.mjs": "49a12fac77b8809af7804cac03bc8e518a7257502bb9e7c1afcfe463adeefff8",
+    "scripts/run-accessibility-tests.py": "1747f92f46e5754e72d496cd4b57329d5ab16afddadbc54b214593f1f4ceead1"
+  },
+  "scope": "Remember the last available page focus target and restore it only if closing hides the active player control. Fall back to current main content for removed/hidden/disabled prior controls. Explicit service rebuild; no server business logic changed."
+}

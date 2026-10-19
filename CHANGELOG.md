@@ -2,6 +2,87 @@
 
 ## Unreleased
 
+- Keep long inbox participant links visible and independently truncated,
+  with usable hit areas and room for keyboard focus outlines.
+
+- Explain browser sign-in limits with a localized, focused page and native
+  return link, preserving HTTP 429, admission limits and API JSON responses.
+
+- Focus rejected OAuth second-factor errors while retaining code-entry focus
+  for fresh challenges and the existing authorization/consent flow.
+
+- Focus two-factor setup and disabling errors, and associate rejected setup
+  codes with their field while retaining normal focus for fresh enrollment.
+
+- Preserve keyboard focus after refused poll votes and when voting results
+  replace the active form, without taking focus from later navigation.
+
+- Preserve declared message language in private-message previews and content
+  warnings while keeping interface labels in the interface language.
+
+- Focus the existing app-session creation error after a rejected package,
+  keeping session details and advanced choices available for correction.
+
+- Improve composer-error contrast and focus, preserve keyboard context through
+  attendance requests, and expose updated attendance text as status messages.
+
+- Preserve group-creation drafts and policy choices after validation errors,
+  with focused feedback associated with invalid names.
+
+- Focus the existing two-factor sign-in error after a rejected code while
+  retaining code-entry focus for fresh challenges.
+
+- Preserve rejected publication times and queue pagination when rescheduling,
+  with focused validation feedback associated with the affected time field.
+
+- Localize private-message inbox controls and expand narrow inbox menus within
+  their cards so conversation links remain visible and reachable.
+
+- Keep privacy choices and domain text in the settings form after domain
+  validation fails, with a focused explanation and field association.
+
+- Keep existing list and filter edits after validation errors, including keyword
+  drafts, and focus the existing error so the same form can be corrected.
+
+- Give relationship-selection checkboxes localized account, domain and hashtag
+  names for assistive technology, without changing their layout.
+
+- Focus password-change errors and associate them with the affected field,
+  preserving independent two-factor setup and existing authentication rules.
+
+- Preserve list-creation choices and rejected member handles, with focused
+  validation feedback and an associated invalid-title message.
+
+- Show report forms and confirmations in the selected interface language,
+  including category guidance and optional mute/block actions.
+
+- Localize media-viewer labels and keep keyboard focus on a visible control
+  when image navigation hides the active button.
+
+- Give search pages a localized heading for assistive-technology navigation
+  without changing the visible search layout.
+
+- Retain filter titles, keywords and selected settings after rejected creation,
+  and focus the existing error for correction.
+
+- Preserve list semantics and focus the existing error when a remote-follow
+  handle needs correction, including without JavaScript.
+
+- Keep profile text, image descriptions and choices in the editor after a
+  rejected upload, with a focused error and guidance for retrying.
+
+- Keep the proposed email address after rejected account changes and focus
+  the existing error so keyboard users can correct it.
+
+- Focus password-reset errors while preserving their list semantics, and show
+  login failures in the selected interface language.
+
+- Preserve birth date, accepted rules, and login identifier after form errors,
+  focus the existing error summary, and underline the signup rules link.
+  Give post actions descriptive accessible names, explain failed actions,
+  and keep keyboard focus available for retry without adding steps to
+  successful use.
+
 - Offer the existing Translate control regardless of a post's declared
   language. Detect the source from the text for web and API translation,
   including the no-JS flow, and refresh translations cached with forced labels.

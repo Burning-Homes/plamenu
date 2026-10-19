@@ -1,0 +1,130 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "e88a573f87574cd215eea1d2784af7cc8ca1c4d8",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T01:45:10.418Z",
+  "completed_at": "2026-10-19T01:45:41.052Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > settings-journey.spec.mjs > account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 1461
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > settings-journey.spec.mjs > profile and reading preferences can be edited and restored with the keyboard",
+      "status": "passed",
+      "duration_ms": 2160
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > settings-journey.spec.mjs > account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 1272
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > settings-journey.spec.mjs > profile and reading preferences can be edited and restored with the keyboard",
+      "status": "passed",
+      "duration_ms": 1827
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > settings-journey.spec.mjs > account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 2349
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > settings-journey.spec.mjs > profile and reading preferences can be edited and restored with the keyboard",
+      "status": "passed",
+      "duration_ms": 2543
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > settings-journey.spec.mjs > account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 2205
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > settings-journey.spec.mjs > profile and reading preferences can be edited and restored with the keyboard",
+      "status": "passed",
+      "duration_ms": 2386
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > settings-journey.spec.mjs > account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 2739
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > settings-journey.spec.mjs > profile and reading preferences can be edited and restored with the keyboard",
+      "status": "passed",
+      "duration_ms": 3181
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > settings-journey.spec.mjs > account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 1520
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > settings-journey.spec.mjs > profile and reading preferences can be edited and restored with the keyboard",
+      "status": "passed",
+      "duration_ms": 2148
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > settings-journey.spec.mjs > @no-js account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 841
+    }
+  ]
+}

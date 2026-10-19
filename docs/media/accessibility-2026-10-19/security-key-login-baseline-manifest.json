@@ -1,0 +1,8 @@
+{
+  "baseline_executable_sha256": "005faf0e543935b3c6228a08ce849e375ba86bf7fd353f9407d10c9fa01833d1",
+  "baseline_source_note": "Iteration43 application plus the two-line enrollment focus restoration; enrollment hidden CSS and sign-in focus remain unfixed.",
+  "browser_test_sha256": "1a40e03b565a5c9571a7c9c707248350c1dbe6b0a7fba60768c421aae4d7c36c",
+  "fixture_exception": "One registration options response is tightened from userVerification preferred to required solely to enroll an ephemeral existing-key fixture accepted by the real server. No production policy changes. This cannot qualify production registration, which remains broken. Authentication options/assertion and deletion use production behavior.",
+  "extended_browser_test_sha256": "80349d4b97f27a80c33d493bcf9b85eb9cdc650c97d51213b8447ba28c630e7d",
+  "extended_baseline_note": "Adds native sign-in for an existing-key account, checking the hidden key control and completing recovery-code sign-in. Extended baseline uses the reviewed enrollment executable; authentication focus/hidden state are still unchanged."
+}

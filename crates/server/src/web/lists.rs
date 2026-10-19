@@ -6,12 +6,13 @@
 //! as the REST API enforces.
 //!
 //! Everything works with JavaScript disabled: links navigate, forms POST, and
-//! each write follows the POST/Redirect/GET pattern back to the page it came
-//! from. State-changing endpoints live under `/web/lists/…` so they never
+//! successful writes redirect back. Rejected creates and member additions
+//! return the form with its submitted values. State-changing endpoints live under `/web/lists/…` so they never
 //! collide with a list-timeline URL.
 
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use fluent_bundle::FluentArgs;
 use maud::{Markup, html};
@@ -112,7 +113,7 @@ fn error_message(code: Option<&str>, locale: Locale) -> Option<String> {
         .map(|refusal| refusal.message(locale))
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 pub struct ListQuery {
     max_id: Option<i64>,
     saved: Option<String>,
@@ -238,12 +239,34 @@ pub async fn new_page(
         Ok(count) => count,
         Err(err) => return ApiError::from(err).into_response(),
     };
+    render_new_page(&user, &query, owned, None)
+}
+
+fn focused_error(message: Option<&str>) -> Markup {
+    html! {
+        @if let Some(message) = message {
+            p.settings__error id="form-error" role="alert" tabindex="-1" autofocus { (message) }
+        }
+    }
+}
+
+fn render_new_page(
+    user: &WebUser,
+    query: &ListQuery,
+    owned: i64,
+    submitted: Option<&[(String, String)]>,
+) -> Response {
+    let pairs = submitted.unwrap_or(&[]);
+    let title_invalid = matches!(
+        query.error.as_deref(),
+        Some("title_blank" | "title_too_long")
+    );
     let locale = user.locale;
     let title = locale.text("lists-new-title");
     let body = html! {
         section.column {
             h1 { (view::icon("list")) " " (title) }
-            (error_flash(error_message(query.error.as_deref(), locale).as_deref()))
+            (focused_error(error_message(query.error.as_deref(), locale).as_deref()))
             @if owned >= list::PER_ACCOUNT_LIMIT {
                 p.settings__error role="alert" { (at_limit_message(locale)) }
                 p { a href="/lists" { (locale.text("lists-back")) } }
@@ -256,11 +279,14 @@ pub async fn new_page(
                             span.settings-field__label { (locale.text("lists-field-title")) }
                             input type="text" name="title"
                                 placeholder=(locale.text("lists-title-placeholder"))
-                                maxlength="256" autocomplete="off" required;
+                                maxlength="256" autocomplete="off" required
+                                value=(field(pairs, "title").unwrap_or_default())
+                                aria-invalid=[title_invalid.then_some("true")]
+                                aria-describedby=[title_invalid.then_some("form-error")];
                         }
-                        (policy_select("list", locale))
+                        (policy_select(field(pairs, "replies_policy").unwrap_or("list"), locale))
                         (checkbox("exclusive", &locale.text("lists-exclusive"),
-                            &locale.text("lists-exclusive-hint"), false))
+                            &locale.text("lists-exclusive-hint"), super::settings::checked(pairs, "exclusive")))
                     }
                     div.settings-form__actions {
                         button type="submit" { (locale.text("lists-create")) }
@@ -270,7 +296,7 @@ pub async fn new_page(
             }
         }
     };
-    layout::shell(&title, Some(&user), &body).into_response()
+    layout::shell(&title, Some(user), &body).into_response()
 }
 
 /// `POST /web/lists` — create a list, then land on it.
@@ -291,7 +317,13 @@ pub async fn create_action(State(state): State<AppState>, user: WebUser, body: B
         Err(err) => return ApiError::from(err).into_response(),
     };
     if let Err(refusal) = validate(&title, policy, owned >= list::PER_ACCOUNT_LIMIT) {
-        return redirect_error("/lists/new", refusal);
+        let query = ListQuery {
+            error: Some(refusal.code().to_owned()),
+            ..Default::default()
+        };
+        let mut response = render_new_page(&user, &query, owned, Some(&pairs));
+        *response.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+        return response;
     }
     match list::create(
         &state.pool,
@@ -416,24 +448,43 @@ pub async fn edit_form(
         Ok(list) => list,
         Err(response) => return response,
     };
+    render_edit_page(&user, &list, &query, None)
+}
+
+fn render_edit_page(
+    user: &WebUser,
+    list: &list::List,
+    query: &ListQuery,
+    submitted: Option<&[(String, String)]>,
+) -> Response {
+    let pairs = submitted.unwrap_or(&[]);
+    let title_invalid = matches!(
+        query.error.as_deref(),
+        Some("title_blank" | "title_too_long")
+    );
+    let exclusive = submitted.map_or(list.exclusive, |pairs| {
+        super::settings::checked(pairs, "exclusive")
+    });
     let locale = user.locale;
     let body = html! {
         section.column {
-            (list_tabs(&list, "settings", locale))
+            (list_tabs(list, "settings", locale))
             (saved_flash(query.saved.is_some(), &locale.text("lists-updated")))
-            (error_flash(error_message(query.error.as_deref(), locale).as_deref()))
+            (focused_error(error_message(query.error.as_deref(), locale).as_deref()))
             form.settings-form method="post" action=(format!("/web/lists/{}/edit", list.id)) {
                 input type="hidden" name="csrf" value=(user.csrf);
                 fieldset.settings-form__group {
                     legend { (locale.text("lists-settings-legend")) }
                     label.settings-field {
                         span.settings-field__label { (locale.text("lists-field-title")) }
-                        input type="text" name="title" value=(list.title)
-                            maxlength="256" autocomplete="off" required;
+                        input type="text" name="title" value=(field(pairs, "title").unwrap_or(&list.title))
+                            maxlength="256" autocomplete="off" required
+                            aria-invalid=[title_invalid.then_some("true")]
+                            aria-describedby=[title_invalid.then_some("form-error")];
                     }
-                    (policy_select(&list.replies_policy, locale))
+                    (policy_select(field(pairs, "replies_policy").unwrap_or(&list.replies_policy), locale))
                     (checkbox("exclusive", &locale.text("lists-exclusive"),
-                        &locale.text("lists-exclusive-hint"), list.exclusive))
+                        &locale.text("lists-exclusive-hint"), exclusive))
                 }
                 div.settings-form__actions {
                     button type="submit" { (locale.text("lists-save")) }
@@ -454,7 +505,7 @@ pub async fn edit_form(
             }
         }
     };
-    layout::shell(&list.title, Some(&user), &body).into_response()
+    layout::shell(&list.title, Some(user), &body).into_response()
 }
 
 /// `POST /web/lists/{id}/edit`.
@@ -471,15 +522,23 @@ pub async fn update_action(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return csrf_rejection();
     }
-    if owned_list(&state, &user, list_id).await.is_err() {
-        return super::pages::not_found(&state, Some(&user), user.locale).await;
-    }
+    let list = match owned_list(&state, &user, list_id).await {
+        Ok(list) => list,
+        Err(response) => return response,
+    };
     let title = field(&pairs, "title").unwrap_or_default().trim().to_owned();
     let policy = field(&pairs, "replies_policy").unwrap_or("list");
     let exclusive = super::settings::checked(&pairs, "exclusive");
     let back = format!("/lists/{list_id}/edit");
     if let Err(refusal) = validate(&title, policy, false) {
-        return redirect_error(&back, refusal);
+        let query = ListQuery {
+            max_id: None,
+            saved: None,
+            error: Some(refusal.code().to_owned()),
+        };
+        let mut response = render_edit_page(&user, &list, &query, Some(&pairs));
+        *response.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+        return response;
     }
     match list::update(&state.pool, list_id, &title, policy, exclusive).await {
         Ok(_) => redirect_to(&format!("{back}?saved=1")),
@@ -518,7 +577,17 @@ pub async fn members_page(
     Path(list_id): Path<i64>,
     Query(query): Query<ListQuery>,
 ) -> Response {
-    let list = match owned_list(&state, &user, list_id).await {
+    render_members_page(&state, &user, list_id, &query, "").await
+}
+
+async fn render_members_page(
+    state: &AppState,
+    user: &WebUser,
+    list_id: i64,
+    query: &ListQuery,
+    handle: &str,
+) -> Response {
+    let list = match owned_list(state, user, list_id).await {
         Ok(list) => list,
         Err(response) => return response,
     };
@@ -534,7 +603,7 @@ pub async fn members_page(
         Ok(ids) => ids,
         Err(err) => return ApiError::from(err).into_response(),
     };
-    let members = match ordered_accounts(&state, &ids, user.current.account.id).await {
+    let members = match ordered_accounts(state, &ids, user.current.account.id).await {
         Ok(accounts) => accounts,
         Err(response) => return response,
     };
@@ -553,7 +622,7 @@ pub async fn members_page(
         section.column {
             (list_tabs(&list, "members", locale))
             (saved_flash(query.saved.is_some(), &locale.text("lists-members-saved")))
-            (error_flash(error_message(query.error.as_deref(), locale).as_deref()))
+            (focused_error(error_message(query.error.as_deref(), locale).as_deref()))
 
             form.settings-form method="post" action=(format!("/web/lists/{list_id}/members/add")) {
                 input type="hidden" name="csrf" value=(user.csrf);
@@ -562,7 +631,8 @@ pub async fn members_page(
                     p.settings-field__hint { (add_hint) }
                     label.settings-field {
                         span.settings-field__label { (locale.text("lists-field-handle")) }
-                        input type="text" name="handle"
+                        input type="text" name="handle" value=(handle)
+                            aria-describedby=[query.error.as_deref().and_then(Refusal::from_code).map(|_| "form-error")]
                             placeholder=(locale.text("lists-handle-placeholder"))
                             autocomplete="off" required;
                     }
@@ -591,7 +661,25 @@ pub async fn members_page(
             }
         }
     };
-    layout::shell(&list.title, Some(&user), &body).into_response()
+    layout::shell(&list.title, Some(user), &body).into_response()
+}
+
+async fn member_error(
+    state: &AppState,
+    user: &WebUser,
+    list_id: i64,
+    handle: &str,
+    refusal: Refusal,
+) -> Response {
+    let query = ListQuery {
+        error: Some(refusal.code().to_owned()),
+        ..Default::default()
+    };
+    let mut response = render_members_page(state, user, list_id, &query, handle).await;
+    if response.status().is_success() {
+        *response.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+    }
+    response
 }
 
 /// One member row: the account card plus a Remove button.
@@ -634,12 +722,14 @@ pub async fn add_member_action(
     let handle = normalize_handle(raw);
     let account = match resolve_handle(&state, &handle).await {
         Ok(Some(account)) => account,
-        Ok(None) => return redirect_error(&back, Refusal::NoSuchAccount),
+        Ok(None) => return member_error(&state, &user, list_id, raw, Refusal::NoSuchAccount).await,
         Err(err) => return err.into_response(),
     };
     match list::add_members(&state.pool, list_id, user.current.account.id, &[account.id]).await {
         Ok(Ok(())) => redirect_to(&format!("{back}?saved=1")),
-        Ok(Err(reason)) => redirect_error(&back, add_refusal(Some(reason))),
+        Ok(Err(reason)) => {
+            member_error(&state, &user, list_id, raw, add_refusal(Some(reason))).await
+        }
         Err(err) => ApiError::from(err).into_response(),
     }
 }
@@ -881,12 +971,4 @@ fn normalize_handle(raw: &str) -> String {
     } else {
         format!("@{}", trimmed.trim_start_matches('@'))
     }
-}
-
-/// Redirects back to `base` carrying the refusal's code, which the page it
-/// lands on re-states in the reader's language.
-fn redirect_error(base: &str, refusal: Refusal) -> Response {
-    let sep = if base.contains('?') { '&' } else { '?' };
-    let query = serde_urlencoded::to_string([("error", refusal.code())]).unwrap_or_default();
-    redirect_to(&format!("{base}{sep}{query}"))
 }

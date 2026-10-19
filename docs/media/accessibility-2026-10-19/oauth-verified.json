@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "6927034d64fda4defc9478b584f7a556f5a92f70",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T04:26:56.622Z",
+  "completed_at": "2026-10-19T04:27:19.382Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > oauth-journey.spec.mjs > OAuth second-factor recovery preserves authorization and explicit consent",
+      "status": "passed",
+      "duration_ms": 2102
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > oauth-journey.spec.mjs > OAuth second-factor recovery preserves authorization and explicit consent",
+      "status": "passed",
+      "duration_ms": 2046
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > oauth-journey.spec.mjs > OAuth second-factor recovery preserves authorization and explicit consent",
+      "status": "passed",
+      "duration_ms": 3220
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > oauth-journey.spec.mjs > OAuth second-factor recovery preserves authorization and explicit consent",
+      "status": "passed",
+      "duration_ms": 3224
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > oauth-journey.spec.mjs > OAuth second-factor recovery preserves authorization and explicit consent",
+      "status": "passed",
+      "duration_ms": 3368
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > oauth-journey.spec.mjs > OAuth second-factor recovery preserves authorization and explicit consent",
+      "status": "passed",
+      "duration_ms": 2426
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > oauth-journey.spec.mjs > @no-js OAuth recovery and consent use native forms",
+      "status": "passed",
+      "duration_ms": 1605
+    }
+  ]
+}

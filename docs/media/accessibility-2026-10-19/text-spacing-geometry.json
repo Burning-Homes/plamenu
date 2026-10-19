@@ -1,0 +1,534 @@
+{
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-desktop/login-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1425,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-desktop/signup-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1425,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-desktop/compose-default-geometry.json": {
+    "width": 1440,
+    "scroll": 1425
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-desktop/compose-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1425,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-desktop/post-default-geometry.json": {
+    "width": 1440,
+    "scroll": 1425
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-desktop/post-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1425,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-desktop/profile-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1425,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-desktop/login-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1425,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-desktop/signup-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1425,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-desktop/compose-default-geometry.json": {
+    "width": 1440,
+    "scroll": 1425
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-desktop/compose-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1425,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-desktop/post-default-geometry.json": {
+    "width": 1440,
+    "scroll": 1425
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-desktop/post-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1425,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-desktop/profile-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1425,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-mobile/login-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-mobile/signup-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-mobile/compose-default-geometry.json": {
+    "width": 320,
+    "scroll": 320
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-mobile/compose-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-mobile/post-default-geometry.json": {
+    "width": 320,
+    "scroll": 320
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-mobile/post-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-chromium-mobile/profile-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-mobile/login-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-mobile/signup-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-mobile/compose-default-geometry.json": {
+    "width": 320,
+    "scroll": 320
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-mobile/compose-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-mobile/post-default-geometry.json": {
+    "width": 320,
+    "scroll": 320
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-mobile/post-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-chromium-mobile/profile-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-desktop/login-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-desktop/signup-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-desktop/compose-default-geometry.json": {
+    "width": 1440,
+    "scroll": 1440
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-desktop/compose-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-desktop/post-default-geometry.json": {
+    "width": 1440,
+    "scroll": 1440
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-desktop/post-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-desktop/profile-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-desktop/login-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-desktop/signup-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-desktop/compose-default-geometry.json": {
+    "width": 1440,
+    "scroll": 1440
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-desktop/compose-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-desktop/post-default-geometry.json": {
+    "width": 1440,
+    "scroll": 1440
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-desktop/post-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-desktop/profile-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-mobile/login-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-mobile/signup-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-mobile/compose-default-geometry.json": {
+    "width": 320,
+    "scroll": 320
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-mobile/compose-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-mobile/post-default-geometry.json": {
+    "width": 320,
+    "scroll": 320
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-mobile/post-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-firefox-mobile/profile-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-mobile/login-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-mobile/signup-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-mobile/compose-default-geometry.json": {
+    "width": 320,
+    "scroll": 320
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-mobile/compose-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-mobile/post-default-geometry.json": {
+    "width": 320,
+    "scroll": 320
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-mobile/post-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-firefox-mobile/profile-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-desktop/login-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-desktop/signup-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-desktop/compose-default-geometry.json": {
+    "width": 1440,
+    "scroll": 1440
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-desktop/compose-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-desktop/post-default-geometry.json": {
+    "width": 1440,
+    "scroll": 1440
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-desktop/post-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-desktop/profile-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-desktop/login-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-desktop/signup-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-desktop/compose-default-geometry.json": {
+    "width": 1440,
+    "scroll": 1440
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-desktop/compose-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-desktop/post-default-geometry.json": {
+    "width": 1440,
+    "scroll": 1440
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-desktop/post-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-desktop/profile-spacing-geometry.json": {
+    "width": 1440,
+    "innerWidth": 1440,
+    "scroll": 1440,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-mobile/login-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-mobile/signup-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-mobile/compose-default-geometry.json": {
+    "width": 320,
+    "scroll": 320
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-mobile/compose-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-mobile/post-default-geometry.json": {
+    "width": 320,
+    "scroll": 320
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-mobile/post-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-2694f-user-text-spacing-overrides-webkit-mobile/profile-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-mobile/login-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-mobile/signup-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-mobile/compose-default-geometry.json": {
+    "width": 320,
+    "scroll": 320
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-mobile/compose-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-mobile/post-default-geometry.json": {
+    "width": 320,
+    "scroll": 320
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-mobile/post-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-3092c-user-text-spacing-overrides-webkit-mobile/profile-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 320,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-e165a-rate-text-spacing-overrides-chromium-no-javascript/login-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 305,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-e165a-rate-text-spacing-overrides-chromium-no-javascript/signup-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 305,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-e165a-rate-text-spacing-overrides-chromium-no-javascript/compose-default-geometry.json": {
+    "width": 320,
+    "scroll": 305
+  },
+  "text-spacing-journey-Engli-e165a-rate-text-spacing-overrides-chromium-no-javascript/compose-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 305,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-e165a-rate-text-spacing-overrides-chromium-no-javascript/post-default-geometry.json": {
+    "width": 320,
+    "scroll": 305
+  },
+  "text-spacing-journey-Engli-e165a-rate-text-spacing-overrides-chromium-no-javascript/post-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 305,
+    "candidates": []
+  },
+  "text-spacing-journey-Engli-e165a-rate-text-spacing-overrides-chromium-no-javascript/profile-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 305,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-6db41-rate-text-spacing-overrides-chromium-no-javascript/login-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 305,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-6db41-rate-text-spacing-overrides-chromium-no-javascript/signup-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 305,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-6db41-rate-text-spacing-overrides-chromium-no-javascript/compose-default-geometry.json": {
+    "width": 320,
+    "scroll": 305
+  },
+  "text-spacing-journey-Russi-6db41-rate-text-spacing-overrides-chromium-no-javascript/compose-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 316,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-6db41-rate-text-spacing-overrides-chromium-no-javascript/post-default-geometry.json": {
+    "width": 320,
+    "scroll": 305
+  },
+  "text-spacing-journey-Russi-6db41-rate-text-spacing-overrides-chromium-no-javascript/post-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 316,
+    "candidates": []
+  },
+  "text-spacing-journey-Russi-6db41-rate-text-spacing-overrides-chromium-no-javascript/profile-spacing-geometry.json": {
+    "width": 320,
+    "innerWidth": 320,
+    "scroll": 305,
+    "candidates": []
+  }
+}

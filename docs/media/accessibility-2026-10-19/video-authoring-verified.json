@@ -1,0 +1,142 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "893132761b9025776a3f0f71e1ccd42c0f5e14aa",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T03:34:32.887Z",
+  "completed_at": "2026-10-19T03:37:03.808Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > native-video.spec.mjs > native video upload, review and publication",
+      "status": "passed",
+      "duration_ms": 19748
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > video-authoring-ux.spec.mjs > Authoring hierarchy, help dismissal and validation preserve choices",
+      "status": "passed",
+      "duration_ms": 3230
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > native-video.spec.mjs > native video upload, review and publication",
+      "status": "passed",
+      "duration_ms": 15814
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > video-authoring-ux.spec.mjs > Authoring hierarchy, help dismissal and validation preserve choices",
+      "status": "passed",
+      "duration_ms": 2450
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > native-video.spec.mjs > native video upload, review and publication",
+      "status": "passed",
+      "duration_ms": 20122
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > video-authoring-ux.spec.mjs > Authoring hierarchy, help dismissal and validation preserve choices",
+      "status": "passed",
+      "duration_ms": 3805
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > native-video.spec.mjs > native video upload, review and publication",
+      "status": "passed",
+      "duration_ms": 16956
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > video-authoring-ux.spec.mjs > Authoring hierarchy, help dismissal and validation preserve choices",
+      "status": "passed",
+      "duration_ms": 3452
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > native-video.spec.mjs > native video upload, review and publication",
+      "status": "passed",
+      "duration_ms": 19732
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > video-authoring-ux.spec.mjs > Authoring hierarchy, help dismissal and validation preserve choices",
+      "status": "passed",
+      "duration_ms": 4302
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > native-video.spec.mjs > native video upload, review and publication",
+      "status": "passed",
+      "duration_ms": 16853
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > video-authoring-ux.spec.mjs > Authoring hierarchy, help dismissal and validation preserve choices",
+      "status": "passed",
+      "duration_ms": 2855
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > native-video.spec.mjs > native video upload, captions and publication @no-js",
+      "status": "passed",
+      "duration_ms": 10791
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > native-video.spec.mjs > Video metadata authoring and editing without JavaScript @no-js",
+      "status": "passed",
+      "duration_ms": 4478
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > video-authoring-ux.spec.mjs > Authoring disclosures and error recovery work without scripts @no-js",
+      "status": "passed",
+      "duration_ms": 1095
+    }
+  ]
+}

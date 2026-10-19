@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { signIn } from '../session.mjs';
+import { openDetailsFor, signIn } from '../session.mjs';
 
 const publicPages = [
   ['landing', '/'],
@@ -218,6 +218,7 @@ test('media lightbox controls keep their icons centred in accessible targets', a
   const cards = page.locator('.compose__attachment');
   await expect(cards).toHaveCount(3);
   for (const [index, card] of (await cards.all()).entries()) {
+    await openDetailsFor(card.locator('.compose__alt'));
     await card.locator('.compose__alt').fill(`Lightbox test image ${index + 1}`);
   }
   await Promise.all([

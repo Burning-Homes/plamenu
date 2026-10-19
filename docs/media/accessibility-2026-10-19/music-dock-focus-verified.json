@@ -1,0 +1,166 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "202f2df553d7055d60c051acb4177edcb913a5c3",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T06:07:33.031Z",
+  "completed_at": "2026-10-19T06:08:42.615Z",
+  "status": "failed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 2,
+      "failed": 1,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 1,
+      "failed": 2,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > music-dock-focus.spec.mjs > keyboard focus stays above the music dock while editing an upload",
+      "status": "passed",
+      "duration_ms": 1680
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > music-dock-focus.spec.mjs > keyboard focus stays above an expanded music queue while editing an upload",
+      "status": "passed",
+      "duration_ms": 1492
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > music-listener-journey.spec.mjs > ordinary listeners can publish, find and play audio without queue setup",
+      "status": "passed",
+      "duration_ms": 3859
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > music-dock-focus.spec.mjs > keyboard focus stays above the music dock while editing an upload",
+      "status": "passed",
+      "duration_ms": 1266
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > music-dock-focus.spec.mjs > keyboard focus stays above an expanded music queue while editing an upload",
+      "status": "passed",
+      "duration_ms": 1076
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > music-listener-journey.spec.mjs > ordinary listeners can publish, find and play audio without queue setup",
+      "status": "passed",
+      "duration_ms": 3891
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > music-dock-focus.spec.mjs > keyboard focus stays above the music dock while editing an upload",
+      "status": "passed",
+      "duration_ms": 2289
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > music-dock-focus.spec.mjs > keyboard focus stays above an expanded music queue while editing an upload",
+      "status": "passed",
+      "duration_ms": 1546
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > music-listener-journey.spec.mjs > ordinary listeners can publish, find and play audio without queue setup",
+      "status": "passed",
+      "duration_ms": 7332
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > music-dock-focus.spec.mjs > keyboard focus stays above the music dock while editing an upload",
+      "status": "passed",
+      "duration_ms": 2088
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > music-dock-focus.spec.mjs > keyboard focus stays above an expanded music queue while editing an upload",
+      "status": "passed",
+      "duration_ms": 1246
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > music-listener-journey.spec.mjs > ordinary listeners can publish, find and play audio without queue setup",
+      "status": "passed",
+      "duration_ms": 7444
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > music-dock-focus.spec.mjs > keyboard focus stays above the music dock while editing an upload",
+      "status": "passed",
+      "duration_ms": 2950
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > music-dock-focus.spec.mjs > keyboard focus stays above an expanded music queue while editing an upload",
+      "status": "failed",
+      "duration_ms": 2062
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > music-listener-journey.spec.mjs > ordinary listeners can publish, find and play audio without queue setup",
+      "status": "passed",
+      "duration_ms": 8538
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > music-dock-focus.spec.mjs > keyboard focus stays above the music dock while editing an upload",
+      "status": "failed",
+      "duration_ms": 1503
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > music-dock-focus.spec.mjs > keyboard focus stays above an expanded music queue while editing an upload",
+      "status": "failed",
+      "duration_ms": 1682
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > music-listener-journey.spec.mjs > ordinary listeners can publish, find and play audio without queue setup",
+      "status": "passed",
+      "duration_ms": 8572
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > music-listener-journey.spec.mjs > ordinary audio journey works without JavaScript @no-js",
+      "status": "passed",
+      "duration_ms": 3507
+    }
+  ]
+}

@@ -32,6 +32,8 @@ struct FormValues {
     /// The chosen IANA zone, so a failed submission does not silently reset it
     /// to the server default. Empty means "server default".
     time_zone: String,
+    date_of_birth: String,
+    agreement: bool,
 }
 
 #[derive(Deserialize)]
@@ -156,11 +158,16 @@ fn field_description(errors: &[SignupError], field: &str, hint: Option<&str>) ->
     }
 }
 
-fn birth_date_field(minimum_age_help: &str, errors: &[SignupError], locale: Locale) -> Markup {
+fn birth_date_field(
+    minimum_age_help: &str,
+    current: &str,
+    errors: &[SignupError],
+    locale: Locale,
+) -> Markup {
     html! {
         label {
             (locale.text("signup-date-of-birth"))
-            input type="date" name="date_of_birth" autocomplete="bday" required
+            input type="date" name="date_of_birth" value=(current) autocomplete="bday" required
                 aria-invalid=[field_invalid(errors, "date_of_birth").then_some("true")]
                 aria-describedby=[field_description(errors, "date_of_birth", Some("signup-bday-hint"))];
             span.settings-field__hint id="signup-bday-hint" {
@@ -180,7 +187,7 @@ fn signup_identity_fields(
         label {
             (locale.text("signup-username"))
             input type="text" name="username" value=(values.username)
-                autocomplete="username" required autofocus
+                autocomplete="username" required autofocus[errors.is_empty()]
                 aria-invalid=[field_invalid(errors, "username").then_some("true")]
                 aria-describedby=[field_description(errors, "username", Some("signup-username-hint"))];
             span.settings-field__hint id="signup-username-hint" {
@@ -228,8 +235,10 @@ async fn signup_page(
                 p { (locale.text("signup-reviewed")) }
             }
             @if !errors.is_empty() {
-                ul.form-error id="signup-errors" role="alert" {
-                    @for error in errors { li { (&error.message) } }
+                div id="signup-errors" role="alert" tabindex="-1" autofocus {
+                    ul.form-error {
+                        @for error in errors { li { (&error.message) } }
+                    }
                 }
             }
             form.auth-form method="post" action="/signup" {
@@ -252,7 +261,7 @@ async fn signup_page(
                         aria-describedby=[field_description(errors, "password_confirmation", None)];
                 }
                 @if min_age > 0 {
-                    (birth_date_field(&minimum_age_help, errors, locale))
+                    (birth_date_field(&minimum_age_help, &values.date_of_birth, errors, locale))
                 }
                 (time_zone_field(&values.time_zone, locale))
                 @if mode == RegistrationsMode::Approved {
@@ -266,7 +275,7 @@ async fn signup_page(
                     }
                 }
                 label.form-check {
-                    input type="checkbox" name="agreement" value="1" required
+                    input type="checkbox" name="agreement" value="1" required checked[values.agreement]
                         aria-invalid=[field_invalid(errors, "agreement").then_some("true")]
                         aria-describedby=[field_description(errors, "agreement", None)];
                     span {
@@ -397,6 +406,8 @@ pub async fn signup_submit(
         time_zone: crate::time_zones::normalize(&form.time_zone)
             .unwrap_or_default()
             .to_owned(),
+        date_of_birth: form.date_of_birth.trim().to_owned(),
+        agreement: form.agreement.is_some(),
     };
     let mode = settings.registrations_mode();
 
@@ -727,7 +738,9 @@ mod tests {
             "Enter a valid date".to_owned(),
         )];
         let rendered =
-            birth_date_field("You must be 18.", &errors, Locale::default()).into_string();
+            birth_date_field("You must be 18.", "1990-01-02", &errors, Locale::default())
+                .into_string();
+        assert!(rendered.contains(r#"value="1990-01-02""#), "{rendered}");
         assert!(rendered.contains(r#"autocomplete="bday""#), "{rendered}");
         assert!(rendered.contains(r#"aria-invalid="true""#), "{rendered}");
         assert!(

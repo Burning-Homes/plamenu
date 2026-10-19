@@ -348,6 +348,65 @@ fn content_security_policy(
     .expect("a base64 hash is always a valid header value")
 }
 
+// Only explicit HTML browser requests to first-party sign-in forms receive
+// an HTML throttle explanation. API clients retain their existing JSON body.
+fn browser_login_locale(request: &Request) -> Option<web::i18n::Locale> {
+    use axum::http::{Method, header};
+
+    if request.method() != Method::POST
+        || !matches!(request.uri().path(), "/login" | "/login/challenge")
+    {
+        return None;
+    }
+    let accept = request.headers().get(header::ACCEPT)?.to_str().ok()?;
+    let html = accept.split(',').any(|range| {
+        let mut parts = range.split(';');
+        if !parts
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .eq_ignore_ascii_case("text/html")
+        {
+            return false;
+        }
+        parts.all(|parameter| {
+            let (name, value) = parameter.trim().split_once('=').unwrap_or_default();
+            !name.eq_ignore_ascii_case("q")
+                || value
+                    .parse::<f32>()
+                    .is_ok_and(|quality| quality > 0.0 && quality <= 1.0)
+        })
+    });
+    html.then(|| web::i18n::Locale::from_headers(request.headers()))
+}
+
+fn browser_login_throttle(
+    mut response: axum::response::Response,
+    locale: Option<web::i18n::Locale>,
+) -> axum::response::Response {
+    use axum::http::{HeaderValue, StatusCode, header};
+
+    if response.status() == StatusCode::TOO_MANY_REQUESTS
+        && let Some(locale) = locale
+    {
+        *response.body_mut() =
+            axum::body::Body::from(web::session::login_rate_limit_page(locale).into_string());
+        let headers = response.headers_mut();
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/html; charset=utf-8"),
+        );
+        headers.remove(header::CONTENT_LENGTH);
+        headers.remove(header::CONTENT_ENCODING);
+        headers.remove(header::ETAG);
+        headers.append(
+            header::VARY,
+            HeaderValue::from_static("Accept, Accept-Language"),
+        );
+    }
+    response
+}
+
 /// Global response hardening. Denies framing of every HTML page except the
 /// public, read-only status and music embeds; this blocks clickjacking of login, OAuth
 /// consent, and settings actions, and marks credential-bearing responses
@@ -361,6 +420,7 @@ async fn security_headers(
 ) -> axum::response::Response {
     use axum::http::{HeaderValue, header};
 
+    let login_locale = browser_login_locale(&request);
     let sensitive = is_credential_path(request.uri().path());
     let music_share = is_music_share_path(request.uri().path());
     let embeddable_status = request
@@ -372,7 +432,7 @@ async fn security_headers(
     let embeddable_music = web::music_embeds::is_frame_path(request.uri().path());
     let security = RequestSecurityContext::default();
     request.extensions_mut().insert(security.clone());
-    let mut response = next.run(request).await;
+    let mut response = browser_login_throttle(next.run(request).await, login_locale);
     let embeddable_response =
         (embeddable_status || embeddable_music) && response.status().is_success();
     let headers = response.headers_mut();

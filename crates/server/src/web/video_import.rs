@@ -66,7 +66,7 @@ async fn render(
             }
             p.video-form__intro { (locale.text("video-import-hint")) }
             (super::video_workspace::navigation("/videos",locale))
-            @if let Some(error) = error { p.settings__error role="alert" { (error) } }
+            @if let Some(error) = error { p.settings__error id="video-import-error" role="alert" tabindex="-1" autofocus { (error) } }
             @if channels.is_empty() {
                 p { a href="/videos/channels/new" { (locale.text("videos-new-channel")) } }
             } @else {

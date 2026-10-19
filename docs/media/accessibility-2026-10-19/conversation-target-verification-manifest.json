@@ -1,0 +1,12 @@
+{
+  "baseline_executable_sha256": "f0e75f931d89ec34bc27eabcf0d0a61331463e1274e6887ccbb092e601f8e518",
+  "first_candidate_executable_sha256": "162ad4fc5fd78c7628dafc2a69b5796a01a22f36c983aed342e30c3482e988e1",
+  "verified_executable_sha256": "a97faaea578b3dc66f1e20dc9081e52f9c539a7b0df9e28357ef81b541915f25",
+  "files": {
+    "crates/server/src/web/assets/app.css": "7c4742f8980f6fd235e85ecbb325cb26891307fde3dde8f8ffb412900d5f5c77",
+    "crates/server/src/web/view.rs": "840c3c90781cbba7e99e74104fe2bd311abdd625171bf39eb5397907ef920b26",
+    "accessibility/tests/conversation-targets.spec.mjs": "c85c3a3ebee6158de31dcf1f197888fec284a5d3837664cce1e7dc4c3c2b63ea"
+  },
+  "first_candidate": "19/21 cases passed. WebKit hid an overlong atomic inline link; the final layout gives each name its own bounded flex item. The no-JavaScript display-name expectation also exceeded the existing 30-character input limit and was corrected.",
+  "final_scope": "28 cases: single-name and two-visible-name targets plus the existing conversation and language journeys. Card crops compare the affected row without unrelated inbox threads. Larger participant sets and physical devices are not exhaustively qualified."
+}

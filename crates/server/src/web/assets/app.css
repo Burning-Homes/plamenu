@@ -803,6 +803,11 @@ img.emoji {
     label.form-check {
       display: flex;
       align-items: baseline;
+
+      a {
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
     }
 
     button {
@@ -1126,6 +1131,10 @@ img.emoji {
 .compose__actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-inline-size: 0;
+  max-inline-size: 100%;
   gap: var(--space-3);
   margin-inline-start: auto;
 }
@@ -1162,7 +1171,7 @@ img.emoji {
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius);
   background: var(--danger-soft);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 /* "Posting to !group" note above the composer for a group submission. */
@@ -3253,7 +3262,8 @@ span.history__thumb--file {
   color: var(--text-muted);
 }
 
-.poll__error {
+.poll__error,
+.status__action-error {
   margin: var(--space-2) 0 0;
   font-size: var(--text-sm);
   color: var(--danger);
@@ -4530,21 +4540,50 @@ img.reaction__emoji {
 }
 
 .conversation__with {
+  display: flex;
+  align-items: center;
   margin: 0;
   color: var(--text-muted);
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 
   .conversation__participant {
+    display: inline-block;
+    min-block-size: 24px;
+    min-inline-size: 24px;
+    max-inline-size: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
     color: var(--text);
     font-weight: 700;
   }
 }
 
+.conversation__names {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-inline-size: 0;
+  white-space: nowrap;
+  /* Each name truncates independently; keep its focus outline visible. */
+  padding-block: var(--space-1);
+}
+
+.conversation__separator {
+  flex-shrink: 0;
+  white-space: pre;
+}
+
+.conversation__extra {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
 .conversation__dot {
   display: inline-block;
+  flex-shrink: 0;
   inline-size: 0.55rem;
   block-size: 0.55rem;
   border-radius: 50%;
@@ -6153,6 +6192,12 @@ a.settings-button--plain {
   display: grid;
   gap: var(--space-2);
   margin-top: var(--space-2);
+}
+
+/* Preserve native hiding when script/platform support cannot reveal key controls. */
+.webauthn-register[hidden],
+.auth-webauthn[hidden] {
+  display: none;
 }
 
 .auth-webauthn {
@@ -9482,8 +9527,21 @@ html:has(.vod-player:fullscreen) { scrollbar-gutter: auto; }
 .music-dock .music-player-error { grid-column: 1 / -1; margin: 0; color: var(--danger); }
 .music-dock .music-player-error:empty { display: none; }
 .music-dock > section.music-player { display: none; }
-.music-dock--expanded > section.music-player { display: grid; max-block-size: 55dvh; overflow: auto; padding: 1rem; }
-.has-music-dock .app-main { padding-block-end: 8rem; }
+.music-dock--expanded > section.music-player {
+  display: grid;
+  /* Preserve page-editing space in short windows while the queue keeps its
+     existing scrollport and enough room for a focused queue control. */
+  max-block-size: min(55dvh, max(3.5rem, calc(100dvh - var(--music-dock-controls-clearance, 10rem) - 8rem)));
+  overflow: auto;
+  padding: 1rem;
+}
+/* Keep page and sidebar focus above the actual dock, including its open queue. */
+html:has(body.has-music-dock) {
+  scroll-padding-block-end: calc(var(--music-dock-clearance, 0px) + var(--space-3));
+}
+.has-music-dock .app-main :focus-visible { scroll-margin-block-end: var(--space-3); }
+.has-music-dock .sidebar { block-size: calc(100dvh - var(--music-dock-clearance, 0px)); }
+.has-music-dock .app-main { padding-block-end: max(8rem, calc(var(--music-dock-clearance, 0px) + var(--space-4))); }
 @media(max-width: 60rem) {
   .music-dock { inset-block-end: calc(3.5rem + env(safe-area-inset-bottom)); padding: .45rem .75rem; }
   .music-dock .music-player-media { grid-template-columns: 2rem minmax(0,1fr) auto; gap: .4rem; }
@@ -9494,7 +9552,7 @@ html:has(.vod-player:fullscreen) { scrollbar-gutter: auto; }
   .music-dock__actions button:last-child { inline-size: 2rem; overflow: hidden; font-size: 0; }
   .music-dock__actions button:last-child::after { content: '×'; font-size: 1.3rem; }
   .music-dock .music-player-now { font-size: .8rem; }
-  .has-music-dock .app-main { padding-block-end: 12rem; }
+  .has-music-dock .app-main { padding-block-end: max(12rem, calc(var(--music-dock-clearance, 0px) + var(--space-4))); }
 }
 @media(max-width: 34rem) {
   .music-primary { column-gap: .85rem; row-gap: 0; }
@@ -9707,3 +9765,39 @@ html:has(.vod-player:fullscreen) { scrollbar-gutter: auto; }
 /* Identity gets the card's full width; normal breaks separate user and host. */
 .discovery-handle { margin: 0; color: var(--text-muted); font-size: var(--text-sm); line-height: 1.5; overflow-wrap: normal; }
 .discovery-handle__part { display: inline-block; max-inline-size: 100%; vertical-align: top; overflow-wrap: anywhere; }
+
+/* On narrow inbox cards, expand the existing menu into the row rather than
+   leaving a thin clickable sliver of the conversation underneath it. The
+   summary stays at the top right; the preview remains reachable below. */
+@media (max-width: 40rem) {
+  .conversation__header {
+    position: relative;
+    flex-wrap: wrap;
+    min-block-size: 44px;
+  }
+  .conversation__with {
+    flex: 1;
+    margin-inline-end: 3rem;
+  }
+  .conversation__menu {
+    position: static;
+    flex-basis: 100%;
+    margin-inline-start: 0;
+  }
+  .conversation__menu:not([open]) {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+  }
+  .conversation__menu > summary {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: 0;
+  }
+  .conversation__menu .status__menu-pop {
+    position: static;
+    translate: none;
+    min-inline-size: 0;
+    max-inline-size: none;
+  }
+}

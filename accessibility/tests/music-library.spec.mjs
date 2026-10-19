@@ -35,7 +35,7 @@ async function albumAccess(owner,url,visibility,shareTracks){
   await owner.goto(response.headers().location);
 }
 async function savedResources(owner,browser,info,noScript,resources){
-  const viewer=await browser.newContext({baseURL:process.env.A11Y_BASE_URL,ignoreHTTPSErrors:false,javaScriptEnabled:!noScript,extraHTTPHeaders:info.project.use.extraHTTPHeaders});
+  const viewer=await browser.newContext({...info.project.use,baseURL:process.env.A11Y_BASE_URL,ignoreHTTPSErrors:false,javaScriptEnabled:!noScript,extraHTTPHeaders:info.project.use.extraHTTPHeaders});
   const page=await viewer.newPage();
   async function change(button){
     const action=await button.evaluate(control=>new URL(control.form.action).pathname);
@@ -169,7 +169,7 @@ async function journey(page,browser,info,noScript){
   const assetId=new URL(assetUrl).pathname.split('/').at(-1);
   const streamUrl=new URL(`/music/assets/${assetId}/stream`,assetUrl).href;
   await expect(page.locator('section.music-library > p').filter({hasText:/^Only me and people I share with$/})).toBeVisible();
-  const anonymous=await browser.newContext({baseURL:process.env.A11Y_BASE_URL,ignoreHTTPSErrors:false,javaScriptEnabled:!noScript});
+  const anonymous=await browser.newContext({...info.project.use,baseURL:process.env.A11Y_BASE_URL,ignoreHTTPSErrors:false,javaScriptEnabled:!noScript});
   try{
     expect((await anonymous.request.get(streamUrl)).status()).toBe(404);
     const trackImage=await artwork(page,'image');

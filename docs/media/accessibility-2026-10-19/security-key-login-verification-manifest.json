@@ -1,0 +1,14 @@
+{
+  "application_base_commit": "7ded4ca",
+  "executable_sha256": "d13a17b4dbd81995e2ede7c2fb3823fe6613ebb94f1256c4645d7f6556fe8604",
+  "files_at_start": {
+    "crates/server/src/web/assets/app.css": "85df101888d0d617501d0458a046c0399095d7a8e467fbb988f3d572a8a00059",
+    "crates/server/src/web/assets/app.js": "08ed323791fbaf16a283ab10ca7c27f6d4f6a367f6d1c6b1d3be37def9deda92",
+    "accessibility/tests/security-key-login-journey.spec.mjs": "4fd35065b8e2e0f2847dd6e3cd26212067bc094b8d176cdee75ad63f35e0df7f",
+    "accessibility/authenticator.mjs": "eff3a7e85e523b8592c4f61b891c479c2fe4d11e2356f527ef8164b3558bcadb",
+    "accessibility/session.mjs": "40082a3c368d18fc0129607f5747fc03109238fffa7df81a6a4d8e9e9fb87020",
+    "accessibility/playwright.config.mjs": "49a12fac77b8809af7804cac03bc8e518a7257502bb9e7c1afcfe463adeefff8",
+    "scripts/run-accessibility-tests.py": "1747f92f46e5754e72d496cd4b57329d5ab16afddadbc54b214593f1f4ceead1"
+  },
+  "scope": "Existing-key sign-in failure focus and hidden native control, native recovery-code sign-in, delayed failure preserving focus, real virtual-key authentication and removal. Fixture enrollment alone tightens UV to required to avoid unresolved upstream registration-policy mismatch; no production registration policy changes. Native contexts exercise both widths; physical authenticators and OAuth-key ceremonies remain unverified."
+}

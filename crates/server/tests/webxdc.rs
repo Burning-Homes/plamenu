@@ -135,6 +135,40 @@ async fn session_creation_unifies_app_choice_metadata_and_standard_defaults(pool
     assert!(html.contains("allowed range 0–86,400,000"));
     assert!(html.contains("allowed range 256–1,048,576"));
 
+    let stored_user = plamenu_db::user::find_by_account_id(&pool, alice.id)
+        .await
+        .unwrap()
+        .unwrap();
+    plamenu_db::user::update_locale(&pool, stored_user.id, Some("ru"))
+        .await
+        .unwrap();
+    let russian = admin_request(
+        &app,
+        &cookie,
+        &format!("/webxdc/new?version={}", personal.version_id),
+        None,
+    )
+    .await;
+    assert_eq!(russian.status(), StatusCode::OK);
+    let russian = String::from_utf8(
+        russian
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(russian.contains("<html lang=\"ru\""));
+    assert!(russian.contains("Создать сеанс приложения"));
+    assert!(russian.contains("Поиск доступных приложений"));
+    assert!(russian.contains("data-selected=\"Выбрано из библиотеки приложений\""));
+    assert!(russian.contains("data-default=\"Выбрать из библиотеки приложений\""));
+    assert!(russian.contains("value=\"Shared Notes\""));
+    assert!(russian.contains("Plan the next release together"));
+    assert!(!russian.contains("Search available apps"));
+
     let uploaded = protocol::create_local(
         &state,
         protocol::CreateLocal {
@@ -2033,7 +2067,8 @@ async fn upload_limits_are_live_and_multipart_failures_preserve_the_form(pool: P
     let html = std::str::from_utf8(&body).unwrap();
     assert!(html.contains("at most 1 MiB"));
     assert!(html.contains("value=\"Large app\""));
-    assert!(html.contains("role=\"alert\""));
+    assert!(html.contains("role=\"alert\" tabindex=\"-1\" autofocus"));
+    assert_eq!(html.matches("autofocus").count(), 1);
     assert!(!html.contains("Error parsing multipart"));
 
     let response = upload_package(&app, &cookie, b"invalid archive").await;
@@ -2041,8 +2076,9 @@ async fn upload_limits_are_live_and_multipart_failures_preserve_the_form(pool: P
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let html = std::str::from_utf8(&body).unwrap();
     let alert = html
-        .split("role=\"alert\">")
+        .split("role=\"alert\"")
         .nth(1)
+        .and_then(|tail| tail.split_once('>').map(|(_, message)| message))
         .unwrap_or("")
         .split("</p>")
         .next()

@@ -1,0 +1,11 @@
+{
+  "application_source_tree_commit": "8352861",
+  "executable_sha256": "e6c50a4f782656f64e514f70948fca945cfcdc2a9e4efd2ad8255d22dd51e93b",
+  "browser_files": {
+    "accessibility/tests/live-broadcast.spec.mjs": "c62e1f2c7bb6ce87e1f1188f2c9831b83ba964a05915567712ef9a214eae11f5",
+    "accessibility/session.mjs": "40082a3c368d18fc0129607f5747fc03109238fffa7df81a6a4d8e9e9fb87020",
+    "accessibility/playwright.config.mjs": "49a12fac77b8809af7804cac03bc8e518a7257502bb9e7c1afcfe463adeefff8",
+    "scripts/run-accessibility-tests.py": "1747f92f46e5754e72d496cd4b57329d5ab16afddadbc54b214593f1f4ceead1"
+  },
+  "scope": "Initial three cases: two passed, one stale automatic-publication expectation failed. Corrected full selection: nine pass, four explicit WebKit skips for absent MediaRecorder. Real MediaRecorder/WebSocket/FFmpeg/HLS and replay decoding with synthetic acquisition; native local encoder playback without scripts. Private preview remains waiting until existing Go live is activated. No actual camera/microphone or public federation destination; raw trace/screenshots may contain disposable stream keys and are not published."
+}

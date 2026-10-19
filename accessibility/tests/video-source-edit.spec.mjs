@@ -5,7 +5,7 @@ import {signIn,openVideoOptions,createVideoChannel,videoChannelForm,chooseVideoL
 
 async function check(page,noScript){
   await page.setViewportSize({width:320,height:800});
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
   if(!noScript){
     const result=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();
     expect(result.violations.map(v=>({id:v.id,targets:v.nodes.map(n=>n.target)}))).toEqual([]);
@@ -45,14 +45,16 @@ async function apply(page,permalink){
   await confirm.press('Space');await button.press('Enter');await page.waitForURL(permalink);
 }
 async function journey(page,info,noScript){
-  test.setTimeout(300000);await signIn(page);await page.goto('/videos/upload');await openVideoOptions(page);
+  test.setTimeout(300000);
+  if(noScript) await page.setViewportSize({width:320,height:800});
+  await signIn(page);await page.goto('/videos/upload');await openVideoOptions(page);
   const channelForm=await videoChannelForm(page);
   if(!await channelForm.isVisible())await channelForm.locator('..').locator(':scope > summary').press('Enter');
   const name=`source_${randomUUID().replaceAll('-','').slice(0,20)}`;
   const channel=`Source ${name}`;
   await channelForm.getByLabel('Channel address').fill(name);await channelForm.getByLabel('Channel name').fill(channel);
-  const [created]=await Promise.all([page.waitForResponse(r=>new URL(r.url()).pathname==='/web/video-channels'&&r.request().method()==='POST'),channelForm.getByRole('button',{name:'Create a video channel',exact:true}).press('Enter')]);
-  expect(created.status()).toBe(303);await page.goto('/videos/upload');await openVideoOptions(page);
+  await createVideoChannel(page,channelForm.getByRole('button',{name:'Create a video channel',exact:true}));
+  await openVideoOptions(page);
   const upload=page.locator('form[action="/web/videos"]');
   await upload.getByRole('combobox',{name:'Channel',exact:true}).selectOption({label:channel});
   await upload.getByLabel('Video title',{exact:true}).fill(`Film ${name}`);

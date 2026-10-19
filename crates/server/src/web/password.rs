@@ -267,8 +267,10 @@ async fn edit_page(state: &AppState, token: &str, errors: &[String], locale: Loc
         section.auth-card {
             h1 { (locale.text("password-reset-choose-title")) }
             @if !errors.is_empty() {
-                ul.form-error id="password-reset-errors" role="alert" {
-                    @for error in errors { li { (error) } }
+                div id="password-reset-errors" role="alert" tabindex="-1" autofocus {
+                    ul.form-error {
+                        @for error in errors { li { (error) } }
+                    }
                 }
             }
             form.auth-form method="post" action="/auth/password/edit" {
@@ -277,7 +279,7 @@ async fn edit_page(state: &AppState, token: &str, errors: &[String], locale: Loc
                     (locale.text("password-reset-new"))
                     input type="password" name="password"
                         autocomplete="new-password" minlength=(auth::PASSWORD_MIN)
-                        maxlength=(auth::PASSWORD_MAX) required autofocus
+                        maxlength=(auth::PASSWORD_MAX) required autofocus[errors.is_empty()]
                         aria-invalid=[(!errors.is_empty()).then_some("true")]
                         aria-describedby=[(!errors.is_empty()).then_some("password-reset-errors")];
                 }

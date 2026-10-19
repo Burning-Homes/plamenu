@@ -3325,7 +3325,7 @@ const REPORT_STATUS_CHOICES: i64 = 20;
 /// A short plain-text excerpt for the report form's post picker: the content
 /// warning when there is one (the gated text stays gated), otherwise the
 /// stripped content.
-fn report_excerpt(status: &Status) -> String {
+fn report_excerpt(status: &Status, locale: Locale) -> String {
     let text = if status.spoiler_text.is_empty() {
         crate::filters::plain_text(&status.content)
     } else {
@@ -3333,7 +3333,7 @@ fn report_excerpt(status: &Status) -> String {
     };
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if text.is_empty() {
-        return "(no text)".to_owned();
+        return locale.text("report-no-text");
     }
     if text.chars().count() > 160 {
         let mut cut: String = text.chars().take(160).collect();
@@ -3342,6 +3342,12 @@ fn report_excerpt(status: &Status) -> String {
     } else {
         text
     }
+}
+
+fn report_title(locale: Locale, acct: &str) -> String {
+    let mut args = FluentArgs::new();
+    args.set("account", acct);
+    locale.plain_with("report-title", &args)
 }
 
 /// `GET /web/statuses/{id}/report` — Mastodon's report stepper as one plain
@@ -3374,7 +3380,7 @@ pub async fn report_page(
 
     if query.done.is_some() {
         let body = report_done(&user, &target, &acct, &back);
-        let title = format!("Report @{acct}");
+        let title = report_title(user.locale, &acct);
         return Ok(layout::shell(&title, Some(&user), &body).into_response());
     }
 
@@ -3403,12 +3409,12 @@ pub async fn report_page(
     let rules = rule::list_ordered(&state.pool).await?;
     let body = html! {
         section.column {
-            h1 { "Report @" (acct) }
+            h1 { (report_title(user.locale, &acct)) }
             (report_form(&user, &format!("/web/statuses/{}/report", stored.id),
                 &target, &back, &rules, &candidates, Some(stored.id), &state.config.domain))
         }
     };
-    let title = format!("Report @{acct}");
+    let title = report_title(user.locale, &acct);
     Ok(layout::shell(&title, Some(&user), &body).into_response())
 }
 
@@ -3434,7 +3440,7 @@ pub async fn report_account_page(
 
     if query.done.is_some() {
         let body = report_done(&user, &target, &acct, &back);
-        let title = format!("Report @{acct}");
+        let title = report_title(user.locale, &acct);
         return Ok(layout::shell(&title, Some(&user), &body).into_response());
     }
 
@@ -3455,12 +3461,12 @@ pub async fn report_account_page(
     let rules = rule::list_ordered(&state.pool).await?;
     let body = html! {
         section.column {
-            h1 { "Report @" (acct) }
+            h1 { (report_title(user.locale, &acct)) }
             (report_form(&user, &format!("/web/accounts/{}/report", target.id),
                 &target, &back, &rules, &candidates, None, &state.config.domain))
         }
     };
-    let title = format!("Report @{acct}");
+    let title = report_title(user.locale, &acct);
     Ok(layout::shell(&title, Some(&user), &body).into_response())
 }
 
@@ -3468,28 +3474,24 @@ pub async fn report_account_page(
 /// server rules" only joins the list when the instance has rules to cite.
 fn report_categories(has_rules: bool) -> Vec<(&'static str, &'static str, &'static str)> {
     let mut categories = vec![
-        (
-            "spam",
-            "It's spam",
-            "Malicious links, fake engagement or repetitive replies",
-        ),
+        ("spam", "report-category-spam", "report-category-spam-hint"),
         (
             "legal",
-            "It's illegal",
-            "You believe it violates the law of your or the server's country",
+            "report-category-legal",
+            "report-category-legal-hint",
         ),
     ];
     if has_rules {
         categories.push((
             "violation",
-            "It violates server rules",
-            "You are aware that it breaks specific rules",
+            "report-category-violation",
+            "report-category-violation-hint",
         ));
     }
     categories.push((
         "other",
-        "It's something else",
-        "The issue does not fit into other categories",
+        "report-category-other",
+        "report-category-other-hint",
     ));
     categories
 }
@@ -3509,35 +3511,36 @@ fn report_form(
     lead_id: Option<i64>,
     local_domain: &str,
 ) -> Markup {
+    let locale = user.locale;
     let categories = report_categories(!rules.is_empty());
     // From a post the report leads with that post pre-checked; from a profile
     // there is no lead, so the copy addresses the account instead.
     let intro = if lead_id.is_some() {
-        "Tell us what's going on with this post"
+        "report-intro-post"
     } else {
-        "Tell us what's going on with this account"
+        "report-intro-account"
     };
     html! {
         form.settings-form.report-form method="post" action=(action) {
             input type="hidden" name="csrf" value=(user.csrf);
             input type="hidden" name="return_to" value=(back);
             fieldset.settings-form__group {
-                legend { (intro) }
+                legend { (locale.text(intro)) }
                 @for (value, label, hint) in &categories {
                     label.settings-toggle {
                         input type="radio" name="category" value=(value) required;
                         span.settings-toggle__text {
-                            span.settings-toggle__label { (label) }
-                            span.settings-field__hint { (hint) }
+                            span.settings-toggle__label { (locale.text(label)) }
+                            span.settings-field__hint { (locale.text(hint)) }
                         }
                     }
                 }
             }
             @if !rules.is_empty() {
                 fieldset.settings-form__group {
-                    legend { "Which rules are being violated?" }
+                    legend { (locale.text("report-rules")) }
                     p.settings-field__hint {
-                        "Citing a rule files the report under \"It violates server rules\"."
+                        (locale.text("report-rules-hint"))
                     }
                     @for rule in rules {
                         label.settings-toggle {
@@ -3554,48 +3557,49 @@ fn report_form(
             }
             @if !candidates.is_empty() {
                 fieldset.settings-form__group {
-                    legend { "Are there any posts that back up this report?" }
+                    legend { (locale.text("report-evidence")) }
                     @for candidate in candidates {
                         label.settings-toggle {
                             input type="checkbox" name="status_ids[]" value=(candidate.id)
                                 checked[Some(candidate.id) == lead_id];
                             span.settings-toggle__text {
                                 span.report-form__status-time { (user.clock.element_date(candidate.created_at)) }
-                                span.report-form__status-excerpt { (report_excerpt(candidate)) }
+                                span.report-form__status-excerpt lang=[candidate.language.as_deref()] { (report_excerpt(candidate, locale)) }
                             }
                         }
                     }
                 }
             }
             fieldset.settings-form__group {
-                legend { "Is there anything else we should know?" }
+                legend { (locale.text("report-comments-title")) }
                 label.settings-field {
-                    span.settings-field__label { "Additional comments" }
+                    span.settings-field__label { (locale.text("report-comments")) }
                     textarea name="comment" rows="4" maxlength="1000" {}
-                    span.settings-field__hint { "Up to 1000 characters." }
+                    span.settings-field__hint { (locale.text("report-comments-hint")) }
                 }
             }
             @if let Some(domain) = target.domain.as_deref()
                 .filter(|_| !target.is_portable_on(local_domain)) {
                 fieldset.settings-form__group {
-                    legend { "This account is from another server" }
+                    legend { (locale.text("report-remote")) }
+                    @let mut forward_args = FluentArgs::new();
+                    @let () = forward_args.set("domain", domain);
                     label.settings-toggle {
                         input type="checkbox" name="forward" value="1";
                         span.settings-toggle__text {
                             span.settings-toggle__label {
-                                "Also forward this report to " (domain)
+                                (locale.plain_with("report-forward", &forward_args))
                             }
                             span.settings-field__hint {
-                                "An anonymized copy is sent to the account's own server; \
-                                 your report stays with our moderators either way."
+                                (locale.text("report-forward-hint"))
                             }
                         }
                     }
                 }
             }
             div.settings-form__actions.report-form__actions {
-                a.settings-button--plain href=(back) { "Cancel" }
-                button type="submit" { "Submit report" }
+                a.settings-button--plain href=(back) { (locale.text("report-cancel")) }
+                button type="submit" { (locale.text("report-submit")) }
             }
         }
     }
@@ -3604,31 +3608,34 @@ fn report_form(
 /// The post-submission view: Mastodon's "thanks for reporting" step, with its
 /// take-action-while-we-review mute/block shortcuts.
 fn report_done(user: &WebUser, target: &Account, acct: &str, back: &str) -> Markup {
+    let locale = user.locale;
+    let mut args = FluentArgs::new();
+    args.set("account", acct);
     let block_action = format!("/web/accounts/{}/block", target.id);
-    let block_message = format!("Block @{acct}?");
+    let block_message = locale.plain_with("status-block-account-confirm", &args);
     html! {
         section.column {
-            h1 { "Thanks for reporting" }
-            p.muted { "Your report was sent to the moderators for review." }
-            h2 { "Don't want to see this?" }
+            h1 { (locale.text("report-thanks")) }
+            p.muted { (locale.text("report-sent")) }
+            h2 { (locale.text("report-take-action")) }
             p.muted {
-                "While the report is reviewed, you can take action against @" (acct) "."
+                (locale.plain_with("report-review-action", &args))
             }
             div.report-done__actions {
                 form method="post" action=(format!("/web/accounts/{}/mute", target.id)) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     input type="hidden" name="return_to" value=(back);
-                    button type="submit" { "Mute @" (acct) }
+                    button type="submit" { (locale.plain_with("status-mute-account", &args)) }
                 }
                 form method="post" action=(view::CONFIRM_PATH)
                     data-confirm=(&block_message) data-confirm-action=(&block_action) {
                     input type="hidden" name="csrf" value=(user.csrf);
                     input type="hidden" name="return_to" value=(back);
                     (view::confirmation_fields(&block_action, Some(&block_message)))
-                    button.settings-button--danger type="submit" { "Block @" (acct) }
+                    button.settings-button--danger type="submit" { (locale.plain_with("status-block-account", &args)) }
                 }
             }
-            p { a href=(back) { "Back" } }
+            p { a href=(back) { (locale.text("common-back")) } }
         }
     }
 }
@@ -4566,6 +4573,7 @@ pub async fn search(
     };
     let body = html! {
         section.column {
+            h1.visually-hidden { (locale.text("page-search")) }
             (view::search_form(&q, locale))
             @if q.is_empty() {
                 p.muted { (locale.text("page-search-help")) }

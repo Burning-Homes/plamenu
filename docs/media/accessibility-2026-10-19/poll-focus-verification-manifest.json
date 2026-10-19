@@ -1,0 +1,10 @@
+{
+  "baseline_executable_sha256": "46c8b7cb6d2e6a17c676d715fdba76050fb498b38d5b3492db0e929d81148ab4",
+  "verified_executable_sha256": "d6f3c56feb1db21d294319a71899260ab2d5214e2ff742f727b16490a2cab993",
+  "files": {
+    "crates/server/src/web/assets/app.js": "66407107daa57c4dc5c99e45e463596c38dce8b6f291c6f92ad6d0975b87f049",
+    "accessibility/tests/poll-focus.spec.mjs": "2c88eefebc96761d6505878ba873100337dd2f36703dca42233b6e1aa3e7739d"
+  },
+  "baseline": "Iteration 21 has the same poll handler as iteration 22. Initial vote-count assertions were corrected to allow Fluent bidirectional isolation characters; only the corrected baseline is used for comparison.",
+  "later_source_edits": "The two-factor setup edits belong to the next iteration and are absent from this frozen executable."
+}

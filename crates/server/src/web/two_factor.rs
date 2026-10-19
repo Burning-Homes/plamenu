@@ -25,8 +25,7 @@ use qrcode::render::svg;
 use super::i18n::Locale;
 use super::session::{WebUser, csrf_rejection};
 use super::settings::{
-    SettingsQuery, bad_form, error_flash, field, form_pairs, redirect_to, saved_flash,
-    settings_shell,
+    SettingsQuery, bad_form, field, form_pairs, redirect_to, saved_flash, settings_shell,
 };
 use crate::auth::{self, PasswordPolicy, hash_secret};
 use crate::error::ApiError;
@@ -172,7 +171,9 @@ fn tf_error(code: Option<&str>, locale: Locale) -> Option<String> {
         locale.text_with(id, &args)
     };
     match code {
-        Some("current_password") => Some(locale.text("security-error-current-password")),
+        Some("current_password" | "password_current") => {
+            Some(locale.text("security-error-current-password"))
+        }
         Some("password_mismatch") => Some(locale.text("security-error-password-mismatch")),
         Some("password_empty") => Some(locale.text("security-error-password-empty")),
         Some("password_short") => {
@@ -218,6 +219,7 @@ pub async fn page(
 ) -> Result<Markup, ApiError> {
     let u = &user.current.user;
     let locale = user.locale;
+    let error = tf_error(query.error.as_deref(), locale);
     let two_factor_section = if crate::crypto::otp_box(&state.config).is_none() {
         not_configured_notice(locale)
     } else if u.otp_required_for_login {
@@ -225,7 +227,13 @@ pub async fn page(
         let keys = plamenu_db::webauthn_credential::list_by_user(&state.pool, u.id).await?;
         enabled_status(&user, remaining, &keys)
     } else if let Some(secret) = provisional_secret(&state, u.otp_secret.as_deref()) {
-        provisional_form(&state, &user, &secret)
+        provisional_form(
+            &state,
+            &user,
+            &secret,
+            error.is_none(),
+            query.error.as_deref() == Some("code"),
+        )
     } else {
         enable_form(&user)
     };
@@ -239,16 +247,18 @@ pub async fn page(
     } else {
         None
     };
-    let error = tf_error(query.error.as_deref(), locale);
     let body = html! {
         (saved_flash(saved.is_some(), saved.as_deref().unwrap_or_default()))
-        (error_flash(error.as_deref()))
+        @if let Some(error) = error.as_deref() {
+            p.settings__error id="form-error" role="alert"
+                tabindex="-1" autofocus { (error) }
+        }
         // The security page stacks several independent forms and the account-
         // access cards; the stack gives them one consistent rhythm (the plain
         // settings body has no gap, so without it the blocks and their buttons
         // run together).
         div.settings-stack {
-            (password_form(&user))
+            (password_form(&user, query.error.as_deref()))
             section.settings-stack__item {
                 h3.settings-subhead { (locale.text("security-two-factor-title")) }
                 (two_factor_section)
@@ -315,8 +325,14 @@ pub async fn sign_in_alert_action(
 
 /// The change-password form. Lives here rather than on the Account page:
 /// sign-in credentials and second factors belong on one Security surface.
-fn password_form(user: &WebUser) -> Markup {
+fn password_form(user: &WebUser, error: Option<&str>) -> Markup {
     let locale = user.locale;
+    let current_invalid = error == Some("password_current");
+    let new_invalid = matches!(
+        error,
+        Some("password_empty" | "password_short" | "password_long")
+    );
+    let confirmation_invalid = error == Some("password_mismatch");
     html! {
         form.settings-form method="post" action="/web/settings/security/password" {
             input type="hidden" name="csrf" value=(user.csrf);
@@ -325,19 +341,25 @@ fn password_form(user: &WebUser) -> Markup {
                 label.settings-field {
                     span.settings-field__label { (locale.text("security-current-password")) }
                     input type="password" name="current_password"
-                        autocomplete="current-password" required;
+                        autocomplete="current-password" required
+                        aria-invalid=[current_invalid.then_some("true")]
+                        aria-describedby=[current_invalid.then_some("form-error")];
                 }
                 label.settings-field {
                     span.settings-field__label { (locale.text("security-new-password")) }
                     input type="password" name="new_password"
                         autocomplete="new-password" minlength=(auth::PASSWORD_MIN)
-                        maxlength=(auth::PASSWORD_MAX) required;
+                        maxlength=(auth::PASSWORD_MAX) required
+                        aria-invalid=[new_invalid.then_some("true")]
+                        aria-describedby=[new_invalid.then_some("form-error")];
                 }
                 label.settings-field {
                     span.settings-field__label { (locale.text("security-confirm-password")) }
                     input type="password" name="confirm_password"
                         autocomplete="new-password" minlength=(auth::PASSWORD_MIN)
-                        maxlength=(auth::PASSWORD_MAX) required;
+                        maxlength=(auth::PASSWORD_MAX) required
+                        aria-invalid=[confirmation_invalid.then_some("true")]
+                        aria-describedby=[confirmation_invalid.then_some("form-error")];
                 }
             }
             div.settings-form__actions {
@@ -388,7 +410,13 @@ fn enable_form(user: &WebUser) -> Markup {
     }
 }
 
-fn provisional_form(state: &AppState, user: &WebUser, secret: &str) -> Markup {
+fn provisional_form(
+    state: &AppState,
+    user: &WebUser,
+    secret: &str,
+    focus_code: bool,
+    invalid_code: bool,
+) -> Markup {
     // The authenticator-app label: the e-mail when set, the handle otherwise.
     let label = user.current.user.email.clone().unwrap_or_else(|| {
         format!(
@@ -417,7 +445,9 @@ fn provisional_form(state: &AppState, user: &WebUser, secret: &str) -> Markup {
                 label.settings-field {
                     span.settings-field__label { (locale.text("security-auth-code")) }
                     input type="text" name="code" inputmode="numeric"
-                        autocomplete="one-time-code" autofocus required;
+                        autocomplete="one-time-code" autofocus[focus_code] required
+                        aria-invalid=[invalid_code.then_some("true")]
+                        aria-describedby=[invalid_code.then_some("form-error")];
                     span.settings-field__hint { (locale.text("security-auth-code-hint")) }
                 }
             }
@@ -520,7 +550,11 @@ fn qr_svg(uri: &str) -> Markup {
 /// Validates CSRF, then the current password, returning the redirect to send
 /// back on failure (or `None` to proceed) — the `update_password_action`
 /// pattern, shared by every password-gated two-factor action.
-async fn password_gate(user: &WebUser, pairs: &[(String, String)]) -> Option<Response> {
+async fn password_gate(
+    user: &WebUser,
+    pairs: &[(String, String)],
+    error_code: &'static str,
+) -> Option<Response> {
     if !user.csrf_ok(field(pairs, "csrf").unwrap_or_default()) {
         return Some(csrf_rejection());
     }
@@ -532,7 +566,7 @@ async fn password_gate(user: &WebUser, pairs: &[(String, String)]) -> Option<Res
     )
     .await
     {
-        return Some(redirect_to(&format!("{PATH}?error=current_password")));
+        return Some(redirect_to(&format!("{PATH}?error={error_code}")));
     }
     None
 }
@@ -552,7 +586,7 @@ pub async fn password_action(
         Ok(pairs) => pairs,
         Err(message) => return bad_form(message),
     };
-    if let Some(response) = password_gate(&user, &pairs).await {
+    if let Some(response) = password_gate(&user, &pairs, "password_current").await {
         return response;
     }
     let new_password = field(&pairs, "new_password").unwrap_or_default();
@@ -607,7 +641,7 @@ pub async fn setup_action(State(state): State<AppState>, user: WebUser, body: By
         Ok(pairs) => pairs,
         Err(message) => return bad_form(message),
     };
-    if let Some(rejection) = password_gate(&user, &pairs).await {
+    if let Some(rejection) = password_gate(&user, &pairs, "current_password").await {
         return rejection;
     }
     if crate::crypto::otp_box(&state.config).is_none() {
@@ -666,7 +700,7 @@ pub async fn recovery_codes_action(
         Ok(pairs) => pairs,
         Err(message) => return bad_form(message),
     };
-    if let Some(rejection) = password_gate(&user, &pairs).await {
+    if let Some(rejection) = password_gate(&user, &pairs, "current_password").await {
         return rejection;
     }
     if !user.current.user.otp_required_for_login {
@@ -687,7 +721,7 @@ pub async fn disable_action(State(state): State<AppState>, user: WebUser, body: 
         Ok(pairs) => pairs,
         Err(message) => return bad_form(message),
     };
-    if let Some(rejection) = password_gate(&user, &pairs).await {
+    if let Some(rejection) = password_gate(&user, &pairs, "current_password").await {
         return rejection;
     }
     match user::disable_otp(&state.pool, user.current.user.id).await {

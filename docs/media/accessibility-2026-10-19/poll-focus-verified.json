@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "67a88253122098a69e5a5502f98a0521aabeb7e5",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T04:12:19.555Z",
+  "completed_at": "2026-10-19T04:13:01.157Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > poll-focus.spec.mjs > poll voting preserves keyboard context after refusal and results replacement",
+      "status": "passed",
+      "duration_ms": 6618
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > poll-focus.spec.mjs > poll voting preserves keyboard context after refusal and results replacement",
+      "status": "passed",
+      "duration_ms": 4690
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > poll-focus.spec.mjs > poll voting preserves keyboard context after refusal and results replacement",
+      "status": "passed",
+      "duration_ms": 6417
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > poll-focus.spec.mjs > poll voting preserves keyboard context after refusal and results replacement",
+      "status": "passed",
+      "duration_ms": 5867
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > poll-focus.spec.mjs > poll voting preserves keyboard context after refusal and results replacement",
+      "status": "passed",
+      "duration_ms": 6853
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > poll-focus.spec.mjs > poll voting preserves keyboard context after refusal and results replacement",
+      "status": "passed",
+      "duration_ms": 4149
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > poll-focus.spec.mjs > @no-js poll voting retains the native form journey",
+      "status": "passed",
+      "duration_ms": 1480
+    }
+  ]
+}

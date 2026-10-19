@@ -21,8 +21,7 @@ use super::export;
 use super::i18n::Locale;
 use super::session::{WebUser, csrf_rejection};
 use super::settings::{
-    SettingsQuery, bad_form, error_flash, field, form_pairs, redirect_to, saved_flash,
-    settings_shell,
+    bad_form, error_flash, field, form_pairs, redirect_to, saved_flash, settings_shell,
 };
 use super::view::icon;
 use crate::bulk_import::{
@@ -47,11 +46,30 @@ const TYPES: &[ImportType] = &[
     ImportType::Lists,
 ];
 
+#[derive(serde::Deserialize)]
+pub struct ImportQuery {
+    saved: Option<String>,
+    error: Option<String>,
+    #[serde(rename = "type")]
+    import_type: Option<String>,
+    mode: Option<String>,
+}
+
+fn upload_refusal(code: &str, import_type: ImportType, overwrite: bool) -> Response {
+    let query = serde_urlencoded::to_string([
+        ("error", code),
+        ("type", import_type.as_str()),
+        ("mode", if overwrite { "overwrite" } else { "merge" }),
+    ])
+    .unwrap_or_default();
+    redirect_to(&format!("{PATH}?{query}"))
+}
+
 /// `GET /settings/export` — the combined Import &amp; export page.
 pub async fn page(
     State(state): State<AppState>,
     user: WebUser,
-    Query(query): Query<SettingsQuery>,
+    Query(query): Query<ImportQuery>,
 ) -> Result<Markup, ApiError> {
     let account_id = user.current.account.id;
     let recent = store::recent_for_account(&state.pool, account_id, RECENT_LIMIT).await?;
@@ -66,19 +84,46 @@ pub async fn page(
             .await?;
     let clock = &user.clock;
     let locale = user.locale;
+    let import_type = query.import_type.as_deref().and_then(ImportType::from_str);
+    let overwrite = query.mode.as_deref() == Some("overwrite");
+    let error = query
+        .error
+        .as_deref()
+        .and_then(error_message)
+        .map(|id| locale.text(id));
+    let retained = import_type.is_some()
+        && matches!(query.mode.as_deref(), Some("merge" | "overwrite"))
+        && matches!(
+            query.error.as_deref(),
+            Some(
+                "empty"
+                    | "malformed"
+                    | "incompatible"
+                    | "too_many"
+                    | "too_large"
+                    | "too_many_pending"
+                    | "server_busy"
+            )
+        );
     let body = html! {
         (saved_flash(
             query.saved.is_some(),
             &locale.text(saved_message(query.saved.as_deref())),
         ))
-        (error_flash(
-            query.error.as_deref().and_then(error_message)
-                .map(|id| locale.text(id)).as_deref(),
-        ))
+        @if retained {
+            @if let Some(message) = error.as_deref() {
+                div.settings__error id="import-error" role="alert" tabindex="-1" autofocus {
+                    p {(message)}
+                    p {(locale.text("import-error-reselect"))}
+                }
+            }
+        } @else {
+            (error_flash(error.as_deref()))
+        }
         // The grid wrapper spaces the section cards — bare siblings would sit
         // border against border.
         div.settings-form {
-            (import_form(&user, locale))
+            (import_form(&user, locale, import_type.unwrap_or(ImportType::Following), overwrite))
             (recent_imports(&recent, locale))
             (export::download_list(locale))
             (export::archive_section(&archives, archive_blocked, &user.csrf, clock, locale))
@@ -93,7 +138,12 @@ pub async fn page(
 }
 
 /// The upload form: pick a type and mode, choose a CSV.
-fn import_form(user: &WebUser, locale: Locale) -> Markup {
+fn import_form(
+    user: &WebUser,
+    locale: Locale,
+    selected_type: ImportType,
+    overwrite: bool,
+) -> Markup {
     html! {
         form.settings-form__group method="post" action="/web/settings/import"
             enctype="multipart/form-data" {
@@ -103,7 +153,7 @@ fn import_form(user: &WebUser, locale: Locale) -> Markup {
                 span.settings-field__label { (locale.text("import-type-label")) }
                 select name="type" {
                     @for import_type in TYPES {
-                        option value=(import_type.as_str()) {
+                        option value=(import_type.as_str()) selected[*import_type == selected_type] {
                             (locale.text(type_message(*import_type)))
                         }
                     }
@@ -117,11 +167,11 @@ fn import_form(user: &WebUser, locale: Locale) -> Markup {
             fieldset.settings-form__group {
                 legend { (locale.text("import-mode-legend")) }
                 label.settings-field__choice {
-                    input type="radio" name="mode" value="merge" checked;
+                    input type="radio" name="mode" value="merge" checked[!overwrite];
                     span { (locale.text("import-mode-merge")) }
                 }
                 label.settings-field__choice {
-                    input type="radio" name="mode" value="overwrite";
+                    input type="radio" name="mode" value="overwrite" checked[overwrite];
                     span { (locale.text("import-mode-overwrite")) }
                 }
             }
@@ -238,19 +288,20 @@ pub async fn upload(
     let Some(import_type) = ImportType::from_str(&type_str) else {
         return redirect_to(&format!("{PATH}?error=bad_type"));
     };
+    let overwrite = mode == "overwrite";
     if data.len() > FILE_SIZE_LIMIT {
-        return redirect_to(&format!("{PATH}?error=too_large"));
+        return upload_refusal("too_large", import_type, overwrite);
     }
     let parsed = match parse_csv(import_type, &data) {
         Ok(parsed) => parsed,
-        Err(error) => return redirect_to(&format!("{PATH}?error={}", error_code(&error))),
+        Err(error) => return upload_refusal(error_code(&error), import_type, overwrite),
     };
     let mismatched = likely_mismatched(import_type, &parsed.headers, &filename);
     match store::create_with_rows_capped(
         &state.pool,
         account_id,
         import_type.as_str(),
-        mode == "overwrite",
+        overwrite,
         &filename,
         mismatched,
         &parsed.rows,
@@ -262,8 +313,10 @@ pub async fn upload(
         Ok(ImportAdmission::Admitted(import)) => {
             redirect_to(&format!("/settings/import/{}", import.id))
         }
-        Ok(ImportAdmission::AccountFull) => redirect_to(&format!("{PATH}?error=too_many_pending")),
-        Ok(ImportAdmission::ServerBusy) => redirect_to(&format!("{PATH}?error=server_busy")),
+        Ok(ImportAdmission::AccountFull) => {
+            upload_refusal("too_many_pending", import_type, overwrite)
+        }
+        Ok(ImportAdmission::ServerBusy) => upload_refusal("server_busy", import_type, overwrite),
         Err(error) => ApiError::from(error).into_response(),
     }
 }

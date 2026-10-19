@@ -73,6 +73,34 @@ export async function signIn(page) {
   const username = prefix && !seeded
     ? prefix + info.project.name.replaceAll('-', '_')
     : process.env.A11Y_USERNAME || 'developer';
+  await signInAccount(page, username);
+}
+
+// Separate fixture actors are real accounts; reuse their browser sessions
+// rather than exhausting login budgets by treating every new context as a user.
+export function participantUsername(info = test.info()) {
+  return process.env.A11Y_PARTICIPANT_PREFIX
+    ? process.env.A11Y_PARTICIPANT_PREFIX + info.project.name.replaceAll('-', '_')
+    : 'channel_editor';
+}
+
+export async function useFixtureClient(page, role) {
+  if (!process.env.A11Y_CANONICAL_ORIGIN) return;
+  if (!['participant', 'security', 'recovery', 'throttle'].includes(role)) throw new Error('Unknown fixture client role');
+  const info = test.info();
+  await page.context().setExtraHTTPHeaders({
+    ...info.project.use.extraHTTPHeaders,
+    'X-Plamenu-Fixture-Client': `${info.project.name}-${role}`,
+  });
+}
+
+export async function signInParticipant(page) {
+  await useFixtureClient(page, 'participant');
+  await signInAccount(page, participantUsername());
+}
+
+async function signInAccount(page, username) {
+  const info = test.info();
   const key = `${info.project.name}:${username}`;
   const cached = sessions.get(key);
   if (cached) {
@@ -143,4 +171,17 @@ export async function chooseVideoLanguage(form, value) {
     await combo.locator(`[role="option"][data-value="${value}"]`).click();
   }
   await expect(select).toHaveValue(value);
+}
+
+// Use the visible keyboard picker; saved account locale outranks browser locale.
+export async function chooseInterfaceLanguage(page, code) {
+  await page.goto('/settings/languages');
+  const form = page.locator('form[action="/web/settings/languages"]');
+  const picker = form.locator('[data-compose-combo]').filter({ has: page.locator('select[name=locale]') });
+  await picker.locator('[data-combo-trigger]').press('Enter');
+  await picker.locator('[data-combo-search]').fill(code);
+  await picker.locator('[data-combo-search]').press('Enter');
+  await expect(form.locator('select[name=locale]')).toHaveValue(code);
+  await form.locator('button[type=submit]').press('Enter');
+  await expect(page.locator('.settings__saved')).toBeVisible();
 }

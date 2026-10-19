@@ -192,6 +192,21 @@ fn head(title: &str, meta: &PageMeta) -> Markup {
     }
 }
 
+/// Inert localized labels shared by the full-page and embedded media viewer.
+fn lightbox_labels(locale: Locale) -> Markup {
+    html! {
+        template id="lightbox-labels"
+            data-title=(locale.text("lightbox-title"))
+            data-close=(locale.text("lightbox-close"))
+            data-previous=(locale.text("lightbox-previous"))
+            data-next=(locale.text("lightbox-next"))
+            data-more=(locale.text("lightbox-more"))
+            data-less=(locale.text("lightbox-less"))
+            data-post=(locale.text("lightbox-post"))
+            data-description=(locale.text("lightbox-description")) {}
+    }
+}
+
 /// Which anonymous-access features the navigation should advertise. Only
 /// consulted when the visitor is signed out — a logged-out person shouldn't see
 /// a "Live feeds" or "Search" link that just bounces them to the login page when
@@ -308,6 +323,7 @@ fn render_with_locale(
                 data-p2p-configured=[user.map(|user|user.p2p_configured)]
                 data-notification-sound=(notification_sound)
                 data-notification-volume=(notification_volume) {
+                (lightbox_labels(locale))
                 a.skip-link href="#main-content" { (locale.text("nav-skip-to-content")) }
                 // The tab bar is `position: fixed`, so its slot in the flow
                 // doesn't matter visually — but its slot in the *source* does.
@@ -360,6 +376,7 @@ pub fn focused_shell_p2p(
         html lang=(locale.tag()) dir=(locale.direction()) class="no-js" {
             (head(title, &PageMeta::default()))
             body data-p2p-default=[p2p] data-p2p-configured=[configured] data-p2p-locked=[locked.then_some("true")] {
+                (lightbox_labels(locale))
                 main.focused-main { (content) }
             }
         }
@@ -623,6 +640,21 @@ mod tests {
             "skip link must precede repeated navigation"
         );
         assert!(rendered.contains(r#"<main class="app-main" id="main-content" tabindex="-1">"#));
+    }
+
+    #[test]
+    fn media_labels_follow_the_locale_in_both_shells() {
+        let locale = Locale::negotiate(Some("ru"), None);
+        let content = html! { h1 { "Example" } };
+        for rendered in [
+            shell_visitor_localized("Example", None, AnonNav::default(), &content, locale),
+            focused_shell_localized("Example", &content, locale),
+        ] {
+            let source = rendered.into_string();
+            assert_eq!(source.matches("id=\"lightbox-labels\"").count(), 1);
+            assert!(source.contains("data-title=\"Просмотр медиа\""));
+            assert!(source.contains("data-close=\"Закрыть\""));
+        }
     }
 
     #[test]

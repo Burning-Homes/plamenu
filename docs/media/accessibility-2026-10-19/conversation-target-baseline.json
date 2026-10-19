@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "3bec4207c13bcc49d67ecb6e407bf87b7cec4bf8",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T05:04:16.155Z",
+  "completed_at": "2026-10-19T05:04:33.389Z",
+  "status": "failed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 0,
+      "failed": 2,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 0,
+      "failed": 2,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "failed",
+      "duration_ms": 4044
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > conversation-targets.spec.mjs > multiple inbox participants share visible targets without hiding a long name",
+      "status": "failed",
+      "duration_ms": 3715
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "failed",
+      "duration_ms": 3008
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > conversation-targets.spec.mjs > multiple inbox participants share visible targets without hiding a long name",
+      "status": "failed",
+      "duration_ms": 3722
+    }
+  ]
+}

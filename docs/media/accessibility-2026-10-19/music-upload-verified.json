@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "11b5ef030315205eccdc221dbed1809a0e7b2117",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T05:29:33.652Z",
+  "completed_at": "2026-10-19T05:30:01.976Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > music-upload-recovery.spec.mjs > audio upload rejection retains metadata through correction and publication",
+      "status": "passed",
+      "duration_ms": 2033
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > music-upload-recovery.spec.mjs > audio upload rejection retains metadata through correction and publication",
+      "status": "passed",
+      "duration_ms": 1839
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > music-upload-recovery.spec.mjs > audio upload rejection retains metadata through correction and publication",
+      "status": "passed",
+      "duration_ms": 4977
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > music-upload-recovery.spec.mjs > audio upload rejection retains metadata through correction and publication",
+      "status": "passed",
+      "duration_ms": 3344
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > music-upload-recovery.spec.mjs > audio upload rejection retains metadata through correction and publication",
+      "status": "passed",
+      "duration_ms": 5654
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > music-upload-recovery.spec.mjs > audio upload rejection retains metadata through correction and publication",
+      "status": "passed",
+      "duration_ms": 4225
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > music-upload-recovery.spec.mjs > @no-js audio upload rejection retains metadata through correction and publication",
+      "status": "passed",
+      "duration_ms": 1302
+    }
+  ]
+}

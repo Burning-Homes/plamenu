@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "e43ca9a8b61325dc8dd6adf42b1b29962afcd68a",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T07:02:54.316Z",
+  "completed_at": "2026-10-19T07:03:06.390Z",
+  "status": "failed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 1,
+      "failed": 1,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 1,
+      "failed": 1,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > archive-journey.spec.mjs > Full archive request, ready state and download remain accessible",
+      "status": "passed",
+      "duration_ms": 1321
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "failed",
+      "duration_ms": 3115
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > archive-journey.spec.mjs > Full archive request, ready state and download remain accessible",
+      "status": "passed",
+      "duration_ms": 2976
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "failed",
+      "duration_ms": 2909
+    }
+  ]
+}

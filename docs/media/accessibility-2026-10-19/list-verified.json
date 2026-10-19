@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "31870423b0fb5493e1e5635246a68e46b25c05d6",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T02:39:42.213Z",
+  "completed_at": "2026-10-19T02:40:29.332Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > list-journey.spec.mjs > list creation and member errors preserve work through follow, edit and delete",
+      "status": "passed",
+      "duration_ms": 4128
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > list-journey.spec.mjs > list creation and member errors preserve work through follow, edit and delete",
+      "status": "passed",
+      "duration_ms": 3632
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > list-journey.spec.mjs > list creation and member errors preserve work through follow, edit and delete",
+      "status": "passed",
+      "duration_ms": 8869
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > list-journey.spec.mjs > list creation and member errors preserve work through follow, edit and delete",
+      "status": "passed",
+      "duration_ms": 7666
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > list-journey.spec.mjs > list creation and member errors preserve work through follow, edit and delete",
+      "status": "passed",
+      "duration_ms": 8484
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > list-journey.spec.mjs > list creation and member errors preserve work through follow, edit and delete",
+      "status": "passed",
+      "duration_ms": 6807
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > list-journey.spec.mjs > @no-js list creation and member errors preserve work through native confirmation",
+      "status": "passed",
+      "duration_ms": 2176
+    }
+  ]
+}

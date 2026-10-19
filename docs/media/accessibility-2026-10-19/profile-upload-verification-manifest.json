@@ -1,0 +1,11 @@
+{
+  "baseline_executable_sha256": "979514892d88640d51e611bc3ecead65cfd1a03bcff18248427a98dae0fbc59f",
+  "verified_executable_sha256": "4828113f9dabccf686386f3d9faa2fb51e84ec8ede2f44676d2705642352030f",
+  "files": {
+    "crates/server/src/web/settings.rs": "cb32ebdbaf49291c2b45455dca6b72ff3104d67508ea6b22c22fb261301a8bdd",
+    "crates/server/src/web/locales/en-US/main.ftl": "d5bcd3ba14a98e2a9a2bafd7adbf84328b838244d3220969c1d0fa1729ba1251",
+    "crates/server/src/web/locales/ru/main.ftl": "91ff3c87ecd8818fcec97f7dea0f4fda4240abf3be2069373c51f7afa40b226f",
+    "crates/server/tests/web.rs": "964162f61271d7eb968255f4ef3824a9c4ff54eef406bd8e707b9f3f37dd20a6",
+    "accessibility/tests/profile-upload-journey.spec.mjs": "247f96e44f1a1d58f7a8c4b229cc0472a946981043408ccffdc6b8567f6c5de4"
+  }
+}

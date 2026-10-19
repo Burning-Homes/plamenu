@@ -660,7 +660,7 @@ pub async fn login_form(
     let mascot = mascot_url(&state).await;
     let signup_open = signup_open(&state).await;
     if accounts.is_empty() {
-        return login_page(&state, mascot.as_deref(), None, signup_open, locale)
+        return login_page(&state, mascot.as_deref(), None, "", signup_open, locale)
             .await
             .into_response();
     }
@@ -853,6 +853,7 @@ async fn login_page(
     state: &AppState,
     mascot: Option<&str>,
     error: Option<&str>,
+    identifier: &str,
     signup_open: bool,
     locale: Locale,
 ) -> Markup {
@@ -863,13 +864,13 @@ async fn login_page(
             }
             h1 { (locale.text("nav-sign-in")) }
             @if let Some(message) = error {
-                p.form-error id="login-error" role="alert" { (message) }
+                p.form-error id="login-error" role="alert" tabindex="-1" autofocus { (message) }
             }
             form.auth-form method="post" action="/login" {
                 label {
                     (locale.text("auth-identifier"))
-                    input type="text" name="identifier" autocomplete="username"
-                        required autofocus aria-invalid=[error.map(|_| "true")]
+                    input type="text" name="identifier" value=(identifier) autocomplete="username"
+                        required autofocus[error.is_none()] aria-invalid=[error.map(|_| "true")]
                         aria-describedby=[error.map(|_| "login-error")];
                 }
                 label {
@@ -908,6 +909,24 @@ async fn login_page(
     )
 }
 
+/// Browser-only presentation of a genuine admission refusal. The outer
+/// middleware retains status, rate-limit headers, and the ordinary HTML CSP.
+pub(crate) fn login_rate_limit_page(locale: Locale) -> Markup {
+    let title = locale.text("auth-rate-limit-title");
+    let content = html! {
+        section.auth-card {
+            h1 { (&title) }
+            p.form-error id="login-rate-limit-error" role="alert" tabindex="-1" autofocus {
+                (locale.text("auth-rate-limit-body"))
+            }
+            p.auth-card__alt {
+                a href="/login" { (locale.text("auth-rate-limit-return")) }
+            }
+        }
+    };
+    layout::focused_shell_localized(&title, &content, locale)
+}
+
 /// The second-factor prompt shown after a correct password on a 2FA account.
 /// One input accepts a TOTP code or a recovery code; the raw challenge token
 /// round-trips in a hidden field. Reused verbatim after a wrong code, so it
@@ -928,7 +947,7 @@ pub(crate) async fn challenge_page(
         section.auth-card {
             h1 { (locale.text("auth-two-factor")) }
             @if let Some(message) = error {
-                p.form-error id="challenge-error" role="alert" { (message) }
+                p.form-error id="challenge-error" role="alert" tabindex="-1" autofocus { (message) }
             }
             @if show_webauthn {
                 (super::webauthn::login_prompt(challenge_token, None, locale))
@@ -941,7 +960,7 @@ pub(crate) async fn challenge_page(
                 label {
                     (locale.text("auth-code"))
                     input type="text" name="code" inputmode="numeric"
-                        autocomplete="one-time-code" autofocus required
+                        autocomplete="one-time-code" autofocus[error.is_none()] required
                         aria-invalid=[error.map(|_| "true")]
                         aria-describedby=[error.map(|_| "challenge-error")];
                 }
@@ -1151,7 +1170,7 @@ pub(crate) fn oauth_challenge_page(
         section.auth-card {
             h1 { (locale.text("auth-two-factor")) }
             @if let Some(message) = error {
-                p.form-error id="oauth-challenge-error" role="alert" { (message) }
+                p.form-error id="oauth-challenge-error" role="alert" tabindex="-1" autofocus { (message) }
             }
             @if show_webauthn {
                 (super::webauthn::login_prompt(
@@ -1174,7 +1193,7 @@ pub(crate) fn oauth_challenge_page(
                 label {
                     (locale.text("auth-code"))
                     input type="text" name="code" inputmode="numeric"
-                        autocomplete="one-time-code" autofocus required
+                        autocomplete="one-time-code" autofocus[error.is_none()] required
                         aria-invalid=[error.map(|_| "true")]
                         aria-describedby=[error.map(|_| "oauth-challenge-error")];
                 }
@@ -1268,12 +1287,14 @@ pub async fn login_submit(
         Err(failure) => {
             let mascot = mascot_url(&state).await;
             let signup_open = signup_open(&state).await;
+            let message = locale.text(failure.web_message_id());
             return (
                 StatusCode::UNAUTHORIZED,
                 login_page(
                     &state,
                     mascot.as_deref(),
-                    Some(failure.web_message()),
+                    Some(&message),
+                    &form.identifier,
                     signup_open,
                     locale,
                 )
@@ -1499,6 +1520,7 @@ pub async fn login_challenge_submit(
                     &state,
                     mascot.as_deref(),
                     Some(&expired),
+                    "",
                     signup_open,
                     locale,
                 )

@@ -1,0 +1,12 @@
+{
+  "application_source_tree_commit": "dc59574",
+  "executable_sha256": "a97faaea578b3dc66f1e20dc9081e52f9c539a7b0df9e28357ef81b541915f25",
+  "browser_files": {
+    "accessibility/tests/music.spec.mjs": "5c0ed7e8318c20b18af78fd8eef4c557338035bac1e3a4150b5d4a3cd97becb6",
+    "accessibility/tests/profile-upload-journey.spec.mjs": "44b5c2ba5d9c1419322ef0a6eecfb6e799f9c0008ca8ee1002ed4d76d1044174",
+    "accessibility/session.mjs": "40082a3c368d18fc0129607f5747fc03109238fffa7df81a6a4d8e9e9fb87020",
+    "accessibility/playwright.config.mjs": "49a12fac77b8809af7804cac03bc8e518a7257502bb9e7c1afcfe463adeefff8",
+    "scripts/run-accessibility-tests.py": "1747f92f46e5754e72d496cd4b57329d5ab16afddadbc54b214593f1f4ceead1"
+  },
+  "scope": "Twenty passing profile-upload and audio-publication cases. Files unchanged throughout the run. Reproduces an earlier project changing the publisher display name before the no-JavaScript subscription journey. Library URL remains the account identity; display_name or username fallback supplies its visible label. Does not replace the 277/278 combined result."
+}

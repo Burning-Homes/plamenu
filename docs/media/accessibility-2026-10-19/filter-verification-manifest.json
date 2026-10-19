@@ -1,0 +1,9 @@
+{
+  "baseline_executable_sha256": "979514892d88640d51e611bc3ecead65cfd1a03bcff18248427a98dae0fbc59f",
+  "verified_executable_sha256": "d61a2692cabf46dba89ed4091f539ece6df5a5b64851dbd9a5f4cda0d5007a8e",
+  "files": {
+    "crates/server/src/web/filters.rs": "6533008e952de9773717f96b61b0c7162e0b82c63439a4f9f076421b129f0e13",
+    "crates/server/tests/web.rs": "628830c1c0f1cf50a5ef49413527772cd1a89933fac9986e343b9e7b51b0f34f",
+    "accessibility/tests/filter-journey.spec.mjs": "ed19a70f497c73cc3b553d1a1fdd6805f0c350d573abf45d3ff38cabb9547791"
+  }
+}

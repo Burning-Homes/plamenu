@@ -1,0 +1,2 @@
+name = "Shared accessibility fixture"
+description = "A disposable local test of the Webxdc update bridge."

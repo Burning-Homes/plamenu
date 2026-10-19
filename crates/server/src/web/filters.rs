@@ -5,18 +5,20 @@
 //! same [`plamenu_db::custom_filter::active_for`] set the REST API serves, so
 //! changes apply immediately.
 //!
-//! Everything works with JavaScript disabled: forms POST and each write
-//! follows POST/Redirect/GET. Keywords edit in place — clear a keyword's text
+//! Everything works with JavaScript disabled: successful writes follow
+//! POST/Redirect/GET; rejected creates retain the submitted form. Keywords edit in place — clear a keyword's text
 //! to remove it, use the blank row to add one.
 
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use fluent_bundle::FluentArgs;
 use maud::{Markup, html};
 use plamenu_db::custom_filter::{
-    self, ACTIONS, CustomFilter, KEYWORD_LENGTH_LIMIT, KeywordChange, MAX_FILTERS_PER_ACCOUNT,
-    MAX_KEYWORDS_PER_FILTER, NewKeyword, TITLE_LENGTH_LIMIT, VALID_CONTEXTS,
+    self, ACTIONS, CustomFilter, CustomFilterKeyword, KEYWORD_LENGTH_LIMIT, KeywordChange,
+    MAX_FILTERS_PER_ACCOUNT, MAX_KEYWORDS_PER_FILTER, NewKeyword, TITLE_LENGTH_LIMIT,
+    VALID_CONTEXTS,
 };
 use serde::Deserialize;
 use time::{Duration, OffsetDateTime};
@@ -101,11 +103,27 @@ fn action_label(action: &str, locale: Locale) -> String {
 }
 
 /// The shared title/action/expiry/context fields of the create and edit forms.
-fn filter_fields(filter: Option<&CustomFilter>, locale: Locale) -> Markup {
-    let title = filter.map_or("", |f| f.title.as_str());
-    let action = filter.map_or("warn", |f| f.action.as_str());
+fn filter_fields(
+    filter: Option<&CustomFilter>,
+    locale: Locale,
+    submitted: Option<&[(String, String)]>,
+) -> Markup {
+    let pairs = submitted.unwrap_or(&[]);
+    let title = field(pairs, "title").unwrap_or_else(|| filter.map_or("", |f| f.title.as_str()));
+    let action =
+        field(pairs, "action").unwrap_or_else(|| filter.map_or("warn", |f| f.action.as_str()));
+    let draft_contexts = submitted.map(context_values);
     let empty: &[String] = &[];
-    let contexts = filter.map_or(empty, |f| f.context.as_slice());
+    let contexts = draft_contexts
+        .as_deref()
+        .unwrap_or_else(|| filter.map_or(empty, |f| f.context.as_slice()));
+    let expiry =
+        field(pairs, "expires_in").unwrap_or(if filter.is_some_and(|f| f.expires_at.is_some()) {
+            "keep"
+        } else {
+            ""
+        });
+    let expiry_seconds = expiry.parse::<i64>().ok();
     let has = |key: &str| contexts.iter().any(|c| c == key);
     html! {
         fieldset.settings-form__group {
@@ -128,13 +146,13 @@ fn filter_fields(filter: Option<&CustomFilter>, locale: Locale) -> Markup {
                 span.settings-field__label { (locale.text("filters-field-expiry")) }
                 select name="expires_in" {
                     @if filter.is_some_and(|f| f.expires_at.is_some()) {
-                        option value="keep" selected { (locale.text("filters-expiry-keep")) }
+                        option value="keep" selected[expiry == "keep"] { (locale.text("filters-expiry-keep")) }
                     }
-                    option value="" selected[filter.is_none_or(|f| f.expires_at.is_none())] {
+                    option value="" selected[expiry.is_empty()] {
                         (locale.text("filters-expiry-never"))
                     }
                     @for (seconds, message) in EXPIRY_CHOICES {
-                        option value=(seconds) { (locale.text(message)) }
+                        option value=(seconds) selected[expiry_seconds == Some(seconds)] { (locale.text(message)) }
                     }
                 }
             }
@@ -221,23 +239,35 @@ pub async fn index(
 
 /// `GET /settings/filters/new`.
 pub async fn new_page(user: WebUser, Query(query): Query<FiltersQuery>) -> Markup {
+    new_filter_page(&user, query.error.as_deref(), None)
+}
+
+fn new_filter_page(
+    user: &WebUser,
+    error: Option<&str>,
+    submitted: Option<&[(String, String)]>,
+) -> Markup {
+    let pairs = submitted.unwrap_or(&[]);
     let locale = user.locale;
     let body = html! {
-        (error_flash(query.error.as_deref()))
+        @if let Some(error) = error {
+            p.settings__error id="form-error" role="alert" tabindex="-1" autofocus { (error) }
+        }
         form.settings-form method="post" action="/web/settings/filters" {
             input type="hidden" name="csrf" value=(user.csrf);
-            (filter_fields(None, locale))
+            (filter_fields(None, locale, submitted))
             fieldset.settings-form__group {
                 legend { (locale.text("filters-first-keyword")) }
                 p.settings-field__hint { (locale.text("filters-first-keyword-hint")) }
                 label.settings-field {
                     span.settings-field__label { (locale.text("filters-keyword")) }
                     input type="text" name="new_keyword"
-                        maxlength=(KEYWORD_LENGTH_LIMIT) autocomplete="off";
+                        maxlength=(KEYWORD_LENGTH_LIMIT) autocomplete="off"
+                        value=(field(pairs, "new_keyword").unwrap_or_default());
                 }
                 label.settings-toggle {
                     input type="hidden" name="new_whole_word" value="false";
-                    input type="checkbox" name="new_whole_word" value="true";
+                    input type="checkbox" name="new_whole_word" value="true" checked[checked(pairs, "new_whole_word")];
                     span.settings-toggle__text {
                         span.settings-toggle__label { (locale.text("filters-whole-word")) }
                     }
@@ -252,11 +282,19 @@ pub async fn new_page(user: WebUser, Query(query): Query<FiltersQuery>) -> Marku
         }
     };
     settings_shell(
-        &user,
+        user,
         "/settings/filters",
         &locale.text("filters-new"),
         &body,
     )
+}
+
+fn create_error(user: &WebUser, pairs: &[(String, String)], message: &str) -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        new_filter_page(user, Some(message), Some(pairs)),
+    )
+        .into_response()
 }
 
 /// `POST /web/settings/filters` — create a filter, then land on its edit page.
@@ -273,12 +311,12 @@ pub async fn create_action(State(state): State<AppState>, user: WebUser, body: B
     let context = context_values(&pairs);
     let locale = user.locale;
     if let Err(message) = validate(&title, &action, &context, locale) {
-        return redirect_error("/settings/filters/new", &message);
+        return create_error(&user, &pairs, &message);
     }
     match custom_filter::count_owned(&state.pool, user.current.account.id).await {
         Ok(count) => {
             if let Some(message) = filter_limit_error(count, locale) {
-                return redirect_error("/settings/filters/new", &message);
+                return create_error(&user, &pairs, &message);
             }
         }
         Err(err) => return ApiError::from(err).into_response(),
@@ -288,7 +326,7 @@ pub async fn create_action(State(state): State<AppState>, user: WebUser, body: B
     let new_text = field(&pairs, "new_keyword").unwrap_or_default().trim();
     if !new_text.is_empty() {
         if let Err(message) = validate_keyword(new_text, locale) {
-            return redirect_error("/settings/filters/new", &message);
+            return create_error(&user, &pairs, &message);
         }
         keywords.push(NewKeyword {
             keyword: new_text.to_owned(),
@@ -324,6 +362,16 @@ pub async fn edit_form(
         Ok(filter) => filter,
         Err(response) => return response,
     };
+    render_edit_page(&state, &user, &filter, &query, None).await
+}
+
+async fn render_edit_page(
+    state: &AppState,
+    user: &WebUser,
+    filter: &CustomFilter,
+    query: &FiltersQuery,
+    submitted: Option<&[(String, String)]>,
+) -> Response {
     let keywords = match custom_filter::keywords_for(&state.pool, filter.id).await {
         Ok(keywords) => keywords,
         Err(err) => return ApiError::from(err).into_response(),
@@ -332,54 +380,15 @@ pub async fn edit_form(
     let locale = user.locale;
     let body = html! {
         (saved_flash(query.saved.is_some(), &locale.text("filters-saved")))
-        (error_flash(query.error.as_deref()))
-        p.settings-field__hint { (expiry_label(&filter, clock, locale)) }
+        @if let Some(error) = query.error.as_deref() {
+            p.settings__error id="form-error" role="alert" tabindex="-1" autofocus { (error) }
+        }
+        p.settings-field__hint { (expiry_label(filter, clock, locale)) }
         form.settings-form method="post"
             action=(format!("/web/settings/filters/{}", filter.id)) {
             input type="hidden" name="csrf" value=(user.csrf);
-            (filter_fields(Some(&filter), locale))
-            fieldset.settings-form__group {
-                legend { (locale.text("filters-keywords")) }
-                p.settings-field__hint { (locale.text("filters-keywords-hint")) }
-                @for keyword in &keywords {
-                    div.settings-field__pair {
-                        label.settings-field {
-                            span.settings-field__label { (locale.text("filters-keyword")) }
-                            input type="text"
-                                name=(format!("keywords[{}][keyword]", keyword.id))
-                                maxlength=(KEYWORD_LENGTH_LIMIT)
-                                value=(keyword.keyword);
-                        }
-                        label.settings-toggle {
-                            input type="hidden"
-                                name=(format!("keywords[{}][whole_word]", keyword.id))
-                                value="false";
-                            input type="checkbox"
-                                name=(format!("keywords[{}][whole_word]", keyword.id))
-                                value="true" checked[keyword.whole_word];
-                            span.settings-toggle__text {
-                                span.settings-toggle__label {
-                                    (locale.text("filters-whole-word"))
-                                }
-                            }
-                        }
-                    }
-                }
-                div.settings-field__pair {
-                    label.settings-field {
-                        span.settings-field__label { (locale.text("filters-add-keyword")) }
-                        input type="text" name="new_keyword"
-                            maxlength=(KEYWORD_LENGTH_LIMIT) autocomplete="off";
-                    }
-                    label.settings-toggle {
-                        input type="hidden" name="new_whole_word" value="false";
-                        input type="checkbox" name="new_whole_word" value="true";
-                        span.settings-toggle__text {
-                            span.settings-toggle__label { (locale.text("filters-whole-word")) }
-                        }
-                    }
-                }
-            }
+            (filter_fields(Some(filter), locale, submitted))
+            (keyword_fields(&keywords, locale, submitted))
             div.settings-form__actions {
                 button type="submit" { (locale.text("filters-save")) }
                 a href="/settings/filters" { (locale.text("filters-back")) }
@@ -397,7 +406,81 @@ pub async fn edit_form(
             }
         }
     };
-    settings_shell(&user, "/settings/filters", &filter.title, &body).into_response()
+    settings_shell(user, "/settings/filters", &filter.title, &body).into_response()
+}
+
+fn keyword_fields(
+    keywords: &[CustomFilterKeyword],
+    locale: Locale,
+    submitted: Option<&[(String, String)]>,
+) -> Markup {
+    let pairs = submitted.unwrap_or(&[]);
+    html! {
+        fieldset.settings-form__group {
+            legend { (locale.text("filters-keywords")) }
+            p.settings-field__hint { (locale.text("filters-keywords-hint")) }
+            @for keyword in keywords {
+                @let text_name = format!("keywords[{}][keyword]", keyword.id);
+                @let word_name = format!("keywords[{}][whole_word]", keyword.id);
+                @let whole_word = submitted.map_or(keyword.whole_word, |pairs| checked(pairs, &word_name));
+                div.settings-field__pair {
+                    label.settings-field {
+                        span.settings-field__label { (locale.text("filters-keyword")) }
+                        input type="text"
+                            name=(text_name)
+                            maxlength=(KEYWORD_LENGTH_LIMIT)
+                            value=(field(pairs, &text_name).unwrap_or(&keyword.keyword));
+                    }
+                    label.settings-toggle {
+                        input type="hidden"
+                            name=(word_name)
+                            value="false";
+                        input type="checkbox"
+                            name=(word_name)
+                            value="true" checked[whole_word];
+                        span.settings-toggle__text {
+                            span.settings-toggle__label {
+                                (locale.text("filters-whole-word"))
+                            }
+                        }
+                    }
+                }
+            }
+            div.settings-field__pair {
+                label.settings-field {
+                    span.settings-field__label { (locale.text("filters-add-keyword")) }
+                    input type="text" name="new_keyword"
+                        maxlength=(KEYWORD_LENGTH_LIMIT) autocomplete="off"
+                        value=(field(pairs, "new_keyword").unwrap_or_default());
+                }
+                label.settings-toggle {
+                    input type="hidden" name="new_whole_word" value="false";
+                    input type="checkbox" name="new_whole_word" value="true" checked[checked(pairs, "new_whole_word")];
+                    span.settings-toggle__text {
+                        span.settings-toggle__label { (locale.text("filters-whole-word")) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn edit_error(
+    state: &AppState,
+    user: &WebUser,
+    filter: &CustomFilter,
+    pairs: &[(String, String)],
+    message: String,
+) -> Response {
+    let query = FiltersQuery {
+        saved: None,
+        error: Some(message),
+    };
+    let mut response = render_edit_page(state, user, filter, &query, Some(pairs)).await;
+    if response.status().is_success() {
+        *response.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+    }
+    response
 }
 
 /// `POST /web/settings/filters/{id}` — rewrite attributes and apply keyword
@@ -425,7 +508,7 @@ pub async fn update_action(
     let context = context_values(&pairs);
     let locale = user.locale;
     if let Err(message) = validate(&title, &action, &context, locale) {
-        return redirect_error(&back, &message);
+        return edit_error(&state, &user, &filter, &pairs, message).await;
     }
     let expires_at = parse_expiry(field(&pairs, "expires_in"), filter.expires_at);
 
@@ -437,7 +520,7 @@ pub async fn update_action(
             changes.push(KeywordChange::Destroy { id });
         } else {
             if let Err(message) = validate_keyword(&text, locale) {
-                return redirect_error(&back, &message);
+                return edit_error(&state, &user, &filter, &pairs, message).await;
             }
             changes.push(KeywordChange::Update {
                 id,
@@ -449,7 +532,7 @@ pub async fn update_action(
     let new_text = field(&pairs, "new_keyword").unwrap_or_default().trim();
     if !new_text.is_empty() {
         if let Err(message) = validate_keyword(new_text, locale) {
-            return redirect_error(&back, &message);
+            return edit_error(&state, &user, &filter, &pairs, message).await;
         }
         changes.push(KeywordChange::Create {
             keyword: new_text.to_owned(),
@@ -466,7 +549,7 @@ pub async fn update_action(
             Ok(current) => {
                 let current = usize::try_from(current).unwrap_or(usize::MAX);
                 if let Some(message) = keyword_limit_error(current.saturating_add(added), locale) {
-                    return redirect_error(&back, &message);
+                    return edit_error(&state, &user, &filter, &pairs, message).await;
                 }
             }
             Err(err) => return ApiError::from(err).into_response(),
@@ -629,11 +712,4 @@ fn limit_message(id: &str, limit: usize, locale: Locale) -> String {
     let mut args = FluentArgs::new();
     args.set("limit", i64::try_from(limit).unwrap_or(i64::MAX));
     locale.text_with(id, &args)
-}
-
-/// Redirects back to `base` with a human-readable error in the query string.
-fn redirect_error(base: &str, message: &str) -> Response {
-    let sep = if base.contains('?') { '&' } else { '?' };
-    let query = serde_urlencoded::to_string([("error", message)]).unwrap_or_default();
-    redirect_to(&format!("{base}{sep}{query}"))
 }

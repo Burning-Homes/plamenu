@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "6927034d64fda4defc9478b584f7a556f5a92f70",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T04:24:11.897Z",
+  "completed_at": "2026-10-19T04:24:20.999Z",
+  "status": "failed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > oauth-journey.spec.mjs > OAuth second-factor recovery preserves authorization and explicit consent",
+      "status": "failed",
+      "duration_ms": 3968
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > oauth-journey.spec.mjs > OAuth second-factor recovery preserves authorization and explicit consent",
+      "status": "failed",
+      "duration_ms": 3790
+    }
+  ]
+}

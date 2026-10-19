@@ -790,6 +790,24 @@ async fn web_aliases_page_adds_and_removes(pool: PgPool) {
     assert!(page.body.contains("You have no declared aliases"));
 
     let csrf = csrf_of(&page.body);
+    let refused = post_form(
+        &app,
+        "/web/settings/aliases",
+        &cookie,
+        &[("csrf", &csrf), ("acct", "<broken>")],
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::SEE_OTHER);
+    let refusal = get_page(&app, refused.location.as_deref().unwrap(), &cookie).await;
+    assert!(refusal.body.contains("value=\"&lt;broken&gt;\""));
+    assert!(!refusal.body.contains("<broken>"));
+    assert!(
+        refusal
+            .body
+            .contains("id=\"migration-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    assert!(refusal.body.contains("You have no declared aliases"));
+
     let response = post_form(
         &app,
         "/web/settings/aliases",
@@ -852,6 +870,35 @@ async fn web_migration_page_moves_the_account(pool: PgPool) {
             .contains("error="),
         "{:?}",
         response.location
+    );
+
+    let refusal = get_page(&app, response.location.as_deref().unwrap(), &cookie).await;
+    assert!(refusal.body.contains("value=\"dave@new.example\""));
+    assert!(
+        refusal
+            .body
+            .contains("id=\"migration-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    assert!(!refusal.body.contains("value=\"wrong\""));
+    assert!(
+        !response
+            .location
+            .as_deref()
+            .unwrap()
+            .contains("current_password")
+    );
+    assert!(
+        account_migration::list(
+            &pool,
+            account::find_local_by_username(&pool, "dave")
+                .await
+                .unwrap()
+                .unwrap()
+                .id
+        )
+        .await
+        .unwrap()
+        .is_empty()
     );
 
     let response = post_form(
@@ -922,6 +969,14 @@ async fn web_migration_pages_negotiate_russian_including_refusals(pool: PgPool) 
     )
     .await;
     let location = wrong.location.unwrap();
+    let recovery = get_page_in_russian(&app, &location, &cookie).await;
+    assert!(recovery.body.contains("Неверный пароль"));
+    assert!(recovery.body.contains("value=\"dave@new.example\""));
+    assert!(
+        recovery
+            .body
+            .contains("id=\"migration-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
     assert!(
         location.contains(&urlencoding_of("Неверный пароль")),
         "location {location}"

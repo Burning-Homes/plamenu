@@ -1,0 +1,130 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "8a0abd73dde2c6f5897b18765cb7c5bc77ee9688",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T01:34:18.711Z",
+  "completed_at": "2026-10-19T01:35:22.290Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > recovery-journey.spec.mjs > email confirmation and password reset recover from errors and revoke old sessions",
+      "status": "passed",
+      "duration_ms": 8799
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > recovery-journey.spec.mjs > Russian authentication errors use the interface language",
+      "status": "passed",
+      "duration_ms": 678
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > recovery-journey.spec.mjs > email confirmation and password reset recover from errors and revoke old sessions",
+      "status": "passed",
+      "duration_ms": 7186
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > recovery-journey.spec.mjs > Russian authentication errors use the interface language",
+      "status": "passed",
+      "duration_ms": 627
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > recovery-journey.spec.mjs > email confirmation and password reset recover from errors and revoke old sessions",
+      "status": "passed",
+      "duration_ms": 9068
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > recovery-journey.spec.mjs > Russian authentication errors use the interface language",
+      "status": "passed",
+      "duration_ms": 1070
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > recovery-journey.spec.mjs > email confirmation and password reset recover from errors and revoke old sessions",
+      "status": "passed",
+      "duration_ms": 9566
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > recovery-journey.spec.mjs > Russian authentication errors use the interface language",
+      "status": "passed",
+      "duration_ms": 868
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > recovery-journey.spec.mjs > email confirmation and password reset recover from errors and revoke old sessions",
+      "status": "passed",
+      "duration_ms": 9077
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > recovery-journey.spec.mjs > Russian authentication errors use the interface language",
+      "status": "passed",
+      "duration_ms": 1408
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > recovery-journey.spec.mjs > email confirmation and password reset recover from errors and revoke old sessions",
+      "status": "passed",
+      "duration_ms": 5152
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > recovery-journey.spec.mjs > Russian authentication errors use the interface language",
+      "status": "passed",
+      "duration_ms": 865
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > recovery-journey.spec.mjs > @no-js password reset keeps its error list, focus and recovery path",
+      "status": "passed",
+      "duration_ms": 1677
+    }
+  ]
+}

@@ -1,0 +1,268 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "d69b4538a1eeb92e29107859b24428be065e9ac1",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T07:18:10.280Z",
+  "completed_at": "2026-10-19T07:23:03.439Z",
+  "status": "failed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 2,
+      "failed": 3,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 2,
+      "failed": 3,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 3,
+      "failed": 1,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 3,
+      "failed": 1,
+      "skipped": 1
+    },
+    "firefox-mobile": {
+      "passed": 3,
+      "failed": 1,
+      "skipped": 1
+    },
+    "webkit-desktop": {
+      "passed": 3,
+      "failed": 1,
+      "skipped": 1
+    },
+    "webkit-mobile": {
+      "passed": 3,
+      "failed": 1,
+      "skipped": 1
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "passed",
+      "duration_ms": 2002
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > security-key-login-journey.spec.mjs > Existing security-key sign-in recovers focus after refusal and still authenticates",
+      "status": "failed",
+      "duration_ms": 4154
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > video-channels.spec.mjs > Channel roles and ownership are keyboard-operable and responsive",
+      "status": "failed",
+      "duration_ms": 10859
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > video-history.spec.mjs > private Video history and decoded resume",
+      "status": "failed",
+      "duration_ms": 13199
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > video-playlists.spec.mjs > keyboard playlist authoring, stable duplicate clips, native playback and confirmed deletion",
+      "status": "passed",
+      "duration_ms": 9233
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "passed",
+      "duration_ms": 1742
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > security-key-login-journey.spec.mjs > Existing security-key sign-in recovers focus after refusal and still authenticates",
+      "status": "failed",
+      "duration_ms": 4125
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > video-channels.spec.mjs > Channel roles and ownership are keyboard-operable and responsive",
+      "status": "failed",
+      "duration_ms": 10870
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > video-history.spec.mjs > private Video history and decoded resume",
+      "status": "failed",
+      "duration_ms": 9851
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > video-playlists.spec.mjs > keyboard playlist authoring, stable duplicate clips, native playback and confirmed deletion",
+      "status": "passed",
+      "duration_ms": 9247
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "passed",
+      "duration_ms": 2802
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > security-key-login-journey.spec.mjs > Existing security-key sign-in recovers focus after refusal and still authenticates",
+      "status": "skipped",
+      "duration_ms": 149,
+      "skip_reasons": [
+        "Chromium CDP virtual authenticator coverage only; physical prompts are unverified."
+      ]
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > video-channels.spec.mjs > Channel roles and ownership are keyboard-operable and responsive",
+      "status": "failed",
+      "duration_ms": 11222
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > video-history.spec.mjs > private Video history and decoded resume",
+      "status": "passed",
+      "duration_ms": 18860
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > video-playlists.spec.mjs > keyboard playlist authoring, stable duplicate clips, native playback and confirmed deletion",
+      "status": "passed",
+      "duration_ms": 10272
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "passed",
+      "duration_ms": 2650
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > security-key-login-journey.spec.mjs > Existing security-key sign-in recovers focus after refusal and still authenticates",
+      "status": "skipped",
+      "duration_ms": 147,
+      "skip_reasons": [
+        "Chromium CDP virtual authenticator coverage only; physical prompts are unverified."
+      ]
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > video-channels.spec.mjs > Channel roles and ownership are keyboard-operable and responsive",
+      "status": "failed",
+      "duration_ms": 11345
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > video-history.spec.mjs > private Video history and decoded resume",
+      "status": "passed",
+      "duration_ms": 18275
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > video-playlists.spec.mjs > keyboard playlist authoring, stable duplicate clips, native playback and confirmed deletion",
+      "status": "passed",
+      "duration_ms": 10055
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "passed",
+      "duration_ms": 3008
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > security-key-login-journey.spec.mjs > Existing security-key sign-in recovers focus after refusal and still authenticates",
+      "status": "skipped",
+      "duration_ms": 262,
+      "skip_reasons": [
+        "Chromium CDP virtual authenticator coverage only; physical prompts are unverified."
+      ]
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > video-channels.spec.mjs > Channel roles and ownership are keyboard-operable and responsive",
+      "status": "failed",
+      "duration_ms": 11695
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > video-history.spec.mjs > private Video history and decoded resume",
+      "status": "passed",
+      "duration_ms": 23047
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > video-playlists.spec.mjs > keyboard playlist authoring, stable duplicate clips, native playback and confirmed deletion",
+      "status": "passed",
+      "duration_ms": 11983
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "passed",
+      "duration_ms": 1870
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > security-key-login-journey.spec.mjs > Existing security-key sign-in recovers focus after refusal and still authenticates",
+      "status": "skipped",
+      "duration_ms": 146,
+      "skip_reasons": [
+        "Chromium CDP virtual authenticator coverage only; physical prompts are unverified."
+      ]
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > video-channels.spec.mjs > Channel roles and ownership are keyboard-operable and responsive",
+      "status": "failed",
+      "duration_ms": 11407
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > video-history.spec.mjs > private Video history and decoded resume",
+      "status": "passed",
+      "duration_ms": 20405
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > video-playlists.spec.mjs > keyboard playlist authoring, stable duplicate clips, native playback and confirmed deletion",
+      "status": "passed",
+      "duration_ms": 10296
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > security-key-journey.spec.mjs > @no-js security-key explanation preserves existing two-factor sign-in",
+      "status": "passed",
+      "duration_ms": 1056
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > video-channels.spec.mjs > Channel roles and ownership work without scripts @no-js",
+      "status": "failed",
+      "duration_ms": 10868
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > video-history.spec.mjs > private Video history and native resume @no-js",
+      "status": "passed",
+      "duration_ms": 6779
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > video-playlists.spec.mjs > playlist authoring and native clipped playback without scripts @no-js",
+      "status": "passed",
+      "duration_ms": 8320
+    }
+  ]
+}

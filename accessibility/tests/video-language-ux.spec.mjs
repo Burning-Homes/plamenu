@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import {signIn,chooseVideoLanguage} from '../session.mjs';
+import {signIn,chooseVideoLanguage,ensureVideoFormChannel} from '../session.mjs';
 
 async function bounds(page) {
   const result=await page.evaluate(()=>{
@@ -15,6 +15,8 @@ async function bounds(page) {
 }
 async function languageJourney(page,info) {
   await signIn(page);
+  await page.goto('/videos/import');
+  await ensureVideoFormChannel(page,page.locator('form[action="/web/videos/import"]'));
   const noScript=info.project.use.javaScriptEnabled===false;
   for (const width of [320,375]) {
     await page.setViewportSize({width,height:800});
@@ -84,6 +86,8 @@ test('Readable video languages retain values through native no-JavaScript forms 
 
 test('Translated video language labels fit narrow screens',async({page},info)=>{
   await signIn(page);
+  await page.goto('/videos/import');
+  await ensureVideoFormChannel(page,page.locator('form[action="/web/videos/import"]'));
   await page.goto('/settings/languages');
   const form=page.locator('form[action="/web/settings/languages"]');
   const csrf=await form.locator('input[name="csrf"]').inputValue();

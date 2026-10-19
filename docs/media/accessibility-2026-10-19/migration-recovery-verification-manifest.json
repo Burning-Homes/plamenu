@@ -1,0 +1,16 @@
+{
+  "base_commit": "e43ca9a",
+  "candidate_executable_sha256": "e6b58f61c8cfc23ee6d95255b26858c5607ab5d1e34348f7c174c16cfca0cd68",
+  "baseline_executable_commit": "2c2f990",
+  "baseline_executable_sha256": "b11b94622ded42ea2148f3bfcdf8a5abf24c0c1be8298ea1be16e1fa1991bb57",
+  "candidate_files_at_start": {
+    "crates/server/src/web/migration.rs": "518bd946df714e133505975e3a2a165a4bcb6a0fa2c3966d765fac981d05f1a0",
+    "crates/server/tests/migration.rs": "20a0dfa4ab04fa7ab92971d02e82d90faacfb2873ef0db4f75251a6e8786df5e",
+    "accessibility/tests/migration-recovery-journey.spec.mjs": "2a9b43a134a791ea2c71b1b823f186331e917bbaf4aa46899432083ea7fb7e56",
+    "accessibility/tests/archive-journey.spec.mjs": "46c1f61c8d4c2869c252c19b6f39f9f0acfcd702890b9b894343d74490f5fea3",
+    "accessibility/session.mjs": "40082a3c368d18fc0129607f5747fc03109238fffa7df81a6a4d8e9e9fb87020",
+    "accessibility/playwright.config.mjs": "49a12fac77b8809af7804cac03bc8e518a7257502bb9e7c1afcfe463adeefff8",
+    "scripts/run-accessibility-tests.py": "1747f92f46e5754e72d496cd4b57329d5ab16afddadbc54b214593f1f4ceead1"
+  },
+  "scope": "Retained alias/migration handle and native focused error. 16 integration checks pass, including successful stub-federation moves and aliases. Browser invalid-handle/password correction plus full account archive request/download. No real remote migration or physical authenticator claim."
+}

@@ -14,6 +14,7 @@
 
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use fluent_bundle::FluentArgs;
 use maud::html;
@@ -24,9 +25,7 @@ use time::{OffsetDateTime, PrimitiveDateTime};
 use super::clock::parse_datetime_local;
 use super::i18n::Locale;
 use super::session::{WebUser, csrf_rejection};
-use super::settings::{
-    bad_form, error_flash, field, form_pairs, redirect_to, saved_flash, settings_shell,
-};
+use super::settings::{bad_form, field, form_pairs, redirect_to, saved_flash, settings_shell};
 use crate::error::ApiError;
 use crate::routes::scheduled_statuses::validate_future;
 use crate::state::AppState;
@@ -39,6 +38,12 @@ pub struct ScheduledQuery {
     max_id: Option<i64>,
     saved: Option<String>,
     error: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+struct ScheduleDraft<'a> {
+    id: i64,
+    value: &'a str,
 }
 
 /// Resolves a submitted `datetime-local` value in the viewer's zone to the
@@ -130,6 +135,15 @@ pub async fn page(
     user: WebUser,
     Query(query): Query<ScheduledQuery>,
 ) -> Response {
+    render_page(&state, &user, &query, None).await
+}
+
+async fn render_page(
+    state: &AppState,
+    user: &WebUser,
+    query: &ScheduledQuery,
+    draft: Option<ScheduleDraft<'_>>,
+) -> Response {
     let account_id = user.current.account.id;
     let rows = match scheduled_status::list_for_account(
         &state.pool,
@@ -186,7 +200,10 @@ pub async fn page(
             query.saved.as_deref().is_some_and(|v| v != "scheduled"),
             &locale.text("scheduled-updated"),
         ))
-        (error_flash(query.error.as_deref()))
+        @if let Some(error) = query.error.as_deref() {
+            // Shared schedule validation details are currently English.
+            p.settings__error id="form-error" role="alert" lang="en" tabindex="-1" autofocus { (error) }
+        }
         p.settings-field__hint { (zone_hint) }
         @if rows.is_empty() {
             p.empty {
@@ -197,7 +214,8 @@ pub async fn page(
         } @else {
             ul.list-index {
                 @for (row, local) in rows.iter().zip(&wall_clocks) {
-                    (queue_entry(row, *local, &user.csrf, locale))
+                    (queue_entry(row, *local, &user.csrf, locale, query.max_id,
+                        draft.filter(|draft| draft.id == row.id).map(|draft| draft.value)))
                 }
             }
         }
@@ -206,7 +224,7 @@ pub async fn page(
         }
     };
     settings_shell(
-        &user,
+        user,
         "/settings/scheduled",
         &locale.text("scheduled-title"),
         &body,
@@ -221,7 +239,10 @@ fn queue_entry(
     local: PrimitiveDateTime,
     csrf: &str,
     locale: Locale,
+    max_id: Option<i64>,
+    draft: Option<&str>,
 ) -> maud::Markup {
+    let time_value = draft.map_or_else(|| input_value(local), str::to_owned);
     // The summary reads as one localized clause per fact, joined with the
     // separator the surrounding list already uses.
     let mut facts = vec![visibility_label(&row.visibility, locale)];
@@ -255,10 +276,15 @@ fn queue_entry(
             form.settings-form--inline method="post"
                 action=(format!("/web/settings/scheduled/{}/reschedule", row.id)) {
                 input type="hidden" name="csrf" value=(csrf);
+                @if let Some(max_id) = max_id {
+                    input type="hidden" name="max_id" value=(max_id);
+                }
                 label.compose__inline {
                     span.visually-hidden { (locale.text("scheduled-new-time")) }
                     input type="datetime-local" name="scheduled_at"
-                        value=(input_value(local)) required;
+                        value=(time_value) required
+                        aria-invalid=[draft.map(|_| "true")]
+                        aria-describedby=[draft.map(|_| "form-error")];
                 }
                 button type="submit" { (locale.text("scheduled-reschedule")) }
             }
@@ -292,7 +318,22 @@ pub async fn reschedule_action(
     let instant = match resolve_schedule_input(&state, &user, raw).await {
         Ok(instant) => instant,
         Err(ApiError::Unprocessable(message)) => {
-            return redirect_error("/settings/scheduled", &message);
+            let query = ScheduledQuery {
+                max_id: field(&pairs, "max_id").and_then(|value| value.parse().ok()),
+                saved: None,
+                error: Some(message),
+            };
+            let mut response = render_page(
+                &state,
+                &user,
+                &query,
+                Some(ScheduleDraft { id, value: raw }),
+            )
+            .await;
+            if response.status().is_success() {
+                *response.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+            }
+            return response;
         }
         Err(err) => return err.into_response(),
     };
@@ -301,7 +342,7 @@ pub async fn reschedule_action(
     {
         // A row already published or cancelled in another tab is gone — the
         // refreshed listing says so better than a 404 page.
-        Ok(_) => redirect_to("/settings/scheduled?saved=1"),
+        Ok(_) => queue_saved(&pairs),
         Err(err) => ApiError::from(err).into_response(),
     }
 }
@@ -326,10 +367,14 @@ pub async fn cancel_action(
     }
 }
 
-/// Redirects back to the listing with an error flash.
-fn redirect_error(base: &str, message: &str) -> Response {
-    let query = serde_urlencoded::to_string([("error", message)]).unwrap_or_default();
-    redirect_to(&format!("{base}?{query}"))
+/// Keep the queue page that contained the rescheduled entry.
+fn queue_saved(pairs: &[(String, String)]) -> Response {
+    let max_id = field(pairs, "max_id").and_then(|value| value.parse::<i64>().ok());
+    let target = max_id.map_or_else(
+        || "/settings/scheduled?saved=1".to_owned(),
+        |id| format!("/settings/scheduled?max_id={id}&saved=1"),
+    );
+    redirect_to(&target)
 }
 
 #[cfg(test)]

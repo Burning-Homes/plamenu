@@ -219,6 +219,36 @@ async fn enrol_totp_shows_qr_and_hands_back_recovery_codes(pool: PgPool) {
     let provisional = get(&app, "/settings/security", Some(&cookie)).await;
     assert!(provisional.body.contains("<svg"), "QR svg rendered");
     assert!(provisional.body.contains("Setup key:"));
+    // A password-change error owns focus even while OTP setup is pending.
+    let password_error = get(
+        &app,
+        "/settings/security?error=password_current",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(password_error.body.matches("autofocus").count(), 1);
+    assert!(
+        password_error
+            .body
+            .contains("id=\"form-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    // Fresh setup focuses the code; a rejected code instead focuses its error
+    // and identifies only the code input, not the separate password form.
+    assert_eq!(provisional.body.matches("autofocus").count(), 1);
+    assert!(
+        provisional
+            .body
+            .contains("autocomplete=\"one-time-code\" autofocus required")
+    );
+    let code_error = get(&app, "/settings/security?error=code", Some(&cookie)).await;
+    assert_eq!(code_error.body.matches("autofocus").count(), 1);
+    assert!(
+        code_error
+            .body
+            .contains("id=\"form-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    assert!(code_error.body.contains("autocomplete=\"one-time-code\" required aria-invalid=\"true\" aria-describedby=\"form-error\""));
+    assert_eq!(code_error.body.matches("aria-invalid=\"true\"").count(), 1);
     let secret = between(&provisional.body, "<code>", "</code>");
     let secret_bytes =
         base32::decode(base32::Alphabet::Rfc4648 { padding: false }, secret).unwrap();
@@ -277,6 +307,11 @@ async fn totp_login_needs_the_code(pool: PgPool) {
     assert_eq!(pw.status, StatusCode::OK);
     assert!(pw.set_cookie.is_none());
     assert!(pw.body.contains("Two-factor authentication"));
+    assert_eq!(pw.body.matches("autofocus").count(), 1);
+    assert!(
+        pw.body
+            .contains("autocomplete=\"one-time-code\" autofocus required")
+    );
 
     // The code completes the sign-in.
     let cookie = login_with_totp(&app).await;
@@ -301,6 +336,15 @@ async fn totp_login_rejects_a_wrong_code(pool: PgPool) {
     assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(bad.set_cookie.is_none());
     assert!(bad.body.contains("was incorrect"));
+    assert_eq!(bad.body.matches("autofocus").count(), 1);
+    assert!(
+        bad.body
+            .contains("id=\"challenge-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    assert!(
+        !bad.body
+            .contains("autocomplete=\"one-time-code\" autofocus")
+    );
 
     // The challenge is still live, so the correct code still works.
     let ok = post(
@@ -518,6 +562,36 @@ async fn oauth_authorize_completes_with_second_factor(pool: PgPool) {
         "{challenge_csp}"
     );
     let token = hidden_value(&step1.body, "challenge_token");
+
+    assert_eq!(step1.body.matches("autofocus").count(), 1);
+    assert!(
+        step1
+            .body
+            .contains("autocomplete=\"one-time-code\" autofocus required")
+    );
+    // A rejected code retains the authorization request and focuses its error.
+    let rejected = post(
+        &app,
+        "/oauth/authorize",
+        None,
+        &[
+            ("client_id", "test-client"),
+            ("redirect_uri", "https://client.example/cb"),
+            ("scope", "read"),
+            ("challenge_token", &token),
+            ("code", "invalid"),
+        ],
+    )
+    .await;
+    assert_eq!(rejected.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(rejected.body.matches("autofocus").count(), 1);
+    assert!(
+        rejected
+            .body
+            .contains("id=\"oauth-challenge-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    assert!(rejected.body.contains("autocomplete=\"one-time-code\" required aria-invalid=\"true\" aria-describedby=\"oauth-challenge-error\""));
+    assert!(hidden_value(&rejected.body, "challenge_token") == token);
 
     // The code mints the grant and redirects back with an authorization code.
     let step2 = post(

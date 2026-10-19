@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "d69b4538a1eeb92e29107859b24428be065e9ac1",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T07:12:58.184Z",
+  "completed_at": "2026-10-19T07:13:27.329Z",
+  "status": "failed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "passed",
+      "duration_ms": 1930
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "passed",
+      "duration_ms": 1798
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "passed",
+      "duration_ms": 2867
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "passed",
+      "duration_ms": 2686
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "passed",
+      "duration_ms": 2937
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > security-key-journey.spec.mjs > Security-key registration failure retains focus and existing sign-in alternatives",
+      "status": "passed",
+      "duration_ms": 1835
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > security-key-journey.spec.mjs > @no-js security-key explanation preserves existing two-factor sign-in",
+      "status": "failed",
+      "duration_ms": 10511
+    }
+  ]
+}

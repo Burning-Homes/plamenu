@@ -209,13 +209,13 @@ pub async fn page(
                 ul.relationships-list data-paged {
                     @match &rows {
                         Rows::Accounts(values) => {
-                            @for value in values { (account_row(value)) }
+                            @for value in values { (account_row(value, locale)) }
                         }
                         Rows::Domains(domains) => {
-                            @for domain in domains { (domain_row(domain)) }
+                            @for domain in domains { (domain_row(domain, locale)) }
                         }
                         Rows::Tags(tags) => {
-                            @for tag in tags { (tag_row(tag)) }
+                            @for tag in tags { (tag_row(tag, locale)) }
                         }
                     }
                 }
@@ -461,14 +461,22 @@ fn keyset_next(relationship: Relationship, last_id: Option<i64>, count: usize) -
     }
 }
 
+/// Identify the target without changing the compact visual selection column.
+fn selection_label(locale: Locale, target: &str) -> String {
+    let mut args = FluentArgs::new();
+    args.set("target", target);
+    locale.plain_with("relationships-select", &args)
+}
+
 /// One selectable account row: a checkbox carrying the account id, beside the
 /// standard account card.
-fn account_row(value: &serde_json::Value) -> Markup {
+fn account_row(value: &serde_json::Value, locale: Locale) -> Markup {
     let account = view::Account(value);
     html! {
         li.relationships-list__item {
             label.relationships-list__check {
-                input type="checkbox" name="ids" value=(account.id());
+                input type="checkbox" name="ids" value=(account.id())
+                    aria-label=(selection_label(locale, &format!("@{}", account.acct())));
             }
             (view::account_card(&account))
         }
@@ -477,11 +485,12 @@ fn account_row(value: &serde_json::Value) -> Markup {
 
 /// One selectable domain row: a checkbox carrying the domain name, beside the
 /// domain shown as plain text.
-fn domain_row(domain: &str) -> Markup {
+fn domain_row(domain: &str, locale: Locale) -> Markup {
     html! {
         li.relationships-list__item {
             label.relationships-list__check {
-                input type="checkbox" name="domains" value=(domain);
+                input type="checkbox" name="domains" value=(domain)
+                    aria-label=(selection_label(locale, domain));
             }
             span.relationships-list__domain { (domain) }
         }
@@ -490,11 +499,12 @@ fn domain_row(domain: &str) -> Markup {
 
 /// One selectable followed-hashtag row: a checkbox carrying the tag
 /// name, beside a link to the hashtag's timeline.
-fn tag_row(tag: &tag::FollowedTag) -> Markup {
+fn tag_row(tag: &tag::FollowedTag, locale: Locale) -> Markup {
     html! {
         li.relationships-list__item {
             label.relationships-list__check {
-                input type="checkbox" name="tags" value=(tag.name);
+                input type="checkbox" name="tags" value=(tag.name)
+                    aria-label=(selection_label(locale, &format!("#{}", tag.name)));
             }
             a.relationships-list__domain href=(format!("/tags/{}", tag.name)) {
                 "#" (tag.name)
@@ -603,4 +613,42 @@ pub async fn bulk_action(State(state): State<AppState>, user: WebUser, body: Byt
         }
     }
     redirect_to(&format!("/settings/relationships?rel={rel}&saved=1"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relationship_checkboxes_name_their_targets_in_both_locales() {
+        let account = serde_json::json!({"id":"42", "acct":"bob@example.test"});
+        let tag = tag::FollowedTag {
+            follow_id: 1,
+            id: 2,
+            name: "accessibility".to_owned(),
+            display_name: None,
+        };
+        for (locale, verb) in [
+            (Locale::default(), "Select"),
+            (Locale::negotiate(Some("ru"), None), "Выбрать"),
+        ] {
+            for (markup, target) in [
+                (account_row(&account, locale), "@bob@example.test"),
+                (domain_row("example.test", locale), "example.test"),
+                (tag_row(&tag, locale), "#accessibility"),
+            ] {
+                assert!(
+                    markup
+                        .into_string()
+                        .contains(&format!("aria-label=\"{verb} {target}\""))
+                );
+            }
+        }
+        // Dynamic values remain escaped when used in an attribute.
+        assert!(
+            domain_row("a\"&b", Locale::default())
+                .into_string()
+                .contains("aria-label=\"Select a&quot;&amp;b\"")
+        );
+    }
 }

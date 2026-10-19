@@ -18,7 +18,7 @@ test.afterEach(async ({page}, info) => {
 });
 
 async function scan(page, noScript) {
-  const widths = await page.evaluate(() => [innerWidth, document.documentElement.scrollWidth]);
+  const widths = await page.evaluate(() => [document.documentElement.clientWidth, document.documentElement.scrollWidth]);
   expect(widths[1]).toBeLessThanOrEqual(widths[0]);
   if (!noScript) {
     const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
@@ -30,6 +30,7 @@ function form(page, op) { return page.locator(`form:has(input[name="operation"][
 async function journey(page, info) {
   test.setTimeout(180_000);
   const noScript = info.project.use.javaScriptEnabled === false;
+  if (noScript) await page.setViewportSize({width:320,height:800});
   if (!noScript) await page.addInitScript(() => { window.__ownedVideoProfile = true; });
   await signIn(page);
   await page.goto('/videos/upload');await openVideoOptions(page);

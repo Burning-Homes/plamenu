@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "202f2df553d7055d60c051acb4177edcb913a5c3",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T06:13:40.229Z",
+  "completed_at": "2026-10-19T06:15:05.887Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > video-accessible-metadata.spec.mjs > accessible Video metadata lifecycle",
+      "status": "passed",
+      "duration_ms": 11882
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > video-accessible-metadata.spec.mjs > accessible Video metadata lifecycle",
+      "status": "passed",
+      "duration_ms": 11637
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > video-accessible-metadata.spec.mjs > accessible Video metadata lifecycle",
+      "status": "passed",
+      "duration_ms": 12580
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > video-accessible-metadata.spec.mjs > accessible Video metadata lifecycle",
+      "status": "passed",
+      "duration_ms": 12160
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > video-accessible-metadata.spec.mjs > accessible Video metadata lifecycle",
+      "status": "passed",
+      "duration_ms": 14436
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > video-accessible-metadata.spec.mjs > accessible Video metadata lifecycle",
+      "status": "passed",
+      "duration_ms": 11708
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > video-accessible-metadata.spec.mjs > accessible Video metadata lifecycle @no-js",
+      "status": "passed",
+      "duration_ms": 6830
+    }
+  ]
+}

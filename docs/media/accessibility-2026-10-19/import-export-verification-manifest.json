@@ -1,0 +1,17 @@
+{
+  "base_commit": "2c2f990",
+  "candidate_executable_sha256": "1e49e7b463128c541d2efbb7ad2f5e835bf0014f0596d42a04f440921e5e478e",
+  "baseline_executable_commit": "bdcf52f",
+  "baseline_executable_sha256": "a739c2e48698c28d9ad2867e0e00f63b0dc0477abac830ac53e910dd93c10720",
+  "candidate_files_at_start": {
+    "crates/server/src/web/import.rs": "bb8b44f96db3aebff44e2ed07a77e06c6f47f7d601c24a0c4c38c700d878c143",
+    "crates/server/tests/import.rs": "c405ac1f19263a0d0785211ca5514796d95550b79563346160f64741c6d77a08",
+    "crates/server/src/web/locales/en-US/main.ftl": "b38046bd224f39b95ebcd1996579c494e00d52fbea48277a5b863de44f6ecf87",
+    "crates/server/src/web/locales/ru/main.ftl": "1ce72fbcac3364f3e72da96160d7f7b5773941536c6e085d017a58d39ae0d741",
+    "accessibility/tests/import-export-journey.spec.mjs": "d8ee3aaa916276c6b7821a557a0fa945528f76d76a780cafe6082f531dd196ec",
+    "accessibility/session.mjs": "40082a3c368d18fc0129607f5747fc03109238fffa7df81a6a4d8e9e9fb87020",
+    "accessibility/playwright.config.mjs": "49a12fac77b8809af7804cac03bc8e518a7257502bb9e7c1afcfe463adeefff8",
+    "scripts/run-accessibility-tests.py": "1747f92f46e5754e72d496cd4b57329d5ab16afddadbc54b214593f1f4ceead1"
+  },
+  "scope": "CSV rejection retains validated import type and mode, localized focused summary; native correction, review, confirmation, worker completion and exported domain CSV. 16 server/catalog tests pass; explicitly rebuilt executable."
+}

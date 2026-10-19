@@ -108,8 +108,10 @@ async fn interact_page(
             p { (lead) }
             p { (locale.text("interact-explainer")) }
             @if !errors.is_empty() {
-                ul.form-error id="interact-errors" role="alert" {
-                    @for error in errors { li { (error) } }
+                div id="interact-errors" role="alert" tabindex="-1" autofocus {
+                    ul.form-error {
+                        @for error in errors { li { (error) } }
+                    }
                 }
             }
             form.auth-form method="post" action="/interact" {
@@ -117,7 +119,7 @@ async fn interact_page(
                 label {
                     (locale.text("interact-handle-label"))
                     input type="text" name="handle" value=(handle)
-                        placeholder="user@example.org" autocomplete="off" required autofocus
+                        placeholder="user@example.org" autocomplete="off" required autofocus[errors.is_empty()]
                         aria-invalid=[(!errors.is_empty()).then_some("true")]
                         aria-describedby=(if errors.is_empty() {
                             "interact-handle-hint"

@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "a9a5742439ad916de9a0371b6a3a8689f1a7162c",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T01:05:04.817Z",
+  "completed_at": "2026-10-19T01:05:51.187Z",
+  "status": "failed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 0,
+      "failed": 2,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 0,
+      "failed": 2,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > core-journey.spec.mjs > signup error recovery, login and first post form a complete core journey",
+      "status": "failed",
+      "duration_ms": 17136
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > core-journey.spec.mjs > post action failure is explained and can be retried with the keyboard",
+      "status": "failed",
+      "duration_ms": 3652
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > core-journey.spec.mjs > signup error recovery, login and first post form a complete core journey",
+      "status": "failed",
+      "duration_ms": 19395
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > core-journey.spec.mjs > post action failure is explained and can be retried with the keyboard",
+      "status": "failed",
+      "duration_ms": 3512
+    }
+  ]
+}

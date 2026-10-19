@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "96530f234307861a76fc190d4e6668090c4e4c5d",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T03:16:59.017Z",
+  "completed_at": "2026-10-19T03:17:23.669Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > privacy-journey.spec.mjs > privacy domain errors retain choices through correction and restoration",
+      "status": "passed",
+      "duration_ms": 2220
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > privacy-journey.spec.mjs > privacy domain errors retain choices through correction and restoration",
+      "status": "passed",
+      "duration_ms": 2150
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > privacy-journey.spec.mjs > privacy domain errors retain choices through correction and restoration",
+      "status": "passed",
+      "duration_ms": 3640
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > privacy-journey.spec.mjs > privacy domain errors retain choices through correction and restoration",
+      "status": "passed",
+      "duration_ms": 3414
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > privacy-journey.spec.mjs > privacy domain errors retain choices through correction and restoration",
+      "status": "passed",
+      "duration_ms": 4315
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > privacy-journey.spec.mjs > privacy domain errors retain choices through correction and restoration",
+      "status": "passed",
+      "duration_ms": 2682
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > privacy-journey.spec.mjs > @no-js privacy domain errors retain choices through correction and restoration",
+      "status": "passed",
+      "duration_ms": 1528
+    }
+  ]
+}

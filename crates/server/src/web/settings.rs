@@ -260,7 +260,22 @@ fn field_rows(account: &Account) -> Vec<(String, String, bool)> {
 }
 
 pub async fn profile_form(user: WebUser, Query(query): Query<SettingsQuery>) -> Markup {
-    let account = &user.current.account;
+    profile_page(
+        &user,
+        &user.current.account,
+        query.saved.is_some(),
+        None,
+        false,
+    )
+}
+
+fn profile_page(
+    user: &WebUser,
+    account: &Account,
+    saved: bool,
+    error: Option<&str>,
+    had_upload: bool,
+) -> Markup {
     let fields = field_rows(account);
     let locale = user.locale;
     let mut bio_hint_args = FluentArgs::new();
@@ -275,7 +290,20 @@ pub async fn profile_form(user: WebUser, Query(query): Query<SettingsQuery>) -> 
     );
 
     let body = html! {
-        (saved_flash(query.saved.is_some(), &locale.text("settings-profile-saved")))
+        (saved_flash(saved, &locale.text("settings-profile-saved")))
+        @if let Some(error) = error {
+            div.settings__error id="profile-errors" role="alert" tabindex="-1" autofocus {
+                p { (locale.text("settings-profile-error")) }
+                // API validation details currently use English. Mark the language
+                // explicitly instead of presenting them as the interface locale.
+                p lang="en" { (error) }
+                p { (locale.text(if had_upload {
+                    "settings-profile-error-upload-hint"
+                } else {
+                    "settings-profile-error-hint"
+                })) }
+            }
+        }
         form.settings-form method="post" action="/web/settings/profile" enctype="multipart/form-data" {
             input type="hidden" name="csrf" value=(user.csrf);
 
@@ -378,7 +406,7 @@ pub async fn profile_form(user: WebUser, Query(query): Query<SettingsQuery>) -> 
         }
     };
     settings_shell(
-        &user,
+        user,
         "/settings/profile",
         &locale.text("settings-profile-title"),
         &body,
@@ -406,6 +434,49 @@ pub(super) fn select(name: &str, options: &[(&str, &str)], selected: &str) -> Ma
             }
         }
     }
+}
+
+/// A rendering-only copy of submitted text and choices, without upload bytes.
+/// Keep it separate from the authenticated account and from database writes.
+fn profile_draft(account: &Account, changes: &ProfileChanges) -> Account {
+    let mut draft = account.clone();
+    if let Some(value) = &changes.display_name {
+        draft.display_name.clone_from(value);
+    }
+    if let Some(value) = &changes.note {
+        draft.note_source.clone_from(value);
+    }
+    if let Some(value) = &changes.avatar_description {
+        draft.avatar_description.clone_from(value);
+    }
+    if let Some(value) = &changes.header_description {
+        draft.header_description.clone_from(value);
+    }
+    if let Some(value) = changes.locked {
+        draft.locked = value;
+    }
+    if let Some(value) = changes.bot {
+        draft.is_bot = value;
+    }
+    if let Some(fields) = &changes.fields {
+        draft.fields = Value::Array(
+            fields
+                .iter()
+                .map(|(name, value)| {
+                    let verified_at = account.fields.as_array().and_then(|stored| {
+                        stored
+                            .iter()
+                            .find(|field| {
+                                field.get("value").and_then(Value::as_str) == Some(value.as_str())
+                            })
+                            .and_then(|field| field.get("verified_at"))
+                    });
+                    serde_json::json!({"name": name, "value": value, "verified_at": verified_at})
+                })
+                .collect(),
+        );
+    }
+    draft
 }
 
 pub async fn update_profile_action(
@@ -461,9 +532,20 @@ pub async fn update_profile_action(
         changes.fields = Some(fields.into_values().collect());
     }
 
+    let had_upload = changes.avatar.is_some() || changes.header.is_some();
+    let draft = profile_draft(&user.current.account, &changes);
     match update_profile(&state, &user.current.account, changes).await {
         Ok(_) => redirect_to("/settings/profile?saved=1"),
-        Err(err) => err.into_response(),
+        Err(err) => {
+            let message = err.to_string();
+            // Preserve the error status and normal server-side error logging.
+            let status = err.into_response().status();
+            (
+                status,
+                profile_page(&user, &draft, false, Some(&message), had_upload),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -1296,12 +1378,25 @@ fn policy_row(locale: Locale, name: &str, label: &str, current: Disposition) -> 
     }
 }
 
-#[allow(clippy::too_many_lines)]
 pub async fn privacy(
     State(state): State<AppState>,
     user: WebUser,
     Query(query): Query<SettingsQuery>,
 ) -> Result<Markup, ApiError> {
+    privacy_page(&state, &user, &query, None, None).await
+}
+
+#[allow(clippy::too_many_lines)]
+async fn privacy_page(
+    state: &AppState,
+    user: &WebUser,
+    query: &SettingsQuery,
+    submitted: Option<&[(String, String)]>,
+    error: Option<&str>,
+) -> Result<Markup, ApiError> {
+    let pairs = submitted.unwrap_or(&[]);
+    let draft_flag = |name, stored| submitted.map_or(stored, |pairs| checked(pairs, name));
+    let draft_policy = |name, stored| field(pairs, name).map_or(stored, Disposition::parse);
     let locale = user.locale;
     let account = &user.current.account;
     let policy = notification_policy::get_or_default(&state.pool, account.id).await?;
@@ -1310,11 +1405,20 @@ pub async fn privacy(
         .unwrap_or_default();
     let attribution_domains =
         plamenu_db::account::attribution_domains(&state.pool, account.id).await?;
+    let stored_domains = attribution_domains.join("\n");
+    let domains = field(pairs, "attribution_domains").unwrap_or(&stored_domains);
     let body = html! {
         (saved_flash(
             query.saved.is_some(),
             &locale.text("settings-privacy-saved"),
         ))
+        @if let Some(error) = error {
+            div.settings__error id="form-error" role="alert" tabindex="-1" autofocus {
+                p { (locale.text("settings-privacy-error")) }
+                // Shared API validation details are English, independently of UI locale.
+                p id="privacy-domain-error" lang="en" { (error) }
+            }
+        }
         form.settings-form method="post" action="/web/settings/privacy" {
             input type="hidden" name="csrf" value=(user.csrf);
             fieldset.settings-form__group {
@@ -1322,34 +1426,34 @@ pub async fn privacy(
                 (checkbox("discoverable",
                     &locale.text("settings-privacy-discoverable"),
                     &locale.text("settings-privacy-discoverable-hint"),
-                    account.discoverable.unwrap_or(false)))
+                    draft_flag("discoverable", account.discoverable.unwrap_or(false))))
                 (checkbox("indexable",
                     &locale.text("settings-privacy-indexable"),
                     &locale.text("settings-privacy-indexable-hint"),
-                    account.indexable))
+                    draft_flag("indexable", account.indexable)))
                 (checkbox("hide_collections",
                     &locale.text("settings-privacy-hide-collections"),
                     &locale.text("settings-privacy-hide-collections-hint"),
-                    account.hide_collections))
+                    draft_flag("hide_collections", account.hide_collections)))
                 (checkbox("noindex",
                     &locale.text("settings-privacy-noindex"),
                     &locale.text("settings-privacy-noindex-hint"),
-                    settings.noindex))
+                    draft_flag("noindex", settings.noindex)))
             }
             fieldset.settings-form__group {
                 legend { (locale.text("settings-privacy-profile-tabs")) }
                 (checkbox("show_featured",
                     &locale.text("settings-privacy-show-featured"),
                     &locale.text("settings-privacy-show-featured-hint"),
-                    account.show_featured))
+                    draft_flag("show_featured", account.show_featured)))
                 (checkbox("show_media",
                     &locale.text("settings-privacy-show-media"),
                     &locale.text("settings-privacy-show-media-hint"),
-                    account.show_media))
+                    draft_flag("show_media", account.show_media)))
                 (checkbox("show_media_replies",
                     &locale.text("settings-privacy-show-media-replies"),
                     &locale.text("settings-privacy-show-media-replies-hint"),
-                    account.show_media_replies))
+                    draft_flag("show_media_replies", account.show_media_replies)))
             }
             fieldset.settings-form__group {
                 legend { (locale.text("settings-privacy-attribution")) }
@@ -1357,8 +1461,10 @@ pub async fn privacy(
                     span.settings-field__label {
                         (locale.text("settings-privacy-attribution-domains"))
                     }
-                    textarea name="attribution_domains" rows="3" placeholder="example.com" {
-                        (attribution_domains.join("\n"))
+                    textarea name="attribution_domains" rows="3" placeholder="example.com"
+                        aria-invalid=[error.map(|_| "true")]
+                        aria-describedby=[error.map(|_| "privacy-domain-error")] {
+                        (domains)
                     }
                     span.settings-field__hint {
                         (locale.text("settings-privacy-attribution-hint"))
@@ -1378,22 +1484,22 @@ pub async fn privacy(
                 }
                 (policy_row(locale, "not_following_policy",
                     &locale.text("settings-privacy-not-following"),
-                    policy.for_not_following))
+                    draft_policy("not_following_policy", policy.for_not_following)))
                 (policy_row(locale, "not_followers_policy",
                     &locale.text("settings-privacy-not-followers"),
-                    policy.for_not_followers))
+                    draft_policy("not_followers_policy", policy.for_not_followers)))
                 (policy_row(locale, "new_accounts_policy",
                     &locale.text("settings-privacy-new-accounts"),
-                    policy.for_new_accounts))
+                    draft_policy("new_accounts_policy", policy.for_new_accounts)))
                 (policy_row(locale, "private_mentions_policy",
                     &locale.text("settings-privacy-private-mentions"),
-                    policy.for_private_mentions))
+                    draft_policy("private_mentions_policy", policy.for_private_mentions)))
                 (policy_row(locale, "limited_accounts_policy",
                     &locale.text("settings-privacy-limited-accounts"),
-                    policy.for_limited_accounts))
+                    draft_policy("limited_accounts_policy", policy.for_limited_accounts)))
                 (policy_row(locale, "bots_policy",
                     &locale.text("settings-privacy-bots"),
-                    policy.for_bots))
+                    draft_policy("bots_policy", policy.for_bots)))
             }
             div.settings-form__actions {
                 button type="submit" { (locale.text("settings-privacy-save")) }
@@ -1401,7 +1507,7 @@ pub async fn privacy(
         }
     };
     Ok(settings_shell(
-        &user,
+        user,
         "/settings/privacy",
         &locale.text("settings-privacy-title"),
         &body,
@@ -1475,6 +1581,18 @@ pub async fn update_privacy_action(
             }
             redirect_to("/settings/privacy?saved=1")
         }
+        Err(err @ ApiError::Unprocessable(_)) => {
+            let message = err.to_string();
+            let status = err.into_response().status();
+            let query = SettingsQuery {
+                saved: None,
+                error: None,
+            };
+            match privacy_page(&state, &user, &query, Some(&pairs), Some(&message)).await {
+                Ok(page) => (status, page).into_response(),
+                Err(err) => err.into_response(),
+            }
+        }
         Err(err) => err.into_response(),
     }
 }
@@ -1501,6 +1619,10 @@ fn account_saved(locale: Locale, code: Option<&str>) -> Option<String> {
 }
 
 pub async fn account(user: WebUser, Query(query): Query<SettingsQuery>) -> Markup {
+    account_page(&user, &query, None)
+}
+
+fn account_page(user: &WebUser, query: &SettingsQuery, proposed_email: Option<&str>) -> Markup {
     let locale = user.locale;
     let handle = format!("@{}", user.current.account.username);
     let saved = account_saved(locale, query.saved.as_deref());
@@ -1515,7 +1637,11 @@ pub async fn account(user: WebUser, Query(query): Query<SettingsQuery>) -> Marku
     delete_args.set("handle", handle.as_str());
     let body = html! {
         (saved_flash(saved.is_some(), saved.as_deref().unwrap_or_default()))
-        (error_flash(error.as_deref()))
+        @if let Some(error) = error.as_deref() {
+            p.settings__error id="form-error" role="alert" tabindex="-1" autofocus {
+                (error)
+            }
+        }
 
         div.settings-form {
             form.settings-form method="post" action="/web/settings/account/email" {
@@ -1527,7 +1653,7 @@ pub async fn account(user: WebUser, Query(query): Query<SettingsQuery>) -> Marku
                             (locale.text("settings-account-email-address"))
                         }
                         input type="email" name="email"
-                            value=(user.current.user.email.as_deref().unwrap_or(""))
+                            value=(proposed_email.unwrap_or_else(|| user.current.user.email.as_deref().unwrap_or("")))
                             autocomplete="email"
                             aria-invalid=[email_invalid.then_some("true")]
                             aria-describedby=(if email_invalid {
@@ -1593,11 +1719,23 @@ pub async fn account(user: WebUser, Query(query): Query<SettingsQuery>) -> Marku
         }
     };
     settings_shell(
-        &user,
+        user,
         "/settings/account",
         &locale.text("settings-account-title"),
         &body,
     )
+}
+
+fn account_email_error(user: &WebUser, email: &str, code: &str) -> Response {
+    let query = SettingsQuery {
+        saved: None,
+        error: Some(code.to_owned()),
+    };
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        account_page(user, &query, Some(email)),
+    )
+        .into_response()
 }
 
 pub async fn update_email_action(
@@ -1612,6 +1750,7 @@ pub async fn update_email_action(
     if !user.csrf_ok(field(&pairs, "csrf").unwrap_or_default()) {
         return csrf_rejection();
     }
+    let proposed_email = field(&pairs, "email").unwrap_or_default().trim();
     if !crate::auth::verify_password_gated(
         field(&pairs, "current_password")
             .unwrap_or_default()
@@ -1620,11 +1759,11 @@ pub async fn update_email_action(
     )
     .await
     {
-        return redirect_to("/settings/account?error=email_password");
+        return account_email_error(&user, proposed_email, "email_password");
     }
     // Empty removes the address: e-mail is optional, so an account may go
     // back to signing in by username only.
-    let email = field(&pairs, "email").unwrap_or_default().trim();
+    let email = proposed_email;
     let saved = if email.is_empty() {
         "email_removed"
     } else {
@@ -1634,7 +1773,7 @@ pub async fn update_email_action(
     match user::update_email(&state.pool, user.current.user.id, email).await {
         Ok(Some(_)) => redirect_to(&format!("/settings/account?saved={saved}")),
         Ok(None) => ApiError::NotFound.into_response(),
-        Err(DbError::EmailTaken) => redirect_to("/settings/account?error=email_taken"),
+        Err(DbError::EmailTaken) => account_email_error(&user, proposed_email, "email_taken"),
         Err(err) => ApiError::from(err).into_response(),
     }
 }

@@ -1,33 +1,20 @@
 import { test, expect } from '@playwright/test';
-import { signIn } from '../session.mjs';
-
-const recipientSessions = new Map();
+import { signIn, signInParticipant, participantUsername } from '../session.mjs';
 
 for (const prefix of ['', '@no-js ']) {
   for (const surface of ['new message', 'inline public-thread reply', 'dedicated public-thread reply']) {
     test(`${prefix}Private mention uses inline mentions in ${surface}`, async ({ page, browser }, info) => {
       await signIn(page);
       const otherContext = await browser.newContext({
+        ...info.project.use,
         baseURL: process.env.A11Y_BASE_URL,
-        extraHTTPHeaders: info.project.use.extraHTTPHeaders,
         javaScriptEnabled: !prefix,
         serviceWorkers: 'block',
       });
       const other = await otherContext.newPage();
-      const recipient = 'channel_editor';
+      const recipient = participantUsername(info);
       try {
-        const cookies = recipientSessions.get(info.project.name);
-        if (cookies) {
-          await otherContext.addCookies(cookies);
-          await other.goto('/');
-        } else {
-          await other.goto('/login');
-          await other.locator('[name=identifier]').fill(recipient);
-          await other.locator('[name=password]').fill(process.env.A11Y_PASSWORD || 'plamenu-development-only');
-          await other.getByRole('button', { name: 'Sign in', exact: true }).click();
-          await expect(other).toHaveURL(url => url.pathname === '/');
-          recipientSessions.set(info.project.name, await otherContext.cookies());
-        }
+        await signInParticipant(other);
         await expect(other).toHaveURL(url => url.pathname === '/');
         if (surface === 'new message') {
           await page.goto('/compose?visibility=direct');

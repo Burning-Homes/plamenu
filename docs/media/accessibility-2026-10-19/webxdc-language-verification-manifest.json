@@ -1,0 +1,33 @@
+{
+  "base_commit": "8352861",
+  "candidate_executable_sha256": "27d18902da275f982da765f5ba0afcbbf06be7ae39a06b989a20b12b81caf17c",
+  "baseline_executable_commit": "dc59574",
+  "baseline_executable_sha256": "a97faaea578b3dc66f1e20dc9081e52f9c539a7b0df9e28357ef81b541915f25",
+  "candidate_files_at_start": {
+    "crates/server/src/web/webxdc.rs": "740e5883b5e10a55d5c0d2d65bf26bc42da99d6858ce5320e82dfd1b005e05fa",
+    "crates/server/src/web/assets/app.js": "363a9cffe5dd6ba42b163e7ba85cf4113207c359bc950b05a37f18a715247bf4",
+    "crates/server/src/web/locales/en-US/main.ftl": "90b634c3aad3736e796bcd78e878f41f6a6d2d77719425afabfe794d55d913c9",
+    "crates/server/src/web/locales/ru/main.ftl": "aa04b47005f8b8a631acf1f2834120a3c5f39d410237f2eb604ece40f2687c00",
+    "crates/server/tests/webxdc.rs": "ab407bc1e51c10907820e90b02083b789b76582fd9113c41961dec1c00e3db71",
+    "accessibility/tests/webxdc-create-language.spec.mjs": "af696dc6c6f0b5783b64fedad18e77ad603c755d866008070adf30a8a79027ed",
+    "accessibility/tests/webxdc-journey.spec.mjs": "67963f9cdee02b00ba6734fd389dd7edb9dfe90a0aca2d676df28ad6a022045c",
+    "accessibility/session.mjs": "40082a3c368d18fc0129607f5747fc03109238fffa7df81a6a4d8e9e9fb87020",
+    "accessibility/playwright.config.mjs": "49a12fac77b8809af7804cac03bc8e518a7257502bb9e7c1afcfe463adeefff8",
+    "scripts/run-accessibility-tests.py": "1747f92f46e5754e72d496cd4b57329d5ab16afddadbc54b214593f1f4ceead1"
+  },
+  "server_checks": "Three passed: English/Russian session-creation integration plus two localization catalog tests. Explicit executable rebuild followed.",
+  "final_executable_sha256": "8380a19d83e4e6c2fdc95d0b1165641087b9051a7bb5849eb625629f361634da",
+  "final_files_at_start": {
+    "crates/server/src/web/webxdc.rs": "d0bcab3232207bed1c8ed1acd4d825388deaf490b63a890562680702659b947c",
+    "crates/server/src/web/assets/app.js": "363a9cffe5dd6ba42b163e7ba85cf4113207c359bc950b05a37f18a715247bf4",
+    "crates/server/src/web/locales/en-US/main.ftl": "90b634c3aad3736e796bcd78e878f41f6a6d2d77719425afabfe794d55d913c9",
+    "crates/server/src/web/locales/ru/main.ftl": "aa04b47005f8b8a631acf1f2834120a3c5f39d410237f2eb604ece40f2687c00",
+    "crates/server/tests/webxdc.rs": "ab407bc1e51c10907820e90b02083b789b76582fd9113c41961dec1c00e3db71",
+    "accessibility/tests/webxdc-create-language.spec.mjs": "af696dc6c6f0b5783b64fedad18e77ad603c755d866008070adf30a8a79027ed",
+    "accessibility/tests/webxdc-journey.spec.mjs": "67963f9cdee02b00ba6734fd389dd7edb9dfe90a0aca2d676df28ad6a022045c",
+    "accessibility/session.mjs": "40082a3c368d18fc0129607f5747fc03109238fffa7df81a6a4d8e9e9fb87020",
+    "accessibility/playwright.config.mjs": "49a12fac77b8809af7804cac03bc8e518a7257502bb9e7c1afcfe463adeefff8",
+    "scripts/run-accessibility-tests.py": "1747f92f46e5754e72d496cd4b57329d5ab16afddadbc54b214593f1f4ceead1"
+  },
+  "final_change": "Replace two potentially wrapping count/limit casts with checked conversions after Clippy review. Three Rust checks pass again and service executable explicitly rebuilt."
+}

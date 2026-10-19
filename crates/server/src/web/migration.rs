@@ -13,21 +13,41 @@ use plamenu_db::{account_alias, account_migration};
 use super::i18n::Locale;
 use super::session::{WebUser, csrf_rejection};
 use super::settings::{
-    SettingsQuery, bad_form, error_flash, field, form_pairs, redirect_to, saved_flash,
-    settings_shell,
+    bad_form, error_flash, field, form_pairs, redirect_to, saved_flash, settings_shell,
 };
 use super::view;
 use crate::error::ApiError;
 use crate::migration::{self, Failure, Invalid, MIGRATION_COOLDOWN};
 use crate::state::AppState;
 
-/// Redirects back to `path` with a ready-to-show error in the query string —
-/// the refusals here are already phrased for the reader (and, for a failed
-/// lookup, carry the handle that failed), unlike the fixed error codes other
-/// settings pages map through `?error=`.
-fn redirect_error(path: &str, message: &str) -> Response {
-    let query = serde_urlencoded::to_string([("error", message)]).unwrap_or_default();
+#[derive(serde::Deserialize)]
+pub struct MigrationQuery {
+    saved: Option<String>,
+    error: Option<String>,
+    acct: Option<String>,
+}
+
+/// Preserve the non-secret handle on a completed form refusal. Passwords are
+/// never retained. Removal failures have no editable handle to restore.
+fn redirect_error(path: &str, message: &str, acct: Option<&str>) -> Response {
+    let mut pairs = vec![("error", message)];
+    if let Some(acct) = acct {
+        pairs.push(("acct", acct));
+    }
+    let query = serde_urlencoded::to_string(pairs).unwrap_or_default();
     redirect_to(&format!("{path}?{query}"))
+}
+
+fn form_error(query: &MigrationQuery) -> maud::Markup {
+    if let (Some(message), Some(_)) = (&query.error, &query.acct) {
+        html! {
+            p.settings__error id="migration-error" role="alert" tabindex="-1" autofocus {
+                (message)
+            }
+        }
+    } else {
+        error_flash(query.error.as_deref())
+    }
 }
 
 /// The reader's phrasing of a typed migration refusal. The service keeps its
@@ -64,9 +84,9 @@ fn invalid_message(invalid: &Invalid, locale: Locale) -> String {
 /// Turns a failed alias/move attempt into the response the form owes: a typed
 /// refusal comes back on the page in the reader's language, anything else is
 /// an ordinary error.
-fn failure_response(failure: Failure, path: &str, locale: Locale) -> Response {
+fn failure_response(failure: Failure, path: &str, locale: Locale, acct: Option<&str>) -> Response {
     match failure {
-        Failure::Invalid(invalid) => redirect_error(path, &invalid_message(&invalid, locale)),
+        Failure::Invalid(invalid) => redirect_error(path, &invalid_message(&invalid, locale), acct),
         Failure::Api(err) => err.into_response(),
     }
 }
@@ -75,7 +95,7 @@ fn failure_response(failure: Failure, path: &str, locale: Locale) -> Response {
 pub async fn aliases_page(
     State(state): State<AppState>,
     user: WebUser,
-    Query(query): Query<SettingsQuery>,
+    Query(query): Query<MigrationQuery>,
 ) -> Response {
     let aliases = match account_alias::list(&state.pool, user.current.account.id).await {
         Ok(aliases) => aliases,
@@ -89,7 +109,7 @@ pub async fn aliases_page(
     );
     let body = html! {
         (saved_flash(query.saved.is_some(), &locale.text("aliases-saved")))
-        (error_flash(query.error.as_deref()))
+        (form_error(&query))
 
         p.settings-field__hint {
             (locale.markup("aliases-hint", &[("handle", html! { b { (handle) } })]))
@@ -102,6 +122,7 @@ pub async fn aliases_page(
                 label.settings-field {
                     span.settings-field__label { (locale.text("aliases-handle")) }
                     input type="text" name="acct" placeholder="username@domain"
+                        value=(query.acct.as_deref().unwrap_or_default())
                         autocomplete="off" required;
                 }
             }
@@ -173,11 +194,15 @@ pub async fn add_alias_action(
     let locale = user.locale;
     let acct = field(&pairs, "acct").unwrap_or_default().trim();
     if acct.is_empty() {
-        return redirect_error("/settings/aliases", &locale.text("aliases-error-empty"));
+        return redirect_error(
+            "/settings/aliases",
+            &locale.text("aliases-error-empty"),
+            Some(acct),
+        );
     }
     match migration::add_local_alias(&state, &user.current.account.username, acct).await {
         Ok(_) => redirect_to("/settings/aliases?saved=1"),
-        Err(failure) => failure_response(failure, "/settings/aliases", locale),
+        Err(failure) => failure_response(failure, "/settings/aliases", locale, Some(acct)),
     }
 }
 
@@ -197,7 +222,7 @@ pub async fn remove_alias_action(
     let uri = field(&pairs, "uri").unwrap_or_default();
     match migration::remove_local_alias(&state, &user.current.account.username, uri).await {
         Ok(_) => redirect_to("/settings/aliases?saved=1"),
-        Err(failure) => failure_response(failure, "/settings/aliases", user.locale),
+        Err(failure) => failure_response(failure, "/settings/aliases", user.locale, None),
     }
 }
 
@@ -205,7 +230,7 @@ pub async fn remove_alias_action(
 pub async fn migration_page(
     State(state): State<AppState>,
     user: WebUser,
-    Query(query): Query<SettingsQuery>,
+    Query(query): Query<MigrationQuery>,
 ) -> Response {
     let account = &user.current.account;
     let history = match account_migration::list(&state.pool, account.id).await {
@@ -220,7 +245,7 @@ pub async fn migration_page(
     let locale = user.locale;
     let body = html! {
         (saved_flash(query.saved.is_some(), &locale.text("migration-saved")))
-        (error_flash(query.error.as_deref()))
+        (form_error(&query))
 
         @if let Some(target) = account.moved_to_uri.as_deref() {
             p.settings__saved role="status" {
@@ -251,6 +276,7 @@ pub async fn migration_page(
                 label.settings-field {
                     span.settings-field__label { (locale.text("migration-handle")) }
                     input type="text" name="acct" placeholder="username@domain"
+                        value=(query.acct.as_deref().unwrap_or_default())
                         autocomplete="off" required;
                 }
                 label.settings-field {
@@ -309,6 +335,7 @@ pub async fn move_action(State(state): State<AppState>, user: WebUser, body: Byt
         return csrf_rejection();
     }
     let locale = user.locale;
+    let target = field(&pairs, "acct").unwrap_or_default().trim();
     if !crate::auth::verify_password_gated(
         field(&pairs, "current_password")
             .unwrap_or_default()
@@ -320,14 +347,18 @@ pub async fn move_action(State(state): State<AppState>, user: WebUser, body: Byt
         return redirect_error(
             "/settings/migration",
             &locale.text("migration-error-password"),
+            Some(target),
         );
     }
-    let target = field(&pairs, "acct").unwrap_or_default().trim();
     if target.is_empty() {
-        return redirect_error("/settings/migration", &locale.text("migration-error-empty"));
+        return redirect_error(
+            "/settings/migration",
+            &locale.text("migration-error-empty"),
+            Some(target),
+        );
     }
     match migration::migrate_local_account(&state, &user.current.account.username, target).await {
         Ok(_) => redirect_to("/settings/migration?saved=1"),
-        Err(failure) => failure_response(failure, "/settings/migration", locale),
+        Err(failure) => failure_response(failure, "/settings/migration", locale, Some(target)),
     }
 }

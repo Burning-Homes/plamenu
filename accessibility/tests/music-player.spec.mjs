@@ -46,8 +46,8 @@ async function favouriteNotification(page,info,noScript,assetUrl,assetId,title){
   await sharing.getByRole('button',{name:'Grant access',exact:true}).press('Enter');
   await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
   const origin=new URL(assetUrl).origin;
-  const context=await page.context().browser().newContext({baseURL:origin,viewport:info.project.use.viewport,
-    javaScriptEnabled:!noScript,serviceWorkers:'block',extraHTTPHeaders:{Origin:process.env.A11Y_CANONICAL_ORIGIN||origin}});
+  const context=await page.context().browser().newContext({...info.project.use,baseURL:origin,viewport:info.project.use.viewport,
+    javaScriptEnabled:!noScript,serviceWorkers:'block',extraHTTPHeaders:{...info.project.use.extraHTTPHeaders,Origin:process.env.A11Y_CANONICAL_ORIGIN||origin}});
   const viewer=await context.newPage();
   try{
     await viewer.goto('/login');

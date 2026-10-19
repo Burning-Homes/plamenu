@@ -1,0 +1,8 @@
+{
+  "baseline_executable_sha256": "979514892d88640d51e611bc3ecead65cfd1a03bcff18248427a98dae0fbc59f",
+  "verified_executable_sha256": "eb9c4e10552fef1ca7122a63d7694676fbc477eb64160d6868910d93ddb46cce",
+  "files": {
+    "crates/server/src/web/pages.rs": "9fed5f2f843f386129883a5853b057f3403222f901ced08f3fb206e5abc09fef",
+    "accessibility/tests/search-journey.spec.mjs": "9f895ea29e250eeae79e8c8abb2d2d1fe123ffd89d91adc13477fb1b29f24105"
+  }
+}

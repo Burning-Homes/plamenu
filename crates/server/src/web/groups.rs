@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 use axum::body::Bytes;
 use axum::extract::{Multipart, Path, Query, State};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use fluent_bundle::FluentArgs;
 use maud::{Markup, html};
@@ -321,24 +322,56 @@ pub async fn new_page(
         Err(err) => return ApiError::from(err).into_response(),
     };
     let can_create = may_create(settings.group_creation_policy(), user.is_staff);
+    let refusal = query.error.as_deref().and_then(Refusal::from_code);
+    new_group_page(&user, can_create, refusal, None)
+}
+
+fn new_group_page(
+    user: &WebUser,
+    can_create: bool,
+    refusal: Option<Refusal>,
+    submitted: Option<&[(String, String)]>,
+) -> Response {
     let locale = user.locale;
     let body = html! {
         section.column {
             h1 { (view::icon("group")) " " (locale.text("groups-new-title")) }
-            (error_flash(error_message(query.error.as_deref(), locale).as_deref()))
+            @if let Some(refusal) = refusal {
+                p.settings__error id="form-error" role="alert" tabindex="-1" autofocus {
+                    (refusal.message(locale))
+                }
+            }
             @if can_create {
-                (create_form(&user))
+                (create_form(user, refusal, submitted))
             } @else {
                 p.settings__error role="alert" { (locale.text("groups-error-limited")) }
                 p { a href="/groups" { (locale.text("groups-back")) } }
             }
         }
     };
-    layout::shell(&locale.text("groups-new-title"), Some(&user), &body).into_response()
+    layout::shell(&locale.text("groups-new-title"), Some(user), &body).into_response()
 }
 
 /// The new-group form: name, display name, membership policy.
-fn create_form(user: &WebUser) -> Markup {
+fn create_form(
+    user: &WebUser,
+    refusal: Option<Refusal>,
+    submitted: Option<&[(String, String)]>,
+) -> Markup {
+    let pairs = submitted.unwrap_or(&[]);
+    let name_invalid = matches!(
+        refusal,
+        Some(
+            Refusal::NameBlank
+                | Refusal::NameTooLong
+                | Refusal::NameInvalid
+                | Refusal::NameReserved
+                | Refusal::NameTaken
+        )
+    );
+    let display_invalid = refusal == Some(Refusal::DisplayNameTooLong);
+    let membership = field(pairs, "membership_policy").unwrap_or("open");
+    let posting = field(pairs, "posting_policy").unwrap_or("members");
     let locale = user.locale;
     html! {
         form.settings-form method="post" action="/web/groups" {
@@ -349,28 +382,34 @@ fn create_form(user: &WebUser) -> Markup {
                     span.settings-field__label { (locale.text("groups-name-label")) }
                     input type="text" name="name"
                         placeholder=(locale.text("groups-name-placeholder"))
-                        maxlength="30" autocomplete="off" required;
+                        maxlength="30" autocomplete="off" required
+                        value=(field(pairs, "name").unwrap_or_default())
+                        aria-invalid=[name_invalid.then_some("true")]
+                        aria-describedby=[name_invalid.then_some("form-error")];
                     span.settings-field__hint { (locale.text("groups-name-hint")) }
                 }
                 label.settings-field {
                     span.settings-field__label { (locale.text("groups-display-name-label")) }
                     input type="text" name="display_name"
                         placeholder=(locale.text("groups-display-name-placeholder"))
-                        maxlength="30" autocomplete="off";
+                        maxlength="30" autocomplete="off"
+                        value=(field(pairs, "display_name").unwrap_or_default())
+                        aria-invalid=[display_invalid.then_some("true")]
+                        aria-describedby=[display_invalid.then_some("form-error")];
                 }
                 label.settings-field {
                     span.settings-field__label { (locale.text("groups-membership-label")) }
                     select name="membership_policy" {
-                        option value="open" selected { (locale.text("groups-membership-open")) }
-                        option value="approval" { (locale.text("groups-membership-approval")) }
+                        option value="open" selected[membership == "open"] { (locale.text("groups-membership-open")) }
+                        option value="approval" selected[membership == "approval"] { (locale.text("groups-membership-approval")) }
                     }
                 }
                 label.settings-field {
                     span.settings-field__label { (locale.text("groups-posting-label")) }
                     select name="posting_policy" {
-                        option value="anyone" { (locale.text("groups-posting-anyone")) }
-                        option value="members" selected { (locale.text("groups-posting-members")) }
-                        option value="mods" { (locale.text("groups-posting-mods")) }
+                        option value="anyone" selected[posting == "anyone"] { (locale.text("groups-posting-anyone")) }
+                        option value="members" selected[posting == "members"] { (locale.text("groups-posting-members")) }
+                        option value="mods" selected[posting == "mods"] { (locale.text("groups-posting-mods")) }
                     }
                     span.settings-field__hint { (locale.text("groups-posting-hint")) }
                 }
@@ -458,7 +497,11 @@ pub async fn create_action(
         Ok((created, _)) => redirect_to(&format!("/@{}", created.username)),
         // Validation problems come back as a typed refusal restated from the
         // catalog on the form; anything else is a real error page.
-        Err(CreateFailure::Invalid(invalid)) => redirect_refused("/groups/new", invalid.into()),
+        Err(CreateFailure::Invalid(invalid)) => {
+            let mut response = new_group_page(&user, true, Some(invalid.into()), Some(&pairs));
+            *response.status_mut() = StatusCode::UNPROCESSABLE_ENTITY;
+            response
+        }
         Err(CreateFailure::Api(err)) => err.into_response(),
     }
 }

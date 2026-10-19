@@ -5456,6 +5456,158 @@ async fn post_multipart_file(
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn radio_create_rejection_retains_draft_and_localizes_name_help(pool: PgPool) {
+    let app = app_with_alice(pool.clone()).await;
+    let cookie = login(&app).await;
+    let csrf = csrf_of(&get(&app, "/music/radios", Some(&cookie)).await.body);
+    let alice = account::find_local_by_username(&pool, "alice")
+        .await
+        .unwrap()
+        .unwrap();
+    let stored_user = user::find_by_account_id(&pool, alice.id)
+        .await
+        .unwrap()
+        .unwrap();
+    for (locale, message) in [
+        ("en", "Enter a station name of up to 200 characters."),
+        ("ru", "Введите название станции длиной до 200 символов."),
+    ] {
+        user::update_locale(&pool, stored_user.id, Some(locale))
+            .await
+            .unwrap();
+        let rejected = post_form(
+            &app,
+            "/web/music/radios/create",
+            &cookie,
+            &[
+                ("csrf", &csrf),
+                ("name", "   "),
+                ("description", "Draft <safe> & description"),
+                ("visibility", "local"),
+                ("config", "Opaque <station> settings"),
+            ],
+        )
+        .await;
+        assert_eq!(rejected.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(rejected.cache_control, "private, no-store");
+        assert!(
+            rejected
+                .body
+                .contains("id=\"radio-create-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+        );
+        assert!(rejected.body.contains(
+            "value=\"   \" aria-invalid=\"true\" aria-describedby=\"radio-create-error\""
+        ));
+        assert!(rejected.body.contains(message));
+        assert!(
+            rejected
+                .body
+                .contains("Draft &lt;safe&gt; &amp; description")
+        );
+        assert!(rejected.body.contains("Opaque &lt;station&gt; settings"));
+        assert!(rejected.body.contains("value=\"local\" selected"));
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM music_radios")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+    let saved = post_form(
+        &app,
+        "/web/music/radios/create",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("name", "Corrected station"),
+            ("description", "Draft <safe> & description"),
+            ("visibility", "local"),
+            ("config", "Opaque <station> settings"),
+        ],
+    )
+    .await;
+    assert_eq!(saved.status, StatusCode::SEE_OTHER);
+    let radio = sqlx::query_as::<_, plamenu::music_radios::Radio>("SELECT * FROM music_radios")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(radio.name, "Corrected station");
+    assert_eq!(radio.visibility, "local");
+    assert_eq!(radio.description, "Draft <safe> & description");
+    assert_eq!(radio.config, "Opaque <station> settings");
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn music_upload_rejection_keeps_metadata_without_creating_asset(pool: PgPool) {
+    seed_alice(&pool).await;
+    let app = build_router(common::test_state_with(
+        pool.clone(),
+        StubFederation::with_actors([]),
+    ));
+    let cookie = login(&app).await;
+    let fresh = get(&app, "/music/assets?upload=true", Some(&cookie)).await;
+    let csrf = csrf_of(&fresh.body);
+    assert!(!fresh.body.contains("id=\"music-upload-error\""));
+    assert!(!fresh.body.contains("<details open>"));
+    for operation in ["store", "publish"] {
+        let rejected = post_multipart_file(
+            &app,
+            "/web/music/assets/import",
+            &cookie,
+            &[
+                ("csrf", &csrf),
+                ("operation", operation),
+                ("title", "Title <safe> & friends"),
+                ("artist", "Artist \"quoted\""),
+                ("album", "Recovery sessions"),
+            ],
+            ("file", "empty.wav", "audio/wav", b""),
+        )
+        .await;
+        assert_eq!(rejected.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            rejected
+                .body
+                .contains("id=\"music-upload-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+        );
+        assert!(
+            rejected
+                .body
+                .contains("value=\"Title &lt;safe&gt; &amp; friends\"")
+        );
+        assert!(
+            rejected
+                .body
+                .contains("value=\"Artist &quot;quoted&quot;\"")
+        );
+        assert!(rejected.body.contains("value=\"Recovery sessions\""));
+        assert!(rejected.body.contains("<details open>"));
+        assert!(rejected.body.contains("Choose the audio file again."));
+        assert!(
+            rejected
+                .body
+                .contains("type=\"file\" name=\"file\" accept=\"audio/*\" required")
+        );
+        assert!(!rejected.body.contains("value=\"empty.wav\""));
+        assert_eq!(rejected.cache_control, "private, no-store");
+    }
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM music_assets")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    let invalid_csrf = post_multipart_file(
+        &app,
+        "/web/music/assets/import",
+        &cookie,
+        &[("csrf", "invalid"), ("title", "Never echoed")],
+        ("file", "empty.wav", "audio/wav", b""),
+    )
+    .await;
+    assert_eq!(invalid_csrf.status, StatusCode::FORBIDDEN);
+    assert!(!invalid_csrf.body.contains("Never echoed"));
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn native_video_spool_is_bounded_csrf_gated_and_cleaned(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let root = tempfile::tempdir().unwrap();
@@ -6213,6 +6365,58 @@ async fn settings_profile_update_persists(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn settings_profile_upload_error_keeps_draft_without_saving(pool: PgPool) {
+    let app = app_with_alice(pool.clone()).await;
+    let cookie = login(&app).await;
+    let csrf = csrf_of(&get(&app, "/settings/profile", Some(&cookie)).await.body);
+    for image in ["avatar", "header"] {
+        let response = post_multipart_file(
+            &app,
+            "/web/settings/profile",
+            &cookie,
+            &[
+                ("csrf", &csrf),
+                ("display_name", "Uncommitted draft"),
+                ("note", "<script>alert(1)</script>"),
+                ("locked", "true"),
+                ("avatar_description", "A retained description"),
+                ("fields_attributes[0][name]", "Website"),
+                ("fields_attributes[0][value]", "https://example.test"),
+            ],
+            (image, "broken.png", "image/png", b"not an image"),
+        )
+        .await;
+        assert_eq!(response.status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            response
+                .body
+                .contains("id=\"profile-errors\" role=\"alert\" tabindex=\"-1\" autofocus")
+        );
+        assert!(response.body.contains("value=\"Uncommitted draft\""));
+        assert!(
+            response
+                .body
+                .contains("&lt;script&gt;alert(1)&lt;/script&gt;")
+        );
+        assert!(!response.body.contains("<script>alert(1)</script>"));
+        assert!(response.body.contains("value=\"A retained description\""));
+        assert!(response.body.contains("https://example.test"));
+        assert!(
+            response
+                .body
+                .contains("name=\"locked\" value=\"true\" checked")
+        );
+        assert!(response.body.contains("<p lang=\"en\">Validation failed:"));
+        let stored = account::find_local_by_username(&pool, "alice")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_ne!(stored.display_name, "Uncommitted draft");
+        assert!(!stored.locked);
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn settings_profile_update_rejects_bad_csrf(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -6415,6 +6619,103 @@ async fn settings_privacy_save_persists_flags(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn settings_privacy_domain_error_retains_draft_without_writes(pool: PgPool) {
+    let alice = seed_alice(&pool).await;
+    let stored_user = user::find_by_account_id(&pool, alice.id)
+        .await
+        .unwrap()
+        .unwrap();
+    user::update_locale(&pool, stored_user.id, Some("ru"))
+        .await
+        .unwrap();
+    let before_policy = notification_policy::get_or_default(&pool, alice.id)
+        .await
+        .unwrap();
+    let app = common::test_app(pool.clone());
+    let cookie = login(&app).await;
+    let csrf = csrf_of(&get(&app, "/settings/privacy", Some(&cookie)).await.body);
+    let rejected = post_form(
+        &app,
+        "/web/settings/privacy",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            (
+                "attribution_domains",
+                "https://valid.example.test/\n<invalid>",
+            ),
+            ("discoverable", "true"),
+            ("indexable", "true"),
+            ("hide_collections", "true"),
+            ("noindex", "true"),
+            ("private_mentions_policy", "drop"),
+        ],
+    )
+    .await;
+    assert_eq!(rejected.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        rejected
+            .body
+            .contains("Не удалось сохранить настройки приватности")
+    );
+    assert!(
+        rejected
+            .body
+            .contains("id=\"privacy-domain-error\" lang=\"en\"")
+    );
+    assert!(
+        rejected
+            .body
+            .contains("https://valid.example.test/\n&lt;invalid&gt;</textarea>")
+    );
+    assert!(
+        rejected
+            .body
+            .contains("aria-invalid=\"true\" aria-describedby=\"privacy-domain-error\"")
+    );
+    assert!(
+        rejected
+            .body
+            .contains("id=\"form-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    for name in ["discoverable", "indexable", "hide_collections", "noindex"] {
+        assert!(
+            rejected
+                .body
+                .contains(&format!("name=\"{name}\" value=\"true\" checked"))
+        );
+    }
+    assert!(rejected.body.contains("value=\"drop\" selected"));
+    let after = account::find_local_by_username(&pool, "alice")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.discoverable, alice.discoverable);
+    assert_eq!(after.indexable, alice.indexable);
+    assert_eq!(after.hide_collections, alice.hide_collections);
+    assert!(
+        account::attribution_domains(&pool, alice.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        !user::settings_by_user_id(&pool, stored_user.id)
+            .await
+            .unwrap()
+            .unwrap_or_default()
+            .noindex
+    );
+    let after_policy = notification_policy::get_or_default(&pool, alice.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        after_policy.for_private_mentions,
+        before_policy.for_private_mentions
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn settings_security_password_change_reauthenticates(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -6435,7 +6736,7 @@ async fn settings_security_password_change_reauthenticates(pool: PgPool) {
     assert_eq!(wrong.status, StatusCode::SEE_OTHER);
     assert_eq!(
         wrong.location.as_deref(),
-        Some("/settings/security?error=current_password")
+        Some("/settings/security?error=password_current")
     );
 
     let changed = post_form(
@@ -6468,6 +6769,35 @@ async fn settings_account_email_change_handles_conflict(pool: PgPool) {
     let cookie = login(&app).await;
     let csrf = csrf_of(&get(&app, "/settings/account", Some(&cookie)).await.body);
 
+    let wrong_password = post_form(
+        &app,
+        "/web/settings/account/email",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("email", "alice-proposed@example.com"),
+            ("current_password", "a-secret-that-must-not-be-reflected"),
+        ],
+    )
+    .await;
+    assert_eq!(wrong_password.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        wrong_password
+            .body
+            .contains("value=\"alice-proposed@example.com\"")
+    );
+    assert!(
+        wrong_password
+            .body
+            .contains("id=\"form-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    assert!(
+        !wrong_password
+            .body
+            .contains("a-secret-that-must-not-be-reflected")
+    );
+    assert!(user::find_by_email(&pool, EMAIL).await.unwrap().is_some());
+
     let conflict = post_form(
         &app,
         "/web/settings/account/email",
@@ -6479,11 +6809,10 @@ async fn settings_account_email_change_handles_conflict(pool: PgPool) {
         ],
     )
     .await;
-    assert_eq!(conflict.status, StatusCode::SEE_OTHER);
-    assert_eq!(
-        conflict.location.as_deref(),
-        Some("/settings/account?error=email_taken")
-    );
+    assert_eq!(conflict.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(conflict.location.is_none());
+    assert!(conflict.body.contains("value=\"bob@example.com\""));
+    assert!(conflict.body.contains("aria-invalid=\"true\""));
 
     let saved = post_form(
         &app,
@@ -13316,6 +13645,33 @@ async fn lists_crud_and_membership_flow(pool: PgPool) {
     assert_eq!(index.status, StatusCode::OK);
     assert!(index.body.contains("You haven't created any lists yet."));
     let csrf = csrf_of(&index.body);
+    let invalid = post_form(
+        &app,
+        "/web/lists",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("title", "   "),
+            ("replies_policy", "none"),
+            ("exclusive", "false"),
+            ("exclusive", "true"),
+        ],
+    )
+    .await;
+    assert_eq!(invalid.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(invalid.body.contains("value=\"none\" selected"));
+    assert!(
+        invalid
+            .body
+            .contains("name=\"exclusive\" value=\"true\" checked")
+    );
+    assert!(invalid.body.contains("aria-invalid=\"true\""));
+    assert_eq!(
+        plamenu_db::list::count_owned(&pool, alice.id)
+            .await
+            .unwrap(),
+        0
+    );
     let created = post_form(
         &app,
         "/web/lists",
@@ -13357,8 +13713,14 @@ async fn lists_crud_and_membership_flow(pool: PgPool) {
         &[("csrf", &mcsrf), ("handle", "@bob")],
     )
     .await;
-    assert_eq!(rejected.status, StatusCode::SEE_OTHER);
-    assert!(rejected.location.unwrap().contains("error"));
+    assert_eq!(rejected.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(rejected.location.is_none());
+    assert!(rejected.body.contains("name=\"handle\" value=\"@bob\""));
+    assert!(
+        rejected
+            .body
+            .contains("id=\"form-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
 
     // Following bob lets the add succeed.
     follow::create(&pool, alice.id, bob.id, None).await.unwrap();
@@ -13413,6 +13775,34 @@ async fn lists_crud_and_membership_flow(pool: PgPool) {
             .await
             .body,
     );
+    let invalid = post_form(
+        &app,
+        &format!("/web/lists/{list_id}/edit"),
+        &cookie,
+        &[
+            ("csrf", &ecsrf),
+            ("title", "   "),
+            ("replies_policy", "none"),
+            ("exclusive", "true"),
+        ],
+    )
+    .await;
+    assert_eq!(invalid.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(invalid.body.contains("name=\"title\" value=\"   \""));
+    assert!(invalid.body.contains("value=\"none\" selected"));
+    assert!(
+        invalid
+            .body
+            .contains("name=\"exclusive\" value=\"true\" checked")
+    );
+    assert!(invalid.body.contains("aria-describedby=\"form-error\""));
+    let unchanged = plamenu_db::list::find_owned(&pool, alice.id, list_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(unchanged.title, "Close friends");
+    assert_eq!(unchanged.replies_policy, "list");
+    assert!(!unchanged.exclusive);
     let updated = post_form(
         &app,
         &format!("/web/lists/{list_id}/edit"),
@@ -13551,8 +13941,7 @@ async fn lists_pages_use_stored_russian_locale(pool: PgPool) {
             .contains("Удалить этот список? Это действие необратимо.")
     );
 
-    // A refusal: bob is not followed, so the add is declined. The redirect
-    // carries the code, and the members page states it in Russian.
+    // A refusal renders the retained form in the account's interface language.
     let add = post_form(
         &app,
         &format!("/web/lists/{list_id}/members/add"),
@@ -13560,11 +13949,14 @@ async fn lists_pages_use_stored_russian_locale(pool: PgPool) {
         &[("csrf", &csrf_of(&members.body)), ("handle", "@bob")],
     )
     .await;
-    assert_eq!(
-        add.location.as_deref(),
-        Some(format!("{members_url}?error=not_followed").as_str()),
-        "the refusal travels as a code, not a sentence"
+    assert_eq!(add.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(add.location.is_none());
+    assert!(
+        add.body
+            .contains("Добавлять можно только аккаунты, на которые вы подписаны.")
     );
+    assert!(add.body.contains("name=\"handle\" value=\"@bob\""));
+    // Existing error-code URLs still render localized, allowlisted messages.
     let refused = get(
         &app,
         &format!("{members_url}?error=not_followed"),
@@ -14540,7 +14932,7 @@ async fn groups_page_creates_and_lists(pool: PgPool) {
     assert!(index.body.contains("hiking"));
     assert!(!index.body.contains("You haven't joined any groups yet."));
 
-    // A taken name bounces back with a readable error.
+    // A taken name retains the draft without changing the existing group.
     let csrf = csrf_of(&index.body);
     let clash = post_form(
         &app,
@@ -14549,12 +14941,37 @@ async fn groups_page_creates_and_lists(pool: PgPool) {
         &[
             ("csrf", &csrf),
             ("name", "hiking"),
-            ("membership_policy", "open"),
+            ("display_name", "<New & group>"),
+            ("membership_policy", "approval"),
+            ("posting_policy", "mods"),
         ],
     )
     .await;
-    assert_eq!(clash.status, StatusCode::SEE_OTHER);
-    assert!(clash.location.unwrap().contains("error"));
+    assert_eq!(clash.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        clash
+            .body
+            .contains("value=\"hiking\" aria-invalid=\"true\" aria-describedby=\"form-error\"")
+    );
+    assert!(clash.body.contains("value=\"&lt;New &amp; group&gt;\""));
+    assert!(clash.body.contains("value=\"approval\" selected"));
+    assert!(clash.body.contains("value=\"mods\" selected"));
+    assert!(
+        clash
+            .body
+            .contains("id=\"form-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    let account = account::find_local_by_username(&pool, "hiking")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(account.display_name, "Hiking & trails");
+    let group = plamenu_db::group::find(&pool, account.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(group.membership_policy.as_str(), "open");
+    assert_eq!(group.posting_policy.as_str(), "members");
 }
 
 /// With `group_creation_policy = admins`, ordinary accounts see no create
@@ -15220,6 +15637,38 @@ async fn settings_filters_crud(pool: PgPool) {
     assert!(page.body.contains("New filter"));
     let csrf = csrf_of(&page.body);
 
+    // A missing context must not discard unrelated valid choices.
+    let invalid = post_form(
+        &app,
+        "/web/settings/filters",
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("title", "<Draft>"),
+            ("action", "hide"),
+            ("expires_in", "86400"),
+            ("new_keyword", "spoiler"),
+            ("new_whole_word", "false"),
+            ("new_whole_word", "true"),
+        ],
+    )
+    .await;
+    assert_eq!(invalid.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(invalid.body.contains("value=\"&lt;Draft&gt;\""));
+    assert!(invalid.body.contains("value=\"hide\" selected"));
+    assert!(invalid.body.contains("value=\"86400\" selected"));
+    assert!(invalid.body.contains("value=\"spoiler\""));
+    assert!(
+        invalid
+            .body
+            .contains("name=\"new_whole_word\" value=\"true\" checked")
+    );
+    assert!(
+        invalid
+            .body
+            .contains("id=\"form-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+
     // Create with two contexts and an initial whole-word keyword.
     let resp = post_form(
         &app,
@@ -15267,6 +15716,59 @@ async fn settings_filters_crud(pool: PgPool) {
     assert!(edit.body.contains("Spoilers"));
     let kw_text = format!("keywords[{}][keyword]", keywords[0].id);
     let kw_whole = format!("keywords[{}][whole_word]", keywords[0].id);
+    // Rejected edits retain both existing and new keyword drafts without writes.
+    let invalid = post_form(
+        &app,
+        &format!("/web/settings/filters/{}", filters[0].id),
+        &cookie,
+        &[
+            ("csrf", &csrf),
+            ("title", "<Edited>"),
+            ("action", "hide"),
+            ("expires_in", "86400"),
+            (&kw_text, "<draft word>"),
+            (&kw_whole, "false"),
+            ("new_keyword", "added word"),
+            ("new_whole_word", "true"),
+        ],
+    )
+    .await;
+    assert_eq!(invalid.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(invalid.body.contains("value=\"&lt;Edited&gt;\""));
+    assert!(invalid.body.contains("value=\"&lt;draft word&gt;\""));
+    assert!(invalid.body.contains("value=\"86400\" selected"));
+    assert!(invalid.body.contains(
+        "name=\"new_keyword\" maxlength=\"512\" autocomplete=\"off\" value=\"added word\""
+    ));
+    assert!(
+        !invalid
+            .body
+            .contains(&format!("name=\"{kw_whole}\" value=\"true\" checked"))
+    );
+    assert!(
+        invalid
+            .body
+            .contains("name=\"new_whole_word\" value=\"true\" checked")
+    );
+    assert!(
+        invalid
+            .body
+            .contains("id=\"form-error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
+    let unchanged = custom_filter::find_owned(&pool, account.id, filters[0].id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(unchanged.title, "Spoilers");
+    assert_eq!(unchanged.action, "warn");
+    assert!(unchanged.expires_at.is_none());
+    let unchanged_keywords = custom_filter::keywords_for(&pool, filters[0].id)
+        .await
+        .unwrap();
+    assert_eq!(unchanged_keywords.len(), 1);
+    assert_eq!(unchanged_keywords[0].keyword, "finale");
+    assert!(unchanged_keywords[0].whole_word);
+
     let resp = post_form(
         &app,
         &format!("/web/settings/filters/{}", filters[0].id),
@@ -15385,15 +15887,10 @@ async fn settings_filters_enforce_account_cap(pool: PgPool) {
         ],
     )
     .await;
-    assert_eq!(resp.status, StatusCode::SEE_OTHER);
-    assert!(
-        resp.location
-            .as_deref()
-            .unwrap_or_default()
-            .contains("error"),
-        "over-limit create redirects back with an error: {:?}",
-        resp.location
-    );
+    assert_eq!(resp.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(resp.location.is_none());
+    assert!(resp.body.contains("id=\"form-error\""));
+    assert!(resp.body.contains("value=\"one too many\""));
     assert_eq!(
         custom_filter::count_owned(&pool, account.id).await.unwrap(),
         i64::try_from(MAX_FILTERS_PER_ACCOUNT).unwrap(),
@@ -15954,18 +16451,51 @@ async fn scheduled_page_lists_reschedules_and_cancels(pool: PgPool) {
         time::macros::datetime!(2030-04-02 10:00 UTC)
     );
 
-    // …a nonsense time is refused with the error flash…
+    // …a rejected time retains the draft and the page cursor without writes…
+    let cursor = (row_id + 1).to_string();
+    let older = get(
+        &app,
+        &format!("/settings/scheduled?max_id={cursor}"),
+        Some(&cookie),
+    )
+    .await;
+    assert!(
+        older
+            .body
+            .contains(&format!("name=\"max_id\" value=\"{cursor}\""))
+    );
     let resp = post_form(
         &app,
         &format!("/web/settings/scheduled/{row_id}/reschedule"),
         &cookie,
-        &[("csrf", &csrf), ("scheduled_at", "not-a-time")],
+        &[
+            ("csrf", &csrf),
+            ("scheduled_at", "2001-01-01T12:00"),
+            ("max_id", &cursor),
+        ],
     )
     .await;
-    assert_eq!(resp.status, StatusCode::SEE_OTHER);
+    assert_eq!(resp.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(
-        resp.location.unwrap().contains("error="),
-        "error flash redirect"
+        resp.body
+            .contains("value=\"2001-01-01T12:00\" required aria-invalid=\"true\"")
+    );
+    assert!(resp.body.contains("aria-describedby=\"form-error\""));
+    assert!(
+        resp.body
+            .contains("id=\"form-error\" role=\"alert\" lang=\"en\" tabindex=\"-1\" autofocus")
+    );
+    assert!(
+        resp.body
+            .contains(&format!("name=\"max_id\" value=\"{cursor}\""))
+    );
+    let unchanged = scheduled_status::find_for_account(&pool, alice.id, row_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        unchanged.scheduled_at,
+        time::macros::datetime!(2030-04-02 10:00 UTC)
     );
 
     // …and cancel drops the row.
@@ -15973,10 +16503,14 @@ async fn scheduled_page_lists_reschedules_and_cancels(pool: PgPool) {
         &app,
         &format!("/web/settings/scheduled/{row_id}/cancel"),
         &cookie,
-        &[("csrf", &csrf)],
+        &[("csrf", &csrf), ("max_id", &cursor)],
     )
     .await;
     assert_eq!(resp.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        resp.location,
+        Some("/settings/scheduled?saved=1".to_owned())
+    );
     assert!(
         scheduled_status::find_for_account(&pool, alice.id, row_id)
             .await
@@ -17412,6 +17946,11 @@ async fn event_posts_render_an_rsvp_cluster_per_join_mode(pool: PgPool) {
     assert_eq!(fragment.status, StatusCode::OK);
     assert!(fragment.body.contains("data-rsvp="));
     assert!(fragment.body.contains("You're going"), "{}", fragment.body);
+    assert!(
+        fragment
+            .body
+            .contains("class=\"status__event-going\" role=\"status\"")
+    );
     assert!(fragment.body.contains("/unparticipate"));
     assert!(
         !fragment.body.contains("<title"),
@@ -17720,6 +18259,11 @@ async fn composer_event_uses_selected_zone_and_retains_draft(pool: PgPool) {
             .contains("Event end time cannot be before its start time")
     );
     assert!(failed.body.contains(r#"value="event" selected"#));
+    assert!(
+        failed
+            .body
+            .contains("class=\"compose__error\" role=\"alert\" tabindex=\"-1\" autofocus")
+    );
     assert!(
         failed
             .body

@@ -12,8 +12,8 @@ const mobile = {
   isMobile: true,
   hasTouch: true,
 };
-// Only the isolated fixture proxy consumes this bounded engine identity. It
-// keeps independent browser clients from sharing one login/IP rate budget.
+// Only the isolated fixture proxy consumes this bounded client identity.
+// Journeys can select fixed participant, security, recovery or throttle-test roles.
 const clientHeaders = project => canonicalOrigin
   ? { Origin: canonicalOrigin, 'X-Plamenu-Fixture-Client': project }
   : {};

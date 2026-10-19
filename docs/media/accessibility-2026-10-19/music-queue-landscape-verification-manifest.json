@@ -1,0 +1,20 @@
+{
+  "base_commit": "bdcf52f",
+  "candidate_executable_sha256": "b11b94622ded42ea2148f3bfcdf8a5abf24c0c1be8298ea1be16e1fa1991bb57",
+  "baseline_executable_commit": "bdcf52f",
+  "baseline_executable_sha256": "a739c2e48698c28d9ad2867e0e00f63b0dc0477abac830ac53e910dd93c10720",
+  "candidate_files_at_start": {
+    "crates/server/src/web/assets/app.css": "d31d817ec3bb5358fa9db6cc46b93feb7a6be1f611f7f4d0ad7995d2b3409604",
+    "crates/server/src/web/assets/app.js": "a3134310102d70462ed2f17e565537f88fcc5002a083951c20e2cf5493381d63",
+    "accessibility/tests/music-queue-landscape.spec.mjs": "2f0458a0271c7928101069036a87e0045db4e274c3854504a021b4510e801dfe",
+    "accessibility/tests/music-dock-close.spec.mjs": "a8f275434ee203a142f25b0bbc2d80fc0afe9fb822439e4c28bba10a5af9362f",
+    "accessibility/tests/music-dock-focus.spec.mjs": "5d576431f81ced7482d4b79f8fdf28a7e66d4d0e8686761b805b2a5ecde3ac0e",
+    "accessibility/tests/music-listener-journey.spec.mjs": "b4d2c6c44df8c96508a49b8cc4edca4fbf64e8f1e56e0d8ffb770e157b3e2c41",
+    "accessibility/session.mjs": "40082a3c368d18fc0129607f5747fc03109238fffa7df81a6a4d8e9e9fb87020",
+    "accessibility/playwright.config.mjs": "49a12fac77b8809af7804cac03bc8e518a7257502bb9e7c1afcfe463adeefff8",
+    "scripts/run-accessibility-tests.py": "1747f92f46e5754e72d496cd4b57329d5ab16afddadbc54b214593f1f4ceead1"
+  },
+  "scope": "Reserve editing room in 800x360 and 800x320 windows by sizing the existing queue scrollport around measured player controls. Verify focused page/queue controls and playback, plus previous dock/close/listener journeys. Explicit service rebuild; no server business logic changes.",
+  "followup_browser_file_sha256": "49347d32cdcecacd9edc996de08224ced1219bea5cec2250ad0a6fad07fc509b",
+  "followup_note": "The initial 37-case run passed all 25 existing dock/listener cases; 12 new cases reached the queue control but used its visible Play text instead of the accessible name Play this track. With that selector corrected, all 12 focused cases pass on the same executable. No passing full-37 rerun is claimed."
+}

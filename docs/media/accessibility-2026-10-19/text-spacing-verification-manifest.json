@@ -1,0 +1,14 @@
+{
+  "base_commit": "482cbf3",
+  "candidate_executable_sha256": "372720f0bbf640b24a1c2b2216d963f3bbfb737c98e9ce863660785efc58805a",
+  "baseline_executable_commit": "ae0a008",
+  "baseline_executable_sha256": "8380a19d83e4e6c2fdc95d0b1165641087b9051a7bb5849eb625629f361634da",
+  "candidate_files": {
+    "crates/server/src/web/assets/app.css": "1bee30821ba618059e57cde2534f85b60b11933b29e553f6ea22c5c249248621",
+    "accessibility/tests/text-spacing-journey.spec.mjs": "02cbdde71ae7f8e02d0414ea2c5ee144767bf1db188b23b3d969338197996b1a",
+    "accessibility/session.mjs": "40082a3c368d18fc0129607f5747fc03109238fffa7df81a6a4d8e9e9fb87020",
+    "accessibility/playwright.config.mjs": "49a12fac77b8809af7804cac03bc8e518a7257502bb9e7c1afcfe463adeefff8",
+    "scripts/run-accessibility-tests.py": "1747f92f46e5754e72d496cd4b57329d5ab16afddadbc54b214593f1f4ceead1"
+  },
+  "scope": "14 passing English/Russian cases, five sampled pages each, plus default composer/reply layouts. CSSOM overrides only line height, letter/word spacing and paragraph margin; computed values are asserted. Publication uses real native/server flows. No complete clipped-content or AT speech qualification. The corrected baseline used documentElement.clientWidth; innerWidth had expanded with Chrome mobile overflow. Candidate adds explicit default-width assertions to its baseline screenshot captures."
+}

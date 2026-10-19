@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import {signIn} from '../session.mjs';
+import {signIn,videoChannelForm,createVideoChannel} from '../session.mjs';
 
 async function open(page,name) {
   const summary=page.locator('summary').filter({hasText:name});
@@ -16,6 +16,14 @@ async function audit(page,noScript) {
 async function journey(page,noScript,info) {
   test.setTimeout(120000);
   await signIn(page);
+  await page.goto('/videos/channels');
+  if (!await page.locator('.video-workspace__row').count()) {
+    await page.goto('/videos/channels/new');
+    const channel=await videoChannelForm(page);
+    await channel.getByLabel('Channel address (letters, numbers and underscores)',{exact:true}).fill(`authoring_${info.project.name.replaceAll('-','_').slice(0,20)}`);
+    await channel.getByLabel('Channel name',{exact:true}).fill('Authoring fixture channel');
+    await createVideoChannel(page,channel.getByRole('button',{name:'Create a video channel',exact:true}));
+  }
   await page.goto('/videos/upload');
   const form=page.locator('form[action="/web/videos"]');
   await expect(form.getByLabel('Video or audio file',{exact:true})).toBeVisible();

@@ -1,0 +1,10 @@
+{
+  "verified_executable_sha256": "2ae6c72620ab31e3645ebefa28af0a3d576d4f29341528d9c399c18f2f18218a",
+  "files": {
+    "accessibility/tests/native-video.spec.mjs": "ce7a244d0dc1ab85fab01b83218f3ddd862ea2bd4f26d0dc9b5bbfbba5a0175f",
+    "accessibility/tests/video-authoring-ux.spec.mjs": "168525e324a199fda0f31ac3416e2b003fc477147f269f0ad5a8bcdbe81d000a",
+    "accessibility/session.mjs": "e37c9f86b2d5e880dee60f702ee8d6b64845fc2b6adbfc54b49fc445ce3d171a",
+    "accessibility/video-settings.mjs": "700f63a4bd5498c5f40e2fff999ec48ab54543c0a371f146bc1c5847bf1bc636"
+  },
+  "note": "Existing journeys, no production or test changes in this checkpoint. Uses the frozen two-factor iteration executable; the later scheduling cancellation-cursor adjustment does not alter these selected video workflows."
+}

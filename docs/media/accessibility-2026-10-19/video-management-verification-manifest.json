@@ -1,0 +1,23 @@
+{
+  "application_base_commit": "75f377d",
+  "executable_sha256": "1955639173f5fa09b36326b8b9705a1fbbd357f9bc3bad8c0526f4cc637138d8",
+  "files_at_start": {
+    "accessibility/tests/video-channels.spec.mjs": "7268236a0ccf6830618eafe286eeb6d00b275fa72415092a22a1624c7581bbcb",
+    "accessibility/tests/video-playlists.spec.mjs": "a85a4a04cb727fd37a724f6e3901896e2ca949b87f560c447e8ff2346cf84d9a",
+    "accessibility/tests/video-history.spec.mjs": "25ecb524080a118474cfa3f429f404fa14025c8ca10c04dd1318b926bbb9ae40",
+    "accessibility/session.mjs": "40082a3c368d18fc0129607f5747fc03109238fffa7df81a6a4d8e9e9fb87020",
+    "accessibility/playwright.config.mjs": "49a12fac77b8809af7804cac03bc8e518a7257502bb9e7c1afcfe463adeefff8",
+    "scripts/run-accessibility-tests.py": "1747f92f46e5754e72d496cd4b57329d5ab16afddadbc54b214593f1f4ceead1",
+    "crates/server/src/web/assets/app.js": "b627e90aca17c9981ef2ecba83e20e089ab2f85eeabbd5b692b0b185d0dc3c3d",
+    "crates/server/src/web/assets/app.css": "8267efe8a6b4765cac6f23d35193acbdaccee60bbd37d06f3aa447ac8a3871f8"
+  },
+  "scope": "Video collaboration roles/ownership, playlist clip ordering/playback/privacy/deletion and opt-in watch history/resume/settings. Frozen application includes pending iteration45 enrollment focus/hidden-state fixes; no video business-logic change. Existing fixture role helpers and actual clientWidth reflow checks adopted before run; native channel/playlists start at320.",
+  "followup_test_hashes": {
+    "accessibility/tests/video-channels.spec.mjs": "4670ad9f7e9cb0d6648a5e95e2c8ce580aa5eace005cacbf3e637f154557c039",
+    "accessibility/tests/video-history.spec.mjs": "5bf5eeac2b21e96bd12c348bdd4f1c63881cdb6666222fd5f44788f9cce866e6"
+  },
+  "followup_note": "Initial mixed run passes all seven playlists and five history cases. Seven channel cases use a removed upload-page link; two Chromium history cases flag forced-system-color timer contrast. Correct navigation and use existing forced-color scan policy, preserving normal contrast. Follow-up covers channels/history across all projects on the SAME executable; playlists are not repeated.",
+  "interruption_note": "The corrected 14-case run passes13. WebKit desktop history times out on Upload video, then its cleanup navigation stalls beyond the ordinary timeout. Only that disposable MiniBrowser process was terminated to release the runner; remaining cases completed. This interrupted case is not a pass and root cause is unestablished. A focused repeat uses the same executable and unchanged test.",
+  "focused_recheck": "The interrupted WebKit desktop history case passes on its unchanged focused rerun (video-history-webkit-recheck.json), same executable. Final coverage comprises seven playlist passes from the initial mixed run, thirteen channel/history follow-up passes, and one focused history pass. No passing full-21 rerun is claimed.",
+  "saved_application_commit": "7ded4ca"
+}

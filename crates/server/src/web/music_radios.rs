@@ -33,21 +33,70 @@ fn response(title: &str, user: Option<&WebUser>, body: &Markup) -> Response {
     )
         .into_response()
 }
-fn fields(l: super::i18n::Locale, radio: Option<&Radio>) -> Markup {
+fn invalid_name(name: &str) -> bool {
+    name.trim().is_empty() || name.chars().count() > 200 || name.contains('\0')
+}
+fn fields(l: super::i18n::Locale, radio: Option<&Radio>, draft: Option<&New>) -> Markup {
+    let name = draft
+        .map(|r| r.name.as_str())
+        .or_else(|| radio.map(|r| r.name.as_str()))
+        .unwrap_or_default();
+    let description = draft
+        .map(|r| r.description.as_str())
+        .or_else(|| radio.map(|r| r.description.as_str()))
+        .unwrap_or_default();
+    let config = draft
+        .map(|r| r.config.as_str())
+        .or_else(|| radio.map(|r| r.config.as_str()))
+        .unwrap_or_default();
+    let visibility = draft
+        .map(|r| r.visibility.as_str())
+        .or_else(|| radio.map(|r| r.visibility.as_str()))
+        .unwrap_or("private");
+    let name_invalid = draft.is_some() && invalid_name(name);
     html! {
         label for="music-radio-name"{(l.text("music-radio-name"))}
-        input id="music-radio-name" name="name" required maxlength="200" value=(radio.map_or("",|r|r.name.as_str()));
+        input id="music-radio-name" name="name" required maxlength="200" value=(name) aria-invalid=[name_invalid.then_some("true")] aria-describedby=[name_invalid.then_some("radio-create-error")];
         label for="music-radio-description"{(l.text("music-radio-description"))}
-        textarea id="music-radio-description" name="description" maxlength="4000"{(radio.map_or("",|r|r.description.as_str()))}
+        textarea id="music-radio-description" name="description" maxlength="4000"{(description)}
         label for="music-radio-visibility"{(l.text("music-radio-visibility"))}
         select id="music-radio-visibility" name="visibility"{
-            @for (value,key) in [("private","music-assets-private"),("local","music-assets-local"),("public","music-public")]{option value=(value) selected[radio.map_or(value=="private",|r|r.visibility==value)]{(l.text(key))}}
+            @for (value,key) in [("private","music-assets-private"),("local","music-assets-local"),("public","music-public")]{option value=(value) selected[visibility==value]{(l.text(key))}}
         }
         label for="music-radio-config"{(l.text("music-radio-config"))}
-        textarea id="music-radio-config" name="config" maxlength="50000" aria-describedby="music-radio-config-hint"{(radio.map_or("",|r|r.config.as_str()))}
+        textarea id="music-radio-config" name="config" maxlength="50000" aria-describedby="music-radio-config-hint"{(config)}
         p.form-hint id="music-radio-config-hint"{(l.text("music-radio-config-hint"))}
         @if let Some(radio)=radio {input type="hidden" name="revision" value=(radio.revision);}
     }
+}
+fn creation_form(user: &WebUser, draft: Option<&New>) -> Markup {
+    html! {form.settings-form method="post" action="/web/music/radios/create" {
+        input type="hidden" name="csrf" value=(&user.csrf);
+        (fields(user.locale, None, draft))
+        button type="submit" {(user.locale.text("music-radio-create"))}
+    }}
+}
+fn creation_problem(user: &WebUser, draft: &New, message: &str) -> Response {
+    let l = user.locale;
+    let body = html! {section.column.music-library {
+        h1 {(l.text("music-radio-create"))}
+        (super::music::workspace_navigation(l, true, "radios"))
+        div.settings__error id="radio-create-error" role="alert" tabindex="-1" autofocus {
+            @if invalid_name(&draft.name) {
+                p {(l.text("music-radio-name-error"))}
+            } @else {
+                p {(l.text("music-radio-create-error"))}
+                p lang="en" {(message)}
+            }
+        }
+        (creation_form(user, Some(draft)))
+        a href="/music/radios" {(l.text("music-radios-title"))}
+    }};
+    (
+        axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+        response(&l.text("music-radio-create"), Some(user), &body),
+    )
+        .into_response()
 }
 pub async fn index(
     State(state): State<AppState>,
@@ -95,10 +144,7 @@ pub async fn index(
             label for="music-radio-search"{(l.text("music-radios-search"))}input id="music-radio-search" type="search" name="q" maxlength="200" value=(page.q.as_deref().unwrap_or_default());button type="submit"{(l.text("music-search-submit"))}
         }
         @if let Some(user)=&user{details{summary{(l.text("music-radio-create"))}
-            form.settings-form method="post" action="/web/music/radios/create"{
-                input type="hidden" name="csrf" value=(user.csrf);(fields(l,None))
-                button type="submit"{(l.text("music-radio-create"))}
-            }
+            (creation_form(user, None))
         }}
         @if items.is_empty(){p{(l.text("music-radios-empty"))}}
         ul{@for radio in &items{li{a href=(format!("/music/radios/{}",radio.id)){(radio.name)}}}}
@@ -157,7 +203,7 @@ pub async fn show(
         @if let Some(user)=owner{
             details{summary{(l.text("music-radio-edit"))}
                 form.settings-form method="post" action=(format!("/web/music/radios/{id}/edit")){
-                    input type="hidden" name="csrf" value=(user.csrf);(fields(l,Some(&radio)))
+                    input type="hidden" name="csrf" value=(user.csrf);(fields(l,Some(&radio),None))
                     button type="submit"{(l.text("music-radio-save"))}
                 }
             }
@@ -214,7 +260,14 @@ pub async fn create(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     let pairs = form(&user, &body)?;
-    let radio = music_radios::create(&state, user.current.account.id, &attributes(&pairs)).await?;
+    let draft = attributes(&pairs);
+    let radio = match music_radios::create(&state, user.current.account.id, &draft).await {
+        Ok(radio) => radio,
+        Err(ApiError::Unprocessable(message)) => {
+            return Ok(creation_problem(&user, &draft, &message));
+        }
+        Err(error) => return Err(error),
+    };
     Ok(settings::redirect_to(&format!(
         "/music/radios/{}",
         radio.id

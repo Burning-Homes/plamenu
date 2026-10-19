@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "2c2f99072f04856d1dc4c15a3125c6e379c4ac87",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T06:56:03.538Z",
+  "completed_at": "2026-10-19T06:56:38.045Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > import-export-journey.spec.mjs > CSV import errors retain choices through review, application and export",
+      "status": "passed",
+      "duration_ms": 3202
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > import-export-journey.spec.mjs > CSV import errors retain choices through review, application and export",
+      "status": "passed",
+      "duration_ms": 5060
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > import-export-journey.spec.mjs > CSV import errors retain choices through review, application and export",
+      "status": "passed",
+      "duration_ms": 4059
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > import-export-journey.spec.mjs > CSV import errors retain choices through review, application and export",
+      "status": "passed",
+      "duration_ms": 2765
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > import-export-journey.spec.mjs > CSV import errors retain choices through review, application and export",
+      "status": "passed",
+      "duration_ms": 6813
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > import-export-journey.spec.mjs > CSV import errors retain choices through review, application and export",
+      "status": "passed",
+      "duration_ms": 5566
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > import-export-journey.spec.mjs > @no-js CSV import recovery, confirmation and export use native controls",
+      "status": "passed",
+      "duration_ms": 2305
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "executable_sha256": "5cbdf2ce34b120fe7ab06ab6650e25af1b313aaf8d3b8c508b38be819a2e4be9",
+  "baseline_source_commit": "6927034",
+  "baseline_files": {
+    "accessibility/tests/music-listener-journey.spec.mjs": "fe8b6e51bc005b0849176cea86a1e52b4ac64ac051cba608ec8b2e2590d6293d",
+    "accessibility/tests/music.spec.mjs": "1a60aa7f296aa8f14d5c04138f7836aa58de09506a112b9fe2993a32bec241c9",
+    "accessibility/session.mjs": "e37c9f86b2d5e880dee60f702ee8d6b64845fc2b6adbfc54b49fc445ce3d171a"
+  },
+  "verified_files": {
+    "accessibility/tests/music-listener-journey.spec.mjs": "b4d2c6c44df8c96508a49b8cc4edca4fbf64e8f1e56e0d8ffb770e157b3e2c41",
+    "accessibility/tests/music.spec.mjs": "f5c53c6be700e0910f54010850177308c394bb03108314d8e5da56b656d38a42",
+    "accessibility/session.mjs": "3b95f02086e481d33ae64d340cf82adc9a66ec6ed5e13536f81123b5fc60a05a"
+  },
+  "verification": "All seven listener cases pass in music-entry-navigation-corrected.json. That run has three publication failures from a desktop-only composer CSS locator. All seven publication cases pass in music-publication-verified.json after using the shared New post accessible name. These reports establish 14 unique passing journeys, not a single all-passing 14-case run.",
+  "scope": "Local synthetic audio, real native decoding and UI workflows. Upload selection is automated; native WebKit playback includes pointer interaction. No claim of an entirely keyboard-only journey, remote-server interoperability, or accessibility of arbitrary media content."
+}

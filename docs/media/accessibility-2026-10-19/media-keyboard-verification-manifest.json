@@ -1,0 +1,13 @@
+{
+  "baseline_executable_sha256": "979514892d88640d51e611bc3ecead65cfd1a03bcff18248427a98dae0fbc59f",
+  "verified_executable_sha256": "2ff896189b5a4f99448664a49c39a9baf75981e813f087abac93f18bba53e6f1",
+  "files": {
+    "crates/server/src/web/assets/app.js": "59993a225625c0d8e4eccacc5f293c3579f1095d0db78230c599672afe824742",
+    "crates/server/src/web/layout.rs": "19d078cb5c39fa890a86bb6352222e2e007e5e33a0967122ab7a4b503c28535c",
+    "crates/server/src/web/locales/en-US/main.ftl": "9d8a7e9614fc5eec623c01e796565858d783395e258e3c8f2dc204f0f869d6d6",
+    "crates/server/src/web/locales/ru/main.ftl": "307e6d7bba878919e0d2d381372cc7c518babe1b0a22b114eda517cf52e637d9",
+    "accessibility/session.mjs": "e37c9f86b2d5e880dee60f702ee8d6b64845fc2b6adbfc54b49fc445ce3d171a",
+    "accessibility/tests/media-keyboard-journey.spec.mjs": "e6ea75f4b0321448fcb7a19c07fcca3567029e373e3de3d40af56b605603c3fc",
+    "accessibility/tests/profile-upload-journey.spec.mjs": "44b5c2ba5d9c1419322ef0a6eecfb6e799f9c0008ca8ee1002ed4d76d1044174"
+  }
+}

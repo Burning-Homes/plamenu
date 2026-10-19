@@ -4,6 +4,8 @@
 import hashlib
 import html
 import http.server
+import email.parser
+import email.policy
 import ipaddress
 import json
 import os
@@ -11,6 +13,7 @@ import secrets
 import shutil
 import signal
 import socket
+import socketserver
 import subprocess
 import sys
 import tempfile
@@ -38,23 +41,29 @@ BROWSER_PROJECTS = (
 )
 
 
-def tls_configuration(address, app_port, tls_port, *, offline=False):
-    """Give independent engines distinct client budgets behind the test proxy.
+PARTICIPANT_PREFIX = "peer_"
 
-    The mapping is confined to this disposable TLS fixture. Production rate
-    limits stay enabled and unchanged, including each client's failed logins.
-    Only the fixed engine names map to addresses; arbitrary forwarded headers
-    are replaced at the proxy.
+
+def tls_configuration(address, app_port, tls_port, *, offline=False):
+    """Keep independent fixture clients distinct without relaxing rate limits.
+
+    Only bounded engine/role names map to addresses. Arbitrary forwarded
+    headers are replaced. Each client's failed logins still count normally.
     """
+    identities = tuple(
+        project + suffix
+        for suffix in ("", "-participant", "-security", "-recovery", "-throttle")
+        for project in BROWSER_PROJECTS
+    )
     clients = "".join(
-        f"    {project} 198.18.0.{index}\n"
-        for index, project in enumerate(BROWSER_PROJECTS, 1)
+        f"    {identity} 198.18.0.{index}\n"
+        for index, identity in enumerate(identities, 1)
     )
 
     admin = "127.0.0.1:2019" if offline else "off"
     return (
         f"{{\n  admin {admin}\n  auto_https disable_redirects\n}}\n"
-        f"https://localhost:{tls_port} {{\n"
+        f"https://localhost:{tls_port}, https://*.webxdc.localhost:{tls_port} {{\n"
         "  tls internal\n"
         "  map {http.request.header.X-Plamenu-Fixture-Client} {fixture_client_ip} {\n"
         f"{clients}"
@@ -461,6 +470,87 @@ def podcast_producer(address, audio, poster):
     return producer
 
 
+def fixture_mailbox(address):
+    """Bounded local SMTP sink with a nonce-protected, read-only test inbox."""
+    nonce = secrets.token_urlsafe(24)
+    messages = []
+    lock = threading.Lock()
+
+    class SMTP(socketserver.StreamRequestHandler):
+        def handle(self):
+            try:
+                self.session()
+            except (TimeoutError, ConnectionError):
+                # An idle pooled connection or a client going away is normal.
+                pass
+
+        def session(self):
+            self.connection.settimeout(15)
+            self.wfile.write(b"220 localhost fixture SMTP\r\n")
+            while line := self.rfile.readline(65537):
+                command = line.split(b" ", 1)[0].strip().upper()
+                if command in (b"EHLO", b"HELO"):
+                    self.wfile.write(b"250-localhost\r\n250 SIZE 1048576\r\n")
+                elif command == b"DATA":
+                    self.wfile.write(b"354 End with a dot\r\n")
+                    body = bytearray()
+                    while chunk := self.rfile.readline(65537):
+                        if chunk == b".\r\n":
+                            break
+                        body.extend(chunk[1:] if chunk.startswith(b"..") else chunk)
+                        if len(body) > 1048576:
+                            self.wfile.write(b"552 Message too large\r\n")
+                            return
+                    message = email.parser.BytesParser(policy=email.policy.default).parsebytes(body)
+                    with lock:
+                        messages.append({
+                            "to": str(message.get("To", "")),
+                            "subject": str(message.get("Subject", "")),
+                            "body": message.get_content(),
+                        })
+                        del messages[:-256]
+                    self.wfile.write(b"250 Accepted\r\n")
+                elif command == b"QUIT":
+                    self.wfile.write(b"221 Bye\r\n")
+                    return
+                elif command in (b"MAIL", b"RCPT", b"RSET", b"NOOP"):
+                    self.wfile.write(b"250 OK\r\n")
+                else:
+                    self.wfile.write(b"502 Unsupported\r\n")
+
+    class Inbox(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            parsed = urllib.parse.urlsplit(self.path)
+            if parsed.path != f"/{nonce}":
+                self.send_error(403)
+                return
+            recipient = urllib.parse.parse_qs(parsed.query).get("recipient", [""])[0]
+            with lock:
+                body = json.dumps([m for m in messages if m["to"] == recipient]).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    smtp = socketserver.ThreadingTCPServer(("127.0.0.1", 0), SMTP)
+    smtp.daemon_threads = True
+    inbox = http.server.ThreadingHTTPServer((address, 0), Inbox)
+    for service in (smtp, inbox):
+        threading.Thread(target=service.serve_forever, daemon=True).start()
+
+    def close():
+        for service in (smtp, inbox):
+            service.shutdown()
+            service.server_close()
+
+    return smtp.server_address[1], f"http://{address}:{inbox.server_port}/{nonce}", close
+
+
 def main():
     if sys.argv[1:] == ["--prepare-browser-image"]:
         print(browser_image())
@@ -478,6 +568,7 @@ def main():
     server = None
     podcasts = None
     offline_close = None
+    mailbox_close = None
     log_handle = None
     local_browsers = os.environ.get("A11Y_LOCAL_BROWSERS") == "1"
     if local_browsers:
@@ -668,6 +759,7 @@ def main():
                 )
                 else ""
             )
+            smtp_port, mailbox_url, mailbox_close = fixture_mailbox(app_address)
             config.write_text(
                 'domain = "localhost"\n'
                 f'trusted_proxies = ["{proxy_address}/32"]\n'
@@ -684,7 +776,7 @@ def main():
                 "encryption_secret_version = 1\n"
                 "\n[smtp]\n"
                 'server = "127.0.0.1"\n'
-                "port = 9\n"
+                f"port = {smtp_port}\n"
                 'from_address = "Plamenu <notifications@localhost>"\n'
             )
             run(*application.command(config, "account", "add", "developer"))
@@ -716,7 +808,12 @@ def main():
             )
             for username in (
                 "channel_editor",
+                "a11y_moderator",
+                "recovery_no_javascript",
                 *creator_users,
+                *("security_" + project.replace("-", "_") for project in creator_projects),
+                *(PARTICIPANT_PREFIX + project.replace("-", "_") for project in creator_projects),
+                *("limit_" + project.replace("-", "_") for project in creator_projects),
                 *music_viewers,
                 *music_erasure_users,
             ):
@@ -733,6 +830,33 @@ def main():
                     ),
                 )
             seed_native_draft_pages(name, fixture, video_fixture)
+            # Exercise the actual registration form, including conditional age
+            # input, rather than only scanning the closed-registration notice.
+            # This changes only the disposable fixture, never instance policy.
+            run(
+                "docker",
+                "exec",
+                "-i",
+                name,
+                "psql",
+                "-U",
+                "postgres",
+                "-d",
+                "plamenu_a11y",
+                "-v",
+                "ON_ERROR_STOP=1",
+                # Keep the real inactive-moderator safeguard enabled. A fixture
+                # moderator prevents it closing signup during a long matrix;
+                # all browser journey accounts retain ordinary member roles.
+                input=(
+                    "UPDATE users SET role_id = (SELECT id FROM user_roles WHERE name = 'Admin'), "
+                    "current_sign_in_at = now() WHERE account_id = "
+                    "(SELECT id FROM accounts WHERE username = 'a11y_moderator' AND domain IS NULL); "
+                    "UPDATE instance_settings SET registrations_mode = 'open', min_age = 18;"
+                ),
+                text=True,
+                stdout=subprocess.DEVNULL,
+            )
             log = ROOT / "target/accessibility/server.log"
             log.parent.mkdir(parents=True, exist_ok=True)
             log_handle = log.open("wb")
@@ -791,8 +915,10 @@ def main():
                 "A11Y_BASE_URL": base_url,
                 "A11Y_USERNAME": "developer",
                 "A11Y_CREATOR_PREFIX": "a11y_",
+                "A11Y_PARTICIPANT_PREFIX": PARTICIPANT_PREFIX,
                 "A11Y_PASSWORD": "plamenu-development-only",
                 "A11Y_CANONICAL_ORIGIN": "https://localhost",
+                "A11Y_MAILBOX_URL": mailbox_url,
                 "A11Y_REPORT_PATH": os.environ.get(
                     "A11Y_REPORT_PATH", "target/accessibility/automated.json"
                 ),
@@ -943,9 +1069,11 @@ def main():
                             "A11Y_BASE_URL",
                             "A11Y_USERNAME",
                             "A11Y_CREATOR_PREFIX",
+                            "A11Y_PARTICIPANT_PREFIX",
                             "A11Y_PASSWORD",
                             "A11Y_CANONICAL_ORIGIN",
                             "A11Y_REPORT_PATH",
+                            "A11Y_MAILBOX_URL",
                         )
                         for item in ("--env", f"{name}={environment[name]}")
                     ),
@@ -986,6 +1114,8 @@ def main():
                         server.wait()
                 if log_handle:
                     log_handle.close()
+                if mailbox_close:
+                    mailbox_close()
                 subprocess.run(
                     ["docker", "rm", "--force", "--volumes", proxy_name],
                     stdout=subprocess.DEVNULL,

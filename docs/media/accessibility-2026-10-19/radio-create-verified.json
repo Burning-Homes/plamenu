@@ -1,0 +1,136 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "037a3c18edf7ea7a448df73124e1f180fd2b1b37",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T05:47:12.034Z",
+  "completed_at": "2026-10-19T05:48:14.107Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > music-radios.spec.mjs > radio station settings and revocable member access are accessible",
+      "status": "passed",
+      "duration_ms": 6419
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > radio-create-recovery.spec.mjs > radio creation retains station details after a blank-name rejection",
+      "status": "passed",
+      "duration_ms": 1081
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > music-radios.spec.mjs > radio station settings and revocable member access are accessible",
+      "status": "passed",
+      "duration_ms": 5648
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > radio-create-recovery.spec.mjs > radio creation retains station details after a blank-name rejection",
+      "status": "passed",
+      "duration_ms": 938
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > music-radios.spec.mjs > radio station settings and revocable member access are accessible",
+      "status": "passed",
+      "duration_ms": 8963
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > radio-create-recovery.spec.mjs > radio creation retains station details after a blank-name rejection",
+      "status": "passed",
+      "duration_ms": 1448
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > music-radios.spec.mjs > radio station settings and revocable member access are accessible",
+      "status": "passed",
+      "duration_ms": 8248
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > radio-create-recovery.spec.mjs > radio creation retains station details after a blank-name rejection",
+      "status": "passed",
+      "duration_ms": 1211
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > music-radios.spec.mjs > radio station settings and revocable member access are accessible",
+      "status": "passed",
+      "duration_ms": 9235
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > radio-create-recovery.spec.mjs > radio creation retains station details after a blank-name rejection",
+      "status": "passed",
+      "duration_ms": 1591
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > music-radios.spec.mjs > radio station settings and revocable member access are accessible",
+      "status": "passed",
+      "duration_ms": 6019
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > radio-create-recovery.spec.mjs > radio creation retains station details after a blank-name rejection",
+      "status": "passed",
+      "duration_ms": 1108
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > music-radios.spec.mjs > radio station settings work without JavaScript @no-js",
+      "status": "passed",
+      "duration_ms": 4311
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > radio-create-recovery.spec.mjs > @no-js radio creation retains station details after a blank-name rejection",
+      "status": "passed",
+      "duration_ms": 430
+    }
+  ]
+}

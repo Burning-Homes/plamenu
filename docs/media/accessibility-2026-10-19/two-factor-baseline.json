@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "eccae3dca94579ffa696144348555336accc13ee",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T03:28:43.524Z",
+  "completed_at": "2026-10-19T03:28:55.379Z",
+  "status": "failed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > two-factor-journey.spec.mjs > opt-in two-factor enrollment and recovery-code correction remain accessible",
+      "status": "failed",
+      "duration_ms": 5237
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > two-factor-journey.spec.mjs > opt-in two-factor enrollment and recovery-code correction remain accessible",
+      "status": "failed",
+      "duration_ms": 4996
+    }
+  ]
+}

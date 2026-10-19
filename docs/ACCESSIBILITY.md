@@ -5,6 +5,9 @@ selected AAA improvements where they do not make ordinary use worse. This file
 records the current implementation and the work still required; it is not a
 conformance statement.
 
+The [incremental journey audit](ACCESSIBILITY_JOURNEY.md) records reproduced
+findings, local fixes, visual comparisons, and the next journeys to test.
+
 The normative standard is [WCAG 2.2](https://www.w3.org/TR/WCAG22/). Evaluation
 follows [WCAG-EM](https://www.w3.org/WAI/test-evaluate/conformance/wcag-em/).
 Automated checks are regression guards and cannot establish conformance without
@@ -68,11 +71,15 @@ the remaining manual and assistive-technology evidence.
 - `accessibility/criteria.json` accounts for every WCAG 2.2 Level A and AA
   criterion, including the obsolete status of 4.1.1, and maps applicable
   criteria to reproducible checks.
-- The isolated Playwright/axe suite contains 25 tests across Chromium, Firefox,
+- The isolated Playwright/axe suite runs regression tests across Chromium, Firefox,
   and WebKit at desktop and 320-CSS-pixel mobile viewports, plus no-JavaScript
   Chromium. It covers signed-in and signed-out pages, English and Russian,
   light and dark themes, reduced motion, forced colours, keyboard bypass,
   structure, duplicate IDs, and reflow.
+- Its disposable fixture opens registration, including the conditional age
+  field. The core journey exercises real signup and validation recovery,
+  authentication, posting, and post-action failures; optional-email signup
+  does not claim coverage of email delivery or confirmation.
 - Release evidence is bound to the exact Git revision and browser-report
   digest. The release validator rejects missing, skipped, altered, dirty-source,
   wrong-revision, or incomplete manual evidence.

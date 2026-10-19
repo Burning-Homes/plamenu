@@ -36,8 +36,11 @@ fn response(title: &str, user: Option<&WebUser>, body: &Markup) -> Response {
     )
         .into_response()
 }
-fn upload_form(user: &WebUser) -> Markup {
+fn upload_form(user: &WebUser, fields: &[(String, String)]) -> Markup {
     let l = user.locale;
+    let title = settings::field(fields, "title").unwrap_or_default();
+    let artist = settings::field(fields, "artist").unwrap_or_default();
+    let album = settings::field(fields, "album").unwrap_or_default();
     html! {
         p {(l.text("music-assets-upload-hint"))}
         form.settings-form.music-upload method="post" action="/web/music/assets/import" enctype="multipart/form-data" {
@@ -45,14 +48,14 @@ fn upload_form(user: &WebUser) -> Markup {
             label for="music-asset-file"{(l.text("music-assets-file"))}
             input id="music-asset-file" type="file" name="file" accept="audio/*" required;
             label for="music-upload-title"{(l.text("music-upload-title"))}
-            input id="music-upload-title" name="title" maxlength="200";
-            details {
+            input id="music-upload-title" name="title" maxlength="200" value=(title);
+            details open[!artist.is_empty() || !album.is_empty()] {
                 summary {(l.text("music-metadata-more"))}
                 div.settings-form {
                     label for="music-upload-artist"{(l.text("music-artist"))}
-                    input id="music-upload-artist" name="artist" maxlength="200";
+                    input id="music-upload-artist" name="artist" maxlength="200" value=(artist);
                     label for="music-upload-album"{(l.text("music-album"))}
-                    input id="music-upload-album" name="album" maxlength="200";
+                    input id="music-upload-album" name="album" maxlength="200" value=(album);
                 }
             }
             p {(l.text("music-upload-publish-hint"))}
@@ -62,6 +65,22 @@ fn upload_form(user: &WebUser) -> Markup {
             }
         }
     }
+}
+
+fn upload_page(user: &WebUser, fields: &[(String, String)], rejected: bool) -> Markup {
+    let l = user.locale;
+    html! {section.column.music-library {
+        h1 {(l.text("music-upload-audio"))}
+        (super::music::workspace_navigation(l,true,"upload"))
+        @if rejected {
+            div.settings__error id="music-upload-error" role="alert" tabindex="-1" autofocus {
+                p {(l.text("music-upload-file-problem"))}
+                p {(l.text("music-upload-reselect"))}
+            }
+        }
+        (upload_form(user, fields))
+        a href="/music/mine" {(l.text("music-mine-title"))}
+    }}
 }
 
 pub async fn index(
@@ -76,12 +95,7 @@ pub async fn index(
     if q.upload.unwrap_or(false)
         && let Some(user) = &user
     {
-        let body = html! {section.column.music-library {
-            h1 {(l.text("music-upload-audio"))}
-            (super::music::workspace_navigation(l,true,"upload"))
-            (upload_form(user))
-            a href="/music/mine" {(l.text("music-mine-title"))}
-        }};
+        let body = upload_page(user, &[], false);
         return Ok(response(&l.text("music-upload-audio"), Some(user), &body));
     }
     let mut tracks = music_assets::catalogue(
@@ -374,7 +388,7 @@ pub async fn import(
     let mut asset = match music_assets::import(&state, user.current.account.id, bytes, &name).await
     {
         Ok(asset) => asset,
-        Err(error) => return upload_problem(&user, error, None),
+        Err(error) => return upload_problem(&user, error, None, &fields),
     };
     if !publish && asset.visibility != "private" {
         return Ok(settings::redirect_to(&format!(
@@ -389,7 +403,7 @@ pub async fn import(
         && let Err(error) =
             crate::music_publications::publish(&state, &user.current.account, asset.id).await
     {
-        return upload_problem(&user, error, Some(asset.id));
+        return upload_problem(&user, error, Some(asset.id), &fields);
     }
     Ok(settings::redirect_to(&format!(
         "/music/assets/{}",
@@ -520,6 +534,7 @@ fn upload_problem(
     user: &WebUser,
     error: ApiError,
     asset: Option<i64>,
+    fields: &[(String, String)],
 ) -> Result<Response, ApiError> {
     let l = user.locale;
     tracing::warn!(owner=user.current.account.id,error=%error.chain(),"Music upload or publication could not finish");
@@ -528,7 +543,15 @@ fn upload_problem(
     } else {
         match error {
             ApiError::BadRequest(_) | ApiError::Unprocessable(_) => {
-                axum::http::StatusCode::UNPROCESSABLE_ENTITY
+                return Ok((
+                    axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                    response(
+                        &l.text("music-upload-problem"),
+                        Some(user),
+                        &upload_page(user, fields, true),
+                    ),
+                )
+                    .into_response());
             }
             other => return Err(other),
         }

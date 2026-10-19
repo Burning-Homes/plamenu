@@ -31,6 +31,10 @@
 
   async function toggleAction(form) {
     const button = form.querySelector("button");
+    const hadFocus = document.activeElement === button;
+    const row = form.closest(".status__actions");
+    const previousError = row?.nextElementSibling;
+    if (previousError?.matches(".status__action-error")) previousError.remove();
     const base = form.dataset.action; // favourite | reblog | bookmark | up/downvote
     const wasActive = button.classList.contains("is-active");
     const id = statusActionParts(form)?.id;
@@ -76,9 +80,29 @@
     } catch (_err) {
       snapshot.forEach(restoreActionForm);
       scoreSnapshot.forEach(([score, text]) => { score.textContent = text; });
+      if (row) {
+        // Concurrent action failures share one message below this action row.
+        const existingError = row.nextElementSibling;
+        if (existingError?.matches(".status__action-error")) existingError.remove();
+        const error = document.createElement("p");
+        error.className = "status__action-error";
+        error.setAttribute("role", "alert");
+        error.textContent = form.dataset.error;
+        row.after(error);
+      }
+      restoreActionFocus(button, hadFocus);
       return;
     }
     setActionPending(actionForms, false, base);
+    restoreActionFocus(button, hadFocus);
+  }
+
+  function restoreActionFocus(button, hadFocus) {
+    // Disabling a pending control can drop focus to the document. Restore
+    // that position, but never take focus back from a user who moved on.
+    if (hadFocus && document.activeElement === document.body) {
+      button.focus({ preventScroll: true });
+    }
   }
 
   function statusActionParts(form) {
@@ -130,6 +154,7 @@
     if (state.title == null) button.removeAttribute("title");
     else button.setAttribute("title", state.title);
     if (state.count) state.count.textContent = state.countText;
+    syncActionName(button);
     button.disabled = state.disabled;
   }
 
@@ -140,6 +165,7 @@
     setActive(button, active);
     const title = active ? button.dataset.activeTitle : button.dataset.inactiveTitle;
     if (title) button.setAttribute("title", title);
+    syncActionName(button);
     form.setAttribute(
       "action",
       `/web/statuses/${parts.id}/${active ? "un" : ""}${form.dataset.action}`,
@@ -206,6 +232,7 @@
     if (!region || !button || region.dataset.pending) {
       return;
     }
+    const hadFocus = document.activeElement === button;
     clearPollError(region);
     region.dataset.pending = "1";
     region.setAttribute("aria-busy", "true");
@@ -223,7 +250,7 @@
         showPollError(region, region.dataset.pollFailed);
         return;
       }
-      await refreshPoll(region.dataset.poll, body.get("return_to") || "");
+      await refreshPoll(region.dataset.poll, body.get("return_to") || "", region, hadFocus);
     } catch (_err) {
       // The POST may have reached the server before the connection failed, so
       // never submit it a second time. Keep the choices and offer a retry.
@@ -232,10 +259,13 @@
       delete region.dataset.pending;
       region.removeAttribute("aria-busy");
       button.disabled = false;
+      if (hadFocus && button.isConnected && document.activeElement === document.body) {
+        button.focus();
+      }
     }
   }
 
-  async function refreshPoll(base, returnTo) {
+  async function refreshPoll(base, returnTo, origin, restoreOrigin) {
     const regions = document.querySelectorAll(`[data-poll="${base}"]`);
     if (!regions.length) return;
     const res = await fetch(
@@ -248,9 +278,17 @@
     const fresh = tpl.content.querySelector("[data-poll]");
     if (!fresh) throw new Error("poll fragment missing");
     regions.forEach((old) => {
+      const restore = old.contains(document.activeElement) ||
+        (old === origin && restoreOrigin && document.activeElement === document.body);
       const copy = fresh.cloneNode(true);
       old.replaceWith(copy);
       bindPollForms(copy);
+      if (restore) {
+        // Results replace the voting form. Keep a useful reading position
+        // without introducing a permanent stop in the Tab sequence.
+        copy.tabIndex = -1;
+        copy.focus();
+      }
     });
   }
 
@@ -287,6 +325,7 @@
     const region = form.closest("[data-rsvp]");
     const button = form.querySelector("button[type=submit]");
     if (!region || !button || region.dataset.pending) return;
+    const hadFocus = document.activeElement === button;
     clearRsvpError(region);
     region.dataset.pending = "1";
     region.setAttribute("aria-busy", "true");
@@ -304,17 +343,20 @@
         showRsvpError(region, region.dataset.rsvpFailed);
         return;
       }
-      await refreshRsvp(region.dataset.rsvp, body.get("return_to") || "");
+      await refreshRsvp(region.dataset.rsvp, body.get("return_to") || "", region, hadFocus);
     } catch (_err) {
       showRsvpError(region, region.dataset.rsvpNetworkFailed);
     } finally {
       delete region.dataset.pending;
       region.removeAttribute("aria-busy");
       button.disabled = false;
+      if (hadFocus && button.isConnected && document.activeElement === document.body) {
+        button.focus();
+      }
     }
   }
 
-  async function refreshRsvp(base, returnTo) {
+  async function refreshRsvp(base, returnTo, origin, restoreOrigin) {
     const regions = document.querySelectorAll(`[data-rsvp="${base}"]`);
     if (!regions.length) return;
     const res = await fetch(
@@ -327,9 +369,21 @@
     const fresh = tpl.content.querySelector("[data-rsvp]");
     if (!fresh) throw new Error("RSVP fragment missing");
     regions.forEach((old) => {
+      // Keep focus only when replacing the control that owns it, or when
+      // disabling the initiating button dropped focus to the document.
+      const restore = old.contains(document.activeElement) ||
+        (old === origin && restoreOrigin && document.activeElement === document.body);
       const copy = fresh.cloneNode(true);
       old.replaceWith(copy);
       bindRsvpForms(copy);
+      if (restore) {
+        const next = copy.querySelector("button:not([disabled]), a[href]");
+        if (next) next.focus();
+        else {
+          copy.tabIndex = -1;
+          copy.focus();
+        }
+      }
     });
   }
 
@@ -498,6 +552,14 @@
     if (!count) return;
     const next = (parseInt(count.textContent, 10) || 0) + delta;
     count.textContent = String(Math.max(next, 0));
+    syncActionName(button);
+  }
+
+  function syncActionName(button) {
+    const label = button.getAttribute("title");
+    if (!label) return;
+    const count = button.querySelector(".action__count");
+    button.setAttribute("aria-label", count ? `${label} (${count.textContent})` : label);
   }
 
   // ---- <details> disclosures --------------------------------------------
@@ -3355,6 +3417,7 @@
       setStatus(status, webauthnText(form, "webauthnNameFirst"));
       return;
     }
+    const hadFocus = document.activeElement === button;
     button.disabled = true;
     setStatus(status, webauthnText(form, "webauthnPrompt"));
     try {
@@ -3382,6 +3445,7 @@
     } catch (err) {
       button.disabled = false;
       setStatus(status, friendlyError(form, err));
+      restoreActionFocus(button, hadFocus);
     }
   }
 
@@ -3394,6 +3458,7 @@
     const optionsUrl =
       container.dataset.webauthnOptionsUrl || "/login/webauthn/options";
     const finishUrl = container.dataset.webauthnFinishUrl || "/login/webauthn";
+    const hadFocus = document.activeElement === button;
     button.disabled = true;
     setStatus(status, webauthnText(container, "webauthnPrompt"));
     try {
@@ -3445,6 +3510,7 @@
     } catch (err) {
       button.disabled = false;
       setStatus(status, friendlyError(container, err));
+      restoreActionFocus(button, hadFocus);
     }
   }
 
@@ -3476,6 +3542,7 @@
   // across the post's media, wheel/pinch zoom with drag panning, swipe
   // navigation, alt text shown, focus-trapped dialog. A plain click or tap
   // anywhere outside the controls closes it.
+  const lightboxLabels = document.getElementById("lightbox-labels")?.dataset || {};
   let lightbox = null;
 
   function ensureLightbox() {
@@ -3485,7 +3552,7 @@
     el.hidden = true;
     el.setAttribute("role", "dialog");
     el.setAttribute("aria-modal", "true");
-    el.setAttribute("aria-label", "Media viewer");
+    el.setAttribute("aria-label", lightboxLabels.title || "Media viewer");
     el.innerHTML = `
       <div class="lightbox__stage">
         <div class="lightbox__track">
@@ -3555,6 +3622,10 @@
       scrollRestoration: null,
       scrollRestorationTimer: null,
     };
+    box.close.setAttribute("aria-label", lightboxLabels.close || "Close");
+    box.prev.setAttribute("aria-label", lightboxLabels.previous || "Previous");
+    box.next.setAttribute("aria-label", lightboxLabels.next || "Next");
+    box.post.textContent = lightboxLabels.post || "View post";
     box.prev.addEventListener("click", (event) => {
       event.stopPropagation();
       moveLightbox(-1);
@@ -3599,6 +3670,7 @@
         box.scrollRestorationTimer = null;
       }, 0);
     });
+    window.addEventListener("resize", syncLightboxDescriptionFocus, { passive: true });
     lightbox = box;
     return box;
   }
@@ -3740,6 +3812,7 @@
 
   function updateLightboxDetails() {
     const box = lightbox;
+    const focused = document.activeElement;
     const index = box.index;
     const item = box.items[index];
     box.alt.textContent = item.alt;
@@ -3760,6 +3833,13 @@
     box.next.hidden = index === box.items.length - 1;
     box.prev.disabled = box.prev.hidden;
     box.next.disabled = box.next.hidden;
+    // Navigation or a shorter description can hide the focused control.
+    // Keep focus on a useful visible control without changing focus elsewhere.
+    if (box.el.contains(focused) && (focused.hidden || (focused === box.alt && box.alt.tabIndex < 0))) {
+      const replacement = focused === box.next && !box.prev.hidden ? box.prev
+        : focused === box.prev && !box.next.hidden ? box.next : box.close;
+      replacement.focus({ preventScroll: true });
+    }
   }
 
   function moveLightbox(direction, dragged = false) {
@@ -3834,8 +3914,25 @@
     const box = lightbox;
     box.alt.classList.toggle("is-expanded", expanded);
     box.alt.scrollTop = 0;
-    box.altToggle.textContent = expanded ? "Show less" : "Show more";
+    box.altToggle.textContent = expanded
+      ? (lightboxLabels.less || "Show less") : (lightboxLabels.more || "Show more");
     box.altToggle.setAttribute("aria-expanded", String(expanded));
+    syncLightboxDescriptionFocus();
+  }
+
+  function syncLightboxDescriptionFocus() {
+    const box = lightbox;
+    if (!box || box.el.hidden) return;
+    const scrollable = box.alt.classList.contains("is-expanded")
+      && box.alt.scrollHeight > box.alt.clientHeight;
+    box.alt.tabIndex = scrollable ? 0 : -1;
+    if (scrollable) {
+      box.alt.setAttribute("role", "region");
+      box.alt.setAttribute("aria-label", lightboxLabels.description || "Media description");
+    } else {
+      box.alt.removeAttribute("role");
+      box.alt.removeAttribute("aria-label");
+    }
   }
 
   function onLightboxKey(event) {
@@ -3848,8 +3945,8 @@
     } else if (event.key === "ArrowRight") {
       moveLightbox(1);
     } else if (event.key === "Tab") {
-      // Focus trap: cycle through the dialog's buttons and the post link.
-      const buttons = [...box.el.querySelectorAll("button:not([hidden]), a:not([hidden])")];
+      // Include expanded descriptions only when they need keyboard scrolling.
+      const buttons = [...box.el.querySelectorAll('button:not([hidden]), a:not([hidden]), [tabindex="0"]')];
       const first = buttons[0];
       const last = buttons[buttons.length - 1];
       if (!box.el.contains(document.activeElement)) {
@@ -6385,10 +6482,10 @@
         autoName = nextName;
         autoSummary = nextSummary;
         if (appBrowserLabel && appBrowserMeta) {
-          appBrowserLabel.textContent = uploading ? "Choose from app library" : nextName;
+          appBrowserLabel.textContent = uploading ? appBrowserLabel.dataset.default : nextName;
           appBrowserMeta.textContent = uploading
             ? appBrowserMeta.dataset.default
-            : "Selected from app library";
+            : appBrowserMeta.dataset.selected;
         }
         if (!uploading && appBrowser) appBrowser.open = false;
       };
@@ -7088,8 +7185,43 @@
   // Every intercepted link/form retains its normal server-rendered fallback.
   let musicNavigationPending = false;
   let musicDock;
+  let musicPageFocus;
+  function updateMusicDockClearance(player) {
+    const root = document.documentElement;
+    if (player.hidden) {
+      root.style.removeProperty('--music-dock-clearance');
+      root.style.removeProperty('--music-dock-controls-clearance');
+      return;
+    }
+    const bottom = Math.max(0, parseFloat(getComputedStyle(player).bottom) || 0);
+    const queue = player.querySelector(':scope > section.music-player');
+    const queueHeight = queue?.getBoundingClientRect().height || 0;
+    const controls = Math.ceil(player.getBoundingClientRect().height - queueHeight + bottom);
+    root.style.setProperty('--music-dock-controls-clearance', `${controls}px`);
+    const clearance = Math.ceil(player.getBoundingClientRect().height + bottom);
+    root.style.setProperty('--music-dock-clearance', `${clearance}px`);
+  }
+  function revealMusicPageFocus(player, target) {
+    if (player.hidden || document.fullscreenElement || !(target instanceof HTMLElement)
+      || document.activeElement !== target || !target.closest('main.app-main')) return;
+    if (target.matches('main.app-main')) return;
+    // Floating dialogs/popovers manage their own position; scrolling the page
+    // cannot move a fixed control and would only disturb the background.
+    for (let node = target; node && node !== document.body; node = node.parentElement) {
+      if (getComputedStyle(node).position === 'fixed') return;
+    }
+    const control = target.getBoundingClientRect();
+    const top = player.getBoundingClientRect().top;
+    if (control.bottom > top && control.top < innerHeight) {
+      // WebKit may skip focus scrolling for a control inside the unpadded
+      // viewport, even when scroll-padding reserves the floating dock.
+      const distance = Math.min(control.bottom - top + 12, Math.max(0, control.top - 12));
+      if (distance > 0) window.scrollBy(0, distance);
+    }
+  }
   function dockMusicPlayer(player) {
     if (musicDock) return musicDock;
+    musicPageFocus = document.activeElement;
     musicDock = player;
     player.classList.add('music-dock');
     player.setAttribute('role','region');
@@ -7113,12 +7245,32 @@
     const close = document.createElement('button'); close.type = 'button'; close.className = 'button--quiet';
     close.textContent = player.dataset.closeLabel || 'Close player';
     close.addEventListener('click', () => {
+      const restoreFocus = player.contains(document.activeElement);
+      const previous = musicPageFocus;
       // Keep the controller's references valid; this also preserves its queue.
       player.querySelector('audio.music-player-audio').pause();
       player.hidden = true; document.body.classList.remove('has-music-dock');
+      updateMusicDockClearance(player);
+      if (restoreFocus) {
+        const available = previous instanceof HTMLElement && previous !== document.body
+          && previous.isConnected && previous.getClientRects().length && !previous.matches(':disabled');
+        (available ? previous : document.querySelector('main.app-main'))?.focus();
+      }
     });
     tools.append(close); player.querySelector('.music-player-media').append(tools);
     document.body.append(player); document.body.classList.add('has-music-dock');
+    updateMusicDockClearance(player);
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => updateMusicDockClearance(player)).observe(player);
+    }
+    window.addEventListener('resize', () => updateMusicDockClearance(player));
+    document.addEventListener('focusin', event => {
+      if (event.target instanceof HTMLElement && event.target !== document.body
+        && event.target !== document.documentElement && !player.contains(event.target)) {
+        musicPageFocus = event.target;
+      }
+      requestAnimationFrame(() => revealMusicPageFocus(player, event.target));
+    });
     history.scrollRestoration = 'manual';
     let scrollTimer;
     window.addEventListener('scroll',()=>{clearTimeout(scrollTimer);scrollTimer=setTimeout(()=>history.replaceState({...history.state,scrollY:window.scrollY},'',location.href),100);},{passive:true});
@@ -7129,10 +7281,12 @@
     player.classList.toggle('music-dock--expanded',open);
     player.querySelector('[data-music-queue-toggle]').setAttribute('aria-expanded',String(open));
     const queue=player.querySelector('.music-player-queue'); if(queue)queue.open=open;
+    updateMusicDockClearance(player);
   }
   function restoreMusicDock() {
     if (!musicDock) return;
     musicDock.hidden = false; document.body.classList.add('has-music-dock');
+    updateMusicDockClearance(musicDock);
   }
   function musicNavigationUrl(url) {
     if (url.origin !== location.origin || url.hash || /\/(stream|downloads?|artwork|export)(\/|$)/.test(url.pathname)) return false;

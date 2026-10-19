@@ -384,17 +384,17 @@ pub enum PasswordLoginError {
 }
 
 impl PasswordLoginError {
-    /// Human-facing wording used by the first-party web login. API adapters
+    /// Message key used by the localized first-party web login. API adapters
     /// translate the same variants into their protocol's stable error codes.
     #[must_use]
-    pub const fn web_message(self) -> &'static str {
+    pub const fn web_message_id(self) -> &'static str {
         match self {
-            Self::BadCredentials => "Wrong e-mail/username or password.",
-            Self::Locked => "Your account is temporarily locked. Try again later.",
-            Self::Unconfirmed => "You have to confirm your e-mail address before signing in.",
-            Self::PendingApproval => "Your account is still awaiting approval by the moderators.",
-            Self::Disabled => "Your account is currently disabled.",
-            Self::EmailBlocked => "This e-mail address is blocked.",
+            Self::BadCredentials => "auth-error-credentials",
+            Self::Locked => "auth-error-locked",
+            Self::Unconfirmed => "auth-error-unconfirmed",
+            Self::PendingApproval => "auth-error-pending",
+            Self::Disabled => "auth-error-disabled",
+            Self::EmailBlocked => "auth-error-email-blocked",
         }
     }
 }

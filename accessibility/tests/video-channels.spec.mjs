@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { signIn, openVideoOptions, createVideoChannel ,videoChannelForm} from '../session.mjs';
+import { signIn, signInParticipant, participantUsername, openVideoOptions, createVideoChannel ,videoChannelForm} from '../session.mjs';
 
 async function form(page, operation) {
   if (operation === 'profile') return page.locator('form[action^="/web/video-channels/"][action$="/profile"]');
@@ -13,7 +13,7 @@ async function submitAndCommit(page, button, channelPath) {
   expect((await posted).status()).toBe(303);
 }
 async function scan(page, noScript) {
-  const widths = await page.evaluate(() => [innerWidth, document.documentElement.scrollWidth]);
+  const widths = await page.evaluate(() => [document.documentElement.clientWidth, document.documentElement.scrollWidth]);
   expect(widths[1]).toBeLessThanOrEqual(widths[0]);
   if (!noScript) {
     const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
@@ -23,6 +23,8 @@ async function scan(page, noScript) {
 
 async function journey(page, browser, info, noScript) {
   test.setTimeout(120_000);
+  if (noScript) await page.setViewportSize({width:320,height:800});
+  const collaborator = participantUsername(info);
   await signIn(page);
   await page.goto('/videos/upload');await openVideoOptions(page);
   const name = `team_${Date.now().toString(36)}_${info.project.name.slice(0, 3)}`;
@@ -32,7 +34,12 @@ async function journey(page, browser, info, noScript) {
   await create.getByLabel('Channel name').fill(`Team ${name}`);
   await createVideoChannel(page, create.getByRole('button', { name: 'Create a video channel' }));
   await page.waitForURL(url => url.pathname === '/videos/upload');await openVideoOptions(page);
-  await page.getByRole('link', { name: 'Channels', exact: true }).first().click();
+  // Upload has creation controls; channel management is linked from Videos.
+  if (!await page.getByRole('link', {name:'Videos',exact:true}).count()) {
+    await page.locator('details[data-drawer] > summary').press('Enter');
+  }
+  await page.getByRole('link', {name:'Videos',exact:true}).first().press('Enter');
+  await page.getByRole('link', {name:'Manage video channels',exact:true}).press('Enter');
   await page.getByRole('link', { name: `Team ${name}`, exact: true }).click();
   const channelPath = new URL(page.url()).pathname;
   await scan(page, noScript);
@@ -42,23 +49,20 @@ async function journey(page, browser, info, noScript) {
   await profile.getByRole('button', { name: 'Save channel profile' }).press('Enter');
   await expect(page.getByRole('heading', { level: 1 })).toContainText(`Team revised ${name}`);
   let invite = await form(page, 'invite');
-  await invite.getByLabel("Local person's username").fill('channel_editor');
+  await invite.getByLabel("Local person's username").fill(collaborator);
   await invite.getByRole('combobox', { name: 'Role', exact: true }).selectOption('editor');
   await invite.getByRole('button', { name: 'Invite collaborator' }).press('Enter');
   await expect(page.getByText('Awaiting acceptance', { exact: false }).first()).toBeVisible();
 
   const context = await browser.newContext({
-    baseURL: process.env.A11Y_BASE_URL || 'https://plamenu.local', ignoreHTTPSErrors: false,
-    javaScriptEnabled: !noScript, viewport: info.project.use.viewport,
-    ...(process.env.A11Y_CANONICAL_ORIGIN ? { extraHTTPHeaders: { Origin: process.env.A11Y_CANONICAL_ORIGIN } } : {}),
+    ...info.project.use,
+    baseURL: process.env.A11Y_BASE_URL || 'https://plamenu.local',
+    javaScriptEnabled: !noScript,
+    ...(noScript ? {viewport:{width:320,height:800}} : {}),
   });
   const recipient = await context.newPage();
   try {
-    await recipient.goto('/login');
-    await recipient.locator('input[name="identifier"]').fill('channel_editor');
-    await recipient.locator('input[name="password"]').fill('plamenu-development-only');
-    await recipient.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await recipient.waitForURL(url => url.pathname === '/');
+    await signInParticipant(recipient);
     await recipient.goto('/videos/channels');
     await recipient.getByRole('link', { name: `Team revised ${name}`, exact: true }).click();
     await expect(await form(recipient, 'profile')).toHaveCount(0);
@@ -71,11 +75,11 @@ async function journey(page, browser, info, noScript) {
     await submitAndCommit(recipient, profile.getByRole('button', { name: 'Save channel profile' }), `${channelPath}/profile`);
     await page.reload();
     await expect((await form(page, 'profile')).getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('Corrected by a consenting editor.');
-    await submitAndCommit(page, page.getByRole('button', { name: 'Revoke access for @channel_editor', exact: true }), channelPath);
+    await submitAndCommit(page, page.getByRole('button', { name: `Revoke access for @${collaborator}`, exact: true }), channelPath);
     expect((await recipient.request.get(channelPath)).status()).toBe(404);
     await page.locator('summary').filter({ hasText: /^Transfer ownership$/ }).press('Enter');
     let transfer = await form(page, 'transfer');
-    await transfer.getByLabel("Local person's username").fill('channel_editor');
+    await transfer.getByLabel("Local person's username").fill(collaborator);
     await submitAndCommit(page, transfer.getByRole('button', { name: 'Request ownership transfer' }), channelPath);
     await recipient.goto('/videos/channels');
     await recipient.getByRole('link', { name: `Team revised ${name}`, exact: true }).click();

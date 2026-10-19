@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import smtplib
 import subprocess
 import tempfile
 import time
@@ -18,6 +19,30 @@ SPEC = importlib.util.spec_from_file_location(
 )
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+
+
+class MailboxFixtureTests(unittest.TestCase):
+    def test_real_smtp_delivery_recipient_isolation_and_nonce(self):
+        port, url, close = MODULE.fixture_mailbox("127.0.0.1")
+        try:
+            with smtplib.SMTP("127.0.0.1", port, timeout=5) as smtp:
+                smtp.sendmail("sender@example.test", ["reader@example.test"],
+                              "To: reader@example.test\r\nSubject: Test\r\n\r\nA local reset link.\r\n")
+            with urllib.request.urlopen(url + "?recipient=reader%40example.test") as response:
+                messages = json.load(response)
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+            self.assertEqual(len(messages), 1)
+            self.assertIn("A local reset link.", messages[0]["body"])
+            with urllib.request.urlopen(url + "?recipient=other%40example.test") as response:
+                self.assertEqual(json.load(response), [])
+            try:
+                urllib.request.urlopen(url.rsplit("/", 1)[0] + "/wrong")
+                self.fail("Mailbox accepted a wrong nonce")
+            except urllib.error.HTTPError as error:
+                self.assertEqual(error.code, 403)
+                error.close()
+        finally:
+            close()
 
 
 class ColdRenditionFixtureTests(unittest.TestCase):
@@ -39,6 +64,26 @@ class ColdRenditionFixtureTests(unittest.TestCase):
 
 
 class OfflineProxyFixtureTests(unittest.TestCase):
+    def test_participant_handles_fit_the_registered_local_mention_limit(self):
+        for project in MODULE.BROWSER_PROJECTS:
+            username = MODULE.PARTICIPANT_PREFIX + project.replace("-", "_")
+            self.assertLessEqual(len(username), 30)
+
+    def test_independent_fixture_roles_have_bounded_distinct_clients(self):
+        configuration = MODULE.tls_configuration("127.0.0.1", 8000, 443)
+        mappings = [line.split() for line in configuration.splitlines()
+                    if line.strip().startswith(tuple(MODULE.BROWSER_PROJECTS))]
+        self.assertEqual(len(mappings), len(MODULE.BROWSER_PROJECTS) * 5)
+        self.assertEqual(len({address for _, address in mappings}), len(mappings))
+        self.assertIn("default 198.18.0.100", configuration)
+        self.assertIn("header_up X-Forwarded-For {fixture_client_ip}", configuration)
+
+    def test_session_runtime_origins_use_the_same_ephemeral_trusted_ca(self):
+        configuration = MODULE.tls_configuration("127.0.0.1", 8000, 443)
+        self.assertIn("https://localhost:443, https://*.webxdc.localhost:443", configuration)
+        self.assertIn("tls internal", configuration)
+        self.assertIn("reverse_proxy http://127.0.0.1:8000", configuration)
+
     def test_default_proxy_has_no_admin_listener_and_opt_in_is_loopback_only(self):
         self.assertIn("admin off", MODULE.tls_configuration("127.0.0.1", 8000, 443))
         self.assertIn("admin 127.0.0.1:2019", MODULE.tls_configuration("127.0.0.1", 8000, 443, offline=True))

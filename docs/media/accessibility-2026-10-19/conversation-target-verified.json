@@ -1,0 +1,220 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "3bec4207c13bcc49d67ecb6e407bf87b7cec4bf8",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T05:06:04.847Z",
+  "completed_at": "2026-10-19T05:07:33.410Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 3665
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 1691
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "passed",
+      "duration_ms": 2721
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > conversation-targets.spec.mjs > multiple inbox participants share visible targets without hiding a long name",
+      "status": "passed",
+      "duration_ms": 2727
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 3150
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 1507
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "passed",
+      "duration_ms": 2492
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > conversation-targets.spec.mjs > multiple inbox participants share visible targets without hiding a long name",
+      "status": "passed",
+      "duration_ms": 2510
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 4556
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 2126
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "passed",
+      "duration_ms": 3238
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > conversation-targets.spec.mjs > multiple inbox participants share visible targets without hiding a long name",
+      "status": "passed",
+      "duration_ms": 3271
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 4406
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 2018
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "passed",
+      "duration_ms": 2967
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > conversation-targets.spec.mjs > multiple inbox participants share visible targets without hiding a long name",
+      "status": "passed",
+      "duration_ms": 3121
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 6074
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 2946
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "passed",
+      "duration_ms": 4591
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > conversation-targets.spec.mjs > multiple inbox participants share visible targets without hiding a long name",
+      "status": "passed",
+      "duration_ms": 4696
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 4163
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 2198
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > conversation-targets.spec.mjs > long inbox participant names retain usable targets and keyboard navigation",
+      "status": "passed",
+      "duration_ms": 3505
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > conversation-targets.spec.mjs > multiple inbox participants share visible targets without hiding a long name",
+      "status": "passed",
+      "duration_ms": 3496
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > conversation-journey.spec.mjs > @no-js private mentions support reply, read state and native removal",
+      "status": "passed",
+      "duration_ms": 2047
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > conversation-language.spec.mjs > @no-js private-message previews preserve declared language",
+      "status": "passed",
+      "duration_ms": 1292
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > conversation-targets.spec.mjs > @no-js long inbox participant names retain usable targets",
+      "status": "passed",
+      "duration_ms": 1370
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > conversation-targets.spec.mjs > @no-js multiple inbox participants retain visible targets",
+      "status": "passed",
+      "duration_ms": 1378
+    }
+  ]
+}

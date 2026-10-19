@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "4dbfb38a57fd587ea617a20a3e6122de0f234866",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T04:48:20.239Z",
+  "completed_at": "2026-10-19T04:48:47.834Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > login-throttle-journey.spec.mjs > browser login throttling explains the limit and offers a native return path",
+      "status": "passed",
+      "duration_ms": 2758
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > login-throttle-journey.spec.mjs > browser login throttling explains the limit and offers a native return path",
+      "status": "passed",
+      "duration_ms": 2646
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > login-throttle-journey.spec.mjs > browser login throttling explains the limit and offers a native return path",
+      "status": "passed",
+      "duration_ms": 3979
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > login-throttle-journey.spec.mjs > browser login throttling explains the limit and offers a native return path",
+      "status": "passed",
+      "duration_ms": 3769
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > login-throttle-journey.spec.mjs > browser login throttling explains the limit and offers a native return path",
+      "status": "passed",
+      "duration_ms": 3776
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > login-throttle-journey.spec.mjs > browser login throttling explains the limit and offers a native return path",
+      "status": "passed",
+      "duration_ms": 2906
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > login-throttle-journey.spec.mjs > @no-js browser login throttling retains a native recovery path",
+      "status": "passed",
+      "duration_ms": 2239
+    }
+  ]
+}

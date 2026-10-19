@@ -1,0 +1,136 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "7ded4ca4e690aa24217fe92d0d692a5705028940",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T07:25:48.703Z",
+  "completed_at": "2026-10-19T07:33:33.057Z",
+  "status": "failed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 1,
+      "failed": 1,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > video-channels.spec.mjs > Channel roles and ownership are keyboard-operable and responsive",
+      "status": "passed",
+      "duration_ms": 5022
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > video-history.spec.mjs > private Video history and decoded resume",
+      "status": "passed",
+      "duration_ms": 18049
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > video-channels.spec.mjs > Channel roles and ownership are keyboard-operable and responsive",
+      "status": "passed",
+      "duration_ms": 4468
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > video-history.spec.mjs > private Video history and decoded resume",
+      "status": "passed",
+      "duration_ms": 16356
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > video-channels.spec.mjs > Channel roles and ownership are keyboard-operable and responsive",
+      "status": "passed",
+      "duration_ms": 7009
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > video-history.spec.mjs > private Video history and decoded resume",
+      "status": "passed",
+      "duration_ms": 18034
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > video-channels.spec.mjs > Channel roles and ownership are keyboard-operable and responsive",
+      "status": "passed",
+      "duration_ms": 6710
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > video-history.spec.mjs > private Video history and decoded resume",
+      "status": "passed",
+      "duration_ms": 17813
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > video-channels.spec.mjs > Channel roles and ownership are keyboard-operable and responsive",
+      "status": "passed",
+      "duration_ms": 7960
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > video-history.spec.mjs > private Video history and decoded resume",
+      "status": "failed",
+      "duration_ms": 319590
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > video-channels.spec.mjs > Channel roles and ownership are keyboard-operable and responsive",
+      "status": "passed",
+      "duration_ms": 5237
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > video-history.spec.mjs > private Video history and decoded resume",
+      "status": "passed",
+      "duration_ms": 22519
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > video-channels.spec.mjs > Channel roles and ownership work without scripts @no-js",
+      "status": "passed",
+      "duration_ms": 2978
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > video-history.spec.mjs > private Video history and native resume @no-js",
+      "status": "passed",
+      "duration_ms": 7456
+    }
+  ]
+}

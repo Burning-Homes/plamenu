@@ -1,0 +1,136 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "6927034d64fda4defc9478b584f7a556f5a92f70",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T04:42:02.894Z",
+  "completed_at": "2026-10-19T04:42:49.339Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 3696
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 1708
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 3180
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 1556
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 4619
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 2183
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 4381
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 2048
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 5935
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 2985
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > conversation-journey.spec.mjs > Russian private mentions support reply, read state and inbox recovery",
+      "status": "passed",
+      "duration_ms": 4290
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > conversation-language.spec.mjs > private-message previews preserve declared French text and warning language",
+      "status": "passed",
+      "duration_ms": 2212
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > conversation-journey.spec.mjs > @no-js private mentions support reply, read state and native removal",
+      "status": "passed",
+      "duration_ms": 2015
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > conversation-language.spec.mjs > @no-js private-message previews preserve declared language",
+      "status": "passed",
+      "duration_ms": 1292
+    }
+  ]
+}

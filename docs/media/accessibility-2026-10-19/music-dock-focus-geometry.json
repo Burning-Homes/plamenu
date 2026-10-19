@@ -1,0 +1,1678 @@
+{
+  "music-dock-focus-keyboard--3bbac-ock-while-editing-an-upload-chromium-desktop/music-dock-focus-geometry.json": [
+    {
+      "tag": "INPUT",
+      "name": "title",
+      "value": null,
+      "top": 317.359375,
+      "bottom": 359.515625,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "SUMMARY",
+      "name": null,
+      "value": null,
+      "top": 379.515625,
+      "bottom": 424.453125,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "INPUT",
+      "name": "artist",
+      "value": null,
+      "top": 468.609375,
+      "bottom": 510.765625,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "INPUT",
+      "name": "album",
+      "value": null,
+      "top": 574.921875,
+      "bottom": 617.078125,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "publish",
+      "top": 736.578125,
+      "bottom": 778.734375,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "store",
+      "top": 736.578125,
+      "bottom": 778.734375,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    }
+  ],
+  "music-dock-focus-keyboard--3bbac-ock-while-editing-an-upload-chromium-desktop/music-dock-sidebar-geometry.json": [
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Home",
+      "top": 69.078125,
+      "bottom": 111.796875,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Live feeds",
+      "top": 111.796875,
+      "bottom": 154.53125,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Search",
+      "top": 154.53125,
+      "bottom": 197.25,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Notifications",
+      "top": 197.25,
+      "bottom": 239.984375,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Messages",
+      "top": 239.984375,
+      "bottom": 282.703125,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Bookmarks",
+      "top": 282.703125,
+      "bottom": 325.4375,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Favourites",
+      "top": 325.4375,
+      "bottom": 368.15625,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Lists",
+      "top": 368.15625,
+      "bottom": 410.890625,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Groups",
+      "top": 410.890625,
+      "bottom": 453.625,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Music",
+      "top": 453.625,
+      "bottom": 496.359375,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Videos",
+      "top": 496.359375,
+      "bottom": 539.09375,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Apps",
+      "top": 539.09375,
+      "bottom": 581.828125,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "People",
+      "top": 581.828125,
+      "bottom": 624.5625,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Discover",
+      "top": 624.5625,
+      "bottom": 667.296875,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Settings",
+      "top": 667.296875,
+      "bottom": 710.03125,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "New post",
+      "top": 723.46875,
+      "bottom": 764.328125,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "@a11y_chromium_desktop@a11y_chromium_desktop",
+      "top": 774.515625,
+      "bottom": 812.453125,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Switch account",
+      "top": 775.34375,
+      "bottom": 811.609375,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": true,
+      "text": "Sign out",
+      "top": 772.328125,
+      "bottom": 814.640625,
+      "dockTop": 839
+    }
+  ],
+  "music-dock-focus-keyboard--0ca50-eue-while-editing-an-upload-chromium-desktop/music-dock-focus-geometry.json": [
+    {
+      "tag": "INPUT",
+      "name": "title",
+      "value": null,
+      "top": 317.359375,
+      "bottom": 359.515625,
+      "dockTop": 528.8125,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "SUMMARY",
+      "name": null,
+      "value": null,
+      "top": 379.515625,
+      "bottom": 424.453125,
+      "dockTop": 528.8125,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "INPUT",
+      "name": "artist",
+      "value": null,
+      "top": 461.609375,
+      "bottom": 503.765625,
+      "dockTop": 528.8125,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "INPUT",
+      "name": "album",
+      "value": null,
+      "top": 267.921875,
+      "bottom": 310.078125,
+      "dockTop": 528.8125,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "publish",
+      "top": 429.578125,
+      "bottom": 471.734375,
+      "dockTop": 528.8125,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "store",
+      "top": 429.578125,
+      "bottom": 471.734375,
+      "dockTop": 528.8125,
+      "dockBottom": 900,
+      "height": 900
+    }
+  ],
+  "music-dock-focus-keyboard--0ca50-eue-while-editing-an-upload-chromium-desktop/music-dock-sidebar-geometry.json": [
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Home",
+      "top": 45.390625,
+      "bottom": 77.546875,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Live feeds",
+      "top": 77.546875,
+      "bottom": 109.703125,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Search",
+      "top": 109.703125,
+      "bottom": 141.859375,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Notifications",
+      "top": 141.859375,
+      "bottom": 174.015625,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Messages",
+      "top": 174.015625,
+      "bottom": 206.171875,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Bookmarks",
+      "top": 206.171875,
+      "bottom": 238.328125,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Favourites",
+      "top": 238.328125,
+      "bottom": 270.484375,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Lists",
+      "top": 270.484375,
+      "bottom": 302.640625,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Groups",
+      "top": 302.640625,
+      "bottom": 334.796875,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Music",
+      "top": 334.796875,
+      "bottom": 366.953125,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Videos",
+      "top": 366.953125,
+      "bottom": 399.109375,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Apps",
+      "top": 396.109375,
+      "bottom": 428.265625,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "People",
+      "top": 328.265625,
+      "bottom": 360.421875,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Discover",
+      "top": 360.421875,
+      "bottom": 392.578125,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Settings",
+      "top": 392.578125,
+      "bottom": 424.734375,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "New post",
+      "top": 428.140625,
+      "bottom": 460.296875,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "@a11y_chromium_desktop@a11y_chromium_desktop",
+      "top": 470.484375,
+      "bottom": 508.421875,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Switch account",
+      "top": 471.3125,
+      "bottom": 507.578125,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": true,
+      "text": "Sign out",
+      "top": 468.296875,
+      "bottom": 510.609375,
+      "dockTop": 528.8125
+    }
+  ],
+  "music-dock-focus-keyboard--3bbac-ock-while-editing-an-upload-chromium-mobile/music-dock-focus-geometry.json": [
+    {
+      "tag": "INPUT",
+      "name": "title",
+      "value": null,
+      "top": 381.515625,
+      "bottom": 423.671875,
+      "dockTop": 636.8125,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "SUMMARY",
+      "name": null,
+      "value": null,
+      "top": 443.671875,
+      "bottom": 488.609375,
+      "dockTop": 636.8125,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "INPUT",
+      "name": "artist",
+      "value": null,
+      "top": 532.765625,
+      "bottom": 574.921875,
+      "dockTop": 636.8125,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "INPUT",
+      "name": "album",
+      "value": null,
+      "top": 316.078125,
+      "bottom": 358.234375,
+      "dockTop": 636.8125,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "publish",
+      "top": 526.046875,
+      "bottom": 568.203125,
+      "dockTop": 636.8125,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "store",
+      "top": 526.046875,
+      "bottom": 568.203125,
+      "dockTop": 636.8125,
+      "dockBottom": 744,
+      "height": 800
+    }
+  ],
+  "music-dock-focus-keyboard--0ca50-eue-while-editing-an-upload-chromium-mobile/music-dock-focus-geometry.json": [
+    {
+      "tag": "INPUT",
+      "name": "title",
+      "value": null,
+      "top": 129.515625,
+      "bottom": 171.671875,
+      "dockTop": 326.625,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "SUMMARY",
+      "name": null,
+      "value": null,
+      "top": 191.671875,
+      "bottom": 236.609375,
+      "dockTop": 326.625,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "INPUT",
+      "name": "artist",
+      "value": null,
+      "top": 259.765625,
+      "bottom": 301.921875,
+      "dockTop": 326.625,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "INPUT",
+      "name": "album",
+      "value": null,
+      "top": 130.078125,
+      "bottom": 172.234375,
+      "dockTop": 326.625,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "publish",
+      "top": 228.046875,
+      "bottom": 270.203125,
+      "dockTop": 326.625,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "store",
+      "top": 228.046875,
+      "bottom": 270.203125,
+      "dockTop": 326.625,
+      "dockBottom": 744,
+      "height": 800
+    }
+  ],
+  "music-dock-focus-keyboard--3bbac-ock-while-editing-an-upload-firefox-desktop/music-dock-focus-geometry.json": [
+    {
+      "tag": "INPUT",
+      "name": "title",
+      "value": null,
+      "top": 320.76666259765625,
+      "bottom": 362.93333435058594,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "SUMMARY",
+      "name": null,
+      "value": null,
+      "top": 382.933349609375,
+      "bottom": 428.40000915527344,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "INPUT",
+      "name": "artist",
+      "value": null,
+      "top": 472.566650390625,
+      "bottom": 514.7333221435547,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "INPUT",
+      "name": "album",
+      "value": null,
+      "top": 578.9000244140625,
+      "bottom": 621.0666961669922,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "publish",
+      "top": 740.5999755859375,
+      "bottom": 782.7666320800781,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "store",
+      "top": 740.5999755859375,
+      "bottom": 782.7666320800781,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    }
+  ],
+  "music-dock-focus-keyboard--3bbac-ock-while-editing-an-upload-firefox-desktop/music-dock-sidebar-geometry.json": [
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Home",
+      "top": 69.08332824707031,
+      "bottom": 111.83332824707031,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Live feeds",
+      "top": 111.83332824707031,
+      "bottom": 154.56666564941406,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Search",
+      "top": 154.56666564941406,
+      "bottom": 197.31666564941406,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Notifications",
+      "top": 197.31666564941406,
+      "bottom": 240.0500030517578,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Messages",
+      "top": 240.0500030517578,
+      "bottom": 282.8000030517578,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Bookmarks",
+      "top": 282.79998779296875,
+      "bottom": 325.5333251953125,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Favourites",
+      "top": 325.5333251953125,
+      "bottom": 368.2833251953125,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Lists",
+      "top": 368.2833251953125,
+      "bottom": 411.0166473388672,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Groups",
+      "top": 411.01666259765625,
+      "bottom": 453.76666259765625,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Music",
+      "top": 453.76666259765625,
+      "bottom": 496.5,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Videos",
+      "top": 496.5,
+      "bottom": 539.2333374023438,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Apps",
+      "top": 539.2333374023438,
+      "bottom": 581.9666595458984,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "People",
+      "top": 581.9666748046875,
+      "bottom": 624.7000122070312,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Discover",
+      "top": 624.7000122070312,
+      "bottom": 667.433349609375,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Settings",
+      "top": 667.433349609375,
+      "bottom": 710.1666870117188,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "New post",
+      "top": 723.5999755859375,
+      "bottom": 764.4666290283203,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "@a11y_firefox_desktop@a11y_firefox_desktop",
+      "top": 774.5833129882812,
+      "bottom": 812.5166473388672,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Switch account",
+      "top": 775.4166870117188,
+      "bottom": 811.683349609375,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": true,
+      "text": "Sign out",
+      "top": 772.4666748046875,
+      "bottom": 814.6333465576172,
+      "dockTop": 839
+    }
+  ],
+  "music-dock-focus-keyboard--0ca50-eue-while-editing-an-upload-firefox-desktop/music-dock-focus-geometry.json": [
+    {
+      "tag": "INPUT",
+      "name": "title",
+      "value": null,
+      "top": 320.76666259765625,
+      "bottom": 362.93333435058594,
+      "dockTop": 528.2333374023438,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "SUMMARY",
+      "name": null,
+      "value": null,
+      "top": 382.933349609375,
+      "bottom": 428.40000915527344,
+      "dockTop": 528.2333374023438,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "INPUT",
+      "name": "artist",
+      "value": null,
+      "top": 472.566650390625,
+      "bottom": 514.7333221435547,
+      "dockTop": 528.2333374023438,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "INPUT",
+      "name": "album",
+      "value": null,
+      "top": 267.8999938964844,
+      "bottom": 310.06666564941406,
+      "dockTop": 528.2333374023438,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "publish",
+      "top": 429.6000061035156,
+      "bottom": 471.76666259765625,
+      "dockTop": 528.2333374023438,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "store",
+      "top": 429.6000061035156,
+      "bottom": 471.76666259765625,
+      "dockTop": 528.2333374023438,
+      "dockBottom": 900,
+      "height": 900
+    }
+  ],
+  "music-dock-focus-keyboard--0ca50-eue-while-editing-an-upload-firefox-desktop/music-dock-sidebar-geometry.json": [
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "HomeLive feedsSearchNotificationsMessagesBookmarksFavouritesListsGroup",
+      "top": 41.399993896484375,
+      "bottom": 428.26666259765625,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Home",
+      "top": 45.399993896484375,
+      "bottom": 77.56666564941406,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Live feeds",
+      "top": 77.56666564941406,
+      "bottom": 109.73333740234375,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Search",
+      "top": 109.73333740234375,
+      "bottom": 141.89999389648438,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Notifications",
+      "top": 141.89999389648438,
+      "bottom": 174.06666564941406,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Messages",
+      "top": 174.06666564941406,
+      "bottom": 206.23333740234375,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Bookmarks",
+      "top": 206.23333740234375,
+      "bottom": 238.39999389648438,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Favourites",
+      "top": 238.39999389648438,
+      "bottom": 270.56666564941406,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Lists",
+      "top": 270.566650390625,
+      "bottom": 302.7333221435547,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Groups",
+      "top": 302.73333740234375,
+      "bottom": 334.8999938964844,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Music",
+      "top": 334.8999938964844,
+      "bottom": 367.06666564941406,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Videos",
+      "top": 367.066650390625,
+      "bottom": 399.2333221435547,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Apps",
+      "top": 399.23333740234375,
+      "bottom": 431.3999938964844,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "People",
+      "top": 327.3999938964844,
+      "bottom": 359.56666564941406,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Discover",
+      "top": 359.566650390625,
+      "bottom": 391.7333221435547,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Settings",
+      "top": 391.73333740234375,
+      "bottom": 423.8999938964844,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "New post",
+      "top": 428.26666259765625,
+      "bottom": 460.43333435058594,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "@a11y_firefox_desktop@a11y_firefox_desktop",
+      "top": 470.54998779296875,
+      "bottom": 508.4833221435547,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Switch account",
+      "top": 471.3833312988281,
+      "bottom": 507.6499938964844,
+      "dockTop": 528.2333374023438
+    },
+    {
+      "inSidebar": true,
+      "logout": true,
+      "text": "Sign out",
+      "top": 468.433349609375,
+      "bottom": 510.6000213623047,
+      "dockTop": 528.2333374023438
+    }
+  ],
+  "music-dock-focus-keyboard--3bbac-ock-while-editing-an-upload-firefox-mobile/music-dock-focus-geometry.json": [
+    {
+      "tag": "INPUT",
+      "name": "title",
+      "value": null,
+      "top": 384.4666748046875,
+      "bottom": 426.6333465576172,
+      "dockTop": 636.7333374023438,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "SUMMARY",
+      "name": null,
+      "value": null,
+      "top": 446.6333312988281,
+      "bottom": 492.1000061035156,
+      "dockTop": 636.7333374023438,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "INPUT",
+      "name": "artist",
+      "value": null,
+      "top": 536.2666625976562,
+      "bottom": 578.4333343505859,
+      "dockTop": 636.7333374023438,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "INPUT",
+      "name": "album",
+      "value": null,
+      "top": 315.6000061035156,
+      "bottom": 357.76666259765625,
+      "dockTop": 636.7333374023438,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "publish",
+      "top": 525.63330078125,
+      "bottom": 567.7999725341797,
+      "dockTop": 636.7333374023438,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "store",
+      "top": 525.63330078125,
+      "bottom": 567.7999725341797,
+      "dockTop": 636.7333374023438,
+      "dockBottom": 744,
+      "height": 800
+    }
+  ],
+  "music-dock-focus-keyboard--0ca50-eue-while-editing-an-upload-firefox-mobile/music-dock-focus-geometry.json": [
+    {
+      "tag": "INPUT",
+      "name": "title",
+      "value": null,
+      "top": 129.46665954589844,
+      "bottom": 171.63333129882812,
+      "dockTop": 325.9666748046875,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "SUMMARY",
+      "name": null,
+      "value": null,
+      "top": 191.63333129882812,
+      "bottom": 237.10000610351562,
+      "dockTop": 325.9666748046875,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "INPUT",
+      "name": "artist",
+      "value": null,
+      "top": 129.26666259765625,
+      "bottom": 171.43333435058594,
+      "dockTop": 325.9666748046875,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "INPUT",
+      "name": "album",
+      "value": null,
+      "top": 235.60000610351562,
+      "bottom": 277.76666259765625,
+      "dockTop": 325.9666748046875,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "publish",
+      "top": 226.63333129882812,
+      "bottom": 268.8000030517578,
+      "dockTop": 325.9666748046875,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "store",
+      "top": 226.63333129882812,
+      "bottom": 268.8000030517578,
+      "dockTop": 325.9666748046875,
+      "dockBottom": 744,
+      "height": 800
+    }
+  ],
+  "music-dock-focus-keyboard--3bbac-ock-while-editing-an-upload-webkit-desktop/music-dock-focus-geometry.json": [
+    {
+      "tag": "INPUT",
+      "name": "title",
+      "value": null,
+      "top": 323.203125,
+      "bottom": 365.359375,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "SUMMARY",
+      "name": null,
+      "value": null,
+      "top": 385.359375,
+      "bottom": 430.296875,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "INPUT",
+      "name": "artist",
+      "value": null,
+      "top": 474.453125,
+      "bottom": 516.609375,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "INPUT",
+      "name": "album",
+      "value": null,
+      "top": 580.765625,
+      "bottom": 622.921875,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "publish",
+      "top": 742.421875,
+      "bottom": 784.578125,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "store",
+      "top": 742.421875,
+      "bottom": 784.578125,
+      "dockTop": 839,
+      "dockBottom": 900,
+      "height": 900
+    }
+  ],
+  "music-dock-focus-keyboard--3bbac-ock-while-editing-an-upload-webkit-desktop/music-dock-sidebar-geometry.json": [
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Home",
+      "top": 69.09375,
+      "bottom": 111.828125,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Live feeds",
+      "top": 111.828125,
+      "bottom": 154.5625,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Search",
+      "top": 154.5625,
+      "bottom": 197.296875,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Notifications",
+      "top": 197.296875,
+      "bottom": 240.03125,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Messages",
+      "top": 240.03125,
+      "bottom": 282.765625,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Bookmarks",
+      "top": 282.765625,
+      "bottom": 325.5,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Favourites",
+      "top": 325.5,
+      "bottom": 368.234375,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Lists",
+      "top": 368.234375,
+      "bottom": 410.96875,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Groups",
+      "top": 410.96875,
+      "bottom": 453.703125,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Music",
+      "top": 453.703125,
+      "bottom": 496.4375,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Videos",
+      "top": 496.4375,
+      "bottom": 539.171875,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Apps",
+      "top": 539.171875,
+      "bottom": 581.90625,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "People",
+      "top": 581.90625,
+      "bottom": 624.640625,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Discover",
+      "top": 624.640625,
+      "bottom": 667.375,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Settings",
+      "top": 667.375,
+      "bottom": 710.109375,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "New post",
+      "top": 723.5625,
+      "bottom": 764.421875,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "@a11y_webkit_desktop@a11y_webkit_desktop",
+      "top": 774.5625,
+      "bottom": 812.5,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Switch account",
+      "top": 775.390625,
+      "bottom": 811.65625,
+      "dockTop": 839
+    },
+    {
+      "inSidebar": true,
+      "logout": true,
+      "text": "Sign out",
+      "top": 772.421875,
+      "bottom": 814.640625,
+      "dockTop": 839
+    }
+  ],
+  "music-dock-focus-keyboard--0ca50-eue-while-editing-an-upload-webkit-desktop/music-dock-focus-geometry.json": [
+    {
+      "tag": "INPUT",
+      "name": "title",
+      "value": null,
+      "top": 323.203125,
+      "bottom": 365.359375,
+      "dockTop": 528.8125,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "SUMMARY",
+      "name": null,
+      "value": null,
+      "top": 385.359375,
+      "bottom": 430.296875,
+      "dockTop": 528.8125,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "INPUT",
+      "name": "artist",
+      "value": null,
+      "top": 474.453125,
+      "bottom": 516.609375,
+      "dockTop": 528.8125,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "INPUT",
+      "name": "album",
+      "value": null,
+      "top": 474.765625,
+      "bottom": 516.921875,
+      "dockTop": 528.8125,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "publish",
+      "top": 461.421875,
+      "bottom": 503.578125,
+      "dockTop": 528.8125,
+      "dockBottom": 900,
+      "height": 900
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "store",
+      "top": 461.421875,
+      "bottom": 503.578125,
+      "dockTop": 528.8125,
+      "dockBottom": 900,
+      "height": 900
+    }
+  ],
+  "music-dock-focus-keyboard--0ca50-eue-while-editing-an-upload-webkit-desktop/music-dock-sidebar-geometry.json": [
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Home",
+      "top": 45.390625,
+      "bottom": 77.546875,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Live feeds",
+      "top": 77.546875,
+      "bottom": 109.703125,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Search",
+      "top": 109.703125,
+      "bottom": 141.859375,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Notifications",
+      "top": 141.859375,
+      "bottom": 174.015625,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Messages",
+      "top": 174.015625,
+      "bottom": 206.171875,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Bookmarks",
+      "top": 206.171875,
+      "bottom": 238.328125,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Favourites",
+      "top": 238.328125,
+      "bottom": 270.484375,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Lists",
+      "top": 270.484375,
+      "bottom": 302.640625,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Groups",
+      "top": 302.640625,
+      "bottom": 334.796875,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Music",
+      "top": 334.796875,
+      "bottom": 366.953125,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Videos",
+      "top": 366.953125,
+      "bottom": 399.109375,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Apps",
+      "top": 396.109375,
+      "bottom": 428.265625,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "People",
+      "top": 328.265625,
+      "bottom": 360.421875,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Discover",
+      "top": 360.421875,
+      "bottom": 392.578125,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Settings",
+      "top": 392.578125,
+      "bottom": 424.734375,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "New post",
+      "top": 428.21875,
+      "bottom": 460.375,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "@a11y_webkit_desktop@a11y_webkit_desktop",
+      "top": 470.53125,
+      "bottom": 508.46875,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": false,
+      "text": "Switch account",
+      "top": 471.359375,
+      "bottom": 507.625,
+      "dockTop": 528.8125
+    },
+    {
+      "inSidebar": true,
+      "logout": true,
+      "text": "Sign out",
+      "top": 468.390625,
+      "bottom": 510.609375,
+      "dockTop": 528.8125
+    }
+  ],
+  "music-dock-focus-keyboard--3bbac-ock-while-editing-an-upload-webkit-mobile/music-dock-focus-geometry.json": [
+    {
+      "tag": "INPUT",
+      "name": "title",
+      "value": null,
+      "top": 387.359375,
+      "bottom": 429.515625,
+      "dockTop": 636.8125,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "SUMMARY",
+      "name": null,
+      "value": null,
+      "top": 449.515625,
+      "bottom": 494.453125,
+      "dockTop": 636.8125,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "INPUT",
+      "name": "artist",
+      "value": null,
+      "top": 538.609375,
+      "bottom": 580.765625,
+      "dockTop": 636.8125,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "INPUT",
+      "name": "album",
+      "value": null,
+      "top": 582.921875,
+      "bottom": 625.078125,
+      "dockTop": 636.8125,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "publish",
+      "top": 569.890625,
+      "bottom": 612.046875,
+      "dockTop": 636.8125,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "store",
+      "top": 569.890625,
+      "bottom": 612.046875,
+      "dockTop": 636.8125,
+      "dockBottom": 744,
+      "height": 800
+    }
+  ],
+  "music-dock-focus-keyboard--0ca50-eue-while-editing-an-upload-webkit-mobile/music-dock-focus-geometry.json": [
+    {
+      "tag": "INPUT",
+      "name": "title",
+      "value": null,
+      "top": 273.359375,
+      "bottom": 315.515625,
+      "dockTop": 326.625,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "SUMMARY",
+      "name": null,
+      "value": null,
+      "top": 257.515625,
+      "bottom": 302.453125,
+      "dockTop": 326.625,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "INPUT",
+      "name": "artist",
+      "value": null,
+      "top": 272.609375,
+      "bottom": 314.765625,
+      "dockTop": 326.625,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "INPUT",
+      "name": "album",
+      "value": null,
+      "top": 272.921875,
+      "bottom": 315.078125,
+      "dockTop": 326.625,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "publish",
+      "top": 259.890625,
+      "bottom": 302.046875,
+      "dockTop": 326.625,
+      "dockBottom": 744,
+      "height": 800
+    },
+    {
+      "tag": "BUTTON",
+      "name": "operation",
+      "value": "store",
+      "top": 259.890625,
+      "bottom": 302.046875,
+      "dockTop": 326.625,
+      "dockBottom": 744,
+      "height": 800
+    }
+  ]
+}

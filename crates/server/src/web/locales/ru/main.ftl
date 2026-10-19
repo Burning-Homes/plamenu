@@ -450,6 +450,12 @@ auth-current-account = Текущий
 auth-another-account = Войти в другой аккаунт
 auth-identifier = Электронная почта или имя пользователя
 auth-password = Пароль
+auth-error-credentials = Неверный адрес электронной почты, имя пользователя или пароль.
+auth-error-locked = Ваша учётная запись временно заблокирована. Попробуйте позже.
+auth-error-unconfirmed = Перед входом нужно подтвердить адрес электронной почты.
+auth-error-pending = Ваша учётная запись ещё ожидает одобрения модераторами.
+auth-error-disabled = Ваша учётная запись отключена.
+auth-error-email-blocked = Этот адрес электронной почты заблокирован.
 auth-forgot-password = Забыли пароль?
 auth-no-account = Ещё нет аккаунта?
 auth-sign-up = Зарегистрироваться
@@ -518,6 +524,9 @@ settings-section-applications = Разработка
 settings-section-invites = Приглашения
 settings-profile-title = Редактирование профиля
 settings-profile-saved = Профиль сохранён, изменения отправлены вашим подписчикам.
+settings-profile-error = Не удалось сохранить профиль.
+settings-profile-error-hint = Ваш текст и выбранные параметры сохранены в форме. Исправьте ошибку и попробуйте снова.
+settings-profile-error-upload-hint = Ваш текст и выбранные параметры сохранены в форме. Выберите изображения заново или сохраните профиль без них.
 settings-profile-appearance = Оформление
 settings-profile-display-name = Отображаемое имя
 settings-profile-bio = О себе
@@ -659,6 +668,7 @@ settings-languages-select-all = Выбрать все
 settings-languages-select-none = Снять выбор
 settings-languages-save = Сохранить языки
 settings-privacy-title = Конфиденциальность и охват
+settings-privacy-error = Не удалось сохранить настройки приватности. Исправьте доменные имена и попробуйте снова.
 settings-privacy-saved = Настройки конфиденциальности сохранены и отправлены вашим подписчикам.
 settings-privacy-discoverability = Обнаружение аккаунта
 settings-privacy-discoverable = Предлагать аккаунт другим людям
@@ -1089,6 +1099,7 @@ status-poll-vote = Голосовать
 status-poll-vote-failed = Не удалось записать ваш голос. Попробуйте ещё раз.
 status-poll-vote-network-failed = Возможно, ваш голос записан, но обновить результаты не удалось. Попробуйте ещё раз.
 status-action-reply = Ответить
+status-action-failed = Не удалось подтвердить изменение. Попробуйте ещё раз или обновите страницу.
 status-action-boost = Продвинуть
 status-action-unboost = Отменить продвижение
 status-action-quote = Цитировать
@@ -1519,6 +1530,7 @@ collections-error-already-member = Этот аккаунт уже есть в э
 
 relationships-saved = Отношения обновлены.
 relationships-intro = Управляйте аккаунтами, на которые подписаны вы и которые подписаны на вас, а также заблокированными и игнорируемыми аккаунтами и доменами — в том числе несколькими сразу.
+relationships-select = Выбрать { $target }
 relationships-views = Виды отношений
 relationships-tab-received =
     { $count ->
@@ -1868,6 +1880,7 @@ import-confirm = Подтвердить импорт
 import-discard = Отклонить
 import-saved = Импорт запланирован — он выполнится в ближайшее время.
 import-error-empty = В этом файле нет строк для импорта.
+import-error-reselect = Выберите CSV-файл ещё раз. Тип и режим импорта сохранены.
 import-error-malformed = Не удалось прочитать этот файл как CSV.
 import-error-incompatible = Этот файл не соответствует выбранному типу импорта.
 import-error-too-many = В этом файле больше 20 000 строк.
@@ -3079,6 +3092,7 @@ music-upload-reused = Это аудио уже было загружено. От
 
 music-upload-problem = Не удалось завершить загрузку
 music-upload-file-problem = Проверьте, что выбран поддерживаемый аудиофайл допустимого размера, и попробуйте ещё раз.
+music-upload-reselect = Выберите аудиофайл ещё раз. Название и другие введённые данные сохранены.
 music-upload-publication-problem = Аудио сохранено, но публикацию не удалось подтвердить. Откройте его, чтобы проверить состояние или опубликовать ещё раз.
 music-upload-open-saved = Открыть сохранённое аудио
 
@@ -3397,3 +3411,105 @@ discovery-language-all = Все языки
 
 discovery-caught-up-discovered = Вы просмотрели всё, что подходит под эти фильтры. Показываем недавно найденное, включая уже просмотренное.
 discovery-caught-up-published = Вы просмотрели всё, что подходит под эти фильтры. Показываем недавно опубликованное, включая уже просмотренное.
+
+# Media viewer
+lightbox-title = Просмотр медиа
+lightbox-close = Закрыть
+lightbox-previous = Предыдущее
+lightbox-next = Следующее
+lightbox-more = Показать больше
+lightbox-less = Показать меньше
+lightbox-post = Открыть публикацию
+lightbox-description = Описание медиа
+
+# Reporting
+report-title = Пожаловаться на @{ $account }
+report-intro-post = Что не так с этой публикацией?
+report-intro-account = Что не так с этой учётной записью?
+report-category-spam = Это спам
+report-category-spam-hint = Вредоносные ссылки, накрутка активности или повторяющиеся ответы
+report-category-legal = Это незаконно
+report-category-legal-hint = Вы считаете, что это нарушает законы вашей страны или страны сервера
+report-category-violation = Нарушены правила сервера
+report-category-violation-hint = Вы знаете, какие именно правила нарушены
+report-category-other = Другая причина
+report-category-other-hint = Проблема не относится к другим категориям
+report-rules = Какие правила нарушены?
+report-rules-hint = Если указать правило, жалоба будет отнесена к категории «Нарушены правила сервера».
+report-evidence = Есть ли публикации, подтверждающие жалобу?
+report-comments-title = Что ещё нам следует знать?
+report-comments = Дополнительный комментарий
+report-comments-hint = До 1000 символов.
+report-remote = Эта учётная запись находится на другом сервере
+report-forward = Также отправить жалобу на { $domain }
+report-forward-hint = Анонимизированная копия будет отправлена на сервер этой учётной записи. Наши модераторы получат жалобу в любом случае.
+report-cancel = Отмена
+report-submit = Отправить жалобу
+report-thanks = Спасибо за жалобу
+report-sent = Жалоба отправлена модераторам на рассмотрение.
+report-take-action = Не хотите видеть этот контент?
+report-review-action = Пока модераторы рассматривают жалобу, вы можете ограничить взаимодействие с @{ $account }.
+report-no-text = (без текста)
+
+conversation-and = и
+conversation-more = и ещё { $count }
+conversation-unread = Непрочитано:
+conversation-options = Действия с перепиской
+conversation-mark-read = Отметить прочитанной
+conversation-mark-unread = Отметить непрочитанной
+conversation-remove = Убрать из входящих
+conversation-remove-confirm = Убрать эту переписку из входящих? Новое сообщение вернёт её обратно.
+conversation-last-deleted = Последнее сообщение в этой переписке удалено.
+
+auth-rate-limit-title = Слишком много попыток входа
+auth-rate-limit-body = Было слишком много попыток входа. Подождите и попробуйте войти позже.
+auth-rate-limit-return = Вернуться ко входу
+
+# Webxdc session creation
+webxdc-create-choose-app = Выберите приложение
+webxdc-create-choose-hint = Выберите доступное приложение или загрузите его со своего устройства.
+webxdc-create-find-app = Найти приложение
+webxdc-create-search-placeholder = Поиск доступных приложений
+webxdc-create-your-library = Ваша библиотека
+webxdc-create-instance-library = Библиотека сервера
+webxdc-create-no-results = По этому запросу нет доступных приложений.
+webxdc-create-upload-app = Загрузить приложение
+webxdc-create-upload-hint = Выберите пакет .xdc на этом устройстве.
+webxdc-create-one-off = Пакет для этого сеанса
+webxdc-create-file = Файл приложения (.xdc)
+webxdc-create-browse-library = Просмотр и управление библиотекой приложений →
+webxdc-create-back = ← Сеансы приложений
+webxdc-create-heading = Создать сеанс приложения
+webxdc-create-intro = Выберите приложение, опишите назначение совместного сеанса и пригласите участников, когда будете готовы.
+webxdc-create-details = Сведения о сеансе
+webxdc-create-name = Название сеанса
+webxdc-create-name-placeholder = Название выбранного приложения
+webxdc-create-name-hint = Сначала используется название приложения. Измените его, чтобы участникам было проще различать сеансы.
+webxdc-create-description = Описание сеанса
+webxdc-create-description-placeholder = Для чего участники будут использовать этот сеанс?
+webxdc-create-description-hint = Сначала используется сохранённое описание приложения, если оно есть.
+webxdc-create-advanced = Дополнительные настройки
+webxdc-create-who-joins = Кто может присоединиться
+webxdc-create-join-open = Все, у кого есть ссылка
+webxdc-create-join-approval = Только с моего одобрения
+webxdc-create-join-hint = По умолчанию к сеансу может присоединиться любой, у кого есть ссылка-приглашение.
+webxdc-create-interval = Минимальный интервал между обновлениями
+webxdc-create-interval-hint = Интервал между сохраняемыми обновлениями в миллисекундах. По умолчанию 10 000 (10 секунд); допустимый диапазон: 0–86 400 000.
+webxdc-create-size = Максимальный размер обновления
+webxdc-create-size-hint = Максимальный размер сохраняемого обновления JSON в байтах. По умолчанию 128 000; допустимый диапазон: 256–1 048 576 (1 МиБ).
+webxdc-create-cancel = Отмена
+webxdc-create-submit = Создать сеанс
+webxdc-create-page-title = Создать сеанс Webxdc
+webxdc-create-choose-library = Выбрать из библиотеки приложений
+webxdc-create-selected-library = Выбрано из библиотеки приложений
+webxdc-create-file-hint = Выберите файл .xdc размером до { $limit } МиБ. Название приложения будет использовано автоматически, если оно доступно.
+webxdc-create-reselect = Выберите { $file } ещё раз для повторной попытки.
+webxdc-create-app-count =
+    { $count ->
+        [one] Доступно { $count } приложение
+        [few] Доступно { $count } приложения
+       *[other] Доступно { $count } приложений
+    }
+
+music-radio-name-error = Введите название станции длиной до 200 символов.
+music-radio-create-error = Проверьте сведения о станции и попробуйте ещё раз.

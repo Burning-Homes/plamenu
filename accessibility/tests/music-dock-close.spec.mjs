@@ -1,0 +1,34 @@
+import {test,expect} from '@playwright/test';
+import {signIn,freshMusicAudio,openDetailsFor} from '../session.mjs';
+
+test('closing the music player returns keyboard focus to the unfinished upload',async({page},info)=>{
+  test.setTimeout(120000);
+  await signIn(page);
+  await page.goto('/music/assets?upload=true');
+  const form=page.locator('form.music-upload');
+  await form.locator('[name=file]').setInputFiles(await freshMusicAudio());
+  await form.locator('[name=title]').fill('Close player fixture');
+  await form.locator('summary').press('Enter');
+  await form.locator('[name=album]').fill('Close player album');
+  await form.locator('button[value=publish]').press('Enter');
+  await expect(page).toHaveURL(url=>/^\/music\/assets\/\d+$/.test(url.pathname));
+  await page.getByRole('link',{name:'Close player album',exact:true}).press('Enter');
+  await page.getByRole('button',{name:'Play these tracks',exact:true}).press('Enter');
+  const dock=page.locator('.music-dock');
+  await expect(dock).toBeVisible();
+  const upload=page.locator('main').getByRole('link',{name:'Upload audio',exact:true,includeHidden:true});
+  await openDetailsFor(upload);
+  await upload.press('Enter');
+  const title=form.locator('[name=title]');
+  await title.fill('Continue after closing');
+  await dock.getByRole('button',{name:/^Close player/}).press('Enter');
+  await expect(dock).toBeHidden();
+  await page.evaluate(()=>new Promise(requestAnimationFrame));
+  await page.screenshot({path:info.outputPath('music-dock-close.png')});
+  await expect.soft(title).toBeFocused({timeout:1000});
+  await expect(title).toHaveValue('Continue after closing');
+  await form.locator('[name=file]').setInputFiles(await freshMusicAudio());
+  await form.locator('button[value=store]').press('Enter');
+  await expect(page).toHaveURL(url=>/^\/music\/assets\/\d+$/.test(url.pathname));
+  await expect(page.getByRole('heading',{name:'Continue after closing',exact:true})).toBeVisible();
+});

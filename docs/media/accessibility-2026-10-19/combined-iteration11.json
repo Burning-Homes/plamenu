@@ -1,0 +1,880 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "97fcec8106a46cc90c17cf7c1c96943e1ac16a1c",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T02:48:20.968Z",
+  "completed_at": "2026-10-19T02:57:21.730Z",
+  "status": "failed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 20,
+      "failed": 1,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 20,
+      "failed": 1,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 11,
+      "failed": 1,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 20,
+      "failed": 1,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 20,
+      "failed": 1,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 19,
+      "failed": 2,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 20,
+      "failed": 1,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > core-journey.spec.mjs > signup error recovery, login and first post form a complete core journey",
+      "status": "passed",
+      "duration_ms": 13963
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > core-journey.spec.mjs > post action failure is explained and can be retried with the keyboard",
+      "status": "passed",
+      "duration_ms": 1990
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > core-journey.spec.mjs > follow, home reading, content warnings, poll voting, replies and notifications",
+      "status": "passed",
+      "duration_ms": 3395
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > filter-journey.spec.mjs > filter creation retains its settings after missing context and can be corrected",
+      "status": "passed",
+      "duration_ms": 1371
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > list-journey.spec.mjs > list creation and member errors preserve work through follow, edit and delete",
+      "status": "passed",
+      "duration_ms": 3662
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > media-keyboard-journey.spec.mjs > Russian media upload and viewer keep keyboard focus and localized controls",
+      "status": "passed",
+      "duration_ms": 3224
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > profile-upload-journey.spec.mjs > rejected profile image keeps text, descriptions and choices for correction",
+      "status": "passed",
+      "duration_ms": 1173
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > profile-upload-journey.spec.mjs > Russian profile recovery marks the language of validation details",
+      "status": "passed",
+      "duration_ms": 1879
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > recovery-journey.spec.mjs > email confirmation and password reset recover from errors and revoke old sessions",
+      "status": "passed",
+      "duration_ms": 10445
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > recovery-journey.spec.mjs > Russian authentication errors use the interface language",
+      "status": "passed",
+      "duration_ms": 649
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > remote-interaction-journey.spec.mjs > remote-follow interstitial retains context and exposes handle errors",
+      "status": "passed",
+      "duration_ms": 925
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > report-journey.spec.mjs > Russian account report and optional mute recovery use the interface language",
+      "status": "passed",
+      "duration_ms": 3117
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > representative.spec.mjs > representative signed-out pages pass WCAG A/AA automated rules",
+      "status": "passed",
+      "duration_ms": 7832
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > representative.spec.mjs > representative signed-in pages pass WCAG A/AA automated rules",
+      "status": "passed",
+      "duration_ms": 12799
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > representative.spec.mjs > Russian, dark theme, reduced motion, and forced colours remain operable",
+      "status": "passed",
+      "duration_ms": 1833
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > representative.spec.mjs > keyboard bypass and 320 CSS-pixel reflow contracts hold",
+      "status": "passed",
+      "duration_ms": 120
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > representative.spec.mjs > media lightbox controls keep their icons centred in accessible targets",
+      "status": "passed",
+      "duration_ms": 1365
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > search-journey.spec.mjs > search exposes its page heading and supports result and empty-state journeys",
+      "status": "passed",
+      "duration_ms": 1190
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > security-password-journey.spec.mjs > password-change errors lead to correction and revoke other sessions",
+      "status": "failed",
+      "duration_ms": 2201
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > settings-journey.spec.mjs > account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 1439
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > settings-journey.spec.mjs > profile and reading preferences can be edited and restored with the keyboard",
+      "status": "passed",
+      "duration_ms": 2126
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > core-journey.spec.mjs > signup error recovery, login and first post form a complete core journey",
+      "status": "passed",
+      "duration_ms": 10446
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > core-journey.spec.mjs > post action failure is explained and can be retried with the keyboard",
+      "status": "passed",
+      "duration_ms": 1792
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > core-journey.spec.mjs > follow, home reading, content warnings, poll voting, replies and notifications",
+      "status": "passed",
+      "duration_ms": 2861
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > filter-journey.spec.mjs > filter creation retains its settings after missing context and can be corrected",
+      "status": "passed",
+      "duration_ms": 1154
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > list-journey.spec.mjs > list creation and member errors preserve work through follow, edit and delete",
+      "status": "passed",
+      "duration_ms": 3461
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > media-keyboard-journey.spec.mjs > Russian media upload and viewer keep keyboard focus and localized controls",
+      "status": "passed",
+      "duration_ms": 3206
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > profile-upload-journey.spec.mjs > rejected profile image keeps text, descriptions and choices for correction",
+      "status": "passed",
+      "duration_ms": 1041
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > profile-upload-journey.spec.mjs > Russian profile recovery marks the language of validation details",
+      "status": "passed",
+      "duration_ms": 1717
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > recovery-journey.spec.mjs > email confirmation and password reset recover from errors and revoke old sessions",
+      "status": "passed",
+      "duration_ms": 9494
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > recovery-journey.spec.mjs > Russian authentication errors use the interface language",
+      "status": "passed",
+      "duration_ms": 601
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > remote-interaction-journey.spec.mjs > remote-follow interstitial retains context and exposes handle errors",
+      "status": "passed",
+      "duration_ms": 909
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > report-journey.spec.mjs > Russian account report and optional mute recovery use the interface language",
+      "status": "passed",
+      "duration_ms": 2911
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > representative.spec.mjs > representative signed-out pages pass WCAG A/AA automated rules",
+      "status": "passed",
+      "duration_ms": 7675
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > representative.spec.mjs > representative signed-in pages pass WCAG A/AA automated rules",
+      "status": "passed",
+      "duration_ms": 12099
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > representative.spec.mjs > Russian, dark theme, reduced motion, and forced colours remain operable",
+      "status": "passed",
+      "duration_ms": 1792
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > representative.spec.mjs > keyboard bypass and 320 CSS-pixel reflow contracts hold",
+      "status": "passed",
+      "duration_ms": 991
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > representative.spec.mjs > media lightbox controls keep their icons centred in accessible targets",
+      "status": "passed",
+      "duration_ms": 1345
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > search-journey.spec.mjs > search exposes its page heading and supports result and empty-state journeys",
+      "status": "passed",
+      "duration_ms": 1048
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > security-password-journey.spec.mjs > password-change errors lead to correction and revoke other sessions",
+      "status": "failed",
+      "duration_ms": 1940
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > settings-journey.spec.mjs > account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 1313
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > settings-journey.spec.mjs > profile and reading preferences can be edited and restored with the keyboard",
+      "status": "passed",
+      "duration_ms": 1860
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > core-journey.spec.mjs > signup error recovery, login and first post form a complete core journey",
+      "status": "passed",
+      "duration_ms": 11295
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > core-journey.spec.mjs > post action failure is explained and can be retried with the keyboard",
+      "status": "passed",
+      "duration_ms": 2316
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > core-journey.spec.mjs > follow, home reading, content warnings, poll voting, replies and notifications",
+      "status": "passed",
+      "duration_ms": 3890
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > filter-journey.spec.mjs > filter creation retains its settings after missing context and can be corrected",
+      "status": "passed",
+      "duration_ms": 1632
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > list-journey.spec.mjs > list creation and member errors preserve work through follow, edit and delete",
+      "status": "passed",
+      "duration_ms": 7433
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > media-keyboard-journey.spec.mjs > Russian media upload and viewer keep keyboard focus and localized controls",
+      "status": "passed",
+      "duration_ms": 3772
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > profile-upload-journey.spec.mjs > rejected profile image keeps text, descriptions and choices for correction",
+      "status": "passed",
+      "duration_ms": 1508
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > profile-upload-journey.spec.mjs > Russian profile recovery marks the language of validation details",
+      "status": "passed",
+      "duration_ms": 3324
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > recovery-journey.spec.mjs > email confirmation and password reset recover from errors and revoke old sessions",
+      "status": "passed",
+      "duration_ms": 8327
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > recovery-journey.spec.mjs > Russian authentication errors use the interface language",
+      "status": "passed",
+      "duration_ms": 831
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > remote-interaction-journey.spec.mjs > remote-follow interstitial retains context and exposes handle errors",
+      "status": "passed",
+      "duration_ms": 1888
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > report-journey.spec.mjs > Russian account report and optional mute recovery use the interface language",
+      "status": "passed",
+      "duration_ms": 6092
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > representative.spec.mjs > representative signed-out pages pass WCAG A/AA automated rules",
+      "status": "passed",
+      "duration_ms": 9784
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > representative.spec.mjs > representative signed-in pages pass WCAG A/AA automated rules",
+      "status": "passed",
+      "duration_ms": 18083
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > representative.spec.mjs > Russian, dark theme, reduced motion, and forced colours remain operable",
+      "status": "passed",
+      "duration_ms": 2240
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > representative.spec.mjs > keyboard bypass and 320 CSS-pixel reflow contracts hold",
+      "status": "passed",
+      "duration_ms": 232
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > representative.spec.mjs > media lightbox controls keep their icons centred in accessible targets",
+      "status": "passed",
+      "duration_ms": 4285
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > search-journey.spec.mjs > search exposes its page heading and supports result and empty-state journeys",
+      "status": "passed",
+      "duration_ms": 2573
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > security-password-journey.spec.mjs > password-change errors lead to correction and revoke other sessions",
+      "status": "failed",
+      "duration_ms": 2866
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > settings-journey.spec.mjs > account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 2361
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > settings-journey.spec.mjs > profile and reading preferences can be edited and restored with the keyboard",
+      "status": "passed",
+      "duration_ms": 2585
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > core-journey.spec.mjs > signup error recovery, login and first post form a complete core journey",
+      "status": "passed",
+      "duration_ms": 12148
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > core-journey.spec.mjs > post action failure is explained and can be retried with the keyboard",
+      "status": "passed",
+      "duration_ms": 2173
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > core-journey.spec.mjs > follow, home reading, content warnings, poll voting, replies and notifications",
+      "status": "passed",
+      "duration_ms": 3570
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > filter-journey.spec.mjs > filter creation retains its settings after missing context and can be corrected",
+      "status": "passed",
+      "duration_ms": 1436
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > list-journey.spec.mjs > list creation and member errors preserve work through follow, edit and delete",
+      "status": "passed",
+      "duration_ms": 6831
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > media-keyboard-journey.spec.mjs > Russian media upload and viewer keep keyboard focus and localized controls",
+      "status": "passed",
+      "duration_ms": 3536
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > profile-upload-journey.spec.mjs > rejected profile image keeps text, descriptions and choices for correction",
+      "status": "passed",
+      "duration_ms": 1323
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > profile-upload-journey.spec.mjs > Russian profile recovery marks the language of validation details",
+      "status": "passed",
+      "duration_ms": 3202
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > recovery-journey.spec.mjs > email confirmation and password reset recover from errors and revoke old sessions",
+      "status": "passed",
+      "duration_ms": 7423
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > recovery-journey.spec.mjs > Russian authentication errors use the interface language",
+      "status": "passed",
+      "duration_ms": 771
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > remote-interaction-journey.spec.mjs > remote-follow interstitial retains context and exposes handle errors",
+      "status": "passed",
+      "duration_ms": 1847
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > report-journey.spec.mjs > Russian account report and optional mute recovery use the interface language",
+      "status": "passed",
+      "duration_ms": 5556
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > representative.spec.mjs > representative signed-out pages pass WCAG A/AA automated rules",
+      "status": "passed",
+      "duration_ms": 9258
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > representative.spec.mjs > representative signed-in pages pass WCAG A/AA automated rules",
+      "status": "passed",
+      "duration_ms": 16737
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > representative.spec.mjs > Russian, dark theme, reduced motion, and forced colours remain operable",
+      "status": "passed",
+      "duration_ms": 2155
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > representative.spec.mjs > keyboard bypass and 320 CSS-pixel reflow contracts hold",
+      "status": "passed",
+      "duration_ms": 1872
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > representative.spec.mjs > media lightbox controls keep their icons centred in accessible targets",
+      "status": "passed",
+      "duration_ms": 4244
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > search-journey.spec.mjs > search exposes its page heading and supports result and empty-state journeys",
+      "status": "passed",
+      "duration_ms": 2423
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > security-password-journey.spec.mjs > password-change errors lead to correction and revoke other sessions",
+      "status": "failed",
+      "duration_ms": 2847
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > settings-journey.spec.mjs > account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 2216
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > settings-journey.spec.mjs > profile and reading preferences can be edited and restored with the keyboard",
+      "status": "passed",
+      "duration_ms": 2309
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > core-journey.spec.mjs > signup error recovery, login and first post form a complete core journey",
+      "status": "failed",
+      "duration_ms": 14832
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > core-journey.spec.mjs > post action failure is explained and can be retried with the keyboard",
+      "status": "passed",
+      "duration_ms": 3468
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > core-journey.spec.mjs > follow, home reading, content warnings, poll voting, replies and notifications",
+      "status": "passed",
+      "duration_ms": 5070
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > filter-journey.spec.mjs > filter creation retains its settings after missing context and can be corrected",
+      "status": "passed",
+      "duration_ms": 2143
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > list-journey.spec.mjs > list creation and member errors preserve work through follow, edit and delete",
+      "status": "passed",
+      "duration_ms": 8181
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > media-keyboard-journey.spec.mjs > Russian media upload and viewer keep keyboard focus and localized controls",
+      "status": "passed",
+      "duration_ms": 5764
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > profile-upload-journey.spec.mjs > rejected profile image keeps text, descriptions and choices for correction",
+      "status": "passed",
+      "duration_ms": 2177
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > profile-upload-journey.spec.mjs > Russian profile recovery marks the language of validation details",
+      "status": "passed",
+      "duration_ms": 3800
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > recovery-journey.spec.mjs > email confirmation and password reset recover from errors and revoke old sessions",
+      "status": "passed",
+      "duration_ms": 6078
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > recovery-journey.spec.mjs > Russian authentication errors use the interface language",
+      "status": "passed",
+      "duration_ms": 1104
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > remote-interaction-journey.spec.mjs > remote-follow interstitial retains context and exposes handle errors",
+      "status": "passed",
+      "duration_ms": 2243
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > report-journey.spec.mjs > Russian account report and optional mute recovery use the interface language",
+      "status": "passed",
+      "duration_ms": 7451
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > representative.spec.mjs > representative signed-out pages pass WCAG A/AA automated rules",
+      "status": "passed",
+      "duration_ms": 8948
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > representative.spec.mjs > representative signed-in pages pass WCAG A/AA automated rules",
+      "status": "passed",
+      "duration_ms": 15323
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > representative.spec.mjs > Russian, dark theme, reduced motion, and forced colours remain operable",
+      "status": "passed",
+      "duration_ms": 2290
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > representative.spec.mjs > keyboard bypass and 320 CSS-pixel reflow contracts hold",
+      "status": "passed",
+      "duration_ms": 369
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > representative.spec.mjs > media lightbox controls keep their icons centred in accessible targets",
+      "status": "passed",
+      "duration_ms": 3103
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > search-journey.spec.mjs > search exposes its page heading and supports result and empty-state journeys",
+      "status": "passed",
+      "duration_ms": 1965
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > security-password-journey.spec.mjs > password-change errors lead to correction and revoke other sessions",
+      "status": "failed",
+      "duration_ms": 4211
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > settings-journey.spec.mjs > account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 2238
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > settings-journey.spec.mjs > profile and reading preferences can be edited and restored with the keyboard",
+      "status": "passed",
+      "duration_ms": 3626
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > core-journey.spec.mjs > signup error recovery, login and first post form a complete core journey",
+      "status": "passed",
+      "duration_ms": 4725
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > core-journey.spec.mjs > post action failure is explained and can be retried with the keyboard",
+      "status": "passed",
+      "duration_ms": 2186
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > core-journey.spec.mjs > follow, home reading, content warnings, poll voting, replies and notifications",
+      "status": "passed",
+      "duration_ms": 3676
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > filter-journey.spec.mjs > filter creation retains its settings after missing context and can be corrected",
+      "status": "passed",
+      "duration_ms": 1406
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > list-journey.spec.mjs > list creation and member errors preserve work through follow, edit and delete",
+      "status": "passed",
+      "duration_ms": 6080
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > media-keyboard-journey.spec.mjs > Russian media upload and viewer keep keyboard focus and localized controls",
+      "status": "passed",
+      "duration_ms": 4584
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > profile-upload-journey.spec.mjs > rejected profile image keeps text, descriptions and choices for correction",
+      "status": "passed",
+      "duration_ms": 1336
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > profile-upload-journey.spec.mjs > Russian profile recovery marks the language of validation details",
+      "status": "passed",
+      "duration_ms": 2665
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > recovery-journey.spec.mjs > email confirmation and password reset recover from errors and revoke old sessions",
+      "status": "passed",
+      "duration_ms": 4886
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > recovery-journey.spec.mjs > Russian authentication errors use the interface language",
+      "status": "passed",
+      "duration_ms": 802
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > remote-interaction-journey.spec.mjs > remote-follow interstitial retains context and exposes handle errors",
+      "status": "passed",
+      "duration_ms": 1746
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > report-journey.spec.mjs > Russian account report and optional mute recovery use the interface language",
+      "status": "passed",
+      "duration_ms": 5999
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > representative.spec.mjs > representative signed-out pages pass WCAG A/AA automated rules",
+      "status": "passed",
+      "duration_ms": 8270
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > representative.spec.mjs > representative signed-in pages pass WCAG A/AA automated rules",
+      "status": "passed",
+      "duration_ms": 13785
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > representative.spec.mjs > Russian, dark theme, reduced motion, and forced colours remain operable",
+      "status": "passed",
+      "duration_ms": 2017
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > representative.spec.mjs > keyboard bypass and 320 CSS-pixel reflow contracts hold",
+      "status": "passed",
+      "duration_ms": 2199
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > representative.spec.mjs > media lightbox controls keep their icons centred in accessible targets",
+      "status": "passed",
+      "duration_ms": 2496
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > search-journey.spec.mjs > search exposes its page heading and supports result and empty-state journeys",
+      "status": "passed",
+      "duration_ms": 1422
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > security-password-journey.spec.mjs > password-change errors lead to correction and revoke other sessions",
+      "status": "failed",
+      "duration_ms": 2577
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > settings-journey.spec.mjs > account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 1570
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > settings-journey.spec.mjs > profile and reading preferences can be edited and restored with the keyboard",
+      "status": "passed",
+      "duration_ms": 2311
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > core-journey.spec.mjs > @no-js login error recovery and publishing work without scripts",
+      "status": "passed",
+      "duration_ms": 873
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > filter-journey.spec.mjs > @no-js filter creation retains its settings after missing context and can be corrected",
+      "status": "passed",
+      "duration_ms": 818
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > list-journey.spec.mjs > @no-js list creation and member errors preserve work through native confirmation",
+      "status": "passed",
+      "duration_ms": 1910
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > media-keyboard-journey.spec.mjs > @no-js native media upload preserves its description and opens the image",
+      "status": "passed",
+      "duration_ms": 802
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > profile-upload-journey.spec.mjs > @no-js rejected profile image keeps text, descriptions and choices for correction",
+      "status": "passed",
+      "duration_ms": 593
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > recovery-journey.spec.mjs > @no-js password reset keeps its error list, focus and recovery path",
+      "status": "passed",
+      "duration_ms": 1202
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > remote-interaction-journey.spec.mjs > @no-js remote-follow interstitial retains context and exposes handle errors",
+      "status": "passed",
+      "duration_ms": 442
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > report-journey.spec.mjs > @no-js account report and mute recovery remain native forms",
+      "status": "passed",
+      "duration_ms": 1169
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > representative.spec.mjs > @no-js public pages retain their core document and form contracts",
+      "status": "passed",
+      "duration_ms": 347
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > search-journey.spec.mjs > @no-js search exposes its page heading and supports result and empty-state journeys",
+      "status": "passed",
+      "duration_ms": 595
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > security-password-journey.spec.mjs > @no-js password-change errors lead to correction and revoke other sessions",
+      "status": "failed",
+      "duration_ms": 1066
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > settings-journey.spec.mjs > @no-js account email errors preserve the proposed address and allow correction",
+      "status": "passed",
+      "duration_ms": 857
+    }
+  ]
+}

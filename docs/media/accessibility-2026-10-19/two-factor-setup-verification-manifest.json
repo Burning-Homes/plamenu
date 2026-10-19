@@ -1,0 +1,11 @@
+{
+  "baseline_executable_sha256": "d6f3c56feb1db21d294319a71899260ab2d5214e2ff742f727b16490a2cab993",
+  "verified_executable_sha256": "5cbdf2ce34b120fe7ab06ab6650e25af1b313aaf8d3b8c508b38be819a2e4be9",
+  "files": {
+    "crates/server/src/web/two_factor.rs": "f0daa30e578bbeecb504c8a27fbd8df76bfc899a40ac3b671fdf2d619f172b8a",
+    "crates/server/tests/two_factor.rs": "d9d048c5766229378b16fc9441a0d954095147cab8d56cc0ad81a6e18502a004",
+    "accessibility/authenticator.mjs": "eff3a7e85e523b8592c4f61b891c479c2fe4d11e2356f527ef8164b3558bcadb",
+    "accessibility/tests/two-factor-setup.spec.mjs": "7894402822e8f162a5fa4a80a121e27ff58d3859b399f3c480fc103adec048de"
+  },
+  "review_images": "Error-only crops include the focus outline and exclude the QR/setup key. No recovery codes are captured. Uncommitted raw failure traces are not review artifacts."
+}

@@ -80,7 +80,7 @@ async function journey(page, info, noScript) {
     expect(await audio.evaluate(a => a.error?.code ?? null)).toBeNull();
     if (!noScript) {
       const before = await audio.evaluate(a => a.currentTime);
-      await player.getByRole('link', {name: 'Discover', exact: true}).first().click();
+      await player.getByRole('navigation', {name: 'Music', exact: true}).getByRole('link', {name: 'Discover', exact: true}).press('Enter');
       await expect(page.getByRole('heading', {name: 'Music', exact: true})).toBeVisible();
       await expect.poll(() => audio.evaluate(a => a.currentTime)).toBeGreaterThan(before);
       expect(page.context().pages()).toHaveLength(windowCount);

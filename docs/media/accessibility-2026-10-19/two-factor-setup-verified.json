@@ -1,0 +1,178 @@
+{
+  "schema": 1,
+  "standard": "WCAG 2.2",
+  "level": "AA",
+  "source_revision": "a3608bfe0c1b23f151c280c3feb22c3db67e6c37",
+  "source_dirty": true,
+  "browser_image": "sha256:903bdd608d8afcdd017eb68810abbbecb430ae5ccff20853bd72944cec0b1a58",
+  "encoder_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "base_url": "https://localhost",
+  "started_at": "2026-10-19T04:15:53.841Z",
+  "completed_at": "2026-10-19T04:16:48.114Z",
+  "status": "passed",
+  "projects": {
+    "chromium-desktop": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-mobile": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "chromium-no-javascript": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-desktop": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "firefox-mobile": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-desktop": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "webkit-mobile": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "tests": [
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > security-password-journey.spec.mjs > password-change errors lead to correction and revoke other sessions",
+      "status": "passed",
+      "duration_ms": 2968
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > two-factor-journey.spec.mjs > opt-in two-factor enrollment and recovery-code correction remain accessible",
+      "status": "passed",
+      "duration_ms": 1901
+    },
+    {
+      "project": "chromium-desktop",
+      "title": "chromium-desktop > two-factor-setup.spec.mjs > two-factor setup errors preserve the key and identify code correction",
+      "status": "passed",
+      "duration_ms": 1743
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > security-password-journey.spec.mjs > password-change errors lead to correction and revoke other sessions",
+      "status": "passed",
+      "duration_ms": 2373
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > two-factor-journey.spec.mjs > opt-in two-factor enrollment and recovery-code correction remain accessible",
+      "status": "passed",
+      "duration_ms": 1706
+    },
+    {
+      "project": "chromium-mobile",
+      "title": "chromium-mobile > two-factor-setup.spec.mjs > two-factor setup errors preserve the key and identify code correction",
+      "status": "passed",
+      "duration_ms": 1708
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > security-password-journey.spec.mjs > password-change errors lead to correction and revoke other sessions",
+      "status": "passed",
+      "duration_ms": 4256
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > two-factor-journey.spec.mjs > opt-in two-factor enrollment and recovery-code correction remain accessible",
+      "status": "passed",
+      "duration_ms": 1932
+    },
+    {
+      "project": "firefox-desktop",
+      "title": "firefox-desktop > two-factor-setup.spec.mjs > two-factor setup errors preserve the key and identify code correction",
+      "status": "passed",
+      "duration_ms": 2052
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > security-password-journey.spec.mjs > password-change errors lead to correction and revoke other sessions",
+      "status": "passed",
+      "duration_ms": 3730
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > two-factor-journey.spec.mjs > opt-in two-factor enrollment and recovery-code correction remain accessible",
+      "status": "passed",
+      "duration_ms": 2282
+    },
+    {
+      "project": "firefox-mobile",
+      "title": "firefox-mobile > two-factor-setup.spec.mjs > two-factor setup errors preserve the key and identify code correction",
+      "status": "passed",
+      "duration_ms": 2127
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > security-password-journey.spec.mjs > password-change errors lead to correction and revoke other sessions",
+      "status": "passed",
+      "duration_ms": 4367
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > two-factor-journey.spec.mjs > opt-in two-factor enrollment and recovery-code correction remain accessible",
+      "status": "passed",
+      "duration_ms": 2575
+    },
+    {
+      "project": "webkit-desktop",
+      "title": "webkit-desktop > two-factor-setup.spec.mjs > two-factor setup errors preserve the key and identify code correction",
+      "status": "passed",
+      "duration_ms": 2592
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > security-password-journey.spec.mjs > password-change errors lead to correction and revoke other sessions",
+      "status": "passed",
+      "duration_ms": 2984
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > two-factor-journey.spec.mjs > opt-in two-factor enrollment and recovery-code correction remain accessible",
+      "status": "passed",
+      "duration_ms": 2615
+    },
+    {
+      "project": "webkit-mobile",
+      "title": "webkit-mobile > two-factor-setup.spec.mjs > two-factor setup errors preserve the key and identify code correction",
+      "status": "passed",
+      "duration_ms": 1988
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > security-password-journey.spec.mjs > @no-js password-change errors lead to correction and revoke other sessions",
+      "status": "passed",
+      "duration_ms": 1491
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > two-factor-journey.spec.mjs > @no-js opt-in two-factor enrollment and recovery-code correction remain accessible",
+      "status": "passed",
+      "duration_ms": 1195
+    },
+    {
+      "project": "chromium-no-javascript",
+      "title": "chromium-no-javascript > two-factor-setup.spec.mjs > @no-js two-factor setup errors support native correction",
+      "status": "passed",
+      "duration_ms": 1059
+    }
+  ]
+}

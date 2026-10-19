@@ -26,18 +26,22 @@ async function journey(page,info,noScript){
   const publisher=info.project.name==='chromium-no-javascript'?'a11y_chromium_desktop':'a11y_chromium_no_javascript';
   const account=await page.request.get('/api/v1/accounts/lookup?acct='+publisher);
   expect(account.ok()).toBe(true);
-  const library=(await account.json()).uri+'/library';
+  const publisherProfile=await account.json();
+  const library=publisherProfile.uri+'/library';
   await page.getByLabel('Music library or track URL').fill(library);
   await page.getByRole('button',{name:'Subscribe to music',exact:true}).press('Enter');
   await page.getByText('Music subscriptions',{exact:true}).press('Enter');
   const subscription=page.locator('li').filter({has:page.locator('input[name="url"][value="'+library+'"]')});
-  await expect(subscription).toContainText(publisher);
+  // Other journeys can legitimately change a publisher's display name.
+  // The library URL above identifies the account independently of its label.
+  await expect(subscription).toContainText(publisherProfile.display_name||publisherProfile.username);
   await audit(page,noScript);
   await page.screenshot({path:info.outputPath('music-subscriptions.png'),fullPage:true});
   await subscription.getByRole('button',{name:'Unsubscribe',exact:true}).press('Enter');
   await expect(page.locator('input[name="url"][value="'+library+'"]')).toHaveCount(0);
-  await page.getByText('Advanced music tools',{exact:true}).press('Enter');
-  await page.getByRole('link',{name:'Publish audio',exact:true}).press('Enter');
+  await page.getByRole('link',{name:'New post',exact:true}).first().press('Enter');
+  await page.locator('select[name="post_kind"]').selectOption('audio');
+  if(noScript) await page.locator('button[name="op"][value="change_kind"]').press('Enter');
   await expect(page.locator('select[name="post_kind"]')).toHaveValue('audio');
   const title='Music QA '+randomUUID();
   await page.locator('input[name="title"]').fill(title);

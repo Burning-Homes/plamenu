@@ -361,6 +361,7 @@ async fn ordinary_html_requires_session_csrf_rights_and_reserves_remote_not_form
         String::from_utf8(get.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
     assert!(html.contains("name=\"source_url\"") && html.contains("name=\"confirm\""));
     assert!(!html.contains("media-description"));
+    assert!(!html.contains("id=\"video-import-error\""));
     assert!(f.stub.media_fetches.lock().unwrap().is_empty());
     let post = |token: &str, confirm: &str| {
         app.clone().oneshot(Request::builder().method("POST").uri("/web/videos/import")
@@ -371,10 +372,26 @@ async fn ordinary_html_requires_session_csrf_rights_and_reserves_remote_not_form
         post("wrong", "yes").await.unwrap().status(),
         StatusCode::FORBIDDEN
     );
-    assert_eq!(
-        post(&csrf, "").await.unwrap().status(),
-        StatusCode::UNPROCESSABLE_ENTITY
+    let refused = post(&csrf, "").await.unwrap();
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(refused.headers()["cache-control"], "private, no-store");
+    let refused_html = String::from_utf8(
+        refused
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(
+        refused_html.contains("id=\"video-import-error\" role=\"alert\" tabindex=\"-1\" autofocus")
     );
+    assert_eq!(refused_html.matches("autofocus").count(), 1);
+    assert!(refused_html.contains("value=\"Imported film\""));
+    assert!(refused_html.contains("value=\"https://source.example/film.mp4\""));
+    assert!(f.stub.media_fetches.lock().unwrap().is_empty());
     let accepted = post(&csrf, "yes").await.unwrap();
     assert_eq!(accepted.status(), StatusCode::SEE_OTHER);
     let id: i64 = accepted.headers()["location"]

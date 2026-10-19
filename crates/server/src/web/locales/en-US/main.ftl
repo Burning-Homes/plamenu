@@ -453,6 +453,12 @@ auth-current-account = Current
 auth-another-account = Sign in to another account
 auth-identifier = E-mail or username
 auth-password = Password
+auth-error-credentials = Wrong e-mail/username or password.
+auth-error-locked = Your account is temporarily locked. Try again later.
+auth-error-unconfirmed = You have to confirm your e-mail address before signing in.
+auth-error-pending = Your account is still awaiting approval by the moderators.
+auth-error-disabled = Your account is currently disabled.
+auth-error-email-blocked = This e-mail address is blocked.
 auth-forgot-password = Forgot your password?
 auth-no-account = No account yet?
 auth-sign-up = Sign up
@@ -521,6 +527,9 @@ settings-section-applications = Development
 settings-section-invites = Invites
 settings-profile-title = Edit profile
 settings-profile-saved = Profile saved and sent to your followers.
+settings-profile-error = Your profile could not be saved.
+settings-profile-error-hint = Your text and choices are kept. Correct the error and try again.
+settings-profile-error-upload-hint = Your text and choices are kept. Choose any images again before retrying, or save without them.
 settings-profile-appearance = Appearance
 settings-profile-display-name = Display name
 settings-profile-bio = Bio
@@ -652,6 +661,7 @@ settings-languages-select-all = Select all
 settings-languages-select-none = Deselect all
 settings-languages-save = Save languages
 settings-privacy-title = Privacy and reach
+settings-privacy-error = Privacy settings could not be saved. Correct the domain names and try again.
 settings-privacy-saved = Privacy settings saved and sent to your followers.
 settings-privacy-discoverability = Discoverability
 settings-privacy-discoverable = Suggest account to others
@@ -1099,6 +1109,7 @@ status-poll-vote = Vote
 status-poll-vote-failed = Your vote could not be recorded. Please try again.
 status-poll-vote-network-failed = Your vote may have been recorded, but the results could not be refreshed. Please try again.
 status-action-reply = Reply
+status-action-failed = Could not confirm the change. Try again or refresh the page.
 status-action-boost = Boost
 status-action-unboost = Undo boost
 status-action-quote = Quote
@@ -1519,6 +1530,7 @@ collections-error-already-member = That account is already in this collection.
 
 relationships-saved = Relationships updated.
 relationships-intro = Manage the accounts you follow and that follow you, the accounts and domains you've blocked or muted, and act on several at once.
+relationships-select = Select { $target }
 relationships-views = Relationship views
 relationships-tab-received =
     { $count ->
@@ -1866,6 +1878,7 @@ import-confirm = Confirm import
 import-discard = Discard
 import-saved = Import scheduled — it will run shortly.
 import-error-empty = That file had no rows to import.
+import-error-reselect = Choose the CSV file again. Your import type and mode have been kept.
 import-error-malformed = That file could not be read as CSV.
 import-error-incompatible = That file doesn't match the import type you chose.
 import-error-too-many = That file has more than 20,000 rows.
@@ -3057,6 +3070,7 @@ music-upload-reused = You already uploaded this audio. This is your existing tra
 
 music-upload-problem = The upload could not finish
 music-upload-file-problem = Check that the file is a supported audio recording and fits the upload limit, then try again.
+music-upload-reselect = Choose the audio file again. Your title and other details are still here.
 music-upload-publication-problem = Your audio has been saved, but publication could not be confirmed. Open it to check its status or try publishing again.
 music-upload-open-saved = Open saved audio
 
@@ -3375,3 +3389,104 @@ discovery-language-all = All languages
 
 discovery-caught-up-discovered = You’re all caught up for these filters. Showing Recently discovered, including items you’ve already seen.
 discovery-caught-up-published = You’re all caught up for these filters. Showing Latest published, including items you’ve already seen.
+
+# Media viewer
+lightbox-title = Media viewer
+lightbox-close = Close
+lightbox-previous = Previous
+lightbox-next = Next
+lightbox-more = Show more
+lightbox-less = Show less
+lightbox-post = View post
+lightbox-description = Media description
+
+# Reporting
+report-title = Report @{ $account }
+report-intro-post = Tell us what's going on with this post
+report-intro-account = Tell us what's going on with this account
+report-category-spam = It's spam
+report-category-spam-hint = Malicious links, fake engagement or repetitive replies
+report-category-legal = It's illegal
+report-category-legal-hint = You believe it violates the law of your or the server's country
+report-category-violation = It violates server rules
+report-category-violation-hint = You are aware that it breaks specific rules
+report-category-other = It's something else
+report-category-other-hint = The issue does not fit into other categories
+report-rules = Which rules are being violated?
+report-rules-hint = Citing a rule files the report under "It violates server rules".
+report-evidence = Are there any posts that back up this report?
+report-comments-title = Is there anything else we should know?
+report-comments = Additional comments
+report-comments-hint = Up to 1000 characters.
+report-remote = This account is from another server
+report-forward = Also forward this report to { $domain }
+report-forward-hint = An anonymized copy is sent to the account's own server; your report stays with our moderators either way.
+report-cancel = Cancel
+report-submit = Submit report
+report-thanks = Thanks for reporting
+report-sent = Your report was sent to the moderators for review.
+report-take-action = Don't want to see this?
+report-review-action = While the report is reviewed, you can take action against @{ $account }.
+report-no-text = (no text)
+
+conversation-and = and
+conversation-more = and { $count } more
+conversation-unread = Unread:
+conversation-options = Conversation options
+conversation-mark-read = Mark as read
+conversation-mark-unread = Mark as unread
+conversation-remove = Remove from inbox
+conversation-remove-confirm = Hide this conversation from your inbox? A new message brings it back.
+conversation-last-deleted = The latest message in this conversation was deleted.
+
+auth-rate-limit-title = Too many sign-in attempts
+auth-rate-limit-body = There have been too many sign-in attempts. Please wait and try again later.
+auth-rate-limit-return = Return to sign in
+
+# Webxdc session creation
+webxdc-create-choose-app = Choose an app
+webxdc-create-choose-hint = Start with an app that is already available, or upload one from your device.
+webxdc-create-find-app = Find an app
+webxdc-create-search-placeholder = Search available apps
+webxdc-create-your-library = Your library
+webxdc-create-instance-library = Instance library
+webxdc-create-no-results = No available apps match that search.
+webxdc-create-upload-app = Upload an app
+webxdc-create-upload-hint = Choose a .xdc package from this device.
+webxdc-create-one-off = One-off package
+webxdc-create-file = App file (.xdc)
+webxdc-create-browse-library = Browse or manage your app library →
+webxdc-create-back = ← App sessions
+webxdc-create-heading = Create an app session
+webxdc-create-intro = Pick an app, give the shared session a purpose, and invite people when you are ready.
+webxdc-create-details = Session details
+webxdc-create-name = Session name
+webxdc-create-name-placeholder = Filled from the selected app
+webxdc-create-name-hint = Starts with the app name. Change it to help people distinguish this session.
+webxdc-create-description = Session description
+webxdc-create-description-placeholder = What will people use this session for?
+webxdc-create-description-hint = Starts with the saved app description when one is available.
+webxdc-create-advanced = Advanced settings
+webxdc-create-who-joins = Who can join
+webxdc-create-join-open = Anyone with the link
+webxdc-create-join-approval = Only people I approve
+webxdc-create-join-hint = The default lets anyone with the invitation link enter the session.
+webxdc-create-interval = Minimum interval between updates
+webxdc-create-interval-hint = Milliseconds between durable updates. Default 10,000 (10 seconds); allowed range 0–86,400,000.
+webxdc-create-size = Maximum update size
+webxdc-create-size-hint = Maximum JSON bytes per durable update. Default 128,000; allowed range 256–1,048,576 (1 MiB).
+webxdc-create-cancel = Cancel
+webxdc-create-submit = Create session
+webxdc-create-page-title = Create Webxdc session
+webxdc-create-choose-library = Choose from app library
+webxdc-create-selected-library = Selected from app library
+webxdc-create-file-hint = Choose a .xdc file up to { $limit } MiB. Its app name will be used automatically when available.
+webxdc-create-reselect = Select { $file } again to retry.
+webxdc-create-app-count =
+    { $count ->
+        [one] { $count } app available
+       *[other] { $count } apps available
+    }
+
+music-radio-name-error = Enter a station name of up to 200 characters.
+music-radio-create-error = Check the station details and try again.
