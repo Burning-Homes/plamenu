@@ -78,6 +78,67 @@ enum Command {
     /// server, and serve 410 Gone while they go out. Irreversible; always
     /// asks for confirmation. Re-run to see the wind-down's progress.
     SelfDestruct,
+    /// Inspect and control independent discovery without starting acquisition.
+    #[command(subcommand)]
+    Discovery(DiscoveryCommand),
+}
+
+#[derive(Subcommand)]
+enum DiscoveryCommand {
+    /// Bootstrap, import or export untrusted source hints.
+    #[command(subcommand)]
+    Sources(DiscoverySourcesCommand),
+    /// Admit a public profile/community directory or video catalogue; enable discovery first.
+    AddSource { url: String },
+    /// Run one bounded worker batch now, respecting pause, policy and budgets.
+    RunOnce,
+    /// Show currently eligible profile text; does not contact peers.
+    Profiles,
+    /// Refetch a known canonical profile, community, post or video, including an operator-selected withdrawal.
+    Recheck { uri: String },
+    /// Settings, queue and rolling budgets, plus at most 200 source records.
+    Status,
+    /// Stop acquisition and invalidate current leases.
+    Pause,
+    /// Resume acquisition if the master switch is enabled.
+    Resume,
+    /// Change only the supplied controls. Missing consent defaults to allow.
+    Configure {
+        #[arg(long, action=clap::ArgAction::Set)]
+        enabled: Option<bool>,
+        #[arg(long, action=clap::ArgAction::Set)]
+        allow_missing_discoverable: Option<bool>,
+        #[arg(long, action=clap::ArgAction::Set)]
+        allow_missing_indexable: Option<bool>,
+        /// Comma-separated mechanism names; an empty string enables all mechanisms.
+        #[arg(long)]
+        disabled_mechanisms: Option<String>,
+        #[arg(long)]
+        requests_per_day: Option<i64>,
+        #[arg(long)]
+        max_entries: Option<i64>,
+        #[arg(long)]
+        entries_per_origin: Option<i64>,
+        #[arg(long)]
+        requests_per_origin: Option<i64>,
+        #[arg(long)]
+        bytes_per_day: Option<i64>,
+    },
+}
+
+#[derive(Subcommand)]
+enum DiscoverySourcesCommand {
+    /// Admit the reviewed bundled starters; discovery must be enabled first.
+    Bootstrap,
+    /// Import a version-1 JSON source list (at most 64 KiB / 100 addresses).
+    Import {
+        path: std::path::PathBuf,
+        /// Disable bundled sources absent from this list.
+        #[arg(long)]
+        replace_bundled: bool,
+    },
+    /// Write addresses and observed public facts to stdout (first 100 sources).
+    Export,
 }
 
 #[derive(Subcommand)]
@@ -726,6 +787,7 @@ async fn dispatch(command: Command, state: AppState) -> Result<(), AnyError> {
         Command::Media(MediaCommand::Reconcile { delete }) => media_reconcile(&state, delete).await,
         Command::Federation(cmd) => federation_command(&state, cmd).await,
         Command::SelfDestruct => self_destruct(&state).await,
+        Command::Discovery(cmd) => discovery_command(&state, cmd).await,
     }
 }
 
@@ -933,6 +995,11 @@ async fn serve(state: AppState) -> Result<(), AnyError> {
             plamenu::webmentions::worker::spawn,
         ),
         supervise("reply fetcher", state.clone(), plamenu::reply_fetch::spawn),
+        supervise(
+            "discovery",
+            state.clone(),
+            plamenu::discovery::worker::spawn,
+        ),
         supervise(
             "remote history",
             state.clone(),
@@ -2192,4 +2259,183 @@ mod supervisor_tests {
             "no respawn after shutdown"
         );
     }
+}
+
+async fn discovery_command(state: &AppState, command: DiscoveryCommand) -> Result<(), AnyError> {
+    use plamenu_db::discovery_store as db;
+    let mut settings = db::settings(&state.pool).await?;
+    match command {
+        DiscoveryCommand::Sources(command) => {
+            return discovery_sources_command(state, command).await;
+        }
+        DiscoveryCommand::AddSource { url } => {
+            let endpoint = plamenu::discovery::videos::endpoint(&url)?;
+            let admitted = db::add_source(&state.pool, &endpoint, None).await?;
+            if let db::Admission::Added(id) | db::Admission::Existing(id) = admitted {
+                let queued = db::enqueue(
+                    &state.pool,
+                    id,
+                    &endpoint,
+                    db::Operation::InspectSource,
+                    None,
+                )
+                .await?;
+                println!("source {id}: {queued:?}");
+            } else {
+                println!("{admitted:?}");
+            }
+            return Ok(());
+        }
+        DiscoveryCommand::RunOnce => {
+            println!(
+                "processed {} jobs",
+                plamenu::discovery::worker::run_due(state).await?
+            );
+            return Ok(());
+        }
+        DiscoveryCommand::Recheck { uri } => {
+            println!(
+                "{:?}",
+                db::request_profile_recheck(&state.pool, &uri).await?
+            );
+            return Ok(());
+        }
+        DiscoveryCommand::Profiles => return discovery_profiles(state).await,
+        DiscoveryCommand::Status => return discovery_status(state, &settings).await,
+        DiscoveryCommand::Pause => settings.paused = true,
+        DiscoveryCommand::Resume => settings.paused = false,
+        DiscoveryCommand::Configure {
+            enabled,
+            allow_missing_discoverable,
+            allow_missing_indexable,
+            disabled_mechanisms,
+            requests_per_day,
+            max_entries,
+            entries_per_origin,
+            requests_per_origin,
+            bytes_per_day,
+        } => {
+            if let Some(value) = enabled {
+                settings.enabled = value;
+            }
+            if let Some(value) = allow_missing_discoverable {
+                settings.allow_missing_discoverable = value;
+            }
+            if let Some(value) = allow_missing_indexable {
+                settings.allow_missing_indexable = value;
+            }
+            if let Some(value) = disabled_mechanisms {
+                settings.disabled_mechanisms = value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|v| !v.is_empty())
+                    .map(str::to_owned)
+                    .collect();
+                plamenu::discovery::store::policy(&settings)?;
+            }
+            if let Some(value) = max_entries {
+                settings.max_entries = value;
+            }
+            if let Some(value) = entries_per_origin {
+                settings.entries_per_origin = value;
+            }
+            if let Some(value) = requests_per_day {
+                settings.requests_per_day = value;
+            }
+            if let Some(value) = requests_per_origin {
+                settings.requests_per_origin = value;
+            }
+            if let Some(value) = bytes_per_day {
+                settings.bytes_per_day = value;
+            }
+        }
+    }
+    if !db::save_settings(&state.pool, &settings).await? {
+        return Err("discovery settings changed concurrently; inspect status and retry".into());
+    }
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&db::settings(&state.pool).await?)?
+    );
+    Ok(())
+}
+
+async fn discovery_status(
+    state: &AppState,
+    settings: &plamenu_db::discovery_store::Settings,
+) -> Result<(), AnyError> {
+    use plamenu_db::discovery_store as db;
+    let sources = db::source_diagnostics(&state.pool).await?;
+    let peer_failures: Vec<_> = sources
+        .iter()
+        .filter_map(|source| {
+            source.peer_error.as_ref().map(|reason| {
+                serde_json::json!({
+                    "origin": source.origin,
+                    "reason": reason,
+                    "next_check_at": source.peer_next_at,
+                })
+            })
+        })
+        .collect();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "settings": settings,
+            "diagnostics": db::diagnostics(&state.pool).await?,
+            "queue_reasons_first_50": db::queue_diagnostics(&state.pool).await?,
+            "origins_first_200": db::origin_diagnostics(&state.pool).await?,
+            "requests_by_family": db::family_diagnostics(&state.pool).await?,
+            "recovery_inventory": db::recovery_inventory(&state.pool).await?,
+            "daily_outcomes_first_1000": db::recovery_metrics(&state.pool).await?,
+            "fresh_catalogue_coverage": db::coverage_diagnostics(&state.pool).await?,
+            "peer_failures_first_200": peer_failures,
+            "sources_first_200": sources,
+        }))?
+    );
+    Ok(())
+}
+
+async fn discovery_sources_command(
+    state: &AppState,
+    command: DiscoverySourcesCommand,
+) -> Result<(), AnyError> {
+    use plamenu::discovery::seeds;
+    let result = match command {
+        DiscoverySourcesCommand::Export => {
+            println!("{}", seeds::export(&state.pool).await?);
+            return Ok(());
+        }
+        DiscoverySourcesCommand::Bootstrap => {
+            seeds::import(&state.pool, seeds::BUNDLED, true, false).await?
+        }
+        DiscoverySourcesCommand::Import {
+            path,
+            replace_bundled,
+        } => {
+            use std::io::Read;
+            let mut raw = String::new();
+            std::fs::File::open(path)?
+                .take(65_537)
+                .read_to_string(&mut raw)?;
+            seeds::import(&state.pool, &raw, false, replace_bundled).await?
+        }
+    };
+    println!("{}", serde_json::to_string_pretty(&result)?);
+    Ok(())
+}
+
+async fn discovery_profiles(state: &AppState) -> Result<(), AnyError> {
+    use plamenu_db::discovery_store as db;
+    let mut profiles = Vec::new();
+    for entry in db::profile_candidates(&state.pool).await? {
+        if let Some(entry) =
+            plamenu::discovery::profiles::eligible(state, &entry.canonical_uri).await?
+        {
+            profiles.push(serde_json::json!({"uri":entry.canonical_uri,"title":entry.title,"summary":entry.summary,
+                        "discoverable":entry.discoverable,"indexable":entry.indexable,"verified_at":entry.verified_at.to_string(),"valid_until":entry.valid_until.to_string()}));
+        }
+    }
+    println!("{}", serde_json::to_string_pretty(&profiles)?);
+    Ok(())
 }

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_jobs SET lease_token=NULL,lease_owner=NULL,leased_until=NULL WHERE leased_until<=clock_timestamp()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "a56f857feb2592a255605a7e42fa1ad5184a37996da9ff6a136a333361304e61"
+}

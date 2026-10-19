@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.round,CASE WHEN p.round%5=4 AND NOT('video_catalogue'=ANY(s.capabilities)\n            OR s.endpoint LIKE '%/api/v1/videos') THEN p.new_offset ELSE p.active_offset END AS \"offset!\",p.seed\n        FROM discovery_sampling p JOIN discovery_sources s ON s.id=p.source_id WHERE p.source_id=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "round",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sampling",
+            "name": "round"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "offset!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "seed",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sampling",
+            "name": "seed"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "f308d98eac2260d1d101881eca44ec08cc6b3e9f07f9c4d9a2a9b5a5d89b4fc3"
+}

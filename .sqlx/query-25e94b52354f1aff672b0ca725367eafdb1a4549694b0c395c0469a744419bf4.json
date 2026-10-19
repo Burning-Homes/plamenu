@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_jobs SET cursor='canonical' WHERE id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "25e94b52354f1aff672b0ca725367eafdb1a4549694b0c395c0469a744419bf4"
+}

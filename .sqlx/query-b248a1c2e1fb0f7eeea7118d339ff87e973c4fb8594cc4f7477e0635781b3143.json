@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM discovery_jobs WHERE target_uri=$1 AND NOT withdrawn",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b248a1c2e1fb0f7eeea7118d339ff87e973c4fb8594cc4f7477e0635781b3143"
+}

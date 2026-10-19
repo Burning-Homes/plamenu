@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id,endpoint,introduced_by FROM discovery_sources WHERE enabled AND (CASE WHEN 'video_catalogue'=ANY(capabilities) OR endpoint LIKE '%/api/v1/videos' THEN $3 WHEN 'community_directory'=ANY(capabilities) OR endpoint LIKE '%/api/v3/community/list' THEN $2 ELSE $1 AND endpoint LIKE '%/api/v1/directory' END) AND (cooldown_until IS NULL OR cooldown_until<=clock_timestamp()) AND (valid_until IS NULL OR valid_until<=clock_timestamp()+interval '1 hour' OR EXISTS(SELECT 1 FROM discovery_sampling p WHERE p.source_id=discovery_sources.id AND p.next_at<=clock_timestamp())) ORDER BY valid_until NULLS FIRST,id LIMIT 32",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "endpoint",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "endpoint"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "introduced_by",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "introduced_by"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "c61626828c171b5db09c4f02ebefb16efbdc2610c465995083ffeb06e95e8d03"
+}

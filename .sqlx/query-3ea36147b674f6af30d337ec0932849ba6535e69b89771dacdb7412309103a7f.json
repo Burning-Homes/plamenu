@@ -1,0 +1,96 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH ranked AS (\n            SELECT e.*,s.origin,\n                e.browse_ordinal AS ordinal,\n                CASE WHEN $6::bigint=0 THEN 0 ELSE hashtextextended(s.origin,$6) END AS source_order\n            FROM discovery_entries e JOIN discovery_sources s ON s.id=e.source_id\n            WHERE (e.kind=$8 OR ($8='all' AND e.kind IN ('profile','post','community','video'))) AND e.id<=$2 ORDER BY e.id DESC LIMIT 2000\n        )\n        SELECT e.id,e.canonical_uri,e.actor_uri,e.origin,e.ordinal AS \"ordinal!\",e.source_order AS \"source_order!\",\n            CASE WHEN $8 IN ('post','video') THEN e.creator_ordinal ELSE 0 END AS \"creator_ordinal!\"\n        FROM ranked e LEFT JOIN accounts a ON a.uri=e.actor_uri\n        WHERE (CASE WHEN $8 IN ('post','video') THEN e.creator_ordinal ELSE 0 END,e.ordinal,e.source_order,e.id)>($12,$3,$7,$4) AND ($5::bigint IS NULL OR e.source_id=$5)\n            AND e.state='active' AND e.valid_until>clock_timestamp()\n            AND ($9='' OR to_tsvector('simple',coalesce(e.title,'') || ' ' || coalesce(e.summary,'')) @@ plainto_tsquery('simple',$9))\n            AND ($10='' OR EXISTS(SELECT 1 FROM discovery_topics t WHERE t.entry_id=e.id AND t.topic=$10))\n            AND ($11='' OR e.actor_uri=$11)\n            AND (a.id IS NULL OR (a.id<>$1 AND NOT account_hidden($1,a.id)\n                AND NOT EXISTS(SELECT 1 FROM follow_recommendation_mutes m\n                    WHERE m.account_id=$1 AND m.target_account_id=a.id)))\n            AND NOT EXISTS(SELECT 1 FROM discovery_dismissals d\n                WHERE d.account_id=$1 AND d.entry_id=e.id)\n        ORDER BY CASE WHEN $8 IN ('post','video') THEN e.creator_ordinal ELSE 0 END,e.ordinal,e.source_order,e.id LIMIT 200\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "canonical_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "canonical_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "actor_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "actor_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "origin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "origin"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "ordinal!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "source_order!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "creator_ordinal!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "3ea36147b674f6af30d337ec0932849ba6535e69b89771dacdb7412309103a7f"
+}

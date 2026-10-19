@@ -1,0 +1,278 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM discovery_settings WHERE singleton FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "singleton",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "singleton"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "paused",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "paused"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "allow_missing_discoverable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "allow_missing_discoverable"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "allow_missing_indexable",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "allow_missing_indexable"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "disabled_mechanisms",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "disabled_mechanisms"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "revision",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "revision"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "max_sources",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "max_sources"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "sources_per_origin",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "sources_per_origin"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "sources_per_introducer",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "sources_per_introducer"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "max_jobs",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "max_jobs"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "jobs_per_origin",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "jobs_per_origin"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "jobs_per_introducer",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "jobs_per_introducer"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "max_entries",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "max_entries"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "entries_per_origin",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "entries_per_origin"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "entries_per_introducer",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "entries_per_introducer"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "max_inflight",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "max_inflight"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "max_attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "max_attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "lease_seconds",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "lease_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "requests_per_day",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "requests_per_day"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "requests_per_origin",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "requests_per_origin"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "bytes_per_day",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_settings",
+            "name": "bytes_per_day"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4577903b7929c49e836f3aa0269d43e0402567dffa225240f9f1802b3f653e2d"
+}

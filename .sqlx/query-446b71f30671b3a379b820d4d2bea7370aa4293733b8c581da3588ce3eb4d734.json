@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_entries SET revision=revision+1,\n        discoverable=CASE WHEN $2 IN ('deny','invalid') THEN $2 ELSE discoverable END,\n        indexable=CASE WHEN $3 IN ('deny','invalid') THEN $3 ELSE indexable END,\n        visibility=CASE WHEN $4 THEN visibility ELSE 'unknown' END,\n        state=CASE WHEN state='withdrawn' THEN state WHEN $5 THEN 'denied' ELSE state END,\n        title=CASE WHEN $5 THEN NULL ELSE title END,summary=CASE WHEN $5 THEN NULL ELSE summary END,\n        language=CASE WHEN $5 THEN NULL ELSE language END,\n        outbox_uri=CASE WHEN $6 THEN NULL ELSE outbox_uri END,outbox_next_at=CASE WHEN $6 THEN NULL ELSE outbox_next_at END,\n        invalidation_reason=CASE WHEN $5 AND state<>'withdrawn' THEN 'ineligible' ELSE invalidation_reason END,\n        updated_at=clock_timestamp() WHERE canonical_uri=$1 AND kind IN ('profile','community')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "446b71f30671b3a379b820d4d2bea7370aa4293733b8c581da3588ce3eb4d734"
+}

@@ -194,7 +194,7 @@ fn head(title: &str, meta: &PageMeta) -> Markup {
 
 /// Which anonymous-access features the navigation should advertise. Only
 /// consulted when the visitor is signed out — a logged-out person shouldn't see
-/// an "Explore" or "Search" link that just bounces them to the login page when
+/// a "Live feeds" or "Search" link that just bounces them to the login page when
 /// the instance keeps those behind auth.
 #[derive(Clone, Copy, Default)]
 #[allow(clippy::struct_excessive_bools, reason = "one flag per nav entry")]
@@ -203,8 +203,6 @@ pub struct AnonNav {
     pub feeds: bool,
     /// Public Video catalogue is browsable without signing in.
     pub videos: bool,
-    /// The Trending pages are browsable without signing in.
-    pub trends: bool,
     /// The People directory is browsable without signing in.
     pub people: bool,
     /// The Groups directory is browsable without signing in.
@@ -220,7 +218,6 @@ impl AnonNav {
         Self {
             feeds: true,
             videos: true,
-            trends: true,
             people: true,
             groups: true,
             search: true,
@@ -432,7 +429,7 @@ fn primary_nav(user: &WebUser) -> Markup {
         (nav_link("/videos/explore", "video", &locale.text("videos-title")))
         (nav_link("/webxdc", "apps", &locale.text("nav-webxdc")))
         (nav_link("/people", "profile", &locale.text("nav-people")))
-        (nav_link("/explore", "explore", &locale.text("nav-trending")))
+        (nav_link("/discover", "explore", &locale.text("discovery-title")))
         (nav_link("/settings", "settings", &locale.text("nav-settings")))
         @if user.is_staff {
             (nav_link("/admin", "shield", &locale.text("nav-admin")))
@@ -448,7 +445,6 @@ fn primary_nav(user: &WebUser) -> Markup {
 fn anon_primary_nav(anon: AnonNav, locale: Locale) -> Markup {
     html! {
         (nav_link("/", "home", &locale.text("nav-home")))
-        @if anon.trends { (nav_link("/explore", "explore", &locale.text("nav-trending"))) }
         @if anon.feeds { (nav_link("/public", "feeds", &locale.text("nav-live-feeds"))) }
         @if anon.videos { (nav_link("/music", "music", &locale.text("music-title"))) }
         @if anon.videos { (nav_link("/videos/explore", "video", &locale.text("videos-title"))) }

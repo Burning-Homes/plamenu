@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_jobs SET cursor=$2,exploration=false WHERE id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f03837e8b41cab6f17c688c682499e7ea413d17e9fb0d86c9f1e7ce33e9bfa66"
+}

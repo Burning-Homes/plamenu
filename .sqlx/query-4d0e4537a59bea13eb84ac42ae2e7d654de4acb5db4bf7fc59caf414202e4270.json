@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_requests SET active_until=clock_timestamp()-interval '1 second'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "4d0e4537a59bea13eb84ac42ae2e7d654de4acb5db4bf7fc59caf414202e4270"
+}

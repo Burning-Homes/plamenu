@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT depth FROM discovery_sources WHERE id=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "depth",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "depth"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "42722df2bb04c09a353f40269b64579da22153c1c43f10f146493f48f1602666"
+}

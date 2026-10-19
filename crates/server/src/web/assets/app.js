@@ -2895,6 +2895,117 @@
     });
   }
 
+  // Discovery appends verified local catalogue pages. Keep the native link as
+  // the no-script path; failed/redirected loads never start a retry loop.
+  function bindDiscoveryImages(root) {
+    root.querySelectorAll('.discovery-avatar > img').forEach(img => {
+      if (img.dataset.bound) return;
+      img.dataset.bound = '1';
+      img.addEventListener('error', () => img.remove(), { once: true });
+      if (img.complete && !img.naturalWidth) img.remove();
+    });
+  }
+  function bindDiscovery(root) {
+    bindDiscoveryImages(root);
+    root.querySelectorAll('form[data-wider-search]').forEach(form => {
+      if (form.dataset.bound) return;
+      form.dataset.bound = '1';
+      form.addEventListener('submit', () => {
+        form.querySelector('button[type="submit"]').disabled = true;
+        const message = form.querySelector('.discovery-wider__status');
+        message.textContent = message.dataset.searching;
+      });
+      window.addEventListener('pageshow', () => {
+        form.querySelector('button[type="submit"]').disabled = false;
+        form.querySelector('.discovery-wider__status').textContent = '';
+      });
+    });
+    const section = root.querySelector('.discovery');
+    const results = section?.querySelector('[data-discovery-results]');
+    const pager = section?.querySelector('.discovery-pagination');
+    const link = pager?.querySelector('.discovery-more');
+    if (!results || !link || section.dataset.pagingBound) return;
+    section.dataset.pagingBound = '1';
+    const status = pager.querySelector('.discovery-page-status');
+    // No-JS has the normal next-page link. JS uses the same URL as its sentinel.
+    link.hidden = 'IntersectionObserver' in window;
+    const seen = new Set();
+    let busy = false, failed = false, exhausted = false, emptyPages = 0;
+    const localUrl = value => {
+      const url = new URL(value, location.href);
+      return url.origin === location.origin && ['/discover', '/discover/posts', '/discover/communities', '/discover/topics', '/discover/videos'].includes(url.pathname) ? url : null;
+    };
+    const observer = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) maybeLoad();
+    }, { rootMargin: '200px' }) : null;
+    function maybeLoad() {
+      if (!section.isConnected) { observer?.disconnect(); return; }
+      if (!failed && !exhausted && !document.hidden &&
+          !pager.contains(document.activeElement) && pager.getBoundingClientRect().top <= innerHeight + 200) load(false);
+    }
+    async function load(manual) {
+      if (busy || exhausted) return;
+      const url = localUrl(link.href);
+      // A repeated cursor or malformed response leaves normal navigation usable.
+      if (!url || seen.has(url.href) || seen.size >= 100) { failed = true; link.hidden = false; return; }
+      busy = true;
+      link.setAttribute('aria-disabled', 'true');
+      results.setAttribute('aria-busy', 'true');
+      status.textContent = status.dataset.loading;
+      try {
+        const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store',
+          headers: { 'X-Requested-With': 'fetch' }, signal: AbortSignal.timeout(15000) });
+        if (!response.ok || response.redirected) throw new Error('Unavailable page');
+        const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+        const incomingSection = doc.querySelector('.discovery');
+        const incoming = incomingSection?.querySelector('[data-discovery-results]');
+        if (!incoming || incoming.dataset.discoveryResults !== results.dataset.discoveryResults ||
+            (section.dataset.discoveryView !== 'servers' && incomingSection.dataset.discoverySource !== section.dataset.discoverySource) ||
+            incomingSection.dataset.discoveryQuery !== section.dataset.discoveryQuery ||
+            incomingSection.dataset.discoveryChannel !== section.dataset.discoveryChannel ||
+            incomingSection.querySelector('[data-discovery-topic]')?.dataset.discoveryTopic !== section.querySelector('[data-discovery-topic]')?.dataset.discoveryTopic) throw new Error('Different view');
+        const ids = new Set([...results.children].map(node => node.id));
+        const nodes = [...incoming.children].filter(node => node.id && !ids.has(node.id));
+        const next = incomingSection.querySelector('.discovery-more');
+        const nextUrl = next && localUrl(next.href);
+        if (next && (!nextUrl || nextUrl.href === url.href || seen.has(nextUrl.href))) throw new Error('Repeated page');
+        results.append(...nodes);
+        bindDiscoveryImages(results);
+        seen.add(url.href);
+        emptyPages = nodes.length ? 0 : emptyPages + 1;
+        failed = emptyPages >= 3;
+        exhausted = !next;
+        if (next) link.href = nextUrl.href;
+        else { link.hidden = true; observer?.disconnect(); }
+        status.textContent = exhausted ? status.dataset.end : status.dataset.loaded;
+        if (manual) {
+          const target = nodes[0]?.querySelector('h2') || status;
+          target.setAttribute('tabindex', '-1');
+          target.focus({ preventScroll: true });
+          if (nodes.length) target.scrollIntoView({ block: 'nearest' });
+        }
+      } catch {
+        failed = true;
+        status.textContent = status.dataset.error;
+        link.hidden = false;
+      } finally {
+        busy = false;
+        link.removeAttribute('aria-disabled');
+        results.removeAttribute('aria-busy');
+      }
+      // Empty/short pages may leave the sentinel intersecting without a new
+      // observer event. At most three empty pages are followed automatically.
+      if (!manual) requestAnimationFrame(maybeLoad);
+    }
+    link.addEventListener('click', event => {
+      if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      if (seen.has(link.href) || seen.size >= 100) return;
+      event.preventDefault();
+      if (!busy) { failed = false; emptyPages = 0; load(true); }
+    });
+    observer?.observe(pager);
+  }
+
   // ---- Infinite scroll --------------------------------------------------
   //
   // Applies to any page that marks its repeating-items container with
@@ -7125,6 +7236,7 @@
 
   // ---- Wiring -----------------------------------------------------------
   function enhance(root) {
+    bindDiscovery(root);
     bindVideoPosterPicker(root);
     bindVideoPosterReplacement(root);
     bindCaptionUpload(root);
@@ -7712,3 +7824,44 @@ bindPodcastEpisodes(document);
     schedule();
   }
 }
+
+// Discovery impressions reflect actual visibility, not delivered HTML.
+(() => {
+  const history = document.querySelector('[data-discovery-seen-csrf]');
+  if (!history || !('IntersectionObserver' in window)) return;
+  const selector = '[data-discovery-card],[data-discovery-post],[data-discovery-video]';
+  const recorded = new Set(), pending = new Set(), timers = new Map();
+  let flushTimer;
+  async function flush() {
+    const ids = [...pending].slice(0, 50); if (!ids.length) return;
+    ids.forEach(id => pending.delete(id));
+    try {
+      const response = await fetch('/web/discover/seen', {method:'POST', credentials:'same-origin', keepalive:true,
+        body:new URLSearchParams({csrf:history.dataset.discoverySeenCsrf, ids:ids.join(',')})});
+      if (!response.ok) throw new Error('Impression not saved');
+    } catch { ids.forEach(id => recorded.delete(id)); }
+  }
+  const observer = new IntersectionObserver(changes => {
+    for (const change of changes) {
+      const card = change.target;
+      clearTimeout(timers.get(card)); timers.delete(card);
+      if (!change.isIntersecting || change.intersectionRatio < 0.5 || document.hidden) continue;
+      timers.set(card, setTimeout(() => {
+        if (document.hidden || !card.isConnected) return;
+        const id = card.dataset.discoveryCard || card.dataset.discoveryPost || card.dataset.discoveryVideo;
+        if (recorded.has(id)) return;
+        recorded.add(id); pending.add(id); observer.unobserve(card);
+        clearTimeout(flushTimer); flushTimer=setTimeout(flush, 1200);
+      }, 1000));
+    }
+  }, {threshold:[0,0.5]});
+  function observe(root) {root.querySelectorAll(selector).forEach(card => observer.observe(card));}
+  observe(document);
+  const results=document.querySelector('[data-discovery-results]');
+  if (results) new MutationObserver(() => observe(results)).observe(results,{childList:true});
+  document.addEventListener('visibilitychange', () => {
+    timers.forEach(clearTimeout); timers.clear();
+    if (document.hidden) flush(); else {observer.disconnect(); observe(document);}
+  });
+  window.addEventListener('pagehide',flush);
+})();

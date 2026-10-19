@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO discovery_sources(id,origin,endpoint,introduced_by,depth,provenance,cooldown_until,last_error,last_failure_at)\n        SELECT $1,$2,$3,$4,$5,$6,max(cooldown_until),\n            CASE WHEN max(cooldown_until) IS NOT NULL THEN 'rate_limited' END,\n            max(last_failure_at)\n        FROM discovery_sources WHERE origin=$2 AND last_error='rate_limited'\n            AND cooldown_until>clock_timestamp()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Int8",
+        "Int2",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f9f5e4b4796e12359061f87d1374996982b901f5bd9a11c9529c9429eeec6fcc"
+}

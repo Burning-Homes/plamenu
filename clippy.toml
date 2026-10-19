@@ -11,3 +11,9 @@ future-size-threshold = 32768
 # that response at 128 bytes; keep the lint useful for errors larger than the
 # framework response rather than annotating every handler.
 large-error-threshold = 256
+
+# SQLx 0.9 expands each database test's migration list into a const-promoted
+# borrowed array. At 187 migrations that generated metadata exceeds 16 KiB;
+# it is not a per-call stack allocation. Retain the lint for arrays above
+# 32 KiB instead of suppressing it in every SQLx test.
+array-size-threshold = 32768

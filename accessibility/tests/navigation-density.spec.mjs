@@ -7,7 +7,7 @@ const layout = readFileSync(new URL('../../crates/server/src/web/layout.rs', imp
 const primary = layout.slice(layout.indexOf('fn primary_nav('), layout.indexOf('fn anon_primary_nav('));
 const staffCount = [...primary.matchAll(/\(nav_link\(|a\.nav-link\s/g)].length;
 const icon = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg>';
-const labels = ['Home', 'Live feeds', 'Search', 'Notifications', 'Messages', 'Bookmarks', 'Favourites', 'Lists', 'Groups', 'Music', 'Videos', 'Apps', 'People', 'Trending', 'Settings', 'Admin'];
+const labels = ['Home', 'Live feeds', 'Search', 'Notifications', 'Messages', 'Bookmarks', 'Favourites', 'Lists', 'Groups', 'Music', 'Videos', 'Apps', 'People', 'Discover', 'Settings', 'Admin'];
 const menu = count => Array.from({ length: count }, (_, index) => `<a class="nav-link" href="#destination-${index}" aria-label="${labels[index] || `Destination ${index}`}">${icon}<span class="nav-link__label">${labels[index] || `Destination ${index}`}</span></a>`).join('');
 const contents = count => `<a class="brand" href="#home"><span class="brand__mark">P</span><span class="brand__name">Plamenu</span></a>
   <nav class="nav" aria-label="Primary">${menu(count)}</nav><a class="compose-btn" href="#compose">${icon}<span>New post</span></a>

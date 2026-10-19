@@ -1,0 +1,98 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n        (SELECT count(*) FROM discovery_sources) AS \"sources!\",\n        (SELECT count(*) FROM discovery_entries) AS \"entries!\",\n        (SELECT count(*) FROM discovery_jobs WHERE NOT withdrawn) AS \"queued!\",\n        (SELECT count(*) FROM discovery_jobs WHERE lease_token IS NOT NULL AND leased_until>clock_timestamp()) AS \"leased!\",\n        (SELECT count(*) FROM discovery_jobs WHERE withdrawn) AS \"withdrawal_guards!\",\n        (SELECT count(*) FROM discovery_requests WHERE started_at>clock_timestamp()-interval '24 hours') AS \"requests_24h!\",\n        (SELECT COALESCE(sum(bytes),0)::bigint FROM discovery_requests WHERE started_at>clock_timestamp()-interval '24 hours') AS \"charged_bytes_24h!\",\n        (SELECT count(*) FROM discovery_requests WHERE NOT completed AND active_until>clock_timestamp()) AS \"active_requests!\",\n        (SELECT min(started_at)+interval '24 hours' FROM discovery_requests WHERE started_at>clock_timestamp()-interval '24 hours') AS next_charge_expires_at,\n        (SELECT max(last_success_at) FROM discovery_sources) AS last_success_at,\n        (SELECT max(last_failure_at) FROM discovery_sources) AS last_failure_at,\n        (SELECT last_error FROM discovery_sources WHERE last_failure_at IS NOT NULL ORDER BY last_failure_at DESC LIMIT 1) AS last_failure_reason\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sources!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "entries!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "queued!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "leased!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "withdrawal_guards!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "requests_24h!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "charged_bytes_24h!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "active_requests!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "next_charge_expires_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "last_success_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "last_failure_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "last_failure_reason",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "125f4a3e648f76e2676f55f9f4428642eca1533d50e97efd09cd221ec32d6234"
+}

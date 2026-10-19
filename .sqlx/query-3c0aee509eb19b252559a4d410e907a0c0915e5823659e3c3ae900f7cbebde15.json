@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_jobs SET leased_until=clock_timestamp()-interval '1 second'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "3c0aee509eb19b252559a4d410e907a0c0915e5823659e3c3ae900f7cbebde15"
+}

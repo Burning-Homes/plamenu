@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT introduced_by FROM discovery_sources WHERE id=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "introduced_by",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "introduced_by"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "ac76498d53fae4f2521f8fdadbe9527ceeaa331c68ed3de9f05e7333c9eccba1"
+}

@@ -21,6 +21,7 @@ mod collapse;
 mod collections;
 mod compose_media;
 mod confirmation;
+mod discovery;
 mod explore;
 mod export;
 mod featured_tags;
@@ -425,6 +426,31 @@ pub fn router() -> Router<AppState> {
         .route("/web/video-playlists/import", post(video_playlists::import))
         .route("/web/video-playlists/{id}", post(video_playlists::change))
         .route("/public", get(pages::public))
+        .route(
+            "/web/discover/servers/{id}/icon",
+            get(discovery::server_icon),
+        )
+        .route("/web/discover/seen", post(discovery::seen))
+        .route("/web/discover/page/{token}", get(discovery::page_seen))
+        .route(
+            "/web/discover/history/reset",
+            post(discovery::reset_history),
+        )
+        .route("/discover", get(discovery::index))
+        .route("/discover/topics", get(discovery::topic_index))
+        .route("/discover/trail/{id}", get(discovery::trail))
+        .route(
+            "/discover/collections/{id}",
+            get(discovery::collection_trail),
+        )
+        .route("/web/discover/topics", post(discovery::save_topic))
+        .route("/web/discover/search", post(discovery::wider_search))
+        .route("/discover/posts", get(discovery::post_index))
+        .route("/discover/videos", get(discovery::video_index))
+        .route("/web/discover/{id}/channel", post(discovery::open_channel))
+        .route("/discover/communities", get(discovery::community_index))
+        .route("/web/discover/{id}/open", post(discovery::open))
+        .route("/web/discover/{id}/dismiss", post(discovery::dismiss))
         .route("/explore", get(explore::posts))
         .route("/explore/hashtags", get(explore::hashtags))
         .route("/explore/links", get(explore::links))

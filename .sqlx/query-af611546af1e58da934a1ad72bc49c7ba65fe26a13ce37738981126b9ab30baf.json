@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT family,operation,count(*) AS \"requests!\",\n        COALESCE(sum(bytes),0)::bigint AS \"charged_bytes!\" FROM discovery_requests\n        WHERE started_at>clock_timestamp()-interval '24 hours' GROUP BY family,operation ORDER BY family,operation",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "family",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_requests",
+            "name": "family"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "operation",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_requests",
+            "name": "operation"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "requests!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "charged_bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "af611546af1e58da934a1ad72bc49c7ba65fe26a13ce37738981126b9ab30baf"
+}

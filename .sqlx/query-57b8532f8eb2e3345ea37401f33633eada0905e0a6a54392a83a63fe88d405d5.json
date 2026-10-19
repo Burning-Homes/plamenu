@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_jobs SET expires_at=clock_timestamp()-interval '1 second'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "57b8532f8eb2e3345ea37401f33633eada0905e0a6a54392a83a63fe88d405d5"
+}

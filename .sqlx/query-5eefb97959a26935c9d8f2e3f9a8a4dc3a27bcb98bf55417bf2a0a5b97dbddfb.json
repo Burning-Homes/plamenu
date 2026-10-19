@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT target_uri,id FROM discovery_jobs ORDER BY id LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "target_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "target_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "5eefb97959a26935c9d8f2e3f9a8a4dc3a27bcb98bf55417bf2a0a5b97dbddfb"
+}

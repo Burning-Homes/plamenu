@@ -31,6 +31,7 @@ pub mod conversation;
 pub mod custom_emoji;
 pub mod custom_filter;
 pub mod discovery;
+pub mod discovery_store;
 pub mod dislike;
 pub mod domain_severance_job;
 pub mod email;

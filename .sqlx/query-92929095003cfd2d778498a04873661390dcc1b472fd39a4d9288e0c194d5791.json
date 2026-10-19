@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_sources SET cooldown_until=GREATEST(cooldown_until,clock_timestamp()+make_interval(secs=>$3)),last_error=$4,last_failure_at=clock_timestamp(),revision=revision+1 WHERE id=$1 OR ($2 AND origin=$5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Float8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "92929095003cfd2d778498a04873661390dcc1b472fd39a4d9288e0c194d5791"
+}

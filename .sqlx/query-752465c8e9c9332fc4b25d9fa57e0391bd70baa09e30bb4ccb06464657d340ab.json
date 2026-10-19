@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO discovery_search_sources(source_id,kind,outcome,retry_at) VALUES($1,$2,$3,clock_timestamp()+make_interval(secs=>$4)) ON CONFLICT(source_id,kind) DO UPDATE SET outcome=excluded.outcome,retry_at=excluded.retry_at,checked_at=clock_timestamp()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "752465c8e9c9332fc4b25d9fa57e0391bd70baa09e30bb4ccb06464657d340ab"
+}

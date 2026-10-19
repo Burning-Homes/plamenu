@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM discovery_topics WHERE entry_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fd4e901b40d7422f0e5f92fc1a7125e0587e1611c3516dde3040efec8cde449a"
+}

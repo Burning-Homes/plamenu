@@ -1,6 +1,7 @@
 //! Outbound federation HTTP: actor dereferencing, webfinger resolution and
 //! signed delivery. Every request passes the SSRF [`crate::guard`] first.
 
+pub mod discovery;
 mod webmention;
 pub use webmention::MentionPage;
 
@@ -128,6 +129,10 @@ fn retry_after_secs(headers: &HeaderMap) -> Option<u64> {
 
 #[derive(Debug, Error)]
 pub enum FederationError {
+    #[error("discovery temporarily deferred: {0}")]
+    DiscoveryDeferred(&'static str),
+    #[error("discovery lease or policy superseded")]
+    DiscoveryStale,
     #[error("http request failed: {}", error_chain(.0))]
     Http(#[from] reqwest::Error),
     #[error("remote answered {0}")]

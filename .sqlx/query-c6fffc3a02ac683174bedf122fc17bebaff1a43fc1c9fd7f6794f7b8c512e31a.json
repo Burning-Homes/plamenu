@@ -1,0 +1,148 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM discovery_search_runs WHERE account_id=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_search_runs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_search_runs",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "query_digest",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_search_runs",
+            "name": "query_digest"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_search_runs",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "source_ids",
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "discovery_search_runs",
+            "name": "source_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_search_runs",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "deadline",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_search_runs",
+            "name": "deadline"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_search_runs",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "requests",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "discovery_search_runs",
+            "name": "requests"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "finished",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "discovery_search_runs",
+            "name": "finished"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "results",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "discovery_search_runs",
+            "name": "results"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c6fffc3a02ac683174bedf122fc17bebaff1a43fc1c9fd7f6794f7b8c512e31a"
+}

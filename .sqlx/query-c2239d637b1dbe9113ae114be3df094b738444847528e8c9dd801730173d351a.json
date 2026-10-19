@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT state='withdrawn' AS \"withdrawn!\" FROM discovery_entries WHERE canonical_uri=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "withdrawn!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "c2239d637b1dbe9113ae114be3df094b738444847528e8c9dd801730173d351a"
+}

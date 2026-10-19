@@ -3457,6 +3457,9 @@ async fn handle_update(
                 tracing::debug!(uri = object_uri, "ignoring Update for a foreign note");
                 return Ok(());
             }
+            if let Some(actor) = sender.uri.as_deref() {
+                crate::discovery::posts::verified_update(state, actor, object).await?;
+            }
             // Edits only apply to statuses we already have; an Update for an
             // unknown status is not a Create (Mastodon may re-send old posts
             // this way, e.g. quote-stamp redistribution).
@@ -3510,6 +3513,12 @@ async fn handle_update(
                 tracing::debug!("ignoring Update for a foreign actor");
                 return Ok(());
             }
+            crate::discovery::profiles::verified_update(
+                state,
+                id_of(object).unwrap_or_default(),
+                object,
+            )
+            .await?;
             let Ok(actor) = serde_json::from_value::<RemoteActor>(object.clone()) else {
                 return Ok(());
             };
@@ -3582,6 +3591,7 @@ async fn handle_delete(
     let Some(object_uri) = activity.object_id() else {
         return Ok(());
     };
+    crate::discovery::posts::verified_delete(state, sender.uri.as_deref(), object_uri).await?;
     if Some(object_uri) == sender.uri.as_deref() {
         account::delete_by_uri(&state.pool, object_uri).await?;
     } else {

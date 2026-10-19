@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_requests SET bytes=$2,completed=true,active_until=clock_timestamp() WHERE id=$1 AND NOT completed",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3dd02c062b8dd4510b80a921468723063185b0343aae78f38e1bd53be3a6295e"
+}

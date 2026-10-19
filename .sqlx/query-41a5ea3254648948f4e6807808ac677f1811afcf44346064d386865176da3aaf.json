@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"requests!\",\n        count(*) FILTER (WHERE origin=$1) AS \"origin_requests!\",\n        count(*) FILTER (WHERE NOT exploration) AS \"refresh_requests!\",\n        COALESCE(sum(bytes) FILTER (WHERE NOT exploration),0)::bigint AS \"refresh_bytes!\",\n        COALESCE(sum(bytes),0)::bigint AS \"bytes!\",\n        count(*) FILTER (WHERE NOT completed AND active_until>clock_timestamp()) AS \"active!\",\n        count(*) FILTER (WHERE origin=$1 AND NOT completed AND active_until>clock_timestamp()) AS \"origin_active!\"\n        FROM discovery_requests",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "requests!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "origin_requests!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "refresh_requests!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "refresh_bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "active!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "origin_active!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "41a5ea3254648948f4e6807808ac677f1811afcf44346064d386865176da3aaf"
+}

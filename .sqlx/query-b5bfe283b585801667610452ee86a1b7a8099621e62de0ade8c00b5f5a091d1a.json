@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT operation,last_error AS reason,count(*) AS \"jobs!\",min(run_at) AS next_run_at FROM discovery_jobs WHERE NOT withdrawn GROUP BY operation,last_error ORDER BY count(*) DESC,operation,last_error LIMIT 50",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "operation",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "operation"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "jobs!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "next_run_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "b5bfe283b585801667610452ee86a1b7a8099621e62de0ade8c00b5f5a091d1a"
+}

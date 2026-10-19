@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_entries SET outbox_round=outbox_round+1 WHERE canonical_uri=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d33090fc3e8e4dacf7aa8408f7a44fa2597ebb7f58c7bb2de5dec8813b13b3d8"
+}

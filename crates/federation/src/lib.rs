@@ -15,6 +15,7 @@ pub mod request_auth;
 pub mod rfc9421;
 pub mod signature;
 
+pub use client::discovery::{DiscoveryBudget, DiscoveryDocument, DiscoveryFormat};
 pub use client::{
     FederationClient, FederationError, FetchedActivityPub, FetchedEnclosure, FetchedFeed,
     FetchedMedia, FetchedMediaFile, FetchedMediaRange, FetchedPage, HttpMethod, MentionPage,

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_sources SET next_ordinal=(SELECT max(s.next_ordinal)+1 FROM discovery_sources s WHERE s.origin=discovery_sources.origin)\n            WHERE id=$1 RETURNING next_ordinal",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "next_ordinal",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "next_ordinal"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2cdae4b5ba2497b0ab280e4c64d9260d93d4bc64c027d49bf83bc00833312dbe"
+}

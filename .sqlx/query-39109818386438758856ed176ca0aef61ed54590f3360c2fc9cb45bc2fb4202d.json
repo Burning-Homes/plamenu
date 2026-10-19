@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT e.id,e.canonical_uri FROM discovery_entries e JOIN discovery_sources s ON s.id=e.source_id JOIN discovery_sources t ON t.id=$1 LEFT JOIN discovery_video_details v ON v.entry_id=e.id WHERE e.kind='video' AND e.state<>'withdrawn' AND e.valid_until<=clock_timestamp() AND ($2 OR s.origin=t.origin) AND ($3 OR v.channel_uri=$4) AND NOT EXISTS(SELECT 1 FROM discovery_jobs j WHERE j.target_uri=e.canonical_uri AND (j.withdrawn OR j.leased_until>clock_timestamp())) ORDER BY e.valid_until,e.id LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "canonical_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "canonical_uri"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "39109818386438758856ed176ca0aef61ed54590f3360c2fc9cb45bc2fb4202d"
+}

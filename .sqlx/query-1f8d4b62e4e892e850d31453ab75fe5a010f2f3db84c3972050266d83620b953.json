@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_entries SET outbox_next_at=clock_timestamp()+interval '24 hours' WHERE id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1f8d4b62e4e892e850d31453ab75fe5a010f2f3db84c3972050266d83620b953"
+}

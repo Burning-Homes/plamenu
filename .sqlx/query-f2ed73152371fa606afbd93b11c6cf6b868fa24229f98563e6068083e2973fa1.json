@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_jobs SET run_at=clock_timestamp()+make_interval(secs=>$3),last_error=$4 WHERE id=$1 AND lease_token=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Float8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f2ed73152371fa606afbd93b11c6cf6b868fa24229f98563e6068083e2973fa1"
+}

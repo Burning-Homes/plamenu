@@ -1,0 +1,183 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO discovery_jobs(id,source_id,target_uri,origin,introduced_by,operation,cursor,search_run_id,\n        expires_at,lease_token,lease_owner,leased_until,policy_revision,source_revision,entry_revision,attempts,exploration)\n        SELECT $1,$2,$3,$4,$5,$6,$7,r.id,r.deadline,$8,'interactive-search',r.deadline,$9,$10,$11,1,false\n        FROM discovery_search_runs r WHERE r.id=$12 AND NOT r.finished AND r.deadline>clock_timestamp()\n        RETURNING id,source_id,target_uri,operation,cursor,attempts,exploration,search_run_id,\n        lease_token AS \"lease_token!\",leased_until AS \"leased_until!\",policy_revision AS \"policy_revision!\",\n        source_revision AS \"source_revision!\",entry_revision",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "source_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "source_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "target_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "target_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "operation",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "operation"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "cursor",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "cursor"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "attempts"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "exploration",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "exploration"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "search_run_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "search_run_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "lease_token!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "lease_token"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "leased_until!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "leased_until"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "policy_revision!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "policy_revision"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "source_revision!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "source_revision"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "entry_revision",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "entry_revision"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Int8",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "5e031c17853870c59af5912642a472d66f1fbdde2f76bf9121396edfab47b6d5"
+}

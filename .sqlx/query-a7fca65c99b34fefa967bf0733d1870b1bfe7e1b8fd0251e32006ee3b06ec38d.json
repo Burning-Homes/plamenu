@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM discovery_jobs WHERE target_uri=$1 AND NOT withdrawn AND operation IN ('refresh_entry','revalidate_entry')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a7fca65c99b34fefa967bf0733d1870b1bfe7e1b8fd0251e32006ee3b06ec38d"
+}

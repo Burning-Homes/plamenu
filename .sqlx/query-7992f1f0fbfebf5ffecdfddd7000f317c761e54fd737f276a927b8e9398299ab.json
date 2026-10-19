@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_entries SET state=CASE WHEN state='withdrawn' OR $3 THEN 'withdrawn' ELSE 'denied' END,revision=revision+1,title=NULL,summary=NULL,language=NULL,published_at=NULL,sensitive=false,invalidation_reason=$4,updated_at=clock_timestamp() WHERE kind='video' AND canonical_uri=$1 AND actor_uri=$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7992f1f0fbfebf5ffecdfddd7000f317c761e54fd737f276a927b8e9398299ab"
+}

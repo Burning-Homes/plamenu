@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n        (SELECT count(*) FROM discovery_jobs)<$2\n        AND (SELECT count(*) FROM discovery_jobs WHERE origin=$1)<$3\n        AND (SELECT count(*) FROM discovery_jobs WHERE introduced_by IS NOT DISTINCT FROM $5)<$6\n        AND (SELECT count(*) FROM discovery_jobs WHERE lease_token IS NOT NULL AND leased_until>clock_timestamp())<$4\n        AND NOT EXISTS(SELECT 1 FROM discovery_jobs WHERE origin=$1 AND lease_token IS NOT NULL AND leased_until>clock_timestamp()) AS \"room!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "room!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "867af50c9e168dc0c5ca4ff6071c8787ef9ebf026763b9e67c47ad14083f01d9"
+}

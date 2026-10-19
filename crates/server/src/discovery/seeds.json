@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "reviewed_at": "2026-10-16",
+  "provenance": "Replaceable public entry points across three content families. New endpoints answered one anonymous, one-result catalogue request within 64 KiB on the review date; existing Mastodon starters were verified by the staging pilot. This verifies availability only, not endorsement, consent or content quality. Runtime canonical verification remains mandatory.",
+  "sources": [
+    {
+      "origin": "https://mastodon.social"
+    },
+    {
+      "origin": "https://mstdn.social"
+    },
+    {
+      "origin": "https://social.coop"
+    },
+    {
+      "origin": "https://lemmy.world",
+      "endpoint": "https://lemmy.world/api/v3/community/list"
+    },
+    {
+      "origin": "https://lemmy.ml",
+      "endpoint": "https://lemmy.ml/api/v3/community/list"
+    },
+    {
+      "origin": "https://discuss.tchncs.de",
+      "endpoint": "https://discuss.tchncs.de/api/v3/community/list"
+    },
+    {
+      "origin": "https://framatube.org",
+      "endpoint": "https://framatube.org/api/v1/videos"
+    },
+    {
+      "origin": "https://tilvids.com",
+      "endpoint": "https://tilvids.com/api/v1/videos"
+    },
+    {
+      "origin": "https://video.blender.org",
+      "endpoint": "https://video.blender.org/api/v1/videos"
+    }
+  ]
+}

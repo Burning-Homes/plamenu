@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_sources SET enabled=false,revision=revision+1\n            WHERE provenance='bundled' AND enabled AND NOT(endpoint=ANY($1))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eba632344d651d9e2ee824f56db95620c0f0d5704edba5bf474246455dba868c"
+}

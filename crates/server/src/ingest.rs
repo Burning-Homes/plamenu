@@ -611,7 +611,7 @@ fn object_title(object: &Value) -> Option<&str> {
     mapped_text(object, "name", "nameMap")
 }
 
-fn raw_language_code(object: &Value) -> Option<&str> {
+pub(crate) fn raw_language_code(object: &Value) -> Option<&str> {
     object
         .get("contentMap")
         .and_then(Value::as_object)
@@ -1819,6 +1819,12 @@ pub(crate) async fn ingest_remote_note_delivery_deferred(
     author: &Account,
     object: &Value,
 ) -> Result<RemoteIngestResult, ApiError> {
+    if !crate::discovery::posts::public_post(object)
+        && !crate::discovery::videos::public_delivery(state, object).await?
+        && let Some(uri) = author.uri.as_deref()
+    {
+        crate::discovery::posts::verified_update(state, uri, object).await?;
+    }
     ingest_remote_note_with_quote_depth(
         state,
         author,

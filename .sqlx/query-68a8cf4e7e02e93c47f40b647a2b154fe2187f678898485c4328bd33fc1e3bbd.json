@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n        SELECT 1 FROM discovery_jobs j JOIN discovery_sources s ON s.id=j.source_id\n        WHERE NOT j.withdrawn AND j.id=$1 AND j.lease_token=$2 AND j.source_id=$3 AND j.target_uri=$4\n          AND j.search_run_id IS NOT DISTINCT FROM $10 AND j.exploration=$9 AND j.operation=$5 AND j.policy_revision=$6 AND j.source_revision=$7\n          AND j.entry_revision IS NOT DISTINCT FROM $8\n          AND s.revision=j.source_revision AND s.enabled\n          AND (s.cooldown_until IS NULL OR s.cooldown_until<=clock_timestamp() OR (j.operation='list_peers' AND s.last_error IS DISTINCT FROM 'rate_limited'))\n          AND j.leased_until>clock_timestamp() AND j.expires_at>clock_timestamp()\n          AND (j.operation IN ('inspect_source','list_peers') OR s.verified_at IS NOT NULL)\n    ) AS \"valid!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "valid!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "68a8cf4e7e02e93c47f40b647a2b154fe2187f678898485c4328bd33fc1e3bbd"
+}

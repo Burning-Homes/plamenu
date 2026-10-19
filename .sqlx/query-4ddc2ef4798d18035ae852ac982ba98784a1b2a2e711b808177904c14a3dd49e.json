@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_sources SET peers_verified_at=clock_timestamp(),peer_error=NULL,\n        peer_offset=$2,peer_next_at=clock_timestamp()+interval '24 hours',\n        capabilities=CASE WHEN 'peer_exploration'=ANY(capabilities) THEN capabilities ELSE array_append(capabilities,'peer_exploration') END\n        WHERE id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4ddc2ef4798d18035ae852ac982ba98784a1b2a2e711b808177904c14a3dd49e"
+}

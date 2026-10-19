@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT e.canonical_uri,e.source_id,s.introduced_by FROM discovery_entries e JOIN discovery_sources s ON s.id=e.source_id WHERE e.kind IN ('profile','community','video') AND (e.kind<>'community' OR $1) AND (e.kind<>'video' OR $2) AND e.state<>'withdrawn' AND s.enabled AND s.verified_at IS NOT NULL AND e.valid_until>clock_timestamp() AND EXISTS(SELECT 1 FROM discovery_identity i WHERE i.canonical_uri=e.canonical_uri AND i.next_check_at<=clock_timestamp()) ORDER BY e.valid_until,e.id LIMIT 64",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "canonical_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "canonical_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "source_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "source_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "introduced_by",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "introduced_by"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "a82712c1370695a3a040c248904fc7639caa4f8492f5d63b431fa5f4d5533552"
+}

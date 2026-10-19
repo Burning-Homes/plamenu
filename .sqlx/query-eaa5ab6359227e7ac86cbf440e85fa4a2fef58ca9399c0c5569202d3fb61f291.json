@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM discovery_jobs j USING discovery_video_work w WHERE w.job_id=j.id AND NOT j.withdrawn AND (w.owner_uri=$1 OR ($2::text IS NULL AND w.channel_uri=$1)) AND ($2::text IS NULL OR j.target_uri=$2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eaa5ab6359227e7ac86cbf440e85fa4a2fef58ca9399c0c5569202d3fb61f291"
+}

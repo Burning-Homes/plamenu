@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM discovery_entries\n        WHERE canonical_uri=$1 AND source_id=$2 AND revision=$3 AND kind='profile'\n          AND (state='active' OR (state='denied' AND invalidation_reason='ineligible'))\n          AND visibility='public' AND verified_at<=clock_timestamp() AND verified_at<=$4\n          AND (indexable='allow' OR (indexable='missing' AND $5))) AS \"current!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "current!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Timestamptz",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1f5a735146249f8216861d46afe5f0e679453b569c0825f30a6eba70647c2b65"
+}

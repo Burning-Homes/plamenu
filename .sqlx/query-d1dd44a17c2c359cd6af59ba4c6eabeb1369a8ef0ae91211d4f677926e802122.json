@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO discovery_sampling(source_id) VALUES($1) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d1dd44a17c2c359cd6af59ba4c6eabeb1369a8ef0ae91211d4f677926e802122"
+}

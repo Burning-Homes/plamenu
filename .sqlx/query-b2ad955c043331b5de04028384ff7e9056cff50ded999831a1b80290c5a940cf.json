@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_jobs j SET withdrawn=true,search_run_id=NULL,lease_token=NULL,lease_owner=NULL,leased_until=NULL,cursor=NULL,last_error=$3 FROM discovery_video_work w WHERE w.job_id=j.id AND j.operation='refresh_entry' AND (w.owner_uri=$1 OR ($2::text IS NULL AND w.channel_uri=$1)) AND ($2::text IS NULL OR j.target_uri=$2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b2ad955c043331b5de04028384ff7e9056cff50ded999831a1b80290c5a940cf"
+}

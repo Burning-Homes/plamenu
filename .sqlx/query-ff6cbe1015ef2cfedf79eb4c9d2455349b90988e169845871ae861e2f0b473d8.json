@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_jobs SET lease_token=NULL,lease_owner=NULL,leased_until=NULL WHERE source_id IN (SELECT id FROM discovery_sources WHERE id=$1 OR ($2 AND origin=$3))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ff6cbe1015ef2cfedf79eb4c9d2455349b90988e169845871ae861e2f0b473d8"
+}

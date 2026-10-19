@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_entries SET state=CASE WHEN state='withdrawn' THEN state ELSE $2 END,revision=revision+1,title=NULL,summary=NULL,language=NULL,outbox_uri=NULL,outbox_next_at=NULL,published_at=NULL,sensitive=false,invalidation_reason=$3,updated_at=clock_timestamp() WHERE canonical_uri=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "12540ccccee5ecf31ab909394f31c6ab302a7bbdd64cd79e64da97d31d642368"
+}

@@ -814,11 +814,14 @@ pub struct RemoteActor {
     /// Locked account; absent on actors that never lock.
     #[serde(default)]
     pub manually_approves_followers: bool,
-    /// Discoverability opt-in (`toot:discoverable`); absent on actors that
-    /// never opt in, treated as false.
+    /// Discoverability opt-in (`toot:discoverable`); existing account flows
+    /// treat absence as false. Independent discovery reads presence from the
+    /// original document with [`crate::discovery::DiscoverySignals`].
     #[serde(default)]
     pub discoverable: bool,
-    /// Public-post search opt-in (`toot:indexable`); absent treated as false.
+    /// Public-post search opt-in (`toot:indexable`); existing account flows
+    /// treat absence as false. See [`crate::discovery::DiscoverySignals`] for
+    /// presence-aware discovery policy.
     #[serde(default)]
     pub indexable: bool,
     /// `GoToSocial`'s unauthenticated-web audience hints. A positive value on

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO discovery_entries(id,canonical_uri,source_id,kind,actor_uri,account_id,\n        state,policy_revision,discoverable,indexable,visibility,title,summary,language,verified_at,valid_until,invalidation_reason,browse_ordinal,outbox_uri,outbox_next_at,published_at,sensitive)\n        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,CASE WHEN $19::text IS NULL THEN NULL ELSE now() END,$20,$21)\n        ON CONFLICT(canonical_uri) DO UPDATE SET actor_uri=excluded.actor_uri,account_id=excluded.account_id,\n        state=excluded.state,policy_revision=excluded.policy_revision,discoverable=excluded.discoverable,\n        indexable=excluded.indexable,visibility=excluded.visibility,title=excluded.title,summary=excluded.summary,\n        language=excluded.language,verified_at=excluded.verified_at,valid_until=excluded.valid_until,\n        outbox_uri=excluded.outbox_uri,outbox_next_at=CASE WHEN excluded.outbox_uri IS NULL THEN NULL WHEN discovery_entries.outbox_uri IS DISTINCT FROM excluded.outbox_uri THEN now() ELSE discovery_entries.outbox_next_at END,\n        published_at=excluded.published_at,sensitive=excluded.sensitive,\n        invalidation_reason=excluded.invalidation_reason,revision=discovery_entries.revision+1,updated_at=now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8",
+        "Text",
+        "Text",
+        "Int8",
+        "Text",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Text",
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ddc9dc66b066db52a9cfeae36d1d91978bcafeb2b49a8a5b602dc3229f49af9e"
+}

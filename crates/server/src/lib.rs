@@ -20,6 +20,7 @@ pub mod conversations;
 pub mod crypto;
 pub mod crypto_gate;
 pub mod delivery;
+pub mod discovery;
 pub mod emoji;
 pub mod entities;
 pub mod error;

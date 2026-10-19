@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO discovery_lenses(account_id,topic) VALUES($1,$2) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1edea8d3453af24ad09f88493710d45505df509e6ff92c2d29efe46a7ff325ef"
+}

@@ -15,6 +15,7 @@ mod announcements;
 mod appeals;
 mod audit_log;
 mod custom_emojis;
+mod discovery;
 mod federation_debug;
 mod groups;
 mod instances;
@@ -187,6 +188,11 @@ const SECTIONS: &[Section] = &[
         permissions: &[permission::MANAGE_FEDERATION],
     },
     Section {
+        href: "/admin/discovery",
+        label: "Discover",
+        permissions: &[permission::MANAGE_FEDERATION],
+    },
+    Section {
         href: "/admin/remote-history",
         label: "History",
         permissions: &[permission::MANAGE_FEDERATION],
@@ -292,10 +298,11 @@ pub(super) fn admin_shell(admin: &WebAdmin, current: &str, title: &str, body: &M
                 h1 { (icon("shield")) " Administration" }
             }
             @let music_jobs_title=admin.user.locale.text("music-jobs-title");
+            @let discovery_title=admin.user.locale.text("discovery-title");
             @let tabs: Vec<view::Tab> = SECTIONS
                 .iter()
                 .filter(|section| can_section(admin, section))
-                .map(|section| view::Tab::new(section.href, if section.href=="/admin/music/jobs"{&music_jobs_title}else{section.label}, current == section.href))
+                .map(|section| view::Tab::new(section.href, if section.href=="/admin/music/jobs"{&music_jobs_title}else if section.href=="/admin/discovery"{&discovery_title}else{section.label}, current == section.href))
                 .collect();
             (view::tab_strip("Admin sections", &tabs))
             div.admin__body {
@@ -1027,6 +1034,13 @@ fn moderation_router() -> Router<AppState> {
         )
         .route("/admin/relays", get(relays::index))
         .route("/admin/federation-debug", get(federation_debug::index))
+        .route("/admin/discovery", get(discovery::index))
+        .route("/admin/discovery/export", get(discovery::export))
+        .route("/web/admin/discovery/bootstrap", post(discovery::bootstrap))
+        .route("/web/admin/discovery/import", post(discovery::import))
+        .route("/web/admin/discovery/settings", post(discovery::save))
+        .route("/web/admin/discovery/sources", post(discovery::add))
+        .route("/web/admin/discovery/sources/{id}", post(discovery::toggle))
         .route("/admin/remote-history", get(remote_history::index))
         .route("/web/admin/remote-history", post(remote_history::save))
         .route(

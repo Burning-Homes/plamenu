@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_entries SET revision=revision+1 WHERE canonical_uri=$1 AND kind='profile'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b671fc57745df68fc409b8e457c257ceeee93459a2b69204f0cc74574ac1d8d8"
+}

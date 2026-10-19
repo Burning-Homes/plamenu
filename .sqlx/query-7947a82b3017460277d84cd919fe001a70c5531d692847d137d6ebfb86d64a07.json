@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM discovery_search_runs WHERE expires_at<=clock_timestamp()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "7947a82b3017460277d84cd919fe001a70c5531d692847d137d6ebfb86d64a07"
+}

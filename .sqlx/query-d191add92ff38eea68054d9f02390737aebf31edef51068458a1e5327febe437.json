@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM discovery_video_details WHERE entry_id=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "entry_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_video_details",
+            "name": "entry_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "uuid",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_video_details",
+            "name": "uuid"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_video_details",
+            "name": "owner_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "channel_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_video_details",
+            "name": "channel_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "channel_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_video_details",
+            "name": "channel_title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "duration",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "discovery_video_details",
+            "name": "duration"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "d191add92ff38eea68054d9f02390737aebf31edef51068458a1e5327febe437"
+}

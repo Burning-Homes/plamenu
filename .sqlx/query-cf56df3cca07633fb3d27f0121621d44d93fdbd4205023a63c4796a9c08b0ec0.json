@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n        (SELECT count(*) FROM discovery_sources) <= $1\n        AND NOT EXISTS (SELECT 1 FROM discovery_sources GROUP BY origin HAVING count(*) > $2)\n        AND NOT EXISTS (SELECT 1 FROM discovery_sources GROUP BY introduced_by HAVING count(*) > $3)\n        AND (SELECT count(*) FROM discovery_jobs) <= $4\n        AND NOT EXISTS (SELECT 1 FROM discovery_jobs GROUP BY origin HAVING count(*) > $5)\n        AND NOT EXISTS (SELECT 1 FROM discovery_jobs GROUP BY introduced_by HAVING count(*) > $6)\n        AND (SELECT count(*) FROM discovery_entries) <= $7\n        AND NOT EXISTS (SELECT 1 FROM discovery_entries e JOIN discovery_sources s ON s.id=e.source_id\n            GROUP BY s.origin HAVING count(*) > $8)\n        AND NOT EXISTS (SELECT 1 FROM discovery_entries e JOIN discovery_sources s ON s.id=e.source_id\n            GROUP BY s.introduced_by HAVING count(*) > $9) AS \"fits!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "fits!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "cf56df3cca07633fb3d27f0121621d44d93fdbd4205023a63c4796a9c08b0ec0"
+}

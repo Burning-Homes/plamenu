@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM discovery_jobs WHERE NOT withdrawn AND (expires_at<=clock_timestamp() OR (attempts >= $1 AND (leased_until IS NULL OR leased_until<=clock_timestamp())))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bd6bf07d567ca0db701ef0115e9ae550046ee49f65d688f8beea699f3e86346d"
+}

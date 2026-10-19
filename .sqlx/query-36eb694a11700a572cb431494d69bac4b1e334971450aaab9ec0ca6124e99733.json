@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_sources SET attempts_total=attempts_total+1 WHERE id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "36eb694a11700a572cb431494d69bac4b1e334971450aaab9ec0ca6124e99733"
+}

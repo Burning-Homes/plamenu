@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_entries SET verified_at=clock_timestamp()-interval '2 days',valid_until=clock_timestamp()-interval '1 second',updated_at=clock_timestamp()-interval '24 hours' WHERE canonical_uri=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7c5c9637b3ccd3fc528f9d3e0322afe6288d70c0dd70a019605ab8e779c9156b"
+}

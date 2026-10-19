@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id,withdrawn FROM discovery_jobs WHERE target_uri=$1 AND operation=$2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "withdrawn",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "discovery_jobs",
+            "name": "withdrawn"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "9b0bde53b4347e6b8fcb56bf0c0ce56e6cc7d507c14213411b27f7e781f1fd66"
+}

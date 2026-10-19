@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT topic FROM discovery_topics WHERE entry_id=$1 ORDER BY topic LIMIT 16",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "topic",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_topics",
+            "name": "topic"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5c816b853653a3bd25960e002d4f6222ed1054f42ebb8ac17c2af3418b4ef00f"
+}

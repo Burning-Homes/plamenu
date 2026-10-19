@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO discovery_video_details(entry_id,uuid,owner_uri,channel_uri,channel_title,duration) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(entry_id) DO UPDATE SET uuid=excluded.uuid,owner_uri=excluded.owner_uri,channel_uri=excluded.channel_uri,channel_title=excluded.channel_title,duration=excluded.duration",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1ef44579c9284b4354e839b3822320b0d1dda547203ccb47ce5cfb4206dbcd1b"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM discovery_jobs WHERE NOT withdrawn AND\n        ((operation='sample_outbox' AND target_uri=$1) OR cursor=$1 OR target_uri IN\n         (SELECT canonical_uri FROM discovery_entries WHERE kind='post' AND actor_uri=$1))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eb23e379d8d20c849a3912b53266eb463ec093f4f80fd8a76fd15f989b40e281"
+}

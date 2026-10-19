@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_jobs SET introduced_by=NULL,lease_token=NULL,lease_owner=NULL,leased_until=NULL WHERE source_id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7b55c860d0bc208df00b91882870cac11bd5d67242ed30582a7d3f42145aeb25"
+}

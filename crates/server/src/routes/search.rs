@@ -158,6 +158,33 @@ pub async fn search_v2(
         results["hashtags"] =
             Value::Array(search_hashtags(&state, viewer_id, &q, limit, offset).await?);
     }
+    // Catalogue objects are intentionally not fabricated as imported Mastodon
+    // account/status ids. First-party and supporting clients can open these
+    // verified canonical resources through the ordinary resolver.
+    if let Some(viewer) = viewer_id
+        && !truthy(query.following.as_deref())
+        && query.account_id.is_none()
+        && query.max_id.is_none()
+        && query.min_id.is_none()
+    {
+        let entries =
+            crate::discovery::search::search(&state, viewer, &q, kind, limit, offset).await?;
+        let mut discovery = Vec::new();
+        for e in entries {
+            if ["accounts", "statuses"].iter().any(|k| {
+                results[*k].as_array().is_some_and(|rows| {
+                    rows.iter().any(|v| {
+                        v["uri"].as_str() == Some(e.canonical_uri.as_str())
+                            || v["url"].as_str() == Some(e.canonical_uri.as_str())
+                    })
+                })
+            }) {
+                continue;
+            }
+            discovery.push(json!({"id":e.id.to_string(),"type":e.kind,"uri":e.canonical_uri,"actor_uri":e.actor_uri,"title":e.title,"summary":e.summary,"language":e.language,"sensitive":e.sensitive}));
+        }
+        results["discovery"] = Value::Array(discovery);
+    }
     Ok(Json(results))
 }
 

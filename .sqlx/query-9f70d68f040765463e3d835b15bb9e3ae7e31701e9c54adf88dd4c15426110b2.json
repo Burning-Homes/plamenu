@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n        (SELECT count(*) FROM discovery_sources WHERE introduced_by IS NULL)<$2\n        AND (SELECT count(*) FROM discovery_jobs WHERE introduced_by IS NULL OR source_id=$1)<=$3\n        AND (SELECT count(*) FROM discovery_entries e JOIN discovery_sources s ON s.id=e.source_id\n            WHERE s.introduced_by IS NULL OR s.id=$1)<=$4 AS \"fits!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "fits!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9f70d68f040765463e3d835b15bb9e3ae7e31701e9c54adf88dd4c15426110b2"
+}

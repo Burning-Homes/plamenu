@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_sources SET peer_next_at=clock_timestamp()+interval '24 hours' WHERE id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2b56f908a3f14e5fbf88d30dffcadce9512b9975d6e3a7d512b7bb35e782c312"
+}

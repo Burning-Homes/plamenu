@@ -65,6 +65,7 @@ http = "1"
 httpdate = "1"
 percent-encoding = "2.3"
 image = { version = "0.25", default-features = false, features = [
+    "ico",
     "gif",
     "jpeg",
     "png",

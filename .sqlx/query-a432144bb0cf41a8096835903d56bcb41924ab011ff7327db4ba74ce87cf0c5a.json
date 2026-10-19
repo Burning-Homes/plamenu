@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_settings SET enabled=$1,paused=$2,\n        allow_missing_discoverable=$3,allow_missing_indexable=$4,disabled_mechanisms=$5,\n        max_sources=$6,sources_per_origin=$7,sources_per_introducer=$8,\n        max_jobs=$9,jobs_per_origin=$10,jobs_per_introducer=$11,\n        max_entries=$12,entries_per_origin=$13,entries_per_introducer=$14,\n        max_inflight=$15,max_attempts=$16,lease_seconds=$17,requests_per_day=$18,requests_per_origin=$19,bytes_per_day=$20,revision=revision+1\n        WHERE singleton",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Bool",
+        "Bool",
+        "Bool",
+        "TextArray",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a432144bb0cf41a8096835903d56bcb41924ab011ff7327db4ba74ce87cf0c5a"
+}

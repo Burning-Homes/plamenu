@@ -16,6 +16,7 @@ sqlx = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 # `sync` (Barrier) is used only by the concurrent-upsert race regression tests.

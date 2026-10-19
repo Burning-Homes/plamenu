@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT e.id,e.canonical_uri FROM discovery_entries e JOIN discovery_sources s ON s.id=e.source_id\n        CROSS JOIN discovery_sources target WHERE target.id=$1 AND e.kind='post' AND e.state='active'\n        AND e.verified_at<clock_timestamp()-interval '12 hours' AND (NOT $2 OR s.origin=target.origin)\n        AND (NOT $3 OR e.actor_uri=$4) AND NOT EXISTS(SELECT 1 FROM discovery_dismissals d WHERE d.entry_id=e.id)\n        AND NOT EXISTS(SELECT 1 FROM discovery_jobs j WHERE j.target_uri=e.canonical_uri AND (j.withdrawn OR j.leased_until>clock_timestamp()))\n        ORDER BY e.verified_at,e.id LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "canonical_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "canonical_uri"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "e48d0fdb34d29367427e7efda2b808ef80216fb1ff223e4e6f710c6a8b242ab6"
+}

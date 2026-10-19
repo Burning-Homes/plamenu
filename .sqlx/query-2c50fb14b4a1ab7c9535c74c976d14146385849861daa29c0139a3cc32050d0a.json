@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_search_runs SET requests=requests+1 WHERE id=$1 AND requests<24 AND NOT finished AND deadline>clock_timestamp()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2c50fb14b4a1ab7c9535c74c976d14146385849861daa29c0139a3cc32050d0a"
+}

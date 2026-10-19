@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_requests SET started_at=clock_timestamp()-interval '25 hours'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "3a0c5ca22023669c4cbec26ac924958d8d05d1cd6868b20ebe4620d4d397a6ff"
+}

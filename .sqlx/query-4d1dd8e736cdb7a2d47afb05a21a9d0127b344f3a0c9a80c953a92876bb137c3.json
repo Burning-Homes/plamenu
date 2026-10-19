@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM discovery_jobs WHERE target_uri=$1)\n        OR EXISTS(SELECT 1 FROM discovery_entries WHERE canonical_uri=$1 AND state='withdrawn') AS \"busy!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "busy!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4d1dd8e736cdb7a2d47afb05a21a9d0127b344f3a0c9a80c953a92876bb137c3"
+}

@@ -56,7 +56,6 @@ pub(crate) async fn anon_nav(state: &AppState) -> layout::AnonNav {
     layout::AnonNav {
         feeds: state.timeline_preview_federated().await || state.timeline_preview_local().await,
         videos: state.timeline_preview_federated().await,
-        trends: state.anon_trends().await,
         people: state.anon_directory().await,
         groups: state.anon_groups().await,
         search: state.public_search().await,
@@ -4520,7 +4519,30 @@ pub async fn search(
             .collect();
     }
 
-    let has_results = !accounts.is_empty() || !statuses.is_empty() || !hashtags.is_empty();
+    let mut discovered = if let Some(user) = session.as_ref() {
+        crate::discovery::search::search(&state, user.current.account.id, &q, None, LIMIT, 0)
+            .await?
+    } else {
+        Vec::new()
+    };
+    // A normally resolved result and its catalogue card are one identity.
+    discovered.retain(|entry| {
+        !accounts.iter().chain(statuses.iter()).any(|v| {
+            ["uri", "url"].iter().any(|key| {
+                v.get(*key).and_then(serde_json::Value::as_str)
+                    == Some(entry.canonical_uri.as_str())
+            })
+        })
+    });
+    let discovery_cards = if let Some(user) = session.as_ref() {
+        super::discovery::search_cards(&state, user, &discovered, &q).await?
+    } else {
+        html! {}
+    };
+    let has_results = !accounts.is_empty()
+        || !statuses.is_empty()
+        || !hashtags.is_empty()
+        || !discovered.is_empty();
     let empty_result_message = if q.is_empty() || has_results {
         None
     } else {
@@ -4559,6 +4581,9 @@ pub async fn search(
                             }
                         }
                     }
+                }
+                @if !discovered.is_empty() {
+                    section.results {h2 {(locale.text("discovery-title"))} (discovery_cards)}
                 }
                 @if !hashtags.is_empty() {
                     section.results {

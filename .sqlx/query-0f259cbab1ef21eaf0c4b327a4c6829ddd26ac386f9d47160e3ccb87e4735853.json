@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT e.revision,e.outbox_uri,e.indexable,e.visibility,e.valid_until,s.introduced_by\n        FROM discovery_entries e JOIN discovery_sources s ON s.id=e.source_id\n        WHERE e.canonical_uri=$1 AND e.source_id=$2 AND e.kind='profile'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "revision",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "revision"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "outbox_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "outbox_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "indexable",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "indexable"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "valid_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "valid_until"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "introduced_by",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "introduced_by"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "0f259cbab1ef21eaf0c4b327a4c6829ddd26ac386f9d47160e3ccb87e4735853"
+}

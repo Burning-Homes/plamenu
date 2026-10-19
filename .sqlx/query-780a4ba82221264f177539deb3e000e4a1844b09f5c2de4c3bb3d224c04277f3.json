@@ -1,0 +1,328 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM discovery_entries WHERE id=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "canonical_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "canonical_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "source_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "actor_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "actor_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "account_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "revision",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "revision"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "policy_revision",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "policy_revision"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "discoverable",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "discoverable"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "indexable",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "indexable"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "visibility",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "visibility"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "summary",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "summary"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "verified_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "verified_at"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "valid_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "valid_until"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "invalidation_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "invalidation_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "browse_ordinal",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "browse_ordinal"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "outbox_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "outbox_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "outbox_next_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "outbox_next_at"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "sensitive",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "sensitive"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "creator_ordinal",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "creator_ordinal"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "outbox_round",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_entries",
+            "name": "outbox_round"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "780a4ba82221264f177539deb3e000e4a1844b09f5c2de4c3bb3d224c04277f3"
+}

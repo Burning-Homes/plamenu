@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_sources SET enabled=$2,revision=revision+1 WHERE id=$1 AND enabled<>$2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "727c8b7443bd84261758edf8685ac9da0b2d1b0cd679543ffe676f62fc79beba"
+}

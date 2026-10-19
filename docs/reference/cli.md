@@ -27,6 +27,7 @@ Commands:
   media          Maintenance tasks for stored media
   federation     Read-only federation diagnostics (fetch objects, resolve handles, inspect the delivery queue and the reachability breaker)
   self-destruct  Erase the server from the federation (Mastodon's `tootctl self-destruct`): broadcast account deletion notices to every known server, and serve 410 Gone while they go out. Irreversible; always asks for confirmation. Re-run to see the wind-down's progress
+  discovery      Inspect and control independent discovery without starting acquisition
   help           Print this message or the help of the given subcommand(s)
 
 Options:
@@ -1086,4 +1087,217 @@ Usage: plamenu self-destruct [OPTIONS]
 Options:
       --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
   -h, --help             Print help
+```
+
+### `plamenu discovery`
+
+```text
+$ plamenu discovery --help
+Inspect and control independent discovery without starting acquisition
+
+Usage: plamenu discovery [OPTIONS] <COMMAND>
+
+Commands:
+  sources     Bootstrap, import or export untrusted source hints
+  add-source  Admit a public profile/community directory or video catalogue; enable discovery first
+  run-once    Run one bounded worker batch now, respecting pause, policy and budgets
+  profiles    Show currently eligible profile text; does not contact peers
+  recheck     Refetch a known canonical profile, community, post or video, including an operator-selected withdrawal
+  status      Settings, queue and rolling budgets, plus at most 200 source records
+  pause       Stop acquisition and invalidate current leases
+  resume      Resume acquisition if the master switch is enabled
+  configure   Change only the supplied controls. Missing consent defaults to allow
+  help        Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+#### `plamenu discovery sources`
+
+```text
+$ plamenu discovery sources --help
+Bootstrap, import or export untrusted source hints
+
+Usage: plamenu discovery sources [OPTIONS] <COMMAND>
+
+Commands:
+  bootstrap  Admit the reviewed bundled starters; discovery must be enabled first
+  import     Import a version-1 JSON source list (at most 64 KiB / 100 addresses)
+  export     Write addresses and observed public facts to stdout (first 100 sources)
+  help       Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+##### `plamenu discovery sources bootstrap`
+
+```text
+$ plamenu discovery sources bootstrap --help
+Admit the reviewed bundled starters; discovery must be enabled first
+
+Usage: plamenu discovery sources bootstrap [OPTIONS]
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+##### `plamenu discovery sources import`
+
+```text
+$ plamenu discovery sources import --help
+Import a version-1 JSON source list (at most 64 KiB / 100 addresses)
+
+Usage: plamenu discovery sources import [OPTIONS] <PATH>
+
+Arguments:
+  <PATH>
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+      --replace-bundled  Disable bundled sources absent from this list
+  -h, --help             Print help
+```
+
+##### `plamenu discovery sources export`
+
+```text
+$ plamenu discovery sources export --help
+Write addresses and observed public facts to stdout (first 100 sources)
+
+Usage: plamenu discovery sources export [OPTIONS]
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+#### `plamenu discovery add-source`
+
+```text
+$ plamenu discovery add-source --help
+Admit a public profile/community directory or video catalogue; enable discovery first
+
+Usage: plamenu discovery add-source [OPTIONS] <URL>
+
+Arguments:
+  <URL>
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+#### `plamenu discovery run-once`
+
+```text
+$ plamenu discovery run-once --help
+Run one bounded worker batch now, respecting pause, policy and budgets
+
+Usage: plamenu discovery run-once [OPTIONS]
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+#### `plamenu discovery profiles`
+
+```text
+$ plamenu discovery profiles --help
+Show currently eligible profile text; does not contact peers
+
+Usage: plamenu discovery profiles [OPTIONS]
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+#### `plamenu discovery recheck`
+
+```text
+$ plamenu discovery recheck --help
+Refetch a known canonical profile, community, post or video, including an operator-selected withdrawal
+
+Usage: plamenu discovery recheck [OPTIONS] <URI>
+
+Arguments:
+  <URI>
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+#### `plamenu discovery status`
+
+```text
+$ plamenu discovery status --help
+Settings, queue and rolling budgets, plus at most 200 source records
+
+Usage: plamenu discovery status [OPTIONS]
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+#### `plamenu discovery pause`
+
+```text
+$ plamenu discovery pause --help
+Stop acquisition and invalidate current leases
+
+Usage: plamenu discovery pause [OPTIONS]
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+#### `plamenu discovery resume`
+
+```text
+$ plamenu discovery resume --help
+Resume acquisition if the master switch is enabled
+
+Usage: plamenu discovery resume [OPTIONS]
+
+Options:
+      --config <CONFIG>  TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+  -h, --help             Print help
+```
+
+#### `plamenu discovery configure`
+
+```text
+$ plamenu discovery configure --help
+Change only the supplied controls. Missing consent defaults to allow
+
+Usage: plamenu discovery configure [OPTIONS]
+
+Options:
+      --config <CONFIG>
+          TOML configuration file used by every command except `config generate` [default: plamenu.toml]
+      --enabled <ENABLED>
+          [possible values: true, false]
+      --allow-missing-discoverable <ALLOW_MISSING_DISCOVERABLE>
+          [possible values: true, false]
+      --allow-missing-indexable <ALLOW_MISSING_INDEXABLE>
+          [possible values: true, false]
+      --disabled-mechanisms <DISABLED_MECHANISMS>
+          Comma-separated mechanism names; an empty string enables all mechanisms
+      --requests-per-day <REQUESTS_PER_DAY>
+
+      --requests-per-origin <REQUESTS_PER_ORIGIN>
+
+      --bytes-per-day <BYTES_PER_DAY>
+
+  -h, --help
+          Print help
 ```

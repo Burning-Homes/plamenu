@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM discovery_requests WHERE started_at<=clock_timestamp()-interval '24 hours' AND active_until<=clock_timestamp()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "cd1172e7e6ee571c24145b78d1c477b39c27ca58bf409ffe233a052f63c2ba9d"
+}

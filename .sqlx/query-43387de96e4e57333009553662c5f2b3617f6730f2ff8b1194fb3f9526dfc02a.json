@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM discovery_entries WHERE canonical_uri=$1 AND actor_uri=$2 AND kind='post')\n        OR EXISTS(SELECT 1 FROM discovery_jobs WHERE target_uri=$1 AND cursor=$2) AS \"known!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "known!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "43387de96e4e57333009553662c5f2b3617f6730f2ff8b1194fb3f9526dfc02a"
+}

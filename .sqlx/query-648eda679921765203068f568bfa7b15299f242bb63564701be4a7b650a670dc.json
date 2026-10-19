@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO discovery_dismissals(account_id,entry_id)\n        SELECT $1,id FROM discovery_entries WHERE id=$2 AND kind IN ('profile','post','community','video')\n        ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "648eda679921765203068f568bfa7b15299f242bb63564701be4a7b650a670dc"
+}

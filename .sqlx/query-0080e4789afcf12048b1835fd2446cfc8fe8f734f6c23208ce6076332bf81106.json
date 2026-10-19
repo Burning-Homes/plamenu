@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM accounts a WHERE a.uri=$2 AND (a.id=$1 OR account_hidden($1,a.id) OR EXISTS(SELECT 1 FROM follow_recommendation_mutes m WHERE m.account_id=$1 AND m.target_account_id=a.id))) AS \"hidden!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hidden!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0080e4789afcf12048b1835fd2446cfc8fe8f734f6c23208ce6076332bf81106"
+}

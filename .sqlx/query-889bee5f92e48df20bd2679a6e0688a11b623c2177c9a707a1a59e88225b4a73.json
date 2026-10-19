@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (SELECT count(*) FROM accounts) AS \"accounts!\",(SELECT count(*) FROM statuses) AS \"statuses!\",(SELECT count(*) FROM follows) AS \"follows!\",(SELECT count(*) FROM notifications) AS \"notifications!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "accounts!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "statuses!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "follows!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "notifications!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "889bee5f92e48df20bd2679a6e0688a11b623c2177c9a707a1a59e88225b4a73"
+}

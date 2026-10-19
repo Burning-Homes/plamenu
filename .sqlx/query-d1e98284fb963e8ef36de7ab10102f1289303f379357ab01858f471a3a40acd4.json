@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT origin,count(*) AS \"requests!\",COALESCE(sum(bytes),0)::bigint AS \"charged_bytes!\" FROM discovery_requests WHERE started_at>clock_timestamp()-interval '24 hours' GROUP BY origin ORDER BY count(*) DESC,origin LIMIT 200",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "origin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_requests",
+            "name": "origin"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "requests!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "charged_bytes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "d1e98284fb963e8ef36de7ab10102f1289303f379357ab01858f471a3a40acd4"
+}

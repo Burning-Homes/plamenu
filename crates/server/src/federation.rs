@@ -12,9 +12,10 @@ use futures_util::{StreamExt, stream};
 use plamenu_ap::acct::Acct;
 use plamenu_ap::actor::RemoteActor;
 use plamenu_federation::{
-    FederationClient, FederationError, FetchedActivityPub, FetchedEnclosure, FetchedFeed,
-    FetchedMedia, FetchedMediaFile, FetchedMediaRange, FetchedPage, HttpMethod, MentionPage,
-    RequestSigner, ResolvedAcct, ServiceResponse, SignatureStyle,
+    DiscoveryBudget, DiscoveryDocument, DiscoveryFormat, FederationClient, FederationError,
+    FetchedActivityPub, FetchedEnclosure, FetchedFeed, FetchedMedia, FetchedMediaFile,
+    FetchedMediaRange, FetchedPage, HttpMethod, MentionPage, RequestSigner, ResolvedAcct,
+    ServiceResponse, SignatureStyle,
 };
 use serde_json::Value;
 use tokio::sync::Semaphore;
@@ -90,6 +91,21 @@ pub struct ServiceRequest {
 }
 
 pub trait FederationApi: Send + Sync {
+    /// Discovery must use its own per-wire accounting boundary. Implementations
+    /// without that boundary fail closed, rather than using unmetered defaults.
+    fn fetch_discovery<'a>(
+        &'a self,
+        _uri: &'a str,
+        _format: DiscoveryFormat,
+        _budget: &'a dyn DiscoveryBudget,
+    ) -> BoxFuture<'a, Result<DiscoveryDocument, FederationError>> {
+        Box::pin(async {
+            Err(FederationError::Admission(
+                "discovery transport unavailable".into(),
+            ))
+        })
+    }
+
     fn fetch_actor<'a>(
         &'a self,
         uri: &'a str,
@@ -562,7 +578,9 @@ impl HttpFederation {
 fn counts_as_resource_failure(error: &FederationError) -> bool {
     !matches!(
         error,
-        FederationError::InvalidUrl(_)
+        FederationError::DiscoveryDeferred(_)
+            | FederationError::DiscoveryStale
+            | FederationError::InvalidUrl(_)
             | FederationError::PrivateAddress(_)
             | FederationError::Signing(_)
             | FederationError::Io(_)
@@ -592,6 +610,31 @@ fn counts_as_host_failure_for(error: &FederationError, host: &str) -> bool {
 }
 
 impl FederationApi for HttpFederation {
+    fn fetch_discovery<'a>(
+        &'a self,
+        uri: &'a str,
+        format: DiscoveryFormat,
+        budget: &'a dyn DiscoveryBudget,
+    ) -> BoxFuture<'a, Result<DiscoveryDocument, FederationError>> {
+        Box::pin(async move {
+            let _hidden = crate::hidden_gate::try_fetch_permit(uri)
+                .map_err(|_| FederationError::DiscoveryDeferred("federation_busy"))?;
+            // Leave eight shared fetch slots available to foreground federation.
+            // Discovery never queues ahead of it while waiting for admission.
+            if self.fetch_permits.available_permits() <= 8 {
+                return Err(FederationError::DiscoveryDeferred("federation_busy"));
+            }
+            let _permit = self
+                .fetch_permits
+                .try_acquire()
+                .map_err(|_| FederationError::DiscoveryDeferred("federation_busy"))?;
+            if self.fetch_permits.available_permits() < 8 {
+                return Err(FederationError::DiscoveryDeferred("federation_busy"));
+            }
+            self.client.fetch_discovery(uri, format, budget).await
+        })
+    }
+
     fn fetch_actor<'a>(
         &'a self,
         uri: &'a str,

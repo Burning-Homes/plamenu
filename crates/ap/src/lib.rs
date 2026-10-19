@@ -9,6 +9,7 @@ pub mod activity;
 pub mod actor;
 pub mod cache_file;
 pub mod collection;
+pub mod discovery;
 pub mod emoji;
 pub mod featured;
 pub mod hashlink;

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_sources SET cooldown_until=$2,last_error=$3,revision=revision+1 WHERE id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3cedb26925376ec9b12aaa99d7270ab45652fa14a8ec77eeff3102a93fc13b6d"
+}

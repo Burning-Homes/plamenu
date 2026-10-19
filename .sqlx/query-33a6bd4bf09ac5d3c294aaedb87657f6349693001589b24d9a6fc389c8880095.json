@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT turn=0 AS \"explore!\" FROM discovery_scheduler",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "explore!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "33a6bd4bf09ac5d3c294aaedb87657f6349693001589b24d9a6fc389c8880095"
+}

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(\n        SELECT 1 FROM discovery_dismissals WHERE account_id=$1 AND entry_id=$2\n        UNION ALL\n        SELECT 1 FROM discovery_entries e JOIN accounts a ON a.uri=e.actor_uri\n        WHERE e.id=$2 AND (a.id=$1 OR account_hidden($1,a.id) OR EXISTS(\n            SELECT 1 FROM follow_recommendation_mutes m\n            WHERE m.account_id=$1 AND m.target_account_id=a.id))\n        ) AS \"hidden!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hidden!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "6a3412072b422440bfbaf541de2c48e0ebf031ffab15eba01befc9cb82f8e622"
+}

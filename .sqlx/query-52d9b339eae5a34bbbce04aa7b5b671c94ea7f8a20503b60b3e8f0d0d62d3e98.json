@@ -1,0 +1,290 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM discovery_sources ORDER BY id LIMIT 200",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "origin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "origin"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "endpoint",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "endpoint"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "introduced_by",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "introduced_by"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "revision",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "revision"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "canonical_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "canonical_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "capabilities",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "capabilities"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "verified_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "verified_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "valid_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "valid_until"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "cooldown_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "cooldown_until"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "last_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "attempts_total",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "attempts_total"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "last_success_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "last_success_at"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "last_failure_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "last_failure_at"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "depth",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "depth"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "provenance",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "provenance"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "peer_next_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "peer_next_at"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "peer_offset",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "peer_offset"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "peers_verified_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "peers_verified_at"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "peer_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "peer_error"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "next_ordinal",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "next_ordinal"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "52d9b339eae5a34bbbce04aa7b5b671c94ea7f8a20503b60b3e8f0d0d62d3e98"
+}

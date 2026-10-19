@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT origin,enabled,verified_at,provenance FROM discovery_sources WHERE id=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "origin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "origin"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "verified_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "verified_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "provenance",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "discovery_sources",
+            "name": "provenance"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "f6d6db24b12b6ba8407f73149bc8641b9843218c1129d4795a8a59120eca7e40"
+}

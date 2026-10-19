@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE discovery_sources SET canonical_uri=$2,capabilities=CASE WHEN 'peer_exploration'=ANY(capabilities) THEN ARRAY['source_inspection','video_catalogue','peer_exploration'] ELSE ARRAY['source_inspection','video_catalogue'] END,verified_at=clock_timestamp(),valid_until=clock_timestamp()+interval '24 hours',cooldown_until=NULL,last_success_at=clock_timestamp() WHERE id=$1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5a02d964f3b32f2929d64f605f19620dda6d317e8a6d87532ca371c1f51bfe09"
+}

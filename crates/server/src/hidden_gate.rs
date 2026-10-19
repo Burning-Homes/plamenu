@@ -45,6 +45,20 @@ pub async fn fetch_permit(url: &str) -> Option<SemaphorePermit<'static>> {
     permit(&FETCH_GATE, url).await
 }
 
+/// Background discovery yields immediately to a busy hidden-service lane.
+/// It must not hold shared clearnet slots or queue ahead of foreground work.
+pub(crate) fn try_fetch_permit(
+    url: &str,
+) -> Result<Option<SemaphorePermit<'static>>, tokio::sync::TryAcquireError> {
+    if !is_hidden_url(url) {
+        return Ok(None);
+    }
+    FETCH_GATE
+        .get_or_init(|| Semaphore::new(1))
+        .try_acquire()
+        .map(Some)
+}
+
 async fn permit(gate: &'static OnceLock<Semaphore>, url: &str) -> Option<SemaphorePermit<'static>> {
     if !is_hidden_url(url) {
         return None;
@@ -93,7 +107,20 @@ mod tests {
                 .await
                 .is_none()
         );
-        assert!(fetch_permit("http://xyz.onion/media").await.is_some());
+        let fetch = fetch_permit("http://xyz.onion/media").await;
+        assert!(fetch.is_some());
+        assert!(try_fetch_permit("http://abc.onion/source").is_err());
+        assert!(
+            try_fetch_permit("https://remote.example/source")
+                .unwrap()
+                .is_none()
+        );
+        drop(fetch);
+        assert!(
+            try_fetch_permit("http://abc.onion/source")
+                .unwrap()
+                .is_some()
+        );
 
         drop(first);
         let unblocked = tokio::time::timeout(

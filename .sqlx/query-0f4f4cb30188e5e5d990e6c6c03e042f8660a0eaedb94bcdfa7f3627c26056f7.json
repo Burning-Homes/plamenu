@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM discovery_lenses WHERE account_id=$1 AND ($2::text IS NULL OR topic=$2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0f4f4cb30188e5e5d990e6c6c03e042f8660a0eaedb94bcdfa7f3627c26056f7"
+}
