@@ -673,7 +673,8 @@ async fn send(app: &Router, request: Request<Body>) -> Resp {
 }
 
 async fn get(app: &Router, uri: &str, cookie: Option<&str>) -> Resp {
-    let mut request = Request::builder().uri(uri);
+    // Browsers consume URL fragments locally and never send them to the server.
+    let mut request = Request::builder().uri(uri.split('#').next().unwrap());
     if let Some(cookie) = cookie {
         request = request.header(header::COOKIE, cookie);
     }
@@ -4888,8 +4889,16 @@ async fn replies_name_their_target_and_resolve_the_parent(pool: PgPool) {
     .await;
     assert_eq!(posted.status, StatusCode::SEE_OTHER);
     let reply_permalink = posted.location.expect("redirect to the reply");
+    let (reply_path, fragment) = reply_permalink
+        .split_once('#')
+        .expect("reply scroll target");
+    assert_eq!(
+        fragment,
+        format!("post-{}", reply_path.rsplit('/').next().unwrap())
+    );
 
     let reply_page = get(&app, &reply_permalink, Some(&bob_cookie)).await;
+    assert!(reply_page.body.contains(&format!("id=\"{fragment}\"")));
     assert!(reply_page.body.contains("Replying to @alice"));
     assert!(
         reply_page
@@ -15360,7 +15369,14 @@ async fn direct_reply_composer_is_locked(pool: PgPool) {
     let app = common::test_app(pool);
     let bob = login_as(&app, "bob@example.com", PASSWORD).await;
     let thread = compose_direct(&app, &bob, "@alice psst").await;
-    let status_id = thread.rsplit('/').next().unwrap().to_owned();
+    let status_id = thread
+        .split('#')
+        .next()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .to_owned();
 
     // The thread page's inline composer is locked to a private mention and
     // says who will receive the reply.
@@ -15423,7 +15439,15 @@ async fn private_mentions_use_inline_addresses_through_preview_and_publish(pool:
     // there is no separate recipient field to keep an old address alive.
     let text = "@carol A private draft";
     let thread = compose_direct(&app, &alice, text).await;
-    let status_id = thread.rsplit('/').next().unwrap().parse().unwrap();
+    let status_id = thread
+        .split('#')
+        .next()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
     assert_eq!(
         status::source_of(&pool, status_id)
             .await
@@ -15481,7 +15505,15 @@ async fn public_thread_reply_can_become_a_private_mention_without_a_to_field(poo
         let sent = post_multipart(&app, "/web/compose", &alice, &fields).await;
         assert_eq!(sent.status, StatusCode::SEE_OTHER, "{}", sent.body);
         let thread = sent.location.unwrap();
-        let status_id = thread.rsplit('/').next().unwrap().parse().unwrap();
+        let status_id = thread
+            .split('#')
+            .next()
+            .unwrap()
+            .rsplit('/')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
         let stored = status::find_by_id(&pool, status_id).await.unwrap().unwrap();
         assert_eq!(stored.visibility, "direct");
         assert_eq!(stored.in_reply_to_id, Some(root_id.parse().unwrap()));
@@ -16137,9 +16169,9 @@ async fn composer_posts_article_with_inline_and_regular_media(pool: PgPool) {
         thread.body
     );
     assert!(
-        thread.body.contains(
-            r#"<span class="media__alt-text" role="tooltip">A labelled flow diagram</span>"#
-        ),
+        thread
+            .body
+            .contains(r#"popover role="note">A labelled flow diagram</span>"#),
         "inline image alt text needs a no-JS disclosure: {}",
         thread.body
     );
@@ -16156,7 +16188,7 @@ async fn composer_posts_article_with_inline_and_regular_media(pool: PgPool) {
             .body
             .matches(&format!("/media/{}", inline.file_name.as_deref().unwrap()))
             .count(),
-        1,
+        2, // one thumbnail source and one full-image lightbox link
         "the inline image is omitted from the first-party gallery"
     );
 }
@@ -17651,7 +17683,13 @@ async fn unicode_handles_stay_readable_in_reply_and_account_management_forms(poo
     let cookie = login(&app).await;
     let text = "@你好@i18n.example @Аим_Нискажуя@лемми.опенсорс.рус";
     let thread = compose(&app, &cookie, text).await;
-    let post_id = thread.rsplit('/').next().unwrap();
+    let post_id = thread
+        .split('#')
+        .next()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap();
     for route in [thread.clone(), format!("/compose?reply={post_id}")] {
         let page = get(&app, &route, Some(&cookie)).await;
         assert_eq!(page.status, StatusCode::OK);
@@ -17705,6 +17743,9 @@ async fn unicode_handles_stay_readable_in_reply_and_account_management_forms(poo
     assert_eq!(sent.status, StatusCode::SEE_OTHER);
     let reply_id = sent
         .location
+        .unwrap()
+        .split('#')
+        .next()
         .unwrap()
         .rsplit('/')
         .next()
@@ -18650,7 +18691,7 @@ async fn channel_manager_uploads_shared_profile_images_with_editor_authority(poo
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
-async fn client_messages_have_one_badge_and_shared_read_state(pool: PgPool) {
+async fn client_private_messages_appear_in_activity_and_share_thread_read_state(pool: PgPool) {
     let alice = seed_user(&pool, "alice", EMAIL, PASSWORD).await;
     let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
     let app = common::test_app(pool.clone());
@@ -18686,10 +18727,10 @@ async fn client_messages_have_one_badge_and_shared_read_state(pool: PgPool) {
     );
     let inbox = get(&app, "/notifications", Some(&recipient)).await;
     assert!(
-        !inbox
+        inbox
             .body
             .contains("A message addressed with an inline mention"),
-        "Direct messages are not duplicated in activity"
+        "Private post notifications remain available in activity"
     );
     let uid = user::find_by_account_id(&pool, bob.id)
         .await
@@ -18752,6 +18793,122 @@ async fn client_messages_have_one_badge_and_shared_read_state(pool: PgPool) {
         !plamenu_db::conversation::has_unread(&pool, bob.id)
             .await
             .unwrap()
+    );
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
+async fn private_reply_likes_reactions_and_mentions_are_visible_and_read_on_open(pool: PgPool) {
+    let alice = seed_user(&pool, "alice", EMAIL, PASSWORD).await;
+    let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
+    let app = common::test_app(pool.clone());
+    let sender = login(&app).await;
+    let recipient = login_as(&app, "bob@example.com", PASSWORD).await;
+    let root = compose(&app, &recipient, "Public root").await;
+    let root_id = root.rsplit('/').next().unwrap();
+    let csrf = csrf_of(&get(&app, "/compose", Some(&sender)).await.body);
+    let sent = post_multipart(
+        &app,
+        "/web/compose",
+        &sender,
+        &[
+            ("csrf", &csrf),
+            ("status", "@bob Private reply with activity"),
+            ("visibility", "direct"),
+            ("in_reply_to_id", root_id),
+        ],
+    )
+    .await;
+    assert_eq!(sent.status, StatusCode::SEE_OTHER, "{}", sent.body);
+    let thread = sent.location.unwrap();
+    let id = thread
+        .split('#')
+        .next()
+        .unwrap()
+        .rsplit('/')
+        .next()
+        .unwrap();
+    let bob_csrf = csrf_of(&get(&app, &thread, Some(&recipient)).await.body);
+    for verb in ["favourite", "react/%F0%9F%94%A5"] {
+        let response = post_form(
+            &app,
+            &format!("/web/statuses/{id}/{verb}"),
+            &recipient,
+            &[("csrf", &bob_csrf), ("return_to", &thread)],
+        )
+        .await;
+        assert_eq!(response.status, StatusCode::SEE_OTHER, "{}", response.body);
+    }
+    let reply = post_multipart(
+        &app,
+        "/web/compose",
+        &recipient,
+        &[
+            ("csrf", &bob_csrf),
+            ("status", "A private answer"),
+            ("visibility", "direct"),
+            ("in_reply_to_id", id),
+        ],
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER, "{}", reply.body);
+    let uid = user::find_by_account_id(&pool, alice.id)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+    assert!(
+        notification::has_unread_activity(&pool, uid, alice.id)
+            .await
+            .unwrap()
+    );
+    let notes = plamenu_db::notification_read::list(
+        &pool,
+        uid,
+        alice.id,
+        plamenu_db::notification_read::Filter::default(),
+    )
+    .await
+    .unwrap();
+    for kind in ["mention", "favourite", "pleroma:emoji_reaction"] {
+        assert!(notes.iter().any(|n| n.kind == kind), "missing {kind}");
+    }
+    let inbox = get(&app, "/notifications", Some(&sender)).await;
+    assert_eq!(inbox.status, StatusCode::OK, "{}", inbox.body);
+    assert!(inbox.body.contains("Private reply with activity"));
+    assert!(inbox.body.contains("A private answer"));
+    assert!(inbox.body.contains('🔥'));
+    assert!(
+        plamenu_db::conversation::has_unread(&pool, alice.id)
+            .await
+            .unwrap()
+    );
+
+    // Re-open from the push destination without first visiting the inbox.
+    let ids: Vec<_> = notes.iter().map(|note| note.id).collect();
+    plamenu_db::notification_read::set_many(&pool, alice.id, &ids, false)
+        .await
+        .unwrap();
+    notification::create(&pool, alice.id, bob.id, "follow", None)
+        .await
+        .unwrap();
+    let opened = get(&app, &format!("/web/statuses/{id}"), Some(&sender)).await;
+    assert_eq!(opened.status, StatusCode::SEE_OTHER);
+    let page = get(&app, &opened.location.unwrap(), Some(&sender)).await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(
+        !plamenu_db::conversation::has_unread(&pool, alice.id)
+            .await
+            .unwrap()
+    );
+    let read = plamenu_db::notification_read::read_states(&pool, uid, alice.id, &ids)
+        .await
+        .unwrap();
+    assert!(ids.iter().all(|id| read[id]));
+    assert!(
+        notification::has_unread_activity(&pool, uid, alice.id)
+            .await
+            .unwrap(),
+        "opening the private thread must preserve unrelated activity"
     );
 }
 

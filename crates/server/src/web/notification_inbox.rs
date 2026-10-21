@@ -34,7 +34,7 @@ pub async fn page(
             unread,
             mail: page.mail.unwrap_or(false),
             kinds: kinds.as_deref(),
-            exclude_direct: !page.mail.unwrap_or(false),
+            exclude_direct: false,
         },
     )
     .await?;

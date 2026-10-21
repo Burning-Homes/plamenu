@@ -788,7 +788,7 @@ fn remote_status_content(object: &Value, local_domain: &str) -> String {
 }
 
 /// The same canonical body as [`remote_status_content`], retaining only safe
-/// `<img src alt>` elements long enough for [`rewrite_remote_inline_images`]
+/// `<img src alt>` elements long enough for [`rewrite_remote_inline_media`]
 /// to replace their origin URLs with same-origin media URLs. Markdown keeps
 /// its existing renderer: its image syntax is recovered as attachments, but
 /// its sanitizer intentionally does not emit remote image loads.
@@ -809,15 +809,22 @@ static INLINE_IMG_SRC: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?i)\bsrc\s*=\s*\"([^\"]*)\""#).expect("inline image src regex")
 });
 
-/// Rewrites every retained inline image to the media row representing the
-/// same remote URL. Unknown, unsafe, or over-cap images are removed. This is
+/// Rewrites retained images and players to their same-origin media rows.
+/// Unknown, unsafe, or over-cap media sources are removed. This is
 /// the privacy boundary that makes the image-aware sanitizer safe to store.
-async fn rewrite_remote_inline_images(
+async fn rewrite_remote_inline_media(
     state: &AppState,
     status_id: i64,
     html: &str,
 ) -> Result<String, ApiError> {
-    if !INLINE_IMG_TAG.is_match(html) {
+    if !INLINE_IMG_TAG.is_match(html) && !crate::inline_media::PLAYERS.is_match(html) {
+        // A standalone source has no playable parent and must not retain an
+        // unproxied origin URL in stored content.
+        if crate::inline_media::SOURCE_TAGS.is_match(html) {
+            return Ok(crate::inline_media::SOURCE_TAGS
+                .replace_all(html, "")
+                .into_owned());
+        }
         return Ok(html.to_owned());
     }
     let rows = media::for_statuses_read_only(&state.pool, &[status_id])
@@ -828,8 +835,19 @@ async fn rewrite_remote_inline_images(
         .iter()
         .filter_map(|item| item.remote_url.as_ref().map(|url| (url.clone(), item)))
         .collect();
+    let html = crate::inline_media::PLAYERS.replace_all(html, |captures: &regex::Captures<'_>| {
+        let Some(source) = crate::inline_media::player_source(&captures[0]) else { return String::new() };
+        let Some(item) = by_remote.get(&source) else { return String::new() };
+        let kind = if captures[0].starts_with("<audio") { "audio" } else { "video" };
+        if item.kind_or_derived() != kind { return String::new(); }
+        let entity = crate::entities::media_json(&state.config.domain, item, false);
+        let Some(url) = entity.get("url").and_then(Value::as_str) else { return String::new() };
+        format!(r#"<{kind} class="status__inline-player" data-media-id="{}" src="{}" controls preload="none"></{kind}>"#,
+            item.id, plamenu_ap::text::escape_html(url))
+    });
+    let html = crate::inline_media::SOURCE_TAGS.replace_all(&html, "");
     Ok(INLINE_IMG_TAG
-        .replace_all(html, |captures: &regex::Captures<'_>| {
+        .replace_all(&html, |captures: &regex::Captures<'_>| {
             let tag = captures.get(0).map_or("", |m| m.as_str());
             let Some(src) = INLINE_IMG_SRC
                 .captures(tag)
@@ -2258,7 +2276,7 @@ async fn store_remote_note(
     // optional enrichment runs while holding it. Plain Notes keep their cost.
     let parsed_poll = crate::polls::parse_question(object);
     let mention_plan = if carries_mentions(object, &state.config.domain) {
-        Box::pin(resolve_note_mentions(state, object)).await?
+        Box::pin(resolve_note_mentions(state, object, visibility == "direct")).await?
     } else {
         RemoteMentionPlan::default()
     };
@@ -2355,7 +2373,7 @@ async fn store_remote_note(
     {
         video::complete_remote_channel_check(&state.pool, stored.id).await?;
     }
-    let rewritten = rewrite_remote_inline_images(state, stored.id, &content_with_images).await?;
+    let rewritten = rewrite_remote_inline_media(state, stored.id, &content_with_images).await?;
     if rewritten != stored.content {
         stored = status::replace_content(&state.pool, stored.id, &rewritten).await?;
     }
@@ -2495,7 +2513,7 @@ fn attachment_pairs(object: &Value, caps: MediaCaps) -> Vec<(String, Option<Stri
     // Inline and structured images are independent channels. Merge both, using
     // inline alt text to fill a structured attachment whose description is
     // absent, and cap the combined set rather than either input independently.
-    for (url, alt) in inline_image_pairs(object) {
+    for (url, alt) in inline_media_pairs(object) {
         if let Some((_, description)) = pairs.iter_mut().find(|(stored, _)| stored == &url) {
             if description.is_none() {
                 *description = alt;
@@ -2509,27 +2527,32 @@ fn attachment_pairs(object: &Value, caps: MediaCaps) -> Vec<(String, Option<Stri
     pairs
 }
 
-/// Safe (federation-URL) image sources carried only inline in the body's
-/// `<img>` tags, deduped and capped. Used to recover images from posts that
+/// Safe image/audio/video sources carried inline in the body, deduped and capped. Used to recover images from posts that
 /// declare no `attachment` and no native media object — Lemmy/PieFed render
 /// their images inline, and the HTML sanitizer strips `<img>`, so without
 /// this they vanish.
-fn inline_image_pairs(object: &Value) -> Vec<(String, Option<String>)> {
+fn inline_media_pairs(object: &Value) -> Vec<(String, Option<String>)> {
     let Some(content) = object_content(object) else {
         return Vec::new();
     };
     let mut seen = std::collections::HashSet::new();
     crate::link_preview::inline_images(content)
         .into_iter()
-        .filter(|image| federation_url(&image.src))
-        .filter(|image| seen.insert(image.src.clone()))
+        .map(|image| (image.src, image.alt))
+        .chain(
+            crate::inline_media::players(content)
+                .into_iter()
+                .map(|(url, _)| (url, None)),
+        )
+        .filter(|(url, _)| federation_url(url))
+        .filter(|(url, _)| seen.insert(url.clone()))
         .take(MAX_REMOTE_ATTACHMENTS)
-        .map(|image| {
-            let alt = image
-                .alt
-                .map(|alt| plamenu_ap::text::sanitize_remote_plain(&alt))
-                .filter(|alt| !alt.trim().is_empty());
-            (image.src, alt)
+        .map(|(url, alt)| {
+            (
+                url,
+                alt.map(|alt| plamenu_ap::text::sanitize_remote_plain(&alt))
+                    .filter(|alt| !alt.trim().is_empty()),
+            )
         })
         .collect()
 }
@@ -2774,7 +2797,7 @@ async fn update_remote_note_with_publication(
     // author/timestamp checks and while holding the object write guard.
     crate::polls::refresh_remote_poll(state, existing, object).await?;
     let content_with_images = remote_status_content_with_images(object, &state.config.domain);
-    let content = rewrite_remote_inline_images(state, existing.id, &content_with_images).await?;
+    let content = rewrite_remote_inline_media(state, existing.id, &content_with_images).await?;
     let external_url = attachment_link_target(object);
     let title = hoisted_title(object);
     let edited_at = object
@@ -2977,7 +3000,7 @@ async fn update_remote_note_with_publication(
         store_remote_attachments(state, &updated, object, context.is_history()).await?;
     }
     crate::video_metadata::ingest(state, updated.id, object).await?;
-    let rewritten = rewrite_remote_inline_images(state, updated.id, &content_with_images).await?;
+    let rewritten = rewrite_remote_inline_media(state, updated.id, &content_with_images).await?;
     if rewritten != updated.content {
         updated = status::replace_content(&state.pool, updated.id, &rewritten).await?;
     }
@@ -3594,9 +3617,9 @@ async fn store_remote_featured_collections(
 ///
 /// Addressing semantics match Mastodon's `process_audience`: `to`, `cc`, and
 /// `audience` grant silent access — delivery and private-post visibility —
-/// without a notification. A real (`tag`) mention always outranks a silent
-/// audience one for the same account and is the only audience-related source
-/// of a mention notification.
+/// without a notification for ordinary posts. Direct messages notify their
+/// addressed participants even if their sender omitted Mention tags. A real
+/// (`tag`) mention always outranks a silent audience one for the same account.
 fn carries_mentions(object: &Value, domain: &str) -> bool {
     one_or_many(object.get("tag"))
         .iter()
@@ -3634,6 +3657,7 @@ struct RemoteMentionPlan {
 async fn resolve_note_mentions(
     state: &AppState,
     object: &Value,
+    direct: bool,
 ) -> Result<RemoteMentionPlan, ApiError> {
     // Classify the tag Mention hrefs into local usernames and remote hrefs.
     let mut local_tag_uris: Vec<String> = Vec::new();
@@ -3693,12 +3717,14 @@ async fn resolve_note_mentions(
     for &id in &remote_mention_ids {
         record_mention(&mut order, &mut silent_by_id, id, false);
     }
-    // Audience addressing grants silent access but never manufactures a
-    // notification. Current Pleroma and Mitra serializers emit a real Mention
-    // tag for ordinary replies; arbitrary `to` has broader delivery meanings.
+    // Ordinary addressing grants silent access. A direct recipient also gets
+    // a message notification; policy/mute checks still apply at notification creation.
     for (uri, _) in &audience {
         if let Some(&id) = audience_by_uri.get(uri) {
             record_mention(&mut order, &mut silent_by_id, id, true);
+            if direct && notify_seen.insert(id) {
+                notify.push(id);
+            }
         }
     }
     let mention_rows: Vec<(i64, bool)> = order.iter().map(|id| (*id, silent_by_id[id])).collect();
@@ -3719,7 +3745,7 @@ async fn reconcile_note_mentions(
     let RemoteMentionPlan {
         rows: mention_rows,
         notify,
-    } = resolve_note_mentions(state, object).await?;
+    } = resolve_note_mentions(state, object, stored.visibility == "direct").await?;
 
     // Persist the whole set atomically; an edit clears the old rows in the same
     // transaction so a reader never sees a partially rebuilt mention set.
@@ -4080,7 +4106,7 @@ async fn store_remote_attachments(
     // Inline images are an additional media channel, not a fallback. Articles
     // commonly carry a hero as `attachment` and diagrams inside `content`.
     // `create_remote` deduplicates the same file across both channels.
-    store_inline_image_attachments(state, stored, object, force_on_demand).await?;
+    store_inline_media_attachments(state, stored, object, force_on_demand).await?;
     Ok(())
 }
 
@@ -4344,18 +4370,17 @@ async fn store_remote_live_schedules(
     Ok(())
 }
 
-/// Recovers images carried only inline in the body's `<img>` tags as remote
-/// media. `create_remote` is idempotent per (status, url), so a file present in
+/// Recovers images and players carried only in the body as remote media. `create_remote` is idempotent per (status, url), so a file present in
 /// both `attachment` and `content` stores and downloads once. Inline alt text
 /// fills an otherwise-undescribed structured attachment. Mirrors
 /// [`attachment_pairs`].
-async fn store_inline_image_attachments(
+async fn store_inline_media_attachments(
     state: &AppState,
     stored: &status::Status,
     object: &Value,
     force_on_demand: bool,
 ) -> Result<(), ApiError> {
-    let pairs = inline_image_pairs(object);
+    let pairs = inline_media_pairs(object);
     if pairs.is_empty() {
         return Ok(());
     }
@@ -4367,6 +4392,10 @@ async fn store_inline_image_attachments(
         .iter()
         .filter_map(|item| item.remote_url.clone())
         .collect();
+    let player_types: HashMap<_, _> =
+        crate::inline_media::players(object_content(object).unwrap_or_default())
+            .into_iter()
+            .collect();
     let mut total = existing.len();
     for (url, description) in pairs {
         if urls.contains(&url) {
@@ -4378,7 +4407,8 @@ async fn store_inline_image_attachments(
         if total >= MAX_REMOTE_ATTACHMENTS {
             break;
         }
-        let content_type = content_type_from_url(&url).unwrap_or("image/jpeg");
+        let content_type = content_type_from_url(&url)
+            .unwrap_or_else(|| player_types.get(&url).copied().unwrap_or("image/jpeg"));
         media::create_remote(
             &state.pool,
             media::NewRemoteMedia {
@@ -4517,7 +4547,7 @@ mod tests {
     }
 
     #[test]
-    fn inline_image_pairs_extract_safe_images_with_alt_deduped() {
+    fn inline_media_pairs_extract_safe_images_with_alt_deduped() {
         // A Lemmy/PieFed post: the image lives only in an inline `<img>`
         // (empty `attachment`), which the sanitizer would drop.
         let object = serde_json::json!({
@@ -4527,7 +4557,7 @@ mod tests {
                 <img src=\"https://h.example/pictrs/a.avif\"></p>",
         });
         assert_eq!(
-            inline_image_pairs(&object),
+            inline_media_pairs(&object),
             [(
                 "https://h.example/pictrs/a.avif".to_owned(),
                 Some("x".to_owned())
@@ -4537,11 +4567,11 @@ mod tests {
     }
 
     #[test]
-    fn inline_image_pairs_empty_without_images() {
+    fn inline_media_pairs_empty_without_images() {
         let object = serde_json::json!({ "content": "<p>just text, no pictures</p>" });
-        assert!(inline_image_pairs(&object).is_empty());
+        assert!(inline_media_pairs(&object).is_empty());
         let no_content = serde_json::json!({ "type": "Note" });
-        assert!(inline_image_pairs(&no_content).is_empty());
+        assert!(inline_media_pairs(&no_content).is_empty());
     }
 
     #[test]

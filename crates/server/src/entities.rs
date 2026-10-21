@@ -3830,6 +3830,7 @@ async fn media_maps(
     } = media_extensions(pool, &media_ids, &poster_ids, &native_ids).await?;
     let now = time::OffsetDateTime::now_utc();
     for (status_id, files) in per_status {
+        let inline_aliases = crate::inline_media::alias_ids(&files);
         descriptions.insert(
             status_id,
             files
@@ -3848,6 +3849,9 @@ async fn media_maps(
                         allow_direct,
                         ladders.get(&file.id).map(Vec::as_slice),
                     );
+                    if let Some(ids) = inline_aliases.get(&file.id) {
+                        value["inline_alias_ids"] = json!(ids);
+                    }
                     if let Some(alt) = poster_alts.get(&file.id) {
                         value["poster_description"] = json!(alt);
                     }

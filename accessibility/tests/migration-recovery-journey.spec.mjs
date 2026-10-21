@@ -20,13 +20,13 @@ async function journey(page,info) {
   }
   await page.goto('/settings/migration');
   form=page.locator('form[action="/web/settings/migration"]');
-  await form.locator('[name=acct]').fill('new-account@example.invalid');
+  await form.locator('[name=acct]').fill('new-account@example.test');
   await form.locator('[name=current_password]').fill('incorrect-fixture-password');
   await form.locator('button[type=submit]').press('Enter');
   await expect(page.getByRole('alert')).toContainText('Incorrect password');
   await page.screenshot({path:info.outputPath('move-error.png'),fullPage:true});
   await expect.soft(page.locator('#migration-error')).toBeFocused({timeout:1000});
-  await expect.soft(form.locator('[name=acct]')).toHaveValue('new-account@example.invalid',{timeout:1000});
+  await expect.soft(form.locator('[name=acct]')).toHaveValue('new-account@example.test',{timeout:1000});
   await expect(form.locator('[name=current_password]')).toHaveValue('');
   // Correct password, deliberately invalid handle: no remote lookup or account move.
   await form.locator('[name=acct]').fill('needs-a-domain');

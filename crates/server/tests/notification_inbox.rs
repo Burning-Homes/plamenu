@@ -383,7 +383,9 @@ async fn native_inbox_auto_reads_without_scripts_and_clear_requires_csrf_and_con
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
-async fn activity_read_is_bounded_preserves_messages_and_never_rewinds_the_marker(pool: PgPool) {
+async fn activity_read_includes_private_notifications_is_bounded_and_never_rewinds_marker(
+    pool: PgPool,
+) {
     use plamenu_db::status::{self, NewLocalStatus};
     let (state, owner, uid, other, ids) = fixture(pool).await;
     let direct = status::create_local(
@@ -430,7 +432,7 @@ async fn activity_read_is_bounded_preserves_messages_and_never_rewinds_the_marke
             .unwrap();
     assert!(states[&ids[0]]);
     assert!(states[&head]);
-    assert!(!states[&message]);
+    assert!(states[&message]);
     assert!(!states[&newer]);
     assert_eq!(
         marker::find(&state.pool, uid, "notifications")

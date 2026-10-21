@@ -79,11 +79,17 @@ static REMOTE_HTML_WITH_IMAGES: LazyLock<Builder<'static>> = LazyLock::new(|| {
             "h4",
             "h5",
             "img",
+            "video",
+            "audio",
+            "source",
         ]))
         .add_tag_attributes("a", ["class"])
         .add_tag_attributes("span", ["class"])
         .add_tag_attributes("ol", ["start"])
         .add_tag_attributes("img", ["src", "alt"])
+        .add_tag_attributes("video", ["src", "title"])
+        .add_tag_attributes("audio", ["src", "title"])
+        .add_tag_attributes("source", ["src", "type"])
         .url_schemes(HashSet::from(["http", "https"]))
         .link_rel(Some("nofollow noopener noreferrer"));
     builder
@@ -145,9 +151,9 @@ pub fn sanitize_remote_html(html: &str) -> String {
     REMOTE_HTML.clean(html).to_string()
 }
 
-/// Sanitizes remote HTML while temporarily retaining image sources and alt
-/// text. The result is safe markup except for privacy: its image URLs still
-/// name the remote origin. A caller must rewrite or remove every `<img>` before
+/// Sanitizes remote HTML while temporarily retaining image/player sources.
+/// The result is safe markup except for privacy: its media URLs still name the
+/// remote origin. A caller must rewrite or remove every media source before
 /// storing or serving it.
 #[must_use]
 pub fn sanitize_remote_html_with_images(html: &str) -> String {

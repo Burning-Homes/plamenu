@@ -678,7 +678,7 @@ async fn article_merges_inline_images_and_attachments_without_duplicates(pool: P
     assert_eq!(
         body.matches(&format!("/media/proxy/attachment/{}", diagram.id))
             .count(),
-        1,
+        2, // one thumbnail source and one full-image lightbox link
         "inline media is not repeated in the built-in gallery"
     );
 }
@@ -686,6 +686,94 @@ async fn article_merges_inline_images_and_attachments_without_duplicates(pool: P
 /// `WordPress` swaps the excerpt for the CW text and flags `sensitive: true`
 /// when a post carries a content warning — then (and only then) `summary`
 /// is a CW on a converted type.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn inline_wordpress_variants_and_video_use_one_player_and_preserve_other_attachments(
+    pool: PgPool,
+) {
+    create_local_account(&pool, "alice", "Alice").await;
+    let bob = sender();
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let base = "https://remote.example/wp-content/uploads/2025/06/gcp_status";
+    let object = json!({
+        "id": "https://remote.example/article/inline-variants", "type": "Article",
+        "attributedTo": bob.actor.id, "name": "Inline media",
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "content": format!(r#"<p>Before <a href="{base}-scaled.png"><img src="{base}-scaled.png" alt="Diagram"></a> after.</p><p>Watch <video poster="https://unsafe.example/poster"><source src="https://remote.example/movie.mp4" type="video/mp4"></video> then continue.</p>"#),
+        "attachment": [
+            {"type":"Image","url":format!("{base}-1024x650.png"),"mediaType":"image/png"},
+            {"type":"Document","url":"https://remote.example/movie.mp4","mediaType":"video/mp4"},
+            {"type":"Image","url":"https://remote.example/appendix.jpg","mediaType":"image/jpeg"}
+        ]
+    });
+    let activity = json!({"id":"https://remote.example/activity/inline-variants", "type":"Create", "actor":bob.actor.id, "object":object});
+    let app = test_app_with(pool.clone(), stub);
+    assert_eq!(
+        post_signed(app.clone(), &activity, &bob).await,
+        StatusCode::ACCEPTED
+    );
+    let stored = stored_object(&pool, &activity).await;
+    let files = stored_media(&pool, stored.id).await;
+    assert_eq!(files.len(), 4);
+    assert!(!stored.content.contains("src=\"https://remote.example/"));
+    assert!(!stored.content.contains("unsafe.example"));
+    let resized = files
+        .iter()
+        .find(|f| f.remote_url.as_deref() == Some(&format!("{base}-1024x650.png")))
+        .unwrap();
+    let extra = files
+        .iter()
+        .find(|f| f.remote_url.as_deref() == Some("https://remote.example/appendix.jpg"))
+        .unwrap();
+    let response = app
+        .oneshot(
+            Request::get(format!("/@bob@remote.example/{}", stored.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = String::from_utf8(
+        axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(
+        !body.contains(&format!(
+            r#"href="https://plamenu.test/media/proxy/attachment/{}""#,
+            resized.id
+        )),
+        "the smaller variant must not repeat in the gallery"
+    );
+    assert_eq!(
+        body.matches(r#"class="status__media""#).count(),
+        2,
+        "one inline player and one remaining attachment gallery"
+    );
+    assert!(
+        body.contains(&format!("/media/proxy/attachment/{}", extra.id)),
+        "unrelated attachment stays visible"
+    );
+    assert_eq!(
+        body.matches("<video ").count(),
+        1,
+        "the inline video is not repeated"
+    );
+    assert!(
+        body.contains("data-vod-controls"),
+        "inline video uses the ordinary custom player"
+    );
+    assert!(
+        body.contains("controls playsinline"),
+        "native video remains usable without scripts"
+    );
+    assert!(body.contains("status__inline-media\"><a class=\"media__link"));
+    assert!(body.contains("then continue."));
+    assert!(!body.contains("<p>Watch <div"));
+}
+
 #[sqlx::test(migrations = "../db/migrations")]
 async fn wordpress_sensitive_article_summary_is_cw(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;

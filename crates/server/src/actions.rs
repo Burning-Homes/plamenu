@@ -1410,9 +1410,9 @@ async fn inherit_reply_audience(
     mentioned_uris: &mut Vec<String>,
     mention_inboxes: &mut Vec<String>,
     mention_tags: &mut Vec<Value>,
-) -> Result<(), ApiError> {
+) -> Result<Vec<i64>, ApiError> {
     if !matches!(stored.visibility.as_str(), "private" | "direct") {
-        return Ok(());
+        return Ok(Vec::new());
     }
     // The parent and its recipients are committed data, read on the pool; only
     // the new silent-mention rows are written on `conn`.
@@ -1438,6 +1438,13 @@ async fn inherit_reply_audience(
         recipients.push(account);
     }
     let silent_rows: Vec<(i64, bool)> = recipients.iter().map(|a| (a.id, true)).collect();
+    // Direct replies are messages to the inherited participants even without
+    // typed mentions. Match the notification that their wire Mention receives.
+    let notify = recipients
+        .iter()
+        .filter(|account| stored.visibility == "direct" && account.is_local())
+        .map(|account| account.id)
+        .collect();
     mention::attach_many(&mut *conn, stored.id, &silent_rows).await?;
     let recipient_ids: Vec<i64> = recipients.iter().map(|account| account.id).collect();
     let following = if author.silenced() {
@@ -1485,7 +1492,7 @@ async fn inherit_reply_audience(
             mention_inboxes.push(account.inbox_url.clone());
         }
     }
-    Ok(())
+    Ok(notify)
 }
 
 async fn post_status_inner(
@@ -1994,7 +2001,7 @@ async fn post_status_transaction(
         plamenu_db::conversation::ContextRefs::default(),
     )
     .await?;
-    let (mut mentioned_uris, mut mention_inboxes, mention_notify) =
+    let (mut mentioned_uris, mut mention_inboxes, mut mention_notify) =
         persist_compose_artifacts(state, conn, &stored, &composed, &[], author.silenced()).await?;
     // A local group's attribution rides a silent mention row — the same
     // rule inbound submissions get from `store_audience_mentions`, so edit and
@@ -2017,7 +2024,7 @@ async fn post_status_transaction(
     // DM fan-out and Note build, so both address the whole thread).
     let mut inherited_mention_tags: Vec<Value> = Vec::new();
     if let Some(parent) = parent.as_ref() {
-        inherit_reply_audience(
+        let inherited_notify = inherit_reply_audience(
             state,
             conn,
             &author,
@@ -2028,6 +2035,7 @@ async fn post_status_transaction(
             &mut inherited_mention_tags,
         )
         .await?;
+        mention_notify.extend(inherited_notify);
     }
     // Register tag usage for the ranking engine, like Mastodon's
     // `Trends.tags.register` on post. Edits don't re-register.

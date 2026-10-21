@@ -81,18 +81,17 @@ pub async fn mark_all_read(pool: &PgPool, user_id: i64, account_id: i64) -> Resu
 
 /// The activity inbox reads only through the head observed when it was opened.
 pub async fn activity_head(pool: &PgPool, account_id: i64) -> Result<Option<i64>, DbError> {
-    Ok(sqlx::query_scalar(
-        "SELECT max(n.id) FROM notifications n WHERE n.account_id=$1
-        AND NOT EXISTS(SELECT 1 FROM statuses s WHERE s.id=n.status_id AND s.visibility='direct')",
+    Ok(
+        sqlx::query_scalar("SELECT max(n.id) FROM notifications n WHERE n.account_id=$1")
+            .bind(account_id)
+            .fetch_one(pool)
+            .await?,
     )
-    .bind(account_id)
-    .fetch_one(pool)
-    .await?)
 }
 
-/// Advance the shared marker without consuming direct messages. Preserve their
-/// effective read state as sparse overrides before moving past them. Newer
-/// activity and overrides remain untouched, including when an API client has
+/// Read notifications through the observed head, including private-post activity.
+/// Conversation previews remain unread until their thread is opened. Newer
+/// notifications and overrides remain untouched, even if an API client has
 /// already advanced the marker beyond this page's snapshot.
 pub async fn mark_activity_read(
     pool: &PgPool,
@@ -107,27 +106,15 @@ pub async fn mark_activity_read(
     .bind(user_id)
     .execute(&mut *tx)
     .await?;
-    let previous: i64 = sqlx::query_scalar(
+    let _: i64 = sqlx::query_scalar(
         "SELECT last_read_id FROM markers WHERE user_id=$1 AND timeline='notifications' FOR UPDATE",
     )
     .bind(user_id)
     .fetch_one(&mut *tx)
     .await?;
     sqlx::query(
-        "INSERT INTO lemmy_notification_read_overrides(account_id,notification_id,read)
-        SELECT $1,n.id,FALSE FROM notifications n JOIN statuses s ON s.id=n.status_id
-        WHERE n.account_id=$1 AND s.visibility='direct' AND n.id>$2 AND n.id<=$3
-        ON CONFLICT(account_id,notification_id) DO NOTHING",
-    )
-    .bind(account_id)
-    .bind(previous)
-    .bind(through)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query(
         "DELETE FROM lemmy_notification_read_overrides o USING notifications n
-        WHERE o.account_id=$1 AND n.account_id=$1 AND o.notification_id=n.id AND n.id<=$2
-        AND NOT EXISTS(SELECT 1 FROM statuses s WHERE s.id=n.status_id AND s.visibility='direct')",
+        WHERE o.account_id=$1 AND n.account_id=$1 AND o.notification_id=n.id AND n.id<=$2",
     )
     .bind(account_id)
     .bind(through)

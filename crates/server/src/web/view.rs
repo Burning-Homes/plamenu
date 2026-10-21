@@ -101,7 +101,8 @@ fn rewrite_content_links(
         return html.to_owned();
     }
     let mut out = String::with_capacity(html.len() + 64);
-    let mut rest = html;
+    let unlinked = crate::inline_media::LINKED_IMAGE.replace_all(html, "$1");
+    let mut rest = unlinked.as_ref();
     while let Some(open) = rest.find('<') {
         out.push_str(&rest[..open]);
         let tag_onward = &rest[open..];
@@ -144,16 +145,30 @@ fn rewrite_content_links(
 /// enhancement: the stored/API HTML remains the interoperable plain `<img>`.
 fn inline_image_with_alt_control(tag: &str) -> String {
     let attrs = parse_attrs(&tag[5..tag.len() - 1]);
-    let Some(alt) = attrs
+    let alt = attrs
         .iter()
         .find(|(name, _)| *name == "alt")
         .map(|(_, value)| *value)
-        .filter(|value| !value.is_empty())
+        .unwrap_or_default();
+    let Some(src) = attrs
+        .iter()
+        .find(|(name, _)| *name == "src")
+        .map(|(_, value)| *value)
     else {
         return tag.to_owned();
     };
+    let badge = if alt.is_empty() {
+        String::new()
+    } else {
+        alt_badge(&plamenu_ap::text::decode_entities(alt)).into_string()
+    };
+    let label = if alt.is_empty() {
+        "Image attachment"
+    } else {
+        alt
+    };
     format!(
-        r#"<span class="status__inline-media">{tag}<span class="media__alt"><button class="media__badge" type="button" aria-label="ALT: {alt}">ALT</button><span class="media__alt-text" role="tooltip">{alt}</span></span></span>"#
+        r#"<span class="status__inline-media"><a class="media__link" href="{src}" target="_blank" rel="noopener noreferrer" aria-label="{label}">{tag}</a>{badge}</span>"#
     )
 }
 
@@ -647,6 +662,35 @@ impl<'a> Status<'a> {
     pub fn content_markup(&self, resolve: bool) -> Markup {
         let content =
             rewrite_content_links(self.content_html(), self.mentions(), self.tags(), resolve);
+        emojify(&content, self.emojis())
+    }
+
+    fn content_with_players(&self, ctx: &Ctx) -> Markup {
+        let content = rewrite_content_links(
+            self.content_html(),
+            self.mentions(),
+            self.tags(),
+            ctx.viewer_id.is_some(),
+        );
+        let content = crate::inline_media::render_players(&content, |player| {
+            let end = player.find('>')?;
+            let start = player.find(' ')?;
+            let attrs = parse_attrs(&player[start..end]);
+            let id = attrs.iter().find(|(name, _)| *name == "data-media-id")?.1;
+            let media = self
+                .media()
+                .iter()
+                .find(|item| item["id"].as_str() == Some(id))?;
+            Some(
+                media_markup(
+                    std::slice::from_ref(media),
+                    ctx,
+                    self.rendered_language(),
+                    Some(self.id()),
+                )
+                .into_string(),
+            )
+        });
         emojify(&content, self.emojis())
     }
 
@@ -1348,7 +1392,12 @@ impl AdminTargetLinks {
                     url::form_urlencoded::byte_serialize(domain.as_bytes()).collect();
                 (
                     format!("/admin/instances/{encoded}"),
-                    localized_arg(locale, "moderation-open-server", "domain", domain),
+                    localized_arg(
+                        locale,
+                        "moderation-open-server",
+                        "domain",
+                        plamenu_ap::acct::display_domain(domain).as_ref(),
+                    ),
                 )
             })
         });
@@ -1938,7 +1987,7 @@ fn status_body(status: &Status, ctx: &Ctx, detail: bool, verdict: &FilterVerdict
             // by the entity serializer (so stock Mastodon clients see them too),
             // so the card renders them straight out of the content markup.
             div.status__content dir="auto" lang=[status.rendered_language()] {
-                (status.content_markup(ctx.viewer_id.is_some()))
+                (status.content_with_players(ctx))
             }
             (quote_section(status, ctx, detail))
             @if status.poll().is_some() {
@@ -1958,7 +2007,7 @@ fn status_body(status: &Status, ctx: &Ctx, detail: bool, verdict: &FilterVerdict
                 (event_box(status, ctx))
                 // Title/link folded into `content` (see the non-CW branch).
                 div.status__content dir="auto" lang=[status.rendered_language()] {
-                    (status.content_markup(ctx.viewer_id.is_some()))
+                    (status.content_with_players(ctx))
                 }
                 @if status.poll().is_some() {
                     (poll_view(status, ctx))
@@ -2412,7 +2461,7 @@ fn reply_context(status: &Status, locale: Locale) -> Markup {
         let account = status.reply_to_acct();
         let mut args = FluentArgs::new();
         if let Some(account) = account {
-            args.set("account", account);
+            args.set("account", plamenu_ap::acct::display_acct(account));
         }
         return html! {
             p.status__reply-to {
@@ -2608,18 +2657,24 @@ fn quote_card(quoted: &Status, ctx: &Ctx, blur: &[String]) -> Markup {
         quoted,
         ctx.viewer_id.is_some(),
         &media_section(quoted, ctx, blur),
+        Some(ctx),
     )
 }
 
 /// The compact embedded-status card itself — the quote attachment and the
 /// announcement's cited statuses (`status_ids`) share this rendering.
 pub(crate) fn cited_status_card(status: &Status, signed_in: bool) -> Markup {
-    cited_status_card_with(status, signed_in, &html! {})
+    cited_status_card_with(status, signed_in, &html! {}, None)
 }
 
 /// Shared cited-status shell. Quote cards pass their media as the tail while
 /// announcement citations retain their existing text-only compact form.
-fn cited_status_card_with(status: &Status, signed_in: bool, tail: &Markup) -> Markup {
+fn cited_status_card_with(
+    status: &Status,
+    signed_in: bool,
+    tail: &Markup,
+    ctx: Option<&Ctx>,
+) -> Markup {
     let account = status.account();
     html! {
         div.quote-card {
@@ -2628,7 +2683,10 @@ fn cited_status_card_with(status: &Status, signed_in: bool, tail: &Markup) -> Ma
                 span.quote-card__name { (account.name_markup()) }
                 span.quote-card__acct { (account.handle_prefix()) (account.display_acct()) }
             }
-            div.status__content dir="auto" lang=[status.rendered_language()] { (status.content_markup(signed_in)) }
+            div.status__content dir="auto" lang=[status.rendered_language()] {
+                @if let Some(ctx) = ctx { (status.content_with_players(ctx)) }
+                @else { (status.content_markup(signed_in)) }
+            }
             (tail)
         }
     }
@@ -2778,6 +2836,10 @@ fn media_gallery(status: &Status, ctx: &Ctx) -> Markup {
 /// its gallery. Other attachments stay in their ordinary gallery position.
 fn gallery_media(status: &Status) -> Vec<Value> {
     let content = status.content_html();
+    let inline_ids: std::collections::HashSet<_> = crate::inline_media::INLINE_IDS
+        .captures_iter(content)
+        .map(|capture| capture[1].to_owned())
+        .collect();
     status
         .media()
         .iter()
@@ -2785,7 +2847,12 @@ fn gallery_media(status: &Status) -> Vec<Value> {
             let Some(id) = item.get("id").and_then(Value::as_str) else {
                 return true;
             };
-            !content.contains(&format!(r#"data-media-id="{id}""#))
+            let inline = |id: &str| inline_ids.contains(id);
+            !inline(id)
+                && !item
+                    .get("inline_alias_ids")
+                    .and_then(Value::as_array)
+                    .is_some_and(|ids| ids.iter().filter_map(Value::as_str).any(inline))
         })
         .cloned()
         .collect()
@@ -3223,13 +3290,14 @@ fn media_badges(alt: &str, badges: &[Option<MediaBadge>], locale: Locale) -> Mar
     }
 }
 
-/// A mouse-, touch-, and keyboard-discoverable attachment description. The
-/// tooltip is CSS-only so it remains usable when JavaScript is unavailable.
+/// A native popover works without scripts and escapes gallery clipping.
 fn alt_badge(alt: &str) -> Markup {
+    let panel = format!("media-alt-{}", plamenu_db::id::next());
     html! {
         span.media__alt {
-            button.media__badge type="button" aria-label=(format!("ALT: {alt}")) { "ALT" }
-            span.media__alt-text role="tooltip" { (alt) }
+            button.media__badge type="button" aria-label=(format!("ALT: {alt}"))
+                popovertarget=(&panel) { "ALT" }
+            span.media__alt-text id=(panel) popover role="note" { (alt) }
         }
     }
 }
@@ -3852,13 +3920,13 @@ fn overflow_menu(status: &Status, ctx: &Ctx) -> Markup {
                                 action: "/web/domains/block".into(),
                                 undo_action: "/web/domains/unblock".into(),
                                 label: localized_arg(ctx.locale, "status-block-domain",
-                                    "domain", domain),
+                                    "domain", plamenu_ap::acct::display_domain(domain).as_ref()),
                                 undo_label: localized_arg(ctx.locale, "status-unblock-domain",
-                                    "domain", domain),
+                                    "domain", plamenu_ap::acct::display_domain(domain).as_ref()),
                                 account: None,
                                 domain: Some(domain),
                                 confirm: Some(localized_arg(ctx.locale,
-                                    "status-block-domain-confirm", "domain", domain)),
+                                    "status-block-domain-confirm", "domain", plamenu_ap::acct::display_domain(domain).as_ref())),
                             }, csrf, ctx.return_to))
                         }
                     }
@@ -6607,19 +6675,17 @@ mod tests {
         let rendered = rewrite_content_links(content, &[], &[], false);
 
         assert!(
-            rendered.contains(r#"<span class="status__inline-media"><img"#),
+            rendered.contains(r#"<span class="status__inline-media"><a class="media__link""#),
             "{rendered}"
         );
         assert!(
             rendered.contains(
-                r#"<button class="media__badge" type="button" aria-label="ALT: A blue &amp; gold bird">ALT</button>"#
+                r#"<button class="media__badge" type="button" aria-label="ALT: A blue &amp; gold bird" popovertarget="#
             ),
             "{rendered}"
         );
         assert!(
-            rendered.contains(
-                r#"<span class="media__alt-text" role="tooltip">A blue &amp; gold bird</span>"#
-            ),
+            rendered.contains(r#"popover role="note">A blue &amp; gold bird</span>"#),
             "{rendered}"
         );
         assert!(!rendered.contains("<strong>ALT</strong>"), "{rendered}");
@@ -6639,14 +6705,12 @@ mod tests {
 
         assert!(
             rendered.contains(
-                r#"<button class="media__badge" type="button" aria-label="ALT: A lighthouse at dusk">ALT</button>"#
+                r#"<button class="media__badge" type="button" aria-label="ALT: A lighthouse at dusk" popovertarget="#
             ),
             "{rendered}"
         );
         assert!(
-            rendered.contains(
-                r#"<span class="media__alt-text" role="tooltip">A lighthouse at dusk</span>"#
-            ),
+            rendered.contains(r#"popover role="note">A lighthouse at dusk</span>"#),
             "{rendered}"
         );
     }
@@ -6806,7 +6870,7 @@ mod tests {
         assert!(rendered.contains(r#"<figure class="media-wall__item">"#));
         assert!(
             rendered.contains(
-                r#"</a><div class="media__badges"><span class="media__badge">Video</span><span class="media__alt"><button class="media__badge" type="button" aria-label="ALT: A person signing hello">ALT</button>"#
+                r#"</a><div class="media__badges"><span class="media__badge">Video</span><span class="media__alt"><button class="media__badge" type="button" aria-label="ALT: A person signing hello" popovertarget="#
             ),
             "the ALT button must be a sibling, not invalidly nested in the post link: {rendered}"
         );
@@ -7245,6 +7309,17 @@ mod tests {
     #[test]
     fn every_supported_notification_type_has_an_informative_label() {
         for kind in crate::routes::notifications::TYPES {
+            if plamenu_db::actor_notification::KINDS.contains(kind) {
+                // Managed-actor wording comes from the shared entity presenter,
+                // including its channel/community context, not this static map.
+                let note = json!({"type": kind,
+                    "account": notification_account("2", "bob", "Bob"),
+                    "fallback": {"title": "Bob interacted with the managed channel"}});
+                let rendered = notification_item(&note, &view_ctx(None, None)).into_string();
+                assert!(rendered.contains("Bob interacted with the managed channel"));
+                assert!(!rendered.contains("sent you a notification"));
+                continue;
+            }
             assert_ne!(
                 notification_label(kind),
                 "sent you a notification",
@@ -7445,6 +7520,23 @@ mod tests {
 
         let hidden = filtered_status("hide", &["home"]);
         assert_eq!(status_card(&Status(&hidden), &ctx).into_string(), "");
+    }
+
+    #[test]
+    fn reply_context_displays_unicode_domains_for_self_and_other_mentions() {
+        let acct = "norayr@xn--69aa8bzb.xn--y9a3aq";
+        for author in ["8", "9"] {
+            let value = json!({
+                "in_reply_to_id": "12",
+                "in_reply_to_account_id": "8",
+                "account": {"id": author, "acct": acct},
+                "mentions": [{"id": "8", "acct": acct}],
+            });
+            let markup = reply_context(&Status(&value), Locale::default()).into_string();
+            assert!(markup.contains("norayr@թութ.հայ"), "{markup}");
+            assert!(!markup.contains("xn--"), "{markup}");
+            assert!(markup.contains("/web/statuses/12"));
+        }
     }
 
     #[test]

@@ -71,8 +71,8 @@ for (const prefix of ['', '@no-js ']) test(`${prefix}notifications and messages 
     const privateText='Private listening plans '+Date.now().toString(36);
     const thread=await publish(sender,`@${me.username} ${privateText}`);
     await page.goto('/notifications');
-    await expect(page.locator('.notification__label').filter({hasText:'mentioned you'})).toBeVisible();
-    await expect(page.locator('main')).not.toContainText(privateText);
+    await expect(page.locator('.notification__label').filter({hasText:'mentioned you'})).toHaveCount(2);
+    await expect(page.locator('main')).toContainText(privateText);
     await expect(page.locator('.notification-inbox-actions, .notification-inbox-item, .inbox-tabs')).toHaveCount(0);
     await expect(page.locator('[data-notification-nav] .bell__dot')).toHaveCount(0);
     await page.locator('.inbox-options > summary').click();

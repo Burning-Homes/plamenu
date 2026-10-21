@@ -147,7 +147,8 @@ def test_article_inline_images_remain_compatibility_attachments(
         assert page.text.count(f'data-media-id="{diagram["id"]}"') == 1, page.text
         assert f'aria-label="ALT: flow diagram {marker}"' in page.text, page.text
         assert f'aria-label="ALT: appendix {marker}"' in page.text, page.text
-        assert page.text.count('class="media__alt-text" role="tooltip"') == 2, page.text
+        assert page.text.count('class="media__alt-text"') == 2, page.text
+        assert page.text.count('popovertarget="media-alt-') == 2, page.text
         appendix_url = next(
             item["url"]
             for item in posted["media_attachments"]

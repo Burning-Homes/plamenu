@@ -459,6 +459,7 @@ impl AppState {
         federation: Arc<dyn FederationApi>,
         media: Arc<dyn MediaStore>,
     ) -> Result<Self, String> {
+        crate::inline_media::initialize();
         let video = config.native_video;
         let video_resources = crate::video_resources::ProcessingPool::new(
             video.jobs,

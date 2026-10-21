@@ -476,7 +476,7 @@ fn account_row(value: &serde_json::Value, locale: Locale) -> Markup {
         li.relationships-list__item {
             label.relationships-list__check {
                 input type="checkbox" name="ids" value=(account.id())
-                    aria-label=(selection_label(locale, &format!("@{}", account.acct())));
+                    aria-label=(selection_label(locale, &format!("@{}", account.display_acct())));
             }
             (view::account_card(&account))
         }
@@ -486,13 +486,14 @@ fn account_row(value: &serde_json::Value, locale: Locale) -> Markup {
 /// One selectable domain row: a checkbox carrying the domain name, beside the
 /// domain shown as plain text.
 fn domain_row(domain: &str, locale: Locale) -> Markup {
+    let display = plamenu_ap::acct::display_domain(domain);
     html! {
         li.relationships-list__item {
             label.relationships-list__check {
                 input type="checkbox" name="domains" value=(domain)
-                    aria-label=(selection_label(locale, domain));
+                    aria-label=(selection_label(locale, &display));
             }
-            span.relationships-list__domain { (domain) }
+            span.relationships-list__domain { (display) }
         }
     }
 }
@@ -650,5 +651,9 @@ mod tests {
                 .into_string()
                 .contains("aria-label=\"Select a&quot;&amp;b\"")
         );
+        let idn = domain_row("xn--69aa8bzb.xn--y9a3aq", Locale::default()).into_string();
+        assert!(idn.contains("aria-label=\"Select թութ.հայ\""));
+        assert!(idn.contains("class=\"relationships-list__domain\">թութ.հայ</span>"));
+        assert!(idn.contains("value=\"xn--69aa8bzb.xn--y9a3aq\""));
     }
 }

@@ -67,7 +67,7 @@ pub async fn show(
         p{a href=(format!("{back}?{}",serde_urlencoded::to_string([("source",q.source.as_deref().unwrap_or_default()),("kind",q.kind.as_deref().unwrap_or_default())]).unwrap_or_default())){(l.text("music-activities-refresh"))}}
         @if page.items.is_empty(){p.empty{(l.text("music-activities-empty"))}}
         @for entry in &page.items{
-            @if entry["kind"]=="like"{@if let Some(actor)=entry.get("account").filter(|a|!a.is_null()){p.music-activity-label{a href=(actor["url"].as_str().unwrap_or("/music")){(actor["display_name"].as_str().filter(|s|!s.is_empty()).or_else(||actor["acct"].as_str()).unwrap_or_default())}" · "(l.text("webmentions-like"))}}}
+            @if entry["kind"]=="like"{@if let Some(actor)=entry.get("account").filter(|a|!a.is_null()){p.music-activity-label{a href=(actor["url"].as_str().unwrap_or("/music")){(actor["display_name"].as_str().filter(|s|!s.is_empty()).map_or_else(||plamenu_ap::acct::display_acct(actor["acct"].as_str().unwrap_or_default()),std::borrow::Cow::Borrowed))}" · "(l.text("webmentions-like"))}}}
             @if let Some(item)=entry.get("status"){(view::status_card(&view::Status(item),&ctx))}
             @if let Some(row)=entry["id"].as_str().and_then(|s|s.parse::<i64>().ok()).and_then(|id|page.websites.get(&id)){(super::webmentions::cards(std::slice::from_ref(row),l,user.as_ref().filter(|u|u.current.has_scope("write:statuses"))))}
         }

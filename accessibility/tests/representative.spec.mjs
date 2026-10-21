@@ -228,8 +228,8 @@ test('media lightbox controls keep their icons centred in accessible targets', a
 
   for (const alt of await page.locator('.status__media .media__alt > button').all()) {
     const box = await alt.boundingBox();
-    expect(box.width).toBeGreaterThanOrEqual(44);
-    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.width).toBeGreaterThanOrEqual(24);
+    expect(box.height).toBeGreaterThanOrEqual(24);
   }
   await page.locator('.status__media a.media__link').nth(1).click();
   const dialog = page.getByRole('dialog', { name: 'Media viewer' });

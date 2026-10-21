@@ -97,7 +97,7 @@ fn create_page(author: &RemoteUser, group: &RemoteUser, page: &Value) -> Value {
 /// timelines. Replay is idempotent.
 #[sqlx::test(migrations = "../db/migrations")]
 async fn wrapped_create_page_fetches_origin_and_boosts(pool: PgPool) {
-    create_local_account(&pool, "alice", "Alice").await;
+    let viewer = create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
     let group = community("rustlang");
     let stub = StubFederation::with_actors([author.actor.clone(), group.actor.clone()]);
@@ -143,6 +143,25 @@ async fn wrapped_create_page_fetches_origin_and_boosts(pool: PgPool) {
         .unwrap()
         .unwrap();
     assert_eq!(replayed.id, boost.id);
+
+    for followed in [stored.account_id, group_account.id] {
+        plamenu_db::follow::create(&pool, viewer.id, followed, None)
+            .await
+            .unwrap();
+    }
+    for order in [
+        plamenu_db::user::TimelineOrder::Published,
+        plamenu_db::user::TimelineOrder::Received,
+    ] {
+        let feed = status::home_timeline(&pool, viewer.id, order, None, 20)
+            .await
+            .unwrap();
+        assert_eq!(
+            feed.iter().map(|row| row.id).collect::<Vec<_>>(),
+            [stored.id],
+            "following the remote author and community yields one post"
+        );
+    }
 }
 
 /// Lemmy double-sends every post: the wrapper form plus a Mastodon-compat

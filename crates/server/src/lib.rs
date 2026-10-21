@@ -33,6 +33,7 @@ pub mod hidden_gate;
 pub mod identity;
 pub mod import_worker;
 pub mod ingest;
+mod inline_media;
 pub mod instance_actor;
 pub mod instance_policy;
 pub mod key_store;

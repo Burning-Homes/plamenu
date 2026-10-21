@@ -661,6 +661,10 @@ async fn favourite_dispatches_decryptable_legacy_push(pool: PgPool) {
     assert_eq!(payload["access_token"], Value::String(alice_token.clone()));
     assert_eq!(payload["preferred_locale"], "en");
     assert_eq!(payload["notification_type"], "favourite");
+    assert_eq!(
+        payload["url"],
+        format!("/web/statuses/{status_id}#post-{status_id}")
+    );
     assert_eq!(payload["title"], "bob favorited your post");
     // Status content, tags stripped, entities decoded (the composer escaped
     // the raw `<world>`), truncated to 140.
@@ -756,6 +760,7 @@ async fn standard_subscription_gets_rfc8291_push(pool: PgPool) {
 
     let payload = decrypt_standard(&ua_secret, &auth, &push.body);
     assert_eq!(payload["notification_type"], "follow");
+    assert_eq!(payload["url"], "/notifications");
     assert_eq!(payload["title"], "bob is now following you");
     assert_eq!(payload["body"], "test account"); // bob's bio
 }

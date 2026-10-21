@@ -2571,6 +2571,7 @@
     }));
   }
 
+  let previewAltSequence = 0;
   function previewAltBadge(alt) {
     if (!alt) return null;
     const control = document.createElement("span");
@@ -2582,9 +2583,13 @@
     button.setAttribute("aria-label", `ALT: ${alt}`);
     const text = document.createElement("span");
     text.className = "media__alt-text";
-    text.setAttribute("role", "tooltip");
+    text.id = `preview-media-alt-${++previewAltSequence}`;
+    text.setAttribute("popover", "auto");
+    text.setAttribute("role", "note");
+    button.setAttribute("popovertarget", text.id);
     text.textContent = alt;
     control.append(button, text);
+    bindAltDescriptions(control);
     return control;
   }
 
@@ -2752,8 +2757,6 @@
         if (el.hasAttribute("data-compose-body-label")) el.classList.toggle("visually-hidden", value === "note");
       });
       body.rows = value === "article" ? 12 : 5;
-      body.style.height = "auto";
-      body.style.height = `${body.scrollHeight}px`;
     };
     kind.addEventListener("change", () => {
       // A fresh composer can open its publishing workflow immediately. Keep
@@ -2839,16 +2842,7 @@
       if (!textarea) return;
       const kind = form.querySelector("[data-compose-kind]");
 
-      // The server-rendered height (from the `rows` attribute) is the floor, so
-      // autogrow never shrinks the box on load — only grows it. Without this a
-      // tall empty composer would collapse to one line after hydration (CLS).
-      const baseline = textarea.offsetHeight;
-
       const update = () => {
-        if (textarea.dataset.autogrow !== undefined) {
-          textarea.style.height = "auto";
-          textarea.style.height = `${Math.max(textarea.scrollHeight, kind ? 0 : baseline)}px`;
-        }
         if (counter) {
           const limit = kind?.value === "article"
             ? textarea.dataset.maxCharsLongForm
@@ -4157,6 +4151,7 @@
 
   const LIGHTBOX_TILES =
     ".status__media a.media__link, .status__media video.media__gifv, " +
+    ".status__inline-media a.media__link, " +
     ".media-wall a.media-wall__tile[data-media-url]";
 
   function bindLightboxes(root) {
@@ -4166,7 +4161,7 @@
       tile.addEventListener("click", (event) => {
         // Leave modified clicks (new tab, etc.) to the browser.
         if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-        const gallery = tile.closest(".status__media, .media-wall");
+        const gallery = tile.closest(".status__media, .media-wall, .status__content");
         const tiles = [
           ...gallery.querySelectorAll(
             "a.media__link, video.media__gifv, a.media-wall__tile[data-media-url]",
@@ -4174,6 +4169,40 @@
         ];
         event.preventDefault();
         openLightbox(tiles.map(lightboxItemOf), tiles.indexOf(tile), tile);
+      });
+    });
+  }
+
+  // Native popovers own the button toggle, Escape and outside dismissal.
+  // A plain tap on the text also closes it, but drags, long presses and
+  // double clicks belong to text selection. Wait for the second click before
+  // deciding so a word-selection gesture is never destroyed by its first click.
+  function bindAltDescriptions(root) {
+    root.querySelectorAll('.media__alt-text[popover]').forEach(panel => {
+      if (panel.dataset.altBound) return;
+      panel.dataset.altBound = '1';
+      let start, moved = false, closeTimer;
+      const selected = () => {
+        const selection = window.getSelection();
+        return selection && !selection.isCollapsed &&
+          (panel.contains(selection.anchorNode) || panel.contains(selection.focusNode));
+      };
+      panel.addEventListener('pointerdown', event => {
+        clearTimeout(closeTimer);
+        start = { x: event.clientX, y: event.clientY, time: performance.now() };
+        moved = selected();
+      });
+      panel.addEventListener('pointermove', event => {
+        if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) moved = true;
+      });
+      panel.addEventListener('pointercancel', () => { moved = true; clearTimeout(closeTimer); });
+      panel.addEventListener('dblclick', () => clearTimeout(closeTimer));
+      panel.addEventListener('click', event => {
+        clearTimeout(closeTimer);
+        if (event.detail > 1 || moved || selected() || (start && performance.now() - start.time > 400)) return;
+        closeTimer = setTimeout(() => {
+          if (!selected() && panel.matches(':popover-open')) panel.hidePopover();
+        }, 600);
       });
     });
   }
@@ -7408,7 +7437,7 @@
     bindPollForms(root);
     bindRsvpForms(root);
     bindTranslateForms(root);
-    bindDisclosures(root, "details[data-status-menu]", { pop: ".status__menu-pop" });
+    bindDisclosures(root, "details[data-status-menu]");
     bindDisclosures(root, "details[data-nav-select]", { pop: ".nav-select__pop" });
     bindDisclosures(root, "details[data-drawer]", { dismissed: scrimTapped });
     bindStandaloneExternalLinks(root);
@@ -7422,6 +7451,7 @@
     bindReactionForms(root);
     bindReactionTooltips(root);
     bindLightboxes(root);
+    bindAltDescriptions(root);
     bindBlurhashes(root);
     bindHlsVideos(root);
     bindVodControls(root);
@@ -7445,6 +7475,14 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
+    // A keyboard can shrink the visual viewport without changing vh. Native
+    // textarea scrolling keeps the caret in view inside this bounded editor;
+    // never collapse and re-expand the live field while the user is typing.
+    const sizeComposer = () => document.documentElement.style.setProperty(
+      '--compose-viewport-limit', `${Math.max(80, (window.visualViewport?.height || innerHeight) * .55)}px`);
+    sizeComposer();
+    window.visualViewport?.addEventListener('resize', sizeComposer);
+    window.addEventListener('resize', sizeComposer);
     registerAppWorker();
     bindInboxState();
     bindMusicWorkspace();

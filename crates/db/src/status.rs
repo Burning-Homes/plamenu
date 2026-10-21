@@ -2141,24 +2141,40 @@ async fn home_timeline_received(
                             AND target_author.suspended_at IS NULL
                             AND (target_author.portable OR instance_domain_allowed(target_author.domain))
                             AND (authors.with_replies OR target.in_reply_to_id IS NULL)))
-                   -- PeerTube delivers one Video twice when the viewer follows
-                   -- both its owning Person and its channel Group: the Person's
-                   -- Create plus the channel's Announce. If the target author
-                   -- is itself followed, the original already occupies home;
-                   -- suppress only that Video-shaped Group wrapper. Ordinary
-                   -- community announces remain distinct facts, and following
-                   -- only the channel still yields its wrapper.
+                   -- A Group forwards its author's post. Keep only the original
+                   -- when it independently qualifies for home; otherwise retain
+                   -- the group delivery (e.g. the author is in an exclusive list
+                   -- or excluded by their follow's language/reply preferences).
                    AND (s.reblog_of_id IS NULL OR NOT EXISTS (
-                          SELECT 1
-                          FROM statuses video
+                          SELECT 1 FROM statuses original
                           JOIN accounts wrapper_author ON wrapper_author.id = s.account_id
-                          JOIN follows video_author_follow
-                            ON video_author_follow.account_id = $1
-                           AND video_author_follow.target_account_id = video.account_id
-                           AND NOT video_author_follow.pending
-                          WHERE video.id = s.reblog_of_id
-                            AND video.object_type = 'Video'
-                            AND wrapper_author.actor_type = 'Group'))
+                          LEFT JOIN follows original_follow
+                            ON original_follow.account_id = $1
+                           AND original_follow.target_account_id = original.account_id
+                           AND NOT original_follow.pending
+                          WHERE original.id = s.reblog_of_id
+                            AND wrapper_author.actor_type = 'Group'
+                            AND original.deleted_at IS NULL
+                            AND original.ingest_provenance = 'delivery'
+                            AND original.visibility <> 'direct'
+                            AND (original.account_id = $1 OR (
+                                original_follow.account_id IS NOT NULL
+                                AND NOT EXISTS (
+                                    SELECT 1 FROM list_accounts la JOIN lists l ON l.id = la.list_id
+                                    WHERE l.account_id = $1 AND l.exclusive
+                                      AND la.account_id = original.account_id)
+                                AND (original.language IS NULL OR original_follow.languages IS NULL
+                                     OR original.language = ANY(original_follow.languages))
+                                AND (original.language IS NULL OR NOT EXISTS (
+                                    SELECT 1 FROM users u WHERE u.account_id = $1
+                                      AND u.chosen_languages IS NOT NULL
+                                      AND original.language <> ALL(u.chosen_languages)))
+                                AND (original_follow.with_replies OR original.in_reply_to_id IS NULL
+                                     OR original.in_reply_to_account_id = original.account_id
+                                     OR original.in_reply_to_account_id = $1
+                                     OR EXISTS (SELECT 1 FROM follows rf
+                                                WHERE rf.account_id = $1 AND NOT rf.pending
+                                                  AND rf.target_account_id = original.in_reply_to_account_id))))))
                    AND (authors.aid = $1 OR (
                           (s.reblog_of_id IS NULL OR authors.show_reblogs)
                           AND (s.language IS NULL OR authors.languages IS NULL
@@ -2386,19 +2402,40 @@ async fn home_timeline_published(
                             AND target_author.suspended_at IS NULL
                             AND (target_author.portable OR instance_domain_allowed(target_author.domain))
                             AND (authors.with_replies OR target.in_reply_to_id IS NULL)))
-                   -- PeerTube Person Create + channel Group Announce
-                   -- de-duplication; keep in sync with the received ordering.
+                   -- A Group forwards its author's post. Keep only the original
+                   -- when it independently qualifies for home; otherwise retain
+                   -- the group delivery (e.g. the author is in an exclusive list
+                   -- or excluded by their follow's language/reply preferences).
                    AND (s.reblog_of_id IS NULL OR NOT EXISTS (
-                          SELECT 1
-                          FROM statuses video
+                          SELECT 1 FROM statuses original
                           JOIN accounts wrapper_author ON wrapper_author.id = s.account_id
-                          JOIN follows video_author_follow
-                            ON video_author_follow.account_id = $1
-                           AND video_author_follow.target_account_id = video.account_id
-                           AND NOT video_author_follow.pending
-                          WHERE video.id = s.reblog_of_id
-                            AND video.object_type = 'Video'
-                            AND wrapper_author.actor_type = 'Group'))
+                          LEFT JOIN follows original_follow
+                            ON original_follow.account_id = $1
+                           AND original_follow.target_account_id = original.account_id
+                           AND NOT original_follow.pending
+                          WHERE original.id = s.reblog_of_id
+                            AND wrapper_author.actor_type = 'Group'
+                            AND original.deleted_at IS NULL
+                            AND original.ingest_provenance = 'delivery'
+                            AND original.visibility <> 'direct'
+                            AND (original.account_id = $1 OR (
+                                original_follow.account_id IS NOT NULL
+                                AND NOT EXISTS (
+                                    SELECT 1 FROM list_accounts la JOIN lists l ON l.id = la.list_id
+                                    WHERE l.account_id = $1 AND l.exclusive
+                                      AND la.account_id = original.account_id)
+                                AND (original.language IS NULL OR original_follow.languages IS NULL
+                                     OR original.language = ANY(original_follow.languages))
+                                AND (original.language IS NULL OR NOT EXISTS (
+                                    SELECT 1 FROM users u WHERE u.account_id = $1
+                                      AND u.chosen_languages IS NOT NULL
+                                      AND original.language <> ALL(u.chosen_languages)))
+                                AND (original_follow.with_replies OR original.in_reply_to_id IS NULL
+                                     OR original.in_reply_to_account_id = original.account_id
+                                     OR original.in_reply_to_account_id = $1
+                                     OR EXISTS (SELECT 1 FROM follows rf
+                                                WHERE rf.account_id = $1 AND NOT rf.pending
+                                                  AND rf.target_account_id = original.in_reply_to_account_id))))))
                    AND (authors.aid = $1 OR (
                           (s.reblog_of_id IS NULL OR authors.show_reblogs)
                           AND (s.language IS NULL OR authors.languages IS NULL
@@ -6619,10 +6656,9 @@ mod tests {
     /// `PeerTube` publishes a Video once from its account Person and announces
     /// the same object from its channel Group. A viewer following both should
     /// get one home item; a viewer following only the channel must still get
-    /// the announce. This is deliberately Video-specific so ordinary community
-    /// attribution remains a separate feed fact.
+    /// the announce. Community posts obey the same rule as channel videos.
     #[sqlx::test]
-    async fn home_dedupes_peertube_style_channel_announces(pool: PgPool) {
+    async fn home_dedupes_group_announces(pool: PgPool) {
         let viewer = local_account(&pool, "viewer").await;
         let author = local_account(&pool, "video-author").await;
         let channel = local_account(&pool, "video-channel").await;
@@ -6672,8 +6708,8 @@ mod tests {
         );
         assert!(both.contains(&ordinary.id));
         assert!(
-            both.contains(&channel_ordinary.id),
-            "ordinary community announces retain their attribution"
+            !both.contains(&channel_ordinary.id),
+            "community delivery must not duplicate the followed author's post"
         );
 
         crate::follow::delete(&pool, viewer, author).await.unwrap();
@@ -6683,6 +6719,59 @@ mod tests {
             channel_only.contains(&channel_video.id),
             "following only the channel still delivers its Video"
         );
+        assert!(channel_only.contains(&channel_ordinary.id));
+
+        // A follow is insufficient if the original is filtered out of home.
+        crate::follow::create(&pool, viewer, author, None)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE statuses SET language='hy' WHERE id=$1")
+            .bind(ordinary.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        crate::follow::update_settings(
+            &pool,
+            viewer,
+            author,
+            None,
+            None,
+            None,
+            Some(&["en".into()]),
+        )
+        .await
+        .unwrap();
+        let filtered = home_ids(&pool, viewer).await;
+        assert!(!filtered.contains(&ordinary.id));
+        assert!(
+            filtered.contains(&channel_ordinary.id),
+            "the group still delivers a filtered author's post"
+        );
+
+        // Own submissions also have an original in home, without a self-follow.
+        let own = create_local(&pool, NewLocalStatus::new(viewer, "mine", "public", None))
+            .await
+            .unwrap();
+        let own_wrapper = create_local_reblog(&pool, channel, own.id).await.unwrap();
+        let own_feed = home_ids(&pool, viewer).await;
+        assert!(own_feed.contains(&own.id));
+        assert!(!own_feed.contains(&own_wrapper.id));
+
+        for order in [TimelineOrder::Published, TimelineOrder::Received] {
+            let mut cursor = None;
+            let mut paged = Vec::new();
+            loop {
+                let page = home_timeline(&pool, viewer, order, cursor, 1)
+                    .await
+                    .unwrap();
+                let Some(item) = page.first() else { break };
+                assert!(!paged.contains(&item.id), "pagination must advance");
+                paged.push(item.id);
+                cursor = Some(item.id);
+            }
+            paged.sort_unstable();
+            assert_eq!(paged, own_feed, "deduplication precedes the page limit");
+        }
     }
 
     /// With the flag on, home is unchanged; with it off, the three exemptions

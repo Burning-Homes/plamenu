@@ -799,10 +799,17 @@ pub async fn compose(State(state): State<AppState>, user: WebUser, request: Requ
     )
     .await;
     match result {
-        // Land on the new post's thread so the author sees it in context.
+        // A reply's thread includes its ancestors. The fragment must identify
+        // the newly published row, including through ordinary no-script PRG.
         Ok((stored, _)) => redirect_to(&format!(
-            "/@{}/{}",
-            user.current.account.username, stored.id
+            "/@{}/{}{}",
+            user.current.account.username,
+            stored.id,
+            if stored.in_reply_to_id.is_some() {
+                format!("#post-{}", stored.id)
+            } else {
+                String::new()
+            }
         )),
         // A validation failure re-renders the composer with a banner and the
         // user's state intact, instead of the old bare error page.

@@ -97,6 +97,14 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
+function notificationTarget(value) {
+  try {
+    const url = new URL(value || "/notifications", self.location.origin);
+    if (url.origin === self.location.origin) return url.pathname + url.search + url.hash;
+  } catch { /* Invalid or external targets fall back to the inbox. */ }
+  return "/notifications";
+}
+
 self.addEventListener("push", (event) => {
   if (!event.data) return;
   let payload;
@@ -110,7 +118,7 @@ self.addEventListener("push", (event) => {
     body: payload.body || "",
     icon: payload.icon || "/pwa/icon-192.png",
     badge: "/pwa/badge-96.png",
-    data: { url: "/notifications" },
+    data: { url: notificationTarget(payload.url) },
   };
   // Collapse repeat deliveries of the same notification into one bubble.
   if (payload.notification_id) {
@@ -121,20 +129,19 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url =
-    (event.notification.data && event.notification.data.url) ||
-    "/notifications";
+  const url = notificationTarget(event.notification.data?.url);
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({
         type: "window",
         includeUncontrolled: true,
       });
-      // Prefer a tab already showing the notifications page, then any open
-      // tab (left where it is — it may hold a half-written post), then a
-      // fresh window.
-      const onPage = windows.find((c) => new URL(c.url).pathname === url);
+      // Refresh an existing target so new activity and its read state are
+      // loaded. Leave other tabs alone: they may hold an unfinished draft.
+      const target = new URL(url, self.location.origin).href;
+      const onPage = windows.find((c) => c.url === target);
       if (onPage && "focus" in onPage) {
+        if ("navigate" in onPage) await onPage.navigate(url);
         await onPage.focus();
         return;
       }

@@ -1767,7 +1767,7 @@ pub async fn has_unread_activity(
     user_id: i64,
     account_id: i64,
 ) -> Result<bool, DbError> {
-    has_unread_filtered(pool, user_id, account_id, true).await
+    has_unread(pool, user_id, account_id).await
 }
 
 async fn has_unread_filtered(

@@ -63,6 +63,14 @@ def test_remote_member_joins_and_posts_into_a_hosted_group(
             desc="the remote member to land in the group's followers collection",
         )
 
+    with step("the group owner also follows the remote member"):
+        member = plamenu_api.resolve_account(plamenu2_user.acct)
+        plamenu_api.follow(member["id"])
+        wait_for(
+            lambda: plamenu_api.relationship(member["id"])["following"],
+            desc="the author follow to be accepted before the group submission",
+        )
+
     with step("the member submits a titled thread from its own instance"):
         title = f"Thread {marker}"
         submission = plamenu2_api.post_status(
@@ -83,21 +91,25 @@ def test_remote_member_joins_and_posts_into_a_hosted_group(
         assert hosted["group_post"] is True, hosted
         assert marker in hosted["content"], hosted["content"]
 
-    with step("the announce comes back to the member as group content"):
-        boost = wait_for(
-            lambda: plamenu2_api.home_reblog_containing(marker),
-            desc="the group's Announce of the member's own post",
+    with step("the announce marks the member's original as group content"):
+        wait_for(
+            lambda: plamenu2_api.get_status(submission["id"])["group_post"],
+            desc="the group's Announce to attach to the member's own post",
         )
-        assert boost["account"]["group"] is True, boost["account"]
-        assert boost["account"]["acct"] == f"{name}@{plamenu_user.domain}", boost[
-            "account"
-        ]
-        assert boost["reblog"]["id"] == submission["id"], (
-            "the announce must point at the member's own post, not a copy"
-        )
-        assert plamenu2_api.get_status(submission["id"])["group_post"] is True, (
-            "once announced, the member's own post is group content"
-        )
+
+    with step("following the group and author still delivers only one post"):
+        for api, original_id in (
+            (plamenu_api, hosted["id"]),
+            (plamenu2_api, submission["id"]),
+        ):
+            copies = [
+                entry
+                for entry in api.home_timeline()
+                if (entry.get("reblog") or entry)["uri"] == submission["uri"]
+            ]
+            assert len(copies) == 1, copies
+            assert copies[0]["id"] == original_id, copies
+            assert not copies[0].get("reblog"), copies
 
     with step("a reply from the hosting side reaches the member"):
         plamenu_api.post_status(

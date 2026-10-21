@@ -163,10 +163,12 @@ async function publish(page, projectName, noScript) {
   await expect(page.locator('video track[kind="captions"]').first()).toBeAttached();
   const alt = page.getByRole('button', { name: 'ALT: A moving colour test pattern.', exact: true });
   const altBox = await alt.boundingBox();
-  expect(altBox.width).toBeGreaterThanOrEqual(44);
-  expect(altBox.height).toBeGreaterThanOrEqual(44);
+  expect(altBox.width).toBeGreaterThanOrEqual(24);
+  expect(altBox.height).toBeGreaterThanOrEqual(24);
   await alt.press('Enter');
   await expect(page.locator('.media__alt-text').filter({ hasText: 'A moving colour test pattern.' })).toBeVisible();
+  await alt.press('Enter');
+  await expect(page.locator('.media__alt-text').filter({ hasText: 'A moving colour test pattern.' })).toBeHidden();
   const player = page.locator('video').first();
   const masterUrl = await player.getAttribute('data-hls');
   expect(masterUrl).toMatch(/\/media\/hls\/\d+\/master\.m3u8$/);

@@ -149,6 +149,49 @@ async fn post_direct(app: Router, token: &str, text: &str, reply_to: Option<&str
 }
 
 #[sqlx::test(migrations = "../db/migrations")]
+async fn remote_direct_replies_notify_addressed_participants_without_mention_tags(pool: PgPool) {
+    let (alice, token) = user_with_token(&pool, "alice").await;
+    let bob = RemoteUser::new("remote.example", "bob");
+    let stub = StubFederation::with_actors([bob.actor.clone()]);
+    let app = || test_app_with(pool.clone(), stub.clone());
+    let mut parent = None;
+    for index in 0..3 {
+        let uri = format!("{}/statuses/direct-{index}", bob.actor.id);
+        let create = json!({
+            "id": format!("{uri}/create"), "type": "Create", "actor": bob.actor.id,
+            "object": {"id": uri, "type": "Note", "attributedTo": bob.actor.id,
+                "content": "<p>A privately addressed message</p>",
+                "to": ["https://plamenu.test/users/alice"],
+                "inReplyTo": parent, "published": "2026-10-21T00:00:00Z"}
+        });
+        assert_eq!(
+            post_signed(app(), &create, &bob.signer()).await,
+            StatusCode::ACCEPTED
+        );
+        assert_eq!(
+            post_signed(app(), &create, &bob.signer()).await,
+            StatusCode::ACCEPTED
+        );
+        let stored = status::find_by_uri(&pool, &uri).await.unwrap().unwrap();
+        assert_eq!(stored.visibility, "direct");
+        assert_eq!(
+            notification_count(app(), &token).await,
+            if index == 0 { 1 } else { 2 }
+        );
+        if index == 1 {
+            let conv = plamenu_db::conversation::of_status(&pool, stored.id)
+                .await
+                .unwrap()
+                .unwrap();
+            plamenu_db::conversation::mute(&pool, alice.id, conv)
+                .await
+                .unwrap();
+        }
+        parent = Some(uri);
+    }
+}
+
+#[sqlx::test(migrations = "../db/migrations")]
 async fn direct_statuses_stay_between_participants(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;

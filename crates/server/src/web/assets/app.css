@@ -1139,6 +1139,17 @@ img.emoji {
   margin-inline-start: auto;
 }
 
+/* Let the browser size and scroll the editor without resetting its live
+   height on every keystroke. Engines without field-sizing retain native rows
+   and resizing. The caret stays in the editor once long text reaches the cap. */
+.compose textarea[data-autogrow] {
+  field-sizing: content;
+  min-block-size: min(8rem, var(--compose-viewport-limit, 55svh));
+  max-block-size: min(32rem, 55svh, var(--compose-viewport-limit, 55svh));
+  overflow-y: auto;
+  scroll-padding-block: 1lh;
+}
+
 /* Preview sits next to Publish as the secondary action. */
 .compose__preview-btn {
   background: var(--surface-2);
@@ -2934,9 +2945,6 @@ span.history__thumb--file {
     }
   }
 
-  &[data-count="3"] .media:first-child {
-    grid-row: span 2;
-  }
 }
 
 /* ---- Quote card ------------------------------------------------------- */
@@ -3594,14 +3602,16 @@ img.reaction__emoji {
 
 /* ---- Overflow menu --------------------------------------------------- *
  * A <details> disclosure styled as a floating menu, so the secondary verbs
- * open without JavaScript too; JS adds outside-click/Escape closing and
- * viewport-aware placement (the shared popup-shell rules above). */
+ * open without JavaScript too. CSS chooses a fitting position before paint;
+ * JS only adds outside-click/Escape closing. */
 
 .status__menu {
   position: relative;
+  anchor-scope: --status-menu;
 }
 
 .status__menu > summary {
+  anchor-name: --status-menu;
   list-style: none;
   cursor: pointer;
 }
@@ -3622,12 +3632,41 @@ img.reaction__emoji {
   color: var(--accent);
 }
 
-/* The trigger sits at the row's end, so the panel right-aligns by default
-   (the shared shell left-aligns; JS placement may still flip it). */
+/* A bounded viewport panel is the fallback for older engines. Anchor-aware
+   browsers place it beside the trigger and flip before the first paint. */
 .status__menu-pop {
-  inset-inline-start: auto;
-  inset-inline-end: 0;
-  min-inline-size: 16rem;
+  --menu-clearance: var(--space-2);
+  position: fixed;
+  inset: var(--space-2);
+  inset-block-end: var(--menu-clearance);
+  margin: auto;
+  translate: none;
+  inline-size: max-content;
+  block-size: max-content;
+  min-inline-size: min(16rem, calc(100vw - 2rem));
+  max-inline-size: min(21rem, calc(100vw - 2rem));
+  max-block-size: calc(100dvh - var(--menu-clearance) - 1rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 40rem) {
+  .status__menu-pop {
+    --menu-clearance: calc(3.5rem + env(safe-area-inset-bottom, 0px) + var(--space-2));
+  }
+}
+
+@supports (anchor-scope: --status-menu) and (position-area: block-end span-inline-start) {
+  .status__menu-pop {
+    position-anchor: --status-menu;
+    position-area: block-end span-inline-start;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+    position-try-order: most-block-size;
+    inset: auto;
+    margin: var(--space-2);
+    margin-block-end: var(--menu-clearance);
+    max-block-size: calc(100% - var(--menu-clearance) - var(--space-2));
+  }
 }
 
 .status__menu-form {
@@ -7972,29 +8011,27 @@ a.settings-button--plain {
   pointer-events: auto;
 
   .media__badge {
-    min-inline-size: 44px;
-    min-block-size: 44px;
+    min-inline-size: 32px;
+    min-block-size: 28px;
     display: grid;
     place-items: center;
     cursor: pointer;
   }
-
-  &:hover .media__alt-text,
-  &:focus-within .media__alt-text {
-    display: grid;
-  }
 }
 
 .media__alt-text {
-  position: absolute;
-  z-index: 8;
-  inset-block-start: calc(100% + var(--space-1));
-  inset-inline-start: 0;
+  position: fixed;
+  inset: 1rem;
+  inset-block-end: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  margin: auto;
   display: none;
-  gap: var(--space-1);
   inline-size: max-content;
-  max-inline-size: min(20rem, calc(100vw - 4rem));
-  padding: var(--space-2) var(--space-3);
+  block-size: max-content;
+  max-inline-size: min(34rem, calc(100vw - 2rem));
+  max-block-size: calc(100dvh - 6rem - env(safe-area-inset-bottom, 0px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -8002,12 +8039,19 @@ a.settings-button--plain {
   box-shadow: var(--shadow);
   font-size: 0.875rem;
   font-weight: 400;
-  line-height: 1.4;
+  line-height: 1.5;
   letter-spacing: normal;
   overflow-wrap: anywhere;
   pointer-events: auto;
-  white-space: normal;
+  white-space: pre-wrap;
+  user-select: text;
+}
 
+.media__alt-text:popover-open { display: block; }
+
+/* Older engines retain a readable description even without Popover support. */
+@supports not selector(:popover-open) {
+  .media__alt:is(:hover, :focus-within) .media__alt-text { display: block; z-index: 80; }
 }
 
 .media--audio .media__badges {

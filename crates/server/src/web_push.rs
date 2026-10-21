@@ -642,6 +642,10 @@ async fn attempt(
         "preferred_locale": preferred_locale,
         "notification_id": notification.id,
         "notification_type": push_kind,
+        "url": notification.status_id.map_or_else(
+            || "/notifications".to_owned(),
+            |id| format!("/web/statuses/{id}#post-{id}"),
+        ),
         "icon": icon,
         "title": title,
         "body": body,
