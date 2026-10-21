@@ -2150,3 +2150,251 @@ async fn pending_quote_chain_keeps_the_nesting_cap(pool: PgPool) {
     assert!(inner["quote"]["quoted_status"].is_null());
     assert!(inner["content"].as_str().unwrap().contains("RE:"));
 }
+
+/// First exposure to a cross-server quote must fetch its target immediately,
+/// even when the remote approval handshake has not produced a stamp yet.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn pending_cross_origin_quotes_fetch_the_target_on_first_ingest(pool: PgPool) {
+    common::open_previews(&pool).await;
+    let (_alice, token) = user_with_token(&pool, "alice").await;
+    let dave = RemoteUser::new("quoter.example", "dave");
+    let bob = RemoteUser::new("original.example", "bob");
+    let stub = StubFederation::with_actors([dave.actor.clone(), bob.actor.clone()]);
+    let app = || test_app_with(pool.clone(), stub.clone());
+    for (index, property) in ["quote", "quoteUrl"].into_iter().enumerate() {
+        let target_uri = format!("{}/statuses/first-{index}", bob.actor.id);
+        let quoting_uri = format!("{}/statuses/first-{index}", dave.actor.id);
+        let target_text = format!("independent original {index}");
+        let target = json!({
+            "id": target_uri, "type": "Note", "attributedTo": bob.actor.id,
+            "content": format!("<p>{target_text}</p>"),
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        });
+        assert!(
+            status::find_by_uri(&pool, &target_uri)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        stub.objects
+            .lock()
+            .unwrap()
+            .insert(target_uri.clone(), target);
+        let mut note = json!({
+            "id": quoting_uri, "type": "Note", "attributedTo": dave.actor.id,
+            "content": format!("<p>RE: <a href=\"{target_uri}\">{target_uri}</a></p><p>my response</p>"),
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        });
+        note[property] = json!(target_uri);
+        let create = json!({"type": "Create", "actor": dave.actor.id, "object": note});
+        assert_eq!(
+            post_signed(app(), &create, &dave.signer()).await,
+            StatusCode::ACCEPTED
+        );
+        let stored = status::find_by_uri(&pool, &quoting_uri)
+            .await
+            .unwrap()
+            .unwrap();
+        let rows = quote::for_statuses(&pool, &[stored.id]).await.unwrap();
+        let row = &rows[&stored.id];
+        assert!(
+            row.quoted_status_id.is_some(),
+            "stamp-less cross-origin target must be linked before the first render"
+        );
+        assert!(stub.fetches().contains(&target_uri));
+        assert_eq!(row.state, "pending");
+        assert!(row.approval_uri.is_none());
+        assert_eq!(row.legacy, property == "quoteUrl");
+        assert_pending_quote_is_displayed(app(), &stored, &token, &target_text).await;
+    }
+}
+
+async fn assert_pending_quote_is_displayed(
+    app: Router,
+    stored: &status::Status,
+    token: &str,
+    target_text: &str,
+) {
+    for viewer in [None, Some(token)] {
+        let (code, shown) = api(
+            app.clone(),
+            "GET",
+            &format!("/api/v1/statuses/{}", stored.id),
+            viewer,
+            None,
+        )
+        .await;
+        assert_eq!(code, StatusCode::OK);
+        assert_eq!(shown["quote"]["state"], "accepted");
+        assert!(
+            shown["quote"]["quoted_status"]["content"]
+                .as_str()
+                .unwrap()
+                .contains(target_text)
+        );
+        assert_eq!(shown["content"], "<p>my response</p>");
+    }
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/@dave@quoter.example/{}", stored.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let html = String::from_utf8(
+        response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    let focused = html
+        .split_once(&format!("id=\"post-{}\"", stored.id))
+        .unwrap()
+        .1
+        .split("</article>")
+        .next()
+        .unwrap();
+    assert!(focused.contains(r#"class="quote-card""#));
+    assert!(focused.contains(target_text));
+    assert!(!focused.contains("Quote pending approval"));
+    assert!(!focused.contains("The quoted post has been deleted"));
+    assert!(!focused.contains("RE:"));
+}
+
+/// An initial target fetch can fail. Old exhausted quotes must be requeued
+/// and recover without a stamp or any user separately resolving the target.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn unresolved_pending_quote_recovers_after_retry_backfill(pool: PgPool) {
+    common::open_previews(&pool).await;
+    let (_alice, token) = user_with_token(&pool, "alice").await;
+    let dave = RemoteUser::new("quoter.example", "dave");
+    let bob = RemoteUser::new("original.example", "bob");
+    let stub = StubFederation::with_actors([dave.actor.clone(), bob.actor.clone()]);
+    let state = test_state_with(pool.clone(), stub.clone());
+    let app = || test_app_with(pool.clone(), stub.clone());
+    let target_uri = format!("{}/statuses/retry", bob.actor.id);
+    let quoting_uri = format!("{}/statuses/retry", dave.actor.id);
+    let note = json!({
+        "id": quoting_uri, "type": "Note", "attributedTo": dave.actor.id,
+        "content": format!("<p>RE: <a href=\"{target_uri}\">{target_uri}</a></p><p>my response</p>"),
+        "to": ["https://www.w3.org/ns/activitystreams#Public"], "quote": target_uri,
+    });
+    stub.objects
+        .lock()
+        .unwrap()
+        .insert(quoting_uri.clone(), note.clone());
+    let create = json!({"type": "Create", "actor": dave.actor.id, "object": note});
+    assert_eq!(
+        post_signed(app(), &create, &dave.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    let stored = status::find_by_uri(&pool, &quoting_uri)
+        .await
+        .unwrap()
+        .unwrap();
+    let rows = quote::for_statuses(&pool, &[stored.id]).await.unwrap();
+    assert_eq!(rows[&stored.id].state, "pending");
+    assert!(rows[&stored.id].quoted_status_id.is_none());
+    assert!(stub.fetches().contains(&target_uri));
+    let (code, unavailable) = api(
+        app(),
+        "GET",
+        &format!("/api/v1/statuses/{}", stored.id),
+        Some(&token),
+        None,
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK);
+    assert_eq!(
+        unavailable["quote"]["state"], "unauthorized",
+        "an unresolved target is not known to be deleted"
+    );
+    assert!(unavailable["content"].as_str().unwrap().contains("RE:"));
+
+    // Simulate an exhausted old retry; the deployment migration requeues it.
+    sqlx::query("DELETE FROM quote_verify_jobs")
+        .execute(&pool)
+        .await
+        .unwrap();
+    for _ in 0..2 {
+        sqlx::raw_sql(include_str!(
+            "../../db/migrations/0205_retry_unresolved_pending_quotes.sql"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM quote_verify_jobs")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(jobs, 1, "backfill is idempotent");
+    }
+    stub.objects.lock().unwrap().insert(
+        target_uri.clone(),
+        json!({
+            "id": target_uri, "type": "Note", "attributedTo": bob.actor.id,
+            "content": "<p>recovered original</p>",
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        }),
+    );
+    assert_eq!(plamenu::quote_verify::run_due(&state).await, 1);
+    let rows = quote::for_statuses(&pool, &[stored.id]).await.unwrap();
+    assert_eq!(rows[&stored.id].state, "pending");
+    assert!(rows[&stored.id].quoted_status_id.is_some());
+    assert!(rows[&stored.id].approval_uri.is_none());
+    assert_pending_quote_is_displayed(app(), &stored, &token, "recovered original").await;
+}
+
+/// Removing the stamp prerequisite must retain the synchronous fetch bound.
+#[sqlx::test(migrations = "../db/migrations")]
+async fn pending_cross_origin_quote_fetches_keep_the_depth_limit(pool: PgPool) {
+    let dave = RemoteUser::new("quoter.example", "dave");
+    let bob = RemoteUser::new("original.example", "bob");
+    let stub = StubFederation::with_actors([dave.actor.clone(), bob.actor.clone()]);
+    let app = || test_app_with(pool.clone(), stub.clone());
+    let authors = [&dave, &bob];
+    let uris: Vec<String> = (0..5)
+        .map(|index| format!("{}/statuses/chain-{index}", authors[index % 2].actor.id))
+        .collect();
+    for index in 0..5 {
+        let mut note = json!({
+            "id": uris[index], "type": "Note", "attributedTo": authors[index % 2].actor.id,
+            "content": "<p>chain</p>", "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        });
+        if index < 4 {
+            note["quote"] = json!(uris[index + 1]);
+        }
+        stub.objects
+            .lock()
+            .unwrap()
+            .insert(uris[index].clone(), note);
+    }
+    let note = stub.objects.lock().unwrap()[&uris[0]].clone();
+    let create = json!({"type": "Create", "actor": dave.actor.id, "object": note});
+    assert_eq!(
+        post_signed(app(), &create, &dave.signer()).await,
+        StatusCode::ACCEPTED
+    );
+    let fetches = stub.fetches();
+    for uri in &uris[1..=3] {
+        assert!(fetches.contains(uri), "missing bounded quote fetch: {uri}");
+        assert!(status::find_by_uri(&pool, uri).await.unwrap().is_some());
+    }
+    assert!(
+        !fetches.contains(&uris[4]),
+        "recursive fetching must stop at the cap"
+    );
+    assert!(
+        status::find_by_uri(&pool, &uris[4])
+            .await
+            .unwrap()
+            .is_none()
+    );
+}

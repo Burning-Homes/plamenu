@@ -2456,7 +2456,9 @@ async fn store_remote_note(
     // though merely fetching a post must not trigger live-delivery effects.
     let fields = quote_fields(object);
     let quote_notify = if let Some(quoted_uri) = fields.quoted_uri {
-        link_inbound_quote(
+        // A bounded quote chain still nests several storage/evaluation futures.
+        // Keep this boundary on the heap so cold ingest fits the worker stack.
+        Box::pin(link_inbound_quote(
             state,
             author,
             &stored,
@@ -2465,7 +2467,7 @@ async fn store_remote_note(
             fields.legacy,
             quote_depth,
             delivery_effects,
-        )
+        ))
         .await?
     } else {
         None
@@ -3212,53 +3214,55 @@ fn e232_quote_link(object: &Value) -> Option<&str> {
     })
 }
 
-/// Records the quote relationship of an inbound quote post and decides its
-/// state: self-quotes pass, quotes of local posts must match an
-/// authorization we issued, quotes of remote posts are verified by fetching
-/// the FEP-044f `QuoteAuthorization` stamp.
-async fn resolve_or_fetch_quote_target(
-    state: &AppState,
-    sender: &Account,
-    quoted_uri: &str,
-    authorization: Option<&str>,
+/// Resolves a quote's display target independently of approval. Pending
+/// cross-origin quotes need the target just as accepted quotes do; requiring
+/// a stamp here leaves their first render empty. Ordinary federation policy,
+/// object/author ownership checks and the recursive depth cap still apply.
+fn resolve_or_fetch_quote_target<'a>(
+    state: &'a AppState,
+    quoted_uri: &'a str,
     quote_depth: usize,
-) -> Result<Option<status::Status>, ApiError> {
-    if let Some(known) = resolve_status_ref(state, quoted_uri).await? {
-        return Ok(Some(known));
-    }
-    let local_prefix = format!("https://{}/", state.config.domain);
-    if quoted_uri.starts_with(&local_prefix) || quote_depth > MAX_QUOTE_TARGET_FETCH_DEPTH {
-        return Ok(None);
-    }
-    let has_remote_authorization = authorization
-        .and_then(host_of)
-        .is_some_and(|host| host != state.config.domain.as_str());
-    let same_origin_as_sender = sender.uri.as_deref().and_then(host_of) == host_of(quoted_uri);
-    if !has_remote_authorization && !same_origin_as_sender {
-        return Ok(None);
-    }
-
-    let Some((object, author)) = fetch_remote_status_object(state, quoted_uri, None).await? else {
-        return Ok(None);
-    };
-    if id_of(&object) != Some(quoted_uri) {
-        return Ok(None);
-    }
-    tracing::info!(
-        quoted_uri,
-        quote_depth,
-        "fetched missing quoted status for remote quote verification"
-    );
-    Box::pin(ingest_remote_note_with_quote_depth(
-        state,
-        &author,
-        &object,
-        quote_depth + 1,
-        RemoteIngestContext::ExplicitResolution,
-        ThreadFetchAccount::Supplied(None),
-    ))
-    .await
-    .map(|result| Some(result.status))
+) -> crate::federation::BoxFuture<'a, Result<Option<status::Status>, ApiError>> {
+    Box::pin(async move {
+        if let Some(known) = resolve_status_ref(state, quoted_uri).await? {
+            return Ok(Some(known));
+        }
+        let local_prefix = format!("https://{}/", state.config.domain);
+        if quoted_uri.starts_with(&local_prefix) || quote_depth > MAX_QUOTE_TARGET_FETCH_DEPTH {
+            return Ok(None);
+        }
+        let Some((object, author)) = fetch_remote_status_object(state, quoted_uri, None).await?
+        else {
+            return Ok(None);
+        };
+        if id_of(&object) != Some(quoted_uri) {
+            return Ok(None);
+        }
+        tracing::info!(quoted_uri, quote_depth, "fetched missing quoted status");
+        // Poll nested ingestion on its own task stack. Even a bounded chain can
+        // exhaust the request stack when these large storage futures are polled
+        // recursively. The JoinSet aborts the child if this request is cancelled.
+        let state = state.clone();
+        let ingest: crate::federation::BoxFuture<'static, _> = Box::pin(async move {
+            ingest_remote_note_with_quote_depth(
+                &state,
+                &author,
+                &object,
+                quote_depth + 1,
+                RemoteIngestContext::ExplicitResolution,
+                ThreadFetchAccount::Supplied(None),
+            )
+            .await
+        });
+        let mut tasks = tokio::task::JoinSet::new();
+        tasks.spawn(ingest);
+        let Some(result) = tasks.join_next().await else {
+            return Ok(None);
+        };
+        result
+            .map_err(|error| ApiError::Internal(Box::new(error)))?
+            .map(|result| Some(result.status))
+    })
 }
 
 /// The resolved verdict of one quote-verification pass.
@@ -3283,9 +3287,7 @@ pub(crate) async fn evaluate_inbound_quote(
     authorization: Option<&str>,
     quote_depth: usize,
 ) -> Result<QuoteOutcome, ApiError> {
-    let quoted =
-        resolve_or_fetch_quote_target(state, sender, quoted_uri, authorization, quote_depth)
-            .await?;
+    let quoted = resolve_or_fetch_quote_target(state, quoted_uri, quote_depth).await?;
     let quoted_author = match &quoted {
         Some(target) => account::find_by_id(&state.pool, target.account_id).await?,
         None => None,

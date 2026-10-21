@@ -3543,6 +3543,13 @@ fn assemble_quote_map(
                     "state": "accepted",
                     "quoted_status_id": quoted_id.to_string(),
                 }),
+                // Failure to fetch a pending target is not evidence of deletion.
+                // Use Mastodon's generic unavailable/unauthorized placeholder
+                // until a retry resolves it, without claiming consent is pending
+                // in the client presentation or fabricating an accepted card.
+                None if row.state == "pending" => {
+                    json!({ "state": "unauthorized", "quoted_status": null })
+                }
                 None => json!({ "state": "deleted", "quoted_status": null }),
             }
         } else {

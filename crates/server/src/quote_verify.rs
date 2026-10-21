@@ -17,9 +17,8 @@ use crate::{AppState, ingest};
 
 const BATCH_SIZE: i64 = 4;
 const IDLE_POLL: Duration = Duration::from_secs(5);
-/// Verification attempts before a quote is left `pending` for good (a
-/// stamp-less legacy quote then renders as a pending placeholder, like on
-/// Mastodon).
+/// Verification attempts before a quote is left `pending` for good. A
+/// resolved target is still displayed while approval remains pending.
 const MAX_ATTEMPTS: i32 = 5;
 /// Backoff base; attempt `n` waits `RETRY_BASE * 2^n` (60s → ~16min).
 const RETRY_BASE: Duration = Duration::from_mins(1);
