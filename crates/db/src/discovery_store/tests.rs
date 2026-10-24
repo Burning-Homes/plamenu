@@ -81,12 +81,18 @@ async fn scheduler_balances_candidate_costs_instead_of_cheap_wire_attempts(pool:
     policy.max_inflight = 1;
     policy.requests_per_day = 100;
     save_settings(&pool, &policy).await.unwrap();
+    let mut sources = Vec::new();
     for endpoint in [
         "https://people.example/api/v1/directory",
         "https://groups.example/api/v3/community/list",
         "https://films.example/api/v1/videos",
     ] {
-        let source = added(add_source(&pool, endpoint, None).await.unwrap());
+        // Candidate balancing accounts acquisition from established sources;
+        // initial source inspection has its own exploration allowance.
+        let source = verified_source(&pool, endpoint, None).await;
+        sources.push((source, endpoint));
+    }
+    for (source, endpoint) in sources {
         enqueue(&pool, source, endpoint, Operation::InspectSource, None)
             .await
             .unwrap();
@@ -94,6 +100,7 @@ async fn scheduler_balances_candidate_costs_instead_of_cheap_wire_attempts(pool:
     let mut rounds = std::collections::HashMap::new();
     for _ in 0..12 {
         let lease = claim_due(&pool, "fair").await.unwrap().remove(0);
+        assert!(!lease.exploration);
         let cost = if lease.target_uri.ends_with("/videos") {
             4
         } else if lease.target_uri.ends_with("/list") {
@@ -992,6 +999,7 @@ async fn exploration_retains_a_request_allowance_under_refresh_pressure(pool: Pg
     finish_entry(&pool, &first, &facts(uri)).await.unwrap();
     let maintenance = refresh(&pool, source, uri).await;
     assert!(!maintenance.exploration);
+    assert!(maintenance.entry_revision.is_some());
     let other = added(
         add_source(&pool, "https://new.example/api/v1/directory", None)
             .await
@@ -1006,33 +1014,81 @@ async fn exploration_retains_a_request_allowance_under_refresh_pressure(pool: Pg
     )
     .await
     .unwrap();
-    for _ in 0..4 {
-        let Reservation::Reserved(id) = reserve_request(&pool, &maintenance, uri).await.unwrap()
+    // With five requests the 70/20/10 split permits one maintenance,
+    // three acquisition and one exploration attempt.
+    let Reservation::Reserved(id) = reserve_request(&pool, &maintenance, uri).await.unwrap() else {
+        panic!("maintenance allowance")
+    };
+    complete_request(&pool, id, 10).await.unwrap();
+    assert_eq!(
+        reserve_request(&pool, &maintenance, uri).await.unwrap(),
+        Reservation::Budget
+    );
+    assert_eq!(
+        finish_job(&pool, &maintenance).await.unwrap(),
+        Completion::Committed
+    );
+    let new_uri = "https://refresh.example/users/bob";
+    assert!(matches!(
+        enqueue(&pool, source, new_uri, Operation::RefreshEntry, None)
+            .await
+            .unwrap(),
+        Admission::Added(_)
+    ));
+    let acquisition = claim_due_for(&pool, "acquisition", &[Operation::RefreshEntry])
+        .await
+        .unwrap()
+        .remove(0);
+    assert!(!acquisition.exploration);
+    assert!(acquisition.entry_revision.is_none());
+    for _ in 0..3 {
+        let Reservation::Reserved(id) =
+            reserve_request(&pool, &acquisition, new_uri).await.unwrap()
         else {
-            panic!("refresh allowance")
+            panic!("acquisition allowance")
         };
         complete_request(&pool, id, 10).await.unwrap();
     }
     assert_eq!(
-        reserve_request(&pool, &maintenance, uri).await.unwrap(),
+        reserve_request(&pool, &acquisition, new_uri).await.unwrap(),
         Reservation::Budget
+    );
+    assert_eq!(
+        finish_job(&pool, &acquisition).await.unwrap(),
+        Completion::Committed
     );
     let explorer = claim_due(&pool, "restarted-explorer")
         .await
         .unwrap()
         .remove(0);
     assert!(explorer.exploration);
-    assert!(matches!(
-        reserve_request(&pool, &explorer, &explorer.target_uri)
-            .await
-            .unwrap(),
-        Reservation::Reserved(_)
-    ));
+    let Reservation::Reserved(id) = reserve_request(&pool, &explorer, &explorer.target_uri)
+        .await
+        .unwrap()
+    else {
+        panic!("exploration allowance")
+    };
+    complete_request(&pool, id, 10).await.unwrap();
     assert_eq!(diagnostics(&pool).await.unwrap().requests_24h, 5);
+    assert_eq!(diagnostics(&pool).await.unwrap().charged_bytes_24h, 50);
+    let purposes: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT purpose,count(*) FROM discovery_requests GROUP BY purpose ORDER BY purpose",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        purposes,
+        [
+            ("acquisition".into(), 3),
+            ("exploration".into(), 1),
+            ("maintenance".into(), 1)
+        ]
+    );
 }
 
 #[sqlx::test(migrator = "crate::MIGRATOR")]
-async fn peer_capacity_leaves_room_for_roots_and_rotates_only_safe_leaves(pool: PgPool) {
+async fn peer_capacity_leaves_room_for_roots_and_parks_only_unverified_leaves(pool: PgPool) {
     let mut settings = enable(&pool).await;
     settings.max_sources = 5;
     save_settings(&pool, &settings).await.unwrap();
@@ -1078,6 +1134,121 @@ async fn peer_capacity_leaves_room_for_roots_and_rotates_only_safe_leaves(pool: 
     .await
     .unwrap();
     set_source_enabled(&pool, peers[0], false).await.unwrap();
+    let established_endpoint = "https://peer1.example/api/v1/directory";
+    enqueue(
+        &pool,
+        peers[1],
+        established_endpoint,
+        Operation::InspectSource,
+        Some(root),
+    )
+    .await
+    .unwrap();
+    let inspection = claim_due(&pool, "established-peer")
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(inspection.source_id, peers[1]);
+    let now = OffsetDateTime::now_utc();
+    assert_eq!(
+        finish_source(
+            &pool,
+            &inspection,
+            &VerifiedSource {
+                canonical_uri: established_endpoint,
+                capabilities: &["directory".into()],
+                verified_at: now,
+                valid_until: now + Duration::days(1),
+            }
+        )
+        .await
+        .unwrap(),
+        Completion::Committed
+    );
+    let actor = "https://peer1.example/users/alice";
+    let lease = refresh(&pool, peers[1], actor).await;
+    assert_eq!(
+        finish_entry(&pool, &lease, &facts(actor)).await.unwrap(),
+        Completion::Committed
+    );
+    let actor_id = entry(&pool, actor).await.unwrap().unwrap().id;
+    for n in [1, 2] {
+        let endpoint = format!("https://peer{n}.example/api/v1/directory");
+        enqueue(
+            &pool,
+            peers[n],
+            &endpoint,
+            Operation::InspectSource,
+            Some(root),
+        )
+        .await
+        .unwrap();
+        let lease = claim_due(&pool, "failed-peer").await.unwrap().remove(0);
+        assert_eq!(lease.source_id, peers[n]);
+        assert_eq!(
+            fail_job(&pool, &lease, 3600, "unreachable", false)
+                .await
+                .unwrap(),
+            Completion::Committed
+        );
+    }
+    let backoff = source(&pool, peers[2])
+        .await
+        .unwrap()
+        .unwrap()
+        .cooldown_until
+        .unwrap();
+    let retained: Vec<(i64, serde_json::Value)> =
+        sqlx::query_as("SELECT id,to_jsonb(s) FROM discovery_sources s WHERE id<>$1 ORDER BY id")
+            .bind(peers[2])
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    let parked: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(s) FROM discovery_sources s WHERE id=$1")
+            .bind(peers[2])
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    // Age and a disabled leaf do not permit source rotation. Only a failed,
+    // unverified leaf can move to the durable hints queue, preserving backoff.
+    assert_eq!(
+        add_source_with_provenance(
+            &pool,
+            "https://replacement.example/api/v1/directory",
+            None,
+            "import"
+        )
+        .await
+        .unwrap(),
+        Admission::Capacity
+    );
+    assert_eq!(diagnostics(&pool).await.unwrap().sources, 5);
+    schedule_candidates(&pool).await.unwrap();
+    assert!(source(&pool, peers[2]).await.unwrap().is_none());
+    assert_eq!(diagnostics(&pool).await.unwrap().sources, 4);
+    let hints: Vec<(String, Option<i64>, OffsetDateTime, serde_json::Value)> = sqlx::query_as(
+        "SELECT endpoint,introduced_by,next_at,previous_source FROM discovery_source_hints",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        hints,
+        [(
+            "https://peer2.example/api/v1/directory".into(),
+            Some(root),
+            backoff,
+            parked
+        )]
+    );
+    let after: Vec<(i64, serde_json::Value)> =
+        sqlx::query_as("SELECT id,to_jsonb(s) FROM discovery_sources s ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(after, retained);
+    assert_eq!(entry(&pool, actor).await.unwrap().unwrap().id, actor_id);
     assert!(matches!(
         add_source_with_provenance(
             &pool,
@@ -1167,7 +1338,9 @@ async fn explicit_import_adopts_a_peer_without_clearing_its_backoff(pool: PgPool
 }
 
 #[sqlx::test(migrator = "crate::MIGRATOR")]
-async fn catalogue_rotation_keeps_withdrawals_and_persistent_positions(pool: PgPool) {
+async fn catalogue_capacity_retires_only_expired_content_and_keeps_guards_and_positions(
+    pool: PgPool,
+) {
     let mut settings = enable(&pool).await;
     settings.max_entries = 2;
     save_settings(&pool, &settings).await.unwrap();
@@ -1190,15 +1363,81 @@ async fn catalogue_rotation_keeps_withdrawals_and_persistent_positions(pool: PgP
     let lease = refresh(&pool, source, third).await;
     assert_eq!(
         finish_entry(&pool, &lease, &facts(third)).await.unwrap(),
-        Completion::Committed
+        Completion::Capacity
     );
     assert_eq!(
         entry(&pool, first).await.unwrap().unwrap().state,
         "withdrawn"
     );
-    assert!(entry(&pool, second).await.unwrap().is_none());
-    assert!(entry(&pool, third).await.unwrap().unwrap().browse_ordinal > ordinal);
+    let retained = entry(&pool, second).await.unwrap().unwrap();
+    assert_eq!(retained.browse_ordinal, ordinal);
+    assert_eq!(retained.state, "active");
+    assert_eq!(retained.valid_until.year(), 9999);
+    assert!(entry(&pool, third).await.unwrap().is_none());
     assert_eq!(diagnostics(&pool).await.unwrap().entries, 2);
+    assert_eq!(
+        finish_job(&pool, &lease).await.unwrap(),
+        Completion::Committed
+    );
+
+    // Add positive content with a real author fence. A fresh post cannot be
+    // evicted either; only expiry of its 180-day retention makes room.
+    let mut settings = super::settings(&pool).await.unwrap();
+    settings.max_entries = 3;
+    assert!(save_settings(&pool, &settings).await.unwrap());
+    let post = "https://one.example/posts/one";
+    let lease = refresh(&pool, source, post).await;
+    let mut post_facts = facts(second);
+    post_facts.kind = "post";
+    post_facts.author_revision = Some(retained.revision);
+    assert_eq!(
+        finish_entry(&pool, &lease, &post_facts).await.unwrap(),
+        Completion::Committed
+    );
+    let positive = entry(&pool, post).await.unwrap().unwrap();
+    assert!(positive.valid_until > OffsetDateTime::now_utc() + Duration::days(179));
+    let lease = refresh(&pool, source, third).await;
+    assert_eq!(
+        finish_entry(&pool, &lease, &facts(third)).await.unwrap(),
+        Completion::Capacity
+    );
+    assert_eq!(diagnostics(&pool).await.unwrap().entries, 3);
+
+    // Advance the persisted discovery/evidence dates, leaving the retention
+    // trigger enabled so this fixture follows the production expiry contract.
+    sqlx::query("UPDATE discovery_identity SET first_discovered_at=now()-interval '181 days' WHERE canonical_uri=$1")
+        .bind(post).execute(&pool).await.unwrap();
+    sqlx::query(
+        "UPDATE discovery_entries SET verified_at=now()-interval '181 days' WHERE canonical_uri=$1",
+    )
+    .bind(post)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(entry(&pool, post).await.unwrap().unwrap().valid_until < OffsetDateTime::now_utc());
+    assert_eq!(
+        finish_entry(&pool, &lease, &facts(third)).await.unwrap(),
+        Completion::Committed
+    );
+    let guard = entry(&pool, first).await.unwrap().unwrap();
+    assert_eq!(guard.state, "withdrawn");
+    assert!(guard.title.is_none() && guard.summary.is_none());
+    assert_eq!(
+        entry(&pool, second).await.unwrap().unwrap().browse_ordinal,
+        ordinal
+    );
+    assert!(entry(&pool, post).await.unwrap().is_none());
+    assert!(entry(&pool, third).await.unwrap().unwrap().browse_ordinal > positive.browse_ordinal);
+    assert_eq!(diagnostics(&pool).await.unwrap().entries, 3);
+    let identity: (String, Option<OffsetDateTime>) = sqlx::query_as(
+        "SELECT outcome,forget_after FROM discovery_identity WHERE canonical_uri=$1",
+    )
+    .bind(post)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(identity.0, "retired");
+    assert!(identity.1.unwrap() > OffsetDateTime::now_utc() + Duration::days(364));
 }
 
 #[sqlx::test(migrator = "crate::MIGRATOR")]

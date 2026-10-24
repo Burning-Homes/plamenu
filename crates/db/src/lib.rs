@@ -267,7 +267,8 @@ mod schema_contract_tests {
 
     /// JSON storage is an explicit exception, never a convenient default.
     /// The remaining columns are wire/client/library-owned opaque
-    /// formats. Fixed-shape application data must otherwise use columns and
+    /// formats, plus explicitly reviewed bounded recovery snapshots.
+    /// Live fixed-shape application state must otherwise use columns and
     /// child tables (profile fields live in `account_fields`; readers get
     /// their legacy JSON shape from `account_fields_json()`).
     #[sqlx::test(migrator = "crate::MIGRATOR")]
@@ -289,6 +290,23 @@ mod schema_contract_tests {
             // Preserve complete signed FEP-c390 wire documents, including proof fields.
             ("account_identity_proofs".to_owned(), "documents".to_owned()),
             ("delivery_jobs".to_owned(), "activity".to_owned()),
+            // Minimal canonical ActivityPub evidence preserves missing, invalid
+            // and false wire declarations; capped at 8192 bytes and 14 days.
+            ("discovery_actor_evidence".to_owned(), "document".to_owned()),
+            // Deferred PeerTube identity envelope (UUID and owner/channel URIs).
+            // Queue admission and identity bounds precede this private producer;
+            // URI, source, cursor and lifecycle remain typed columns.
+            ("discovery_candidates".to_owned(), "video".to_owned()),
+            // Serialized wider-search client receipt: at most three outcomes,
+            // 4096 bytes and five minutes. Account, digest and budgets are typed.
+            ("discovery_search_runs".to_owned(), "results".to_owned()),
+            // Lossless to_jsonb(discovery_sources) checkpoint when parking an
+            // unverified peer. It is not mutable live source state; endpoint,
+            // introducer and retry schedule remain typed in the bounded queue.
+            (
+                "discovery_source_hints".to_owned(),
+                "previous_source".to_owned(),
+            ),
             ("gateway_actors".to_owned(), "actor".to_owned()),
             ("gateway_collection_items".to_owned(), "object".to_owned()),
             ("gateway_objects".to_owned(), "object".to_owned()),

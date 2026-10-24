@@ -365,6 +365,35 @@ mod tests {
             .unwrap();
         db::claim_due(pool, "test").await.unwrap().remove(0)
     }
+    async fn verified_lease(pool: &PgPool, uri: &str, operation: Operation) -> Lease {
+        let inspection = setup(pool, uri).await;
+        let now = OffsetDateTime::now_utc();
+        assert_eq!(
+            db::finish_source(
+                pool,
+                &inspection,
+                &db::VerifiedSource {
+                    canonical_uri: uri,
+                    capabilities: &["directory".into()],
+                    verified_at: now,
+                    valid_until: now + time::Duration::days(1),
+                },
+            )
+            .await
+            .unwrap(),
+            Completion::Committed
+        );
+        assert!(matches!(
+            db::enqueue(pool, inspection.source_id, uri, operation, None)
+                .await
+                .unwrap(),
+            Admission::Added(_)
+        ));
+        db::claim_due_for(pool, "verified", &[operation])
+            .await
+            .unwrap()
+            .remove(0)
+    }
     fn receipt(result: Reservation) -> i64 {
         let Reservation::Reserved(id) = result else {
             panic!("{result:?}")
@@ -413,7 +442,8 @@ mod tests {
     async fn request_and_origin_caps_survive_reclaims(pool: PgPool) {
         setup(&pool, "https://a.example/source").await;
         let mut settings = db::settings(&pool).await.unwrap();
-        settings.requests_per_day = 2;
+        // Two exploration slots keep the first refusal specific to the origin cap.
+        settings.requests_per_day = 20;
         settings.requests_per_origin = 1;
         db::save_settings(&pool, &settings).await.unwrap();
         let lease = db::claim_due(&pool, "new").await.unwrap().remove(0);
@@ -429,8 +459,32 @@ mod tests {
                 .unwrap(),
             Reservation::Budget
         );
-        db::finish_job(&pool, &lease).await.unwrap();
-        let other = setup(&pool, "https://b.example/source").await;
+        // Tightening policy fences the old lease without refunding its receipt.
+        // Spend one maintenance slot next, so a later acquisition has its own
+        // allowance left and can only be refused by the global two-wire cap.
+        let mut settings = db::settings(&pool).await.unwrap();
+        settings.requests_per_day = 2;
+        assert!(db::save_settings(&pool, &settings).await.unwrap());
+        let reclaimed = db::claim_due(&pool, "after-tightening")
+            .await
+            .unwrap()
+            .remove(0);
+        assert_eq!(reclaimed.id, lease.id);
+        assert_ne!(reclaimed.lease_token, lease.lease_token);
+        assert_eq!(
+            reserve_request(&pool, &lease, &lease.target_uri)
+                .await
+                .unwrap(),
+            Reservation::Stale
+        );
+        assert_eq!(diagnostics(&pool).await.unwrap().requests_24h, 1);
+        db::finish_job(&pool, &reclaimed).await.unwrap();
+        let other = verified_lease(
+            &pool,
+            "https://b.example/source",
+            Operation::RefreshPresentation,
+        )
+        .await;
         let ticket = receipt(
             reserve_request(&pool, &other, &other.target_uri)
                 .await
@@ -438,7 +492,8 @@ mod tests {
         );
         complete_request(&pool, ticket, 2).await.unwrap();
         db::finish_job(&pool, &other).await.unwrap();
-        let third = setup(&pool, "https://c.example/source").await;
+        let third =
+            verified_lease(&pool, "https://c.example/source", Operation::ListDirectory).await;
         assert_eq!(
             reserve_request(&pool, &third, &third.target_uri)
                 .await
@@ -446,6 +501,42 @@ mod tests {
             Reservation::Budget
         );
         assert_eq!(diagnostics(&pool).await.unwrap().requests_24h, 2);
+        assert_eq!(diagnostics(&pool).await.unwrap().charged_bytes_24h, 4);
+        let purposes: Vec<String> =
+            sqlx::query_scalar("SELECT purpose FROM discovery_requests ORDER BY purpose")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(purposes, ["exploration", "maintenance"]);
+    }
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
+    async fn exploration_allowance_blocks_a_fresh_origin_before_the_global_cap(pool: PgPool) {
+        setup(&pool, "https://a.example/source").await;
+        let mut settings = db::settings(&pool).await.unwrap();
+        settings.requests_per_day = 2;
+        assert!(db::save_settings(&pool, &settings).await.unwrap());
+        let first = db::claim_due(&pool, "exploration").await.unwrap().remove(0);
+        assert!(first.exploration);
+        let ticket = receipt(
+            reserve_request(&pool, &first, &first.target_uri)
+                .await
+                .unwrap(),
+        );
+        complete_request(&pool, ticket, 2).await.unwrap();
+        assert_eq!(
+            db::finish_job(&pool, &first).await.unwrap(),
+            Completion::Committed
+        );
+        let second = setup(&pool, "https://b.example/source").await;
+        assert!(second.exploration);
+        assert_eq!(
+            reserve_request(&pool, &second, &second.target_uri)
+                .await
+                .unwrap(),
+            Reservation::Budget
+        );
+        assert_eq!(diagnostics(&pool).await.unwrap().requests_24h, 1);
+        assert_eq!(diagnostics(&pool).await.unwrap().charged_bytes_24h, 2);
     }
     #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn crash_charges_full_body_until_rolling_window_expires(pool: PgPool) {
