@@ -33,7 +33,7 @@ use std::time::{Duration, SystemTime};
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, header};
-use criterion::{BatchSize, Criterion};
+use criterion::{BatchSize, BenchmarkFilter, Criterion};
 use http_body_util::BodyExt;
 use plamenu::auth::{generate_secret, hash_secret};
 use plamenu::state::AppState;
@@ -49,7 +49,10 @@ use tokio::runtime::Runtime;
 use tower::ServiceExt;
 use tracing_subscriber::layer::SubscriberExt;
 
+mod read_selection;
 mod read_warmup;
+mod run_manifest;
+use read_selection::ReadSelection;
 static READ_BOOTSTRAP: Mutex<BTreeMap<String, read_warmup::BootstrapEvidence>> =
     Mutex::new(BTreeMap::new());
 
@@ -323,26 +326,67 @@ fn main() {
     // manifest name a revision the measurement never saw.
     let revision = Revision::current();
     let started_at = SystemTime::now();
+    let output = run_manifest::output_directory(
+        std::env::var_os("CRITERION_HOME"),
+        std::env::var_os("CARGO_TARGET_DIR"),
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
+    );
+    let manifest = run_manifest::RunManifest::begin(
+        &output,
+        json!({
+            "seed_version": seed::SEED_VERSION,
+            "git_sha": revision.sha,
+            "git_dirty": revision.dirty,
+            "started_at": rfc3339(started_at),
+            "warm_up_secs": WARM_UP.as_secs_f64(),
+            "measurement_secs": MEASUREMENT.as_secs_f64(),
+        }),
+    )
+    .expect("publish benchmark run boundary before setup");
+    let requested = std::env::var_os("PLAMENU_BENCH_READ_CASE").map(|value| {
+        value
+            .into_string()
+            .expect("focused read case must be UTF-8")
+    });
+    let selection = ReadSelection::new(requested, &std::env::args().skip(1).collect::<Vec<_>>())
+        .expect("invalid focused benchmark selection");
+    let mut criterion = Criterion::default()
+        .output_directory(&output)
+        .warm_up_time(WARM_UP)
+        .measurement_time(MEASUREMENT)
+        .configure_from_args();
+    if let Some(id) = selection.case() {
+        criterion = criterion.with_benchmark_filter(BenchmarkFilter::Exact(id.to_owned()));
+    }
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("build tokio runtime");
     let fixture = rt.block_on(setup());
-    rt.block_on(collect_case_metrics(&fixture));
+    rt.block_on(collect_case_metrics(&fixture, &selection));
 
-    let mut criterion = Criterion::default()
-        .warm_up_time(WARM_UP)
-        .measurement_time(MEASUREMENT)
-        .configure_from_args();
-    bench_api(&mut criterion, &rt, &fixture);
-    bench_write(&mut criterion, &rt, &fixture);
-    bench_web(&mut criterion, &rt, &fixture);
-    bench_ap(&mut criterion, &rt, &fixture);
-    bench_stream(&mut criterion, &rt, &fixture);
-    bench_db(&mut criterion, &rt, &fixture);
-    bench_micro(&mut criterion, &rt, &fixture);
+    bench_api(&mut criterion, &rt, &fixture, &selection);
+    if selection.case().is_none() {
+        bench_write(&mut criterion, &rt, &fixture);
+    }
+    bench_web(&mut criterion, &rt, &fixture, &selection);
+    bench_ap(&mut criterion, &rt, &fixture, &selection);
+    if selection.case().is_none() {
+        bench_stream(&mut criterion, &rt, &fixture);
+        bench_db(&mut criterion, &rt, &fixture);
+        bench_micro(&mut criterion, &rt, &fixture);
+    }
     criterion.final_summary();
-    write_run_manifest(started_at, &revision);
+    manifest
+        .finish(json!({
+            "finished_at": rfc3339(SystemTime::now()),
+            "focused_read_case": selection.case(),
+            "criterion_arguments": selection.criterion_arguments(),
+            "cases": &*METRICS.lock().unwrap(),
+            "read_bootstrap": &*READ_BOOTSTRAP.lock().unwrap(),
+        }))
+        .expect("publish completed benchmark manifest");
+    eprintln!("wrote {}", output.join(run_manifest::MANIFEST).display());
 }
 
 /// Sends one read case and drops the body — an uncounted warm-up.
@@ -361,13 +405,17 @@ async fn warm(fx: &Fixture, case: &ReadCase) {
 ///
 /// This runs before criterion so the counting subscriber can be retired before
 /// the first timed iteration — see [`ArmedQueryCounter`].
-async fn collect_case_metrics(fx: &Fixture) {
-    let cases: Vec<(&str, ReadCase)> = api_cases(fx)
+async fn collect_case_metrics(fx: &Fixture, selection: &ReadSelection) {
+    let mut cases: Vec<(&str, ReadCase)> = api_cases(fx)
         .into_iter()
         .map(|case| ("api", case))
         .chain(web_cases(fx).into_iter().map(|case| ("web", case)))
         .chain(ap_cases(fx).into_iter().map(|case| ("ap", case)))
         .collect();
+    selection
+        .validate_ids(cases.iter().map(|(group, case)| (*group, case.name)))
+        .expect("focused case must exist in the declared read inventory");
+    cases.retain(|(group, case)| selection.includes(group, case.name));
 
     // Warm every case first, uncounted. The budget describes the steady state,
     // and a process's first request pays one-off cache population (settings,
@@ -454,63 +502,6 @@ async fn collect_case_metrics(fx: &Fixture) {
     // Retires every sqlx callsite back to `Interest::never`, so the timed
     // benches below run exactly as they did with no subscriber installed.
     tracing::callsite::rebuild_interest_cache();
-}
-
-/// Writes what this run measured beyond criterion's own output, next to it.
-///
-/// `bench/bench_budgets.py` promotes this into the committed
-/// `bench/results/<sha>-<ts>.json` record. It exists mostly for `started_at`:
-/// criterion never removes a benchmark directory, so without a run boundary
-/// the gate cannot tell a fresh measurement from one left over from a filtered
-/// run three commits ago — and it was grading the leftovers as if they were
-/// evidence about the current tree.
-fn write_run_manifest(started_at: SystemTime, revision: &Revision) {
-    let path = criterion_dir().join("plamenu-bench-run.json");
-    if let Some(parent) = path.parent()
-        && let Err(error) = std::fs::create_dir_all(parent)
-    {
-        eprintln!("could not create {}: {error}", parent.display());
-        return;
-    }
-    let manifest = json!({
-        "seed_version": seed::SEED_VERSION,
-        "git_sha": revision.sha,
-        "git_dirty": revision.dirty,
-        "started_at": rfc3339(started_at),
-        "finished_at": rfc3339(SystemTime::now()),
-        "warm_up_secs": WARM_UP.as_secs_f64(),
-        "measurement_secs": MEASUREMENT.as_secs_f64(),
-        "cases": &*METRICS.lock().unwrap(),
-        "read_bootstrap": &*READ_BOOTSTRAP.lock().unwrap(),
-    });
-    match std::fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()) {
-        Ok(()) => eprintln!("wrote {}", path.display()),
-        Err(error) => eprintln!("could not write {}: {error}", path.display()),
-    }
-}
-
-/// Where criterion put this run's output.
-///
-/// Cargo runs a bench binary with the *package* as its working directory, so a
-/// bare `target/criterion` lands in `crates/server/target` — next to nothing,
-/// while criterion writes to the workspace target directory. Resolved the same
-/// way criterion resolves it: `CARGO_TARGET_DIR` if set, otherwise the
-/// `target` directory of the workspace root (the ancestor holding
-/// `Cargo.lock`).
-fn criterion_dir() -> std::path::PathBuf {
-    if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
-        return std::path::PathBuf::from(dir).join("criterion");
-    }
-    let mut dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    loop {
-        if dir.join("Cargo.lock").is_file() {
-            return dir.join("target").join("criterion");
-        }
-        match dir.parent() {
-            Some(parent) => dir = parent,
-            None => return std::path::PathBuf::from("target/criterion"),
-        }
-    }
 }
 
 fn rfc3339(at: SystemTime) -> String {
@@ -1477,6 +1468,7 @@ fn bench_reads(
     fx: &Fixture,
     group: &str,
     cases: &[ReadCase],
+    selection: &ReadSelection,
 ) {
     let mut bench_group = criterion.benchmark_group(group);
     bench_group.sample_size(20);
@@ -1484,6 +1476,9 @@ fn bench_reads(
     // `--measurement-time` on the command line still governs everything else.
     let mut overridden = false;
     for case in cases {
+        if !selection.includes(group, case.name) {
+            continue;
+        }
         match case.measurement {
             Some(measurement) => {
                 bench_group.measurement_time(measurement);
@@ -1496,9 +1491,8 @@ fn bench_reads(
             None => {}
         }
         // Setup is outside Criterion's existing warmup and all timed samples.
-        // The canonical metrics pre-pass already visits every declared case,
-        // including filtered runs; keep that inventory rather than parsing
-        // Criterion's private filter configuration independently.
+        // The explicit read selection drives both this setup and Criterion.
+        // Legacy CLI filters retain their existing full preparation behavior.
         let evidence = rt.block_on(read_warmup::prepare(
             &fx.router,
             || build_request(case),
@@ -1690,8 +1684,8 @@ fn api_cases(fx: &Fixture) -> Vec<ReadCase> {
     ]
 }
 
-fn bench_api(criterion: &mut Criterion, rt: &Runtime, fx: &Fixture) {
-    bench_reads(criterion, rt, fx, "api", &api_cases(fx));
+fn bench_api(criterion: &mut Criterion, rt: &Runtime, fx: &Fixture, selection: &ReadSelection) {
+    bench_reads(criterion, rt, fx, "api", &api_cases(fx), selection);
 }
 
 fn bench_write(criterion: &mut Criterion, rt: &Runtime, fx: &Fixture) {
@@ -2530,8 +2524,8 @@ fn web_cases(fx: &Fixture) -> Vec<ReadCase> {
     ]
 }
 
-fn bench_web(criterion: &mut Criterion, rt: &Runtime, fx: &Fixture) {
-    bench_reads(criterion, rt, fx, "web", &web_cases(fx));
+fn bench_web(criterion: &mut Criterion, rt: &Runtime, fx: &Fixture, selection: &ReadSelection) {
+    bench_reads(criterion, rt, fx, "web", &web_cases(fx), selection);
 }
 
 /// `ActivityPub` serving — what every remote peer hits when it derefs our
@@ -2583,8 +2577,8 @@ fn ap_cases(fx: &Fixture) -> Vec<ReadCase> {
     ]
 }
 
-fn bench_ap(criterion: &mut Criterion, rt: &Runtime, fx: &Fixture) {
-    bench_reads(criterion, rt, fx, "ap", &ap_cases(fx));
+fn bench_ap(criterion: &mut Criterion, rt: &Runtime, fx: &Fixture, selection: &ReadSelection) {
+    bench_reads(criterion, rt, fx, "ap", &ap_cases(fx), selection);
 }
 
 /// Direct DB/worker benches. The `api/account_statuses` bench above drives

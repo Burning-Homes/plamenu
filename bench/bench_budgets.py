@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Grade a benchmark run against bench/budgets.toml and record it.
 
 Run after `cargo bench -p plamenu` (or via `./dev bench-check`):
@@ -44,11 +43,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -133,6 +133,32 @@ def read_manifest(criterion_dir: Path) -> dict | None:
     return json.loads(path.read_text())
 
 
+def run_bounds(manifest: dict) -> tuple[float, float]:
+    """Only a successfully finalized attempt can supply measurements."""
+    if not isinstance(manifest, dict):
+        raise TypeError("malformed benchmark manifest")
+    if type(manifest.get("run_schema")) is not int or manifest["run_schema"] != 1:
+        raise ValueError("missing or unsupported benchmark run boundary")
+    if manifest.get("run_status") != "complete":
+        raise ValueError("benchmark attempt did not complete; old results cannot pass")
+    run_id = manifest.get("run_id")
+    if not isinstance(run_id, str) or not re.fullmatch(r"run-[a-zA-Z0-9_-]+", run_id):
+        raise ValueError("missing or malformed benchmark run ID")
+    bounds = []
+    for field_name in ("started_at", "finished_at"):
+        raw = manifest.get(field_name)
+        if not isinstance(raw, str):
+            raise TypeError(f"missing {field_name} benchmark timestamp")
+        at = datetime.fromisoformat(raw)
+        if at.tzinfo is None:
+            raise ValueError(f"benchmark {field_name} must include a timezone")
+        bounds.append(at.timestamp())
+    started, finished = bounds
+    if finished < started:
+        raise ValueError("benchmark finished before it started")
+    return started, finished
+
+
 def measured(criterion_dir: Path, manifest: dict | None) -> dict[str, Measurement]:
     """Benchmark full id -> what this run measured."""
     cases = (manifest or {}).get("cases", {})
@@ -162,6 +188,53 @@ def measured(criterion_dir: Path, manifest: dict | None) -> dict[str, Measuremen
     return out
 
 
+def selection_failures(
+    manifest: dict, measured_ids: set[str], *, filtered: bool
+) -> list[str]:
+    """An explicit preparation subset can never qualify as a full run."""
+    failures = []
+    arguments = manifest.get("criterion_arguments", [])
+    if not isinstance(arguments, list) or any(
+        not isinstance(arg, str) for arg in arguments
+    ):
+        return ["malformed Criterion arguments"]
+    if not filtered and any(arg not in {"--bench", "--noplot"} for arg in arguments):
+        failures.append(
+            "custom Criterion arguments require --filtered; full grading uses default mode"
+        )
+    selected = manifest.get("focused_read_case")
+    if selected is None:
+        return failures
+    if not isinstance(selected, str) or not selected:
+        return [*failures, "malformed focused read selection"]
+    if not filtered:
+        failures.append(
+            "focused read run requires --filtered and cannot qualify as a full run"
+        )
+    if measured_ids != {selected}:
+        failures.append("fresh measurements differ from the focused read selection")
+    metrics = manifest.get("cases", {})
+    if not isinstance(metrics, dict) or set(metrics) != {selected}:
+        failures.append("query/body metrics differ from the focused read selection")
+    bootstraps = manifest.get("read_bootstrap", {})
+    if not isinstance(bootstraps, dict) or set(bootstraps) != {selected}:
+        failures.append("completed read setup differs from the focused read selection")
+    else:
+        setup = bootstraps[selected]
+        pool = setup.get("pool_connection_limit") if isinstance(setup, dict) else None
+        requests = setup.get("requests") if isinstance(setup, dict) else None
+        if (
+            type(pool) is not int
+            or pool <= 0
+            or type(requests) is not int
+            or requests != pool * 8
+        ):
+            failures.append(
+                "focused read setup did not complete eight requests per pool connection"
+            )
+    return failures
+
+
 def grade(rows: list[Row], *, filtered: bool, strict: bool) -> None:
     medians = {r.name: r.measurement.median for r in rows if r.measurement is not None}
     for row in rows:
@@ -179,14 +252,18 @@ def grade(rows: list[Row], *, filtered: bool, strict: bool) -> None:
         if ceiling is None:
             row.failures.append("budget entry has no `ms`")
         elif m.median > ceiling:
-            row.failures.append(f"median {m.median:.3f} ms over the {ceiling} ms budget")
+            row.failures.append(
+                f"median {m.median:.3f} ms over the {ceiling} ms budget"
+            )
         elif 1 - m.median / ceiling < TIGHT_HEADROOM:
             row.warnings.append(
                 f"TIGHT: {(1 - m.median / ceiling) * 100:.0f}% headroom"
             )
 
         want_queries = budget.get("queries")
-        if want_queries is not None and m.queries is not None:
+        if want_queries is not None and m.queries is None:
+            row.failures.append("budgeted query measurement is missing")
+        elif want_queries is not None and m.queries is not None:
             if m.queries > want_queries:
                 row.failures.append(
                     f"{m.queries} SQL round trips, budget {want_queries} — a new "
@@ -202,7 +279,9 @@ def grade(rows: list[Row], *, filtered: bool, strict: bool) -> None:
             row.warnings.append(f"uncalibrated: measured {m.queries} queries")
 
         want_bytes = budget.get("bytes")
-        if want_bytes is not None and m.body_bytes is not None:
+        if want_bytes is not None and m.body_bytes is None:
+            row.failures.append("budgeted body-size measurement is missing")
+        elif want_bytes is not None and m.body_bytes is not None:
             ceiling_bytes = want_bytes * BYTES_TOLERANCE
             if m.body_bytes > ceiling_bytes:
                 row.failures.append(
@@ -261,7 +340,9 @@ def print_table(rows: list[Row], *, color: bool) -> None:
         if m is None:
             ceiling = format_ms(budget["ms"]) if budget and "ms" in budget else "—"
             note = "not measured" if row.failures else "not measured (filtered)"
-            print(f"{row.name:<{width}}{'—':>12}{ceiling:>12}{'':>10}{'':>9}{'':>9}  {note}")
+            print(
+                f"{row.name:<{width}}{'—':>12}{ceiling:>12}{'':>10}{'':>9}{'':>9}  {note}"
+            )
             continue
         ceiling = budget.get("ms") if budget else None
         headroom = f"{(1 - m.median / ceiling) * 100:.0f}%" if ceiling else ""
@@ -283,19 +364,24 @@ def print_table(rows: list[Row], *, color: bool) -> None:
 
 
 def record(rows: list[Row], manifest: dict, sha: str) -> Path:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = REPO / "bench" / "results" / f"{sha[:12]}-{stamp}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "git_sha": sha,
         "git_dirty": False,
         "git_describe": git("describe", "--tags", "--always", "--dirty"),
-        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "recorded_at": datetime.now(UTC).isoformat(),
         "seed_version": manifest.get("seed_version"),
         "started_at": manifest.get("started_at"),
         "finished_at": manifest.get("finished_at"),
         "warm_up_secs": manifest.get("warm_up_secs"),
         "measurement_secs": manifest.get("measurement_secs"),
+        "focused_read_case": manifest.get("focused_read_case"),
+        "criterion_arguments": manifest.get("criterion_arguments", []),
+        "run_schema": manifest["run_schema"],
+        "run_id": manifest["run_id"],
+        "run_status": manifest["run_status"],
         "machine": machine_fingerprint(),
         "benchmarks": {
             row.name: {
@@ -316,7 +402,9 @@ def record(rows: list[Row], manifest: dict, sha: str) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--criterion-dir", type=Path, default=REPO / "target" / "criterion")
+    parser.add_argument(
+        "--criterion-dir", type=Path, default=REPO / "target" / "criterion"
+    )
     parser.add_argument("--budgets", type=Path, default=REPO / "bench" / "budgets.toml")
     parser.add_argument(
         "--filtered",
@@ -324,23 +412,44 @@ def main() -> int:
         help="the run measured a subset; do not fail on unmeasured budgets or stale siblings",
     )
     parser.add_argument(
-        "--strict", action="store_true", help="also fail on TIGHT headroom and uncalibrated caps"
+        "--strict",
+        action="store_true",
+        help="also fail on TIGHT headroom and uncalibrated caps",
     )
     parser.add_argument(
         "--allow-stale",
         action="store_true",
         help="grade a run whose manifest sha is not HEAD (a rebase, a dirty tree)",
     )
-    parser.add_argument("--json", action="store_true", help="machine-readable output only")
-    parser.add_argument("--no-record", action="store_true", help="do not write bench/results/")
+    parser.add_argument(
+        "--json", action="store_true", help="machine-readable output only"
+    )
+    parser.add_argument(
+        "--no-record", action="store_true", help="do not write bench/results/"
+    )
     args = parser.parse_args()
 
     if not args.criterion_dir.is_dir():
-        print(f"no criterion output at {args.criterion_dir} — run `cargo bench -p plamenu` first")
+        print(
+            f"no criterion output at {args.criterion_dir} — run `cargo bench -p plamenu` first"
+        )
         return 2
 
     budgets: dict[str, dict] = tomllib.loads(args.budgets.read_text())["budgets"]
-    manifest = read_manifest(args.criterion_dir)
+    try:
+        manifest = read_manifest(args.criterion_dir)
+        if manifest is not None:
+            started, finished = run_bounds(manifest)
+    except (OSError, ValueError, TypeError) as error:
+        if args.json:
+            print(
+                json.dumps(
+                    {"full_pass": False, "run_failures": [str(error)], "benchmarks": {}}
+                )
+            )
+        else:
+            print(f"RUN {error}")
+        return 2
     if manifest is None:
         print(
             f"no run manifest at {args.criterion_dir / MANIFEST} — the criterion output "
@@ -350,12 +459,16 @@ def main() -> int:
         return 2
 
     measurements = measured(args.criterion_dir, manifest)
-    started = datetime.fromisoformat(manifest["started_at"]).timestamp()
 
     run_failures: list[str] = []
     head = git("rev-parse", "HEAD")
     sha = manifest.get("git_sha") or head
-    if head and manifest.get("git_sha") and manifest["git_sha"] != head and not args.allow_stale:
+    if (
+        head
+        and manifest.get("git_sha")
+        and manifest["git_sha"] != head
+        and not args.allow_stale
+    ):
         run_failures.append(
             f"manifest was measured at {manifest['git_sha'][:12]}, HEAD is {head[:12]} — "
             "a green result here is not evidence about this tree (--allow-stale to override)"
@@ -371,8 +484,17 @@ def main() -> int:
     # has a budget then surfaces as "budgeted but not measured"; a leftover
     # with no budget is the residue of a renamed or deleted benchmark and is
     # ignored (criterion never removes a benchmark directory).
-    graded = {name: m for name, m in measurements.items() if m.mtime >= started}
+    graded = {
+        name: m for name, m in measurements.items() if started <= m.mtime <= finished
+    }
     leftovers = sorted(set(measurements) - set(graded))
+    if not graded:
+        run_failures.append("no measurements within the completed run boundary")
+    if any(m.mtime > finished for m in measurements.values()):
+        run_failures.append("measurements were modified after this run completed")
+    run_failures.extend(
+        selection_failures(manifest, set(graded), filtered=args.filtered)
+    )
 
     rows = [
         Row(name=name, measurement=graded.get(name), budget=budgets.get(name))
@@ -389,14 +511,21 @@ def main() -> int:
         print(
             json.dumps(
                 {
+                    # This standalone budget check is one component; full-gate
+                    # qualification belongs to the release evidence collector.
+                    "full_pass": False,
                     "git_sha": sha,
                     "seed_version": manifest.get("seed_version"),
                     "run_failures": run_failures,
                     "benchmarks": {
                         r.name: {
-                            "median_ms": r.measurement.median if r.measurement else None,
+                            "median_ms": r.measurement.median
+                            if r.measurement
+                            else None,
                             "queries": r.measurement.queries if r.measurement else None,
-                            "bytes": r.measurement.body_bytes if r.measurement else None,
+                            "bytes": r.measurement.body_bytes
+                            if r.measurement
+                            else None,
                             "failures": r.failures,
                             "warnings": r.warnings,
                             "known_bad": r.known_bad,
@@ -436,10 +565,14 @@ def main() -> int:
         print(f"\nRUN {problem}")
 
     if failed or run_failures:
-        print(f"\n{len(failed)} benchmark(s) failed, {len(run_failures)} run-level problem(s)")
+        print(
+            f"\n{len(failed)} benchmark(s) failed, {len(run_failures)} run-level problem(s)"
+        )
         return 1
 
-    print(f"\nall {len([r for r in rows if r.measurement])} measured benchmarks within budget")
+    print(
+        f"\nall {len([r for r in rows if r.measurement])} measured benchmarks within budget"
+    )
     if args.no_record or args.filtered:
         return 0
     if dirty:

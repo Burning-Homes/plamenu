@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Exit-code contract for bench_budgets.py.
 
 The script decides whether a change ships. It had no test, so every rule it
@@ -25,7 +24,9 @@ SCRIPT = REPO / "bench" / "bench_budgets.py"
 STARTED = "2026-07-28T00:00:00Z"
 
 
-def write_criterion(root: Path, benchmarks: dict, *, manifest_extra: dict | None = None) -> Path:
+def write_criterion(
+    root: Path, benchmarks: dict, *, manifest_extra: dict | None = None
+) -> Path:
     """Lays out a criterion output tree plus the run manifest the bench writes.
 
     `benchmarks` maps full id -> dict(median_ms, mad_ms=0, samples=20,
@@ -63,12 +64,21 @@ def write_criterion(root: Path, benchmarks: dict, *, manifest_extra: dict | None
         )
         # Freshness is decided by mtime against the manifest's started_at.
         offset = -3600 if spec.get("stale") else 60
-        for path in (directory / "estimates.json", directory.parent / "new" / "benchmark.json"):
+        for path in (
+            directory / "estimates.json",
+            directory.parent / "new" / "benchmark.json",
+        ):
             os.utime(path, (started + offset, started + offset))
         if spec.get("queries") is not None or spec.get("bytes") is not None:
-            cases[full_id] = {"queries": spec.get("queries"), "bytes": spec.get("bytes")}
+            cases[full_id] = {
+                "queries": spec.get("queries"),
+                "bytes": spec.get("bytes"),
+            }
 
     manifest = {
+        "run_schema": 1,
+        "run_id": "run-fixture",
+        "run_status": "complete",
         "seed_version": "3",
         "started_at": STARTED,
         "finished_at": "2026-07-28T00:05:00Z",
@@ -106,6 +116,7 @@ def run(criterion: Path, budgets: Path, *args: str) -> subprocess.CompletedProce
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
@@ -124,6 +135,169 @@ def test_clean_run_passes(clean):
     result = run(*clean)
     assert result.returncode == 0, result.stdout
     assert "within budget" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "running",
+        "failed",
+        "legacy",
+        "schema",
+        "id",
+        "finished",
+        "backwards",
+        "naive",
+        "malformed",
+    ],
+)
+def test_incomplete_or_malformed_attempt_cannot_grade_old_fresh_results(
+    clean, corruption
+):
+    criterion, budgets = clean
+    path = criterion / "plamenu-bench-run.json"
+    manifest = json.loads(path.read_text())
+    if corruption in {"running", "failed"}:
+        manifest["run_status"] = corruption
+    elif corruption == "legacy":
+        del manifest["run_schema"]
+    elif corruption == "schema":
+        manifest["run_schema"] = True
+    elif corruption == "id":
+        manifest["run_id"] = "../other"
+    elif corruption == "finished":
+        del manifest["finished_at"]
+    elif corruption == "backwards":
+        manifest["finished_at"] = "2026-07-27T00:00:00Z"
+    elif corruption == "naive":
+        manifest["started_at"] = "2026-07-28T00:00:00"
+    path.write_text("{" if corruption == "malformed" else json.dumps(manifest))
+    for flags in [[], ["--filtered", "--allow-stale"]]:
+        result = run(criterion, budgets, *flags, "--json")
+        assert result.returncode == 2
+        payload = json.loads(result.stdout)
+        assert payload["full_pass"] is False
+        assert payload["run_failures"]
+        assert payload["benchmarks"] == {}
+
+
+def test_results_written_after_completion_cannot_join_the_old_run(clean):
+    criterion, budgets = clean
+    path = criterion / "api/home_sparse/new/estimates.json"
+    future = datetime.fromisoformat("2026-07-28T00:06:00Z").timestamp()
+    os.utime(path, (future, future))
+    for flags in [[], ["--filtered"]]:
+        result = run(criterion, budgets, *flags)
+        assert result.returncode == 1
+        assert "modified after this run completed" in result.stdout
+
+
+def test_empty_filtered_run_is_not_a_pass(clean):
+    criterion, budgets = clean
+    os.utime(criterion / "api/home_sparse/new/estimates.json", (0, 0))
+    result = run(criterion, budgets, "--filtered", "--json")
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert (
+        "no measurements within the completed run boundary" in payload["run_failures"]
+    )
+    assert payload["full_pass"] is False
+
+
+@pytest.fixture
+def focused(clean):
+    criterion, budgets = clean
+    path = criterion / "plamenu-bench-run.json"
+    manifest = json.loads(path.read_text())
+    manifest.update(
+        focused_read_case="api/home_sparse",
+        read_bootstrap={
+            "api/home_sparse": {"requests": 128, "pool_connection_limit": 16}
+        },
+    )
+    path.write_text(json.dumps(manifest))
+    return criterion, budgets
+
+
+def test_focused_manifest_cannot_pass_full_grading_even_with_every_budget_fresh(
+    focused,
+):
+    result = run(*focused)
+    assert result.returncode == 1
+    assert "cannot qualify as a full run" in result.stdout
+    assert run(*focused, "--filtered").returncode == 0
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [["api/home"], ["--test"], ["--ignored"], ["--measurement-time", "0.1"]],
+)
+def test_custom_criterion_arguments_cannot_promote_fresh_leftovers_to_a_full_run(
+    clean, arguments
+):
+    criterion, budgets = clean
+    path = criterion / "plamenu-bench-run.json"
+    manifest = json.loads(path.read_text())
+    manifest["criterion_arguments"] = arguments
+    path.write_text(json.dumps(manifest))
+    result = run(criterion, budgets)
+    assert result.returncode == 1
+    assert "custom Criterion arguments require --filtered" in result.stdout
+    assert run(criterion, budgets, "--filtered").returncode == 0
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    ["stale", "metrics", "bootstrap", "short_setup", "wrong_pool", "malformed_setup"],
+)
+def test_focused_run_requires_its_complete_fresh_preparation(focused, corruption):
+    criterion, budgets = focused
+    path = criterion / "plamenu-bench-run.json"
+    manifest = json.loads(path.read_text())
+    if corruption == "stale":
+        estimates = criterion / "api/home_sparse/new/estimates.json"
+        os.utime(estimates, (0, 0))
+    elif corruption == "metrics":
+        manifest["cases"] = {}
+    elif corruption == "bootstrap":
+        manifest["read_bootstrap"] = {}
+    elif corruption == "short_setup":
+        manifest["read_bootstrap"]["api/home_sparse"]["requests"] = 127
+    elif corruption == "wrong_pool":
+        manifest["read_bootstrap"]["api/home_sparse"]["pool_connection_limit"] = 0
+    else:
+        manifest["read_bootstrap"]["api/home_sparse"] = None
+    path.write_text(json.dumps(manifest))
+    result = run(criterion, budgets, "--filtered")
+    assert result.returncode == 1
+    assert "RUN " in result.stdout
+
+
+def test_focused_run_rejects_other_fresh_measurements(focused):
+    criterion, budgets = focused
+    other = criterion / "api/another/new"
+    other.mkdir(parents=True)
+    source = criterion / "api/home_sparse/new"
+    for name in ["estimates.json", "sample.json"]:
+        (other / name).write_bytes((source / name).read_bytes())
+        at = (source / "estimates.json").stat().st_mtime
+        os.utime(other / name, (at, at))
+    (other / "benchmark.json").write_text(json.dumps({"full_id": "api/another"}))
+    result = run(criterion, budgets, "--filtered")
+    assert result.returncode == 1
+    assert "differ from the focused read selection" in result.stdout
+
+
+@pytest.mark.parametrize("metric", ["queries", "bytes"])
+def test_missing_budgeted_metrics_cannot_pass_as_latency_only(clean, metric):
+    criterion, budgets = clean
+    path = criterion / "plamenu-bench-run.json"
+    manifest = json.loads(path.read_text())
+    del manifest["cases"]["api/home_sparse"][metric]
+    path.write_text(json.dumps(manifest))
+    result = run(criterion, budgets)
+    assert result.returncode == 1
+    assert "measurement is missing" in result.stdout
 
 
 def test_over_budget_fails(tmp_path):

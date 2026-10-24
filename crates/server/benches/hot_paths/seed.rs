@@ -547,6 +547,15 @@ pub async fn reset_run_residue(pool: &PgPool, writer: i64, popular: i64) {
         // no dependants. SEED-SHAPE-UNCHANGED: run reset, not dataset.
         "DELETE FROM accounts WHERE domain = 'bench-search.invalid'",
         "DELETE FROM tags WHERE name LIKE 'benchsearch%'",
+        // Discovery intentionally retains resolved remote identities after an
+        // account/status is deleted. These three exact origins are disposable
+        // run fixtures, including purge targets already consumed by a bench.
+        // Keep seeded remote identities and all drift checks intact.
+        // SEED-SHAPE-UNCHANGED: run reset, not dataset.
+        "DELETE FROM discovery_identity
+         WHERE canonical_uri LIKE 'https://bench-peer.invalid/%'
+            OR canonical_uri LIKE 'https://bench-purge.invalid/%'
+            OR canonical_uri LIKE 'https://bench-search.invalid/%'",
         // The throwaway local account `db_jobs/statuses_cleanup_sweep` deletes
         // for, which takes its planted statuses, its cleanup policy and its
         // tombstones with it.
@@ -871,16 +880,10 @@ pub async fn verify(pool: &PgPool) {
 /// naming the table and the drift — instead of quietly measuring a different
 /// database and reporting the difference as a code change.
 pub async fn assert_dataset_unchanged(pool: &PgPool) {
-    let Some(recorded) = marker_value(pool, "table_counts").await else {
-        // A database seeded before this check existed. Recording now would
-        // bless whatever residue it has accumulated, so say so and let the next
-        // reseed establish the baseline honestly.
-        eprintln!(
-            "no dataset baseline recorded — drift checking starts at the next \
-             PLAMENU_BENCH_RESEED=1"
-        );
-        return;
-    };
+    let recorded = marker_value(pool, "table_counts").await.expect(
+        "no pristine dataset baseline recorded; reseed with PLAMENU_BENCH_RESEED=1 \
+         before benchmarking instead of accepting unchecked fixture state",
+    );
     let counts = table_counts(pool).await;
     let baseline: std::collections::BTreeMap<&str, i64> = recorded
         .split(',')
@@ -914,7 +917,7 @@ pub async fn assert_dataset_unchanged(pool: &PgPool) {
 /// Records the row-count fingerprint [`assert_dataset_unchanged`] compares
 /// against. Called at the end of seeding, where the dataset is pristine by
 /// construction.
-async fn record_dataset_baseline(pool: &PgPool) {
+pub(super) async fn record_dataset_baseline(pool: &PgPool) {
     let fingerprint = table_counts(pool)
         .await
         .iter()
@@ -1416,6 +1419,9 @@ async fn seed_statuses(
         let pool = pool.clone();
         let remotes = Arc::clone(remotes);
         async move {
+            // Reuse one autocommit connection for this logical worker. Every
+            // status and mention still executes the ordinary creation SQL.
+            let mut connection = pool.acquire().await.unwrap();
             let mut rng = Rng::new(3_000 + worker);
             let mut created: Vec<(i64, i64)> = Vec::new();
             let mut mention_sparse = Vec::new();
@@ -1454,8 +1460,8 @@ async fn seed_statuses(
                 let created_at = past_timestamp(&mut rng);
                 let sensitive = rng.chance(10);
                 let spoiler = sensitive && rng.chance(30);
-                let status = status::upsert_remote(
-                    &pool,
+                let status = status::upsert_remote_with_provenance(
+                    &mut *connection,
                     NewRemoteStatus {
                         title: None,
                         object_type: None,
@@ -1473,17 +1479,18 @@ async fn seed_statuses(
                         url: None,
                         quote_approval_policy: 0,
                     },
+                    status::IngestProvenance::Delivery,
                 )
                 .await
                 .unwrap();
                 created.push((status.id, author));
                 if j % 499 == 0 {
-                    mention::attach(&pool, status.id, sparse, false)
+                    mention::attach(&mut *connection, status.id, sparse, false)
                         .await
                         .unwrap();
                     mention_sparse.push(status.id);
                 } else if j % 631 == 0 {
-                    mention::attach(&pool, status.id, dense, false)
+                    mention::attach(&mut *connection, status.id, dense, false)
                         .await
                         .unwrap();
                     mention_dense.push(status.id);
@@ -1499,6 +1506,7 @@ async fn seed_statuses(
         let pool = pool.clone();
         let locals = Arc::clone(locals);
         async move {
+            let mut connection = pool.acquire().await.unwrap();
             let mut rng = Rng::new(4_000 + worker);
             let mut created: Vec<(i64, i64)> = Vec::new();
             let end = ((worker + 1) * local_chunk).min(LOCAL_STATUSES);
@@ -1515,7 +1523,7 @@ async fn seed_statuses(
                     content = content.replace("</p>", &text);
                 }
                 let status = status::create_local(
-                    &pool,
+                    &mut *connection,
                     NewLocalStatus {
                         language: Some("en"),
                         ..NewLocalStatus::new(author, &content, visibility(&mut rng), in_reply_to)
@@ -1785,11 +1793,16 @@ async fn seed_tags(pool: &PgPool) -> i64 {
     fan_out(WORKERS, |worker| {
         let pool = pool.clone();
         async move {
+            // Each ensure still commits separately on this worker's connection.
+            let mut connection = pool.acquire().await.unwrap();
             let end = ((worker + 1) * chunk).min(BULK_TAGS);
             for i in (worker * chunk)..end {
-                tag::ensure(&pool, &format!("{}{i}", WORDS[(i % 24) as usize]))
-                    .await
-                    .unwrap();
+                tag::ensure(
+                    &mut *connection,
+                    &format!("{}{i}", WORDS[(i % 24) as usize]),
+                )
+                .await
+                .unwrap();
             }
         }
     })
@@ -1938,6 +1951,9 @@ async fn seed_media(pool: &PgPool, statuses: &Arc<SeededStatuses>) {
         let pool = pool.clone();
         let statuses = Arc::clone(statuses);
         async move {
+            // Reuse the physical connection, retaining create_remote's
+            // independent attachment/job/rendition transaction for each item.
+            let mut connection = pool.acquire().await.unwrap();
             let mut rng = Rng::new(8_000 + worker);
             let start = worker as usize * chunk;
             let end = (start + chunk).min(statuses.all.len());
@@ -1945,7 +1961,8 @@ async fn seed_media(pool: &PgPool, statuses: &Arc<SeededStatuses>) {
                 if rng.chance(28) {
                     let count = if rng.chance(31) { 2 } else { 1 };
                     for slot in 0..count {
-                        attach_remote_media(&pool, status_id, author, slot, &mut rng).await;
+                        attach_remote_media(&mut *connection, status_id, author, slot, &mut rng)
+                            .await;
                     }
                 }
             }
@@ -2028,17 +2045,22 @@ impl MediaShape {
 /// a fifth land on a shared hot-card pool (link storms), so cards ≈ 0.85x
 /// attaches like staging's 85k cards / 112k attaches.
 async fn seed_preview_cards(pool: &PgPool, statuses: &Arc<SeededStatuses>) {
-    for k in 0..CARD_PROVIDERS {
-        preview_card_provider::ensure(pool, &format!("news{k}.bench.invalid"))
-            .await
-            .unwrap();
-    }
+    // The seed needs every provider row, but not its id. Use the same batched
+    // creation path as the scorer instead of a round trip for each domain.
+    let providers: Vec<String> = (0..CARD_PROVIDERS)
+        .map(|k| format!("news{k}.bench.invalid"))
+        .collect();
+    preview_card_provider::ensure_many(pool, &providers)
+        .await
+        .unwrap();
 
     let chunk = statuses.all.len().div_ceil(WORKERS as usize);
     fan_out(WORKERS, |worker| {
         let pool = pool.clone();
         let statuses = Arc::clone(statuses);
         async move {
+            // Reuse the connection; each upsert and attach still commits separately.
+            let mut connection = pool.acquire().await.unwrap();
             let mut rng = Rng::new(14_000 + worker);
             let start = worker as usize * chunk;
             let end = (start + chunk).min(statuses.all.len());
@@ -2057,7 +2079,7 @@ async fn seed_preview_cards(pool: &PgPool, statuses: &Arc<SeededStatuses>) {
                 let url = format!("https://news{provider}.bench.invalid/articles/{card_index}");
                 let title = sentence(&mut rng, None);
                 let card = preview_card::upsert(
-                    &pool,
+                    &mut *connection,
                     NewPreviewCard {
                         url: &url,
                         title: &title,
@@ -2082,7 +2104,7 @@ async fn seed_preview_cards(pool: &PgPool, statuses: &Arc<SeededStatuses>) {
                 )
                 .await
                 .unwrap();
-                preview_card::attach(&pool, status_id, card.id, &url)
+                preview_card::attach(&mut *connection, status_id, card.id, &url)
                     .await
                     .unwrap();
             }
@@ -2782,6 +2804,9 @@ async fn seed_engagement(
         let remotes = Arc::clone(remotes);
         let statuses = Arc::clone(statuses);
         async move {
+            // Keep ordinary per-favourite autocommit statements, while
+            // avoiding a pool checkout on every iteration.
+            let mut connection = pool.acquire().await.unwrap();
             let mut rng = Rng::new(7_000 + worker);
             let len = statuses.all.len() as u64;
             let end = ((worker + 1) * chunk).min(FAVOURITES);
@@ -2789,7 +2814,9 @@ async fn seed_engagement(
                 let fan = remotes[rng.below(REMOTE_ACCOUNTS) as usize];
                 let x = rng.below(len);
                 let (target, _) = statuses.all[(x * x / len) as usize];
-                favourite::create(&pool, fan, target, None).await.unwrap();
+                favourite::create(&mut *connection, fan, target, None)
+                    .await
+                    .unwrap();
             }
         }
     })
@@ -3282,6 +3309,13 @@ async fn seed_local_emojis(pool: &PgPool) {
 /// are excluded: the persona DMs are seeded later through the real fns so
 /// their `account_conversations` fan-out stays honest.
 async fn seed_conversations(pool: &PgPool) {
+    // The bulk load may outrun autovacuum's first analyze. Without parent/null
+    // statistics the recursive walk can choose a quadratic nested loop.
+    sqlx::raw_sql("ANALYZE statuses")
+        .execute(pool)
+        .await
+        .unwrap();
+
     sqlx::raw_sql(
         r"
         INSERT INTO conversations (id, created_at, root_status_id)
@@ -3341,6 +3375,9 @@ async fn seed_graph(
     let benchtag = tag::ensure(pool, "benchtag").await.unwrap();
 
     // --- background graph -------------------------------------------------
+    // Each edge remains an ordinary autocommit insert. Reuse its connection
+    // only for this serial loop, then release it before the persona setup.
+    let mut background = pool.acquire().await.unwrap();
     for _ in 0..BACKGROUND_FOLLOWS {
         let follower = remotes[rng.below(REMOTE_ACCOUNTS) as usize];
         let target = if rng.chance(20) {
@@ -3349,9 +3386,12 @@ async fn seed_graph(
             remotes[rng.below(REMOTE_ACCOUNTS) as usize]
         };
         if follower != target {
-            follow::create(pool, follower, target, None).await.unwrap();
+            follow::create(&mut *background, follower, target, None)
+                .await
+                .unwrap();
         }
     }
+    drop(background);
 
     // --- bench_sparse: the calibrated baseline persona (kept minimal) -----
     let sparse = personas.sparse;
@@ -3401,9 +3441,13 @@ async fn seed_graph(
         dense_follows.push(target);
     }
     dense_follows.push(personas.popular);
+    let mut dense_edges = pool.acquire().await.unwrap();
     for &target in &dense_follows {
-        follow::create(pool, dense, target, None).await.unwrap();
+        follow::create(&mut *dense_edges, dense, target, None)
+            .await
+            .unwrap();
     }
+    drop(dense_edges);
     // Per-follow settings on subsets (M32): hidden boosts, notify bells,
     // language-restricted follows — each is a filter arm in the home query.
     for &target in dense_follows.iter().step_by(15).take(100) {
@@ -3537,23 +3581,32 @@ async fn seed_graph(
         let (target, _) = statuses.all[(k * 613) % statuses.all.len()];
         bookmark::create(pool, dense, target).await.unwrap();
     }
+    // These remaining serial writes all accept one executor. Keep each SQL
+    // statement in autocommit, without leasing the pool again for every row.
+    let mut furniture = pool.acquire().await.unwrap();
     for k in 0..3_000_usize {
         let (target, _) = statuses.all[(k * 431 + 7) % statuses.all.len()];
-        favourite::create(pool, dense, target, None).await.unwrap();
+        favourite::create(&mut *furniture, dense, target, None)
+            .await
+            .unwrap();
     }
 
     // --- bench_popular: the followed one -----------------------------------
     let popular = personas.popular;
     for i in 0..POPULAR_FOLLOWERS {
         let follower = remotes[((i * 15 + 3) % REMOTE_ACCOUNTS) as usize];
-        follow::create(pool, follower, popular, None).await.unwrap();
+        follow::create(&mut *furniture, follower, popular, None)
+            .await
+            .unwrap();
     }
     for &follower in locals.iter() {
-        follow::create(pool, follower, popular, None).await.unwrap();
+        follow::create(&mut *furniture, follower, popular, None)
+            .await
+            .unwrap();
     }
     for i in 0..300_u64 {
         follow::create(
-            pool,
+            &mut *furniture,
             popular,
             remotes[(i * 31) as usize % remotes.len()],
             None,
@@ -3565,10 +3618,11 @@ async fn seed_graph(
     // --- bench_writer: 5k followers across the whole domain spread --------
     for i in 0..WRITER_FOLLOWERS {
         let follower = remotes[((i * 36 + 1) % REMOTE_ACCOUNTS) as usize];
-        follow::create(pool, follower, personas.writer, None)
+        follow::create(&mut *furniture, follower, personas.writer, None)
             .await
             .unwrap();
     }
+    drop(furniture);
 
     // Senders whose notifications dense will actually see. Its policy filters
     // everyone it does not follow, and `sender_filtered` drops everyone it
@@ -3941,7 +3995,13 @@ async fn seed_fetch_failures(pool: &PgPool) {
 /// `(status_id, remote_url)`, and the old builder derived the URL from the
 /// status id alone — so the "two attachments" case silently collapsed into one
 /// on every multi-attachment status.
-async fn attach_remote_media(pool: &PgPool, status_id: i64, author: i64, slot: u64, rng: &mut Rng) {
+async fn attach_remote_media<'a>(
+    pool: impl sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    status_id: i64,
+    author: i64,
+    slot: u64,
+    rng: &mut Rng,
+) {
     let shape = MediaShape::pick(rng);
     let base = format!("https://media.bench.invalid/{status_id}-{slot}");
     let blurhash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj";

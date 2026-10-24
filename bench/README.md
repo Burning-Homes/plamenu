@@ -28,14 +28,41 @@ harness creates, updates, and sometimes rebuilds its `plamenu_bench` database.
 For a focused investigation:
 
 ```sh
-./dev bench -- api/home
+PLAMENU_BENCH_READ_CASE=api/home_sparse ./dev bench
 ./dev bench-check --filtered
 ```
+
+This exact read-case selection drives both preparation and Criterion. Only the
+selected case receives the metrics pre-pass and all 128 setup requests; the
+shared dataset, fixture validation, body/content assertions, sample count and
+warm-up/measurement windows remain unchanged. Unknown IDs fail. It cannot be
+combined with Criterion arguments other than `--noplot` (and Cargo's `--bench`),
+so a second filter or a changed measurement mode cannot disagree with the plan.
+The manifest records the focused ID. Full grading and release evidence reject
+it even if other result files on disk appear fresh.
+
+The existing regex form `./dev bench -- api/home` remains available and retains
+whole-inventory preparation; use the explicit selection above to avoid that cost.
+Custom Criterion arguments are recorded and require diagnostic `--filtered`
+grading. Qualifying full runs use the default mode, with only `--noplot` allowed;
+test/list modes, filters, and changed calibration cannot qualify using leftover
+measurements. This also applies when saving or comparing diagnostic baselines.
 
 Filtered grading allows missing measurements and an unmeasured ratio partner.
 A measured benchmark still needs a budget. Filtered runs do not produce release
 records. `--no-record` grades without writing a record; `--allow-stale` permits
 comparison with a run from another revision, for investigation only.
+
+Before validating arguments or preparing fixtures, the driver replaces the latest
+manifest with a unique `running` attempt. Only normal completion publishes
+`complete`; setup failures, interruptions and manifest write errors cannot reuse
+an earlier pass. Manifests are retained under `plamenu-runs/` beside Criterion's
+output. Standalone grading requires this boundary and measurements between its
+start and completion, including for `--filtered` and `--allow-stale`. Older
+standalone manifests need a new run; historical committed records retain their
+separate revision, workload and calibration validation. `CRITERION_HOME` (before
+`CARGO_TARGET_DIR`) selects the same directory for measurements and manifests;
+pass that directory explicitly to `bench-check --criterion-dir` when overriding it.
 
 ## Dataset
 
@@ -58,6 +85,18 @@ The dataset is defined in
 [`seed.rs`](../crates/server/benches/hot_paths/seed.rs). A run reuses it when
 `SEED_VERSION` matches, cleans up previous benchmark writes, and checks its
 shape and table counts. It refreshes planner statistics after migrations.
+Tag vocabulary workers also reuse one physical connection, with each tag still
+committed separately. Existing tags retain their IDs, casing and moderation
+metadata. The worker releases its connection before ensuring the final benchmark
+tag.
+
+Each preview-card seed worker reuses one physical connection. Card upserts and
+status attachments remain separate autocommit statements; cache invalidation,
+provider policy and the usage rollup retain their existing behavior.
+Run cleanup also removes retained discovery identities for the three disposable
+`bench-peer.invalid`, `bench-purge.invalid` and `bench-search.invalid` origins;
+seeded and unrelated retained metadata stays intact. A missing pristine row-count
+baseline fails instead of disabling drift checks.
 To rebuild it explicitly:
 
 ```sh
@@ -93,9 +132,9 @@ The run manifest keeps the setup request count, pool limit, first and last
 setup request latency, and total setup time in `read_bootstrap`, separately from
 Criterion measurements. These observations follow the existing metrics
 pre-pass; they describe per-case setup, not a cold server's first request.
-They are never used as qualifying medians. Filtered runs also perform setup for
-all declared read cases, as the metrics pre-pass already does, so filtering does
-not remove that setup cost.
+They are never used as qualifying medians. An explicit `PLAMENU_BENCH_READ_CASE`
+run prepares only its selected read case; the ordinary full run and legacy
+Criterion CLI filters retain preparation for every declared read case.
 
 `write/inbox_update_note` measures subsequent edits: every target receives an
 untimed first edit before sampling, with both original and updated snapshots
