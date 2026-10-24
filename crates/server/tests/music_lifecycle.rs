@@ -244,7 +244,7 @@ async fn assert_erased(f: &Fixture) {
         1
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn purge_erases_empty_metadata_and_foreign_references_without_deleted_marker(pool: PgPool) {
     let f = fixture(pool).await;
     let before = snapshot(&f.state.pool).await;
@@ -270,7 +270,7 @@ async fn purge_erases_empty_metadata_and_foreign_references_without_deleted_mark
     assert_eq!(tombstone.username, f.alice.username);
     assert_eq!(tombstone.public_key, f.alice.public_key);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn self_delete_retracts_scoped_only_subscribers_and_rolls_back_at_outbox(pool: PgPool) {
     let f = fixture(pool).await;
     let remote = RemoteUser::new("songhive.test", "sylvia");
@@ -351,7 +351,7 @@ async fn self_delete_retracts_scoped_only_subscribers_and_rolls_back_at_outbox(p
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_and_suspension_updates_reach_music_subscribers_without_social_posts(pool: PgPool) {
     let f = fixture(pool).await;
     let library = plamenu::music_follows::library_uri(TEST_DOMAIN, &f.alice);
@@ -438,7 +438,7 @@ async fn profile_and_suspension_updates_reach_music_subscribers_without_social_p
     assert_eq!(blanked, 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cached_audio_retractions_reach_each_scope_and_preserve_foreign_sources(pool: PgPool) {
     let f = fixture(pool).await;
     let artist: i64 = sqlx::query_scalar("SELECT artist_id FROM music_assets WHERE id=$1")
@@ -572,7 +572,7 @@ async fn cached_audio_retractions_reach_each_scope_and_preserve_foreign_sources(
     assert_erased(&f).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_follow_resolved_before_retirement_cannot_recreate_erased_subscriptions(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let library:i64=sqlx::query_scalar("UPDATE music_collections SET kind='library',visibility='public' WHERE owner_id=$1 RETURNING id").bind(f.alice.id).fetch_one(&pool).await.unwrap();
@@ -663,7 +663,7 @@ async fn a_follow_resolved_before_retirement_cannot_recreate_erased_subscription
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn grace_period_expiry_keeps_music_until_scoped_retractions_commit(pool: PgPool) {
     let f = fixture(pool).await;
     let remote = RemoteUser::new("songhive.test", "sylvia");
@@ -728,7 +728,7 @@ async fn grace_period_expiry_keeps_music_until_scoped_retractions_commit(pool: P
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn expiry_ignores_future_deadlines_and_restored_accounts_without_outbox(pool: PgPool) {
     let f = fixture(pool).await;
     account::suspend(&f.state.pool, f.alice.id, "local")
@@ -763,7 +763,7 @@ async fn expiry_ignores_future_deadlines_and_restored_accounts_without_outbox(po
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn restoration_winning_the_expiry_lock_keeps_music_and_produces_no_delete(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     account::suspend(&pool, f.alice.id, "local").await.unwrap();
@@ -843,7 +843,7 @@ async fn restoration_winning_the_expiry_lock_keeps_music_and_produces_no_delete(
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hard_delete_erases_metadata_without_managed_files(pool: PgPool) {
     let owner = create_local_account(&pool, "metadata_owner", "Metadata owner").await;
     let other = create_local_account(&pool, "metadata_survivor", "Metadata survivor").await;
@@ -886,7 +886,7 @@ async fn hard_delete_erases_metadata_without_managed_files(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn uri_hard_delete_captures_profile_keys_before_metadata_cascades(pool: PgPool) {
     let owner =
         common::create_immutable_local_account(&pool, "uri_metadata_owner", "URI metadata owner")

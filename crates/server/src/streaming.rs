@@ -478,17 +478,18 @@ pub async fn publish(state: &AppState, event: &Event) {
     }
 }
 
-/// Runs the LISTEN loop until the process exits, reconnecting on failure.
+/// Runs the LISTEN loop until cooperative shutdown, reconnecting on failure.
 #[must_use]
 pub fn spawn(state: AppState) -> JoinHandle<()> {
     tokio::spawn(async move {
         tracing::info!("streaming hub started");
         loop {
-            if let Err(error) = listen(&state).await {
-                state.streaming.set_listening(false);
-                if state.shutdown.is_cancelled() {
-                    return;
-                }
+            let result = listen(&state).await;
+            state.streaming.set_listening(false);
+            if state.shutdown.is_cancelled() {
+                return;
+            }
+            if let Err(error) = result {
                 tracing::warn!(%error, "streaming listener disconnected; reconnecting");
                 if !crate::workers::pause(&state, std::time::Duration::from_secs(1)).await {
                     return;
@@ -499,10 +500,20 @@ pub fn spawn(state: AppState) -> JoinHandle<()> {
 }
 
 async fn listen(state: &AppState) -> Result<(), plamenu_db::DbError> {
-    let mut listener = events::listener(&state.pool).await?;
+    let mut listener = tokio::select! {
+        biased;
+        () = state.shutdown.cancelled() => return Ok(()),
+        listener = events::listener(&state.pool) => listener?,
+    };
     state.streaming.set_listening(true);
     loop {
-        let message = listener.recv().await?;
+        // Stop at the idle boundary. An event already being routed below
+        // still finishes before shutdown rather than being cancelled mid-job.
+        let message = tokio::select! {
+            biased;
+            () = state.shutdown.cancelled() => return Ok(()),
+            message = listener.recv() => message?,
+        };
         if state.streaming.is_idle() {
             continue;
         }

@@ -105,7 +105,7 @@ async fn post_signed(app: Router, body: &Value, signer: &RequestSigner) -> Statu
     app.oneshot(request).await.unwrap().status()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn favourite_reblog_roundtrip_with_counts_and_notifications(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -260,7 +260,7 @@ async fn favourite_reblog_roundtrip_with_counts_and_notifications(pool: PgPool) 
     assert_eq!(notifications, json!([]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pleroma_emoji_reaction_api_lists_accounts_and_clears_notifications(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -347,7 +347,7 @@ async fn pleroma_emoji_reaction_api_lists_accounts_and_clears_notifications(pool
     assert!(notifications.as_array().unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn replies_build_a_context_thread(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -413,7 +413,7 @@ async fn replies_build_a_context_thread(pool: PgPool) {
 /// A third-party client opening `/context` expresses the same authenticated
 /// thread-view intent as the built-in permalink. Cold-history replies therefore
 /// heal upward as well as queueing the existing downward replies crawl.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn context_open_chases_a_history_orphan_parent(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("context-parent.example", "bob");
@@ -510,7 +510,7 @@ async fn context_open_chases_a_history_orphan_parent(pool: PgPool) {
 /// depth-first descendants with the root author's self-thread promoted — while
 /// `flat` serves Pleroma's — the whole conversation in arrival order split at
 /// the focal post, sibling branches included above it.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn thread_order_setting_reshapes_context(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -672,7 +672,7 @@ async fn thread_order_setting_reshapes_context(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn visibility_is_enforced_for_reads_and_boosts(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -774,7 +774,7 @@ async fn visibility_is_enforced_for_reads_and_boosts(pool: PgPool) {
     assert_eq!(code, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_timeline_lists_public_originals_only(pool: PgPool) {
     common::open_previews(&pool).await;
     let (_alice, token) = user_with_token(&pool, "alice").await;
@@ -819,7 +819,7 @@ async fn public_timeline_lists_public_originals_only(pool: PgPool) {
 
 /// The public timelines ship Mastodon-shaped — a reply to someone else
 /// is not a top-level post — and the operator can turn the firehose back on.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_timeline_reply_policy_follows_the_operator_setting(pool: PgPool) {
     common::open_previews(&pool).await;
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
@@ -897,7 +897,7 @@ async fn public_timeline_reply_policy_follows_the_operator_setting(pool: PgPool)
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_visibility_is_same_instance_only_and_never_federates(pool: PgPool) {
     common::open_previews(&pool).await;
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
@@ -1137,7 +1137,7 @@ async fn local_visibility_is_same_instance_only_and_never_federates(pool: PgPool
     assert!(stub.deliveries().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn deleting_a_status_federates_a_delete(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1191,7 +1191,7 @@ async fn deleting_a_status_federates_a_delete(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_interactions_arrive_and_undo(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1369,7 +1369,7 @@ async fn remote_interactions_arrive_and_undo(pool: PgPool) {
 /// dropping every `Announce` of an unknown status — so a followed Mastodon /
 /// Pleroma / Misskey account's boosts never surfaced, while only group
 /// (FEP-1b12) announces, which already fetched, got through.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_boost_of_unseen_post_is_fetched_and_surfaces(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     common::open_previews(&pool).await;
@@ -1504,7 +1504,7 @@ async fn remote_boost_of_unseen_post_is_fetched_and_surfaces(pool: PgPool) {
 /// `object`, no embedded object to dispatch on (Mastodon embeds it). Each
 /// retraction must find the activity by its stored uri: the boost row's uri,
 /// the favourite's `Like` uri, the reaction's `EmojiReact` uri.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bare_object_uri_undo_retracts_like_boost_and_reaction(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1622,7 +1622,7 @@ async fn bare_object_uri_undo_retracts_like_boost_and_reaction(pool: PgPool) {
 /// after the second `Like`. The retraction names an activity that is no longer
 /// the one holding the favourite, so it must withdraw nothing: the sender does
 /// still hold it, and the author's notification still stands.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_overtaken_undo_does_not_withdraw_a_refreshed_favourite(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1723,7 +1723,7 @@ async fn an_overtaken_undo_does_not_withdraw_a_refreshed_favourite(pool: PgPool)
     assert_eq!(notifications, json!([]), "the notification goes with it");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_favourite_and_boost_federate_out(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1808,7 +1808,7 @@ async fn remote_favourite_and_boost_federate_out(pool: PgPool) {
     assert_eq!(undo_delivery.activity["object"]["type"], "Like");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbound_emoji_reaction_federates_to_remote_author(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1940,7 +1940,7 @@ async fn outbound_emoji_reaction_federates_to_remote_author(pool: PgPool) {
 /// the status, the outbound `EmojiReact` reuses the remote image, and the
 /// `Undo` retracts it. A remote emoji that isn't already on the post can't
 /// start a reaction (mirroring Pleroma's join-only rule).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn joining_a_remote_custom_emoji_reaction_federates(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2117,7 +2117,7 @@ async fn joining_a_remote_custom_emoji_reaction_federates(pool: PgPool) {
 /// (once both are on the wire, the remote's concurrent inbox processing can
 /// apply the `Undo` before the `Announce` and the boost sticks remotely).
 /// A retraction of an already-delivered interaction still federates.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instant_retractions_cancel_queued_interactions(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2234,7 +2234,7 @@ fn multipart_upload(file: &[u8], description: &str) -> (String, Vec<u8>) {
     (format!("multipart/form-data; boundary={BOUNDARY}"), body)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn media_upload_attach_serve_and_federate(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2333,7 +2333,7 @@ fn build_router_state(state: &plamenu::AppState) -> Router {
     plamenu::build_router(state.clone())
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn fresh_untagged_remote_note_does_not_wait_for_tag_usage_writer(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let state = test_state_with(
@@ -2370,7 +2370,7 @@ async fn fresh_untagged_remote_note_does_not_wait_for_tag_usage_writer(pool: PgP
     assert_eq!(uses, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn existing_remote_note_keeps_tag_usage_on_tagless_delivery(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let state = test_state_with(
@@ -2415,7 +2415,7 @@ async fn existing_remote_note_keeps_tag_usage_on_tagless_delivery(pool: PgPool) 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_content_is_sanitized_and_attachments_stored(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2513,7 +2513,7 @@ async fn inbound_content_is_sanitized_and_attachments_stored(pool: PgPool) {
     assert_eq!(attachments[0]["description"], "a remote cat");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mentions_resolve_render_notify_and_deliver(pool: PgPool) {
     common::open_previews(&pool).await;
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
@@ -2614,7 +2614,7 @@ async fn mentions_resolve_render_notify_and_deliver(pool: PgPool) {
 
 /// A follower must not receive the first visible status while its mention
 /// rows are still being filed. Hashtags and mentions form the same API object.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_note_is_not_visible_without_mentions_and_tags(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2719,7 +2719,7 @@ async fn inbound_note_is_not_visible_without_mentions_and_tags(pool: PgPool) {
     assert_eq!(timeline[0]["tags"][0]["name"], "gate");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failed_remote_mention_write_rolls_back_status_tags_and_can_retry(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2773,7 +2773,7 @@ async fn failed_remote_mention_write_rolls_back_status_tags_and_can_retry(pool: 
     assert_eq!(shown[0]["tags"][0]["name"], "retry");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_mentions_notify_and_grant_private_access(pool: PgPool) {
     common::open_previews(&pool).await;
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
@@ -2851,7 +2851,7 @@ async fn inbound_mentions_notify_and_grant_private_access(pool: PgPool) {
     assert!(timeline.as_array().unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_remote_mentions_are_stored_silently(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let carol = RemoteUser::new("other.example", "carol");
@@ -2906,7 +2906,7 @@ async fn inbound_remote_mentions_are_stored_silently(pool: PgPool) {
     assert_eq!(shown["mentions"][0]["acct"], "carol@other.example");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_emoji_reactions_surface_to_clients(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -3068,7 +3068,7 @@ async fn inbound_emoji_reactions_surface_to_clients(pool: PgPool) {
     assert_eq!(remaining, [":blobcat:", "😀"]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_join_of_local_custom_emoji_uses_local_origin(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -3151,7 +3151,7 @@ async fn inbound_join_of_local_custom_emoji_uses_local_origin(pool: PgPool) {
 /// colons) while `content` stays colon-wrapped. The reaction must still pick
 /// up the tag's image, record `custom_emoji_url`, and render its group under
 /// the qualified `shortcode@domain` name — addressable by that name too.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_reaction_with_bare_emoji_tag_name_keeps_its_image(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -3253,7 +3253,7 @@ async fn notification_kinds(pool: &PgPool, account_id: i64) -> Vec<String> {
 /// or fresh id), Create with mentions, `EmojiReact` — already produced its
 /// rows and side effects the first time, and must not notify again nor
 /// duplicate interaction rows.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn redelivered_activities_do_not_renotify_or_duplicate(pool: PgPool) {
     let (alice, _alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -3369,7 +3369,7 @@ async fn redelivered_activities_do_not_renotify_or_duplicate(pool: PgPool) {
 /// with changed content), then a second one, both apply — while redelivering
 /// the original `Create` or an already-applied `Update` in between stays a
 /// no-op and never rolls the content back or re-notifies.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn redelivery_dedup_still_applies_successive_edits(pool: PgPool) {
     let (alice, _alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -3480,7 +3480,7 @@ async fn redelivery_dedup_still_applies_successive_edits(pool: PgPool) {
 
 /// Repeating a local favourite/boost/react POST is idempotent: one
 /// notification, one delivery, one boost row — like Mastodon's services.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn repeated_local_interactions_notify_once(pool: PgPool) {
     let (alice, _alice_token) = user_with_token(&pool, "alice").await;
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -3534,7 +3534,7 @@ async fn repeated_local_interactions_notify_once(pool: PgPool) {
 /// any peer it doesn't recognise as Mastodon-family. It must land as an
 /// emoji reaction, not a favourite, survive redelivery, and be retracted by
 /// Sharkey's `Undo`, which embeds the rendered Like under the same id.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sharkey_like_with_reaction_is_an_emoji_reaction(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("sharkey.example", "bob");
@@ -3659,7 +3659,7 @@ async fn sharkey_like_with_reaction_is_an_emoji_reaction(pool: PgPool) {
 /// the tagged `Emoji`, a `content`-only reaction (no `_misskey_reaction`),
 /// and the legacy `name`-only form — plus an `Undo` that embeds the Like
 /// without a reusable id, which must fall back to `(status, emoji)` matching.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sharkey_like_reaction_fallback_shapes(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("sharkey.example", "bob");
@@ -3781,7 +3781,7 @@ async fn sharkey_like_reaction_fallback_shapes(pool: PgPool) {
 /// `EmojiReaction` is the legacy Misskey-family alias of `EmojiReact` —
 /// accepted on create and on both `Undo` shapes (embedded object and bare
 /// activity IRI).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn emoji_reaction_type_aliases_emoji_react(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("legacy.example", "bob");
@@ -3876,7 +3876,7 @@ async fn emoji_reaction_type_aliases_emoji_react(pool: PgPool) {
 /// Sharkey's legacy `Dislike` is a withdrawal of the actor's
 /// reaction/favourite on the target — idempotent, validated against what the
 /// sender actually has there, and never stored as anything.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn dislike_withdraws_the_senders_reaction_and_favourite(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("sharkey.example", "bob");
@@ -3977,7 +3977,7 @@ async fn dislike_withdraws_the_senders_reaction_and_favourite(pool: PgPool) {
 /// A Like whose "reaction" cannot be one (smuggled text far past any
 /// emoji length) degrades to a plain favourite instead of being dropped —
 /// and its Undo still retracts that favourite through the fall-through path.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unparseable_like_reaction_degrades_to_favourite(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("sharkey.example", "bob");

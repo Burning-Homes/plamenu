@@ -4,7 +4,7 @@
 //! ladder for not-yet-functional logins, the web sign-up pages, and the
 //! instance entities' registration block.
 
-mod common;
+use plamenu_test_support as common;
 
 use std::sync::Arc;
 
@@ -432,7 +432,7 @@ async fn add_webhook(pool: &PgPool, url: &str, events: &[&str]) {
     .unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signup_returns_token_and_queues_confirmation_mail(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     add_webhook(
@@ -535,7 +535,7 @@ async fn signup_returns_token_and_queues_confirmation_mail(pool: PgPool) {
 /// and the confirmation-mail job together — the Ed25519 keys are present the
 /// instant signup returns rather than waiting on a separate write or the
 /// startup backfill.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signup_commits_account_keys_and_mail_atomically(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());
@@ -578,7 +578,7 @@ async fn signup_commits_account_keys_and_mail_atomically(pool: PgPool) {
 /// the whole transaction rolls back and leaves no account, no keys, and a free
 /// username — never a userless account shadowing the name. This
 /// drives the exact transaction primitives `sign_up` composes.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signup_transaction_rolls_back_completely_on_late_user_failure(pool: PgPool) {
     // Occupy an e-mail so the in-transaction user insert fails with EmailTaken.
     let taken = create_local_account(&pool, "taken", "Taken").await;
@@ -648,7 +648,7 @@ async fn signup_transaction_rolls_back_completely_on_late_user_failure(pool: PgP
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signup_validation_errors_use_mastodon_shape(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());
@@ -739,7 +739,7 @@ async fn signup_validation_errors_use_mastodon_shape(pool: PgPool) {
     assert_eq!(email::pending(&pool).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signup_respects_username_blocklist(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     username_block::create(&pool, "admin", true, false)
@@ -787,7 +787,7 @@ async fn signup_respects_username_blocklist(pool: PgPool) {
     assert!(!created.approved);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signup_refused_when_closed(pool: PgPool) {
     let (_, app_token) = app_with_token(&pool, "signup-app").await;
 
@@ -811,7 +811,7 @@ async fn signup_refused_when_closed(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signup_without_smtp_skips_confirmation(pool: PgPool) {
     // Open mode without an SMTP relay: the confirmation step is skipped
     // (nothing could deliver it), so the login is functional immediately.
@@ -851,7 +851,7 @@ async fn signup_without_smtp_skips_confirmation(pool: PgPool) {
     assert_eq!(body["username"], "vesna");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signup_without_email_is_functional_immediately(pool: PgPool) {
     // E-mail is optional even with a mail relay configured: a sign-up without
     // an address has nothing to confirm and no mail is queued.
@@ -911,7 +911,7 @@ async fn signup_without_email_is_functional_immediately(pool: PgPool) {
     assert_eq!(body, Value::Bool(true));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn confirmation_link_unlocks_login_once(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());
@@ -988,7 +988,7 @@ async fn confirmation_link_unlocks_login_once(pool: PgPool) {
     assert_eq!(body, Value::Bool(true));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn confirmation_grants_approval_when_mode_flipped_open(pool: PgPool) {
     // Sign up while approvals are required...
     set_registrations_mode(&pool, RegistrationsMode::Approved).await;
@@ -1027,7 +1027,7 @@ async fn confirmation_grants_approval_when_mode_flipped_open(pool: PgPool) {
     assert!(confirmed.functional());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn approved_mode_holds_sign_up_until_admin_approval(pool: PgPool) {
     let (admin_account, admin_token) = admin_with_token(&pool, "admin").await;
     set_registrations_mode(&pool, RegistrationsMode::Approved).await;
@@ -1159,7 +1159,7 @@ async fn approved_mode_holds_sign_up_until_admin_approval(pool: PgPool) {
     assert_eq!(login.status, StatusCode::SEE_OTHER);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn approval_before_confirmation_defers_functional_side_effects(pool: PgPool) {
     let (_, admin_token) = admin_with_token(&pool, "admin").await;
     set_registrations_mode(&pool, RegistrationsMode::Approved).await;
@@ -1214,7 +1214,7 @@ async fn approval_before_confirmation_defers_functional_side_effects(pool: PgPoo
     assert_account_is_published(&app, &admin_token, &vesna, true).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn confirmation_resend_rotates_token_and_can_fix_the_address(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());
@@ -1334,7 +1334,7 @@ async fn confirmation_resend_rotates_token_and_can_fix_the_address(pool: PgPool)
 /// TZ slice 5 (G4): sign-up offers a time zone, so a new account is not
 /// silently pinned to UTC forever. The choice survives a failed submission and
 /// reaches `users.time_zone` on success.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_signup_captures_a_time_zone(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());
@@ -1395,7 +1395,7 @@ async fn web_signup_captures_a_time_zone(pool: PgPool) {
 
 /// A zone outside the inventory degrades to the server default rather than
 /// reaching `AT TIME ZONE` as an arbitrary string.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_signup_rejects_a_zone_outside_the_inventory(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());
@@ -1424,7 +1424,7 @@ async fn web_signup_rejects_a_zone_outside_the_inventory(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_signup_form_registers_and_confirms(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());
@@ -1507,7 +1507,7 @@ async fn web_signup_form_registers_and_confirms(pool: PgPool) {
     assert!(login.set_cookie.is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_signup_requires_a_valid_single_use_altcha_proof(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());
@@ -1563,7 +1563,7 @@ async fn web_signup_requires_a_valid_single_use_altcha_proof(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_signup_without_email_is_ready_immediately(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());
@@ -1600,7 +1600,7 @@ async fn web_signup_without_email_is_ready_immediately(pool: PgPool) {
 /// session for an account the attacker also knows the password to — login CSRF
 /// / session swapping, the same class closed on `/login`,
 /// `/login/challenge` and `POST /oauth/authorize`.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cross_site_signup_cannot_sign_this_browser_in(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());
@@ -1650,7 +1650,7 @@ async fn cross_site_signup_cannot_sign_this_browser_in(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_signup_without_email_in_approved_mode_awaits_review(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Approved).await;
     let app = test_app_smtp(pool.clone());
@@ -1686,7 +1686,7 @@ async fn web_signup_without_email_in_approved_mode_awaits_review(pool: PgPool) {
     assert!(login.set_cookie.is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_signup_shows_closed_notice_when_unavailable(pool: PgPool) {
     // Mode `none` (the default): the closed page, and POST refuses too.
     let app = test_app_smtp(pool.clone());
@@ -1727,7 +1727,7 @@ async fn web_signup_shows_closed_notice_when_unavailable(pool: PgPool) {
     assert!(form.body.contains(r#"name="reason""#));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn deleted_account_reserves_username_but_frees_email(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let stub: Arc<StubFederation> = Arc::default();
@@ -1770,7 +1770,7 @@ async fn deleted_account_reserves_username_but_frees_email(pool: PgPool) {
     assert_eq!(status, StatusCode::OK, "{body}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_entities_reflect_registration_state(pool: PgPool) {
     let app = test_app_smtp(pool.clone());
 
@@ -1805,7 +1805,7 @@ async fn instance_entities_reflect_registration_state(pool: PgPool) {
     assert_eq!(v1["registrations"], Value::Bool(true));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn russian_signup_localizes_the_pages_the_errors_and_the_mail(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Open).await;
     let app = test_app_smtp(pool.clone());

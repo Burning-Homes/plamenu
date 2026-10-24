@@ -1,7 +1,7 @@
 //! Per-account Atom feed (`/@name.atom`) and its profile-page
 //! autodiscovery link.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -49,7 +49,7 @@ async fn post_public(pool: &PgPool, username: &str, text: &str) {
     .unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn atom_feed_lists_the_accounts_public_posts(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice Example").await;
     post_public(&pool, "alice", "hello from the feed").await;
@@ -82,7 +82,7 @@ async fn atom_feed_lists_the_accounts_public_posts(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_page_advertises_the_feed(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
 

@@ -136,7 +136,7 @@ async fn form(f: &Fixture, path: String, raw: &str, body: String) -> StatusCode 
         .status()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn video_settings_fallback_is_authorized_single_code_and_scope_safe(pool: PgPool) {
     let f = fixture(pool, false).await;
     let posted = publish(&f).await;
@@ -256,7 +256,7 @@ async fn video_settings_fallback_is_authorized_single_code_and_scope_safe(pool: 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn download_embed_flags_preserve_playback_and_use_current_private_authority(pool: PgPool) {
     let f = fixture(pool, false).await;
     let posted = publish(&f).await;
@@ -397,7 +397,7 @@ async fn download_embed_flags_preserve_playback_and_use_current_private_authorit
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sharing_and_signed_update_rollback_together_and_revoked_editors_cannot_change_them(
     pool: PgPool,
 ) {
@@ -463,7 +463,7 @@ async fn sharing_and_signed_update_rollback_together_and_revoked_editors_cannot_
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn viewer_sessions_and_unlisted_embeds_never_widen_current_content_authority(pool: PgPool) {
     let f = fixture(pool, false).await;
     let posted = publish(&f).await;
@@ -524,7 +524,7 @@ async fn viewer_sessions_and_unlisted_embeds_never_widen_current_content_authori
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn multipart_and_resumable_draft_lanes_refuse_scoped_cookies_before_allocation(pool: PgPool) {
     let f = fixture(pool, true).await;
     for scope in ["read", "read write:statuses"] {
@@ -582,7 +582,7 @@ async fn multipart_and_resumable_draft_lanes_refuse_scoped_cookies_before_alloca
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn initial_private_choices_survive_create_and_require_status_scope_after_publication(
     pool: PgPool,
 ) {
@@ -634,7 +634,7 @@ async fn initial_private_choices_survive_create_and_require_status_scope_after_p
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn all_published_html_media_mutations_keep_oauth_cookies_scoped_and_csrf_bound(pool: PgPool) {
     let f = fixture(pool, false).await;
     publish(&f).await;
@@ -678,7 +678,7 @@ async fn all_published_html_media_mutations_keep_oauth_cookies_scoped_and_csrf_b
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn draft_recovery_and_private_preview_do_not_upgrade_scoped_cookies(pool: PgPool) {
     let f = fixture(pool, true).await;
     for scope in ["read", "read write:statuses", "read write:media"] {
@@ -729,7 +729,7 @@ async fn draft_recovery_and_private_preview_do_not_upgrade_scoped_cookies(pool: 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn direct_and_download_stream_large_ranges_and_resume_identical_bytes(pool: PgPool) {
     let f = fixture(pool, false).await;
     publish(&f).await;
@@ -847,7 +847,7 @@ async fn progressive_fixture_schema(
     p
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn progressive_serving_validators_authority_and_original_identity(pool: PgPool) {
     let f = fixture(pool, true).await;
     let p = progressive_fixture(&f).await;
@@ -959,7 +959,7 @@ async fn progressive_serving_validators_authority_and_original_identity(pool: Pg
     assert_eq!(get(&f, path).await.status(), StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn progressive_missing_failed_stale_metadata_keeps_original(pool: PgPool) {
     let f = fixture(pool, true).await;
     let p = progressive_fixture(&f).await;
@@ -1124,7 +1124,7 @@ async fn progressive_upgrade_failure_retains_legacy_metadata(pool: PgPool) {
     plamenu_db::MIGRATOR.run(&pool).await.unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn progressive_typed_metadata_rejects_invalid_and_unowned_updates(pool: PgPool) {
     let f = fixture(pool.clone(), true).await;
     let expected = progressive_fixture(&f).await;

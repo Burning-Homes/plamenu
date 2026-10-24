@@ -211,7 +211,7 @@ fn status_url(username: &str, id: i64) -> String {
     format!("https://{TEST_DOMAIN}/users/{username}/statuses/{id}")
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn featured_collection_is_empty_and_dereferenceable(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
 
@@ -259,7 +259,7 @@ async fn featured_collection_is_empty_and_dereferenceable(pool: PgPool) {
     assert_eq!(body["error"], "Record not found");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn engagement_collections_carry_counts_only(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -327,7 +327,7 @@ async fn engagement_collections_carry_counts_only(pool: PgPool) {
     assert_eq!(note["shares"]["id"], shares["id"]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn replies_collection_reuses_its_dereferenced_parent_identity(pool: PgPool) {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tracing_subscriber::prelude::*;
@@ -371,7 +371,7 @@ async fn replies_collection_reuses_its_dereferenced_parent_identity(pool: PgPool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn replies_collection_reuses_root_author_and_keeps_other_author_documents(pool: PgPool) {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tracing_subscriber::prelude::*;
@@ -454,7 +454,7 @@ async fn replies_collection_reuses_root_author_and_keeps_other_author_documents(
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn replies_collection_pages_like_mastodon(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     create_local_account(&pool, "bob", "Bob").await;
@@ -536,7 +536,7 @@ async fn replies_collection_pages_like_mastodon(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn replies_pagination_by_min_id(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let parent = post(&pool, "alice", "root", "public", None).await;
@@ -562,7 +562,7 @@ async fn replies_pagination_by_min_id(pool: PgPool) {
     assert_eq!(items[0]["id"], status_url("alice", self2.id));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn status_collections_are_gated_like_the_note(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -601,7 +601,7 @@ async fn status_collections_are_gated_like_the_note(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn note_advertises_self_replies(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let parent = post(&pool, "alice", "root", "public", None).await;
@@ -646,7 +646,7 @@ async fn note_advertises_self_replies(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn context_collection_lists_distributable_thread_posts(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     create_local_account(&pool, "bob", "Bob").await;
@@ -716,7 +716,7 @@ async fn context_collection_lists_distributable_thread_posts(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_ACCEPTABLE);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn context_collection_hidden_for_private_conversation(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let root = post(&pool, "alice", "secret thread", "private", None).await;
@@ -741,7 +741,7 @@ async fn context_collection_hidden_for_private_conversation(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_status_linking_a_collection_tags_it_in_the_note_and_entity(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), std::sync::Arc::default());

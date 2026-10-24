@@ -257,7 +257,7 @@ async fn one_connection(pool: &PgPool) -> PgPool {
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn populated_pairs_equal_sequential_loader_on_one_connection(pool: PgPool) {
     let fixture = seed(&pool).await;
     let single = one_connection(&pool).await;
@@ -379,7 +379,7 @@ async fn get_relationships(pool: &PgPool, uri: &str, token: Option<&str>) -> (St
     (code, serde_json::from_slice(&bytes).unwrap())
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn relationship_api_preserves_order_missing_suspended_and_viewer_scope(pool: PgPool) {
     let fixture = seed(&pool).await;
     let alice_token = token_for(&pool, &fixture.alice).await;

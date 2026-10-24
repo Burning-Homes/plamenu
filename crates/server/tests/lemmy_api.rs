@@ -133,7 +133,7 @@ async fn native_id(pool: &PgPool, kind: Kind, alias: i64) -> i64 {
         .expect("response alias resolves to a native ID")
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn login_site_validate_and_logout_follow_lemmy_contract(pool: PgPool) {
     create_user(&pool, "lemmy_user", "lemmy@example.test", "correct horse").await;
 
@@ -204,7 +204,7 @@ async fn login_site_validate_and_logout_follow_lemmy_contract(pool: PgPool) {
     assert_eq!(invalid.json, json!({ "error": "not_logged_in" }));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_html_is_exposed_as_markdown_in_posts_and_comments(pool: PgPool) {
     let owner = create_local_account(&pool, "html_owner", "HTML owner").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -305,7 +305,7 @@ async fn remote_html_is_exposed_as_markdown_in_posts_and_comments(pool: PgPool) 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_communities_have_markdown_descriptions_exact_feeds_and_all_directory(pool: PgPool) {
     let mut remote_group = RemoteUser::new("lemmy.test", "technology");
     remote_group.actor.kind = "Group".to_owned();
@@ -452,7 +452,7 @@ async fn remote_communities_have_markdown_descriptions_exact_feeds_and_all_direc
     assert_eq!(missing.json, json!({ "error": "couldnt_find_community" }));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn community_feed_does_not_lose_old_posts_behind_global_timeline(pool: PgPool) {
     let (owner, _) = create_user(
         &pool,
@@ -550,7 +550,7 @@ async fn community_feed_does_not_lose_old_posts_behind_global_timeline(pool: PgP
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_promotion_bans_and_purges_are_real_and_audited(pool: PgPool) {
     let (owner_account, _) =
         create_user(&pool, "owner", "owner@example.test", "owner password").await;
@@ -679,7 +679,7 @@ async fn admin_promotion_bans_and_purges_are_real_and_audited(pool: PgPool) {
     assert!(actions.iter().any(|action| action.action == "promote"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn community_feed_reports_and_admin_lifecycle_use_real_state(pool: PgPool) {
     let (owner, _) = create_user(
         &pool,
@@ -1059,7 +1059,7 @@ async fn community_feed_reports_and_admin_lifecycle_use_real_state(pool: PgPool)
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unread_counts_project_notifications_and_direct_conversations(pool: PgPool) {
     let (alice, alice_user) = create_user(
         &pool,
@@ -1167,7 +1167,7 @@ async fn unread_counts_project_notifications_and_direct_conversations(pool: PgPo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn community_post_comment_and_account_mutations_round_trip(pool: PgPool) {
     let settings = plamenu_db::instance_settings::get(&pool).await.unwrap();
     plamenu_db::instance_settings::save(
@@ -1363,7 +1363,7 @@ async fn community_post_comment_and_account_mutations_round_trip(pool: PgPool) {
     assert_eq!(stale.status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbox_read_overrides_and_private_messages_are_durable(pool: PgPool) {
     let (alice, alice_user) = create_user(
         &pool,
@@ -1538,7 +1538,7 @@ async fn inbox_read_overrides_and_private_messages_are_durable(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pictrs_media_and_custom_emoji_mutations_round_trip(pool: PgPool) {
     let (owner, _) = create_user(
         &pool,

@@ -10,7 +10,7 @@ async fn tag(pool: &PgPool, id: i64, value: &str) {
         .unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn topics_and_trails_use_explicit_tags_and_recheck_viewer_policy(pool: PgPool) {
     let f = fixture(&pool).await;
     tag(&pool, f.entry, "garden").await;
@@ -71,7 +71,7 @@ async fn topics_and_trails_use_explicit_tags_and_recheck_viewer_policy(pool: PgP
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn saved_topics_are_private_csrf_protected_resettable_and_concurrently_bounded(pool: PgPool) {
     let f = fixture(&pool).await;
     let bad = f
@@ -138,7 +138,7 @@ async fn saved_topics_are_private_csrf_protected_resettable_and_concurrently_bou
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn topics_do_not_promote_index_only_authors_or_filtered_posts(pool: PgPool) {
     let f = fixture(&pool).await;
     seed_browser_posts(&pool).await;
@@ -271,7 +271,7 @@ async fn collection_fixture(f: &Fixture) -> (i64, i64) {
     (c.id, item.unwrap().id)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collections_need_public_local_ownership_accepted_approval_and_visible_members(
     pool: PgPool,
 ) {
@@ -388,7 +388,7 @@ async fn collections_need_public_local_ownership_accepted_approval_and_visible_m
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn topic_changes_and_domain_blocks_remove_connections_without_fetching(pool: PgPool) {
     let f = fixture(&pool).await;
     tag(&pool, f.entry, "garden").await;

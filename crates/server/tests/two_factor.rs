@@ -186,7 +186,7 @@ async fn login_with_totp(app: &Router) -> String {
 
 // ---- Tests -------------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn enrol_totp_shows_qr_and_hands_back_recovery_codes(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -296,7 +296,7 @@ async fn enrol_totp_shows_qr_and_hands_back_recovery_codes(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn totp_login_needs_the_code(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -319,7 +319,7 @@ async fn totp_login_needs_the_code(pool: PgPool) {
     assert_eq!(home.status, StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn totp_login_rejects_a_wrong_code(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -358,7 +358,7 @@ async fn totp_login_rejects_a_wrong_code(pool: PgPool) {
     assert!(ok.set_cookie.is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn totp_code_cannot_be_replayed(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -390,7 +390,7 @@ async fn totp_code_cannot_be_replayed(pool: PgPool) {
     assert!(second.set_cookie.is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn recovery_code_signs_in_once(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -431,7 +431,7 @@ async fn recovery_code_signs_in_once(pool: PgPool) {
     assert!(second.set_cookie.is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unknown_challenge_token_restarts_login(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -449,7 +449,7 @@ async fn unknown_challenge_token_restarts_login(pool: PgPool) {
     assert!(resp.body.contains("expired"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn disabling_needs_the_password_and_clears_everything(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -503,7 +503,7 @@ async fn disabling_needs_the_password_and_clears_everything(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oauth_authorize_completes_with_second_factor(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -723,7 +723,7 @@ async fn seed_app(pool: &PgPool, client_id: &str, secret: &str, redirect: &str) 
 /// request bound to the challenge at password time. Substituting a different
 /// client / callback / scope into the second POST changes nothing — the code
 /// goes to the app the user actually reviewed, with the scope they approved.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oauth_challenge_is_bound_to_its_authorization_request(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -802,7 +802,7 @@ async fn oauth_challenge_is_bound_to_its_authorization_request(pool: PgPool) {
 /// RFC 7636 syntax (43–128 unreserved characters) is enforced on
 /// the challenge at both authorize entry paths, and on the verifier before it
 /// is hashed at the token exchange.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pkce_challenge_and_verifier_syntax_are_enforced(pool: PgPool) {
     seed_alice(&pool).await;
     seed_app(&pool, "app-a", "secret-a", "https://a.example/cb").await;

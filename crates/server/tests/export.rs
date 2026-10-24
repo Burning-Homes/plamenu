@@ -148,7 +148,7 @@ async fn seed_remote(pool: &PgPool, username: &str, domain: &str) -> Account {
 
 // ---- Tests -------------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn following_and_lists_export(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -229,7 +229,7 @@ async fn following_and_lists_export(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocks_mutes_domains_export(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -285,7 +285,7 @@ async fn blocks_mutes_domains_export(pool: PgPool) {
     assert_eq!(domains.body, "ads.example\nspam.example\n");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bookmarks_export(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -340,7 +340,7 @@ async fn bookmarks_export(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn export_requires_login(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool);
@@ -355,7 +355,7 @@ async fn export_requires_login(pool: PgPool) {
 /// complete — the download pages through the whole set in keyset chunks, so a
 /// large account is never silently truncated and no page boundary loses or
 /// repeats a row.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn large_export_streams_every_row_without_truncation(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     // 2,500 rows — several 1,000-row pages — seeded in one SQL statement.
@@ -383,7 +383,7 @@ async fn large_export_streams_every_row_without_truncation(pool: PgPool) {
 /// The CSV downloads draw from the per-account web-maintenance
 /// admission budget, so a buggy or malicious client cannot hammer the
 /// dataset-walking queries without bound.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn export_downloads_draw_from_the_maintenance_budget(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool);
@@ -405,7 +405,7 @@ async fn export_downloads_draw_from_the_maintenance_budget(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unknown_export_file_is_not_found(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool);
@@ -415,7 +415,7 @@ async fn unknown_export_file_is_not_found(pool: PgPool) {
     assert_eq!(resp.status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn export_page_lists_downloads(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool);

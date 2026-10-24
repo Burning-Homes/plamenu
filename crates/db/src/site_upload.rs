@@ -200,7 +200,7 @@ async fn stale_files(
 mod tests {
     use super::*;
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn upsert_replaces_slot_and_reports_stale_files(pool: PgPool) {
         assert!(get(&pool, "thumbnail").await.unwrap().is_none());
 

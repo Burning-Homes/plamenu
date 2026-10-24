@@ -69,7 +69,7 @@ async fn add(state: &AppState, owner: i64, collection: i64, asset: i64) {
     .unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_contents_share_grants_only_owned_tracks_and_revokes_with_membership(
     pool: PgPool,
 ) {
@@ -147,7 +147,7 @@ async fn explicit_contents_share_grants_only_owned_tracks_and_revokes_with_membe
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn independent_parent_and_direct_grants_survive_other_parent_revocation(pool: PgPool) {
     let (state, alice, bob) = setup(pool).await;
     let source = asset(&state, alice, "Two parent track", "private").await;
@@ -192,7 +192,7 @@ async fn independent_parent_and_direct_grants_survive_other_parent_revocation(po
     assert!(music_assets::get(&state, source, Some(bob)).await.is_err());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_public_contents_access_is_current_and_never_publishes_audio(pool: PgPool) {
     let (state, alice, bob) = setup(pool).await;
     let source = asset(
@@ -295,7 +295,7 @@ async fn explicit_public_contents_access_is_current_and_never_publishes_audio(po
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_contents_sharing_does_not_admit_anonymous_or_foreign_viewers(pool: PgPool) {
     let (state, alice, bob) = setup(pool).await;
     let actor = common::RemoteUser::new("remote.test", "foreign");
@@ -320,7 +320,7 @@ async fn local_contents_sharing_does_not_admit_anonymous_or_foreign_viewers(pool
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn contents_sharing_api_requires_owner_write_scope_and_current_revision(pool: PgPool) {
     use axum::{
         body::Body,
@@ -409,7 +409,7 @@ async fn contents_sharing_api_requires_owner_write_scope_and_current_revision(po
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn full_statistics_count_repeats_beyond_displayed_pages_and_hide_revoked_sources(
     pool: PgPool,
 ) {
@@ -476,7 +476,7 @@ async fn full_statistics_count_repeats_beyond_displayed_pages_and_hide_revoked_s
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_grants_never_bypass_asset_permissions_or_block_revocation(pool: PgPool) {
     let (state, alice, bob) = setup(pool).await;
     let private = asset(&state, alice, "Creator-private title", "private").await;
@@ -553,7 +553,7 @@ async fn collection_grants_never_bypass_asset_permissions_or_block_revocation(po
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ordering_is_revision_checked_and_m3u_hides_revoked_sources(pool: PgPool) {
     let (state, alice, bob) = setup(pool).await;
     let a = asset(&state, alice, "Title\n#EXTINF:999,Injected", "public").await;
@@ -631,7 +631,7 @@ async fn ordering_is_revision_checked_and_m3u_hides_revoked_sources(pool: PgPool
         1
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn libraries_deduplicate_references_playlists_allow_repeats_and_urls_are_canonical(
     pool: PgPool,
 ) {
@@ -689,7 +689,7 @@ async fn libraries_deduplicate_references_playlists_allow_repeats_and_urls_are_c
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn verified_remote_audio_remains_origin_owned_and_source_tombstones_hide_it(pool: PgPool) {
     let (state, alice, _) = setup(pool).await;
     let remote = common::RemoteUser::new("songhive.test", "sylvia");
@@ -752,7 +752,7 @@ async fn verified_remote_audio_remains_origin_owned_and_source_tombstones_hide_i
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn source_cascade_advances_revision_and_paging_exposes_only_readable_sources(pool: PgPool) {
     let (state, alice, bob) = setup(pool).await;
     let list = collection(&state, alice, "playlist", "public").await;
@@ -828,7 +828,7 @@ async fn source_cascade_advances_revision_and_paging_exposes_only_readable_sourc
     ));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_search_filters_kind_before_paging_and_preserves_creator_visibility(
     pool: PgPool,
 ) {

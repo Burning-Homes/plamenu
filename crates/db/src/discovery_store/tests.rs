@@ -4,7 +4,7 @@ use time::Duration;
 use tokio::sync::Barrier;
 use tokio::task::JoinSet;
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn sampling_position_survives_rounds_and_pause_without_extending_actor_freshness(
     pool: PgPool,
 ) {
@@ -55,7 +55,7 @@ async fn sampling_position_survives_rounds_and_pause_without_extending_actor_fre
     assert_eq!(diagnostics(&pool).await.unwrap().entries, 0);
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn video_sampling_keeps_advancing_when_profile_rounds_would_switch_to_new(pool: PgPool) {
     enable(&pool).await;
     let endpoint = "https://video-sampling.example/api/v1/videos";
@@ -75,7 +75,7 @@ async fn video_sampling_keeps_advancing_when_profile_rounds_would_switch_to_new(
     }
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn scheduler_balances_candidate_costs_instead_of_cheap_wire_attempts(pool: PgPool) {
     let mut policy = enable(&pool).await;
     policy.max_inflight = 1;
@@ -221,7 +221,7 @@ fn facts(uri: &str) -> VerifiedEntry<'_> {
     }
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn defaults_and_settings_compare_and_swap(pool: PgPool) {
     let original = settings(&pool).await.unwrap();
     assert!(!original.enabled);
@@ -250,7 +250,7 @@ async fn defaults_and_settings_compare_and_swap(pool: PgPool) {
     assert_eq!(settings(&pool).await.unwrap(), saved);
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn source_admission_normalizes_coalesces_and_bounds_concurrent_insertions(pool: PgPool) {
     let mut config = enable(&pool).await;
     config.max_sources = 3;
@@ -299,7 +299,7 @@ async fn source_admission_normalizes_coalesces_and_bounds_concurrent_insertions(
     assert!(save_settings(&pool, &lower).await.is_err());
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn source_origin_and_introducer_caps_are_independent(pool: PgPool) {
     let mut config = enable(&pool).await;
     config.sources_per_origin = 2;
@@ -352,7 +352,7 @@ async fn source_origin_and_introducer_caps_are_independent(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn job_flood_is_bounded_and_duplicates_do_not_change_provenance(pool: PgPool) {
     let mut config = enable(&pool).await;
     config.max_jobs = 4;
@@ -412,7 +412,7 @@ async fn job_flood_is_bounded_and_duplicates_do_not_change_provenance(pool: PgPo
     );
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn job_caps_reject_mislabeled_origins_and_honor_introducer_limits(pool: PgPool) {
     let mut config = enable(&pool).await;
     config.jobs_per_origin = 2;
@@ -491,7 +491,7 @@ async fn job_caps_reject_mislabeled_origins_and_honor_introducer_limits(pool: Pg
     );
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn claims_are_concurrently_bounded_by_global_and_origin_capacity(pool: PgPool) {
     enable(&pool).await;
     let a = verified_source(&pool, "https://a.example/", None).await;
@@ -522,7 +522,7 @@ async fn claims_are_concurrently_bounded_by_global_and_origin_capacity(pool: PgP
     assert_eq!(claim_due(&pool, "third").await.unwrap().len(), 1);
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn expired_lease_and_retry_cursor_survive_worker_restart(pool: PgPool) {
     enable(&pool).await;
     let source = verified_source(&pool, "https://one.example/", None).await;
@@ -568,7 +568,7 @@ async fn expired_lease_and_retry_cursor_survive_worker_restart(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn policy_changes_pause_and_source_changes_fence_old_results(pool: PgPool) {
     enable(&pool).await;
     let source = verified_source(&pool, "https://one.example/", None).await;
@@ -609,7 +609,7 @@ async fn policy_changes_pause_and_source_changes_fence_old_results(pool: PgPool)
     assert!(saved.summary.is_none());
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn unverified_sources_disabled_methods_and_cooldowns_prevent_claims(pool: PgPool) {
     enable(&pool).await;
     let source = added(
@@ -670,7 +670,7 @@ async fn unverified_sources_disabled_methods_and_cooldowns_prevent_claims(pool: 
     assert_eq!(claim_due(&pool, "test").await.unwrap().len(), 1);
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn retries_backoff_and_expiry_are_durable_and_bounded(pool: PgPool) {
     let mut config = enable(&pool).await;
     config.max_attempts = 2;
@@ -734,7 +734,7 @@ async fn retries_backoff_and_expiry_are_durable_and_bounded(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn concurrent_catalogue_writes_cannot_exceed_the_global_cap(pool: PgPool) {
     let mut config = enable(&pool).await;
     config.max_entries = 2;
@@ -783,7 +783,7 @@ async fn concurrent_catalogue_writes_cannot_exceed_the_global_cap(pool: PgPool) 
     );
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn entry_origin_and_introducer_limits_include_withdrawal_guards(pool: PgPool) {
     let mut config = enable(&pool).await;
     config.entries_per_origin = 1;
@@ -831,7 +831,7 @@ async fn entry_origin_and_introducer_limits_include_withdrawal_guards(pool: PgPo
     assert_eq!(guard.state, "withdrawn");
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn withdrawal_and_denial_fence_refreshes_without_resurrection(pool: PgPool) {
     enable(&pool).await;
     let source = verified_source(&pool, "https://one.example/", None).await;
@@ -872,7 +872,7 @@ async fn withdrawal_and_denial_fence_refreshes_without_resurrection(pool: PgPool
     assert_eq!(entry(&pool, uri).await.unwrap().unwrap().state, "withdrawn");
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn first_fetch_withdrawal_guards_and_competing_sources_cannot_overwrite_entries(
     pool: PgPool,
 ) {
@@ -918,7 +918,7 @@ async fn first_fetch_withdrawal_guards_and_competing_sources_cannot_overwrite_en
     assert_eq!(entry(&pool, uri).await.unwrap().unwrap().source_id, a);
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn entry_refusal_clears_payload_and_missing_signals_round_trip(pool: PgPool) {
     enable(&pool).await;
     let source = verified_source(&pool, "https://one.example/", None).await;
@@ -938,7 +938,7 @@ async fn entry_refusal_clears_payload_and_missing_signals_round_trip(pool: PgPoo
     assert!(saved.title.is_none() && saved.summary.is_none() && saved.language.is_none());
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn field_bounds_invalid_urls_and_old_evidence_cannot_write(pool: PgPool) {
     enable(&pool).await;
     for uri in [
@@ -981,7 +981,7 @@ async fn field_bounds_invalid_urls_and_old_evidence_cannot_write(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn exploration_retains_a_request_allowance_under_refresh_pressure(pool: PgPool) {
     let mut settings = enable(&pool).await;
     settings.requests_per_day = 5;
@@ -1031,7 +1031,7 @@ async fn exploration_retains_a_request_allowance_under_refresh_pressure(pool: Pg
     assert_eq!(diagnostics(&pool).await.unwrap().requests_24h, 5);
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn peer_capacity_leaves_room_for_roots_and_rotates_only_safe_leaves(pool: PgPool) {
     let mut settings = enable(&pool).await;
     settings.max_sources = 5;
@@ -1094,7 +1094,7 @@ async fn peer_capacity_leaves_room_for_roots_and_rotates_only_safe_leaves(pool: 
     assert_eq!(diagnostics(&pool).await.unwrap().sources, 5);
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn peer_failure_does_not_poison_a_working_directory(pool: PgPool) {
     enable(&pool).await;
     let source = verified_source(&pool, "https://one.example/api/v1/directory", None).await;
@@ -1123,7 +1123,7 @@ async fn peer_failure_does_not_poison_a_working_directory(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn explicit_import_adopts_a_peer_without_clearing_its_backoff(pool: PgPool) {
     enable(&pool).await;
     let root = added(
@@ -1166,7 +1166,7 @@ async fn explicit_import_adopts_a_peer_without_clearing_its_backoff(pool: PgPool
     );
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn catalogue_rotation_keeps_withdrawals_and_persistent_positions(pool: PgPool) {
     let mut settings = enable(&pool).await;
     settings.max_entries = 2;
@@ -1201,7 +1201,7 @@ async fn catalogue_rotation_keeps_withdrawals_and_persistent_positions(pool: PgP
     assert_eq!(diagnostics(&pool).await.unwrap().entries, 2);
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn discovery_topics_commit_replace_and_withdraw_with_their_entry(pool: PgPool) {
     enable(&pool).await;
     let source = verified_source(&pool, "https://topics.example/directory", None).await;
@@ -1236,7 +1236,7 @@ async fn discovery_topics_commit_replace_and_withdraw_with_their_entry(pool: PgP
     assert!(entry_topics(&pool, id).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "./migrations")]
+#[sqlx::test(migrator = "crate::MIGRATOR")]
 async fn discovery_topics_denied_facts_never_retain_edges(pool: PgPool) {
     enable(&pool).await;
     let source = verified_source(&pool, "https://topics.example/directory", None).await;

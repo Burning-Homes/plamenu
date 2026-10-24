@@ -100,7 +100,7 @@ fn serve_subtitle_playlist(stub: &StubFederation, origin: &str) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hls_captions_serve_advertised_whole_webvtt_outside_video_directory(pool: PgPool) {
     let account = create_local_account(&pool, "captionviewer", "Caption viewer").await;
     let media = hls_media_row(&pool, account.id).await;
@@ -136,7 +136,7 @@ async fn hls_captions_serve_advertised_whole_webvtt_outside_video_directory(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hls_captions_keep_exact_reference_origin_and_parent_fences(pool: PgPool) {
     let account = create_local_account(&pool, "captionfences", "Caption fences").await;
     let media = hls_media_row(&pool, account.id).await;
@@ -181,7 +181,7 @@ async fn hls_captions_keep_exact_reference_origin_and_parent_fences(pool: PgPool
     assert!(stub.range_fetches().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hls_captions_accept_empty_intervals_and_reject_bad_or_oversized_payloads(pool: PgPool) {
     let account = create_local_account(&pool, "captionpayloads", "Caption payloads").await;
     let media = hls_media_row(&pool, account.id).await;
@@ -220,7 +220,7 @@ async fn hls_captions_accept_empty_intervals_and_reject_bad_or_oversized_payload
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hls_caption_parent_respects_the_existing_playlist_failure_budget(pool: PgPool) {
     let account = create_local_account(&pool, "captionparent", "Caption parent").await;
     let media = hls_media_row(&pool, account.id).await;
@@ -232,7 +232,7 @@ async fn hls_caption_parent_respects_the_existing_playlist_failure_budget(pool: 
     assert_eq!(stub.media_fetches(), vec![SUBTITLE_PLAYLIST]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hls_caption_fetch_cannot_complete_after_lane_revocation(pool: PgPool) {
     let account = create_local_account(&pool, "captionrevocation", "Caption revocation").await;
     let media = hls_media_row(&pool, account.id).await;
@@ -422,7 +422,7 @@ async fn reload_failures(pool: &PgPool, media: i64) -> Option<i32> {
     .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_rounds_target_duration_by_truthful_version_and_preserves_original_extinf(
     pool: PgPool,
 ) {
@@ -445,7 +445,7 @@ async fn blocking_reload_rounds_target_duration_by_truthful_version_and_preserve
     assert_eq!(body.matches("#EXTINF:").count(), 2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_cold_preflight_cannot_publish_after_lifecycle_revocation(pool: PgPool) {
     let f = reload_fixture(&pool, 4).await;
     let gate = Arc::new(tokio::sync::Semaphore::new(1));
@@ -476,7 +476,7 @@ async fn blocking_reload_cold_preflight_cannot_publish_after_lifecycle_revocatio
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_stale_observer_racing_transition_cannot_quarantine_new_revision(
     pool: PgPool,
 ) {
@@ -526,7 +526,7 @@ async fn blocking_reload_stale_observer_racing_transition_cannot_quarantine_new_
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_oversized_rewritten_history_stays_playable_and_memoizes_bounded_original(
     pool: PgPool,
 ) {
@@ -552,7 +552,7 @@ async fn blocking_reload_oversized_rewritten_history_stays_playable_and_memoizes
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_ladder_shares_alternative_audio_preflight_and_counts_all_origin_reads(
     pool: PgPool,
 ) {
@@ -598,7 +598,7 @@ async fn blocking_reload_ladder_shares_alternative_audio_preflight_and_counts_al
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_ladder_over_cap_and_mixed_unsupported_histories_remain_playable_without_advertisement(
     pool: PgPool,
 ) {
@@ -668,7 +668,7 @@ async fn blocking_reload_ladder_over_cap_and_mixed_unsupported_histories_remain_
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_waits_for_complete_msn_and_coalesces_with_ordinary_requests(pool: PgPool) {
     let f = reload_fixture(&pool, 4).await;
     let initial = request(&f.app, "GET", &f.uri, None).await;
@@ -729,7 +729,7 @@ async fn blocking_reload_waits_for_complete_msn_and_coalesces_with_ordinary_requ
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_rejects_bad_directives_without_new_origin_fetch_and_preserves_past_history(
     pool: PgPool,
 ) {
@@ -775,7 +775,7 @@ async fn blocking_reload_rejects_bad_directives_without_new_origin_fetch_and_pre
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_cold_flight_never_falls_through_while_origin_is_running(pool: PgPool) {
     let f = reload_fixture(&pool, 4).await;
     let gate = Arc::new(tokio::sync::Semaphore::new(0));
@@ -818,7 +818,7 @@ async fn blocking_reload_cold_flight_never_falls_through_while_origin_is_running
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_stall_has_end_to_end_deadline_and_failure_is_coalesced(pool: PgPool) {
     let f = reload_fixture(&pool, 1).await;
     let started = std::time::Instant::now();
@@ -853,7 +853,7 @@ async fn blocking_reload_stall_has_end_to_end_deadline_and_failure_is_coalesced(
     assert_eq!(reload_failures(&pool, f.media).await, Some(1));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_endlist_ignores_directives_and_wakes_future_msn(pool: PgPool) {
     let f = reload_fixture(&pool, 4).await;
     assert_eq!(get(&f.app, &f.uri).await.0, StatusCode::OK);
@@ -879,7 +879,7 @@ async fn blocking_reload_endlist_ignores_directives_and_wakes_future_msn(pool: P
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_quarantine_is_cas_persistent_and_duplicates_cannot_clear_it(pool: PgPool) {
     use plamenu_db::media;
     let f = reload_fixture(&pool, 4).await;
@@ -945,7 +945,7 @@ async fn blocking_reload_quarantine_is_cas_persistent_and_duplicates_cannot_clea
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_observed_event_restart_quarantines_ordinary_reload(pool: PgPool) {
     let f = reload_fixture(&pool, 4).await;
     f.stub.serve_media(
@@ -984,7 +984,7 @@ async fn blocking_reload_observed_event_restart_quarantines_ordinary_reload(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_revocation_lifecycle_change_and_shutdown_release_waiters(pool: PgPool) {
     let f = reload_fixture(&pool, 4).await;
     let settings = instance_settings::get(&pool).await.unwrap();
@@ -1068,7 +1068,7 @@ async fn blocking_reload_revocation_lifecycle_change_and_shutdown_release_waiter
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_unknown_permanent_and_unsupported_media_keep_ordinary_playback(
     pool: PgPool,
 ) {
@@ -1101,7 +1101,7 @@ async fn blocking_reload_unknown_permanent_and_unsupported_media_keep_ordinary_p
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_last_plus_two_and_sliding_window_are_satisfied_by_complete_segments(
     pool: PgPool,
 ) {
@@ -1204,7 +1204,7 @@ async fn assert_h2_disconnect(f: &ReloadFixture, active: Arc<std::sync::atomic::
     assert!(h2_server.await.unwrap_err().is_cancelled());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_reload_real_http_disconnect_drops_handler_and_origin_flight(pool: PgPool) {
     use tokio::io::AsyncWriteExt;
     let f = reload_fixture(&pool, 4).await;
@@ -1269,7 +1269,7 @@ async fn blocking_reload_real_http_disconnect_drops_handler_and_origin_flight(po
         .unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_native_rendition_outside_playlist_directory_and_revision_query_are_supported(
     pool: PgPool,
 ) {
@@ -1477,7 +1477,7 @@ fn split_hls_fixture() -> Option<SplitHlsFixture> {
     })
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn playlists_are_memoized_so_n_viewers_cause_one_origin_fetch(pool: PgPool) {
     // M39: the rewritten playlist is memoized for the 60 s the browser is
     // told to cache it, so a crowd of viewers costs the origin one playlist
@@ -1527,7 +1527,7 @@ async fn playlists_are_memoized_so_n_viewers_cause_one_origin_fetch(pool: PgPool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn segment_is_cached_so_n_viewers_cause_one_origin_fetch(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice").await;
     let media_id = hls_media_row(&pool, account.id).await;
@@ -1559,7 +1559,7 @@ async fn segment_is_cached_so_n_viewers_cause_one_origin_fetch(pool: PgPool) {
     assert_eq!(fetches[0], (RENDITION.to_owned(), 10, 5));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn warm_remote_cache_refuses_suspended_and_ended_live_children(pool: PgPool) {
     let account = create_local_account(&pool, "cacheviewer", "Cache viewer").await;
     let mid = hls_media_row(&pool, account.id).await;
@@ -1621,7 +1621,7 @@ async fn warm_remote_cache_refuses_suspended_and_ended_live_children(pool: PgPoo
     assert_eq!(get(&app, &child).await, (StatusCode::OK, vec![7; 188]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn origin_wait_does_not_outlive_current_remote_authority(pool: PgPool) {
     let account = create_local_account(&pool, "cachewait", "Cache wait").await;
     let mid = hls_media_row(&pool, account.id).await;
@@ -1666,7 +1666,7 @@ async fn origin_wait_does_not_outlive_current_remote_authority(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn checksum_wait_does_not_outlive_replaced_peer_authority(pool: PgPool) {
     let account = create_local_account(&pool, "hashwait", "Hash wait").await;
     let mid = hls_media_row(&pool, account.id).await;
@@ -1711,7 +1711,7 @@ async fn checksum_wait_does_not_outlive_replaced_peer_authority(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn restored_orphan_cache_keys_do_not_regain_public_access(pool: PgPool) {
     let account = create_local_account(&pool, "cacheorphan", "Cache orphan").await;
     let mid = hls_media_row(&pool, account.id).await;
@@ -1746,7 +1746,7 @@ async fn restored_orphan_cache_keys_do_not_regain_public_access(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn caller_abort_keeps_cache_write_fenced_admitted_and_privately_journaled(pool: PgPool) {
     let account = create_local_account(&pool, "cacheabort", "Cache abort").await;
     let mid = hls_media_row(&pool, account.id).await;
@@ -1809,7 +1809,7 @@ async fn caller_abort_keeps_cache_write_fenced_admitted_and_privately_journaled(
     assert_eq!(store.get(&key).await.unwrap(), vec![8; 5]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failed_cache_write_and_retirement_keep_debt_until_actual_deletion_ack(pool: PgPool) {
     let account = create_local_account(&pool, "cachedebt", "Cache debt").await;
     let mid = hls_media_row(&pool, account.id).await;
@@ -1887,7 +1887,7 @@ async fn failed_cache_write_and_retirement_keep_debt_until_actual_deletion_ack(p
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn progressive_mp4_streams_and_caches_only_requested_blocks(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice").await;
     let media_id = hls_media_row(&pool, account.id).await;
@@ -1973,7 +1973,7 @@ async fn progressive_mp4_streams_and_caches_only_requested_blocks(pool: PgPool) 
     assert_eq!(jobs, 0, "playback never creates a detached media job");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn progressive_audio_plays_while_its_first_block_is_still_caching(pool: PgPool) {
     const PODCAST: &str = "https://podcast.example/episode.mp3";
     let account = create_local_account(&pool, "alice", "Alice").await;
@@ -2047,7 +2047,7 @@ async fn progressive_audio_plays_while_its_first_block_is_still_caching(pool: Pg
     assert_eq!(jobs, 0, "audio playback never waits on a whole-file job");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oversized_audio_requires_the_direct_media_opt_in(pool: PgPool) {
     const PODCAST: &str = "https://podcast.example/huge.mp3";
     let account = create_local_account(&pool, "alice", "Alice").await;
@@ -2088,7 +2088,7 @@ async fn oversized_audio_requires_the_direct_media_opt_in(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn progressive_disconnect_cancels_origin_stream(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice").await;
     let media_id = hls_media_row(&pool, account.id).await;
@@ -2136,7 +2136,7 @@ async fn progressive_disconnect_cancels_origin_stream(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stable_gateway_reuses_a_legacy_cached_copy(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice").await;
     let media_id = hls_media_row(&pool, account.id).await;
@@ -2174,7 +2174,7 @@ async fn stable_gateway_reuses_a_legacy_cached_copy(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn muxed_hls_gateway_front_loads_the_complete_seek_map(pool: PgPool) {
     let Some(fixture) = muxed_hls_fixture() else {
         eprintln!("ffmpeg/ffprobe unavailable; skipping format validation");
@@ -2281,7 +2281,7 @@ async fn muxed_hls_gateway_front_loads_the_complete_seek_map(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn split_hls_gateway_is_seekable_mp4_with_video_and_audio(pool: PgPool) {
     let Some(fixture) = split_hls_fixture() else {
         eprintln!("ffmpeg/ffprobe unavailable; skipping format validation");
@@ -2481,7 +2481,7 @@ fn top_level_box(bytes: &[u8], wanted: [u8; 4]) -> Option<(usize, &[u8])> {
     None
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_oversized_segment_range_is_refused(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice").await;
     let media_id = hls_media_row(&pool, account.id).await;
@@ -2507,7 +2507,7 @@ async fn an_oversized_segment_range_is_refused(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_dead_master_origin_is_not_re_probed_within_the_fail_window(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice").await;
     let media_id = hls_media_row(&pool, account.id).await;
@@ -2536,7 +2536,7 @@ async fn a_dead_master_origin_is_not_re_probed_within_the_fail_window(pool: PgPo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn exhausted_hls_origin_is_never_automatically_retried(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice").await;
     let media_id = hls_media_row(&pool, account.id).await;
@@ -2565,7 +2565,7 @@ async fn exhausted_hls_origin_is_never_automatically_retried(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn media_json_carries_the_hls_extension_for_hls_video(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice").await;
     let media_id = hls_media_row(&pool, account.id).await;
@@ -2640,7 +2640,7 @@ async fn media_json_carries_the_hls_extension_for_hls_video(pool: PgPool) {
 /// and off air there is nothing to play. Handing one a gateway URL that 404s
 /// would render as a broken player; a null `url` with a preview is Mastodon's
 /// own shape for "no bytes yet", and clients already show the poster for it.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn live_missing_hashes_require_complete_current_origin_bytes(pool: PgPool) {
     use sha2::{Digest, Sha256};
     use std::fmt::Write as _;
@@ -2721,7 +2721,7 @@ async fn live_missing_hashes_require_complete_current_origin_bytes(pool: PgPool)
     assert_eq!(get(&app, &uri).await.0, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn live_peer_transfer_resumes_with_exact_cached_http_tail_on_both_aliases(pool: PgPool) {
     let account = create_local_account(&pool, "livebytes", "Live bytes").await;
     let mid = hls_media_row(&pool, account.id).await;
@@ -2770,7 +2770,7 @@ async fn live_peer_transfer_resumes_with_exact_cached_http_tail_on_both_aliases(
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_live_attachment_is_playable_only_while_it_is_on_air(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice").await;
     let media_id = hls_media_row(&pool, account.id).await;
@@ -2838,7 +2838,7 @@ async fn a_live_attachment_is_playable_only_while_it_is_on_air(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ssrf_fence_rejects_segments_outside_the_video_dir(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice").await;
     let media_id = hls_media_row(&pool, account.id).await;

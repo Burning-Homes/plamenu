@@ -1,7 +1,7 @@
 //! Native Video is an owned publication, not a renamed attachment Note.
 mod common;
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn video_alternatives_edit_atomically_with_original_signer_and_collaborator_authority(
     pool: PgPool,
 ) {
@@ -147,7 +147,7 @@ async fn video_alternatives_edit_atomically_with_original_signer_and_collaborato
     assert_eq!(wire["visualsConveyedInAudio"], true);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_video_alternatives_survive_edit_and_clear_without_replacing_media(pool: PgPool) {
     use serde_json::json;
     let remote = RemoteUser::new("remote.test", "uploader");
@@ -222,7 +222,7 @@ use plamenu_ap::activity::PostKind;
 use plamenu_db::{PgPool, follow, media, scheduled_status};
 use tower::ServiceExt;
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn absent_video_description_serializes_as_null_for_peertube(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -676,7 +676,7 @@ async fn ap_get(app: axum::Router, path: &str) -> (StatusCode, serde_json::Value
     (status, serde_json::from_slice(&bytes).unwrap_or_default())
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_channel_subscriptions_preserve_audience_filters_and_deletion(pool: PgPool) {
     use plamenu_db::{status, user::TimelineOrder};
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -859,7 +859,7 @@ async fn local_channel_subscriptions_preserve_audience_filters_and_deletion(pool
     assert!(!html.contains("?sort=active"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_video_metadata_preserves_html_and_uses_a_long_description_budget(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -969,7 +969,7 @@ async fn native_video_metadata_preserves_html_and_uses_a_long_description_budget
     assert_eq!(object["content"], "<p>x</p>");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_history_requires_the_signature_to_cover_the_entire_path(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let remote = RemoteUser::new("peer.test", "viewer");
@@ -1012,7 +1012,7 @@ async fn channel_history_requires_the_signature_to_cover_the_entire_path(pool: P
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compatible_poster_is_cached_preserves_avif_and_follows_media_deletion(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -1105,7 +1105,7 @@ async fn compatible_poster_is_cached_preserves_avif_and_follows_media_deletion(p
     assert!(state.media.get(&key).await.is_err());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_outbox_uses_path_cursors_and_hides_suspended_owners(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -1216,7 +1216,7 @@ async fn channel_change(
     .await
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_collaboration_consent_roles_revocation_and_signer(pool: PgPool) {
     use plamenu_db::video_channel_access as access;
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -1409,7 +1409,7 @@ async fn channel_collaboration_consent_roles_revocation_and_signer(pool: PgPool)
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_transfer_requires_recipient_and_preserves_authorship(pool: PgPool) {
     use plamenu_db::video_channel_access as access;
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -1577,7 +1577,7 @@ async fn channel_transfer_requires_recipient_and_preserves_authorship(pool: PgPo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_deletion_retracts_collaborator_videos_not_accounts(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -1670,7 +1670,7 @@ async fn channel_deletion_retracts_collaborator_videos_not_accounts(pool: PgPool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_consent_refusal_suspension_and_quota_gate(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -1751,7 +1751,7 @@ async fn channel_consent_refusal_suspension_and_quota_gate(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_revocation_waits_for_committed_publication_permission(pool: PgPool) {
     use plamenu_db::video_channel_access as access;
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -1815,7 +1815,7 @@ async fn channel_revocation_waits_for_committed_publication_permission(pool: PgP
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_profile_transfer_and_deletion_rollback_with_outbox(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -1909,7 +1909,7 @@ async fn channel_profile_transfer_and_deletion_rollback_with_outbox(pool: PgPool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_collaborator_live_revocation_rejects_keys_and_browser_sessions(pool: PgPool) {
     use plamenu_db::native_live;
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -1997,7 +1997,7 @@ async fn channel_collaborator_live_revocation_rejects_keys_and_browser_sessions(
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_transfer_refuses_scheduled_work_until_cancelled(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -2080,7 +2080,7 @@ async fn channel_transfer_refuses_scheduled_work_until_cancelled(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_transfer_enforces_active_channel_quota_and_deletion_releases_it(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -2161,7 +2161,7 @@ fn params<'a>(username: &'a str, media_ids: &'a [i64]) -> PostParams<'a> {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn video_metadata_is_owned_sparse_editable_and_federated(pool: PgPool) {
     use plamenu::video_metadata::{self, Input};
     use serde_json::json;
@@ -2409,7 +2409,7 @@ async fn video_metadata_is_owned_sparse_editable_and_federated(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scheduled_video_reserves_media_and_publishes_once_when_due(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -2526,7 +2526,7 @@ async fn scheduled_video_reserves_media_and_publishes_once_when_due(pool: PgPool
     assert_eq!(wire["sensitive"], true);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn imported_video_metadata_rejects_untrusted_labels_links_and_unknown_ids(pool: PgPool) {
     use serde_json::json;
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -2592,7 +2592,7 @@ async fn imported_video_metadata_rejects_untrusted_labels_links_and_unknown_ids(
     assert!(!metadata.licence_version_known);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cancelling_scheduled_video_releases_its_media(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -2623,7 +2623,7 @@ async fn cancelling_scheduled_video_releases_its_media(pool: PgPool) {
     assert_eq!(posted.object_type.as_deref(), Some("Video"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_is_owned_group_not_community(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -2663,7 +2663,7 @@ async fn channel_is_owned_group_not_community(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_serve_edit_delete_agree_and_reach_channel_followers(pool: PgPool) {
     let alice = common::create_immutable_local_account(&pool, "alice", "Alice").await;
     let remote = RemoteUser::new("remote.test", "viewer");
@@ -2773,7 +2773,7 @@ async fn create_serve_edit_delete_agree_and_reach_channel_followers(pool: PgPool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn publication_is_owned_atomic_and_cannot_lose_its_media(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -2832,7 +2832,7 @@ async fn publication_is_owned_atomic_and_cannot_lose_its_media(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn suspended_channel_cannot_publish_and_owner_deletion_retires_channels(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));

@@ -120,7 +120,7 @@ async fn api_on(
     (status, value)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn translate_public_status_libre(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = post_es(&pool, alice.id, "<p>Hola mundo</p>", "public").await;
@@ -172,7 +172,7 @@ async fn translate_public_status_libre(pool: PgPool) {
     assert_eq!(sent["source"], "auto");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn translate_spoiler_and_poll(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = status::create_local(
@@ -234,7 +234,7 @@ async fn translate_spoiler_and_poll(pool: PgPool) {
     assert_eq!(body["poll"]["options"][1]["title"], "two");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn own_private_status_is_forbidden(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = post_es(&pool, alice.id, "<p>secreto</p>", "private").await;
@@ -255,7 +255,7 @@ async fn own_private_status_is_forbidden(pool: PgPool) {
     assert_eq!(code, StatusCode::FORBIDDEN);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn someone_elses_private_status_is_not_found(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -276,7 +276,7 @@ async fn someone_elses_private_status_is_not_found(pool: PgPool) {
     assert_eq!(code, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn no_backend_translate_is_not_found(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = post_es(&pool, alice.id, "<p>Hola</p>", "public").await;
@@ -293,7 +293,7 @@ async fn no_backend_translate_is_not_found(pool: PgPool) {
     assert_eq!(code, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn quota_exceeded_is_service_unavailable(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = post_es(&pool, alice.id, "<p>Hola</p>", "public").await;
@@ -315,7 +315,7 @@ async fn quota_exceeded_is_service_unavailable(pool: PgPool) {
     assert!(body["error"].as_str().unwrap().contains("quota"), "{body}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn translation_languages_and_instance_flag(pool: PgPool) {
     let fed: Arc<StubFederation> = Arc::default();
     serve_libre_languages(&fed);
@@ -339,7 +339,7 @@ async fn translation_languages_and_instance_flag(pool: PgPool) {
     assert_eq!(instance["configuration"]["translation"]["enabled"], true);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_flag_off_without_backend(pool: PgPool) {
     let (code, instance) = api_on(
         test_app(pool.clone()),
@@ -364,7 +364,7 @@ async fn instance_flag_off_without_backend(pool: PgPool) {
     assert_eq!(langs, json!({}));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn translate_with_deepl_backend(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = post_es(&pool, alice.id, "<p>Hola</p>", "public").await;
@@ -438,7 +438,7 @@ async fn translate_with_deepl_backend(pool: PgPool) {
 
 /// Cached results made with a forced source label are refreshed once, rather
 /// than preserving an incorrect translation or source attribution forever.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn translation_refreshes_cache_from_forced_source_policy(pool: PgPool) {
     use plamenu_db::status_translation::{self, NewStatusTranslation};
     use sha2::{Digest, Sha256};
@@ -506,7 +506,7 @@ async fn translation_refreshes_cache_from_forced_source_policy(pool: PgPool) {
 
 /// A second server instance (fresh in-memory caches, same database) serves a
 /// stored translation without touching the backend.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn translation_cached_across_restarts(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = post_es(&pool, alice.id, "<p>Hola mundo</p>", "public").await;
@@ -551,7 +551,7 @@ async fn translation_cached_across_restarts(pool: PgPool) {
 
 /// Editing a status changes the fragment hash, so the stored row is a miss
 /// and the backend is consulted again.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edited_status_invalidates_cached_translation(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = post_es(&pool, alice.id, "<p>Hola mundo</p>", "public").await;
@@ -601,7 +601,7 @@ async fn edited_status_invalidates_cached_translation(pool: PgPool) {
 
 /// The per-account budget counts backend calls only: a cache hit stays free
 /// after the limit is exhausted.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn backend_rate_limit_spares_cache_hits(pool: PgPool) {
     sqlx::query!("UPDATE instance_settings SET translation_user_rate_limit_per_hour = 1",)
         .execute(&pool)
@@ -713,7 +713,7 @@ fn assert_custom_chat_request(request: &plamenu::federation::ServiceRequest) -> 
     sent
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn translate_with_openai_backend(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = post_es(&pool, alice.id, "<p>Hola mundo</p>", "public").await;
@@ -764,7 +764,7 @@ async fn translate_with_openai_backend(pool: PgPool) {
 
 /// Exact URL and provider options reach the plain request; internal reasoning
 /// stays out of the translated status returned to the client.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn configured_openai_translates_with_provider_options(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = post_es(&pool, alice.id, "<p>Hola mundo</p>", "public").await;
@@ -806,7 +806,7 @@ async fn configured_openai_translates_with_provider_options(pool: PgPool) {
 }
 
 /// The `languages` list drives the instance surface without a backend call.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn openai_language_map_is_static(pool: PgPool) {
     let fed: Arc<StubFederation> = Arc::default();
     let app = build_router(test_state_translation(pool, fed.clone(), openai()));
@@ -826,7 +826,7 @@ async fn openai_language_map_is_static(pool: PgPool) {
 
 /// Source labels do not gate explicit requests, including a label matching
 /// the viewer, a regional match, an unsupported label and missing metadata.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn translate_ignores_self_reported_source_language(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let fed: Arc<StubFederation> = Arc::default();
@@ -883,7 +883,7 @@ async fn translate_ignores_self_reported_source_language(pool: PgPool) {
 }
 
 /// An unsupported target is still refused before any provider translation.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unsupported_target_language_is_a_specific_403(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = status::create_local(
@@ -922,7 +922,7 @@ async fn unsupported_target_language_is_a_specific_403(pool: PgPool) {
 
 /// A multi-fragment post goes to the `OpenAI` backend as ONE structured-JSON
 /// request; the title fragment rides along and lands in the entity.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn openai_translates_title_and_fragments_in_one_request(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = status::create_local(
@@ -984,7 +984,7 @@ async fn openai_translates_title_and_fragments_in_one_request(pool: PgPool) {
 
 /// When the structured reply isn't valid JSON, the backend falls back to one
 /// plain request per fragment instead of failing the translation.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn openai_structured_failure_falls_back_per_fragment(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = status::create_local(
@@ -1037,7 +1037,7 @@ async fn openai_structured_failure_falls_back_per_fragment(pool: PgPool) {
 }
 
 /// A title-only Page (Lemmy's common shape) translates its title.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn title_only_page_translates(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status = status::create_local(

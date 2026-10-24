@@ -115,7 +115,7 @@ impl PortableUser {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn portable_handles_use_the_account_domain_without_moving_identity(pool: PgPool) {
     const HOST_DOMAIN: &str = "social.example.test";
     const ACCOUNT_DOMAIN: &str = "example.test";
@@ -242,7 +242,7 @@ async fn get_client_signed(
     )
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_reply_delivered_to_portable_inbox_is_not_reingested(pool: PgPool) {
     open_registrations(&pool).await;
     common::open_previews(&pool).await;
@@ -408,7 +408,7 @@ async fn local_reply_delivered_to_portable_inbox_is_not_reingested(pool: PgPool)
     assert_eq!(rendered["replies_count"], 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn minimitra_gateway_lifecycle_is_end_to_end(pool: PgPool) {
     open_registrations(&pool).await;
     common::open_previews(&pool).await;
@@ -1337,7 +1337,7 @@ async fn minimitra_gateway_lifecycle_is_end_to_end(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ephemeral_webxdc_packets_never_enter_portable_collections(pool: PgPool) {
     open_registrations(&pool).await;
     let state = test_state_with(pool.clone(), StubFederation::default().into());

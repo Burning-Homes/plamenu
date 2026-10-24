@@ -158,7 +158,7 @@ async fn fetch_actor_doc(app: Router, username: &str) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn update_credentials_changes_profile_and_federates(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     // Bob follows alice, so the profile change must reach his inbox.
@@ -244,7 +244,7 @@ async fn update_credentials_changes_profile_and_federates(pool: PgPool) {
     assert_eq!(update.activity["object"]["indexable"], true);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_tab_settings_persist_federate_and_gate_by_endpoint(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -328,7 +328,7 @@ fn sample_png() -> Vec<u8> {
     bytes
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn update_credentials_multipart_uploads_avatar(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     // One router for the whole test: the in-memory media store must be
@@ -408,7 +408,7 @@ async fn update_credentials_multipart_uploads_avatar(pool: PgPool) {
     assert!(actor.get("image").is_none(), "no header was uploaded");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_api_show_update_and_clear_image(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let shared_app = test_app(pool.clone());
@@ -513,7 +513,7 @@ async fn profile_api_show_update_and_clear_image(pool: PgPool) {
 /// indexed map rather than an array. Mastodon routes `/api/v1/profile` as a
 /// Rails `resource :profile, :update`, so it answers both verbs; we only
 /// answered PATCH, and Phanpy's "Edit profile" got a bare 405.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_api_accepts_multipart_put_from_masto_js(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let shared_app = test_app(pool.clone());
@@ -577,7 +577,7 @@ async fn profile_api_accepts_multipart_put_from_masto_js(pool: PgPool) {
 /// the update queues the old key on `media_cleanup_jobs` and the leased worker
 /// deletes it (retrying transient store errors), so the test drains the worker
 /// between steps.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn replacing_or_clearing_profile_images_deletes_superseded_files(pool: PgPool) {
     let state = test_state_with(pool.clone(), Arc::default());
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -654,7 +654,7 @@ async fn replacing_or_clearing_profile_images_deletes_superseded_files(pool: PgP
 /// An image stored ahead of a profile update whose database
 /// write then fails is compensated — the stray file is queued for durable
 /// cleanup instead of leaking with no database reference.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failed_profile_update_cleans_up_the_stored_image(pool: PgPool) {
     let state = test_state_with(pool.clone(), Arc::default());
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -683,7 +683,7 @@ async fn failed_profile_update_cleans_up_the_stored_image(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn update_credentials_form_fields_and_validation(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -744,7 +744,7 @@ async fn update_credentials_form_fields_and_validation(pool: PgPool) {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn update_credentials_source_params_change_posting_defaults(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -818,7 +818,7 @@ async fn update_credentials_source_params_change_posting_defaults(pool: PgPool) 
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_update_actor_refreshes_the_profile(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -893,7 +893,7 @@ async fn inbound_update_actor_refreshes_the_profile(pool: PgPool) {
 /// (normalized), echoes in `source`, rides the actor document under
 /// `attributionDomains`, and a remote actor's declaration is stored on
 /// ingest.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn attribution_domains_persist_federate_and_ingest(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -955,7 +955,7 @@ async fn attribution_domains_persist_federate_and_ingest(pool: PgPool) {
 /// stored profile at its pre-suspension values; the marker disappearing lifts
 /// the suspension; and a locally-imposed suspension is never altered by the
 /// origin's documents.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_suspension_marker_suspends_freezes_and_lifts(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1050,7 +1050,7 @@ async fn inbound_suspension_marker_suspends_freezes_and_lifts(pool: PgPool) {
     assert_eq!(stored.display_name, "Bobbie");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_update_actor_ignores_foreign_objects(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1095,7 +1095,7 @@ async fn inbound_update_actor_ignores_foreign_objects(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_update_note_applies_the_edit(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1190,7 +1190,7 @@ async fn inbound_update_note_applies_the_edit(pool: PgPool) {
     assert_eq!(mentions.len(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_update_note_ignores_foreign_and_unknown_notes(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1274,7 +1274,7 @@ async fn inbound_update_note_ignores_foreign_and_unknown_notes(pool: PgPool) {
 /// only FEP-521a verification methods — Mastodon 4.7 builds from the
 /// 2026-06-19…07-06 window (mastodon#39725) discard `publicKey` outright —
 /// can still resolve the keyId our signatures name.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn actor_document_publishes_the_ed25519_assertion_method(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let stored = plamenu_db::actor_key::usable_for_account(&pool, alice.id)
@@ -1331,7 +1331,7 @@ fn identity_statement(uri: &str) -> Value {
     ).unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn actor_profile_sidecars_share_one_transaction_snapshot(pool: PgPool) {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tracing_subscriber::layer::SubscriberExt;
@@ -1411,7 +1411,7 @@ async fn actor_profile_sidecars_share_one_transaction_snapshot(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn identity_proofs_api_publishes_replaces_removes_and_rejects_invalid(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let app = test_app(pool.clone());
@@ -1509,7 +1509,7 @@ async fn identity_proofs_api_publishes_replaces_removes_and_rejects_invalid(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn identity_proofs_remote_refresh_discards_invalid_and_removed(pool: PgPool) {
     let bob = RemoteUser::new("remote.test", "bob");
     let mut actor = bob.actor;
@@ -1533,7 +1533,7 @@ async fn identity_proofs_remote_refresh_discards_invalid_and_removed(pool: PgPoo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn identity_proofs_outbox_failure_rolls_back(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.test", "bob");
@@ -1557,7 +1557,7 @@ async fn identity_proofs_outbox_failure_rolls_back(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn identity_proofs_concurrent_publications_respect_cap(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -1586,7 +1586,7 @@ async fn identity_proofs_concurrent_publications_respect_cap(pool: PgPool) {
     assert!(replaced.contains(&existing));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_updates_preserve_legacy_and_immutable_actor_identifiers(pool: PgPool) {
     let viewer = RemoteUser::new("remote.test", "viewer");
     let state = test_state_with(
@@ -1674,7 +1674,7 @@ async fn profile_updates_preserve_legacy_and_immutable_actor_identifiers(pool: P
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn renamed_community_updates_keep_the_established_actor_and_signing_key(pool: PgPool) {
     use plamenu_db::group::{MembershipPolicy, PostingPolicy};
     let owner = create_local_account(&pool, "owner", "Owner").await;

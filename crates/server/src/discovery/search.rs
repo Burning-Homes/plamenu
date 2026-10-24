@@ -14,6 +14,7 @@ pub async fn search(
     if term.trim().is_empty() || term.len() > 512 || term.contains('\0') || limit < 1 {
         return Ok(Vec::new());
     }
+    let limit = usize::try_from(limit.min(80)).expect("positive limit is bounded to 80");
     let kinds: &[&str] = match kind {
         None => &["profile", "community", "post", "video"],
         Some("accounts") => &["profile", "community"],
@@ -47,7 +48,7 @@ pub async fn search(
                 continue;
             }
             results.push(entry);
-            if results.len() >= limit.min(80) as usize {
+            if results.len() >= limit {
                 break;
             }
         }

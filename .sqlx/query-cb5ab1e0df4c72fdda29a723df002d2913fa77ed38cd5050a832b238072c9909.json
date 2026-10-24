@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE instance_settings SET rate_limit_login_attempts = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "cb5ab1e0df4c72fdda29a723df002d2913fa77ed38cd5050a832b238072c9909"
+}

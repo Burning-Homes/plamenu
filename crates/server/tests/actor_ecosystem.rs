@@ -50,7 +50,7 @@ async fn get(state: &plamenu::AppState, token: &str, path: &str) -> (StatusCode,
     (code, serde_json::from_slice(&body).unwrap_or(Value::Null))
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_group_ban_prevents_refollow_and_expires_normally(pool: PgPool) {
     let owner = create_local_account(&pool, "owner", "Owner").await;
     let member = create_local_account(&pool, "member", "Member").await;
@@ -101,7 +101,7 @@ async fn local_group_ban_prevents_refollow_and_expires_normally(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_report_notifications_expose_only_public_accounts_and_current_authority(
     pool: PgPool,
 ) {
@@ -420,7 +420,7 @@ async fn web(e: &Ecosystem, raw: &str, path: &str, form: Option<String>) -> (Sta
     )
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_comments_reach_owner_and_editors_once_with_existing_client_fallback(pool: PgPool) {
     let e = ecosystem(pool).await;
     let commenter = create_local_account(&e.state.pool, "commenter", "Commenter").await;
@@ -505,7 +505,7 @@ async fn channel_comments_reach_owner_and_editors_once_with_existing_client_fall
     assert_eq!(commenter.id, reply.account_id);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scoped_follow_actions_preserve_personal_edges_and_retract_every_controller_copy(
     pool: PgPool,
 ) {
@@ -588,7 +588,7 @@ async fn scoped_follow_actions_preserve_personal_edges_and_retract_every_control
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_authority_profiles_consent_and_revocation_work_without_javascript(pool: PgPool) {
     let e = ecosystem(pool).await;
     let (code, html) = web(&e, &e.owner_token, "/@films", None).await;
@@ -649,7 +649,7 @@ async fn channel_authority_profiles_consent_and_revocation_work_without_javascri
     assert!(!html.contains("actor-connections"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn direct_channel_reply_does_not_grant_other_editors_content_access(pool: PgPool) {
     let e = ecosystem(pool).await;
     let writer = create_local_account(&e.state.pool, "writer", "Writer").await;
@@ -709,7 +709,7 @@ async fn direct_channel_reply_does_not_grant_other_editors_content_access(pool: 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_history_migration_keeps_ids_and_merges_personal_post_reasons(pool: PgPool) {
     let e = ecosystem(pool).await;
     let other = create_local_account(&e.state.pool, "other", "Other").await;
@@ -758,7 +758,7 @@ async fn channel_history_migration_keeps_ids_and_merges_personal_post_reasons(po
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_delivery_notifies_once_but_history_and_audience_alone_do_not(pool: PgPool) {
     let e = ecosystem(pool).await;
     let remote = common::RemoteUser::new("video-peer.test", "viewer");
@@ -817,7 +817,7 @@ async fn remote_delivery_notifies_once_but_history_and_audience_alone_do_not(poo
     assert!(mentions.values().flatten().next().is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_reactions_are_idempotent_and_undo_preserves_personal_notifications(pool: PgPool) {
     let e = ecosystem(pool).await;
     let fan = create_local_account(&e.state.pool, "fan", "Fan").await;
@@ -900,7 +900,7 @@ async fn channel_reactions_are_idempotent_and_undo_preserves_personal_notificati
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_request_loses_access_when_editor_revoked(pool: PgPool) {
     let e = ecosystem(pool).await;
     let fan = create_local_account(&e.state.pool, "fan", "Fan").await;
@@ -967,7 +967,7 @@ async fn channel_request_loses_access_when_editor_revoked(pool: PgPool) {
     assert_eq!(inbox(&e, e.owner.id).await.len(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_invitation_and_notification_commit_together(pool: PgPool) {
     let e = ecosystem(pool).await;
     let person = create_local_account(&e.state.pool, "invitee", "Invitee").await;
@@ -995,7 +995,7 @@ async fn channel_invitation_and_notification_commit_together(pool: PgPool) {
     assert!(inbox(&e, person.id).await.is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_request_targets_group_and_is_removed_for_all_moderators(pool: PgPool) {
     let e = ecosystem(pool).await;
     let (community, _) = group::create(
@@ -1053,7 +1053,7 @@ async fn group_request_targets_group_and_is_removed_for_all_moderators(pool: PgP
     assert!(inbox(&e, e.editor.id).await.is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn accepting_filtered_channel_comment_preserves_context_and_canonical_id(pool: PgPool) {
     use plamenu_db::notification_policy::{self, Disposition, Policy};
     let e = ecosystem(pool).await;
@@ -1111,7 +1111,7 @@ async fn accepting_filtered_channel_comment_preserves_context_and_canonical_id(p
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn publisher_personal_mention_keeps_channel_context_without_subscribing_to_all_comments(
     pool: PgPool,
 ) {
@@ -1186,7 +1186,7 @@ async fn publisher_personal_mention_keeps_channel_context_without_subscribing_to
     assert_eq!(commenter.id, reply.account_id);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_out_channel_review_resumes_after_login_without_open_redirect(pool: PgPool) {
     let e = ecosystem(pool).await;
     plamenu_db::user::set_credentials(

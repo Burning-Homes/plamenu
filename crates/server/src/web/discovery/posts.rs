@@ -112,13 +112,10 @@ pub async fn index(
     }
     let next = page.next.map(|cursor| {
         format!(
-            "/discover/posts?{}&{}",
+            "/discover/posts?{}&{}&{}",
             serde_urlencoded::to_string(cursor).unwrap_or_default(),
-            format!(
-                "{}&{}",
-                serde_urlencoded::to_string([("q", term)]).unwrap_or_default(),
-                q.options_query()
-            )
+            serde_urlencoded::to_string([("q", term)]).unwrap_or_default(),
+            q.options_query()
         )
     });
     let receipt =

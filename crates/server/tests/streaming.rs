@@ -171,7 +171,7 @@ async fn post_with_visibility(
     stored
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn health_endpoint_answers_without_auth(pool: PgPool) {
     let state = test_state_with(pool, std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -198,7 +198,7 @@ async fn reqwest_free_get(addr: std::net::SocketAddr, path: &str) -> String {
         .to_owned()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn connections_require_a_valid_token(pool: PgPool) {
     let state = test_state_with(pool, std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -215,7 +215,7 @@ async fn connections_require_a_valid_token(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn token_via_websocket_subprotocol_is_accepted_and_echoed(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -237,7 +237,7 @@ async fn token_via_websocket_subprotocol_is_accepted_and_echoed(pool: PgPool) {
     wait_subscribed(&state, 1).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn same_origin_web_session_cookie_authenticates_stream(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -275,7 +275,7 @@ async fn same_origin_web_session_cookie_authenticates_stream(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn user_stream_carries_own_and_followed_posts(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -299,7 +299,7 @@ async fn user_stream_carries_own_and_followed_posts(pool: PgPool) {
     assert_eq!(payload_json(&message)["id"], own.id.to_string());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_streams_route_by_origin_and_skip_non_followers_user_stream(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -333,7 +333,7 @@ async fn public_streams_route_by_origin_and_skip_non_followers_user_stream(pool:
     assert_eq!(payload_json(&second)["id"], own.id.to_string());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_posts_reach_followers_but_not_public_streams(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -364,7 +364,7 @@ async fn private_posts_reach_followers_but_not_public_streams(pool: PgPool) {
     assert_eq!(payload_json(&second)["id"], control.id.to_string());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_only_posts_reach_home_and_local_public_streams_only(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -421,7 +421,7 @@ async fn local_only_posts_reach_home_and_local_public_streams_only(pool: PgPool)
 /// page and a reload of it disagree. Hashtag streams are deliberately exempt —
 /// the tag *timeline* keeps replies, so suppressing them here would be the
 /// same disagreement in the other direction.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn replies_to_other_people_skip_the_public_streams(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -474,7 +474,7 @@ async fn replies_to_other_people_skip_the_public_streams(pool: PgPool) {
 /// or a live page and a reload of it disagree about which replies belong in
 /// the feed. The exemptions and the judge-a-boost-by-its-target rule are the
 /// timeline query's, asked here without re-running it.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn user_stream_applies_the_per_follow_reply_flag(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -518,7 +518,7 @@ async fn user_stream_applies_the_per_follow_reply_flag(pool: PgPool) {
     let _ = stranger;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hashtag_stream_subscribes_and_unsubscribes(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -575,7 +575,7 @@ async fn hashtag_stream_subscribes_and_unsubscribes(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn notifications_stream_to_user_and_notification_channels(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -635,7 +635,7 @@ async fn notifications_stream_to_user_and_notification_channels(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn policy_filtered_notifications_never_stream(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -688,7 +688,7 @@ async fn policy_filtered_notifications_never_stream(pool: PgPool) {
     assert_eq!(payload_json(&message)["id"], control.id.to_string());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn statuses_only_scope_gets_no_notification_events(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -727,7 +727,7 @@ async fn statuses_only_scope_gets_no_notification_events(pool: PgPool) {
     assert_eq!(payload_json(&message)["id"], control.id.to_string());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocks_and_mutes_filter_streams(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -776,7 +776,7 @@ async fn blocks_and_mutes_filter_streams(pool: PgPool) {
     assert_eq!(payload_json(&message)["account"]["username"], "erin");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn boosts_stream_and_unboosts_delete(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -809,7 +809,7 @@ async fn boosts_stream_and_unboosts_delete(pool: PgPool) {
     assert_eq!(message["payload"], boost.id.to_string());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edits_and_deletes_stream_to_the_audience(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -880,7 +880,7 @@ async fn edits_and_deletes_stream_to_the_audience(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn direct_messages_stream_conversation_events(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -926,7 +926,7 @@ async fn direct_messages_stream_conversation_events(pool: PgPool) {
     assert_eq!(message["payload"], dm.id.to_string());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn subscription_errors_are_reported_in_band(pool: PgPool) {
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
     let addr = start_server(&state).await;
@@ -958,7 +958,7 @@ async fn subscription_errors_are_reported_in_band(pool: PgPool) {
     assert_eq!(error["status"], 401);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_statuses_stream_via_the_inbox(pool: PgPool) {
     use common::RemoteUser;
 
@@ -1057,7 +1057,7 @@ async fn deliver_signed(state: &AppState, remote: &common::RemoteUser, activity:
     assert_eq!(response.status(), 202);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_stream_carries_member_statuses(pool: PgPool) {
     use plamenu_db::list;
 
@@ -1119,7 +1119,7 @@ async fn list_stream_carries_member_statuses(pool: PgPool) {
     assert_eq!(message["payload"], stored.id.to_string());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_stream_is_owner_only(pool: PgPool) {
     use plamenu_db::list;
 
@@ -1148,7 +1148,7 @@ async fn list_stream_is_owner_only(pool: PgPool) {
     assert_eq!(error["status"], 400);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn announcement_publish_and_delete_broadcast_to_user_streams(pool: PgPool) {
     use plamenu_db::announcement::{self, NewAnnouncement};
 
@@ -1188,7 +1188,7 @@ async fn announcement_publish_and_delete_broadcast_to_user_streams(pool: PgPool)
     assert_eq!(message["payload"], ann.id.to_string());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn per_account_connection_cap_refuses_excess_sockets(pool: PgPool) {
     use plamenu::streaming::Hub;
 
@@ -1234,7 +1234,7 @@ async fn per_account_connection_cap_refuses_excess_sockets(pool: PgPool) {
     .expect("a freed slot lets the capped account reconnect");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn announcement_reaction_broadcasts_to_user_streams(pool: PgPool) {
     use plamenu_db::announcement::{self, NewAnnouncement};
 
@@ -1272,4 +1272,57 @@ async fn announcement_reaction_broadcasts_to_user_streams(pool: PgPool) {
         assert_eq!(payload["me"], false);
         assert_eq!(payload["announcement_id"], ann.id.to_string());
     }
+}
+
+// Own the task even when a regression makes a readiness/shutdown assertion fail.
+struct HubWorker(tokio::task::JoinHandle<()>);
+impl Drop for HubWorker {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
+async fn idle_listener_shuts_down_without_a_database_notification(pool: PgPool) {
+    let state = test_state_with(pool, common::StubFederation::with_actors([]));
+    let mut worker = HubWorker(plamenu::streaming::spawn(state.clone()));
+    tokio::time::timeout(RECV_TIMEOUT, async {
+        while !state.streaming.is_listening() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("listener must be ready before shutdown");
+    state.shutdown.cancel();
+    tokio::time::timeout(Duration::from_secs(5), &mut worker.0)
+        .await
+        .expect("idle listener must not need an event or forced abort")
+        .expect("listener must not panic");
+    assert!(!state.streaming.is_listening());
+}
+
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
+async fn listener_shutdown_cancels_a_stalled_database_connection(pool: PgPool) {
+    // A real TCP connection accepts the startup but never sends a PostgreSQL
+    // greeting. Shutdown must work while connecting, before LISTEN is ready.
+    let gate = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let options = (*pool.connect_options())
+        .clone()
+        .host("127.0.0.1")
+        .port(gate.local_addr().unwrap().port())
+        .ssl_mode(sqlx::postgres::PgSslMode::Disable);
+    let stalled = sqlx::postgres::PgPoolOptions::new().connect_lazy_with(options);
+    let state = test_state_with(stalled, common::StubFederation::with_actors([]));
+    let mut worker = HubWorker(plamenu::streaming::spawn(state.clone()));
+    let (_connection, _) = tokio::time::timeout(Duration::from_secs(5), gate.accept())
+        .await
+        .expect("listener must attempt a real database connection")
+        .unwrap();
+    assert!(!state.streaming.is_listening());
+    state.shutdown.cancel();
+    tokio::time::timeout(Duration::from_secs(5), &mut worker.0)
+        .await
+        .expect("shutdown must cancel connection startup")
+        .expect("listener must not panic");
+    assert!(!state.streaming.is_listening());
 }

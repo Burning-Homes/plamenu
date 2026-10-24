@@ -1,4 +1,3 @@
-mod common;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -10,6 +9,7 @@ use plamenu::{
     auth::{generate_secret, hash_password, hash_secret},
 };
 use plamenu_db::{PgPool, marker, notification, notification_read, oauth, user};
+use plamenu_test_support as common;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 async fn fixture(pool: PgPool) -> (AppState, i64, i64, i64, Vec<i64>) {
@@ -60,7 +60,7 @@ async fn token(state: &AppState, uid: i64, scopes: &str) -> String {
 async fn json_response(response: axum::response::Response) -> Value {
     serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sparse_read_state_survives_markers_is_shared_with_lemmy_and_is_owner_scoped(pool: PgPool) {
     let (state, owner, uid, other, ids) = fixture(pool).await;
     assert!(
@@ -135,7 +135,7 @@ async fn sparse_read_state_survives_markers_is_shared_with_lemmy_and_is_owner_sc
     .unwrap();
     assert_eq!(remaining, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbox_api_supports_scoped_bulk_read_delete_filters_and_preserves_foreign_ids(
     pool: PgPool,
 ) {
@@ -220,7 +220,7 @@ async fn inbox_api_supports_scoped_bulk_read_delete_filters_and_preserves_foreig
         .unwrap();
     assert_eq!(r.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_inbox_auto_reads_without_scripts_and_clear_requires_csrf_and_confirmation(
     pool: PgPool,
 ) {
@@ -382,7 +382,7 @@ async fn native_inbox_auto_reads_without_scripts_and_clear_requires_csrf_and_con
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn activity_read_includes_private_notifications_is_bounded_and_never_rewinds_marker(
     pool: PgPool,
 ) {

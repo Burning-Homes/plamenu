@@ -2,7 +2,7 @@
 //! `X-RateLimit-*` headers, keyed per IP / token / user / e-mail, with the
 //! trusted-proxy `X-Forwarded-For` resolution in front.
 
-mod common;
+use plamenu_test_support as common;
 
 use std::net::SocketAddr;
 
@@ -65,7 +65,7 @@ fn ratelimit_headers(response: &Response<Body>) -> Option<(String, String, Strin
     ))
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ip_bucket_throttles_and_reports_headers(pool: PgPool) {
     sqlx::query!("UPDATE instance_settings SET rate_limit_app_registrations = 2")
         .execute(&pool)
@@ -116,7 +116,7 @@ async fn ip_bucket_throttles_and_reports_headers(pool: PgPool) {
     assert_eq!(other.status(), StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ipv6_clients_share_their_64_prefix(pool: PgPool) {
     sqlx::query!("UPDATE instance_settings SET rate_limit_unauthenticated_api = 1")
         .execute(&pool)
@@ -142,7 +142,7 @@ async fn ipv6_clients_share_their_64_prefix(pool: PgPool) {
     assert_eq!(neighbor.status(), StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn per_token_bucket_throttles_authenticated_api(pool: PgPool) {
     sqlx::query!("UPDATE instance_settings SET rate_limit_per_token_api = 2")
         .execute(&pool)
@@ -199,7 +199,7 @@ async fn per_token_bucket_throttles_authenticated_api(pool: PgPool) {
     assert_eq!(body_json(throttled).await["error"], "Too many requests");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn disabling_the_toggle_bypasses_all_buckets(pool: PgPool) {
     sqlx::query!(
         "UPDATE instance_settings
@@ -220,7 +220,7 @@ async fn disabling_the_toggle_bypasses_all_buckets(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn forwarded_for_honored_only_from_trusted_proxies(pool: PgPool) {
     sqlx::query!("UPDATE instance_settings SET rate_limit_app_registrations = 1")
         .execute(&pool)
@@ -270,7 +270,7 @@ async fn forwarded_for_honored_only_from_trusted_proxies(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn login_attempts_throttle_per_email(pool: PgPool) {
     sqlx::query!("UPDATE instance_settings SET rate_limit_login_attempts = 2")
         .execute(&pool)
@@ -312,7 +312,7 @@ async fn login_attempts_throttle_per_email(pool: PgPool) {
 
 /// The security-sensitive budgets count in Postgres, so neither a process
 /// restart nor a second app instance grants a fresh allowance.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn security_budgets_survive_a_restart(pool: PgPool) {
     sqlx::query!("UPDATE instance_settings SET rate_limit_app_registrations = 2")
         .execute(&pool)
@@ -336,7 +336,7 @@ async fn security_budgets_survive_a_restart(pool: PgPool) {
 /// When the durable counter store is unreachable, security-sensitive routes
 /// are refused (503) rather than admitted unmetered, while load-shedding
 /// classes stay fail-open at the gate.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn durable_buckets_fail_closed_when_the_store_is_unreachable(pool: PgPool) {
     let app = test_app(pool.clone());
     // Warm the settings cache with a healthy request first.
@@ -365,7 +365,7 @@ async fn durable_buckets_fail_closed_when_the_store_is_unreachable(pool: PgPool)
     assert_ne!(open.status(), StatusCode::TOO_MANY_REQUESTS);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sign_in_logging_records_the_forwarded_client_ip(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "alice").await;
     let hash = hash_password("correct horse battery").unwrap();
@@ -416,7 +416,7 @@ fn login_document_request(identifier: &str, accept: &str, language: &str) -> Req
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn browser_login_throttle_preserves_admission_headers_and_json_clients(pool: PgPool) {
     sqlx::query!("UPDATE instance_settings SET rate_limit_login_attempts = 2, rate_limit_app_registrations = 2")
         .execute(&pool).await.unwrap();
@@ -497,7 +497,7 @@ async fn browser_login_throttle_preserves_admission_headers_and_json_clients(poo
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn browser_login_throttle_covers_identifier_budget_without_an_ip(pool: PgPool) {
     sqlx::query!("UPDATE instance_settings SET rate_limit_login_attempts = 1")
         .execute(&pool)

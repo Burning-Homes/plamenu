@@ -86,7 +86,7 @@ pub async fn finish_video_sample(
     delete_claim(&mut tx, lease).await?;
     let mut novel = 0;
     for (uri, hint) in hints {
-        if !super::recovery::new_candidate(&mut tx, &uri).await? {
+        if !super::recovery::new_candidate(&mut tx, uri).await? {
             continue;
         }
         novel += 1;

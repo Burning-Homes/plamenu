@@ -3,7 +3,7 @@
 //! payload shape, pagination windows, group dismissal/clearing, unread
 //! group counts, the per-group accounts listing and `expand_accounts`.
 
-mod common;
+use plamenu_test_support as common;
 
 use std::time::SystemTime;
 
@@ -201,7 +201,7 @@ async fn seed_grouped(pool: &PgPool) -> (Account, String, String, [String; 3]) {
 
 /// Grouped reactions carry the same emoji and image URL as v1, including
 /// when the reacted post's text contains no emoji of its own.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reaction_notifications_keep_emoji_images_in_v1_and_v2(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let (bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -338,7 +338,7 @@ fn assert_reaction_image_fallback(notification: &Value, status: &Value) {
     assert_eq!(emoji["visible_in_picker"], false);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reaction_image_fallback_preserves_text_emoji_and_handles_shared_image_hosts(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     plamenu_db::custom_emoji::create_local(&pool, "party", "text.png", "image/png", 1, None)
@@ -409,7 +409,7 @@ async fn reaction_image_fallback_preserves_text_emoji_and_handles_shared_image_h
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn grouped_notification_id_roundtrips_through_markers_without_phantom_unread(pool: PgPool) {
     use plamenu_db::{notification, notification_read};
 
@@ -518,7 +518,7 @@ async fn grouped_notification_id_roundtrips_through_markers_without_phantom_unre
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn grouped_index_collapses_favourites_into_one_group(pool: PgPool) {
     let (_alice, alice_token, post_id, [bob_id, carol_id, dave_id]) = seed_grouped(&pool).await;
 
@@ -601,7 +601,7 @@ async fn grouped_index_collapses_favourites_into_one_group(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn grouped_types_param_limits_which_kinds_group(pool: PgPool) {
     let (_alice, alice_token, _post_id, _favers) = seed_grouped(&pool).await;
 
@@ -622,7 +622,7 @@ async fn grouped_types_param_limits_which_kinds_group(pool: PgPool) {
         && g["group_key"].as_str().unwrap().starts_with("ungrouped-")));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn grouped_pagination_walks_one_group_per_page(pool: PgPool) {
     let (_alice, alice_token, _post_id, _favers) = seed_grouped(&pool).await;
 
@@ -669,7 +669,7 @@ async fn grouped_pagination_walks_one_group_per_page(pool: PgPool) {
     assert_eq!(groups[0]["type"], "favourite");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn show_dismiss_and_clear_groups(pool: PgPool) {
     let (_alice, alice_token, _post_id, _favers) = seed_grouped(&pool).await;
 
@@ -776,7 +776,7 @@ async fn show_dismiss_and_clear_groups(pool: PgPool) {
     assert_eq!(index["statuses"], json!([]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unread_count_counts_groups_not_notifications(pool: PgPool) {
     let (_alice, alice_token, _post_id, _favers) = seed_grouped(&pool).await;
 
@@ -841,7 +841,7 @@ async fn unread_count_counts_groups_not_notifications(pool: PgPool) {
     assert_eq!(v2_count["count"], 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_accounts_lists_every_sender_paginated(pool: PgPool) {
     let (_alice, alice_token, _post_id, [bob_id, carol_id, dave_id]) = seed_grouped(&pool).await;
 
@@ -916,7 +916,7 @@ async fn group_accounts_lists_every_sender_paginated(pool: PgPool) {
     assert_eq!(accounts, json!([]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn expand_accounts_partial_avatars_splits_the_account_list(pool: PgPool) {
     let (_alice, alice_token, _post_id, [bob_id, carol_id, dave_id]) = seed_grouped(&pool).await;
 
@@ -963,7 +963,7 @@ async fn expand_accounts_partial_avatars_splits_the_account_list(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn v1_notifications_carry_group_keys(pool: PgPool) {
     let (_alice, alice_token, post_id, _favers) = seed_grouped(&pool).await;
 
@@ -997,7 +997,7 @@ async fn v1_notifications_carry_group_keys(pool: PgPool) {
 // ---------------------------------------------------------------------------
 // Edit-driven notifications: `update` and `quoted_update`
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn editing_a_status_notifies_rebloggers_and_quoters(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -1095,7 +1095,7 @@ async fn editing_a_status_notifies_rebloggers_and_quoters(pool: PgPool) {
     assert_eq!(bob_notifications.as_array().unwrap().len(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_edit_notifies_local_rebloggers(pool: PgPool) {
     let remote_bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_users(&[&remote_bob]);

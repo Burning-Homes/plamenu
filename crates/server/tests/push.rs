@@ -204,7 +204,7 @@ fn decrypt_standard(ua_secret: &p256::SecretKey, auth: &[u8], body: &[u8]) -> Va
     serde_json::from_slice(&record[..record.len() - 1]).unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_show_update_delete_lifecycle(pool: PgPool) {
     let (_, _, token) = user_with_token(&pool, "alice", "read write push").await;
     let app = || build_router(test_state_with(pool.clone(), Arc::default()));
@@ -322,7 +322,7 @@ async fn create_show_update_delete_lifecycle(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn subscriptions_are_per_token(pool: PgPool) {
     let (_, user_id, token_a) = user_with_token(&pool, "alice", "read write push").await;
     // A second token for the same user.
@@ -414,7 +414,7 @@ async fn subscriptions_are_per_token(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn push_scope_is_required(pool: PgPool) {
     let (_, _, token) = user_with_token(&pool, "alice", "read write").await;
     let app = || build_router(test_state_with(pool.clone(), Arc::default()));
@@ -441,7 +441,7 @@ async fn push_scope_is_required(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn validation_wording_matches_mastodon(pool: PgPool) {
     let (_, _, token) = user_with_token(&pool, "alice", "push").await;
     let app = || build_router(test_state_with(pool.clone(), Arc::default()));
@@ -526,7 +526,7 @@ async fn validation_wording_matches_mastodon(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rails_bracketed_form_bodies_parse(pool: PgPool) {
     let (_, _, token) = user_with_token(&pool, "alice", "push").await;
     let app = build_router(test_state_with(pool.clone(), Arc::default()));
@@ -593,7 +593,7 @@ async fn post_status(state: &AppState, token: &str, text: &str) -> String {
     body["id"].as_str().unwrap().to_owned()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn favourite_dispatches_decryptable_legacy_push(pool: PgPool) {
     let federation = Arc::new(StubFederation::default());
     let state = test_state_with(pool.clone(), federation.clone());
@@ -685,7 +685,7 @@ async fn favourite_dispatches_decryptable_legacy_push(pool: PgPool) {
     assert_eq!(payload["notification_id"].as_i64().unwrap(), listed_id);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn standard_subscription_gets_rfc8291_push(pool: PgPool) {
     let federation = Arc::new(StubFederation::default());
     let state = test_state_with(pool.clone(), federation.clone());
@@ -765,7 +765,7 @@ async fn standard_subscription_gets_rfc8291_push(pool: PgPool) {
     assert_eq!(payload["body"], "test account"); // bob's bio
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn dead_subscriptions_are_pruned_on_4xx(pool: PgPool) {
     let federation = Arc::new(StubFederation::default());
     federation.set_push_status(410);
@@ -802,7 +802,7 @@ async fn dead_subscriptions_are_pruned_on_4xx(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rate_limited_pushes_retry_then_give_up(pool: PgPool) {
     let federation = Arc::new(StubFederation::default());
     federation.set_push_status(429);
@@ -853,7 +853,7 @@ async fn rate_limited_pushes_retry_then_give_up(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn worker_rechecks_pushability_before_sending(pool: PgPool) {
     let federation = Arc::new(StubFederation::default());
     let state = test_state_with(pool.clone(), federation.clone());

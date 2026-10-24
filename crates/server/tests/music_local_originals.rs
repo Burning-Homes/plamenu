@@ -8,7 +8,7 @@ use http_body_util::BodyExt;
 use plamenu::{auth::hash_password, music_clients, music_collections};
 use plamenu_db::{PgPool, id, user};
 use tower::ServiceExt;
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn indexed_originals_use_approved_held_files_without_copy_or_operator_file_cleanup(
     pool: PgPool,
 ) {
@@ -134,7 +134,7 @@ async fn indexed_originals_use_approved_held_files_without_copy_or_operator_file
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn replacing_an_approved_mount_after_headers_stops_a_held_original_body(pool: PgPool) {
     let owner = create_local_account(&pool, "alice", "Alice").await.id;
     user::create(

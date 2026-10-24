@@ -2,7 +2,7 @@
 //! `GET /api/v1/trends/tags` gate, and the admin surface (`admin/tags`,
 //! `admin/trends/tags` review).
 
-mod common;
+use plamenu_test_support as common;
 
 use std::sync::Arc;
 
@@ -103,7 +103,7 @@ async fn seed_trending_tag(pool: &PgPool, name: &str, accounts: usize, day: Date
     tag_id
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn trends_refresh_gated_on_review(pool: PgPool) {
     let state = test_state_with(pool.clone(), Arc::default());
     let today = OffsetDateTime::now_utc().date();
@@ -174,7 +174,7 @@ async fn trends_refresh_gated_on_review(pool: PgPool) {
     assert_eq!(public[0]["history"][0]["accounts"], "6");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn trends_endpoint_honours_operator_switch(pool: PgPool) {
     // Turn trends off but let tags trend without review.
     let current = instance_settings::get(&pool).await.unwrap();
@@ -205,7 +205,7 @@ async fn trends_endpoint_honours_operator_switch(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn status_trends_refresh_review_and_public(pool: PgPool) {
     let state = test_state_with(pool.clone(), Arc::default());
     // An eligible author: discoverable, posting a public, language-tagged
@@ -292,7 +292,7 @@ async fn status_trends_refresh_review_and_public(pool: PgPool) {
 /// declared it (most remote actors). The eligibility expression must not
 /// propagate that NULL — it made every refresh pass fail to decode, killing
 /// the whole trends scheduler on staging.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn status_refresh_survives_null_discoverable_author(pool: PgPool) {
     let state = test_state_with(pool.clone(), Arc::default());
     // Fresh local accounts are discoverable by default now (migration 0127),
@@ -320,7 +320,7 @@ async fn status_refresh_survives_null_discoverable_author(pool: PgPool) {
         .expect("a NULL-discoverable author must not break the refresh pass");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn link_trends_refresh_review_and_public(pool: PgPool) {
     let state = test_state_with(pool.clone(), Arc::default());
     let today = OffsetDateTime::now_utc().date();
@@ -438,7 +438,7 @@ async fn link_trends_refresh_review_and_public(pool: PgPool) {
     assert_eq!(timeline.as_array().unwrap().len(), 5, "five sharers");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn follow_suggestions_sources_and_dismissal(pool: PgPool) {
     // The viewer follows alice; alice follows carol and dave; carol also
     // follows dave. So carol is a friend-of-friend and dave is both a
@@ -556,7 +556,7 @@ async fn follow_suggestions_sources_and_dismissal(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_tag_registry_show_update_list(pool: PgPool) {
     let (_admin, token) = admin_token(&pool, "moddy").await;
     let tag_id = tag::ensure(&pool, "rust").await.unwrap();
@@ -629,7 +629,7 @@ async fn admin_tag_registry_show_update_list(pool: PgPool) {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn tag_viewer_flags_keep_both_reasons_and_exact_scope(pool: PgPool) {
     let alice = create_local_account(&pool, "flagalice", "Alice").await;
     let bob = create_local_account(&pool, "flagbob", "Bob").await;
@@ -661,7 +661,7 @@ async fn tag_viewer_flags_keep_both_reasons_and_exact_scope(pool: PgPool) {
     assert!(empty.following.is_empty() && empty.featuring.is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_trending_tag_page_has_one_query_at_empty_and_full_page_sizes(pool: PgPool) {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tracing_subscriber::layer::SubscriberExt;
@@ -713,7 +713,7 @@ async fn public_trending_tag_page_has_one_query_at_empty_and_full_page_sizes(poo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn trends_tag_viewer_page_preserves_order_history_and_anonymous_shape(pool: PgPool) {
     let today = OffsetDateTime::now_utc().date();
     let high = seed_trending_tag(&pool, "high", 1, today).await;
@@ -816,7 +816,7 @@ async fn trends_tag_viewer_page_preserves_order_history_and_anonymous_shape(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn trends_disabled_hides_populated_authenticated_flags(pool: PgPool) {
     let (viewer, token) = admin_token(&pool, "disabledviewer").await;
     let id = tag::ensure(&pool, "hidden").await.unwrap();
@@ -843,7 +843,7 @@ async fn trends_disabled_hides_populated_authenticated_flags(pool: PgPool) {
     assert_eq!(page, json!([]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn trends_history_stays_tag_scoped_with_ties_empty_days_and_distinct_accounts(pool: PgPool) {
     let today = OffsetDateTime::now_utc().date();
     let alice = create_local_account(&pool, "historyalice", "Alice").await;

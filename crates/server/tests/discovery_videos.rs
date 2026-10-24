@@ -1,5 +1,4 @@
 //! `PeerTube` 8.3 catalogue contracts over the real guarded HTTP client and routes.
-mod common;
 use axum::{
     Router,
     body::Body,
@@ -13,6 +12,7 @@ use plamenu::{
 };
 use plamenu_db::{PgPool, discovery_store as db};
 use plamenu_federation::{FederationClient, ProxyConfig};
+use plamenu_test_support as common;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -134,8 +134,8 @@ impl Fixture {
             document,
         );
     }
-    // Verification and lifecycle regressions must cover every candidate, even
-    // when ordinary acquisition samples only one per owner.
+    // Re-admission and lifecycle regressions cover every candidate; known
+    // unchanged identities must not buy another individual verification.
     async fn admit_all_candidates(&self) {
         let url = url::Url::parse(&videos::page_uri(ORIGIN).unwrap()).unwrap();
         let document = self
@@ -378,7 +378,7 @@ fn catalogue_requires_local_public_vod_records_and_a_bounded_page() {
     detail["state"] = json!({"id":2});
     assert!(!videos::public_record(&detail, true));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_cards_channel_search_and_hide_have_no_import_side_effects(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let member = session(&f.state).await;
@@ -452,24 +452,23 @@ async fn canonical_cards_channel_search_and_hide_have_no_import_side_effects(poo
             .is_empty()
     );
     assert_eq!(cold_counts(&pool).await, before);
+    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 7);
     let requests = f.peer.requests.lock().unwrap();
-    assert_eq!(requests.len(), 5);
-    assert!(
-        requests
-            .iter()
-            .all(|(path, signed)| if path.starts_with("/api/") {
-                !*signed
-            } else {
-                *signed
-            })
-    );
+    assert_eq!(requests.len(), 7); // catalogue + four documents + config + favicon
+    assert!(requests.iter().all(|(path, signed)| {
+        if path.starts_with("/api/") || path == "/favicon.ico" {
+            !*signed
+        } else {
+            *signed
+        }
+    }));
     assert!(
         !requests
             .iter()
             .any(|(p, _)| p.contains("outbox") || p.contains(".mp4") || p.contains("thumbnail"))
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn fallback_and_shared_budget_stop_after_one_catalogue_page(pool: PgPool) {
     let f = fixture_at(pool.clone(), directory::PATH).await;
     for n in 0..8 {
@@ -477,7 +476,7 @@ async fn fallback_and_shared_budget_stop_after_one_catalogue_page(pool: PgPool) 
     }
     f.page(json!((0..8).map(record).collect::<Vec<_>>()));
     f.drain().await;
-    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 7);
+    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 24);
     assert_eq!(
         f.peer
             .requests
@@ -493,12 +492,12 @@ async fn fallback_and_shared_budget_stop_after_one_catalogue_page(pool: PgPool) 
             .fetch_one(&pool)
             .await
             .unwrap(),
-        1
+        8
     );
-    // Later verification rounds may retain several films from this uploader.
+    // Re-admitting the unchanged page is a ledger hit, with no individual rereads.
     f.admit_all_candidates().await;
     f.drain().await;
-    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 35);
+    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 24);
     let source = db::source(&pool, f.source).await.unwrap().unwrap();
     assert!(source.capabilities.contains(&"video_catalogue".into()));
     let member = session(&f.state).await;
@@ -541,7 +540,7 @@ async fn fallback_and_shared_budget_stop_after_one_catalogue_page(pool: PgPool) 
     }
     assert_eq!(seen.len(), 8, "deletion does not move later author slots");
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn owner_and_channel_flags_gate_indexing_and_recommendation(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let member = session(&f.state).await;
@@ -574,6 +573,15 @@ async fn owner_and_channel_flags_gate_indexing_and_recommendation(pool: PgPool) 
     let mut owner = actor(0, false);
     owner["indexable"] = json!(false);
     f.set("/accounts/filmmaker", owner);
+    // The current contract reuses canonical actor evidence for 14 days.
+    // Expire that fixture evidence before testing a newly observed refusal.
+    sqlx::query(
+        "UPDATE discovery_actor_evidence SET verified_at=now()-interval '15 days' WHERE uri=$1",
+    )
+    .bind(self::owner())
+    .execute(&pool)
+    .await
+    .unwrap();
     db::request_profile_recheck(&pool, &uri(0)).await.unwrap();
     f.drain().await;
     let e = entry(&f, 0).await;
@@ -589,7 +597,7 @@ async fn owner_and_channel_flags_gate_indexing_and_recommendation(pool: PgPool) 
     );
     assert!(db::entry_topics(&pool, e.id).await.unwrap().is_empty());
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn strict_missing_policy_and_video_switches_take_effect_immediately(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let member = session(&f.state).await;
@@ -642,7 +650,7 @@ async fn strict_missing_policy_and_video_switches_take_effect_immediately(pool: 
     worker::run_due(&f.state).await.unwrap();
     assert_eq!(f.peer.requests.lock().unwrap().len(), before);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_visibility_and_attribution_override_catalogue_claims(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     for n in 0..8 {
@@ -686,12 +694,11 @@ async fn canonical_visibility_and_attribution_override_catalogue_claims(pool: Pg
     assert_eq!(entry(&f, 7).await.state, "active");
     assert_eq!(entry(&f, 3).await.indexable, "invalid");
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn deletion_during_first_fetch_cancels_work_and_preserves_actor_binding(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     setup(&f, 0);
     f.page(json!([record(0)]));
-    worker::run_due(&f.state).await.unwrap();
     let started = Arc::new(Notify::new());
     let release = Arc::new(Semaphore::new(0));
     *f.peer.hold.lock().unwrap() = Some((
@@ -700,7 +707,7 @@ async fn deletion_during_first_fetch_cancels_work_and_preserves_actor_binding(po
         release.clone(),
     ));
     let state = f.state.clone();
-    let task = tokio::spawn(async move { worker::run_due(&state).await.unwrap() });
+    let task = tokio::spawn(async move { while worker::run_due(&state).await.unwrap() != 0 {} });
     tokio::time::timeout(Duration::from_secs(5), started.notified())
         .await
         .unwrap();
@@ -729,7 +736,7 @@ async fn deletion_during_first_fetch_cancels_work_and_preserves_actor_binding(po
     f.drain().await;
     assert_eq!(entry(&f, 0).await.state, "active");
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn actor_updates_and_owned_deletions_clear_all_metadata(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     setup(&f, 0);
@@ -759,7 +766,7 @@ async fn actor_updates_and_owned_deletions_clear_all_metadata(pool: PgPool) {
     assert!(entry(&f, 0).await.title.is_none());
     assert!(db::entry_topics(&pool, e.id).await.unwrap().is_empty());
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn auth_failure_never_falls_through_to_another_catalogue(pool: PgPool) {
     let f = fixture_at(pool, directory::PATH).await;
     let url =
@@ -773,7 +780,7 @@ async fn auth_failure_never_falls_through_to_another_catalogue(pool: PgPool) {
     assert_eq!(f.peer.requests.lock().unwrap().len(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_open_reaches_watch_and_channel_without_following(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let member = session(&f.state).await;
@@ -875,7 +882,7 @@ async fn explicit_open_reaches_watch_and_channel_without_following(pool: PgPool)
         );
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn budget_and_pause_fence_video_verification(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     setup(&f, 0);
@@ -894,7 +901,7 @@ async fn budget_and_pause_fence_video_verification(pool: PgPool) {
     assert_eq!(f.peer.requests.lock().unwrap().len(), 2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrong_channel_ownership_or_actor_type_cannot_authorize_a_video(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     for n in 0..8 {
@@ -917,7 +924,7 @@ async fn wrong_channel_ownership_or_actor_type_cannot_authorize_a_video(pool: Pg
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_cap_and_actor_update_fence_are_enforced(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     for n in 0..8 {
@@ -946,7 +953,7 @@ async fn channel_cap_and_actor_update_fence_are_enforced(pool: PgPool) {
             .fetch_one(&pool)
             .await
             .unwrap(),
-        4
+        8 // fixed per-channel storage caps were removed; all bounded hints survive
     );
     let e: db::Entry = sqlx::query_as("SELECT * FROM discovery_entries ORDER BY id LIMIT 1")
         .fetch_one(&pool)
@@ -984,4 +991,90 @@ async fn channel_cap_and_actor_update_fence_are_enforced(pool: PgPool) {
             .unwrap(),
         0
     );
+}
+
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
+async fn fresh_channel_discovery_refusal_preserves_indexing_and_fences_cached_siblings(
+    pool: PgPool,
+) {
+    let f = fixture(pool.clone()).await;
+    let member = session(&f.state).await;
+    setup(&f, 0);
+    setup(&f, 1);
+    f.page(json!([record(0), record(1)]));
+    f.drain().await;
+    for n in 0..2 {
+        let e = entry(&f, n).await;
+        assert!(
+            videos::eligible(&f.state, member.viewer, e.id, Use::Recommend)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+    // A canonical fresh opt-out (including an invalid discovery declaration)
+    // restricts promotion of all siblings while public indexing remains allowed.
+    for signal in [json!(false), Value::Null] {
+        let mut document = actor(0, true);
+        document["discoverable"] = signal.clone();
+        f.set("/video-channels/channel0", document);
+        sqlx::query(
+            "UPDATE discovery_actor_evidence SET verified_at=now()-interval '15 days' WHERE uri=$1",
+        )
+        .bind(channel(0))
+        .execute(&pool)
+        .await
+        .unwrap();
+        db::request_profile_recheck(&pool, &uri(1)).await.unwrap();
+        f.drain().await;
+        for n in 0..2 {
+            let e = entry(&f, n).await;
+            assert_eq!(e.state, "active");
+            assert_eq!(
+                e.discoverable,
+                if signal.is_null() { "invalid" } else { "deny" }
+            );
+            assert_eq!(
+                e.title.as_deref(),
+                Some(format!("Garden film {n}").as_str())
+            );
+            assert!(
+                videos::eligible(&f.state, member.viewer, e.id, Use::Recommend)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                videos::eligible(&f.state, member.viewer, e.id, Use::IndexVideo)
+                    .await
+                    .unwrap()
+                    .is_some()
+            );
+            assert_eq!(db::entry_topics(&pool, e.id).await.unwrap(), ["gardens"]);
+            assert!(
+                db::video_details(&pool, e.id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .channel_title
+                    .is_none_or(|title| title.is_empty())
+            );
+        }
+    }
+    let mut owner_document = actor(0, false);
+    owner_document["indexable"] = json!(false);
+    plamenu::discovery::profiles::verified_update(&f.state, &owner(), &owner_document)
+        .await
+        .unwrap();
+    for n in 0..2 {
+        let e = entry(&f, n).await;
+        assert_eq!(e.state, "denied");
+        assert!(e.title.is_none());
+        assert!(
+            videos::eligible(&f.state, member.viewer, e.id, Use::IndexVideo)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
 }

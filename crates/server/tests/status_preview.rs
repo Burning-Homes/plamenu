@@ -112,7 +112,7 @@ async fn api(
     (status, value)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn markdown_preview_renders_html_without_persisting(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -148,7 +148,7 @@ async fn markdown_preview_renders_html_without_persisting(pool: PgPool) {
     assert_eq!(timeline.as_array().unwrap().len(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn preview_matches_what_create_would_render(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -168,7 +168,7 @@ async fn preview_matches_what_create_would_render(pool: PgPool) {
     assert_eq!(preview["content"], posted["content"]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn preview_resolves_known_local_mentions(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let (bob, _) = user_with_token(&pool, "bob").await;
@@ -195,7 +195,7 @@ async fn preview_resolves_known_local_mentions(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn preview_enforces_the_same_validation_as_create(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -223,7 +223,7 @@ async fn preview_enforces_the_same_validation_as_create(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn preview_requires_authentication(pool: PgPool) {
     let (status, _) = api(
         test_app(pool.clone()),

@@ -1,5 +1,4 @@
 //! Lemmy 0.19.19 public community discovery through guarded HTTP and real routes.
-mod common;
 use axum::{
     Router,
     body::Body,
@@ -13,6 +12,7 @@ use plamenu::{
 };
 use plamenu_db::{PgPool, discovery_store as db};
 use plamenu_federation::{FederationClient, ProxyConfig};
+use plamenu_test_support as common;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -293,7 +293,7 @@ async fn request(
     (status, headers, body)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_community_cards_are_separate_and_have_no_import_side_effects(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let member = session(&f.state).await;
@@ -336,21 +336,20 @@ async fn canonical_community_cards_are_separate_and_have_no_import_side_effects(
     assert!(sources.2.contains("Browse communities"));
     assert!(sources.2.contains("/discover/communities?source="));
     assert_eq!(cold_counts(&pool).await, before);
+    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 5);
     let requests = f.peer.requests.lock().unwrap();
-    assert_eq!(requests.len(), 3);
-    assert!(
-        requests
-            .iter()
-            .all(|(path, signed)| if path.starts_with("/api/") {
-                !*signed
-            } else {
-                *signed
-            })
-    );
+    assert_eq!(requests.len(), 5); // listing + actor + REST detail + site + favicon
+    assert!(requests.iter().all(|(path, signed)| {
+        if path.starts_with("/api/") || path == "/favicon.ico" {
+            !*signed
+        } else {
+            *signed
+        }
+    }));
     assert!(!requests.iter().any(|(path, _)| path.contains("outbox")));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn origins_probe_communities_only_after_an_unsupported_directory(pool: PgPool) {
     let f = fixture_at(pool.clone(), directory::PATH).await;
     f.page(false, json!([record("garden")]));
@@ -367,10 +366,10 @@ async fn origins_probe_communities_only_after_an_unsupported_directory(pool: PgP
         source.canonical_uri.as_deref(),
         Some(format!("{ORIGIN}{}", communities::PATH).as_str())
     );
-    assert_eq!(f.peer.requests.lock().unwrap().len(), 4);
+    assert_eq!(f.peer.requests.lock().unwrap().len(), 6); // includes site and favicon
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authentication_failure_does_not_probe_another_directory(pool: PgPool) {
     let f = fixture_at(pool, directory::PATH).await;
     let uri = directory::page_uri(&format!("{ORIGIN}{}", directory::PATH), 0).unwrap();
@@ -383,21 +382,20 @@ async fn authentication_failure_does_not_probe_another_directory(pool: PgPool) {
     assert_eq!(f.peer.requests.lock().unwrap().len(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn deletion_during_first_verification_keeps_a_guard_and_allows_explicit_recheck(
     pool: PgPool,
 ) {
     let f = fixture(pool.clone()).await;
     f.page(false, json!([record("garden")]));
     setup(&f, "garden");
-    worker::run_due(&f.state).await.unwrap();
     let uri = format!("{ORIGIN}/c/garden");
     let started = Arc::new(Notify::new());
     let release = Arc::new(Semaphore::new(0));
     *f.peer.hold.lock().unwrap() =
         Some(("/api/v3/community".into(), started.clone(), release.clone()));
     let state = f.state.clone();
-    let task = tokio::spawn(async move { worker::run_due(&state).await.unwrap() });
+    let task = tokio::spawn(async move { while worker::run_due(&state).await.unwrap() != 0 {} });
     tokio::time::timeout(Duration::from_secs(5), started.notified())
         .await
         .unwrap();
@@ -420,7 +418,7 @@ async fn deletion_during_first_verification_keeps_a_guard_and_allows_explicit_re
     assert_eq!(community(&f, "garden").await.state, "active");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn small_community_rounds_advance_and_all_work_spends_shared_limits(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let mut settings = db::settings(&pool).await.unwrap();
@@ -443,8 +441,14 @@ async fn small_community_rounds_advance_and_all_work_spends_shared_limits(pool: 
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(count, 3);
-    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 7);
+    assert_eq!(count, 20); // every new URI on the bounded page is verified
+    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 43);
+    // Advance only the fixture's pacing clock. Rolling receipts and all hard
+    // request/origin/byte limits remain intact for the second complete page.
+    sqlx::query("UPDATE discovery_pacing SET refilled_at=now()-interval '2 hours'")
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("UPDATE discovery_sampling SET next_at=now() WHERE source_id=$1")
         .bind(f.source)
         .execute(&pool)
@@ -458,9 +462,9 @@ async fn small_community_rounds_advance_and_all_work_spends_shared_limits(pool: 
         .fetch_one(&pool)
         .await
         .unwrap(),
-        6
+        40
     );
-    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 14);
+    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 84);
     let requests = f.peer.requests.lock().unwrap();
     assert_eq!(
         requests
@@ -525,7 +529,7 @@ fn lemmy_01919_directory_requires_local_public_unhidden_records() {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn fresh_individual_visibility_and_identity_override_listing_hints(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     f.page(
@@ -602,7 +606,7 @@ async fn fresh_individual_visibility_and_identity_override_listing_hints(pool: P
     assert_eq!(cold_counts(&pool).await, vec![0; 10]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn missing_discovery_policy_erases_community_text_until_reverified(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     f.page(false, json!([record("garden")]));
@@ -629,7 +633,7 @@ async fn missing_discovery_policy_erases_community_text_until_reverified(pool: P
     assert!(community(&f, "garden").await.summary.is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn updates_deletes_access_failures_and_inflight_results_obey_revision_fences(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     f.page(false, json!([record("garden")]));
@@ -681,7 +685,7 @@ async fn updates_deletes_access_failures_and_inflight_results_obey_revision_fenc
     assert!(community(&f, "garden").await.summary.is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn community_switch_is_independent_and_pause_keeps_fresh_cards(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     f.page(false, json!([record("garden")]));
@@ -715,17 +719,30 @@ async fn community_switch_is_independent_and_pause_keeps_fresh_cards(pool: PgPoo
             .len(),
         1
     );
+    let requests = db::diagnostics(&pool).await.unwrap().requests_24h;
     sqlx::query("UPDATE discovery_entries SET verified_at=clock_timestamp()-interval '2 days',valid_until=clock_timestamp()-interval '1 day'").execute(&pool).await.unwrap();
-    assert!(
+    sqlx::query("UPDATE discovery_identity SET next_check_at=clock_timestamp()-interval '1 day'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE discovery_sources SET verified_at=clock_timestamp()-interval '2 days',valid_until=clock_timestamp()-interval '1 day'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // A missed recheck, source-health expiry and pause do not withdraw a
+    // previously verified community or change its non-expiring retention.
+    assert_eq!(
         browse::page_kind(&f.state, 1, None, None, "community")
             .await
             .unwrap()
             .entries
-            .is_empty()
+            .len(),
+        1
     );
+    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, requests);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_open_imports_one_group_without_joining_and_dismissals_are_personal(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let member = session(&f.state).await;
@@ -809,7 +826,7 @@ async fn explicit_open_imports_one_group_without_joining_and_dismissals_are_pers
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn changed_actor_type_cannot_open_as_a_community(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let member = session(&f.state).await;

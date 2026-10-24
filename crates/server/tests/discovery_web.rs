@@ -156,7 +156,7 @@ async fn effects(pool: &PgPool) -> Vec<i64> {
     counts
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn browsing_is_private_and_has_no_acquisition_or_import_side_effects(pool: PgPool) {
     let f = fixture(&pool).await;
     let before = effects(&pool).await;
@@ -191,7 +191,7 @@ async fn browsing_is_private_and_has_no_acquisition_or_import_side_effects(pool:
     assert!(response.status().is_redirection());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_open_requires_csrf_resolves_one_profile_and_keeps_follow_separate(pool: PgPool) {
     let f = fixture(&pool).await;
     let path = format!("/web/discover/{}/open", f.entry);
@@ -218,7 +218,7 @@ async fn explicit_open_requires_csrf_resolves_one_profile_and_keeps_follow_separ
     assert!(f.stub.deliveries.lock().unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn exclusions_apply_after_account_import_and_without_imported_accounts(pool: PgPool) {
     let f = fixture(&pool).await;
     let uri = "https://one.example/users/alice";
@@ -286,7 +286,7 @@ async fn exclusions_apply_after_account_import_and_without_imported_accounts(poo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn dismissals_are_personal_and_do_not_import_the_hidden_profile(pool: PgPool) {
     let f = fixture(&pool).await;
     let before = effects(&pool).await;
@@ -318,7 +318,7 @@ async fn dismissals_are_personal_and_do_not_import_the_hidden_profile(pool: PgPo
     assert!(f.stub.fetches.lock().unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pagination_is_stable_diverse_and_ignores_new_arrivals_until_restart(pool: PgPool) {
     let f = fixture(&pool).await;
     let second = source(&pool, "two.example").await;
@@ -353,7 +353,7 @@ async fn pagination_is_stable_diverse_and_ignores_new_arrivals_until_restart(poo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn disabled_paused_expired_and_tightened_policy_are_applied_on_each_read(pool: PgPool) {
     let f = fixture(&pool).await;
     let mut s = db::settings(&pool).await.unwrap();
@@ -387,7 +387,7 @@ async fn disabled_paused_expired_and_tightened_policy_are_applied_on_each_read(p
     assert!(!f.get("/discover").await.contains("data-discovery-card="));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn operator_controls_require_permission_csrf_and_current_revision(pool: PgPool) {
     let f = fixture(&pool).await;
     assert_eq!(
@@ -508,7 +508,7 @@ async fn seed_browser_videos(pool: &PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 #[ignore = "opt-in local Chromium, keyboard/mobile/no-JavaScript and accessibility journey"]
 async fn browser_discovery_journey(pool: PgPool) {
     use std::io::Write;
@@ -576,7 +576,7 @@ async fn browser_discovery_journey(pool: PgPool) {
     assert!(!f.stub.fetches.lock().unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pending_budget_failure_and_localized_states_are_reported_without_fetching(pool: PgPool) {
     let f = fixture(&pool).await;
     db::enqueue(
@@ -623,7 +623,7 @@ async fn pending_budget_failure_and_localized_states_are_reported_without_fetchi
     assert!(f.stub.fetches.lock().unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn source_transfers_are_operator_only_and_import_no_trust(pool: PgPool) {
     let f = fixture(&pool).await;
     assert_eq!(

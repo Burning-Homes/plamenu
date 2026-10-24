@@ -38,7 +38,7 @@ async fn fixture(pool: PgPool) -> (AppState, i64, RemoteUser, Arc<StubFederation
         root,
     )
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_remote_saved_music_is_private_and_never_copies_the_catalogue(pool: PgPool) {
     let (state, viewer, _, _, _) = fixture(pool).await;
     let root = music_remote::import(&state, viewer, ROOT).await.unwrap();
@@ -141,7 +141,7 @@ async fn canonical_remote_saved_music_is_private_and_never_copies_the_catalogue(
             .is_empty()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_identity_controller_and_embedded_private_content_fail_without_partial_cache(
     pool: PgPool,
 ) {
@@ -187,7 +187,7 @@ async fn remote_identity_controller_and_embedded_private_content_fail_without_pa
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_controller_updates_and_deletes_preserve_removable_unavailable_bookmarks(
     pool: PgPool,
 ) {
@@ -274,7 +274,7 @@ async fn signed_controller_updates_and_deletes_preserve_removable_unavailable_bo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn fetched_snapshot_cannot_overwrite_controller_delete_or_newer_update(pool: PgPool) {
     let (state, viewer, publisher, stub, mut root) = fixture(pool).await;
     let row = music_remote::import(&state, viewer, ROOT).await.unwrap();
@@ -339,7 +339,7 @@ async fn fetched_snapshot_cannot_overwrite_controller_delete_or_newer_update(poo
         Err(plamenu::error::ApiError::NotFound)
     ));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn addressed_private_updates_revoke_cache_and_confirmed_public_updates_restore_it(
     pool: PgPool,
 ) {
@@ -366,7 +366,7 @@ async fn addressed_private_updates_revoke_cache_and_confirmed_public_updates_res
     assert_eq!(restored.name, "Public again");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_embedded_updates_refresh_saved_tracks_but_cannot_write_another_controller(
     pool: PgPool,
 ) {
@@ -448,7 +448,7 @@ async fn signed_update(
         .status()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_album_authority_overrides_embedded_credits_and_private_album_does_not_hide_track(
     pool: PgPool,
 ) {
@@ -492,7 +492,7 @@ async fn canonical_album_authority_overrides_embedded_credits_and_private_album_
             .unwrap();
     assert_eq!(stored, (String::new(), String::new(), None));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn proven_permalink_resolves_canonical_audio_and_rejects_cross_origin_identity(pool: PgPool) {
     let (state, viewer, publisher, stub, _) = fixture(pool).await;
     let canonical = json!({"id":AUDIO,"type":"Audio","attributedTo":publisher.actor.id,"to":[PUBLIC],"name":"Canonical audio","track":{"id":TRACK,"type":"Track","name":"Track"}});
@@ -524,7 +524,7 @@ async fn proven_permalink_resolves_canonical_audio_and_rejects_cross_origin_iden
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn library_first_page_is_guarded_and_cached_contents_fold_renditions_once(pool: PgPool) {
     let (state, viewer, publisher, stub, mut root) = fixture(pool).await;
     let first = format!("{ROOT}?page=1");
@@ -560,7 +560,7 @@ async fn library_first_page_is_guarded_and_cached_contents_fold_renditions_once(
         "Origin library"
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn confirmed_origin_refusal_redacts_cached_metadata_and_retains_private_bookmarks(
     pool: PgPool,
 ) {
@@ -670,7 +670,7 @@ async fn login(state: &AppState, viewer: i64) -> (String, String) {
     ));
     (cookie, csrf)
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_remote_lookup_is_csrf_protected_and_saved_music_stays_in_single_workspace(
     pool: PgPool,
 ) {
@@ -808,7 +808,7 @@ async fn api_request(
         .await
         .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_api_requires_separate_read_write_scopes_and_never_exposes_file_urls(pool: PgPool) {
     use axum::http::StatusCode;
     let (state, viewer, _, stub, _) = fixture(pool).await;
@@ -899,7 +899,7 @@ async fn audio_request(
         .await
         .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_track_playback_selects_proven_rendition_and_preserves_ranges_without_listens(
     pool: PgPool,
 ) {
@@ -931,7 +931,7 @@ async fn remote_track_playback_selects_proven_rendition_and_preserves_ranges_wit
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn active_remote_body_stops_on_source_delete_while_origin_is_stalled(pool: PgPool) {
     use http_body_util::BodyExt;
     use std::sync::atomic::Ordering;
@@ -961,7 +961,7 @@ async fn active_remote_body_stops_on_source_delete_while_origin_is_stalled(pool:
     assert_eq!(stub.enclosure_active.load(Ordering::SeqCst), 0);
     assert_eq!(stub.enclosure_chunks_sent.load(Ordering::SeqCst), 1);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn active_remote_body_rechecks_token_revocation_and_releases_listener_on_drop(pool: PgPool) {
     use http_body_util::BodyExt;
     use std::sync::atomic::Ordering;
@@ -996,7 +996,7 @@ async fn active_remote_body_rechecks_token_revocation_and_releases_listener_on_d
     assert_eq!(stub.enclosure_active.load(Ordering::SeqCst), 0);
     assert_eq!(stub.enclosure_chunks_sent.load(Ordering::SeqCst), 1);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_listener_limit_is_finite_and_disconnection_admits_another_listener(pool: PgPool) {
     use axum::http::StatusCode;
     use std::sync::atomic::Ordering;
@@ -1021,7 +1021,7 @@ async fn remote_listener_limit_is_finite_and_disconnection_admits_another_listen
     assert_eq!(stub.enclosure_active.load(Ordering::SeqCst), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn deleting_audio_hides_derived_saved_track_but_keeps_independent_album_authority(
     pool: PgPool,
 ) {
@@ -1086,7 +1086,7 @@ async fn deleting_audio_hides_derived_saved_track_but_keeps_independent_album_au
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unknown_embedded_proof_does_not_break_signed_update_or_rewrite_known_track(pool: PgPool) {
     let (state, viewer, publisher, stub, mut root) = fixture(pool).await;
     music_remote::import(&state, viewer, ROOT).await.unwrap();
@@ -1118,7 +1118,7 @@ async fn unknown_embedded_proof_does_not_break_signed_update_or_rewrite_known_tr
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_remote_page_lookup_resolves_parent_and_advances_only_on_user_request(
     pool: PgPool,
 ) {
@@ -1182,7 +1182,7 @@ async fn explicit_remote_page_lookup_resolves_parent_and_advances_only_on_user_r
     assert!(html.contains("Load more from origin"));
     assert!(html.contains(&third));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_remote_pages_refuse_foreign_parent_and_unvalidated_next_before_fetch(
     pool: PgPool,
 ) {
@@ -1219,7 +1219,7 @@ async fn explicit_remote_pages_refuse_foreign_parent_and_unvalidated_next_before
     assert_eq!(count, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_metadata_is_typed_inherited_displayed_and_redacted_on_withdrawal(pool: PgPool) {
     let (state, viewer, publisher, stub, mut root) = fixture(pool).await;
     root["items"][0]["duration"] = json!("PT1M12S");
@@ -1359,7 +1359,7 @@ async fn remote_metadata_is_typed_inherited_displayed_and_redacted_on_withdrawal
         Err(plamenu::error::ApiError::NotFound)
     ));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_artwork_is_decoded_protected_and_never_embeds_origin_url(pool: PgPool) {
     use axum::{body::to_bytes, http::StatusCode};
     let (state, viewer, _, stub, mut root) = fixture(pool).await;
@@ -1436,7 +1436,7 @@ async fn remote_artwork_is_decoded_protected_and_never_embeds_origin_url(pool: P
     );
     assert_eq!(stub.media_fetches.lock().unwrap().len(), count);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_artwork_rechecks_source_and_token_after_origin_fetch(pool: PgPool) {
     use axum::http::StatusCode;
     let (state, viewer, _, stub, mut root) = fixture(pool).await;
@@ -1489,7 +1489,7 @@ async fn remote_artwork_rechecks_source_and_token_after_origin_fetch(pool: PgPoo
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_album_cover_fallback_rechecks_its_independent_authority(pool: PgPool) {
     use axum::http::StatusCode;
     let (state, viewer, _, stub, _) = fixture(pool).await;
@@ -1560,7 +1560,7 @@ async fn canonical_album_cover_fallback_rechecks_its_independent_authority(pool:
     assert!(!html.contains(&path));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_cache_and_saved_erasure_roll_back_and_retire_without_deleted_marker(pool: PgPool) {
     let (state, viewer, _, stub, mut root) = fixture(pool).await;
     root["items"][0]["track"]["artists"] = json!([{"name":"Private retained credit"}]);
@@ -1661,7 +1661,7 @@ async fn playable_remote_fixture(pool: PgPool) -> (AppState, i64, Arc<StubFedera
         .unwrap();
     (state, viewer, stub, audio, track)
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_queue_folds_audio_identity_reloads_seeks_and_hides_revoked_sources(pool: PgPool) {
     use plamenu::music_queues::{self, Action, Change};
     let (state, viewer, _, audio, track) = playable_remote_fixture(pool).await;
@@ -1755,7 +1755,7 @@ async fn remote_queue_folds_audio_identity_reloads_seeks_and_hides_revoked_sourc
     assert!(hidden.current_entry_id.is_none());
     assert_eq!(hidden.revision, reload.revision);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_favourites_fold_renditions_and_keep_distinct_null_local_sources(pool: PgPool) {
     use plamenu::music_favourites;
     let (state, viewer, stub, audio, track) = playable_remote_fixture(pool).await;
@@ -1846,7 +1846,7 @@ async fn remote_favourites_fold_renditions_and_keep_distinct_null_local_sources(
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_listening_is_explicit_canonical_deduplicated_and_currently_authorized(
     pool: PgPool,
 ) {
@@ -1971,7 +1971,7 @@ async fn remote_listening_is_explicit_canonical_deduplicated_and_currently_autho
             .is_empty()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_remote_player_and_favourite_forms_use_exact_csrf_and_existing_workspace(
     pool: PgPool,
 ) {
@@ -2064,7 +2064,7 @@ async fn counted_remote_listen(
     sqlx::query("INSERT INTO music_listen_sessions(id,token,account_id,request_key,remote_id,status_id,duration,threshold_seconds,played_seconds,counted_at,history_id) VALUES($1,$2,$3,$4,$5,$6,10,5,6,'2026-03-08T00:00:00Z'::timestamptz+$7::integer*interval '1 hour',$8)")
         .bind(id).bind(format!("{id:064x}")).bind(viewer).bind(format!("counted_{id}")).bind(remote).bind(status).bind(hour).bind(plamenu_db::id::next()).execute(&state.pool).await.unwrap();
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_statistics_keep_status_id_namespace_and_current_canonical_credit_links(
     pool: PgPool,
 ) {
@@ -2166,7 +2166,7 @@ async fn remote_statistics_keep_status_id_namespace_and_current_canonical_credit
     assert!(hidden.top.tracks.is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inherited_audio_audience_tracks_library_withdrawal_but_explicit_public_audio_survives(
     pool: PgPool,
 ) {
@@ -2263,7 +2263,7 @@ async fn inherited_audio_audience_tracks_library_withdrawal_but_explicit_public_
         1
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cached_proof_cycles_and_changed_proof_types_never_authorize_old_metadata(pool: PgPool) {
     let (state, viewer, stub, audio, track) = playable_remote_fixture(pool).await;
     sqlx::query("UPDATE music_remote_resources SET proof_uri=$1,proof_kind='track' WHERE id=$2")
@@ -2292,7 +2292,7 @@ async fn cached_proof_cycles_and_changed_proof_types_never_authorize_old_metadat
     ));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn legacy_library_audio_uses_canonical_publisher_and_can_be_looked_up_by_permalink(
     pool: PgPool,
 ) {
@@ -2342,7 +2342,7 @@ async fn legacy_library_audio_uses_canonical_publisher_and_can_be_looked_up_by_p
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn shared_remote_library_membership_is_independent_and_refresh_removes_only_that_parent(
     pool: PgPool,
 ) {
@@ -2402,7 +2402,7 @@ async fn shared_remote_library_membership_is_independent_and_refresh_removes_onl
             .is_some()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_member_pages_accumulate_lazily_and_exhausted_first_page_retires_old_later_pages(
     pool: PgPool,
 ) {
@@ -2463,7 +2463,7 @@ async fn remote_member_pages_accumulate_lazily_and_exhausted_first_page_retires_
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn withdrawing_one_rendition_selects_remaining_public_metadata_and_bytes(pool: PgPool) {
     use axum::http::StatusCode;
     let (state, viewer, publisher, stub, mut root) = fixture(pool).await;
@@ -2618,7 +2618,7 @@ async fn public_audio_request(
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_collection_aliases_deduplicate_libraries_and_preserve_playlist_occurrences(
     pool: PgPool,
 ) {
@@ -2711,7 +2711,7 @@ async fn remote_collection_aliases_deduplicate_libraries_and_preserve_playlist_o
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_remote_collection_playback_requires_exact_current_parent_and_entry(pool: PgPool) {
     use axum::http::StatusCode;
     use plamenu::music_collections;
@@ -2806,7 +2806,7 @@ async fn public_remote_collection_playback_requires_exact_current_parent_and_ent
     assert_eq!(stub.media_fetches.lock().unwrap().len(), before);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stalled_public_remote_body_stops_when_collection_membership_is_removed(pool: PgPool) {
     use http_body_util::BodyExt;
     use plamenu::music_collections;
@@ -2863,7 +2863,7 @@ async fn stalled_public_remote_body_stops_when_collection_membership_is_removed(
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_collection_remote_url_form_requires_csrf_and_keeps_origin_ownership(pool: PgPool) {
     use axum::http::StatusCode;
     use plamenu::music_collections;
@@ -2928,7 +2928,7 @@ async fn native_collection_remote_url_form_requires_csrf_and_keeps_origin_owners
     assert_eq!(counts, (0, 0, 0));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_bulk_append_is_atomic_revisioned_and_library_aliases_are_idempotent(pool: PgPool) {
     use plamenu::music_collections;
     let (state, viewer, _, audio, track) = playable_remote_fixture(pool).await;
@@ -3022,7 +3022,7 @@ async fn remote_bulk_append_is_atomic_revisioned_and_library_aliases_are_idempot
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_remote_bulk_controls_reject_forged_members_and_stale_collection_revisions(
     pool: PgPool,
 ) {
@@ -3147,7 +3147,7 @@ async fn native_remote_bulk_controls_reject_forged_members_and_stale_collection_
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn shared_remote_collection_playback_cannot_escape_membership_and_revokes_stalled_bodies(
     pool: PgPool,
 ) {
@@ -3255,7 +3255,7 @@ async fn shared_remote_collection_playback_cannot_escape_membership_and_revokes_
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_remote_collection_embeds_preserve_repeats_and_cross_origin_ranges_then_revoke(
     pool: PgPool,
 ) {
@@ -3352,7 +3352,7 @@ async fn public_remote_collection_embeds_preserve_repeats_and_cross_origin_range
     assert_eq!(denied.headers()["Access-Control-Allow-Origin"], "*");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_collection_feeds_use_current_rendition_mime_and_caption_without_fetching_audio(
     pool: PgPool,
 ) {
@@ -3404,7 +3404,7 @@ async fn remote_collection_feeds_use_current_rendition_mime_and_caption_without_
     assert!(response_text(atom).await.contains("type=\"audio/flac\""));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_federated_library_lists_imported_publication_uri_without_republishing_it(
     pool: PgPool,
 ) {
@@ -3443,7 +3443,7 @@ async fn public_federated_library_lists_imported_publication_uri_without_republi
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn saved_legacy_remote_audio_folds_only_verified_publication_controller_and_uri(
     pool: PgPool,
 ) {
@@ -3529,7 +3529,7 @@ async fn saved_legacy_remote_audio_folds_only_verified_publication_controller_an
     assert_ne!(foreign.id, saved.id);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn legacy_remote_source_creations_share_canonical_collection_queue_favourite_and_listen_identity(
     pool: PgPool,
 ) {
@@ -3661,7 +3661,7 @@ async fn legacy_remote_source_creations_share_canonical_collection_queue_favouri
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cached_public_track_never_widens_private_legacy_audio_post_audience(pool: PgPool) {
     use plamenu::{music_collections, music_favourites, music_queues};
     let (state, viewer, publisher, _, root) = fixture(pool).await;
@@ -3750,7 +3750,7 @@ async fn cached_public_track_never_widens_private_legacy_audio_post_audience(poo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn historical_saved_audio_uses_current_imported_metadata_and_hides_withdrawn_origin(
     pool: PgPool,
 ) {
@@ -3810,7 +3810,7 @@ async fn historical_saved_audio_uses_current_imported_metadata_and_hides_withdra
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn historical_audio_memberships_fold_current_tracks_without_widening_post_access(
     pool: PgPool,
 ) {
@@ -3959,7 +3959,7 @@ async fn historical_audio_memberships_fold_current_tracks_without_widening_post_
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_favourite_representatives_are_unique_across_legacy_audio_and_page_boundaries(
     pool: PgPool,
 ) {

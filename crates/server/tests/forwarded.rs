@@ -4,7 +4,7 @@
 //! Update is replaced by fetching the object from its origin, and a forwarded
 //! Delete only applies once the origin confirms the object is gone.
 
-mod common;
+use plamenu_test_support as common;
 
 use std::time::SystemTime;
 
@@ -48,7 +48,7 @@ fn origin_note(bob: &RemoteUser, content: &str) -> (String, Value) {
     (uri, note)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn forwarded_create_ingests_the_origin_copy_not_the_payload(pool: PgPool) {
     let bob = RemoteUser::new("origin.example", "bob");
     let fred = RemoteUser::new("relay.example", "fred");
@@ -127,7 +127,7 @@ async fn forwarded_create_ingests_the_origin_copy_not_the_payload(pool: PgPool) 
 /// A Create forwarded by a subscribed relay (LitePub-style: the relay signs,
 /// the origin author stays the actor) counts toward that relay's activity
 /// stats; the same delivery signed by a non-relay forwarder counts nothing.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn forwarded_delivery_counts_toward_the_signing_relay(pool: PgPool) {
     let bob = RemoteUser::new("origin.example", "bob");
     let fred = RemoteUser::new("relay.example", "fred");
@@ -196,7 +196,7 @@ async fn forwarded_delivery_counts_toward_the_signing_relay(pool: PgPool) {
     assert_eq!(activity.last_week, 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn forwarded_delete_needs_the_origin_to_confirm(pool: PgPool) {
     let bob = RemoteUser::new("origin.example", "bob");
     let fred = RemoteUser::new("relay.example", "fred");
@@ -276,7 +276,7 @@ async fn forwarded_delete_needs_the_origin_to_confirm(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn forwarded_copies_of_other_activities_are_ignored(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let local_status = status::create_local(
@@ -348,7 +348,7 @@ async fn forwarded_copies_of_other_activities_are_ignored(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn direct_deliveries_still_verify_the_actor_key(pool: PgPool) {
     // A Create claiming bob as actor but signed by fred, where the object is
     // on bob's host and the origin does NOT serve it: nothing may be stored.
@@ -384,7 +384,7 @@ async fn direct_deliveries_still_verify_the_actor_key(pool: PgPool) {
 /// FEP-8b32: a forwarded copy carrying a valid integrity proof bound to the
 /// actor's own Ed25519 key is trusted wholesale — no origin fetch, tampered
 /// relays impossible (the proof covers the payload).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn forwarded_create_with_valid_proof_skips_the_origin_fetch(pool: PgPool) {
     let bob = RemoteUser::new("origin.example", "bob").with_ed25519();
     let fred = RemoteUser::new("relay.example", "fred");
@@ -424,7 +424,7 @@ async fn forwarded_create_with_valid_proof_skips_the_origin_fetch(pool: PgPool) 
 /// Mastodon 4.7 parity: a real `mldsa44-jcs-2024` proof resolves the exact
 /// FEP-521a verification method, is persisted as ML-DSA-44 material, and can
 /// authenticate a forwarded payload without consulting its origin object.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn forwarded_create_with_valid_ml_dsa_44_proof_skips_origin_fetch(pool: PgPool) {
     use ml_dsa::{Generate, Keypair};
     use time::format_description::well_known::Rfc3339;
@@ -495,7 +495,7 @@ async fn forwarded_create_with_valid_ml_dsa_44_proof_skips_origin_fetch(pool: Pg
 /// A tampered payload invalidates the proof; the delivery degrades to the
 /// origin-confirmation path (which, with the origin serving nothing, stores
 /// nothing).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn forwarded_create_with_broken_proof_falls_back_to_the_origin(pool: PgPool) {
     let bob = RemoteUser::new("origin.example", "bob").with_ed25519();
     let fred = RemoteUser::new("relay.example", "fred");
@@ -536,7 +536,7 @@ async fn forwarded_create_with_broken_proof_falls_back_to_the_origin(pool: PgPoo
 
 /// A proof signed by someone other than the activity's actor (the relay
 /// vouching for itself) authenticates nothing.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn forwarded_proof_by_the_wrong_actor_is_ignored(pool: PgPool) {
     let bob = RemoteUser::new("origin.example", "bob");
     let fred = RemoteUser::new("relay.example", "fred").with_ed25519();
@@ -572,7 +572,7 @@ async fn forwarded_proof_by_the_wrong_actor_is_ignored(pool: PgPool) {
 
 /// A proven forwarded interaction (a Like, which the origin-confirmation
 /// path always ignores) goes through the full direct-delivery dispatch.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn forwarded_like_with_valid_proof_is_processed(pool: PgPool) {
     let bob = RemoteUser::new("origin.example", "bob").with_ed25519();
     let fred = RemoteUser::new("relay.example", "fred");

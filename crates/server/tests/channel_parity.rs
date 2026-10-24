@@ -77,7 +77,7 @@ async fn context(state: &plamenu::AppState, stored: &status::Status, viewer: Opt
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 #[allow(
     clippy::too_many_lines,
     reason = "one batch-to-retirement attribution lifecycle keeps all privacy assertions on the same publications"
@@ -232,7 +232,7 @@ async fn channel_publication_context_is_batched_truthful_and_visibility_guarded(
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_context_survives_bare_video_surfaces_without_community_controls(pool: PgPool) {
     let author = create_local_account(&pool, "alice", "Alice").await;
     let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -306,7 +306,7 @@ async fn channel_context_survives_bare_video_surfaces_without_community_controls
     browser_proof(&state, &author, channel.id, stored.id).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn verified_remote_video_channel_is_not_a_community_announce(pool: PgPool) {
     let author = RemoteUser::new("remote.test", "uploader");
     let mut channel = RemoteUser::new("remote.test", "films");
@@ -406,7 +406,7 @@ async fn verified_remote_video_channel_is_not_a_community_announce(pool: PgPool)
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_known_remote_channel_cannot_claim_another_uploaders_video(pool: PgPool) {
     let owner = RemoteUser::new("remote.test", "owner");
     let uploader = RemoteUser::new("remote.test", "uploader");
@@ -481,7 +481,7 @@ async fn a_known_remote_channel_cannot_claim_another_uploaders_video(pool: PgPoo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_profile_outbox_failure_rolls_back_images_and_cleans_strays(pool: PgPool) {
     let owner = create_local_account(&pool, "alice", "Alice").await;
     let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));

@@ -44,7 +44,7 @@ async fn asset(f: &Fixture, artist: i64, album: Option<i64>, visibility: &str) -
         .bind(asset).bind(f.owner.id).bind(artist).bind(album).bind(visibility).bind(format!("music{asset}.orig")).bind(format!("music{asset}.mp3")).bind(format!("{asset:064x}")).execute(&f.state.pool).await.unwrap();
     asset
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn aggregate_duration_and_empty_owned_albums_follow_current_source_access(pool: PgPool) {
     let f = fixture(pool).await;
     sqlx::query(
@@ -120,7 +120,7 @@ async fn aggregate_duration_and_empty_owned_albums_follow_current_source_access(
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn two_publications_share_reusable_entities_and_withdrawing_one_preserves_them(pool: PgPool) {
     let f = fixture(pool).await;
     let first_asset = asset(&f, f.artist, Some(f.album), "public").await;
@@ -185,7 +185,7 @@ async fn two_publications_share_reusable_entities_and_withdrawing_one_preserves_
         artist["id"]
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_only_entity_metadata_and_statistics_follow_source_grants_and_blocks(pool: PgPool) {
     let f = fixture(pool).await;
     let private = asset(&f, f.artist, Some(f.album), "private").await;
@@ -239,7 +239,7 @@ async fn private_only_entity_metadata_and_statistics_follow_source_grants_and_bl
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reusable_entities_cannot_cross_owner_boundaries_or_leak_music_from_reply_stubs(
     pool: PgPool,
 ) {
@@ -304,7 +304,7 @@ async fn reusable_entities_cannot_cross_owner_boundaries_or_leak_music_from_repl
             .unwrap();
     assert_eq!(rendered["music"], Value::Null);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn all_music_activitypub_documents_use_the_existing_secure_fetch_gate(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let source = asset(&f, f.artist, Some(f.album), "public").await;
@@ -381,7 +381,7 @@ async fn all_music_activitypub_documents_use_the_existing_secure_fetch_gate(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn entity_subscription_lifetime_tracks_public_sources_and_withdrawal_is_atomic(pool: PgPool) {
     let f = fixture(pool).await;
     let first = asset(&f, f.artist, Some(f.album), "public").await;
@@ -483,7 +483,7 @@ async fn entity_subscription_lifetime_tracks_public_sources_and_withdrawal_is_at
     assert!(!deleted.to_string().contains("secret"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ordinary_status_edits_keep_retained_source_and_canonical_music_documents_in_sync(
     pool: PgPool,
 ) {
@@ -587,7 +587,7 @@ fn edit(entity: &music_entities::Entity) -> music_entities::Edit {
         revision: entity.revision.to_string(),
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn artist_and_album_edits_propagate_atomically_and_preserve_track_year_overrides(
     pool: PgPool,
 ) {
@@ -715,7 +715,7 @@ async fn artist_and_album_edits_propagate_atomically_and_preserve_track_year_ove
     assert_eq!(rolled_back.revision, source.revision);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_entity_pages_and_track_paging_hide_unreadable_sources(pool: PgPool) {
     let f = fixture(pool).await;
     let hidden = asset(&f, f.artist, Some(f.album), "private").await;
@@ -826,7 +826,7 @@ async fn api_tokens(f: &Fixture) -> (String, String) {
     }
     (read, write)
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_entity_api_preserves_scope_boundaries_and_string_revisions(pool: PgPool) {
     let f = fixture(pool).await;
     let source = asset(&f, f.artist, Some(f.album), "private").await;
@@ -914,7 +914,7 @@ fn new_entity(name: &str, artist: Option<i64>) -> music_entities::New {
         artist_id: artist.map(|id| id.to_string()),
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn standalone_creation_is_private_owner_scoped_and_does_not_implicitly_merge(pool: PgPool) {
     let f = fixture(pool).await;
     let artist = music_entities::create(
@@ -1006,7 +1006,7 @@ fn deletion(revision: i64, recursive: bool) -> music_entities::Delete {
         recursive,
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn album_detach_preserves_track_identity_bytes_and_compilation_artist_authorization(
     pool: PgPool,
 ) {
@@ -1122,7 +1122,7 @@ async fn album_detach_preserves_track_identity_bytes_and_compilation_artist_auth
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn recursive_artist_deletion_retires_all_sources_artwork_and_collection_references_atomically(
     pool: PgPool,
 ) {
@@ -1258,7 +1258,7 @@ async fn recursive_artist_deletion_retires_all_sources_artwork_and_collection_re
             > 1
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn entity_deletion_rolls_back_entire_batch_on_delivery_failure(pool: PgPool) {
     let f = fixture(pool).await;
     let source = asset(&f, f.artist, Some(f.album), "public").await;
@@ -1305,7 +1305,7 @@ async fn entity_deletion_rolls_back_entire_batch_on_delivery_failure(pool: PgPoo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_creation_and_deletion_api_enforces_write_scope_and_current_revision(pool: PgPool) {
     let f = fixture(pool).await;
     let (read, write) = api_tokens(&f).await;
@@ -1373,7 +1373,7 @@ async fn native_creation_and_deletion_api_enforces_write_scope_and_current_revis
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn totals_endpoints_require_read_scope_and_preserve_full_private_source_counts(pool: PgPool) {
     let f = fixture(pool).await;
     let source = asset(&f, f.artist, Some(f.album), "private").await;

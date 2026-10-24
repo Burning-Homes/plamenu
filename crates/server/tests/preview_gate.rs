@@ -109,7 +109,7 @@ async fn login(app: &Router) -> String {
 
 /// The REST timelines and search reject anonymous reads with a 401 when their
 /// preview flag is off.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn api_timelines_and_search_require_auth_when_private(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let user_id = user::find_by_email(&pool, EMAIL).await.unwrap().unwrap().id;
@@ -141,7 +141,7 @@ async fn api_timelines_and_search_require_auth_when_private(pool: PgPool) {
 
 /// The web timeline and search pages bounce anonymous visitors to `/login`
 /// when their preview flag is off; profiles stay public.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_timelines_and_search_redirect_when_private(pool: PgPool) {
     seed_alice(&pool).await;
     let app = test_app_private(pool);

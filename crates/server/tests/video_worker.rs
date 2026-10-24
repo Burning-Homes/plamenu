@@ -261,7 +261,7 @@ async fn fixture_with_source_and_time(
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn audio_only_source_gets_bounded_waveform_video_and_poster(pool: PgPool) {
     let f = fixture_with_source(pool, false, false, false, SourceShape::Audio).await;
     let source_path = f.store.disk.local_path(&f.source).unwrap();
@@ -370,17 +370,17 @@ async fn assert_silent_shape(pool: PgPool, shape: SourceShape, dimensions: (i64,
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn silent_portrait_video_keeps_its_aspect_ratio_and_seekable_hls(pool: PgPool) {
     assert_silent_shape(pool, SourceShape::SilentPortrait, (270, 480)).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn silent_ultrawide_video_avoids_pointless_upscale(pool: PgPool) {
     assert_silent_shape(pool, SourceShape::SilentUltrawide, (1000, 250)).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn chosen_poster_frame_survives_durable_claim_and_processing(pool: PgPool) {
     let f =
         fixture_with_source_and_time(pool, false, false, false, SourceShape::ColourCut, 3.0).await;
@@ -425,7 +425,7 @@ async fn chosen_poster_frame_survives_durable_claim_and_processing(pool: PgPool)
     assert!(i16::from(pixel.stdout[2]) > i16::from(pixel.stdout[0]) + 100);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn poster_frame_beyond_duration_records_the_actual_time(pool: PgPool) {
     let f =
         fixture_with_source_and_time(pool, false, false, false, SourceShape::ColourCut, 99.0).await;
@@ -478,7 +478,7 @@ fn poster_pixel(bytes: &[u8], extension: &str) -> [u8; 3] {
     output.stdout.try_into().unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn custom_poster_replacement_is_private_journaled_and_repeatable(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
     assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
@@ -683,7 +683,7 @@ async fn custom_poster_replacement_is_private_journaled_and_repeatable(pool: PgP
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn custom_poster_rejects_other_owners_and_invalid_images(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
     assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
@@ -735,7 +735,7 @@ async fn custom_poster_rejects_other_owners_and_invalid_images(pool: PgPool) {
     assert_eq!(current.small_file_name, original);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn custom_poster_quota_refusal_keeps_existing_poster(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
     assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
@@ -777,7 +777,7 @@ async fn custom_poster_quota_refusal_keeps_existing_poster(pool: PgPool) {
     assert_eq!(current.small_file_name, original);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn published_source_edits_are_private_durable_retimed_and_cannot_restore_removed_footage(
     pool: PgPool,
 ) {
@@ -1002,7 +1002,7 @@ async fn published_source_edits_are_private_durable_retimed_and_cannot_restore_r
     assert_eq!(f.state.media.get(&f.source).await.unwrap(), f.original);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_copy_cancellation_during_read_discards_scratch_and_cannot_publish(pool: PgPool) {
     use plamenu::video_source_edit::{self, Operation};
     let f = fixture(pool.clone(), true, false, false).await;
@@ -1103,7 +1103,7 @@ fn assert_blue_frames(f: &Fixture, media: &media::Media) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_edit_copy_refuses_superseded_cancelled_missing_and_revoked_sources(pool: PgPool) {
     use plamenu::video_source_edit::{self, Operation};
     let f = fixture(pool.clone(), false, false, false).await;
@@ -1228,7 +1228,7 @@ async fn publish_fixture(f: &Fixture) -> plamenu_db::status::Status {
     .0
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn published_poster_is_atomic_with_update_and_retains_uploader_quota_and_video_identity(
     pool: PgPool,
 ) {
@@ -1360,7 +1360,7 @@ async fn published_poster_is_atomic_with_update_and_retains_uploader_quota_and_v
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn published_poster_quota_refusal_and_suspension_preserve_existing_assets(pool: PgPool) {
     let f = fixture(pool.clone(), false, false, false).await;
     assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
@@ -1591,7 +1591,7 @@ async fn assert_private_storyboard(f: &Fixture) {
 }
 
 #[cfg(target_os = "linux")]
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn finite_descriptor_replay_ignores_a_partial_tail_without_copying_or_truncating_source(
     pool: PgPool,
 ) {
@@ -1631,7 +1631,7 @@ async fn finite_descriptor_replay_ignores_a_partial_tail_without_copying_or_trun
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn real_job_is_private_ready_and_preserves_original(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
     let resources = plamenu::video_resources::ProcessingPool::new(1, 32 * 1024 * 1024);
@@ -1654,7 +1654,7 @@ async fn real_job_is_private_ready_and_preserves_original(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unavailable_native_processor_falls_back_without_losing_source_or_publication_fence(
     pool: PgPool,
 ) {
@@ -1686,7 +1686,7 @@ async fn unavailable_native_processor_falls_back_without_losing_source_or_public
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn published_hls_is_range_playable_and_revoked_on_suspension(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
     assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
@@ -1839,7 +1839,7 @@ async fn published_hls_is_range_playable_and_revoked_on_suspension(pool: PgPool)
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn source_larger_than_reserved_ceiling_is_deferred_without_spooling(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
     let resources = plamenu::video_resources::ProcessingPool::new(1, 32 * 1024 * 1024);
@@ -1870,7 +1870,7 @@ async fn source_larger_than_reserved_ceiling_is_deferred_without_spooling(pool: 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oversized_encode_can_retry_same_draft_without_reupload(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
     assert!(run_one(&f.state, reservation(1)).await.is_err());
@@ -1890,7 +1890,7 @@ async fn oversized_encode_can_retry_same_draft_without_reupload(pool: PgPool) {
     assert_ready(&f).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cancellation_during_source_read_stops_before_output_write(pool: PgPool) {
     let f = fixture(pool, true, false, false).await;
     let state = f.state.clone();
@@ -1920,7 +1920,7 @@ async fn cancellation_during_source_read_stops_before_output_write(pool: PgPool)
     assert_eq!(outputs, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn aborted_caller_cannot_release_final_write_fence(pool: PgPool) {
     let f = fixture(pool, false, true, false).await;
     let state = f.state.clone();
@@ -1991,7 +1991,7 @@ async fn aborted_caller_cannot_release_final_write_fence(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn partial_store_failure_keeps_private_journal_and_original(pool: PgPool) {
     let f = fixture(pool, false, false, true).await;
     assert!(run_one(&f.state, reservation(1024 * 1024)).await.is_err());
@@ -2033,7 +2033,7 @@ async fn partial_store_failure_keeps_private_journal_and_original(pool: PgPool) 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stored_output_quota_refuses_writes_and_refunds_only_after_cleanup(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
     let tight = plamenu_db::video_storage::Limits {
@@ -2103,7 +2103,7 @@ async fn stored_output_quota_refuses_writes_and_refunds_only_after_cleanup(pool:
     assert_eq!(count, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unknown_sizes_recover_from_storage_after_the_writer_is_fenced(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
     assert!(run_one(&f.state, reservation(1024 * 1024)).await.unwrap());
@@ -2134,7 +2134,7 @@ async fn unknown_sizes_recover_from_storage_after_the_writer_is_fenced(pool: PgP
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scheduler_keeps_jobs_queued_while_an_active_legacy_size_is_unknown(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
     let channel: i64 =
@@ -2215,7 +2215,7 @@ async fn scheduler_keeps_jobs_queued_while_an_active_legacy_size_is_unknown(pool
     worker.await.unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reconciliation_recovers_a_charge_even_when_the_file_is_already_missing(pool: PgPool) {
     let f = fixture(pool, false, false, false).await;
     assert!(
@@ -2419,7 +2419,7 @@ async fn upgrade_does_not_allocate_posters_to_failed_or_live_attempts(pool: PgPo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 #[allow(
     clippy::too_many_lines,
     reason = "one lifecycle verifies publication and retirement share journal authority"
@@ -2683,11 +2683,11 @@ async fn progressive_offload_version(pool: PgPool, version: u8) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn progressive_offload_legacy_wire_retains_exact_artifacts(pool: PgPool) {
     progressive_offload_version(pool, 1).await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn progressive_offload_v2_transfers_verified_artifact_without_local_encode(pool: PgPool) {
     progressive_offload_version(pool, 2).await;
 }

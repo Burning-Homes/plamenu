@@ -4,7 +4,7 @@
 //! `bob@remote.example`, the recipient `alice@plamenu.test`, so fixtures
 //! stay verbatim wire JSON with no templating.
 
-mod common;
+use plamenu_test_support as common;
 
 use std::time::SystemTime;
 
@@ -54,7 +54,7 @@ async fn stored_object(pool: &PgPool, activity: &Value) -> status::Status {
 
 /// `GoToSocial` ships a single mention as a bare `tag` object; dropping it
 /// would lose the mention row and the notification.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn gotosocial_singleton_tag_mention_is_stored_and_notifies(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -88,7 +88,7 @@ async fn gotosocial_singleton_tag_mention_is_stored_and_notifies(pool: PgPool) {
 
 /// A bare `attachment` object (go-fed serialization) must store its media
 /// like a one-element array would.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn gotosocial_singleton_attachment_stores_media(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -118,7 +118,7 @@ async fn gotosocial_singleton_attachment_stores_media(pool: PgPool) {
 
 /// A top-level `Document` post keeps its native body and treats a non-HTML
 /// `url` Link as the published file. This is Hubzilla's real file-post shape.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn document_post_ingests_natively(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -161,7 +161,7 @@ async fn document_post_ingests_natively(pool: PgPool) {
 /// `GoToSocial`'s Update carries the edited Note with the same bare `tag`
 /// shape as its Create; the edit must apply (content + `edited_at`) without
 /// losing the mention, and replaying the same Update must not double-apply.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn gotosocial_update_edits_in_place_and_is_idempotent(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -208,7 +208,7 @@ async fn gotosocial_update_edits_in_place_and_is_idempotent(pool: PgPool) {
 /// `GoToSocial`'s Delete ships the object as a bare IRI string (go-fed
 /// unnests single values); the status must go away, and a replayed Delete
 /// must stay a 202 no-op.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn gotosocial_delete_bare_iri_object_is_idempotent(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -242,7 +242,7 @@ async fn gotosocial_delete_bare_iri_object_is_idempotent(pool: PgPool) {
 /// Sharkey quotes carry no FEP-044f `quote` property — only `_misskey_quote`
 /// / `quoteUrl` / `quoteUri` and the FEP-e232 Link tag — so the quote must
 /// link as a legacy quote.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sharkey_quote_note_links_as_legacy_quote(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -284,7 +284,7 @@ async fn sharkey_quote_note_links_as_legacy_quote(pool: PgPool) {
 /// Decoys must not: an ordinary `text/html` Link with a quote rel is a
 /// hyperlink, not an object link, and a rel-less object link is a bare
 /// reference without quote semantics.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn e232_only_quote_links_as_legacy_quote(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -319,7 +319,7 @@ async fn e232_only_quote_links_as_legacy_quote(pool: PgPool) {
 
 /// Sharkey's Delete has *no activity id* and wraps the target in a
 /// `Tombstone` object; both must be tolerated, idempotently.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sharkey_idless_tombstone_delete_is_idempotent(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -351,7 +351,7 @@ async fn sharkey_idless_tombstone_delete_is_idempotent(pool: PgPool) {
 /// A Sharkey boost (`Announce` with a bare IRI object) must store a reblog
 /// row, and Sharkey's `Undo` — which embeds the whole original Announce as
 /// its object — must retract it, idempotently.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sharkey_announce_and_embedded_undo_roundtrip(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -395,7 +395,7 @@ async fn sharkey_announce_and_embedded_undo_roundtrip(pool: PgPool) {
 /// Sharkey sends every reaction as `Like` + `_misskey_reaction`, custom emoji
 /// carrying a `tag` Emoji with the image; the reaction row must store the
 /// emoji, and the embedded-Like Undo must clear it.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sharkey_custom_emoji_reaction_like_and_undo(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -447,7 +447,7 @@ async fn sharkey_custom_emoji_reaction_like_and_undo(pool: PgPool) {
 /// A `Question` with an array `type` and a bare `oneOf` option must produce
 /// a poll — the ingest gate accepts the array type, so the poll parser has
 /// to agree or the status is silently stored poll-less.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn question_with_array_type_and_singleton_oneof_parses_poll(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -475,7 +475,7 @@ async fn question_with_array_type_and_singleton_oneof_parses_poll(pool: PgPool) 
 /// Sharkey renders poll options as `Note`s whose tallies hide in
 /// `replies.totalItems` (no `votersCount`), with `endTime` for open polls;
 /// the options, tallies and expiry must all come through.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sharkey_question_options_and_tallies_parse(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();

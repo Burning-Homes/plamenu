@@ -132,7 +132,7 @@ async fn fixture(pool: PgPool) -> Fixture {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mirror_copy_and_publication_do_not_require_a_second_pool_connection(pool: PgPool) {
     let one = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
@@ -192,7 +192,7 @@ async fn get(f: &Fixture, path: &str, range: Option<&str>) -> (StatusCode, Vec<u
     )
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn complete_graph_is_durable_private_until_published_and_withdrawal_keeps_debt(pool: PgPool) {
     let f = fixture(pool).await;
     let item = service::request(&f.state, f.operator, f.post, "")
@@ -286,7 +286,7 @@ async fn complete_graph_is_durable_private_until_published_and_withdrawal_keeps_
     assert_eq!(db::charged(&f.state.pool).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn accepted_offer_is_actor_bound_and_undo_is_not_resurrected(pool: PgPool) {
     let one = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
@@ -381,7 +381,7 @@ async fn accepted_offer_is_actor_bound_and_undo_is_not_resurrected(pool: PgPool)
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn consent_update_revokes_warm_assets_and_public_download_does_not_grant_mirroring(
     pool: PgPool,
 ) {
@@ -423,7 +423,7 @@ async fn consent_update_revokes_warm_assets_and_public_download_does_not_grant_m
     assert!(db::charged(&f.state.pool).await.unwrap() > 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unfinished_live_dependency_fails_without_public_offer(pool: PgPool) {
     let f = fixture(pool).await;
     f.stub.media.lock().unwrap().get_mut(CHILD).unwrap().bytes =
@@ -453,7 +453,7 @@ async fn unfinished_live_dependency_fails_without_public_offer(pool: PgPool) {
     assert_eq!(db::charged(&f.state.pool).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cancelled_worker_cannot_refund_or_remove_a_still_running_owned_writer(pool: PgPool) {
     use plamenu::storage::MediaStore as _;
     let mut f = fixture(pool).await;

@@ -133,7 +133,7 @@ async fn api(
     (status, value)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn index_lists_only_published_with_read_state(pool: PgPool) {
     let (_account, token) = user_with_token(&pool, "viewer", "read write").await;
 
@@ -196,7 +196,7 @@ async fn index_lists_only_published_with_read_state(pool: PgPool) {
     assert_eq!(body.as_array().unwrap()[0]["read"], json!(true));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn react_then_unreact(pool: PgPool) {
     let (_account, token) = user_with_token(&pool, "fan", "read write").await;
     let ann = announcement::create(
@@ -250,7 +250,7 @@ async fn react_then_unreact(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn react_enforces_scope_and_existence(pool: PgPool) {
     let (_account, read_token) = user_with_token(&pool, "lurker", "read").await;
     let ann = announcement::create(
@@ -288,7 +288,7 @@ async fn react_enforces_scope_and_existence(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn react_rejects_a_ninth_distinct_emoji(pool: PgPool) {
     let (account, token) = user_with_token(&pool, "reactor", "read write").await;
     let ann = announcement::create(

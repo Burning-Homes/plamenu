@@ -2,6 +2,8 @@
 use super::{PgPool, Tx};
 use crate::DbError;
 
+type CandidateRow = (String, i64, String, Option<serde_json::Value>, Option<i64>);
+
 /// Called while holding the settings lock, before selecting any verification
 /// quota. A known unchanged identity requires no per-object network work.
 pub(super) async fn new_candidate(tx: &mut Tx<'_>, uri: &str) -> Result<bool, DbError> {
@@ -85,7 +87,7 @@ pub async fn schedule_candidates(pool: &PgPool) -> Result<(), DbError> {
         .execute(&mut *tx)
         .await?;
     schedule_source_hints(&mut tx, &settings).await?;
-    let rows: Vec<(String,i64,String,Option<serde_json::Value>,Option<i64>)>=sqlx::query_as(
+    let rows: Vec<CandidateRow>=sqlx::query_as(
         "SELECT c.uri,c.source_id,c.cursor,c.video,s.introduced_by FROM discovery_candidates c
          JOIN discovery_sources s ON s.id=c.source_id WHERE s.enabled ORDER BY c.created_at LIMIT 32")
         .fetch_all(&mut *tx).await?;
@@ -311,6 +313,60 @@ pub async fn actor_evidence(
     Ok(sqlx::query_scalar("SELECT document FROM discovery_actor_evidence WHERE uri=$1 AND verified_at>now()-interval '14 days'")
         .bind(uri).fetch_optional(pool).await?)
 }
+async fn restrict_actor_discovery(
+    tx: &mut Tx<'_>,
+    lease: &super::Lease,
+    uri: &str,
+    signal: &str,
+) -> Result<(), DbError> {
+    // Preserve searchable public video metadata, while immediately applying
+    // this actor's promotion refusal to every cached dependent. The current
+    // canonical verification may finish with the restricted signal; other
+    // revisions and in-flight first fetches must not restore old consent.
+    // Revision fencing clears topics through the existing trigger. Return
+    // the canonical tags with the update, then restore them in a subsequent
+    // statement in this same locked transaction.
+    let previous_topics: Vec<(i64, Vec<String>)> = sqlx::query_as(
+        "WITH affected AS MATERIALIZED (
+            SELECT e.id,COALESCE(array_agg(t.topic) FILTER(WHERE t.topic IS NOT NULL),ARRAY[]::text[]) AS topics
+            FROM discovery_entries e JOIN discovery_video_details v ON e.id=v.entry_id
+            LEFT JOIN discovery_topics t ON t.entry_id=e.id
+            WHERE v.owner_uri=$1 OR v.channel_uri=$1 GROUP BY e.id
+        ) UPDATE discovery_entries e SET discoverable=$2,
+            revision=revision+CASE WHEN e.canonical_uri=$3 THEN 0 ELSE 1 END,
+            updated_at=clock_timestamp() FROM affected a WHERE e.id=a.id
+          RETURNING e.id,a.topics",
+    )
+    .bind(uri)
+    .bind(signal)
+    .bind(&lease.target_uri)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut entry_ids = Vec::new();
+    let mut topics = Vec::new();
+    for (id, tags) in previous_topics {
+        for tag in tags {
+            entry_ids.push(id);
+            topics.push(tag);
+        }
+    }
+    if !topics.is_empty() {
+        sqlx::query("INSERT INTO discovery_topics(entry_id,topic) SELECT * FROM unnest($1::bigint[],$2::text[]) ON CONFLICT DO NOTHING")
+            .bind(&entry_ids).bind(&topics).execute(&mut **tx).await?;
+    }
+    sqlx::query("UPDATE discovery_video_details SET channel_title=NULL WHERE owner_uri=$1 OR channel_uri=$1")
+        .bind(uri).execute(&mut **tx).await?;
+    sqlx::query(
+        "DELETE FROM discovery_jobs j USING discovery_video_work w
+        WHERE w.job_id=j.id AND j.id<>$2 AND NOT j.withdrawn AND j.lease_token IS NOT NULL
+          AND (w.owner_uri=$1 OR w.channel_uri=$1)",
+    )
+    .bind(uri)
+    .bind(lease.id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
 pub async fn save_actor_evidence(
     pool: &PgPool,
     lease: &super::Lease,
@@ -327,6 +383,14 @@ pub async fn save_actor_evidence(
     let settings = super::lock_settings(&mut tx).await?;
     if !super::valid_lease(&mut tx, &settings, lease).await? {
         return Ok(());
+    }
+    let discovery_refusal = match document.get("discoverable") {
+        Some(serde_json::Value::Bool(false)) => Some("deny"),
+        Some(value) if !value.is_boolean() => Some("invalid"),
+        _ => None,
+    };
+    if let Some(signal) = discovery_refusal {
+        restrict_actor_discovery(&mut tx, lease, uri, signal).await?;
     }
     let mut bounded = serde_json::Map::new();
     for key in [

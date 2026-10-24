@@ -969,7 +969,10 @@ pub struct MediaRendition {
     clippy::too_many_lines,
     reason = "one transaction keeps the attachment, job, and rendition ladder atomic"
 )]
-pub async fn create_remote(pool: &PgPool, new: NewRemoteMedia<'_>) -> Result<(), DbError> {
+pub async fn create_remote<'a>(
+    pool: impl sqlx::Acquire<'a, Database = sqlx::Postgres>,
+    new: NewRemoteMedia<'_>,
+) -> Result<(), DbError> {
     let (focus_x, focus_y) = match new.focus {
         Some((x, y)) => (Some(x), Some(y)),
         None => (None, None),

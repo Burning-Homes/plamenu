@@ -136,7 +136,7 @@ async fn post_status(pool: &PgPool, username: &str, text: &str, visibility: &str
     stored.id
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn lookup_resolves_known_accounts_without_webfinger(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -184,7 +184,7 @@ async fn lookup_resolves_known_accounts_without_webfinger(pool: PgPool) {
     assert_eq!(body["error"], "Record not found");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_statuses_lists_and_filters(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -259,7 +259,7 @@ async fn account_statuses_lists_and_filters(pool: PgPool) {
 /// like the home/list/tag timelines: flipping to `received` reorders a
 /// backfilled post (older publish date, newer id) from publish order to
 /// ingest order.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_statuses_honor_viewer_timeline_order(pool: PgPool) {
     let author = create_local_account(&pool, "author", "Author").await;
     let (viewer, viewer_token) = user_with_token(&pool, "viewer").await;
@@ -311,7 +311,7 @@ async fn account_statuses_honor_viewer_timeline_order(pool: PgPool) {
     assert_eq!(ids(&body), [second.to_string(), first.to_string()]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_statuses_reply_and_reblog_filters(pool: PgPool) {
     let (alice, _) = user_with_token(&pool, "alice").await;
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -425,7 +425,7 @@ async fn account_statuses_reply_and_reblog_filters(pool: PgPool) {
     assert_eq!(body, json!([]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn follow_and_unfollow_local_account(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -534,7 +534,7 @@ async fn follow_and_unfollow_local_account(pool: PgPool) {
     assert_eq!(body["error"], "Following your own account is not allowed");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn follow_and_unfollow_remote_account_federate(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -597,7 +597,7 @@ async fn follow_and_unfollow_remote_account_federate(pool: PgPool) {
     assert_eq!(sent[1].activity["object"]["id"], follow_uri);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remove_from_followers_severs_and_rejects(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -657,7 +657,7 @@ async fn remove_from_followers_severs_and_rejects(pool: PgPool) {
     assert_eq!(delivery::run_due(&state).await, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn familiar_followers_lists_mutual_follows(pool: PgPool) {
     // viewer follows carol and dave; carol and erin both follow target;
     // dave does not. So the target's familiar followers (for viewer) = carol.
@@ -710,7 +710,7 @@ async fn familiar_followers_lists_mutual_follows(pool: PgPool) {
     assert!(results[1]["accounts"].as_array().unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn familiar_followers_unknown_id_still_gets_empty_entry(pool: PgPool) {
     // Regression: a nonexistent id must still appear with an
     // empty account list (Mastodon's presenter over `Account.where(id:)`),
@@ -734,7 +734,7 @@ async fn familiar_followers_unknown_id_still_gets_empty_entry(pool: PgPool) {
     assert!(results[1]["accounts"].as_array().unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn familiar_followers_rejects_oversized_id_batch(pool: PgPool) {
     // Regression: an oversized `id[]` batch is a 422 rather
     // than a request that performs work proportional to the body.
@@ -770,7 +770,7 @@ async fn familiar_followers_rejects_oversized_id_batch(pool: PgPool) {
     assert_eq!(body.as_array().unwrap().len(), 200);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn relationships_rejects_oversized_id_batch(pool: PgPool) {
     // Regression: `relationships` renders a repeated id twice,
     // so the raw entry count — duplicates included — must be capped.
@@ -791,7 +791,7 @@ async fn relationships_rejects_oversized_id_batch(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_note_sets_clears_and_rides_relationship(pool: PgPool) {
     let (_viewer, token) = user_with_token(&pool, "viewer").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -840,7 +840,7 @@ async fn account_note_sets_clears_and_rides_relationship(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn endorse_pins_accounts_to_profile(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -925,7 +925,7 @@ async fn endorse_pins_accounts_to_profile(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_endpoints_require_auth(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let app = || test_app(pool.clone());
@@ -960,7 +960,7 @@ async fn account_endpoints_require_auth(pool: PgPool) {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn batch_accounts_returns_requested_in_order(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -999,7 +999,7 @@ async fn batch_accounts_returns_requested_in_order(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sensitive_action_forces_warning_for_everyone_but_the_author(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let status_id = post_status(&pool, "alice", "ordinary image post", "public").await;
@@ -1027,7 +1027,7 @@ async fn sensitive_action_forces_warning_for_everyone_but_the_author(pool: PgPoo
     assert_eq!(own["sensitive"], false, "author sees their stored choice");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn silenced_local_public_post_is_demoted_to_unlisted(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     account::silence(&pool, alice.id).await.unwrap();

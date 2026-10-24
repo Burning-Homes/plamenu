@@ -247,7 +247,7 @@ async fn rollback_and_retry(pool: PgPool, verb: &str) {
 
 macro_rules! mutation_test {
     ($name:ident, $verb:literal) => {
-        #[sqlx::test(migrations = "../db/migrations")]
+        #[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
         async fn $name(pool: PgPool) {
             rollback_and_retry(pool, $verb).await;
         }
@@ -271,7 +271,7 @@ mutation_test!(feature_rollback_and_retry, "feature");
 mutation_test!(unfeature_rollback_and_retry, "unfeature");
 mutation_test!(unfeature_by_id_rollback_and_retry, "unfeature_by_id");
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failure_in_group_fanout_rolls_back_author_jobs_and_group_boost(pool: PgPool) {
     let (state, alice, post, community) = fixture(&pool).await;
     // Author deliveries succeed; only the later group wrapper insert fails.
@@ -320,7 +320,7 @@ async fn failure_in_group_fanout_rolls_back_author_jobs_and_group_boost(pool: Pg
     assert!(group_jobs > 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn event_and_media_edit_roll_back_and_retry_serializes_new_sidecars(pool: PgPool) {
     let (state, alice, _, _) = fixture(&pool).await;
     let upload = plamenu_db::media::create_local(
@@ -400,7 +400,7 @@ async fn event_and_media_edit_roll_back_and_retry_serializes_new_sidecars(pool: 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn quote_revocation_rolls_back_and_retry_updates_the_quoting_note(pool: PgPool) {
     let (state, alice, post, _) = fixture(&pool).await;
     let (quoting, _) = actions::post_status(
@@ -444,7 +444,7 @@ async fn quote_revocation_rolls_back_and_retry_updates_the_quoting_note(pool: Pg
     assert!(plamenu_db::job::pending_count(&pool).await.unwrap() > 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_and_account_deletion_roll_back_with_their_delivery(pool: PgPool) {
     let (state, alice, _, _) = fixture(&pool).await;
     let before: Value = sqlx::query_scalar("SELECT to_jsonb(a) FROM accounts a WHERE id = $1")
@@ -498,7 +498,7 @@ async fn profile_and_account_deletion_roll_back_with_their_delivery(pool: PgPool
     assert!(plamenu_db::job::pending_count(&pool).await.unwrap() > 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_lifecycle_rolls_back_with_its_delivery(pool: PgPool) {
     use plamenu::collections::{self, CollectionParams};
     let (state, alice, _, _) = fixture(&pool).await;
@@ -570,7 +570,7 @@ async fn collection_lifecycle_rolls_back_with_its_delivery(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_moderation_rolls_back_with_its_delivery(pool: PgPool) {
     let (state, alice, post, community) = fixture(&pool).await;
     let target = create_local_account(&pool, "charlie", "Charlie").await;
@@ -642,7 +642,7 @@ async fn group_moderation_rolls_back_with_its_delivery(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn note_render_and_edit_use_a_single_pool_connection(pool: PgPool) {
     let (_, alice, post, _) = fixture(&pool).await;
     let single = sqlx::postgres::PgPoolOptions::new()
@@ -672,7 +672,7 @@ async fn note_render_and_edit_use_a_single_pool_connection(pool: PgPool) {
     .expect("render/edit must not hold a pool connection while asking for another");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn relay_handshakes_roll_back_with_their_delivery(pool: PgPool) {
     let (state, _, _, _) = fixture(&pool).await;
     let relay = plamenu_db::relay::create(&pool, "https://relay.example/inbox", None)
@@ -705,7 +705,7 @@ async fn relay_handshakes_roll_back_with_their_delivery(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn forwarded_report_rolls_back_with_its_flag(pool: PgPool) {
     let (state, alice, _, _) = fixture(&pool).await;
     let target = plamenu_db::account::find_by_uri(&pool, "https://remote.example/users/bob")
@@ -733,7 +733,7 @@ async fn forwarded_report_rolls_back_with_its_flag(pool: PgPool) {
     perform().await.unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_key_rotation_rolls_back_publication_and_expiry(pool: PgPool) {
     let (state, _, _, _) = fixture(&pool).await;
     let owner = common::create_immutable_local_account(&pool, "dana", "Dana").await;
@@ -792,7 +792,7 @@ async fn account_key_rotation_rolls_back_publication_and_expiry(pool: PgPool) {
     assert_ne!(keys().await, before);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_profile_transfer_and_deletion_roll_back_with_delivery(pool: PgPool) {
     let (state, _, _, community) = fixture(&pool).await;
     let successor = create_local_account(&pool, "successor", "Successor").await;
@@ -836,7 +836,7 @@ async fn group_profile_transfer_and_deletion_roll_back_with_delivery(pool: PgPoo
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_membership_rolls_back_and_removal_reaches_removed_member(pool: PgPool) {
     use plamenu::collections::{self, CollectionParams};
     let (state, alice, _, _) = fixture(&pool).await;

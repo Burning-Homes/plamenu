@@ -5,7 +5,7 @@ use crate::AppState;
 use plamenu_db::discovery_store::{self as db, Lease};
 use plamenu_federation::{DiscoveryFormat, FederationError};
 
-fn database(e: plamenu_db::DbError) -> FederationError {
+fn database(e: &plamenu_db::DbError) -> FederationError {
     FederationError::Admission(e.to_string())
 }
 fn transient(e: &FederationError) -> bool {
@@ -17,11 +17,32 @@ fn transient(e: &FederationError) -> bool {
     )
 }
 
+fn advertised_icon(document: &serde_json::Value, base: &url::Url) -> Option<String> {
+    let raw = [
+        "/site_view/site/icon",
+        "/instance/avatars/0/path",
+        "/instance/avatars/0/fileUrl",
+        "/icon/0/src",
+        "/thumbnail/url",
+    ]
+    .iter()
+    .find_map(|p| document.pointer(p).and_then(serde_json::Value::as_str));
+    raw.and_then(|u| base.join(u).ok())
+        .filter(|u| {
+            matches!(u.scheme(), "http" | "https")
+                && u.as_str().len() <= 2048
+                && u.fragment().is_none()
+                && u.username().is_empty()
+                && u.password().is_none()
+        })
+        .map(String::from)
+}
+
 pub(super) async fn server_icon(state: &AppState, lease: &Lease) -> Result<(), FederationError> {
     if lease.search_run_id.is_some() || lease.exploration {
         return Ok(());
     }
-    let settings = db::settings(&state.pool).await.map_err(database)?;
+    let settings = db::settings(&state.pool).await.map_err(|e| database(&e))?;
     if settings
         .disabled_mechanisms
         .iter()
@@ -31,7 +52,7 @@ pub(super) async fn server_icon(state: &AppState, lease: &Lease) -> Result<(), F
     }
     let Some(source) = db::source(&state.pool, lease.source_id)
         .await
-        .map_err(database)?
+        .map_err(|e| database(&e))?
     else {
         return Ok(());
     };
@@ -40,7 +61,7 @@ pub(super) async fn server_icon(state: &AppState, lease: &Lease) -> Result<(), F
     }
     let cached = db::server_icon(&state.pool, source.id)
         .await
-        .map_err(database)?;
+        .map_err(|e| database(&e))?;
     if cached.as_ref().is_some_and(|c| !c.due) {
         return Ok(());
     }
@@ -68,26 +89,7 @@ pub(super) async fn server_icon(state: &AppState, lease: &Lease) -> Result<(), F
         .await
         {
             Ok(r) => {
-                let doc = &r.document;
-                let raw = [
-                    "/site_view/site/icon",
-                    "/instance/avatars/0/path",
-                    "/instance/avatars/0/fileUrl",
-                    "/icon/0/src",
-                    "/thumbnail/url",
-                ]
-                .iter()
-                .find_map(|p| doc.pointer(p).and_then(serde_json::Value::as_str));
-                uri = raw
-                    .and_then(|u| base.join(u).ok())
-                    .filter(|u| {
-                        matches!(u.scheme(), "http" | "https")
-                            && u.as_str().len() <= 2048
-                            && u.fragment().is_none()
-                            && u.username().is_empty()
-                            && u.password().is_none()
-                    })
-                    .map(String::from);
+                uri = advertised_icon(&r.document, &base);
             }
             Err(e) if transient(&e) => return Err(e),
             Err(_) => {}
@@ -97,7 +99,7 @@ pub(super) async fn server_icon(state: &AppState, lease: &Lease) -> Result<(), F
         }
         db::save_server_icon(&state.pool, lease, uri.as_deref(), None, "pending", 0)
             .await
-            .map_err(database)?;
+            .map_err(|e| database(&e))?;
     }
     let mut uri = uri.unwrap();
     let fallback = base.join("/favicon.ico").unwrap().to_string();
@@ -115,7 +117,7 @@ pub(super) async fn server_icon(state: &AppState, lease: &Lease) -> Result<(), F
         uri = fallback.clone();
         db::save_server_icon(&state.pool, lease, Some(&uri), None, "pending", 0)
             .await
-            .map_err(database)?;
+            .map_err(|e| database(&e))?;
     }
     db::save_server_icon(
         &state.pool,
@@ -130,7 +132,7 @@ pub(super) async fn server_icon(state: &AppState, lease: &Lease) -> Result<(), F
         if png.is_some() { 720 } else { 24 },
     )
     .await
-    .map_err(database)?;
+    .map_err(|e| database(&e))?;
     Ok(())
 }
 

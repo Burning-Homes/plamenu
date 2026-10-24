@@ -270,7 +270,7 @@ mod schema_contract_tests {
     /// formats. Fixed-shape application data must otherwise use columns and
     /// child tables (profile fields live in `account_fields`; readers get
     /// their legacy JSON shape from `account_fields_json()`).
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn json_columns_are_limited_to_reviewed_opaque_formats(pool: PgPool) {
         let actual: BTreeSet<(String, String)> = sqlx::query!(
             r#"
@@ -333,12 +333,12 @@ mod schema_contract_tests {
 mod ping_tests {
     use super::*;
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn ping_succeeds_against_a_live_pool(pool: PgPool) {
         ping(&pool).await.expect("live pool is ready");
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn ping_errors_once_the_pool_is_closed(pool: PgPool) {
         // A closed pool stands in for an unreachable database: `ping` must
         // surface the failure so `/ready` can answer 503 instead of a false OK.

@@ -109,7 +109,7 @@ async fn cheap_remote(pool: &PgPool, username: &str) -> account::Account {
     .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn api_followers_and_following_list_accounts(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -160,7 +160,7 @@ async fn api_followers_and_following_list_accounts(pool: PgPool) {
     assert_eq!(body["error"], "Record not found");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hidden_collections_hide_rest_lists_and_forbid_ap_pages(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -205,7 +205,7 @@ async fn hidden_collections_hide_rest_lists_and_forbid_ap_pages(pool: PgPool) {
 /// follower/following lists served by the client API — the list owner (carol)
 /// hides nothing, but the hidden member (dave) must not leak to anonymous
 /// callers. The self/owner exceptions are covered at the query layer.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hidden_member_filtered_from_other_accounts_lists_api(pool: PgPool) {
     let carol = create_local_account(&pool, "carol", "Carol").await;
     let dave = create_local_account(&pool, "dave", "Dave").await;
@@ -252,7 +252,7 @@ async fn hidden_member_filtered_from_other_accounts_lists_api(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn api_follow_lists_paginate_by_follow_id(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let mut follow_ids = Vec::new();
@@ -306,7 +306,7 @@ async fn api_follow_lists_paginate_by_follow_id(pool: PgPool) {
     assert_eq!(accts(&body), ["b3", "b2"]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ap_followers_collection_envelope_and_pages(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -379,7 +379,7 @@ async fn ap_followers_collection_envelope_and_pages(pool: PgPool) {
     assert_eq!(garbled["id"], format!("{collection}?page=1"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn followers_synchronization_is_signed_and_scoped_by_requester_origin(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -437,7 +437,7 @@ async fn followers_synchronization_is_signed_and_scoped_by_requester_origin(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ap_following_collection_and_content_negotiation(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = cheap_remote(&pool, "bob").await;

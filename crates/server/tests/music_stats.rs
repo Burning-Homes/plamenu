@@ -45,7 +45,7 @@ fn request(from: &str, to: &str, zone: &str) -> Request {
         ..Default::default()
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_counts_metadata_genres_artwork_and_publication_aliases_remain_canonical(
     pool: PgPool,
 ) {
@@ -155,7 +155,7 @@ async fn explicit_counts_metadata_genres_artwork_and_publication_aliases_remain_
         report.play_count
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn calendar_zero_fills_week_starts_leap_months_and_fall_dst_hours(pool: PgPool) {
     let (state, owner, _, asset) = fixture(pool).await;
     for at in ["2026-11-01T05:30:00Z", "2026-11-01T06:30:00Z"] {
@@ -222,7 +222,7 @@ async fn calendar_zero_fills_week_starts_leap_months_and_fall_dst_hours(pool: Pg
     assert_eq!(kathmandu.play_count, 1);
     assert_eq!(kathmandu.clock[5].count, 1);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn every_chart_respects_current_shares_blocks_deletion_retirement_and_erase(pool: PgPool) {
     let (state, owner, viewer, asset) = fixture(pool).await;
     music_assets::grant(&state, owner, asset, viewer, true)
@@ -315,7 +315,7 @@ async fn every_chart_respects_current_shares_blocks_deletion_retirement_and_eras
         Err(ApiError::NotFound)
     ));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_metadata_keeps_origin_and_never_merges_into_same_named_local_entities(
     pool: PgPool,
 ) {
@@ -421,7 +421,7 @@ async fn remote_metadata_keeps_origin_and_never_merges_into_same_named_local_ent
     assert_eq!(report.play_count, 1);
     assert_eq!(report.top.tracks.len(), 1);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unsupported_inputs_fail_before_large_scans_and_full_iana_aliases_work(pool: PgPool) {
     let (state, owner, _, _) = fixture(pool).await;
     for args in [
@@ -453,7 +453,7 @@ async fn unsupported_inputs_fail_before_large_scans_and_full_iana_aliases_work(p
     assert_eq!(report.period.tz, "Europe/Vienna");
     assert_eq!(report.clock.len(), 24);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stats_read_scope_and_private_cache_policy_match_the_music_api(pool: PgPool) {
     use axum::{
         body::Body,
@@ -526,7 +526,7 @@ async fn stats_read_scope_and_private_cache_policy_match_the_music_api(pool: PgP
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn aggregation_query_count_does_not_grow_per_listen(pool: PgPool) {
     use std::sync::{
         Arc,
@@ -584,7 +584,7 @@ async fn aggregation_query_count_does_not_grow_per_listen(pool: PgPool) {
         "Query count grew per event: {single} -> {repeated}"
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn all_source_batches_count_without_collapsing_identical_titles_or_hidden_sources(
     pool: PgPool,
 ) {

@@ -1,7 +1,7 @@
 //! Poll integration tests: inbound `Question` ingestion, the polls API,
 //! voting (local and federated) and outbound `Question` authoring.
 
-mod common;
+use plamenu_test_support as common;
 
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -211,7 +211,7 @@ async fn ingest_question_ending(
         .id
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_question_creates_poll_and_renders_entity(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -273,7 +273,7 @@ async fn inbound_question_creates_poll_and_renders_entity(pool: PgPool) {
 /// Pause the child-row write, not readers, so the first visible API status
 /// must already carry its poll. This reproduces inbox/search concurrency
 /// without sleeps standing in for ingest progress.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_question_is_not_visible_without_poll(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -370,7 +370,7 @@ async fn inbound_question_is_not_visible_without_poll(pool: PgPool) {
     assert!(entity["statuses"][0]["poll"].is_object());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failed_remote_poll_write_does_not_publish_status_and_can_retry(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);
@@ -408,7 +408,7 @@ async fn failed_remote_poll_write_does_not_publish_status_and_can_retry(pool: Pg
     assert_eq!(rendered_poll.cached_tallies, vec![3, 4]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn update_question_refreshes_tallies_without_an_edit(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);
@@ -441,7 +441,7 @@ async fn update_question_refreshes_tallies_without_an_edit(pool: PgPool) {
     assert!(stored.edited_at.is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn voting_on_a_remote_poll_federates_the_votes(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -516,7 +516,7 @@ async fn voting_on_a_remote_poll_federates_the_votes(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn vote_validation_mirrors_mastodon(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -564,7 +564,7 @@ async fn vote_validation_mirrors_mastodon(pool: PgPool) {
     assert_eq!(code, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn posting_a_poll_federates_a_question(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -628,7 +628,7 @@ async fn posting_a_poll_federates_a_question(pool: PgPool) {
     assert_eq!(served["anyOf"][0]["name"], "yes");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn poll_creation_validation_mirrors_mastodon(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let cases = [
@@ -681,7 +681,7 @@ async fn poll_creation_validation_mirrors_mastodon(pool: PgPool) {
     assert_eq!(status::count_by_account(&pool, alice.id).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn form_encoded_poll_params_are_recovered(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let (code, body) = post_form(
@@ -706,7 +706,7 @@ async fn form_encoded_poll_params_are_recovered(pool: PgPool) {
     assert_eq!(rendered["multiple"], false);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn own_poll_votes_are_rejected_and_local_votes_tally(pool: PgPool) {
     let (_, alice_token) = user_with_token(&pool, "alice").await;
     let (_, carol_token) = user_with_token(&pool, "carol").await;
@@ -797,7 +797,7 @@ fn vote_activity(bob: &RemoteUser, status_id: &str, name: &str, marker: u32) -> 
     })
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_votes_tally_and_distribute_an_update(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -909,7 +909,7 @@ async fn force_expired(pool: &PgPool, poll_id: i64) {
     .unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_poll_expiry_notifies_and_sends_the_final_update(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -987,7 +987,7 @@ async fn local_poll_expiry_notifies_and_sends_the_final_update(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_poll_expiry_notifies_local_voters(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");

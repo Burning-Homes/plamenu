@@ -149,7 +149,7 @@ async fn token(f: &Fixture, actor: i64, scope: &str) -> (String, String) {
     (raw, csrf)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn opt_in_counts_polled_range_bytes_not_head_errors_metadata_or_unconsumed_bodies(
     pool: PgPool,
 ) {
@@ -235,7 +235,7 @@ async fn opt_in_counts_polled_range_bytes_not_head_errors_metadata_or_unconsumed
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn erase_disable_and_reenable_fence_open_bodies_and_other_collector_generations(
     pool: PgPool,
 ) {
@@ -279,7 +279,7 @@ async fn erase_disable_and_reenable_fence_open_bodies_and_other_collector_genera
     assert_eq!(totals(&f).await, (0, 0));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn owner_editor_publisher_scopes_and_owner_transfer_remain_private(pool: PgPool) {
     let f = fixture(pool).await;
     let editor = common::create_local_account(&f.state.pool, "editor", "Editor").await;
@@ -394,7 +394,7 @@ async fn owner_editor_publisher_scopes_and_owner_transfer_remain_private(pool: P
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn retained_rows_expire_and_deleted_or_moderated_publications_do_not_gain_new_counts(
     pool: PgPool,
 ) {
@@ -451,7 +451,7 @@ async fn retained_rows_expire_and_deleted_or_moderated_publications_do_not_gain_
     assert_eq!(totals(&f).await, (0, 0));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn operator_kill_switch_and_failed_accounting_never_break_media_delivery(pool: PgPool) {
     let mut f = fixture(pool).await;
     analytics::change(&f.state, f.owner, f.channel, true, 30, false)
@@ -486,7 +486,7 @@ async fn operator_kill_switch_and_failed_accounting_never_break_media_delivery(p
     assert_eq!(totals(&f).await, (0, 0));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ordinary_html_forms_require_csrf_scope_and_confirmed_erasure(pool: PgPool) {
     let f = fixture(pool).await;
     let (raw, csrf) = token(&f, f.owner, "read:media write:media").await;

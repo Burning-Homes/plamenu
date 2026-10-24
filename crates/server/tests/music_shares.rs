@@ -116,7 +116,7 @@ async fn text(response: Response) -> String {
     )
     .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn exact_link_serves_ranges_and_revocation_closes_cached_urls_without_publication(
     pool: PgPool,
 ) {
@@ -229,7 +229,7 @@ async fn exact_link_serves_ranges_and_revocation_closes_cached_urls_without_publ
         .unwrap();
     assert_eq!(count, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn parent_links_require_explicit_owned_audio_sharing_and_artist_links_do_not_grant_tracks(
     pool: PgPool,
 ) {
@@ -367,7 +367,7 @@ async fn parent_links_require_explicit_owned_audio_sharing_and_artist_links_do_n
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn expiration_blocks_suspension_and_source_erasure_revoke_the_same_capability(pool: PgPool) {
     let f = fixture(pool).await;
     let l = link(&f, Kind::Track, f.track).await;
@@ -430,7 +430,7 @@ async fn expiration_blocks_suspension_and_source_erasure_revoke_the_same_capabil
         .unwrap();
     assert_eq!(count, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sharing_overview_pages_ties_and_grants_without_secrets_or_cross_owner_data(pool: PgPool) {
     let f = fixture(pool).await;
     let mut secrets = Vec::new();
@@ -501,7 +501,7 @@ async fn sharing_overview_pages_ties_and_grants_without_secrets_or_cross_owner_d
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_create_and_revoke_forms_require_csrf_and_show_raw_link_only_once(pool: PgPool) {
     let f = fixture(pool).await;
     plamenu_db::user::create(
@@ -647,7 +647,7 @@ async fn share_notifications(f: &Fixture) -> Vec<plamenu_db::notification::Notif
     .await
     .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn new_grants_notify_once_use_current_metadata_and_revoke_their_event(pool: PgPool) {
     let f = fixture(pool).await;
     music_assets::grant(&f.state, f.owner.id, f.track, f.viewer.id, true)
@@ -719,7 +719,7 @@ async fn new_grants_notify_once_use_current_metadata_and_revoke_their_event(pool
         .unwrap();
     assert_eq!(statuses, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn notification_failure_rolls_back_the_grant_and_container_revision(pool: PgPool) {
     let f = fixture(pool).await;
     let current = music_collections::get(&f.state, f.collection, Some(f.owner.id))
@@ -779,7 +779,7 @@ async fn notification_failure_rolls_back_the_grant_and_container_revision(pool: 
     assert_eq!(grants, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn playlist_capability_keeps_repeats_and_never_delegates_a_foreign_private_grant(
     pool: PgPool,
 ) {
@@ -892,7 +892,7 @@ async fn playlist_capability_keeps_repeats_and_never_delegates_a_foreign_private
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn album_library_and_radio_grants_have_current_recipient_notifications_without_radio_config(
     pool: PgPool,
 ) {
@@ -977,7 +977,7 @@ async fn album_library_and_radio_grants_have_current_recipient_notifications_wit
     assert!(share_notifications(&f).await.is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn share_api_requires_read_and_media_scopes_and_redacts_listed_tokens(pool: PgPool) {
     use plamenu::auth::{generate_secret, hash_password, hash_secret};
     use plamenu_db::{oauth, user};
@@ -1110,7 +1110,7 @@ async fn share_api_requires_read_and_media_scopes_and_redacts_listed_tokens(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn capability_artwork_tracks_current_membership_and_revocation(pool: PgPool) {
     let f = fixture(pool).await;
     let art = id::next();

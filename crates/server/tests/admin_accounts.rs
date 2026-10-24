@@ -2,7 +2,7 @@
 //! the `AdminUser` HTTP-level gate (role bit + `admin:*` scope), the
 //! `Admin::Account` entity shape, and the listing filters.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -125,7 +125,7 @@ async fn api(
     (status, value)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rejects_user_without_role(pool: PgPool) {
     // Has the admin scope but no moderation role assigned.
     let (_, token) = user_with_scope(&pool, "alice", "read write admin:read admin:write").await;
@@ -140,7 +140,7 @@ async fn rejects_user_without_role(pool: PgPool) {
     assert_eq!(status, StatusCode::FORBIDDEN, "no role → 403: {body}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rejects_admin_without_scope(pool: PgPool) {
     // Holds the role, but the token lacks `admin:read`.
     let (account, token) = user_with_scope(&pool, "alice", "read write").await;
@@ -156,7 +156,7 @@ async fn rejects_admin_without_scope(pool: PgPool) {
     assert_eq!(status, StatusCode::FORBIDDEN, "missing admin:read → 403");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn lists_accounts_with_overlay(pool: PgPool) {
     let (account, token) =
         user_with_scope(&pool, "moddy", "read write admin:read admin:write").await;
@@ -211,7 +211,7 @@ async fn lists_accounts_with_overlay(pool: PgPool) {
     assert_eq!(mine["account"]["username"], "moddy");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn show_returns_admin_entity(pool: PgPool) {
     let (account, token) =
         user_with_scope(&pool, "moddy", "read write admin:read admin:write").await;
@@ -268,7 +268,7 @@ async fn actor_json(app: Router, username: &str) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn disable_action_blocks_login_and_enable_restores(pool: PgPool) {
     let (admin, atoken) =
         user_with_scope(&pool, "moddy", "read write admin:read admin:write").await;
@@ -338,7 +338,7 @@ async fn disable_action_blocks_login_and_enable_restores(pool: PgPool) {
     assert_eq!(restored, StatusCode::OK, "enabled token works again");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn suspend_hides_actor_then_unsuspend_restores(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read write admin:read admin:write").await;
     make_admin(&pool, admin.id).await;
@@ -485,7 +485,7 @@ async fn suspend_hides_actor_then_unsuspend_restores(pool: PgPool) {
     assert_eq!(logs[0].human_identifier, "@bob");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn suspending_remote_actor_rejects_its_local_follows(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read write admin:read admin:write").await;
     make_admin(&pool, admin.id).await;
@@ -530,7 +530,7 @@ async fn suspending_remote_actor_rejects_its_local_follows(pool: PgPool) {
     assert_eq!(reject["object"]["type"], "Follow");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn action_requires_write_scope_and_valid_type(pool: PgPool) {
     // Read-only admin scope cannot act.
     let (reader, rtoken) = user_with_scope(&pool, "reader", "read admin:read").await;
@@ -565,7 +565,7 @@ async fn action_requires_write_scope_and_valid_type(pool: PgPool) {
     assert_eq!(bad, StatusCode::UNPROCESSABLE_ENTITY, "bad type → 422");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_only_actions_forbid_userless_accounts(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read write admin:read admin:write").await;
     make_admin(&pool, admin.id).await;
@@ -583,7 +583,7 @@ async fn local_only_actions_forbid_userless_accounts(pool: PgPool) {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reject_deletes_the_account(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read write admin:read admin:write").await;
     make_admin(&pool, admin.id).await;
@@ -627,7 +627,7 @@ async fn make_moderator(pool: &PgPool, account_id: i64) {
 /// #48: permanent deletion now requires `DELETE_USER_DATA`. A Moderator holds
 /// `MANAGE_USERS` (so the account surface is reachable) but not that bit, so
 /// `DELETE /admin/accounts/{id}` is forbidden and the target survives.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn moderator_cannot_hard_delete_without_delete_user_data(pool: PgPool) {
     let (moddy, token) = user_with_scope(&pool, "moddy", "read write admin:read admin:write").await;
     make_moderator(&pool, moddy.id).await;
@@ -650,7 +650,7 @@ async fn moderator_cannot_hard_delete_without_delete_user_data(pool: PgPool) {
 
 /// #48: the REST hard-delete previously had no self-check. A moderator may not
 /// destroy their own account (the outrank rule denies acting on an equal role).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cannot_hard_delete_own_account(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read write admin:read admin:write").await;
     make_admin(&pool, admin.id).await;
@@ -676,7 +676,7 @@ async fn cannot_hard_delete_own_account(pool: PgPool) {
 /// #48: role hierarchy. A low-position Moderator cannot moderate a
 /// higher-ranked Admin — the previous code let anyone with `MANAGE_USERS`
 /// suspend or delete an Admin/Owner.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn moderator_cannot_moderate_a_higher_ranked_admin(pool: PgPool) {
     let (moddy, token) = user_with_scope(&pool, "moddy", "read write admin:read admin:write").await;
     make_moderator(&pool, moddy.id).await;
@@ -751,7 +751,7 @@ async fn make_superuser(pool: &PgPool, account_id: i64) {
 /// #48: the last administrator may not be permanently deleted, or the instance
 /// would be left with nobody who can administer it. The guard lifts only once a
 /// second active owner exists.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cannot_hard_delete_the_last_administrator(pool: PgPool) {
     let (boss, token) = user_with_scope(&pool, "boss", "read write admin:read admin:write").await;
     make_superuser(&pool, boss.id).await;
@@ -808,7 +808,7 @@ async fn cannot_hard_delete_the_last_administrator(pool: PgPool) {
 
 /// #48: the same lock-out protection covers the reversible verbs — a superuser
 /// cannot suspend the only administrator either.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cannot_suspend_the_last_administrator(pool: PgPool) {
     let (boss, token) = user_with_scope(&pool, "boss", "read write admin:read admin:write").await;
     make_superuser(&pool, boss.id).await;
@@ -841,7 +841,7 @@ async fn cannot_suspend_the_last_administrator(pool: PgPool) {
 /// #49: the audit log is append-only. Permanently purging a moderator must keep
 /// every action they recorded, and the destroy itself is audited in the same
 /// transaction as the data purge.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn deleting_a_moderator_preserves_their_audit_history(pool: PgPool) {
     // A moderator performs a real, audited action.
     let (moddy, mtoken) =
@@ -920,7 +920,7 @@ async fn deleting_a_moderator_preserves_their_audit_history(pool: PgPool) {
     assert_eq!(destroy.human_identifier, "@moddy");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn v2_origin_filter(pool: PgPool) {
     let (account, token) =
         user_with_scope(&pool, "moddy", "read write admin:read admin:write").await;

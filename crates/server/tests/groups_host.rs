@@ -130,7 +130,7 @@ async fn post_signed(app: Router, path: &str, body: &Value, signer: &RequestSign
 
 /// Web group creation is capped per account. The one reaching the
 /// cap succeeds; the next is refused before any RSA key is generated.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_group_enforces_the_per_account_quota(pool: PgPool) {
     let (state, _app) = harness(pool);
     let alice = create_local_account(&state.pool, "alice", "Alice").await;
@@ -193,7 +193,7 @@ async fn create_group_enforces_the_per_account_quota(pool: PgPool) {
 
 // ---- The actor document --------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_actor_document_carries_the_community_contract(pool: PgPool) {
     let (state, app) = harness(pool);
     seed_group(&state, MembershipPolicy::Open).await;
@@ -228,7 +228,7 @@ async fn group_actor_document_carries_the_community_contract(pool: PgPool) {
 
 // ---- The mod-list collections ---------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn moderators_and_affiliations_collections(pool: PgPool) {
     let (state, app) = harness(pool);
     let (_, group_id) = seed_group(&state, MembershipPolicy::Open).await;
@@ -289,7 +289,7 @@ async fn moderators_and_affiliations_collections(pool: PgPool) {
 
 // ---- Membership on the wire -----------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn open_group_accepts_follows_and_bans_reject(pool: PgPool) {
     let remote = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([remote.actor.clone()]);
@@ -351,7 +351,7 @@ async fn open_group_accepts_follows_and_bans_reject(pool: PgPool) {
     assert_eq!(reject.activity["actor"], HIKING_URI);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn approval_group_holds_the_join_request(pool: PgPool) {
     let remote = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([remote.actor.clone()]);
@@ -388,7 +388,7 @@ async fn approval_group_holds_the_join_request(pool: PgPool) {
 
 // ---- Creation -------------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn creation_seeds_owner_and_membership(pool: PgPool) {
     let (state, _) = harness(pool.clone());
     let (alice_id, group_id) = seed_group(&state, MembershipPolicy::Open).await;
@@ -405,7 +405,7 @@ async fn creation_seeds_owner_and_membership(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn creation_validates_names(pool: PgPool) {
     let (state, _) = harness(pool.clone());
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -524,7 +524,7 @@ async fn seeded_group_with_member(
     (alice_id, group_id)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn member_submission_is_wrapped_verbatim_and_boosted(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -579,7 +579,7 @@ async fn member_submission_is_wrapped_verbatim_and_boosted(pool: PgPool) {
     assert_eq!(delivery::run_due(&state).await, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn non_member_outcast_and_nonpublic_submissions_never_announce(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let dave = RemoteUser::new("remote.example", "dave");
@@ -636,7 +636,7 @@ async fn non_member_outcast_and_nonpublic_submissions_never_announce(pool: PgPoo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anyone_policy_announces_a_non_member_submission(pool: PgPool) {
     // A group whose posting policy is `anyone` accepts and announces a
     // top-level post from someone who never joined — unlike the `members`
@@ -677,7 +677,7 @@ async fn account_id_of(pool: &PgPool, user: &RemoteUser) -> i64 {
         .id
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mods_only_gates_threads_but_not_comments(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -731,7 +731,7 @@ async fn mods_only_gates_threads_but_not_comments(pool: PgPool) {
     let _ = alice_id;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn author_update_and_delete_travel_wrapped(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -792,7 +792,7 @@ async fn author_update_and_delete_travel_wrapped(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_titled_post_federates_as_page_and_announces(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -898,7 +898,7 @@ async fn local_titled_post_federates_as_page_and_announces(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_group_post_validation(pool: PgPool) {
     let (state, _) = harness(pool.clone());
     let (_, group_id) = seed_group(&state, MembershipPolicy::Open).await;
@@ -984,7 +984,7 @@ async fn local_group_post_validation(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_edit_and_delete_are_reannounced(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -1091,7 +1091,7 @@ async fn seeded_group_post(
     status::find_by_uri(pool, &uri).await.unwrap().unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_votes_score_exclude_and_relay(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let dave = RemoteUser::new("elsewhere.example", "dave");
@@ -1170,7 +1170,7 @@ async fn inbound_votes_score_exclude_and_relay(pool: PgPool) {
     assert_eq!(undone["object"]["type"], "Undo");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn dislike_off_group_posts_stays_a_reaction_withdrawal(pool: PgPool) {
     let dave = RemoteUser::new("elsewhere.example", "dave");
     let stub = StubFederation::with_actors([dave.actor.clone()]);
@@ -1224,7 +1224,7 @@ async fn dislike_off_group_posts_stays_a_reaction_withdrawal(pool: PgPool) {
     assert_eq!(entity["group_post"], json!(false));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outcast_votes_are_dropped_at_the_gate(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let dave = RemoteUser::new("elsewhere.example", "dave");
@@ -1273,7 +1273,7 @@ async fn outcast_votes_are_dropped_at_the_gate(pool: PgPool) {
     assert_eq!(delivery::run_due(&state).await, 0, "nothing relayed");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_votes_federate_to_author_and_group(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -1392,7 +1392,7 @@ async fn local_votes_federate_to_author_and_group(pool: PgPool) {
     assert!(matches!(err, plamenu::error::ApiError::Unprocessable(_)));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ranked_sorts_order_by_votes(pool: PgPool) {
     let (state, app) = harness(pool.clone());
     let (alice_id, group_id) = seed_group(&state, MembershipPolicy::Open).await;
@@ -1513,7 +1513,7 @@ async fn ranked_sorts_order_by_votes(pool: PgPool) {
 
 // ---- People surfaces exclude groups ----------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn groups_stay_out_of_user_counts_and_directory(pool: PgPool) {
     let (state, app) = harness(pool.clone());
     seed_group(&state, MembershipPolicy::Open).await;
@@ -1559,7 +1559,7 @@ async fn add_member(app: &Router, state: &AppState, user: &RemoteUser, serial: u
     assert_eq!(delivery::run_due(state).await, 1, "the member's Accept");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn approval_join_queue_authorizes_and_rejects(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let dave = RemoteUser::new("remote.example", "dave");
@@ -1627,7 +1627,7 @@ async fn approval_join_queue_authorizes_and_rejects(pool: PgPool) {
     assert_eq!(stub.deliveries().pop().unwrap().activity["type"], "Reject");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ban_severs_membership_and_unban_reverses(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let dave = RemoteUser::new("remote.example", "dave");
@@ -1704,7 +1704,7 @@ async fn ban_severs_membership_and_unban_reverses(pool: PgPool) {
     assert_eq!(undo.activity["object"]["object"]["type"], "Block");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn moderator_remove_retracts_boost_and_announces_delete(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -1758,7 +1758,7 @@ async fn moderator_remove_retracts_boost_and_announces_delete(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn locked_thread_drops_comments_until_reopened(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -1834,7 +1834,7 @@ async fn locked_thread_drops_comments_until_reopened(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn community_flag_files_a_group_scoped_report(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let dave = RemoteUser::new("remote.example", "dave");
@@ -1884,7 +1884,7 @@ async fn community_flag_files_a_group_scoped_report(pool: PgPool) {
     assert_eq!(report::count_unresolved(&pool).await.unwrap(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_moderator_ban_applies_and_reannounces(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let erin = RemoteUser::new("remote.example", "erin"); // a remote co-moderator
@@ -1941,7 +1941,7 @@ async fn remote_moderator_ban_applies_and_reannounces(pool: PgPool) {
 
 // ---- Profile updates, deletion, owner transfer ----------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_profile_update_double_sends(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -2002,7 +2002,7 @@ async fn group_profile_update_double_sends(pool: PgPool) {
     assert_eq!(inner["to"], json!([PUBLIC]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_delete_double_sends_and_tombstones(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -2049,7 +2049,7 @@ async fn group_delete_double_sends_and_tombstones(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn owner_transfer_flips_affiliations_and_announces(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -2105,7 +2105,7 @@ async fn owner_transfer_flips_affiliations_and_announces(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edited_cold_group_submission_announces_only_canonical_uri_once(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -2178,7 +2178,7 @@ async fn edited_cold_group_submission_announces_only_canonical_uri_once(pool: Pg
     assert!(!announce.to_string().contains("Cold original trail"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edited_cold_group_comment_announces_uri_without_boost_or_stale_wrapper(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);
@@ -2245,7 +2245,7 @@ async fn edited_cold_group_comment_announces_uri_without_boost_or_stale_wrapper(
     assert_eq!(announce["object"], uri);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn queued_stale_signed_group_update_cannot_publish_or_reannounce_older_payload(pool: PgPool) {
     let carl = RemoteUser::new("remote.example", "carl");
     let stub = StubFederation::with_actors([carl.actor.clone()]);

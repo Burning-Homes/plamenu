@@ -89,7 +89,7 @@ fn request(sources: Vec<Source>) -> Request {
         label: Some("My download".into()),
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn zip_jobs_preserve_order_and_repeats_safe_names_private_access_and_cleanup_debt(
     pool: PgPool,
 ) {
@@ -212,7 +212,7 @@ async fn shared_collection(f: &Fixture) -> i64 {
     .unwrap();
     row.id
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn archive_container_scope_and_current_asset_permissions_revoke_completed_downloads(
     pool: PgPool,
 ) {
@@ -303,7 +303,7 @@ async fn wait_for_origin(f: &Fixture) {
     .await
     .unwrap();
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cancelling_live_archive_stops_the_origin_body_and_never_publishes_late_bytes(
     pool: PgPool,
 ) {
@@ -360,7 +360,7 @@ async fn cancelling_live_archive_stops_the_origin_body_and_never_publishes_late_
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn leases_and_active_limits_fence_reclaims_stale_edits_and_retirement(pool: PgPool) {
     let mut f = fixture(pool).await;
     std::sync::Arc::make_mut(&mut f.state.config)
@@ -437,7 +437,7 @@ async fn leases_and_active_limits_fence_reclaims_stale_edits_and_retirement(pool
             > 0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unavailable_members_are_reported_and_archives_expire_with_durable_cleanup(pool: PgPool) {
     let f = fixture(pool).await;
     let remote = remote(&f).await;
@@ -574,7 +574,7 @@ async fn native_cookie(app: &axum::Router) -> String {
         .unwrap()
         .to_owned()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn download_api_and_native_forms_keep_scopes_csrf_and_one_music_workspace(pool: PgPool) {
     use axum::http::StatusCode;
     use http_body_util::BodyExt as _;
@@ -769,7 +769,7 @@ async fn check_bulk_selection(app: &axum::Router, cookie: &str, csrf: &str, asse
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn archive_byte_ranges_preserve_current_token_authority_after_response_headers(pool: PgPool) {
     use axum::{
         body::Body,
@@ -871,7 +871,7 @@ async fn hidden_prefix(f: &Fixture) -> i64 {
         .bind(collection.id).bind(ids).bind(assets).execute(&f.state.pool).await.unwrap();
     collection.id
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn container_archive_limit_applies_after_permissions_across_collection_pages(pool: PgPool) {
     let mut f = fixture(pool).await;
     std::sync::Arc::make_mut(&mut f.state.config)

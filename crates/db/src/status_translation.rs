@@ -206,7 +206,7 @@ mod tests {
         }
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn upsert_find_roundtrip_and_replace(pool: PgPool) {
         let status_id = cached_status(&pool).await;
         upsert(&pool, &translation(status_id)).await.unwrap();
@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(row.content, "<p>hello again</p>");
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn stale_reads_touch_last_used(pool: PgPool) {
         let status_id = cached_status(&pool).await;
         upsert(&pool, &translation(status_id)).await.unwrap();
@@ -242,7 +242,7 @@ mod tests {
         assert!(row.last_used_at > OffsetDateTime::now_utc() - time::Duration::hours(1));
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn prune_and_cap(pool: PgPool) {
         let status_id = cached_status(&pool).await;
         upsert(&pool, &translation(status_id)).await.unwrap();

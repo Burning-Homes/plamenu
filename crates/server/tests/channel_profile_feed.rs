@@ -84,7 +84,7 @@ async fn feed(
         .collect()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_channel_profile_and_api_include_all_publications_once(pool: PgPool) {
     let (state, author, channel, films) = library(&pool).await;
     let wrapper = status::upsert_remote_reblog(
@@ -183,7 +183,7 @@ async fn remote_channel_profile_and_api_include_all_publications_once(pool: PgPo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn linked_publications_obey_author_visibility_and_history_boundaries(pool: PgPool) {
     let (_, author, channel, films) = library(&pool).await;
     let viewer = create_local_account(&pool, "viewer", "Viewer").await;
@@ -286,7 +286,7 @@ async fn linked_publications_obey_author_visibility_and_history_boundaries(pool:
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_channel_profile_keeps_uploader_authorship_and_owner_moderation(pool: PgPool) {
     let owner = create_local_account(&pool, "owner", "Owner").await;
     let editor = create_local_account(&pool, "editor", "Editor").await;

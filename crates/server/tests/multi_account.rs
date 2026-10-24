@@ -6,7 +6,7 @@
 //! and `__Host-plamenu_accounts` (the roster) — so the harness keeps a small
 //! cookie jar rather than a single cookie string, and asserts on both.
 
-mod common;
+use plamenu_test_support as common;
 
 use std::collections::HashMap;
 
@@ -202,7 +202,7 @@ async fn seed_oauth_app(pool: &PgPool) {
 
 // ---- Tests -------------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signing_in_a_second_account_keeps_both_in_the_roster(pool: PgPool) {
     let alice = seed(&pool, "alice").await;
     let bob = seed(&pool, "bob").await;
@@ -238,7 +238,7 @@ async fn signing_in_a_second_account_keeps_both_in_the_roster(pool: PgPool) {
     assert!(chooser.body.contains("Sign in to another account"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn switching_flips_the_active_session(pool: PgPool) {
     let alice = seed(&pool, "alice").await;
     let _bob = seed(&pool, "bob").await;
@@ -274,7 +274,7 @@ async fn switching_flips_the_active_session(pool: PgPool) {
     assert_eq!(jar.get(SESSION_COOKIE), Some(&alice_token));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oauth_consent_can_choose_an_already_signed_in_account(pool: PgPool) {
     let alice = seed(&pool, "alice").await;
     let _bob = seed(&pool, "bob").await;
@@ -386,7 +386,7 @@ async fn oauth_consent_can_choose_an_already_signed_in_account(pool: PgPool) {
     assert_eq!(grant.user_id, alice_user.id);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signing_out_drops_the_account_and_offers_the_rest(pool: PgPool) {
     let alice = seed(&pool, "alice").await;
     let bob = seed(&pool, "bob").await;
@@ -413,7 +413,7 @@ async fn signing_out_drops_the_account_and_offers_the_rest(pool: PgPool) {
     assert!(chooser.body.contains("@alice"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_deletion_removes_its_roster_entry_and_keeps_other_sessions(pool: PgPool) {
     let alice = seed(&pool, "alice").await;
     let bob = seed(&pool, "bob").await;
@@ -462,7 +462,7 @@ async fn account_deletion_removes_its_roster_entry_and_keeps_other_sessions(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_deleted_from_another_device_is_not_offered_in_a_stale_roster(pool: PgPool) {
     let bob = seed(&pool, "bob").await;
     let app = common::test_app(pool.clone());
@@ -484,7 +484,7 @@ async fn account_deleted_from_another_device_is_not_offered_in_a_stale_roster(po
     assert!(login.body.contains("name=\"password\""));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signing_in_past_the_cap_revokes_the_evicted_session(pool: PgPool) {
     // MAX_ACCOUNTS is 5, so a sixth sign-in evicts the least-recently-added
     // account from the switcher.
@@ -538,7 +538,7 @@ async fn signing_in_past_the_cap_revokes_the_evicted_session(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn switching_to_a_revoked_session_prunes_it(pool: PgPool) {
     let alice = seed(&pool, "alice").await;
     let _bob = seed(&pool, "bob").await;

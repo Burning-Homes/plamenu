@@ -57,7 +57,7 @@ async fn fixture(pool: PgPool) -> (AppState, i64, Arc<StubFederation>, Value) {
     );
     (test_state_with(pool, stub.clone()), viewer, stub, track)
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_unpublished_album_plays_without_following_or_fabricating_an_ap_post(pool: PgPool) {
     let (state, viewer, _, _) = fixture(pool).await;
     let album = music_remote::import(&state, viewer, &format!("{BASE}/albums/{ALBUM}"))
@@ -103,7 +103,7 @@ async fn public_unpublished_album_plays_without_following_or_fabricating_an_ap_p
         Some(result.entries[0].entry_id.as_str())
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_catalogue_access_is_rechecked_for_private_paid_deleted_and_changed_media(
     pool: PgPool,
 ) {
@@ -141,7 +141,7 @@ async fn anonymous_catalogue_access_is_rechecked_for_private_paid_deleted_and_ch
             .is_ok()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn server_discovery_keeps_private_and_paid_tracks_out_of_results(pool: PgPool) {
     let (state, viewer, stub, track) = fixture(pool).await;
     let uri = format!("{BASE}/api/v1/tracks/?limit=24&offset=0&q=&include=artist%2Calbum%2Cowner");
@@ -167,7 +167,7 @@ async fn server_discovery_keeps_private_and_paid_tracks_out_of_results(pool: PgP
     assert_eq!(cached, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 #[allow(clippy::too_many_lines)] // One signed-in journey verifies discovery, playback and policy gates.
 async fn native_music_landing_album_and_play_flow_needs_no_subscription(pool: PgPool) {
     use axum::{
@@ -413,7 +413,7 @@ async fn native_music_landing_album_and_play_flow_needs_no_subscription(pool: Pg
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_live_streams_have_native_playback_and_stop_when_origin_goes_offline(pool: PgPool) {
     let (state, viewer, stub, _) = fixture(pool).await;
     let mut value = json!({"id":ID,"name":"Live radio","visibility":"public","enabled":true,"online":true,"stream_url":"/streams/live.mp3","owner":{"username":"musician","display_name":"Musician"}});
@@ -445,7 +445,7 @@ async fn public_live_streams_have_native_playback_and_stop_when_origin_goes_offl
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn artist_browsing_preserves_album_tracks_and_an_empty_origin_page_retires_membership(
     pool: PgPool,
 ) {

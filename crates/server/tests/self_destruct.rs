@@ -25,7 +25,7 @@ async fn get(app: &axum::Router, uri: &str) -> (StatusCode, String) {
     (status, String::from_utf8_lossy(&body).into_owned())
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn gate_serves_410_except_wind_down_allowlist(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let app = build_router(test_state_with(pool.clone(), std::sync::Arc::default()));
@@ -109,7 +109,7 @@ async fn gate_serves_410_except_wind_down_allowlist(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn worker_broadcasts_delete_actor_to_every_known_inbox(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -190,7 +190,7 @@ async fn worker_broadcasts_delete_actor_to_every_known_inbox(pool: PgPool) {
     assert_eq!(progress.pending_deliveries, 4);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn worker_backs_off_while_the_queue_is_saturated(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     remote::store_remote_actor(&pool, &RemoteUser::new("masto.example", "carl").actor)
@@ -219,7 +219,7 @@ async fn worker_backs_off_while_the_queue_is_saturated(pool: PgPool) {
 /// after a single top-of-pass capacity check, so it could blow far past the
 /// `MAX_ENQUEUED` (10 000) backpressure cap. Each account's chunk is now reserved
 /// before it starts, so a pass stops the moment the next account would overshoot.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn worker_reserves_queue_capacity_per_account(pool: PgPool) {
     // Three local accounts await broadcast; two known remote inboxes → each
     // account's Delete fan-out is a 2-job chunk.

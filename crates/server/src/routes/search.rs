@@ -42,6 +42,19 @@ fn limit_param(raw: Option<&str>, default: i64) -> i64 {
     }
 }
 
+fn normalize_query(raw: &str) -> String {
+    raw.trim()
+        .chars()
+        .map(|c| {
+            if QUOTE_EQUIVALENTS.contains(&c) {
+                '"'
+            } else {
+                c
+            }
+        })
+        .collect()
+}
+
 fn id_param(raw: Option<&str>) -> Option<i64> {
     raw.and_then(|s| s.parse::<i64>().ok())
 }
@@ -91,17 +104,7 @@ pub async fn search_v2(
         }
     }
 
-    let q: String = raw
-        .trim()
-        .chars()
-        .map(|c| {
-            if QUOTE_EQUIVALENTS.contains(&c) {
-                '"'
-            } else {
-                c
-            }
-        })
-        .collect();
+    let q = normalize_query(raw);
     let limit = limit_param(query.limit.as_deref(), RESULTS_LIMIT);
     let kind = query.kind.as_deref().filter(|k| !k.is_empty());
     // Offsets only apply to single-type searches, like Mastodon's.

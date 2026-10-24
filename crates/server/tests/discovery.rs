@@ -1,8 +1,8 @@
 //! Real guarded transport plus durable worker lifecycle, with loopback fixtures.
-mod common;
 use plamenu::{AppState, discovery::worker, federation::HttpFederation};
 use plamenu_db::{PgPool, discovery_store as db};
 use plamenu_federation::FederationClient;
+use plamenu_test_support as common;
 use std::{sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -53,7 +53,7 @@ async fn request(socket: &mut TcpStream) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inspection_only_records_observed_capability_and_has_no_import_side_effects(pool: PgPool) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy = format!("http://{}", listener.local_addr().unwrap());
@@ -96,7 +96,7 @@ async fn inspection_only_records_observed_capability_and_has_no_import_side_effe
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pause_cancels_stream_and_resume_does_not_refund_or_overlap_requests(pool: PgPool) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy = format!("http://{}", listener.local_addr().unwrap());
@@ -158,7 +158,7 @@ async fn pause_cancels_stream_and_resume_does_not_refund_or_overlap_requests(poo
     assert_eq!(status.leased, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn shutdown_leaves_recoverable_lease_and_conservative_charge(pool: PgPool) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy = format!("http://{}", listener.local_addr().unwrap());
@@ -212,7 +212,7 @@ async fn shutdown_leaves_recoverable_lease_and_conservative_charge(pool: PgPool)
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocked_instance_is_not_contacted(pool: PgPool) {
     let uri = "https://blocked.example/source";
     admitted(&pool, uri).await;
@@ -240,7 +240,7 @@ async fn blocked_instance_is_not_contacted(pool: PgPool) {
     assert!(status.last_success_at.is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbox_sampling_requires_a_verified_author_before_any_request(pool: PgPool) {
     let source = admitted(&pool, "https://peer.example/source").await;
     let lease = db::claim_due(&pool, "verify").await.unwrap().remove(0);
@@ -266,10 +266,15 @@ async fn outbox_sampling_requires_a_verified_author_before_any_request(pool: PgP
     )
     .await
     .unwrap();
-    assert_eq!(
-        worker::run_due(&state(pool.clone(), None)).await.unwrap(),
-        1
-    );
+    // Presentation now has its own scheduled job. Exercise this outbox lease
+    // explicitly so unrelated source branding cannot select the fixture's work.
+    let leases = db::claim_due_for(&pool, "unverified-author", &[db::Operation::SampleOutbox])
+        .await
+        .unwrap();
+    assert_eq!(leases.len(), 1);
+    plamenu::discovery::outbox::fetch(&state(pool.clone(), None), &leases[0])
+        .await
+        .unwrap();
     assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 0);
     let attempts = sqlx::query_scalar!(
         "SELECT attempts FROM discovery_jobs WHERE source_id=$1",
@@ -281,7 +286,7 @@ async fn outbox_sampling_requires_a_verified_author_before_any_request(pool: PgP
     assert!(attempts.is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_block_learned_during_redirect_prevents_the_next_contact(pool: PgPool) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy = format!("http://{}", listener.local_addr().unwrap());

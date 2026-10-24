@@ -50,7 +50,7 @@ pub async fn save_actor_label(
     let settings = super::lock_settings(&mut tx).await?;
     if super::valid_lease(&mut tx, &settings, lease).await? {
         sqlx::query("INSERT INTO discovery_actor_labels(uri,username) SELECT $1,$2 WHERE EXISTS(SELECT 1 FROM discovery_actor_labels WHERE uri=$1) OR (SELECT count(*) FROM discovery_actor_labels)<$3 ON CONFLICT(uri) DO UPDATE SET username=excluded.username,updated_at=now()")
-            .bind(uri).bind(username).bind(i64::from(settings.max_entries)*3).execute(&mut *tx).await?;
+            .bind(uri).bind(username).bind(settings.max_entries*3).execute(&mut *tx).await?;
     }
     tx.commit().await?;
     Ok(())

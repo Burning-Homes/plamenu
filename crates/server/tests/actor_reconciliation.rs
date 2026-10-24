@@ -73,7 +73,7 @@ async fn idle(state: &AppState) {
     .expect("bounded reconciliation should finish");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_reconciliation_keeps_plain_name_and_markdown_summary(pool: PgPool) {
     let channel = RemoteUser::channel("video.example", "forum_demos");
     let stub = StubFederation::with_actors([channel.actor.clone()]);
@@ -117,7 +117,7 @@ async fn actor_fetch_started(stub: &StubFederation, uri: &str, initial: usize) {
     .unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stale_inline_text_converges_without_identity_or_key_rewrite(pool: PgPool) {
     let (state, stub, bob, id) = fixture(&pool).await;
     let before = account::find_by_id(&pool, id).await.unwrap().unwrap();
@@ -158,7 +158,7 @@ async fn stale_inline_text_converges_without_identity_or_key_rewrite(pool: PgPoo
     assert_eq!(after.inbox_url, before.inbox_url);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn foreign_malformed_key_only_or_failed_fetch_preserves_inline(pool: PgPool) {
     for mode in 0..4 {
         let (state, stub, bob, id) = fixture(&pool).await;
@@ -206,7 +206,7 @@ async fn foreign_malformed_key_only_or_failed_fetch_preserves_inline(pool: PgPoo
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn dirty_generation_discards_held_old_origin_and_refetches_current(pool: PgPool) {
     let (state, stub, bob, id) = fixture(&pool).await;
     let initial = stub
@@ -270,7 +270,7 @@ async fn dirty_generation_discards_held_old_origin_and_refetches_current(pool: P
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn intervening_revision_change_suppresses_optional_write_without_fetch_amplification(
     pool: PgPool,
 ) {
@@ -317,7 +317,7 @@ async fn intervening_revision_change_suppresses_optional_write_without_fetch_amp
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn suspension_or_new_domain_block_during_fetch_prevents_text_write(pool: PgPool) {
     for suspend in [true, false] {
         let (state, stub, bob, id) = fixture(&pool).await;
@@ -369,7 +369,7 @@ async fn suspension_or_new_domain_block_during_fetch_prevents_text_write(pool: P
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn foreign_or_unsigned_update_does_not_admit_reconciliation(pool: PgPool) {
     let (state, _, bob, _) = fixture(&pool).await;
     let mut foreign = update(&bob, "Forged", 1);
@@ -395,7 +395,7 @@ async fn foreign_or_unsigned_update_does_not_admit_reconciliation(pool: PgPool) 
     assert_eq!(state.actor_reconciliation.active_count(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn later_real_change_is_not_suppressed_by_freshness_window(pool: PgPool) {
     let (state, stub, bob, id) = fixture(&pool).await;
     for sequence in 1..=2 {
@@ -422,7 +422,7 @@ async fn later_real_change_is_not_suppressed_by_freshness_window(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn identical_text_inline_commit_before_admission_rejects_old_xmin(pool: PgPool) {
     let (state, stub, bob, id) = fixture(&pool).await;
     let initial = stub
@@ -469,7 +469,7 @@ async fn identical_text_inline_commit_before_admission_rejects_old_xmin(pool: Pg
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn invalid_lifecycle_controller_or_key_scope_preserves_inline_without_key_fetch(
     pool: PgPool,
 ) {
@@ -533,7 +533,7 @@ async fn invalid_lifecycle_controller_or_key_scope_preserves_inline_without_key_
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn shutdown_cancels_held_origin_and_releases_task_state(pool: PgPool) {
     let (state, stub, bob, id) = fixture(&pool).await;
     let initial = stub
@@ -564,7 +564,7 @@ async fn shutdown_cancels_held_origin_and_releases_task_state(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn slow_origin_timeout_preserves_inline_and_returns_accepted_promptly(pool: PgPool) {
     let (state, stub, bob, id) = fixture(&pool).await;
     stub.objects
@@ -598,7 +598,7 @@ async fn slow_origin_timeout_preserves_inline_and_returns_accepted_promptly(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inline_commit_after_generation_check_before_cas_cannot_be_overwritten(pool: PgPool) {
     let (state, stub, bob, id) = fixture(&pool).await;
     let initial = stub

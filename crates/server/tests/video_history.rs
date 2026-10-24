@@ -71,7 +71,7 @@ async fn request(
     )
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn api_auth_scopes_cache_owner_isolation_and_clear(pool: PgPool) {
     use serde_json::json;
     let (state, _, bob, film, _) = setup(&pool).await;
@@ -238,7 +238,7 @@ async fn api_auth_scopes_cache_owner_isolation_and_clear(pool: PgPool) {
     assert!(db::recent(&pool, bob).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn html_settings_save_and_forget_require_csrf_and_clear_confirmation(pool: PgPool) {
     let (state, _, bob, film, _) = setup(&pool).await;
     plamenu_db::user::create(
@@ -455,7 +455,7 @@ async fn html_settings_save_and_forget_require_csrf_and_clear_confirmation(pool:
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn viewer_preferences_partial_update_keeps_history_and_rolls_back_together(pool: PgPool) {
     let (_, _, bob, film, _) = setup(&pool).await;
     assert!(db::preferences(&pool, bob).await.unwrap().p2p_enabled);
@@ -523,7 +523,7 @@ async fn setup(pool: &PgPool) -> (plamenu::AppState, i64, i64, i64, i64) {
     (state, alice.id, bob.id, film.id, s.id)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn history_is_opt_in_not_federated_and_disable_deletes(pool: PgPool) {
     let (state, alice, bob, film, post) = setup(&pool).await;
     assert!(!db::enabled(&pool, bob).await.unwrap());
@@ -576,7 +576,7 @@ async fn history_is_opt_in_not_federated_and_disable_deletes(pool: PgPool) {
     assert!(!service::save(&state, bob, film, 26, false).await.unwrap());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn history_rechecks_author_channel_owner_blocks_and_private_access(pool: PgPool) {
     let (state, alice, bob, film, post) = setup(&pool).await;
     db::set_enabled(&pool, bob, true).await.unwrap();
@@ -652,7 +652,7 @@ async fn history_rechecks_author_channel_owner_blocks_and_private_access(pool: P
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn positions_live_and_unpublished_validation(pool: PgPool) {
     let (state, alice, bob, film, _) = setup(&pool).await;
     db::set_enabled(&pool, bob, true).await.unwrap();
@@ -698,7 +698,7 @@ async fn positions_live_and_unpublished_validation(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bounded_retention_paging_and_media_cascade(pool: PgPool) {
     let (state, alice, bob, film, post) = setup(&pool).await;
     db::set_enabled(&pool, bob, true).await.unwrap();
@@ -737,7 +737,7 @@ async fn bounded_retention_paging_and_media_cascade(pool: PgPool) {
     assert!(db::recent(&pool, bob).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn opt_out_fences_concurrent_writes_and_failure_rolls_back(pool: PgPool) {
     let (_, _, bob, film, _) = setup(&pool).await;
     db::set_enabled(&pool, bob, true).await.unwrap();

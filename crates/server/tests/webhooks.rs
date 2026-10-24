@@ -54,7 +54,7 @@ async fn add_webhook(
     .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn status_created_delivers_signed_payload(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let hook = add_webhook(
@@ -126,7 +126,7 @@ async fn status_created_delivers_signed_payload(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn report_created_renders_template_and_failures_follow_mastodon(pool: PgPool) {
     let reporter = create_local_account(&pool, "alice", "Alice").await;
     let target = create_local_account(&pool, "bob", "Bob").await;

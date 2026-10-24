@@ -1,7 +1,7 @@
 //! Scope checks through the routed API: narrow and broad grants, legacy
 //! alternatives, unrelated permissions, and anonymous reads of public objects.
 
-mod common;
+use plamenu_test_support as common;
 
 use std::collections::HashMap;
 
@@ -169,7 +169,7 @@ async fn check_matrix(fixture: &Fixture, cases: &[Case]) {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 #[allow(
     clippy::too_many_lines,
     reason = "explicit endpoint matrix or complete client flow"
@@ -311,7 +311,7 @@ async fn read_endpoints_accept_only_their_scopes(pool: PgPool) {
     .await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 #[allow(
     clippy::too_many_lines,
     reason = "explicit endpoint matrix or complete client flow"
@@ -476,7 +476,7 @@ async fn write_endpoints_accept_only_their_scopes(pool: PgPool) {
     .await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 #[allow(
     clippy::too_many_lines,
     reason = "explicit endpoint matrix or complete client flow"
@@ -632,7 +632,7 @@ async fn granular_oauth_flow_can_upload_post_and_read(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scopes_preserve_visibility_and_ownership(pool: PgPool) {
     let fixture = Fixture::new(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -742,7 +742,7 @@ async fn scopes_preserve_visibility_and_ownership(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn uploads_and_registration_enforce_resource_scopes(pool: PgPool) {
     let fixture = Fixture::new(&pool).await;
     for scope in fixture.tokens.keys() {

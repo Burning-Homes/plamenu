@@ -3,7 +3,7 @@
 //! the uses counter, the `/settings/invites` management page, and the
 //! instance entity's `invites_enabled`.
 
-mod common;
+use plamenu_test_support as common;
 
 use altcha::{Challenge, Payload, SolveChallengeOptions, solve_challenge};
 use axum::Router;
@@ -252,7 +252,7 @@ fn signup_body(username: &str, email: &str, invite_code: &str) -> Value {
     })
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn invite_link_serves_json_and_redirects_browsers(pool: PgPool) {
     let alice = seed_user(&pool, "alice", "pw").await;
     seed_invite(&pool, alice, "AbCd1234", None).await;
@@ -288,7 +288,7 @@ async fn invite_link_serves_json_and_redirects_browsers(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn invite_bypasses_closed_registrations_and_counts_uses(pool: PgPool) {
     // Registrations stay at the default `none`.
     let alice = seed_user(&pool, "alice", "pw").await;
@@ -343,7 +343,7 @@ async fn invite_bypasses_closed_registrations_and_counts_uses(pool: PgPool) {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn invite_grants_approval_in_approved_mode(pool: PgPool) {
     set_registrations_mode(&pool, RegistrationsMode::Approved).await;
     let alice = seed_user(&pool, "alice", "pw").await;
@@ -389,7 +389,7 @@ async fn invite_grants_approval_in_approved_mode(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_invite_management_and_invited_signup(pool: PgPool) {
     // Registrations closed: only the invite opens the web form.
     seed_user(&pool, "alice", "correct horse battery").await;
@@ -488,7 +488,7 @@ async fn web_invite_management_and_invited_signup(pool: PgPool) {
     assert!(reopened.body.contains("Registrations are closed"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_v1_advertises_invites(pool: PgPool) {
     let app = test_app_smtp(pool.clone());
 
@@ -504,7 +504,7 @@ async fn instance_v1_advertises_invites(pool: PgPool) {
     assert_eq!(body["invites_enabled"], Value::Bool(true));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn invites_forbidden_without_role_permission(pool: PgPool) {
     // No `invite_users` grant anywhere: every invite surface is closed.
     seed_user(&pool, "alice", "correct horse battery").await;

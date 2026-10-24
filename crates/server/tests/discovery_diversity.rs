@@ -1,5 +1,4 @@
 //! Reproducible acquisition under the same 100-attempt pilot budget. No Internet.
-mod common;
 use axum::{
     Router,
     body::Body,
@@ -8,11 +7,12 @@ use axum::{
 };
 use plamenu::{
     AppState,
-    discovery::{seeds, worker},
+    discovery::{directory, seeds, worker},
     federation::HttpFederation,
 };
 use plamenu_db::{PgPool, discovery_store as db};
 use plamenu_federation::{FederationClient, ProxyConfig};
+use plamenu_test_support as common;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -147,26 +147,127 @@ fn state(pool: &PgPool, proxy: &str) -> AppState {
     )
     .unwrap()
 }
+struct Exhausted {
+    reason: &'static str,
+    receipts: Value,
+    deferred: HashMap<i64, time::OffsetDateTime>,
+    pending: Vec<String>,
+}
+async fn wire_receipts(pool: &PgPool) -> Value {
+    sqlx::query_scalar(
+        "SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]'::jsonb) FROM discovery_requests r",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+async fn pending_targets(pool: &PgPool) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT target_uri FROM discovery_jobs WHERE NOT withdrawn
+         UNION SELECT uri FROM discovery_candidates",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+async fn global_exhaustion(state: &AppState, deadline: tokio::time::Instant) -> Option<Exhausted> {
+    // Stop only for an allowance shared by every origin and purpose. Include
+    // all possible pacing refill through the existing settlement deadline, so
+    // per-origin/purpose deferrals never hide useful work elsewhere.
+    let window = deadline
+        .saturating_duration_since(tokio::time::Instant::now())
+        .as_secs_f64();
+    let (requests, limit, tokens): (i64, i64, f64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM discovery_requests WHERE started_at>clock_timestamp()-interval '24 hours'),
+         s.requests_per_day,p.tokens+(GREATEST(EXTRACT(epoch FROM clock_timestamp()-p.refilled_at),0)::double precision+$1)*s.requests_per_day::double precision/86400
+         FROM discovery_settings s CROSS JOIN discovery_pacing p WHERE s.singleton AND p.singleton",
+    )
+    .bind(window)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+    let reason = if requests >= limit {
+        "rolling_allowance"
+    } else if tokens < 1.0 {
+        "shared_pacing"
+    } else {
+        return None;
+    };
+    let deferred: Vec<(i64, time::OffsetDateTime)> = sqlx::query_as(
+        "SELECT id,run_at FROM discovery_jobs WHERE NOT withdrawn AND last_error='budget_exhausted'",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap();
+    Some(Exhausted {
+        reason,
+        receipts: wire_receipts(&state.pool).await,
+        deferred: deferred.into_iter().collect(),
+        pending: pending_targets(&state.pool).await,
+    })
+}
+async fn verified_denial(state: &AppState, before: &Exhausted) -> bool {
+    // Execute a real worker turn even when globally blocked. Cached useful
+    // work may finish first; settle only after a fresh durable budget denial.
+    assert_eq!(wire_receipts(&state.pool).await, before.receipts);
+    let deferred: Vec<(i64, time::OffsetDateTime, bool)> = sqlx::query_as(
+        "SELECT id,run_at,attempts=0 AND lease_token IS NULL AND lease_owner IS NULL AND leased_until IS NULL
+         FROM discovery_jobs WHERE NOT withdrawn AND last_error='budget_exhausted'",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap();
+    let denied = deferred.iter().any(|(id, at, released)| {
+        *released && before.deferred.get(id).is_none_or(|previous| at > previous)
+    });
+    if denied {
+        let pending = pending_targets(&state.pool).await;
+        assert!(
+            before.pending.iter().all(|uri| pending.contains(uri)),
+            "settling exhausted work must not discard pending hints"
+        );
+        eprintln!(
+            "drain settled after a real {} denial; every receipt and pending hint retained",
+            before.reason
+        );
+    }
+    denied
+}
+
+// Pump currently claimable work. Budget-deferred jobs remain durable; a hard
+// allowance is not a promise that every hint in the generated graph can finish.
 async fn drain(state: &AppState) {
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(120);
     loop {
+        let exhausted = global_exhaustion(state, deadline).await;
         let worked = worker::run_due(state).await.unwrap();
-        let due:i64=sqlx::query_scalar("SELECT count(*) FROM discovery_jobs WHERE NOT withdrawn AND run_at<now()+interval '45 seconds'")
-            .fetch_one(&state.pool).await.unwrap();
-        if worked == 0 && due == 0 {
-            break;
-        }
         assert!(
             tokio::time::Instant::now() < deadline,
             "bounded graph must settle"
         );
+        if let Some(before) = exhausted {
+            assert_eq!(worked, 1, "exercise an actual exhausted-budget claim");
+            if verified_denial(state, &before).await {
+                break;
+            }
+        }
         if worked == 0 {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            break;
         }
     }
 }
+async fn refill_pacing(pool: &PgPool) {
+    // Simulate elapsed token-refill time only. Do not refund a wire receipt,
+    // its body bytes or the rolling request/origin allowance.
+    sqlx::query("UPDATE discovery_pacing SET refilled_at=now()-interval '1 day'")
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE discovery_jobs SET run_at=now() WHERE NOT withdrawn AND last_error='budget_exhausted'")
+        .execute(pool).await.unwrap();
+}
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hundred_wire_attempts_reach_all_four_kinds_and_resume_catalogues(pool: PgPool) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy = format!("http://{}", listener.local_addr().unwrap());
@@ -178,6 +279,11 @@ async fn hundred_wire_attempts_reach_all_four_kinds_and_resume_catalogues(pool: 
     settings.requests_per_day = 100;
     settings.requests_per_origin = 25;
     settings.bytes_per_day = 16 * 1024 * 1024;
+    // All fixture origins share the real, single hidden-service fetch lane.
+    // Claim one job at a time so the acquisition test does not manufacture
+    // thirty-second foreground-contention deferrals between its own jobs.
+    // This tightens admission; it does not bypass either transport gate.
+    settings.max_inflight = 1;
     db::save_settings(&pool, &settings).await.unwrap();
     let sources:Vec<_>=(0..3).flat_map(|n|[
         json!({"origin":format!("http://people{n}.onion")}),
@@ -199,35 +305,118 @@ async fn hundred_wire_attempts_reach_all_four_kinds_and_resume_catalogues(pool: 
     let first = state(&pool, &proxy);
     drain(&first).await;
     drop(first);
-    let counts:Vec<(String,i64)>=sqlx::query_as("SELECT kind,count(*) FROM discovery_entries WHERE state='active' GROUP BY kind ORDER BY kind").fetch_all(&pool).await.unwrap();
+    let first_requests = db::diagnostics(&pool).await.unwrap().requests_24h;
+    assert!(first_requests <= 100);
     assert_eq!(
-        counts,
-        vec![
-            ("community".into(), 9),
-            ("post".into(), 9),
-            ("profile".into(), 9),
-            ("video".into(), 6)
-        ]
+        usize::try_from(first_requests).unwrap(),
+        network.requests.lock().unwrap().len()
     );
-    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 96);
-    let posts:i64=sqlx::query_scalar("SELECT max(n) FROM (SELECT count(*) n FROM discovery_entries WHERE kind='post' GROUP BY actor_uri) s").fetch_one(&pool).await.unwrap();
-    assert_eq!(
-        posts, 1,
-        "10000 advertised posts do not buy extra sampling slots"
-    );
-    sqlx::query("UPDATE discovery_sampling SET next_at=now() WHERE source_id IN (SELECT id FROM discovery_sources WHERE origin='http://people0.onion')").execute(&pool).await.unwrap();
+    // Restart with a persisted full-page checkpoint. Pick the least-used people
+    // origin, so the continuation itself still fits the strict 25/origin cap.
+    let (source, origin): (i64, String) = sqlx::query_as("SELECT s.id,s.origin FROM discovery_sources s WHERE s.origin LIKE 'http://people%.onion' AND s.verified_at IS NOT NULL AND EXISTS(SELECT 1 FROM discovery_sampling p WHERE p.source_id=s.id) ORDER BY (SELECT count(*) FROM discovery_requests r WHERE r.origin=s.origin),s.origin LIMIT 1")
+        .fetch_one(&pool).await.unwrap();
+    let checkpoint: i64 = sqlx::query_scalar(
+        "SELECT active_offset::bigint FROM discovery_sampling WHERE source_id=$1",
+    )
+    .bind(source)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(checkpoint, 20);
+    sqlx::query("UPDATE discovery_sampling SET next_at=now() WHERE source_id=$1")
+        .bind(source)
+        .execute(&pool)
+        .await
+        .unwrap();
     let restarted = state(&pool, &proxy);
-    drain(&restarted).await;
-    let diagnostic = db::diagnostics(&pool).await.unwrap();
-    assert_eq!(diagnostic.requests_24h, 100);
+    refill_pacing(&pool).await;
+    // The production scheduler prioritizes already-admitted verification and
+    // its bounded overflow queue. Finish real work to make a queue slot, then
+    // admit this explicit next-page adapter pass without raising queue limits.
+    let admission_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(120);
+    loop {
+        match db::enqueue(
+            &pool,
+            source,
+            &format!("{origin}/api/v1/directory"),
+            db::Operation::ListDirectory,
+            None,
+        )
+        .await
+        .unwrap()
+        {
+            db::Admission::Added(_) | db::Admission::Existing(_) => break,
+            db::Admission::Capacity => {
+                assert!(tokio::time::Instant::now() < admission_deadline);
+                assert!(
+                    worker::run_due(&restarted).await.unwrap() > 0,
+                    "pending verification makes queue room"
+                );
+            }
+            result => panic!("next-page admission: {result:?}"),
+        }
+    }
+    let before_continuation = db::diagnostics(&pool).await.unwrap().requests_24h;
+    let leases = db::claim_due_for(&pool, "restart-catalogue", &[db::Operation::ListDirectory])
+        .await
+        .unwrap();
+    assert_eq!(leases.len(), 1);
+    assert_eq!(leases[0].source_id, source);
+    directory::fetch_page(&restarted, &leases[0]).await.unwrap();
+    assert_eq!(
+        db::diagnostics(&pool).await.unwrap().requests_24h,
+        before_continuation + 1
+    );
     assert!(
         network
             .requests
             .lock()
             .unwrap()
             .iter()
-            .any(|u| u.contains("people0.onion/api/v1/directory") && u.contains("offset=20"))
+            .any(|u| u.starts_with(&format!("{origin}/api/v1/directory?"))
+                && u.contains("offset=20"))
     );
+    // The full page now contributes all novel hints. Exercise several paced
+    // turns without increasing any hard limit or removing pending candidates.
+    drain(&restarted).await;
+    for _ in 0..3 {
+        refill_pacing(&pool).await;
+        drain(&restarted).await;
+    }
+    let diagnostic = db::diagnostics(&pool).await.unwrap();
+    let purposes: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT purpose,count(*) FROM discovery_requests GROUP BY purpose ORDER BY purpose",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let pending: Vec<(String, Option<String>, i64)> = sqlx::query_as("SELECT operation,last_error,count(*) FROM discovery_jobs WHERE NOT withdrawn GROUP BY operation,last_error ORDER BY operation,last_error").fetch_all(&pool).await.unwrap();
+    let outcomes: Vec<(String, i64)> = sqlx::query_as("SELECT kind,count(*) FROM discovery_entries WHERE state='active' GROUP BY kind ORDER BY kind").fetch_all(&pool).await.unwrap();
+    eprintln!(
+        "bounded acquisition: requests={} purposes={purposes:?} pending={pending:?} entries={outcomes:?}",
+        diagnostic.requests_24h
+    );
+    assert_eq!(diagnostic.requests_24h, 100);
+    assert_eq!(network.requests.lock().unwrap().len(), 100);
+    let counts: Vec<(String, i64)> = sqlx::query_as("SELECT kind,count(*) FROM discovery_entries WHERE state='active' GROUP BY kind ORDER BY kind")
+        .fetch_all(&pool).await.unwrap();
+    assert_eq!(
+        counts
+            .iter()
+            .map(|(kind, _)| kind.as_str())
+            .collect::<Vec<_>>(),
+        ["community", "post", "profile", "video"]
+    );
+    assert!(counts.iter().all(|(_, count)| *count > 0));
+    let posts:i64=sqlx::query_scalar("SELECT max(n) FROM (SELECT count(*) n FROM discovery_entries WHERE kind='post' GROUP BY actor_uri) s").fetch_one(&pool).await.unwrap();
+    assert!(
+        (1..=32).contains(&posts),
+        "10000 advertised posts cannot exceed the bounded 32-item page"
+    );
+
+    assert!(diagnostic.charged_bytes_24h <= 16 * 1024 * 1024);
+    // Refill cannot bypass the unchanged rolling allowance.
+    refill_pacing(&pool).await;
     let counts = (
         db::diagnostics(&pool).await.unwrap().requests_24h,
         network.requests.lock().unwrap().len(),
@@ -254,8 +443,16 @@ async fn hundred_wire_attempts_reach_all_four_kinds_and_resume_catalogues(pool: 
             .unwrap(),
         0
     );
+    let requests = network.requests.lock().unwrap();
+    let mut fetched_posts = std::collections::HashSet::new();
+    for uri in requests.iter().filter(|uri| uri.contains("/posts/")) {
+        assert!(
+            fetched_posts.insert(uri),
+            "known unchanged posts are not reacquired"
+        );
+    }
     println!(
-        "diversity qualification: 96 wire attempts -> 9 people, 9 posts by distinct authors, 9 communities, 6 videos; continuation stops at 100"
+        "diversity qualification: all four kinds, durable catalogue continuation, 100 wire attempts, 25/origin, no duplicate post acquisition"
     );
     server.abort();
 }

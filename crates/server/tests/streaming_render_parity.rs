@@ -400,7 +400,7 @@ async fn rich_fixtures(state: &AppState, pool: &PgPool) -> Fixtures {
 
 /// The core byte-identity claim: for every fixture status and viewer, the
 /// viewer-set render equals the singular render, character for character.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn viewer_set_render_matches_the_singular_render(pool: PgPool) {
     let state = test_state_with(pool.clone(), Arc::default());
     let fixtures = rich_fixtures(&state, &pool).await;
@@ -460,7 +460,7 @@ async fn next_payload(receiver: &mut tokio::sync::mpsc::Receiver<String>) -> Str
 
 /// The routed `update` payloads must be the singular renders, and a list
 /// stream must carry its owner's home document (one render, not two).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn streamed_status_payloads_match_singular_renders_and_lists_share_them(pool: PgPool) {
     let state = test_state_with(pool.clone(), Arc::default());
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -512,7 +512,7 @@ async fn streamed_status_payloads_match_singular_renders_and_lists_share_them(po
 /// The routed `announcement` payloads must be the singular per-viewer
 /// entities: `read` and reaction `me` stay viewer-relative under the batched
 /// loads.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn streamed_announcement_payloads_match_singular_renders(pool: PgPool) {
     let state = test_state_with(pool.clone(), Arc::default());
     create_local_account(&pool, "alice", "Alice").await;

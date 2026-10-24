@@ -1,7 +1,7 @@
 //! Read-state: `/api/v1/markers` and the notification read endpoints
 //! (`unread_count`, `dismiss`, `clear`, single-notification show).
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -131,7 +131,7 @@ async fn api_full(
     (status, link, value)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn markers_roundtrip_with_versions(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -270,7 +270,7 @@ async fn markers_roundtrip_with_versions(pool: PgPool) {
     assert_eq!(code, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn notification_read_state_endpoints(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -434,7 +434,7 @@ async fn notification_read_state_endpoints(pool: PgPool) {
     assert_eq!(items.as_array().unwrap().len(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn notifications_paginate_with_link_headers_and_min_id(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, _) = user_with_token(&pool, "carol").await;

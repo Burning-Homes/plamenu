@@ -206,7 +206,7 @@ fn junk_assertion() -> Value {
 
 // ---- Tests -------------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn register_options_needs_totp_then_persists_state(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -253,7 +253,7 @@ async fn register_options_needs_totp_then_persists_state(pool: PgPool) {
     assert!(challenge.webauthn_state.is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn register_options_rejects_bad_csrf(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -270,7 +270,7 @@ async fn register_options_rejects_bad_csrf(pool: PgPool) {
     assert_eq!(resp.status, StatusCode::FORBIDDEN);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn register_finish_rejects_garbage_attestation(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -309,7 +309,7 @@ async fn register_finish_rejects_garbage_attestation(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn login_challenge_offers_key_only_when_registered(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -341,7 +341,7 @@ async fn login_challenge_offers_key_only_when_registered(pool: PgPool) {
     assert!(with.body.contains("Use a security key"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn login_options_requires_a_live_challenge_and_keys(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -377,7 +377,7 @@ async fn login_options_requires_a_live_challenge_and_keys(pool: PgPool) {
     let _ = uid;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn login_finish_without_ceremony_state_is_rejected(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -404,7 +404,7 @@ async fn login_finish_without_ceremony_state_is_rejected(pool: PgPool) {
     assert!(finish.set_cookie.is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn removing_a_key_and_disabling_totp_clear_credentials(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -505,7 +505,7 @@ async fn oauth_password_step(app: &Router, client_id: &str) -> Resp {
     .await
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oauth_challenge_offers_key_only_when_registered(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -528,7 +528,7 @@ async fn oauth_challenge_offers_key_only_when_registered(pool: PgPool) {
     assert!(with.body.contains("/oauth/authorize/webauthn/options"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oauth_login_options_requires_a_live_challenge_and_keys(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -559,7 +559,7 @@ async fn oauth_login_options_requires_a_live_challenge_and_keys(pool: PgPool) {
     let _ = uid;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oauth_login_finish_without_ceremony_state_is_rejected(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;
@@ -592,7 +592,7 @@ async fn oauth_login_finish_without_ceremony_state_is_rejected(pool: PgPool) {
 
 // ---- Localization ----------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn security_keys_block_negotiates_russian(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -631,7 +631,7 @@ async fn security_keys_block_negotiates_russian(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oauth_consent_and_key_prompt_negotiate_russian(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     enable_totp(&pool, uid).await;

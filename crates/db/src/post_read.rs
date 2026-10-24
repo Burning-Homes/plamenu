@@ -81,7 +81,7 @@ mod tests {
     use crate::account::{self, NewLocalAccount};
     use crate::status::{self, NewLocalStatus};
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn batch_read_state_is_idempotent_and_reversible(pool: PgPool) {
         let account = account::create_local(
             &pool,

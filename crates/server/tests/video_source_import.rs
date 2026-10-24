@@ -90,7 +90,7 @@ async fn reserve_for(f: &Fixture, owner: i64, url: &str, kind: &str, cap: i64) -
     id
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn downloads_to_private_source_then_native_queue_and_discards_url(pool: PgPool) {
     let f = fixture(pool).await;
     let url = "https://source.example/video.mp4?private-import-hint=not-public";
@@ -162,7 +162,7 @@ async fn downloads_to_private_source_then_native_queue_and_discards_url(pool: Pg
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bounded_failure_explicit_retry_cancellation_and_fenced_crash_reclaim(pool: PgPool) {
     let f = fixture(pool).await;
     let url = "https://source.example/large.mp4";
@@ -202,7 +202,7 @@ async fn bounded_failure_explicit_retry_cancellation_and_fenced_crash_reclaim(po
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_activitypub_sources_only_and_revocation_fences_download_commit(pool: PgPool) {
     let f = fixture(pool).await;
     let url = "https://source.example/videos/watch/film";
@@ -260,7 +260,7 @@ async fn public_activitypub_sources_only_and_revocation_fences_download_commit(p
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cancelling_a_real_inflight_controller_drops_origin_work_and_scratch(pool: PgPool) {
     let f = fixture(pool).await;
     let url = "https://source.example/stalled.mp4";
@@ -301,7 +301,7 @@ async fn cancelling_a_real_inflight_controller_drops_origin_work_and_scratch(poo
     assert!(f.state.media.get(&format!("{id}.orig")).await.is_err());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ordinary_html_requires_session_csrf_rights_and_reserves_remote_not_form_size(
     pool: PgPool,
 ) {

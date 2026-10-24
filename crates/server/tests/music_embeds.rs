@@ -13,7 +13,7 @@ use plamenu::{
 use plamenu_db::{PgPool, id};
 use std::sync::Arc;
 use tower::ServiceExt;
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn embed_codec_controls_clamp_anonymous_quality_and_preserve_readonly_frames(pool: PgPool) {
     let (state, _owner, _artist, track) = fixture(pool).await;
     let app = plamenu::build_router(state.clone());
@@ -165,7 +165,7 @@ fn frame_policy(response: &Response, allowed: bool) {
         }
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_music_frames_and_snippets_revoke_metadata_and_byte_ranges_before_cached_responses(
     pool: PgPool,
 ) {
@@ -224,7 +224,7 @@ async fn public_music_frames_and_snippets_revoke_metadata_and_byte_ranges_before
         frame_policy(&response, false);
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_collection_widgets_keep_playlist_repeats_and_hide_inaccessible_entries_before_cap(
     pool: PgPool,
 ) {
@@ -298,7 +298,7 @@ async fn public_collection_widgets_keep_playlist_repeats_and_hide_inaccessible_e
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     frame_policy(&response, false);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_music_widgets_ignore_valid_owner_authentication_and_share_capabilities(
     pool: PgPool,
 ) {
@@ -381,7 +381,7 @@ async fn private_music_widgets_ignore_valid_owner_authentication_and_share_capab
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn music_oembed_uses_exact_local_identity_and_root_artwork_revokes_with_public_source(
     pool: PgPool,
 ) {
@@ -495,7 +495,7 @@ async fn owner_cookie(state: &AppState, owner: i64) -> String {
     .unwrap();
     format!("__Host-plamenu_session={token}")
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_entity_embed_links_follow_public_access_including_legacy_album_visibility(
     pool: PgPool,
 ) {
@@ -547,7 +547,7 @@ async fn native_entity_embed_links_follow_public_access_including_legacy_album_v
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn music_embed_media_cors_exposes_public_ranges_without_credentials_or_private_access(
     pool: PgPool,
 ) {

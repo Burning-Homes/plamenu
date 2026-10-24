@@ -4,7 +4,7 @@
 //! timeline's hide-boosts and language filters, and the `status`
 //! notification for notify subscribers.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -115,7 +115,7 @@ async fn post_status_in(pool: &PgPool, username: &str, text: &str, language: &st
     stored.id
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn follow_params_set_update_and_keep_settings(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, _) = user_with_token(&pool, "carol").await;
@@ -233,7 +233,7 @@ async fn follow_params_set_update_and_keep_settings(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hide_boosts_and_language_filter_apply_to_home(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -352,7 +352,7 @@ async fn hide_boosts_and_language_filter_apply_to_home(pool: PgPool) {
     assert!(home_ids(&home).contains(&german.to_string()));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn notify_follow_gets_status_notifications(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, _) = user_with_token(&pool, "carol").await;

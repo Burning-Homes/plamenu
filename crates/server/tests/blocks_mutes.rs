@@ -1,7 +1,7 @@
 //! Blocking and muting: API endpoints, timeline/notification enforcement,
 //! and Block federation in both directions.
 
-mod common;
+use plamenu_test_support as common;
 
 use std::time::SystemTime;
 
@@ -149,7 +149,7 @@ async fn relationship(app: Router, token: &str, target_id: i64) -> Value {
     body[0].clone()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn block_severs_relationship_and_hides_content(pool: PgPool) {
     common::open_previews(&pool).await;
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
@@ -332,7 +332,7 @@ async fn block_severs_relationship_and_hides_content(pool: PgPool) {
     assert_eq!(status, StatusCode::OK, "unblock restores visibility");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mute_hides_content_and_optionally_notifications(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -501,7 +501,7 @@ async fn mute_hides_content_and_optionally_notifications(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn domain_block_hides_domain_and_severs_relationships(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -749,7 +749,7 @@ async fn domain_block_hides_domain_and_severs_relationships(pool: PgPool) {
     assert_eq!(rel["domain_blocking"], false);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocking_a_remote_account_federates_block_and_severs_follows(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -872,7 +872,7 @@ async fn blocking_a_remote_account_federates_block_and_severs_follows(pool: PgPo
     assert_eq!(sent[4].activity["object"]["id"], block_uri);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_block_severs_follows_and_undo_restores_visibility(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -982,7 +982,7 @@ async fn inbound_block_severs_follows_and_undo_restores_visibility(pool: PgPool)
 /// without a URI (nothing to retract by reference, only deleted), and an
 /// untouched edge on another domain. The expected activities are hand-written
 /// against the old pipeline's wire shapes, not rebuilt with the same helpers.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn domain_severance_batch_matches_the_per_edge_pipeline(pool: PgPool) {
     // This test compares the underlying severance activity byte-for-byte.
     // Object Integrity Proof emission is covered independently and would add

@@ -65,7 +65,7 @@ fn reference(kind: Kind, id: i64) -> Reference {
         id: id.to_string(),
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn owned_saved_and_favourite_membership_fold_only_current_publication_aliases(pool: PgPool) {
     let f = fixture(pool).await;
     let publication = music_publications::publish(&f.state, &f.owner, f.asset)
@@ -130,7 +130,7 @@ async fn owned_saved_and_favourite_membership_fold_only_current_publication_alia
         1
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unavailable_saved_track_does_not_collect_artist_via_an_unrelated_public_track(
     pool: PgPool,
 ) {
@@ -197,7 +197,7 @@ async fn unavailable_saved_track_does_not_collect_artist_via_an_unrelated_public
             .is_none()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collected_album_includes_its_artist_and_own_empty_entities_remain_owned(pool: PgPool) {
     let f = fixture(pool).await;
     music_saved::save(&f.state, f.viewer.id, &reference(Kind::Album, f.album))
@@ -240,7 +240,7 @@ async fn collected_album_includes_its_artist_and_own_empty_entities_remain_owned
     assert_eq!(viewer.items.len(), 1);
     assert_eq!(viewer.items[0].reference.id, empty.to_string());
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn paging_and_search_apply_current_source_access_before_visible_cursors(pool: PgPool) {
     let f = fixture(pool).await;
     let mut visible = Vec::new();

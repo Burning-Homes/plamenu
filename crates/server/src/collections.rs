@@ -365,11 +365,17 @@ pub async fn featureable(
 ) -> Result<bool, ApiError> {
     let mut target = target.clone();
     if !target.is_local()
-        && target.feature_approval_policy == 0
+        && !matches!(
+            feature_policy_for_account(&state.pool, &target, Some(featurer.id)).await?,
+            "automatic" | "manual"
+        )
         && let Some(uri) = target.uri.as_deref()
         && crate::instance_policy::can_federate_url(&state.pool, &state.config.domain, uri).await?
         && let Ok(actor) = state.federation.fetch_actor(uri).await
     {
+        // A cached explicit denial can predate the author's profile update,
+        // just like a missing policy. Refresh once before rejecting the new
+        // feature request; a failed fetch never supplies consent.
         target = refresh_remote_actor(state, &actor).await?;
     }
 

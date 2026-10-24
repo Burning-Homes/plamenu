@@ -95,7 +95,7 @@ fn create_page(author: &RemoteUser, group: &RemoteUser, page: &Value) -> Value {
 /// the embedded (here: tampered) copy is never stored, the origin's is; the
 /// group's announce becomes the boost row that puts the post in follower
 /// timelines. Replay is idempotent.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrapped_create_page_fetches_origin_and_boosts(pool: PgPool) {
     let viewer = create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -167,7 +167,7 @@ async fn wrapped_create_page_fetches_origin_and_boosts(pool: PgPool) {
 /// Lemmy double-sends every post: the wrapper form plus a Mastodon-compat
 /// `Announce(Page)` under a fresh activity id. Whichever arrives second must
 /// not create a second boost.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compat_announce_page_dedups_against_wrapper(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -217,7 +217,7 @@ async fn compat_announce_page_dedups_against_wrapper(pool: PgPool) {
 /// Mitra signs the activities its groups relay: a valid FEP-8b32 proof from
 /// the inner author authenticates the embedded copy wholesale — no origin
 /// fetch, stored as delivered.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrapped_create_with_author_proof_trusts_embedded_copy(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "erin").with_ed25519();
@@ -277,7 +277,7 @@ async fn wrapped_create_with_author_proof_trusts_embedded_copy(pool: PgPool) {
 /// Lemmy announces every comment in the community. Comments are ingested (so
 /// threads arrive complete) but never boosted — a home timeline full of
 /// strangers' comments is noise.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrapped_comment_ingests_without_boost(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -336,7 +336,7 @@ async fn wrapped_comment_ingests_without_boost(pool: PgPool) {
 
 /// A wrapped `Update` is an edit: refreshed from the origin, never applied
 /// from the embedded copy.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrapped_update_refreshes_from_origin(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -381,7 +381,7 @@ async fn wrapped_update_refreshes_from_origin(pool: PgPool) {
 
 /// A wrapped `Delete` only applies once the origin confirms the object is
 /// gone — a hostile group cannot delete a post its author still serves.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrapped_delete_needs_origin_confirmation(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -447,7 +447,7 @@ async fn wrapped_delete_needs_origin_confirmation(pool: PgPool) {
 
 /// An announced activity that never names the group (no `audience`, no
 /// `to`/`cc` membership) is not community activity — ignored outright.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn announce_without_group_claim_is_ignored(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -492,7 +492,7 @@ async fn announce_without_group_claim_is_ignored(pool: PgPool) {
 /// A page addressed to the group and its followers only (a private Lemmy
 /// community) is ingested with its restricted visibility but never boosted —
 /// a public boost row would leak it into shared timelines.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn non_public_page_is_not_boosted(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -543,7 +543,7 @@ async fn non_public_page_is_not_boosted(pool: PgPool) {
 /// unknown targets (the pre-group behavior) meant a followed Mastodon / Pleroma /
 /// Misskey account's boosts never surfaced at all. Only the FEP-1b12 dialect
 /// handling — comment/vote filtering, wrapper unwrapping — stays group-only.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn person_announce_of_unknown_status_is_fetched_and_boosted(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("origin.example", "bob");
@@ -591,7 +591,7 @@ async fn person_announce_of_unknown_status_is_fetched_and_boosted(pool: PgPool) 
 
 /// `Announce(Update(Group))` — Lemmy's `UpdateCommunity` — refreshes the
 /// stored group actor.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_self_update_refreshes_the_actor(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -640,7 +640,7 @@ async fn group_self_update_refreshes_the_actor(pool: PgPool) {
 
 /// `Undo(Announce)` from the group retracts the boost (a mod removing the
 /// post from the community without the author deleting it).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_undo_announce_removes_the_boost(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -706,7 +706,7 @@ async fn group_undo_announce_removes_the_boost(pool: PgPool) {
 /// group is authoritative for votes on posts it announced — those count
 /// (voter resolved by fetch, mutual exclusion applied); a wrapped vote on
 /// anything the group never boosted is ignored.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_relayed_votes_count_on_the_groups_own_posts(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -852,7 +852,7 @@ async fn group_relayed_votes_count_on_the_groups_own_posts(pool: PgPool) {
 /// fetched (the origin 403s, or serves `text/html` to an AP request) is stored
 /// with no resolved parent — but it must still be recognised as a reply and
 /// kept out of home timelines, not mistaken for a root post and boosted.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrapped_reply_with_unfetchable_parent_is_not_boosted(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -915,7 +915,7 @@ async fn wrapped_reply_with_unfetchable_parent_is_not_boosted(pool: PgPool) {
 /// and the Mastodon-compat `Announce(Page)` under two different activity ids.
 /// Delivered *concurrently* they must still yield exactly one boost row — the
 /// sequential dedup test above cannot exercise the check-then-insert race.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn concurrent_wrapper_and_compat_announce_boost_once(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -965,7 +965,7 @@ async fn concurrent_wrapper_and_compat_announce_boost_once(pool: PgPool) {
 /// A Lemmy/PieFed image post carries its image only inline in the body, with an
 /// empty `attachment`. The sanitizer strips the `<img>`, so the image must be
 /// recovered as a remote-media attachment rather than lost.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inline_image_post_recovers_attachment(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -1098,7 +1098,7 @@ async fn consume_post(
 /// A wrapped `Lock` on a post the community announced locks the thread (the
 /// group-agnostic `group_locked` observable then lights up); a later
 /// `Undo(Lock)` clears it. The lock is keyed on the remote group account.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrapped_lock_and_unlock_toggle_the_consumed_thread(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -1154,7 +1154,7 @@ async fn wrapped_lock_and_unlock_toggle_the_consumed_thread(pool: PgPool) {
 /// after a stranger community boosts a post — a forgeable object-form Announce —
 /// its `Lock` is ignored unless the post genuinely claims that community as its
 /// `audience`. The community the post actually claims can lock it.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrapped_lock_needs_the_post_to_claim_the_community(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -1230,7 +1230,7 @@ async fn wrapped_lock_needs_the_post_to_claim_the_community(pool: PgPool) {
 /// After a mod-removal drops the copy (origin-confirmed gone), the community's
 /// `Undo(Delete)` restores it: the now-live origin Page is re-fetched and the
 /// community boost re-recorded.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrapped_undo_delete_restores_a_removed_post(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -1313,7 +1313,7 @@ async fn wrapped_undo_delete_restores_a_removed_post(pool: PgPool) {
 /// once the origin confirms the community is gone, the stored remote group
 /// account is dropped. A transient failure (origin still serves it) keeps it —
 /// fail-closed.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrapped_community_self_delete_drops_the_stored_group(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -1389,7 +1389,7 @@ async fn wrapped_community_self_delete_drops_the_stored_group(pool: PgPool) {
 /// A reply into a locked consumed thread is refused up front (not created as an
 /// orphan the remote would silently drop). Local groups keep their silent-drop;
 /// this hard refusal is scoped to remote communities.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reply_to_a_locked_consumed_thread_is_refused(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -1474,7 +1474,7 @@ fn block_activity(
 /// post's OWN origin confirming it gone: while the origin still serves the Page
 /// the relayed removal is refused (fail-closed), and once the origin 410s the
 /// copy is dropped regardless of who signed the removal.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrapped_mod_removal_of_another_users_post_is_reflected(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let author = RemoteUser::new("origin.example", "bob");
@@ -1535,7 +1535,7 @@ async fn wrapped_mod_removal_of_another_users_post_is_reflected(pool: PgPool) {
 /// Lemmy runs the purge locally and sends no per-post Delete, so this wrapper is
 /// the only signal. A plain ban (no `removeData`) touches nothing, and the purge
 /// is scoped to the banned user's own content (a different member is untouched).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrapped_ban_with_remove_data_purges_the_users_content(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("origin.example", "bob");
@@ -1634,7 +1634,7 @@ async fn wrapped_ban_with_remove_data_purges_the_users_content(pool: PgPool) {
 
 /// Lemmy's community extensions land on the stored community: the NSFW flag,
 /// the mods-only posting restriction, and where its moderators live.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn lemmy_community_flags_are_mirrored(pool: PgPool) {
     let mut group = community("nsfwart");
     group.actor.sensitive = Some(true);
@@ -1709,7 +1709,7 @@ async fn lemmy_community_flags_are_mirrored(pool: PgPool) {
 /// A community that stops advertising its flags stops being marked, and one
 /// that stops naming moderators has its roster dropped: the actor document is
 /// authoritative about its own community on every refresh.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn community_facts_are_refreshed_not_accumulated(pool: PgPool) {
     let mut group = community("rustlang");
     group.actor.sensitive = Some(true);
@@ -1750,7 +1750,7 @@ async fn community_facts_are_refreshed_not_accumulated(pool: PgPool) {
 /// Mitra publishes FEP-5219 `affiliations` and no `attributedTo` at all, so
 /// that collection is the fallback — otherwise a Mitra community would look
 /// unmoderated. Only the upper rungs of the ladder count.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mitra_affiliations_supply_the_roster(pool: PgPool) {
     let mut group = community("mitracommunity");
     let affiliations = format!("{}/affiliations", group.actor.id);
@@ -1808,7 +1808,7 @@ async fn mitra_affiliations_supply_the_roster(pool: PgPool) {
 /// A Plamenu peer's members-only community survives the round trip. Lemmy's
 /// boolean cannot express it, so the tri-state term is what keeps two
 /// instances of this software agreeing on who may post.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn members_only_policy_survives_the_round_trip(pool: PgPool) {
     let mut group = community("hiking");
     group.actor.posting_restricted_to_mods = Some(false);

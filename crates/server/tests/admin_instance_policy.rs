@@ -1,7 +1,7 @@
 //! Admin instance-policy API: resource-specific admin OAuth scopes plus
 //! CRUD over domain blocks/allows and access blocks.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -121,7 +121,7 @@ async fn api(
     (status, value)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn resource_specific_admin_scopes_do_not_leak(pool: PgPool) {
     let (admin, token) = user_with_scope(
         &pool,
@@ -190,7 +190,7 @@ async fn resource_specific_admin_scopes_do_not_leak(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn policy_records_crud(pool: PgPool) {
     let (admin, token) =
         user_with_scope(&pool, "ownerish", "read write admin:read admin:write").await;
@@ -317,7 +317,7 @@ async fn policy_records_crud(pool: PgPool) {
     assert_eq!(empty, json!({}));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn federation_policy_requires_manage_federation(pool: PgPool) {
     let (moderator, token) = user_with_scope(
         &pool,

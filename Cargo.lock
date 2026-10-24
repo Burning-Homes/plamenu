@@ -3323,6 +3323,7 @@ dependencies = [
  "plamenu-ap",
  "plamenu-db",
  "plamenu-federation",
+ "plamenu-test-support",
  "pulldown-cmark",
  "qrcode",
  "quick_html2md",
@@ -3415,6 +3416,23 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "plamenu-test-support"
+version = "0.7.0"
+dependencies = [
+ "axum",
+ "futures-util",
+ "plamenu",
+ "plamenu-ap",
+ "plamenu-db",
+ "plamenu-federation",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

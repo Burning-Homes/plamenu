@@ -4,7 +4,7 @@
 //! (`active_users`/`languages`/`sources`/retention), and a db-level day-series
 //! check.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -153,7 +153,7 @@ fn window() -> (String, String) {
     (start, end)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rejects_user_without_dashboard_permission(pool: PgPool) {
     // Holds admin:read but no role → no `view_dashboard`.
     let (_, token) = user_with_scope(&pool, "alice", "read admin:read").await;
@@ -169,7 +169,7 @@ async fn rejects_user_without_dashboard_permission(pool: PgPool) {
     assert_eq!(status, StatusCode::FORBIDDEN, "no role → 403");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn measures_new_users_returns_measure_shape(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
     make_admin(&pool, admin.id).await;
@@ -211,7 +211,7 @@ async fn measures_new_users_returns_measure_shape(pool: PgPool) {
     assert_eq!(today_total, 3, "all three land in the window");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn dimensions_software_versions(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
     make_admin(&pool, admin.id).await;
@@ -246,7 +246,7 @@ async fn dimensions_software_versions(pool: PgPool) {
     assert_eq!(plamenu_row["value"], plamenu::FULL_VERSION);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unknown_measure_key_is_skipped(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
     make_admin(&pool, admin.id).await;
@@ -265,7 +265,7 @@ async fn unknown_measure_key_is_skipped(pool: PgPool) {
     assert_eq!(measures[0]["key"], "new_users");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn db_new_users_series_buckets_by_day(pool: PgPool) {
     create_user(&pool, "bob").await;
     create_user(&pool, "carol").await;
@@ -284,7 +284,7 @@ async fn db_new_users_series_buckets_by_day(pool: PgPool) {
     assert_eq!(series_total, 2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn login_records_sign_in_and_active_users(pool: PgPool) {
     // `user_with_scope` performs an /oauth/authorize, which records a sign-in.
     let (admin, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
@@ -309,7 +309,7 @@ async fn login_records_sign_in_and_active_users(pool: PgPool) {
     assert!(first_date.contains('T'), "RFC3339 date, got {first_date}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn dimensions_languages_groups_by_locale(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
     make_admin(&pool, admin.id).await;
@@ -335,7 +335,7 @@ async fn dimensions_languages_groups_by_locale(pool: PgPool) {
     assert_eq!(data[0]["value"], "1");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn dimensions_sources_falls_back_to_web(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
     make_admin(&pool, admin.id).await;
@@ -360,7 +360,7 @@ async fn dimensions_sources_falls_back_to_web(pool: PgPool) {
     assert_eq!(data[0]["value"], "3");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn measures_interactions_counts_recorded(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
     make_admin(&pool, admin.id).await;
@@ -389,7 +389,7 @@ async fn measures_interactions_counts_recorded(pool: PgPool) {
     assert_eq!(today["value"], "2", "both land in today's bucket");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn media_sizes_feed_attachment_measure_and_space_usage(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
     make_admin(&pool, admin.id).await;
@@ -455,7 +455,7 @@ async fn media_sizes_feed_attachment_measure_and_space_usage(pool: PgPool) {
     assert_eq!(media_line["unit"], "bytes");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn retention_reports_self_retention(pool: PgPool) {
     // moddy registers and signs in today → retained in its own cohort (rate 1).
     let (admin, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
@@ -483,7 +483,7 @@ async fn retention_reports_self_retention(pool: PgPool) {
     assert_eq!(cohorts[0]["frequency"], "day");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn measures_tag_uses_and_accounts(pool: PgPool) {
     use plamenu_db::{status, tag};
 
@@ -573,7 +573,7 @@ async fn measures_tag_uses_and_accounts(pool: PgPool) {
 
 // --- Metrics request cardinality/window admission ----------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn measures_reject_reversed_and_century_windows(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
     make_admin(&pool, admin.id).await;
@@ -609,7 +609,7 @@ async fn measures_reject_reversed_and_century_windows(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "century window");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn dimensions_reject_oversized_keys_and_limit(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
     make_admin(&pool, admin.id).await;
@@ -654,7 +654,7 @@ async fn dimensions_reject_oversized_keys_and_limit(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "oversized limit");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn retention_rejects_multi_year_day_span(pool: PgPool) {
     let (admin, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
     make_admin(&pool, admin.id).await;

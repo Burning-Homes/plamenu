@@ -148,7 +148,7 @@ async fn post_direct(app: Router, token: &str, text: &str, reply_to: Option<&str
     posted
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_direct_replies_notify_addressed_participants_without_mention_tags(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -191,7 +191,7 @@ async fn remote_direct_replies_notify_addressed_participants_without_mention_tag
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn direct_statuses_stay_between_participants(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -274,7 +274,7 @@ async fn direct_statuses_stay_between_participants(pool: PgPool) {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn conversations_track_direct_threads(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -413,7 +413,7 @@ async fn notification_count(app: Router, token: &str) -> usize {
     body.as_array().unwrap().len()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn conversation_unread_toggle_and_delete(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -507,7 +507,7 @@ async fn conversation_unread_toggle_and_delete(pool: PgPool) {
     assert_eq!(code, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn muting_a_thread_suppresses_notifications_and_marks_muted(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -582,7 +582,7 @@ async fn muting_a_thread_suppresses_notifications_and_marks_muted(pool: PgPool) 
     assert_eq!(notification_count(app(), &alice_token).await, 2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn conversations_paginate_by_last_status(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -626,7 +626,7 @@ async fn conversations_paginate_by_last_status(pool: PgPool) {
     assert!(older_content.contains("thread one"), "{older_content}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_direct_notes_become_conversations(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -818,7 +818,7 @@ async fn inbound_direct_notes_become_conversations(pool: PgPool) {
     assert_eq!(list, json!([]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbound_direct_delivery_targets_mentions_only(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -908,7 +908,7 @@ async fn outbound_direct_delivery_targets_mentions_only(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mention_less_direct_reply_federates_with_mention_tags(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -970,7 +970,7 @@ async fn mention_less_direct_reply_federates_with_mention_tags(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn direct_parent_forces_direct_reply(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;

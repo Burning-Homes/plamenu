@@ -3,7 +3,7 @@
 //! and `GET /api/oembed`, including the operator gating each one mirrors
 //! from Mastodon.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -200,7 +200,7 @@ async fn post_status(pool: &PgPool, token: &str, body: Value) -> Value {
 // Peers
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn peers_lists_known_domains_minus_blocked(pool: PgPool) {
     create_local_account(&pool, "local", "local").await;
     remote_account(&pool, "friendly.example", "a").await;
@@ -212,7 +212,7 @@ async fn peers_lists_known_domains_minus_blocked(pool: PgPool) {
     assert_eq!(body, json!(["friendly.example"]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn peers_api_disabled_or_allow_list_is_404(pool: PgPool) {
     remote_account(&pool, "friendly.example", "a").await;
 
@@ -241,7 +241,7 @@ async fn peers_api_disabled_or_allow_list_is_404(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn peers_search_prefix_matches_most_populated_first(pool: PgPool) {
     remote_account(&pool, "mastodon.example", "a").await;
     remote_account(&pool, "mastodon.example", "b").await;
@@ -271,7 +271,7 @@ async fn peers_search_prefix_matches_most_populated_first(pool: PgPool) {
 // Activity
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn activity_reports_twelve_weeks_of_strings(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     post_status(&pool, &token, json!({"status": "hello"})).await;
@@ -292,7 +292,7 @@ async fn activity_reports_twelve_weeks_of_strings(pool: PgPool) {
     assert_eq!(first - second, 7 * 24 * 3600);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn activity_api_disabled_is_404(pool: PgPool) {
     save_settings(&pool, |update| SettingsUpdate {
         activity_api_enabled: false,
@@ -308,7 +308,7 @@ async fn activity_api_disabled_is_404(pool: PgPool) {
 // Domain blocks disclosure
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn domain_blocks_disclosure_ladder(pool: PgPool) {
     instance_policy::create_domain_block(
         &pool,
@@ -376,7 +376,7 @@ async fn domain_blocks_disclosure_ladder(pool: PgPool) {
     assert_eq!(body[0]["comment"], "");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn domain_blocks_obfuscation(pool: PgPool) {
     instance_policy::create_domain_block(
         &pool,
@@ -411,7 +411,7 @@ async fn domain_blocks_obfuscation(pool: PgPool) {
 // Languages
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn languages_lists_the_posting_locales(pool: PgPool) {
     let (status, body) = get(&pool, "/api/v1/instance/languages").await;
     assert_eq!(status, StatusCode::OK);
@@ -426,7 +426,7 @@ async fn languages_lists_the_posting_locales(pool: PgPool) {
     assert_eq!(languages[0]["code"], "aa");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn translation_languages_empty_without_backend(pool: PgPool) {
     let (status, body) = get(&pool, "/api/v1/instance/translation_languages").await;
     assert_eq!(status, StatusCode::OK);
@@ -437,7 +437,7 @@ async fn translation_languages_empty_without_backend(pool: PgPool) {
 // oEmbed
 // ---------------------------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oembed_serves_public_local_statuses(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let entity = post_status(&pool, &token, json!({"status": "hello world"})).await;
@@ -468,7 +468,7 @@ async fn oembed_serves_public_local_statuses(pool: PgPool) {
     assert_eq!(body["height"], 300);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oembed_hides_non_public_and_foreign_urls(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let entity = post_status(

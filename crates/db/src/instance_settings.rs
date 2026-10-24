@@ -850,7 +850,7 @@ pub async fn begin_self_destruct(pool: &PgPool) -> Result<bool, DbError> {
 mod tests {
     use super::*;
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn settings_seeded_and_saved(pool: PgPool) {
         let settings = get(&pool).await.unwrap();
         assert_eq!(settings.site_title, "Plamenu");
@@ -1088,7 +1088,7 @@ mod tests {
         assert_eq!(round_trip.custom_css, ".column { color: red }");
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn self_destruct_is_one_way_and_survives_saves(pool: PgPool) {
         let settings = get(&pool).await.unwrap();
         assert!(!settings.is_self_destructing());
@@ -1110,7 +1110,7 @@ mod tests {
         assert!(get(&pool).await.unwrap().is_self_destructing());
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn registrations_auto_close_stamp_cleared_by_save(pool: PgPool) {
         assert_eq!(get(&pool).await.unwrap().registrations_auto_closed_at, None);
 

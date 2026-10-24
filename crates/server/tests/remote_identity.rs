@@ -25,7 +25,7 @@ fn resolution(acct: &str, actors: &[(&str, Option<&str>)]) -> ResolvedAcct {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn handle_change_requires_loopback_and_preserves_profile_refresh(pool: PgPool) {
     let mut alice = RemoteUser::new("old.example", "alice");
     alice.actor.webfinger = Some("alice@old.example".into());
@@ -88,7 +88,7 @@ async fn handle_change_requires_loopback_and_preserves_profile_refresh(pool: PgP
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reused_and_shared_handle_never_merges_actor_uris(pool: PgPool) {
     let first = RemoteUser::new("shared.example", "sam");
     let mut second = RemoteUser::new("shared.example", "other");
@@ -137,7 +137,7 @@ async fn reused_and_shared_handle_never_merges_actor_uris(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn external_fep_521a_method_is_guarded_and_exactly_controller_bound(pool: PgPool) {
     let pair = plamenu_ap::keys::generate_ed25519_keypair();
     let mut alice = RemoteUser::new("remote.example", "alice");
@@ -216,7 +216,7 @@ async fn external_fep_521a_method_is_guarded_and_exactly_controller_bound(pool: 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn external_classic_key_document_is_guarded_and_owner_bound(pool: PgPool) {
     let pair = plamenu_ap::keys::generate_keypair().unwrap();
     let actor_id = "https://remote.example/users/classic";
@@ -253,7 +253,7 @@ async fn external_classic_key_document_is_guarded_and_owner_bound(pool: PgPool) 
     assert_eq!(key.source, "classic-external");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn locally_suspended_actor_refresh_fetches_no_claimed_identity_or_key(pool: PgPool) {
     let mut alice = RemoteUser::new("remote.example", "alice");
     let federation = StubFederation::with_actors([alice.actor.clone()]);

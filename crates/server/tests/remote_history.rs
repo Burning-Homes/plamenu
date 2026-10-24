@@ -152,7 +152,7 @@ fn note(author: &Account, n: usize, local_mention: Option<&str>) -> Value {
     value
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hydration_caps_a_page_and_promotes_once_without_cold_side_effects(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = remote_account(&pool, "bob").await;
@@ -313,7 +313,7 @@ async fn hydration_caps_a_page_and_promotes_once_without_cold_side_effects(pool:
     assert_eq!(notifications, 1, "promotion notifies exactly once");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn history_quotes_resolve_and_render_without_delivery_effects(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = remote_account(&pool, "bob").await;
@@ -411,7 +411,7 @@ async fn history_quotes_resolve_and_render_without_delivery_effects(pool: PgPool
     assert_eq!(quote_jobs, 0, "both quote decisions settled synchronously");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn history_announce_fetches_uncached_target_and_stores_visible_boost(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = remote_account(&pool, "bob").await;
@@ -508,7 +508,7 @@ async fn history_announce_fetches_uncached_target_and_stores_visible_boost(pool:
     assert!(!replay_effects);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cold_history_image_caches_from_its_small_proxy_without_a_thumbnail(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = remote_account(&pool, "bob").await;
@@ -613,7 +613,7 @@ async fn cold_history_image_caches_from_its_small_proxy_without_a_thumbnail(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn iri_first_items_wrappers_updates_announces_and_one_older_page_interoperate(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = remote_account(&pool, "bob").await;
@@ -706,7 +706,7 @@ async fn iri_first_items_wrappers_updates_announces_and_one_older_page_interoper
     assert_eq!(stub.fetches(), [outbox, first, older]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn empty_creator_outbox_is_complete_and_keeps_its_validator(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = remote_account(&pool, "bob").await;
@@ -735,7 +735,7 @@ async fn empty_creator_outbox_is_complete_and_keeps_its_validator(pool: PgPool) 
     assert!(snapshot.last_error_class.is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stale_refresh_sends_etag_and_handles_not_modified_without_reingest(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = remote_account(&pool, "bob").await;
@@ -787,7 +787,7 @@ async fn stale_refresh_sends_etag_and_handles_not_modified_without_reingest(pool
     assert_eq!(snapshot.available_statuses, 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cross_origin_first_cursor_is_rejected_without_a_second_fetch(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = remote_account(&pool, "bob").await;
@@ -821,7 +821,7 @@ async fn cross_origin_first_cursor_is_rejected_without_a_second_fetch(pool: PgPo
     assert_eq!(stub.fetches(), [outbox]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn policy_change_after_enqueue_cancels_before_network(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = remote_account(&pool, "bob").await;
@@ -860,7 +860,7 @@ async fn policy_change_after_enqueue_cancels_before_network(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_and_read_only_get_routes_never_enqueue(pool: PgPool) {
     let bob = remote_account(&pool, "bob").await;
     history_db::save_settings(&pool, true, 90, false)
@@ -914,7 +914,7 @@ async fn anonymous_and_read_only_get_routes_never_enqueue(pool: PgPool) {
     assert_eq!(history_db::pending_count(&pool).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authenticated_first_profile_status_page_enqueues_without_waiting_on_federation(
     pool: PgPool,
 ) {
@@ -988,7 +988,7 @@ async fn authenticated_first_profile_status_page_enqueues_without_waiting_on_fed
     assert!(viewed);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bare_item_dereferencing_is_off_by_default_and_hard_capped_when_enabled(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let stub = Arc::new(StubFederation::default());

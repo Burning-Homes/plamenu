@@ -1,5 +1,4 @@
 //! Generated peer graph: no member activity, no public-network dependency.
-mod common;
 use axum::{
     Router,
     body::Body,
@@ -13,6 +12,7 @@ use plamenu::{
 };
 use plamenu_db::{PgPool, discovery_store as db};
 use plamenu_federation::{FederationClient, ProxyConfig};
+use plamenu_test_support as common;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
@@ -98,7 +98,98 @@ async fn drain(state: &AppState) {
     panic!("bounded graph did not settle");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+struct Deferred {
+    id: i64,
+    run_at: time::OffsetDateTime,
+    job: Value,
+    receipts: Value,
+}
+async fn receipts(pool: &PgPool) -> Value {
+    sqlx::query_scalar(
+        "SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]'::jsonb) FROM discovery_requests r",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+async fn defer_once(state: &AppState, network: &Network) -> Deferred {
+    // Exercise actual foreground contention deterministically. The real hidden
+    // fetch gate must reject admission before sending or reserving any bytes.
+    let held = plamenu::hidden_gate::fetch_permit("http://a.onion")
+        .await
+        .unwrap();
+    let wire = network.requests.lock().unwrap().len();
+    let before = receipts(&state.pool).await;
+    let lower: time::OffsetDateTime = sqlx::query_scalar("SELECT clock_timestamp()")
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(worker::run_due(state).await.unwrap(), 1);
+    let upper: time::OffsetDateTime = sqlx::query_scalar("SELECT clock_timestamp()")
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    let mut jobs: Vec<(i64, time::OffsetDateTime, Value)> = sqlx::query_as(
+        "SELECT id,run_at,to_jsonb(j)-'run_at' FROM discovery_jobs j
+         WHERE last_error='federation_busy' AND NOT withdrawn",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap();
+    assert_eq!(jobs.len(), 1);
+    let (id, run_at, job) = jobs.pop().unwrap();
+    // Assert the unchanged production backoff, without sleeping through it.
+    assert!(run_at >= lower + time::Duration::seconds(30));
+    assert!(run_at <= upper + time::Duration::seconds(30));
+    assert_eq!(job["attempts"], 0, "local pressure cannot consume retries");
+    for key in ["lease_token", "lease_owner", "leased_until"] {
+        assert!(job[key].is_null(), "deferred work releases {key}");
+    }
+    assert_eq!(network.requests.lock().unwrap().len(), wire);
+    assert_eq!(receipts(&state.pool).await, before);
+    drop(held);
+    Deferred {
+        id,
+        run_at,
+        job,
+        receipts: before,
+    }
+}
+async fn resume_deferred(state: &AppState, deferred: &Deferred) {
+    let (run_at, job): (time::OffsetDateTime, Value) =
+        sqlx::query_as("SELECT run_at,to_jsonb(j)-'run_at' FROM discovery_jobs j WHERE id=$1")
+            .bind(deferred.id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(run_at, deferred.run_at, "restart preserves the retry clock");
+    assert_eq!(
+        job, deferred.job,
+        "restart preserves the entire durable job"
+    );
+    assert_eq!(receipts(&state.pool).await, deferred.receipts);
+    // Advance only this owned fixture job's eligibility, after checking the
+    // actual 30-second retry deadline above. Do not change its TTL, cursor,
+    // attempts, revisions, any wire receipt or any production timing/limit.
+    assert_eq!(
+        sqlx::query("UPDATE discovery_jobs SET run_at=clock_timestamp() WHERE id=$1 AND last_error='federation_busy' AND lease_token IS NULL AND NOT withdrawn")
+            .bind(deferred.id).execute(&state.pool).await.unwrap().rows_affected(),
+        1
+    );
+    let resumed: Value =
+        sqlx::query_scalar("SELECT to_jsonb(j)-'run_at' FROM discovery_jobs j WHERE id=$1")
+            .bind(deferred.id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        resumed, deferred.job,
+        "only the fixture retry clock advances"
+    );
+    assert_eq!(receipts(&state.pool).await, deferred.receipts);
+}
+
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn graph_expands_survives_restart_and_accepts_independent_import(pool: PgPool) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let proxy = format!("http://{}", listener.local_addr().unwrap());
@@ -107,6 +198,9 @@ async fn graph_expands_survives_restart_and_accepts_independent_import(pool: PgP
     let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
     let mut settings = db::settings(&pool).await.unwrap();
     settings.enabled = true;
+    // Match the real singleton onion lane, avoiding contention between this
+    // fixture's own jobs. Foreground deferral/restart is checked explicitly.
+    settings.max_inflight = 1;
     db::save_settings(&pool, &settings).await.unwrap();
     let root = r#"{"version":1,"sources":[{"origin":"http://a.onion","verified":true}]}"#;
     assert_eq!(
@@ -118,8 +212,10 @@ async fn graph_expands_survives_restart_and_accepts_independent_import(pool: PgP
     );
     let first = state(&pool, &proxy);
     worker::run_due(&first).await.unwrap();
+    let deferred = defer_once(&first, &network).await;
     drop(first);
     let restarted = state(&pool, &proxy);
+    resume_deferred(&restarted, &deferred).await;
     drain(&restarted).await;
     let sources = db::source_diagnostics(&pool).await.unwrap();
     assert_eq!(sources.len(), 3);
@@ -140,7 +236,7 @@ async fn graph_expands_survives_restart_and_accepts_independent_import(pool: PgP
         256
     );
     let profiles = db::profile_candidates(&pool).await.unwrap();
-    assert_eq!(profiles.len(), 7); // 2 + three rotated candidates + 2
+    assert_eq!(profiles.len(), 24); // 2 + the full bounded page of 20 + 2
     assert!(
         profiles
             .iter()

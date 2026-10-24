@@ -96,7 +96,7 @@ async fn website(f: &Fixture, t: &Target) -> i64 {
     sqlx::query("INSERT INTO webmentions(id,source,target,owner_id,entry,active,state) VALUES($1,$2,$3,$4,$5,true,'done')").bind(mid).bind(source).bind(&t.uri).bind(t.owner).bind(sqlx::types::Json(entry)).execute(&f.state.pool).await.unwrap();
     mid
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn exact_resource_scope_keeps_track_publication_out_of_artist_and_album_feeds(pool: PgPool) {
     let f = fixture(pool).await;
     let post = plamenu::music_publications::publish(&f.state, &f.owner, f.asset)
@@ -115,7 +115,7 @@ async fn exact_resource_scope_keeps_track_publication_out_of_artist_and_album_fe
     }
     assert_eq!(page(&f, &track, None).await.len(), 1);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn website_responses_retain_exact_context_with_reply_like_repost_quote_and_current_edits(
     pool: PgPool,
 ) {
@@ -165,7 +165,7 @@ async fn website_responses_retain_exact_context_with_reply_like_repost_quote_and
     }
     assert_eq!(page(&f, &t, Some("webmention")).await.len(), 1);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_raw_entity_reply_and_native_thread_reactions_have_current_audience_and_undo(
     pool: PgPool,
 ) {
@@ -275,7 +275,7 @@ async fn inbound_raw_entity_reply_and_native_thread_reactions_have_current_audie
         .unwrap();
     assert!(page(&f, &t, None).await.is_empty());
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bounded_paging_skips_hidden_prefix_without_replaying_or_exposing_rows(pool: PgPool) {
     let f = fixture(pool).await;
     let t = target(&f, "artists", f.artist).await;
@@ -331,7 +331,7 @@ async fn bounded_paging_skips_hidden_prefix_without_replaying_or_exposing_rows(p
             .any(|a| next.items.iter().any(|b| a["id"] == b["id"]))
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_and_api_feeds_validate_scope_filters_and_containing_resource_privacy(pool: PgPool) {
     let f = fixture(pool).await;
     common::open_previews(&f.state.pool).await;
@@ -464,7 +464,7 @@ async fn native_and_api_feeds_validate_scope_filters_and_containing_resource_pri
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_activity_targets_require_current_origin_proof_and_collections_use_exact_identity(
     pool: PgPool,
 ) {

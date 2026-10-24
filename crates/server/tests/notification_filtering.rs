@@ -3,7 +3,7 @@
 //! notifications, and the filtered-notification requests
 //! (`/api/v1/notifications/requests`) with accept/dismiss.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -159,7 +159,7 @@ async fn direct_mentions(pool: &PgPool, sender_token: &str, recipient: &str, tex
     assert_eq!(status, StatusCode::OK, "{body}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn policy_v2_defaults_and_partial_update(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
 
@@ -205,7 +205,7 @@ async fn policy_v2_defaults_and_partial_update(pool: PgPool) {
     assert_eq!(refetched["for_not_following"], "drop");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn policy_v1_shape_and_update(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
 
@@ -245,7 +245,7 @@ async fn policy_v1_shape_and_update(pool: PgPool) {
     assert_eq!(v2["for_not_following"], "filter");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_mentions_policy_accept_filter_drop(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -410,7 +410,7 @@ async fn private_mentions_policy_accept_filter_drop(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn filtered_mention_hidden_then_accepted(pool: PgPool) {
     let (alice_token, bob, bob_token) = alice_and_stranger_bob(&pool).await;
     // Filter every notification from non-followed senders.
@@ -514,7 +514,7 @@ async fn filtered_mention_hidden_then_accepted(pool: PgPool) {
     assert_eq!(default.as_array().unwrap().len(), 2, "both visible");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn dismiss_purges_request_and_filtered_notifications(pool: PgPool) {
     let (alice_token, _bob, bob_token) = alice_and_stranger_bob(&pool).await;
     api(
@@ -572,7 +572,7 @@ async fn dismiss_purges_request_and_filtered_notifications(pool: PgPool) {
 /// conversation listing — including two DMs threaded into one conversation
 /// (which the batched backfill folds into a single row) alongside a separate
 /// second conversation.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn accepting_backfills_every_filtered_dm_conversation(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -689,7 +689,7 @@ async fn accepting_backfills_every_filtered_dm_conversation(pool: PgPool) {
 
 /// The bulk accept/dismiss endpoints reject an oversized `id`
 /// array with 422 before dispatching per-request work.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bulk_request_ids_over_the_cap_are_rejected(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
 

@@ -1,6 +1,6 @@
 //! Immutable local actor IDs and handle-only rename behavior.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
@@ -14,7 +14,7 @@ use plamenu_db::{PgPool, account};
 use serde_json::Value;
 use tower::ServiceExt;
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_parent_resolution_reads_identity_and_status_together(pool: PgPool) {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -94,7 +94,7 @@ async fn local_parent_resolution_reads_identity_and_status_together(pool: PgPool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_parent_resolution_preserves_canonical_uri_precedence_and_activation(pool: PgPool) {
     let alice = common::create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), std::sync::Arc::default());
@@ -228,7 +228,7 @@ async fn get(
     (status, headers, body)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rename_changes_discovery_and_human_urls_but_no_federated_id(pool: PgPool) {
     let created = create_immutable_local_account(&pool, "alice", "Alice").await;
     let actor_id = created.uri.clone().unwrap();

@@ -56,7 +56,7 @@ async fn page(state: &plamenu::AppState, path: &str, cookie: Option<&str>) -> (S
     (status, String::from_utf8(body.to_vec()).unwrap())
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn creator_workspace_is_bounded_searchable_and_separate_from_authoring(pool: PgPool) {
     let owner = common::create_local_account(&pool, "creator", "Creator").await;
     let stranger = common::create_local_account(&pool, "stranger", "Stranger").await;
@@ -150,7 +150,7 @@ async fn creator_workspace_is_bounded_searchable_and_separate_from_authoring(poo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn filtered_five_thousand_match_pages_retain_private_safe_older_navigation(pool: PgPool) {
     let owner = common::create_local_account(&pool, "alice", "Alice").await;
     let spammer = common::create_local_account(&pool, "spammer", "Spammer").await;
@@ -242,7 +242,7 @@ async fn filtered_five_thousand_match_pages_retain_private_safe_older_navigation
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn transferred_channel_current_owner_is_authoritative_in_every_catalogue_view(pool: PgPool) {
     let owner = common::create_local_account(&pool, "alice", "Alice").await;
     let recipient = common::create_local_account(&pool, "bob", "Bob").await;
@@ -311,7 +311,7 @@ async fn transferred_channel_current_owner_is_authoritative_in_every_catalogue_v
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_search_and_subscriptions_use_independent_instance_gates(pool: PgPool) {
     let actor = common::create_local_account(&pool, "alice", "Alice").await;
     let state = common::test_state_with(pool.clone(), common::StubFederation::with_actors([]));

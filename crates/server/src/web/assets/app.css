@@ -9159,6 +9159,7 @@ html { scrollbar-gutter: stable; }
 }
 .vod-controls__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
   min-inline-size: 0;
@@ -9198,15 +9199,13 @@ html { scrollbar-gutter: stable; }
   flex: 0 0 auto;
 }
 .vod-controls__time {
-  flex: 1;
-  min-inline-size: 0;
+  flex: 1 0 auto;
+  min-inline-size: max-content;
   margin-inline-start: var(--space-1);
   color: #c7cfda;
   font-variant-numeric: tabular-nums;
   font-size: var(--text-xs);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .vod-controls__volume {
   flex: 0 0 64px;
@@ -9290,12 +9289,18 @@ html { scrollbar-gutter: stable; }
 }
 .vod-player:fullscreen .vod-controls { flex: 0 0 auto; }
 @container (width < 23rem) {
+  /* Intrinsic clock width and row wrapping preserve both readable times and compact short clocks. */
   .vod-controls input.vod-controls__volume { display: none; }
   .vod-controls__field--volume { display: flex; }
 }
 .vod-controls :focus-visible {
   outline: 2px solid #a8bbff;
   outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .vod-controls, .vod-controls__settings { background: Canvas; color: CanvasText; }
+  .vod-controls__time { color: CanvasText; }
 }
 
 @layer app {

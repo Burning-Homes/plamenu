@@ -55,7 +55,7 @@ async fn progress(
     .await
     .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn real_time_threshold_replays_and_finished_sessions_count_once(pool: PgPool) {
     let (state, owner, _, asset) = fixture(pool).await;
     let first = music_listening::start(&state, owner, &start(asset, "first-play"))
@@ -114,7 +114,7 @@ async fn real_time_threshold_replays_and_finished_sessions_count_once(pool: PgPo
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_history_resolves_current_grants_blocks_and_account_retirement(pool: PgPool) {
     let (state, owner, viewer, asset) = fixture(pool).await;
     assert!(matches!(
@@ -215,7 +215,7 @@ async fn private_history_resolves_current_grants_blocks_and_account_retirement(p
         Err(ApiError::NotFound)
     ));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn opt_out_and_erasure_cancel_pending_reports_and_thresholds_are_revisioned(pool: PgPool) {
     let (state, owner, _, asset) = fixture(pool).await;
     let session = music_listening::start(&state, owner, &start(asset, "pending"))
@@ -311,7 +311,7 @@ async fn opt_out_and_erasure_cancel_pending_reports_and_thresholds_are_revisione
         Err(ApiError::NotFound)
     ));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn queue_starts_are_owned_and_nonfinite_reports_cannot_create_history(pool: PgPool) {
     use plamenu::music_queues::{self, Action, Change, Source};
     let (state, owner, viewer, asset) = fixture(pool).await;
@@ -379,7 +379,7 @@ async fn queue_starts_are_owned_and_nonfinite_reports_cannot_create_history(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn listening_api_requires_explicit_write_scope_and_protects_private_results(pool: PgPool) {
     use axum::{
         body::Body,

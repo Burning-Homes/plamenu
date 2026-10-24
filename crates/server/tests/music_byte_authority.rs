@@ -200,7 +200,7 @@ async fn release(
     f.store.gate.add_permits(1);
     assert_eq!(body.await.unwrap().is_ok(), allowed);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_original_and_stream_bodies_recheck_current_credential_after_a_stalled_read(
     pool: PgPool,
 ) {
@@ -226,7 +226,7 @@ async fn native_original_and_stream_bodies_recheck_current_credential_after_a_st
             .unwrap();
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_embed_and_native_stream_stop_when_the_public_source_becomes_private(
     pool: PgPool,
 ) {
@@ -250,7 +250,7 @@ async fn anonymous_embed_and_native_stream_stop_when_the_public_source_becomes_p
             .unwrap();
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn share_original_body_rechecks_revocation_after_headers_and_does_not_widen_to_public_access(
     pool: PgPool,
 ) {
@@ -283,7 +283,7 @@ async fn share_original_body_rechecks_revocation_after_headers_and_does_not_wide
         .unwrap();
     release(&f, body, false).await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scope_reduction_disabled_user_and_web_session_age_stop_bodies_but_foreign_token_age_does_not(
     pool: PgPool,
 ) {
@@ -362,7 +362,7 @@ async fn scope_reduction_disabled_user_and_web_session_age_stop_bodies_but_forei
     let body = held(&f, response).await;
     release(&f, body, true).await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn head_and_ranges_preserve_headers_and_shutdown_drops_a_stalled_body_without_bytes(
     pool: PgPool,
 ) {
@@ -423,7 +423,7 @@ async fn head_and_ranges_preserve_headers_and_shutdown_drops_a_stalled_body_with
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ready_rendition_bodies_keep_source_and_exact_authenticated_viewer_authority_after_headers(
     pool: PgPool,
 ) {
@@ -460,7 +460,7 @@ async fn ready_rendition_bodies_keep_source_and_exact_authenticated_viewer_autho
         .unwrap();
     release(&f, body, false).await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_and_anonymous_embed_artwork_bodies_recheck_the_parent_permission_after_delayed_reads(
     pool: PgPool,
 ) {

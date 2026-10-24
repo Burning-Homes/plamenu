@@ -1,4 +1,3 @@
-mod common;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -18,6 +17,7 @@ use plamenu_db::{
     status::{self, NewLocalStatus},
     user,
 };
+use plamenu_test_support as common;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::{
@@ -120,7 +120,7 @@ async fn capture(accepted: bool) -> (u16, tokio::task::JoinHandle<String>) {
     });
     (port, task)
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn delivery_defaults_and_coalesced_reasons_preserve_enabled_in_app_and_permanent_mentions(
     pool: PgPool,
 ) {
@@ -224,7 +224,7 @@ async fn delivery_defaults_and_coalesced_reasons_preserve_enabled_in_app_and_per
         1
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mail_selection_is_durable_idempotent_opt_in_and_rechecks_current_delivery_before_send(
     pool: PgPool,
 ) {
@@ -295,7 +295,7 @@ async fn mail_selection_is_durable_idempotent_opt_in_and_rechecks_current_delive
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mail_suppresses_unconfirmed_disabled_deleted_notifications_and_current_mutes(
     pool: PgPool,
 ) {
@@ -367,7 +367,7 @@ async fn mail_suppresses_unconfirmed_disabled_deleted_notifications_and_current_
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn actual_smtp_digest_failure_stays_unsent_then_acceptance_stamps_receipts_and_daily_clock(
     pool: PgPool,
 ) {
@@ -455,7 +455,7 @@ async fn actual_smtp_digest_failure_stays_unsent_then_acceptance_stamps_receipts
     .unwrap();
     assert_eq!(rows.len(), 1);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn security_email_keeps_its_original_envelope_and_body_through_the_shared_worker(
     pool: PgPool,
 ) {
@@ -484,7 +484,7 @@ async fn security_email_keeps_its_original_envelope_and_body_through_the_shared_
     assert!(body.contains("Security fixture token link"));
     assert_eq!(email::pending(&state.pool).await.unwrap(), 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 #[allow(
     clippy::too_many_lines,
     reason = "checks API and native form boundaries through one authenticated fixture"
@@ -641,7 +641,7 @@ async fn preference_api_and_native_forms_are_scoped_and_reject_duplicates_and_ba
         .unwrap();
     assert!(p.in_app && p.email_digest && !p.email);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stale_mail_claim_cannot_send_or_stamp_a_reclaimed_batch(pool: PgPool) {
     let (mut state, owner, _, actor) = fixture(pool).await;
     Arc::make_mut(&mut state.config).smtp = Some(smtp(1));
@@ -701,7 +701,7 @@ async fn stale_mail_claim_cannot_send_or_stamp_a_reclaimed_batch(pool: PgPool) {
     assert_eq!(email::pending(&state.pool).await.unwrap(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_erasure_cancels_pending_mail_and_a_claimed_placeholder_cannot_be_sent(
     pool: PgPool,
 ) {

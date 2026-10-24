@@ -70,7 +70,7 @@ fn json_of(files: &HashMap<String, Vec<u8>>, name: &str) -> Value {
 
 // ---- Tests -------------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn build_bundles_streams_media_and_avatar(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -189,7 +189,7 @@ async fn build_bundles_streams_media_and_avatar(pool: PgPool) {
 /// seekable `open` reader in fixed slices, so peak resident memory is one copy
 /// buffer — not the whole file — no matter how large the attachment is, and the
 /// buffering `get` path is never taken.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn build_streams_media_without_buffering_it(pool: PgPool) {
     // Far larger than the 64 KiB copy buffer, so a buffering implementation
     // would show up as a multi-megabyte single read.
@@ -254,7 +254,7 @@ async fn build_streams_media_without_buffering_it(pool: PgPool) {
 /// Bundled media is capped; a file that would push the archive over
 /// the limit is omitted (never read) and a note records it, while the metadata
 /// streams complete.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn build_omits_media_over_the_size_cap(pool: PgPool) {
     const PER_FILE: u64 = 4 * 1024 * 1024; // each media file
     const CAP: u64 = 1024 * 1024; // 1 MiB — smaller than one file
@@ -314,7 +314,7 @@ async fn build_omits_media_over_the_size_cap(pool: PgPool) {
     assert_eq!(get_calls.load(Ordering::Relaxed), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn request_is_rate_limited_and_download_streams_zip(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let (state, app) = state_and_app(pool.clone());
@@ -424,7 +424,7 @@ async fn request_is_rate_limited_and_download_streams_zip(pool: PgPool) {
     assert_eq!(forbidden.status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn concurrent_archive_requests_schedule_one(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let (_state, app) = state_and_app(pool.clone());
@@ -478,7 +478,7 @@ async fn concurrent_archive_requests_schedule_one(pool: PgPool) {
 /// advisory lock + a transaction before the cooldown refuses it. A per-account
 /// admission budget stops the spam earlier: once it is spent the route returns
 /// `429` *before* any DB work, while a single archive stays scheduled throughout.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn archive_requests_are_admission_limited_per_account(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let (_state, app) = state_and_app(pool.clone());
@@ -519,7 +519,7 @@ async fn archive_requests_are_admission_limited_per_account(pool: PgPool) {
 /// finished download — while every other settings surface, imports included,
 /// stays gated. The archive worker keeps running during wind-down, so an archive
 /// requested now is finished and downloadable before teardown.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn archive_request_and_download_survive_the_self_destruct_gate(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     // Arm self-destruct before the first request, so the settings cache reads the
@@ -589,7 +589,7 @@ async fn archive_request_and_download_survive_the_self_destruct_gate(pool: PgPoo
 /// metadata and the body streams in small chunks: the test asserts the download
 /// never calls the buffering `get`, that the largest single read stays kilobytes
 /// (not gigabytes), and that four concurrent downloads all succeed.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn download_streams_a_huge_archive_without_buffering_it(pool: PgPool) {
     const HUGE: u64 = 6 * 1024 * 1024 * 1024; // 6 GiB — far beyond any buffer
 
@@ -709,7 +709,7 @@ async fn download_streams_a_huge_archive_without_buffering_it(pool: PgPool) {
 /// outlive the account it belongs to. A scheduled build never runs, a finished
 /// one's row is gone, and the cleanup worker deletes the file that was
 /// previously retrievable.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn self_delete_cancels_archives_and_schedules_file_cleanup(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let (state, _app) = state_and_app(pool.clone());
@@ -751,7 +751,7 @@ async fn self_delete_cancels_archives_and_schedules_file_cleanup(pool: PgPool) {
 /// If account deletion removes an archive's row while the worker
 /// is mid-build, the conditional finish loses the race and the worker deletes
 /// the object it just wrote — no untracked private ZIP is left in the store.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn worker_deletes_its_object_when_it_loses_the_finish_race(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     // A post so the build has real content to serialize.

@@ -128,7 +128,7 @@ async fn ingest_event_from(
     (state, stub, item)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rsvp_emits_a_join_addressed_to_the_decider(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (state, stub, item) = ingest_event(&pool, "free", None).await;
@@ -174,7 +174,7 @@ async fn rsvp_emits_a_join_addressed_to_the_decider(pool: PgPool) {
     assert!(join["id"].as_str().unwrap().contains(&row.id.to_string()));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_repeat_rsvp_sends_no_second_join(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (state, stub, item) = ingest_event(&pool, "free", None).await;
@@ -191,7 +191,7 @@ async fn a_repeat_rsvp_sends_no_second_join(pool: PgPool) {
     assert_eq!(stub.deliveries().len(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn accept_join_resolves_the_pending_rsvp_and_notifies(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (state, _stub, item) = ingest_event(&pool, "restricted", None).await;
@@ -248,7 +248,7 @@ async fn accept_join_resolves_the_pending_rsvp_and_notifies(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_verdict_from_an_unrelated_actor_is_ignored(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (state, _stub, item) = ingest_event(&pool, "restricted", None).await;
@@ -284,7 +284,7 @@ async fn a_verdict_from_an_unrelated_actor_is_ignored(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reject_join_is_kept_so_the_button_is_not_offered_again(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let organizer = RemoteUser::new("mz.example", "grace");
@@ -331,7 +331,7 @@ async fn reject_join_is_kept_so_the_button_is_not_offered_again(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cancelling_an_rsvp_emits_a_bare_leave(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (state, stub, item) = ingest_event(&pool, "free", None).await;
@@ -372,7 +372,7 @@ async fn cancelling_an_rsvp_emits_a_bare_leave(pool: PgPool) {
     assert_eq!(plamenu::delivery::run_due(&state).await, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_full_remote_event_still_accepts_an_rsvp_that_stays_pending(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (state, _stub, item) = ingest_event(&pool, "free", Some(3)).await;
@@ -391,7 +391,7 @@ async fn a_full_remote_event_still_accepts_an_rsvp_that_stays_pending(pool: PgPo
     assert_eq!(plamenu::delivery::run_due(&state).await, 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_external_event_offers_no_rsvp(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (state, stub, item) = ingest_event(&pool, "external", None).await;
@@ -405,7 +405,7 @@ async fn an_external_event_offers_no_rsvp(pool: PgPool) {
     assert!(stub.deliveries().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn the_entity_carries_the_viewers_own_rsvp_state(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (state, _stub, item) = ingest_event(&pool, "restricted", None).await;
@@ -440,7 +440,7 @@ async fn the_entity_carries_the_viewers_own_rsvp_state(pool: PgPool) {
     assert_eq!(anon["event"]["participation"], Value::Null);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rsvping_to_a_non_event_is_a_404(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let stub = StubFederation::with_actors([]);
@@ -493,7 +493,7 @@ async fn local_event(
 /// Every event notification names the event it concerns. This is part of the
 /// API contract as well as what lets the web page render an event card instead
 /// of an unrelated account card.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn event_notifications_embed_the_referenced_event(pool: PgPool) {
     let organizer = create_local_account(&pool, "grace", "Grace").await;
     let attendee = create_local_account(&pool, "heidi", "Heidi").await;
@@ -550,7 +550,7 @@ fn inbound_join(attendee: &RemoteUser, event_uri: &str, message: Option<&str>) -
     join
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_free_local_event_auto_accepts_and_answers(pool: PgPool) {
     let grace = create_local_account(&pool, "grace", "Grace").await;
     let item = local_event(&pool, grace.id, "free", None).await;
@@ -612,7 +612,7 @@ async fn a_free_local_event_auto_accepts_and_answers(pool: PgPool) {
     assert!(notes.iter().any(|n| n.kind == "event.participation"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_restricted_local_event_waits_then_the_organizer_decides(pool: PgPool) {
     let grace = create_local_account(&pool, "grace", "Grace").await;
     let item = local_event(&pool, grace.id, "restricted", None).await;
@@ -657,7 +657,7 @@ async fn a_restricted_local_event_waits_then_the_organizer_decides(pool: PgPool)
     assert_eq!(sent.activity["object"]["participationMessage"], "may I?");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn only_the_organizer_may_decide(pool: PgPool) {
     let grace = create_local_account(&pool, "grace", "Grace").await;
     let stranger = create_local_account(&pool, "stranger", "Stranger").await;
@@ -687,7 +687,7 @@ async fn only_the_organizer_may_decide(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_full_local_event_refuses_with_a_reject(pool: PgPool) {
     let grace = create_local_account(&pool, "grace", "Grace").await;
     // Capacity one, already taken by an accepted attendee.
@@ -736,7 +736,7 @@ async fn a_full_local_event_refuses_with_a_reject(pool: PgPool) {
     ));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_invite_only_local_event_admits_only_the_invited(pool: PgPool) {
     let grace = create_local_account(&pool, "grace", "Grace").await;
     let item = local_event(&pool, grace.id, "invite", None).await;
@@ -808,7 +808,7 @@ async fn an_invite_only_local_event_admits_only_the_invited(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_inbound_leave_and_an_undo_join_both_withdraw(pool: PgPool) {
     let grace = create_local_account(&pool, "grace", "Grace").await;
     let item = local_event(&pool, grace.id, "free", None).await;
@@ -868,7 +868,7 @@ async fn an_inbound_leave_and_an_undo_join_both_withdraw(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_join_naming_a_remote_event_is_dropped(pool: PgPool) {
     create_local_account(&pool, "grace", "Grace").await;
     let (_state, _stub, remote_event) = ingest_event(&pool, "free", None).await;
@@ -894,7 +894,7 @@ async fn a_join_naming_a_remote_event_is_dropped(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_invite_from_a_stranger_is_ignored(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (_state, _stub, item) = ingest_event(&pool, "invite", None).await;
@@ -921,7 +921,7 @@ async fn an_invite_from_a_stranger_is_ignored(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_invite_from_the_organizer_is_recorded_and_notified(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let organizer = RemoteUser::new("mz.example", "grace");
@@ -1013,7 +1013,7 @@ async fn post_event(
     .0
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authoring_an_event_emits_a_create_event_with_the_full_shape(pool: PgPool) {
     create_local_account(&pool, "grace", "Grace").await;
     // A remote follower, so the Create actually goes out and can be inspected.
@@ -1089,7 +1089,7 @@ async fn authoring_an_event_emits_a_create_event_with_the_full_shape(pool: PgPoo
     assert_eq!(served["location"], object["location"]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_event_without_a_start_time_is_refused(pool: PgPool) {
     create_local_account(&pool, "grace", "Grace").await;
     let stub = StubFederation::with_actors([]);
@@ -1155,7 +1155,7 @@ async fn an_event_without_a_start_time_is_refused(pool: PgPool) {
     ));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_ordinary_post_never_becomes_an_event(pool: PgPool) {
     create_local_account(&pool, "grace", "Grace").await;
     let stub = StubFederation::with_actors([]);
@@ -1190,7 +1190,7 @@ async fn an_ordinary_post_never_becomes_an_event(pool: PgPool) {
     assert!(served["startTime"].is_null());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn moving_and_cancelling_an_event_notifies_every_live_rsvp(pool: PgPool) {
     create_local_account(&pool, "grace", "Grace").await;
     let attendee = create_local_account(&pool, "heidi", "Heidi").await;
@@ -1329,7 +1329,7 @@ async fn moving_and_cancelling_an_event_notifies_every_live_rsvp(pool: PgPool) {
     assert_eq!(served["ical:status"], "CANCELLED");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_edit_never_promotes_a_note_into_an_event(pool: PgPool) {
     create_local_account(&pool, "grace", "Grace").await;
     let stub = StubFederation::with_actors([]);
@@ -1386,7 +1386,7 @@ async fn an_edit_never_promotes_a_note_into_an_event(pool: PgPool) {
     assert_eq!(served["type"], "Note");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_event_update_reaches_remote_attendees_who_follow_nobody(pool: PgPool) {
     create_local_account(&pool, "grace", "Grace").await;
     let heidi = RemoteUser::new("mz.example", "heidi");
@@ -1468,7 +1468,7 @@ async fn an_event_update_reaches_remote_attendees_who_follow_nobody(pool: PgPool
 /// delivery hint rather than a boost: following a Mobilizon instance silently
 /// stopped its groups' events from reaching any follower's timeline. The
 /// subscription broke the ordinary follow it was meant to complement.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_relay_on_a_shared_inbox_does_not_capture_the_hosts_other_actors(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     // The relay actor and a group, both on one host, both advertising `/inbox`.
@@ -1525,7 +1525,7 @@ async fn a_relay_on_a_shared_inbox_does_not_capture_the_hosts_other_actors(pool:
 /// row, and an invitation *is* a row — so the button returned the invitation
 /// unchanged and federated nothing. The inbound half of this transition was
 /// covered; this outbound half was not, which is exactly why it went unnoticed.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_invitation_lets_us_join_an_invite_only_event(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (state, stub, item) = ingest_event(&pool, "invite", None).await;
@@ -1570,7 +1570,7 @@ async fn an_invitation_lets_us_join_an_invite_only_event(pool: PgPool) {
 /// started. An `Invite` creates state for an account that has done nothing — a
 /// notification in their list, and an invite-only event opened to them — so
 /// "somebody else on the organizer's server" is not good enough.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn only_the_organizer_or_its_group_may_invite(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let organizer = RemoteUser::new("mz.example", "grace");
@@ -1635,7 +1635,7 @@ async fn restore_outbox(pool: &PgPool) {
         .unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rsvp_and_cancellation_roll_back_when_outbox_fails(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (state, stub, item) = ingest_event(&pool, "free", None).await;
@@ -1681,7 +1681,7 @@ async fn rsvp_and_cancellation_roll_back_when_outbox_fails(pool: PgPool) {
     assert_eq!(stub.deliveries()[1].activity["type"], "Leave");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rsvp_verdict_rolls_back_when_outbox_fails(pool: PgPool) {
     let grace = create_local_account(&pool, "grace", "Grace").await;
     let item = local_event(&pool, grace.id, "restricted", None).await;

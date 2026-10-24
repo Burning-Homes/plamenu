@@ -127,7 +127,7 @@ async fn ready_native_draft(state: &plamenu::AppState, owner: &account::Account)
     (media_id, channel.id)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_draft_html_review_and_cancel_are_private_and_require_confirmation(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -212,7 +212,7 @@ async fn native_draft_html_review_and_cancel_are_private_and_require_confirmatio
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_draft_html_refresh_never_retries_and_expiry_disables_review(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -313,7 +313,7 @@ async fn native_draft_html_refresh_never_retries_and_expiry_disables_review(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_draft_previews_are_owner_only_and_support_private_ranges(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -418,7 +418,7 @@ async fn native_draft_previews_are_owner_only_and_support_private_ranges(pool: P
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_draft_publication_opens_only_committed_outputs_and_suspension_closes_them(
     pool: PgPool,
 ) {
@@ -527,7 +527,7 @@ async fn native_draft_publication_opens_only_committed_outputs_and_suspension_cl
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_draft_expiry_and_cancellation_never_expose_leftover_bytes(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -804,7 +804,7 @@ async fn app_with_alice_owning_group(pool: PgPool) -> (Router, i64) {
 /// The scoped group composer (`/compose?group=id`) is the full composer plus
 /// the Title / Link fields, with visibility locked public and a "Posting to"
 /// note — not the old cramped three-field box.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_compose_page_is_the_full_composer_with_title_and_link(pool: PgPool) {
     let (app, group_id) = app_with_alice_owning_group(pool).await;
     let cookie = login(&app).await;
@@ -833,7 +833,7 @@ async fn group_compose_page_is_the_full_composer_with_title_and_link(pool: PgPoo
 
 /// A link with no title re-renders the group composer inline with the rule in
 /// the banner and every field preserved — never the old bare error page.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_link_without_a_title_reprompts_gracefully(pool: PgPool) {
     let (app, group_id) = app_with_alice_owning_group(pool).await;
     let cookie = login(&app).await;
@@ -883,7 +883,7 @@ async fn group_link_without_a_title_reprompts_gracefully(pool: PgPool) {
 
 /// A title-only thread (no body, no media) is a valid group post — the blank
 /// check treats the title as content — and its thread shows the title.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_title_only_post_is_accepted(pool: PgPool) {
     let (app, group_id) = app_with_alice_owning_group(pool).await;
     let cookie = login(&app).await;
@@ -923,7 +923,7 @@ async fn group_title_only_post_is_accepted(pool: PgPool) {
 
 /// A bare group post keeps its "posted in [group]" context on every first-party
 /// surface, not only where the group's Announce wrapper happens to survive.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_post_context_survives_public_profile_and_thread_surfaces(pool: PgPool) {
     let (app, group_id) = app_with_alice_owning_group(pool.clone()).await;
     let cookie = login(&app).await;
@@ -1006,7 +1006,7 @@ async fn group_post_context_survives_public_profile_and_thread_surfaces(pool: Pg
 }
 
 /// The group page's "New post" button links to the scoped composer.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_page_links_to_the_scoped_composer(pool: PgPool) {
     let (app, group_id) = app_with_alice_owning_group(pool).await;
     let cookie = login(&app).await;
@@ -1022,7 +1022,7 @@ async fn group_page_links_to_the_scoped_composer(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_publishes_and_renders_everywhere(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -1043,7 +1043,7 @@ async fn compose_publishes_and_renders_everywhere(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_local_visibility_renders_badge_and_stays_local(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -1100,7 +1100,7 @@ async fn compose_local_visibility_renders_badge_and_stays_local(pool: PgPool) {
     assert!(local_auth.body.contains("local web post"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_rejects_a_bad_csrf_token(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -1121,7 +1121,7 @@ async fn compose_rejects_a_bad_csrf_token(pool: PgPool) {
     assert!(!public.body.contains("nope"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_attaches_uploaded_media(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -1160,7 +1160,7 @@ async fn compose_attaches_uploaded_media(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_accepts_and_records_decorative_image_intent(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -1202,7 +1202,7 @@ async fn compose_accepts_and_records_decorative_image_intent(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_accepts_media_over_the_default_body_limit(pool: PgPool) {
     // A single realistic photo already exceeds axum's 2 MB default body limit.
     // The compose route disables that default and sizes its own limit from the
@@ -1274,7 +1274,7 @@ async fn preview_fragment(app: &Router, cookie: &str, fields: &[(&str, &str)]) -
     send(app, request).await
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_preview_renders_the_draft_without_posting(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -1314,7 +1314,7 @@ async fn compose_preview_renders_the_draft_without_posting(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_preview_carries_media_as_a_removable_card(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -1377,7 +1377,7 @@ async fn compose_preview_carries_media_as_a_removable_card(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_preview_fragment_returns_only_the_card(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -1406,7 +1406,7 @@ async fn compose_preview_fragment_returns_only_the_card(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_preview_fragment_allows_a_media_only_draft(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -1435,7 +1435,7 @@ async fn compose_preview_fragment_allows_a_media_only_draft(pool: PgPool) {
     assert!(resp.body.contains("class=\"status\""), "no card rendered");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_preview_reports_a_validation_error(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -1463,7 +1463,7 @@ async fn compose_preview_reports_a_validation_error(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn favourite_toggles_through_the_action_form(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -1498,7 +1498,7 @@ async fn favourite_toggles_through_the_action_form(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bookmarks_and_favourites_pages_list_the_marked_posts(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -1538,7 +1538,7 @@ async fn bookmarks_and_favourites_pages_list_the_marked_posts(pool: PgPool) {
     assert!(home.body.contains("href=\"/favourites\""));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mobile_tabbar_is_five_slots_with_a_burger_drawer(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -1603,7 +1603,7 @@ async fn mobile_tabbar_is_five_slots_with_a_burger_drawer(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mobile_tabbar_is_emitted_before_the_page_content(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -1622,7 +1622,7 @@ async fn mobile_tabbar_is_emitted_before_the_page_content(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn nav_account_row_wears_the_viewers_avatar(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -1651,7 +1651,7 @@ async fn nav_account_row_wears_the_viewers_avatar(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_renders_banner_and_profile_media_descriptions(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     sqlx::query(
@@ -1686,7 +1686,7 @@ async fn profile_renders_banner_and_profile_media_descriptions(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_mobile_tabbar_is_home_plus_burger_drawer(pool: PgPool) {
     common::open_previews(&pool).await;
     let app = common::test_app(pool);
@@ -1728,7 +1728,7 @@ async fn anonymous_mobile_tabbar_is_home_plus_burger_drawer(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_follow_button_drives_the_relationship(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -1817,7 +1817,7 @@ async fn profile_follow_button_drives_the_relationship(pool: PgPool) {
     assert!(page.body.contains(r#"name="with_replies" checked"#));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unknown_profile_is_a_styled_404(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let resp = get(&app, "/@nobody", None).await;
@@ -1829,7 +1829,7 @@ async fn unknown_profile_is_a_styled_404(pool: PgPool) {
 /// A remote Lemmy handle served as both a Person (`/u/collision`) and a Group
 /// (`/c/collision`): `/@collision@host` renders the person, `/!collision@host`
 /// the group. They are different pages.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn person_and_group_handles_route_separately(pool: PgPool) {
     let mut person = RemoteUser::new("lemmy.test", "collision");
     person.actor.name = Some("Collision Person".to_owned());
@@ -1877,7 +1877,7 @@ async fn person_and_group_handles_route_separately(pool: PgPool) {
     assert!(!group_page.body.contains("Joined "), "{}", group_page.body);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_timeline_is_open_to_anonymous_visitors(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let resp = get(&app, "/public", None).await;
@@ -1887,7 +1887,7 @@ async fn public_timeline_is_open_to_anonymous_visitors(pool: PgPool) {
     assert!(resp.body.contains("Local"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn login_page_renders(pool: PgPool) {
     let app = common::test_app(pool);
     let resp = get(&app, "/login", None).await;
@@ -1897,7 +1897,7 @@ async fn login_page_renders(pool: PgPool) {
     assert!(resp.body.contains(r#"action="/login""#));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn login_page_negotiates_russian_from_accept_language(pool: PgPool) {
     let app = common::test_app(pool);
     let request = Request::builder()
@@ -1915,7 +1915,7 @@ async fn login_page_negotiates_russian_from_accept_language(pool: PgPool) {
     assert!(!resp.body.contains(">Sign in<"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stored_interface_locale_overrides_accept_language(pool: PgPool) {
     let account = seed_alice(&pool).await;
     let user = user::find_by_account_id(&pool, account.id)
@@ -1975,7 +1975,7 @@ async fn stored_interface_locale_overrides_accept_language(pool: PgPool) {
     assert!(!compose.body.contains("What&#x27;s on your mind?"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_search_negotiates_russian_interface(pool: PgPool) {
     common::open_previews(&pool).await;
     let app = common::test_app(pool);
@@ -1992,7 +1992,7 @@ async fn anonymous_search_negotiates_russian_interface(pool: PgPool) {
     assert!(resp.body.contains("ничего не найдено"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_profile_negotiates_russian_interface(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let request = Request::builder()
@@ -2012,7 +2012,7 @@ async fn anonymous_profile_negotiates_russian_interface(pool: PgPool) {
     assert!(!resp.body.contains(">Followers<"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_home_serves_the_landing_page(pool: PgPool) {
     let app = common::test_app(pool.clone());
     let resp = get(&app, "/", None).await;
@@ -2049,7 +2049,7 @@ async fn anonymous_home_serves_the_landing_page(pool: PgPool) {
     assert_eq!(resp.location.as_deref(), Some("/login"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_discovery_pages_negotiate_russian(pool: PgPool) {
     common::open_previews(&pool).await;
     // The discovery surfaces sit behind their own anonymous switches.
@@ -2163,7 +2163,7 @@ async fn anonymous_discovery_pages_negotiate_russian(pool: PgPool) {
     assert!(missing.body.contains("Страница не найдена"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn landing_stats_show_connected_relays(pool: PgPool) {
     // An accepted relay with some inbound activity this week gets its own
     // stats line (a pending one would not — see the landing-page test above).
@@ -2191,7 +2191,7 @@ async fn landing_stats_show_connected_relays(pool: PgPool) {
     assert!(resp.body.contains("activities this week"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn staff_page_lists_privileged_accounts(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     // Alice holds the default User role: no staff to show yet.
@@ -2219,7 +2219,7 @@ async fn staff_page_lists_privileged_accounts(pool: PgPool) {
     assert!(!resp.body.contains("/@alice"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn good_credentials_set_session_cookie(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let resp = post_login(&app, EMAIL, PASSWORD).await;
@@ -2232,7 +2232,7 @@ async fn good_credentials_set_session_cookie(pool: PgPool) {
     assert!(cookie.contains("SameSite=Lax"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn login_accepts_username_and_handle_forms(pool: PgPool) {
     let app = app_with_alice(pool).await;
     // The same field takes the username, with or without a leading `@`, the
@@ -2253,7 +2253,7 @@ async fn login_accepts_username_and_handle_forms(pool: PgPool) {
     assert_eq!(resp.status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn login_form_email_field_alias_still_works(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let body = serde_urlencoded::to_string([("email", EMAIL), ("password", PASSWORD)]).unwrap();
@@ -2268,7 +2268,7 @@ async fn login_form_email_field_alias_still_works(pool: PgPool) {
     assert!(resp.set_cookie.is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_without_email_signs_in_by_username(pool: PgPool) {
     let account = create_local_account(&pool, "noemail", "No Email").await;
     let hash = plamenu::auth::hash_password(PASSWORD).unwrap();
@@ -2281,7 +2281,7 @@ async fn account_without_email_signs_in_by_username(pool: PgPool) {
     assert!(resp.set_cookie.is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn repeated_bad_credentials_temporarily_lock_login(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     for _ in 0..(user::LOGIN_LOCK_MAX_ATTEMPTS - 1) {
@@ -2313,7 +2313,7 @@ async fn repeated_bad_credentials_temporarily_lock_login(pool: PgPool) {
     assert!(unlocked.set_cookie.is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn session_cookie_unlocks_home(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = cookie_pair(
@@ -2335,7 +2335,7 @@ async fn session_cookie_unlocks_home(pool: PgPool) {
     assert!(resp.body.contains(r#"action="/logout""#));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn logout_clears_and_revokes_the_session(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = cookie_pair(
@@ -2361,7 +2361,7 @@ async fn logout_clears_and_revokes_the_session(pool: PgPool) {
     assert_eq!(after.location.as_deref(), Some("/login"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stylesheet_is_served(pool: PgPool) {
     let app = common::test_app(pool);
     let resp = get(&app, "/assets/app.css", None).await;
@@ -2391,7 +2391,7 @@ async fn stylesheet_is_served(pool: PgPool) {
     assert!(notification.contains("grid-template-columns: minmax(0, 1fr)"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pwa_install_surface_is_complete(pool: PgPool) {
     let app = common::test_app(pool);
 
@@ -2480,7 +2480,7 @@ async fn pwa_install_surface_is_complete(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn notifications_page_lists_activity(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -2498,7 +2498,7 @@ async fn notifications_page_lists_activity(pool: PgPool) {
     assert!(resp.body.contains("/@bob"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn notifications_page_coalesces_post_reasons_and_mentions_win(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -2547,7 +2547,7 @@ async fn notifications_page_coalesces_post_reasons_and_mentions_win(pool: PgPool
     assert_eq!(row.reasons, vec!["mention", "quote", "status"]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reaction_notification_links_once_to_actor_and_shows_reacted_post(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -2590,7 +2590,7 @@ async fn reaction_notification_links_once_to_actor_and_shows_reacted_post(pool: 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn notifications_page_renders_every_nonstandard_payload_and_action(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -2701,7 +2701,7 @@ async fn notifications_page_renders_every_nonstandard_payload_and_action(pool: P
     assert!(page.body.contains("/settings/strikes"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unread_dot_lights_the_bell_until_the_page_is_opened(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -2740,7 +2740,7 @@ async fn unread_dot_lights_the_bell_until_the_page_is_opened(pool: PgPool) {
     assert!(!page.body.contains("bell__dot"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn follow_lists_render(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -2763,7 +2763,7 @@ async fn follow_lists_render(pool: PgPool) {
     assert!(following.body.contains("/@alice"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hidden_follow_lists_stay_private_on_web(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -2810,7 +2810,7 @@ async fn hidden_follow_lists_stay_private_on_web(pool: PgPool) {
 /// A member who hid their own social graph must also disappear from *other*
 /// accounts' follower lists on the web — except for the member themselves and
 /// the list's owner. Here carol (the list owner) hides nothing; dave does.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hidden_member_filtered_from_other_accounts_lists_on_web(pool: PgPool) {
     let carol = seed_user(&pool, "carol", "carol@example.com", "carol-password-1").await;
     let dave = seed_user(&pool, "dave", "dave@example.com", "dave-password-1").await;
@@ -2872,7 +2872,7 @@ async fn hidden_member_filtered_from_other_accounts_lists_on_web(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_nav_hides_features_disabled_for_visitors(pool: PgPool) {
     seed_alice(&pool).await;
 
@@ -2905,7 +2905,7 @@ async fn anonymous_nav_hides_features_disabled_for_visitors(pool: PgPool) {
     assert!(!locked_login.body.contains(r#"href="/search""#));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn notifications_require_a_session(pool: PgPool) {
     let app = app_with_alice(pool).await;
     // Every session-gated route bounces an anonymous visitor to the login page.
@@ -2920,7 +2920,7 @@ async fn notifications_require_a_session(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn search_finds_people_and_hashtags(pool: PgPool) {
     seed_alice(&pool).await;
     create_local_account(&pool, "bob", "Bob").await;
@@ -2956,7 +2956,7 @@ async fn search_finds_people_and_hashtags(pool: PgPool) {
     assert!(tags.body.contains("/tags/plamenutest"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn search_resolves_a_url_to_its_post(pool: PgPool) {
     seed_alice(&pool).await;
     common::open_previews(&pool).await;
@@ -2997,7 +2997,7 @@ async fn search_resolves_a_url_to_its_post(pool: PgPool) {
     assert!(!anon.body.contains("hello from afar"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_suggestions_complete_mentions_and_hashtags(pool: PgPool) {
     seed_alice(&pool).await;
     create_local_account(&pool, "bob", "Bob the Builder").await;
@@ -3055,7 +3055,7 @@ async fn compose_suggestions_complete_mentions_and_hashtags(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unicode_and_bridge_mentions_work_in_suggestions_and_no_js_compose(pool: PgPool) {
     seed_alice(&pool).await;
     let mut unicode = RemoteUser::new("loops.example", "unicode");
@@ -3158,7 +3158,7 @@ async fn unicode_and_bridge_mentions_work_in_suggestions_and_no_js_compose(pool:
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn search_page_is_open_to_anonymous_visitors(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let resp = get(&app, "/search", None).await;
@@ -3166,7 +3166,7 @@ async fn search_page_is_open_to_anonymous_visitors(pool: PgPool) {
     assert!(resp.body.contains(r#"action="/search""#));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn tag_timeline_shows_tagged_posts(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3179,7 +3179,7 @@ async fn tag_timeline_shows_tagged_posts(pool: PgPool) {
     assert!(resp.body.contains("first"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_page_offers_full_editor(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3215,7 +3215,7 @@ async fn compose_page_offers_full_editor(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_publishes_a_poll(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3244,7 +3244,7 @@ async fn compose_publishes_a_poll(pool: PgPool) {
     assert!(thread.body.contains("votes"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn another_user_can_vote_in_a_poll(pool: PgPool) {
     seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", "bob password 1").await;
@@ -3329,7 +3329,7 @@ async fn another_user_can_vote_in_a_poll(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn quote_post_embeds_the_original(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -3435,7 +3435,7 @@ async fn quote_post_embeds_the_original(pool: PgPool) {
 
 /// The boosts / favourites engagement lists show who engaged, linked
 /// from the thread detail counters; an unknown list segment is a 404.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn engagement_lists_show_boosters_and_favers(pool: PgPool) {
     seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", "bob-password-1").await;
@@ -3486,7 +3486,7 @@ async fn engagement_lists_show_boosters_and_favers(pool: PgPool) {
 
 /// The quotes list renders the quoting posts and offers the quoted
 /// author a per-quote revoke control that withdraws the quote.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn quotes_list_lets_the_author_revoke(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3535,7 +3535,7 @@ async fn quotes_list_lets_the_author_revoke(pool: PgPool) {
 
 /// A content warning is a single gate over the whole post: a CW post with
 /// sensitive media shows one toggle, not a separate one for text and media.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn content_warning_is_one_toggle_over_text_and_media(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3577,7 +3577,7 @@ async fn content_warning_is_one_toggle_over_text_and_media(pool: PgPool) {
 
 /// A described image thumbnail carries the ALT badge and its blurhash
 /// (the JS lightbox/placeholder hooks); an undescribed one carries neither.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn image_renders_alt_badge_and_blurhash(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3622,7 +3622,7 @@ async fn image_renders_alt_badge_and_blurhash(pool: PgPool) {
 
 /// An audio attachment renders a real `<audio>` player instead of the
 /// old bare "Attachment" link.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn audio_attachment_renders_a_player(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3650,7 +3650,7 @@ async fn audio_attachment_renders_a_player(pool: PgPool) {
 /// A gifv (soundless clip) renders a still poster link by default —
 /// badged "GIF" — and only autoplays as an unchromed muted loop once the
 /// viewer turns the "Auto-play animated GIFs" preference on.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn gifv_honors_the_autoplay_preference(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3705,7 +3705,7 @@ async fn gifv_honors_the_autoplay_preference(pool: PgPool) {
 
 /// The "always expand content warnings" reading preference opens the CW toggle
 /// in the rendered timeline instead of leaving it collapsed.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reading_expand_spoilers_opens_the_warning(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3742,7 +3742,7 @@ async fn reading_expand_spoilers_opens_the_warning(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn author_can_delete_their_status(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3775,7 +3775,7 @@ async fn author_can_delete_their_status(pool: PgPool) {
 /// The owner's overflow menu carries the secondary verbs — pin,
 /// conversation mute, quote policy, delete and delete-and-redraft — while the
 /// moderation verbs (against other accounts) stay out of one's own menu.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn overflow_menu_offers_owner_verbs(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3803,7 +3803,7 @@ async fn overflow_menu_offers_owner_verbs(pool: PgPool) {
 
 /// Pin / unpin and conversation mute / unmute round-trip through the
 /// overflow menu forms, the label flipping with the state.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pin_and_conversation_mute_toggle_through_the_menu(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3851,7 +3851,7 @@ async fn pin_and_conversation_mute_toggle_through_the_menu(pool: PgPool) {
 
 /// Pinned posts lead the profile under a "Pinned" marker and don't
 /// repeat in the chronological feed below.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pinned_posts_lead_the_profile(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3881,7 +3881,7 @@ async fn pinned_posts_lead_the_profile(pool: PgPool) {
 
 /// Delete-and-redraft removes the post and reopens the composer
 /// prefilled with its source text, content warning and visibility.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn redraft_deletes_and_prefills_the_composer(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3925,7 +3925,7 @@ async fn redraft_deletes_and_prefills_the_composer(pool: PgPool) {
 
 /// The owner changes who can quote after posting; the menu's selector
 /// tracks the stored policy and the detail metadata spells it out.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn quote_policy_updates_through_the_menu(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -3969,7 +3969,7 @@ async fn quote_policy_updates_through_the_menu(pool: PgPool) {
 
 /// Another user's post offers the account-moderation verbs in its
 /// overflow menu, and the forms actually create the mute / block rows.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn moderation_verbs_mute_and_block_from_the_menu(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -4043,7 +4043,7 @@ async fn moderation_verbs_mute_and_block_from_the_menu(pool: PgPool) {
 
 /// A remote post's menu links to the original page and offers a
 /// user-level domain block for the author's server.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_posts_offer_original_page_and_domain_block(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let remote_bob = RemoteUser::new("remote.example", "bob");
@@ -4127,7 +4127,7 @@ async fn remote_posts_offer_original_page_and_domain_block(pool: PgPool) {
 /// moderation verbs (the profile-level counterparts of the status menu), the
 /// list-management and endorsement ("Feature on profile") entries, and the
 /// join date — none of which appear on one's own profile.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_menu_offers_account_actions_and_join_date(pool: PgPool) {
     seed_alice(&pool).await;
     let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -4175,7 +4175,7 @@ async fn profile_menu_offers_account_actions_and_join_date(pool: PgPool) {
 
 /// Mute/unmute and block/unblock round-trip through the profile menu, and the
 /// button flips to its inverse once the relationship exists.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_menu_mute_and_block_round_trip(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -4252,7 +4252,7 @@ async fn profile_menu_mute_and_block_round_trip(pool: PgPool) {
 /// The profile shows compact badges for the viewer's own sanctions on the
 /// account — mute, block and the reverse "blocks you" — and no badge row at
 /// all on a clean profile or one's own.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_shows_viewer_moderation_badges(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -4285,7 +4285,7 @@ async fn profile_shows_viewer_moderation_badges(pool: PgPool) {
 
 /// Limited accounts retain a visible sanction badge for logged-in viewers,
 /// while suspended profiles are unavailable to every ordinary viewer.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_shows_admin_sanction_badges(pool: PgPool) {
     seed_alice(&pool).await;
     let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -4307,7 +4307,7 @@ async fn profile_shows_admin_sanction_badges(pool: PgPool) {
 
 /// A remote profile's badge row covers the server-level states: the viewer's
 /// own domain block and the admin domain block's severity.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_profile_shows_server_badges(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let remote_bob = RemoteUser::new("remote.example", "bob");
@@ -4342,7 +4342,7 @@ async fn remote_profile_shows_server_badges(pool: PgPool) {
     assert!(limited.body.contains("Server limited"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_history_profile_control_is_feature_gated_compact_and_viewer_local(pool: PgPool) {
     history_db::save_settings(&pool, false, 90, false)
         .await
@@ -4393,7 +4393,7 @@ async fn remote_history_profile_control_is_feature_gated_compact_and_viewer_loca
 /// The profile "Report" link opens the same report form addressed to the whole
 /// account (no post pre-checked), and submitting it files a report with no
 /// attached statuses through the shared `create_report`.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_report_files_an_account_report(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -4439,7 +4439,7 @@ async fn profile_report_files_an_account_report(pool: PgPool) {
 
 /// A remote account's profile menu links to its original page and offers a
 /// user-level domain block for its server, which flips to "Unblock" once set.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_profile_offers_original_page_and_domain_block(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let remote_bob = RemoteUser::new("remote.example", "bob");
@@ -4498,7 +4498,7 @@ async fn remote_profile_offers_original_page_and_domain_block(pool: PgPool) {
 /// A silenced local account's profile is stripped to the handle and a notice
 /// for anonymous visitors — no posts — while a logged-in viewer still sees the
 /// full profile, annotated with a notice.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn silenced_profile_hidden_from_anonymous_but_full_for_members(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -4526,7 +4526,7 @@ async fn silenced_profile_hidden_from_anonymous_but_full_for_members(pool: PgPoo
 /// A `silence` domain block limits every account on that server: the remote
 /// profile shows anonymous visitors only the notice and a link back to the
 /// original page on the home server.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn domain_silence_strips_remote_profile_for_anonymous(pool: PgPool) {
     seed_alice(&pool).await;
     let remote_bob = RemoteUser::new("remote.example", "bob");
@@ -4560,7 +4560,7 @@ async fn domain_silence_strips_remote_profile_for_anonymous(pool: PgPool) {
 /// category radios (violation only when rules exist), the rule picker, the
 /// target's recent posts with the reported one pre-checked, the comment box —
 /// and no forward toggle for a local target.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn report_page_offers_the_stepper_form(pool: PgPool) {
     seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", "pw").await;
@@ -4614,7 +4614,7 @@ async fn report_page_offers_the_stepper_form(pool: PgPool) {
 /// Submitting the form files the report through the same action as
 /// `POST /api/v1/reports` and lands on the confirmation view with its
 /// mute/block shortcuts.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn report_form_files_a_report_and_confirms(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", "pw").await;
@@ -4663,7 +4663,7 @@ async fn report_form_files_a_report_and_confirms(pool: PgPool) {
 
 /// Citing rules forces the `violation` category, exactly like the API
 /// (`ReportService`), whatever the radio said.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn citing_a_rule_forces_the_violation_category(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", "pw").await;
@@ -4698,7 +4698,7 @@ async fn citing_a_rule_forces_the_violation_category(pool: PgPool) {
 
 /// A remote target adds the forward toggle, and forwarding is recorded
 /// on the stored report like the API's `forward` param.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_report_offers_the_forward_toggle(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let remote_bob = RemoteUser::new("remote.example", "bob");
@@ -4761,7 +4761,7 @@ async fn remote_report_offers_the_forward_toggle(pool: PgPool) {
 
 /// The gates — own posts can't be reported (the menu never offers it
 /// and the page 404s), and the POST rejects a bad CSRF token.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn report_gates_own_posts_and_csrf(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", "pw").await;
@@ -4802,7 +4802,7 @@ async fn report_gates_own_posts_and_csrf(pool: PgPool) {
 /// The "all-JS menu ships hidden" rule was reworked: the overflow
 /// menu now always carries the engagement-list links, so it is a working
 /// no-JS disclosure even for an anonymous viewer of a local post.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_menu_offers_the_engagement_lists(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -4820,7 +4820,7 @@ async fn anonymous_menu_offers_the_engagement_lists(pool: PgPool) {
 
 /// Timeline cards carry the account flags (bot, locked) beside the
 /// handle and the language / edited / visibility chips in the meta corner.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn status_cards_surface_account_flags_and_metadata(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -4864,7 +4864,7 @@ async fn status_cards_surface_account_flags_and_metadata(pool: PgPool) {
 /// parent thread through the `/web/statuses/{id}` resolver, which redirects
 /// to the canonical permalink. Also pins down the `in_reply_to_account_id`
 /// entity fix the line reads from.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn replies_name_their_target_and_resolve_the_parent(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -4945,7 +4945,7 @@ async fn replies_name_their_target_and_resolve_the_parent(pool: PgPool) {
 /// The focused post of a thread page carries the detail treatment —
 /// full timestamp, visibility / language / quote-policy labels and the
 /// engagement summary — while plain timeline cards do not.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn thread_focus_shows_detail_metadata(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -4984,7 +4984,7 @@ async fn thread_focus_shows_detail_metadata(pool: PgPool) {
 
 /// Pending quotes render the same card as accepted quotes. Explicit removals
 /// retain their placeholder and fallback link, even if the sender omitted it.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pending_quotes_embed_and_rejected_quotes_keep_fallbacks(pool: PgPool) {
     fn focused_post(body: &str, id: i64) -> &str {
         body.split_once(&format!(r#"id="post-{id}""#))
@@ -5088,7 +5088,7 @@ async fn pending_quotes_embed_and_rejected_quotes_keep_fallbacks(pool: PgPool) {
 /// The first-party UI reflects the same quote policy enforced by the posting
 /// service: denied remote posts show a disabled quote glyph, have no composer
 /// link, and a hand-written composer URL is refused.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_posts_without_quote_permission_disable_the_web_action(pool: PgPool) {
     seed_alice(&pool).await;
     let remote_bob = RemoteUser::new("remote.example", "bob");
@@ -5167,7 +5167,7 @@ async fn remote_posts_without_quote_permission_disable_the_web_action(pool: PgPo
 /// through the in-app resolver (`/web/go`) so a click can land on our copy of a
 /// federated actor/post; an anonymous viewer, who can't resolve, gets the plain
 /// external link. Either way the link opens in a new tab.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn content_links_stay_in_app_and_external_links_open_new_tabs(pool: PgPool) {
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
     let app = app_with_alice(pool).await;
@@ -5214,7 +5214,7 @@ async fn content_links_stay_in_app_and_external_links_open_new_tabs(pool: PgPool
 /// Remote sanitised HTML carries `rel` (ammonia) but no `target`; the
 /// renderer adds one so external links consistently open in a new tab. For a
 /// signed-in viewer the link also routes through the in-app resolver.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_content_links_gain_a_new_tab_target(pool: PgPool) {
     seed_alice(&pool).await;
     let remote_bob = RemoteUser::new("remote.example", "bob");
@@ -5268,7 +5268,7 @@ async fn remote_content_links_gain_a_new_tab_target(pool: PgPool) {
 /// federated URL lands on our local copy. An anonymous viewer gets the
 /// storage-only lookup: a known object still opens locally, an unknown
 /// one falls through to the original page without any fetch.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn go_resolves_federated_urls_and_falls_through_otherwise(pool: PgPool) {
     seed_alice(&pool).await;
     let mut group = RemoteUser::new("lemmy.test", "memes");
@@ -5337,7 +5337,7 @@ async fn go_resolves_federated_urls_and_falls_through_otherwise(pool: PgPool) {
 
 /// A status' preview card renders under the content — provider, title,
 /// description and thumbnail, the whole card one external link.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn preview_card_renders_under_the_content(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -5464,7 +5464,7 @@ async fn post_multipart_file(
     send(app, request).await
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn radio_create_rejection_retains_draft_and_localizes_name_help(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -5545,7 +5545,7 @@ async fn radio_create_rejection_retains_draft_and_localizes_name_help(pool: PgPo
     assert_eq!(radio.config, "Opaque <station> settings");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn music_upload_rejection_keeps_metadata_without_creating_asset(pool: PgPool) {
     seed_alice(&pool).await;
     let app = build_router(common::test_state_with(
@@ -5616,7 +5616,7 @@ async fn music_upload_rejection_keeps_metadata_without_creating_asset(pool: PgPo
     assert!(!invalid_csrf.body.contains("Never echoed"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_video_spool_is_bounded_csrf_gated_and_cleaned(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let root = tempfile::tempdir().unwrap();
@@ -5903,7 +5903,7 @@ async fn native_video_spool_is_bounded_csrf_gated_and_cleaned(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn resumable_video_offsets_survive_retry_and_never_expose_original(pool: PgPool) {
     use sha2::{Digest, Sha256};
     use std::fmt::Write as _;
@@ -6197,7 +6197,7 @@ fn noise_png_bytes(side: u32) -> Vec<u8> {
     bytes
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_index_redirects_to_profile(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -6206,7 +6206,7 @@ async fn settings_index_redirects_to_profile(pool: PgPool) {
     assert_eq!(resp.location.as_deref(), Some("/settings/profile"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_profile_form_renders(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -6221,7 +6221,7 @@ async fn settings_profile_form_renders(pool: PgPool) {
     assert!(!resp.body.contains("WIP"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_profile_form_uses_stored_russian_locale(pool: PgPool) {
     let account = seed_alice(&pool).await;
     let stored_user = user::find_by_account_id(&pool, account.id)
@@ -6257,7 +6257,7 @@ async fn settings_profile_form_uses_stored_russian_locale(pool: PgPool) {
     assert!(!resp.body.contains(">Preferences<"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn core_settings_pages_use_stored_russian_locale(pool: PgPool) {
     let account = seed_alice(&pool).await;
     let stored_user = user::find_by_account_id(&pool, account.id)
@@ -6308,7 +6308,7 @@ async fn core_settings_pages_use_stored_russian_locale(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_profile_update_persists(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -6373,7 +6373,7 @@ async fn settings_profile_update_persists(pool: PgPool) {
     assert_eq!(stored.header_description, "a rabbit hole");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_profile_upload_error_keeps_draft_without_saving(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -6425,7 +6425,7 @@ async fn settings_profile_upload_error_keeps_draft_without_saving(pool: PgPool) 
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_profile_update_rejects_bad_csrf(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -6439,7 +6439,7 @@ async fn settings_profile_update_rejects_bad_csrf(pool: PgPool) {
     assert_eq!(resp.status, StatusCode::FORBIDDEN);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_live_sections_render(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -6463,7 +6463,7 @@ async fn settings_live_sections_render(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_preferences_save_and_compose_defaults(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -6583,7 +6583,7 @@ async fn settings_preferences_save_and_compose_defaults(pool: PgPool) {
     assert_eq!(stored.language.as_deref(), Some("fr"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_privacy_save_persists_flags(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -6627,7 +6627,7 @@ async fn settings_privacy_save_persists_flags(pool: PgPool) {
     assert!(form.body.contains(r#"value="drop" selected"#));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_privacy_domain_error_retains_draft_without_writes(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let stored_user = user::find_by_account_id(&pool, alice.id)
@@ -6724,7 +6724,7 @@ async fn settings_privacy_domain_error_retains_draft_without_writes(pool: PgPool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_security_password_change_reauthenticates(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -6770,7 +6770,7 @@ async fn settings_security_password_change_reauthenticates(pool: PgPool) {
     assert!(!verify_password(PASSWORD, &stored.password_hash));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_account_email_change_handles_conflict(pool: PgPool) {
     seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", "bob-password").await;
@@ -6876,7 +6876,7 @@ async fn settings_account_email_change_handles_conflict(pool: PgPool) {
     assert!(relogin.set_cookie.is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_account_delete_tombstones_and_clears_cookie(pool: PgPool) {
     seed_alice(&pool).await;
     let remote_bob = RemoteUser::new("remote.example", "bob");
@@ -7000,7 +7000,7 @@ async fn make_staff(pool: &PgPool, account_id: i64) {
         .unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_pages_require_a_role(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -7022,7 +7022,7 @@ async fn admin_pages_require_a_role(pool: PgPool) {
     assert!(!home.body.contains("href=\"/admin\""));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn federation_debug_probes_past_the_failure_budget(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -7054,7 +7054,7 @@ async fn federation_debug_probes_past_the_failure_budget(pool: PgPool) {
     assert!(page.body.contains("Fetched"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_link_appears_for_staff(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -7068,7 +7068,7 @@ async fn admin_link_appears_for_staff(pool: PgPool) {
 /// Contextual shield menus follow the destination pages' exact permissions,
 /// rather than the coarse fact that the viewer has some staff role. The role
 /// is resolved on every request, so a change takes effect without signing out.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn contextual_admin_links_follow_exact_permissions(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -7157,7 +7157,7 @@ async fn contextual_admin_links_follow_exact_permissions(pool: PgPool) {
 /// Emoji managers can extract the source-specific emoji set from either a
 /// profile or a post, review advertised/fallback categories, and turn a
 /// selected remote row into an independent local upload.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn contextual_custom_emoji_borrow_flow(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let emoji_role = role::create(
@@ -7366,7 +7366,7 @@ async fn contextual_custom_emoji_borrow_flow(pool: PgPool) {
     assert_eq!(stub.media_fetches(), vec![emoji_url("postparty")]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_overview_shows_stats(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -7411,7 +7411,7 @@ async fn admin_overview_shows_stats(pool: PgPool) {
 
 /// With an account awaiting review, the overview grows a "Pending review"
 /// card that links straight to the local+pending moderation filter.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_overview_links_pending_review(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -7438,7 +7438,7 @@ async fn admin_overview_links_pending_review(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_reviews_trending_tags(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -7519,7 +7519,7 @@ async fn seed_trending_link(
 /// (author + content, not bare text), badges pending vs approved items, and —
 /// because the preview is read-only (`view::status_preview`) — omits the
 /// interaction bar entirely.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_trend_queue_renders_previews_badges_and_omits_the_action_bar(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -7604,7 +7604,7 @@ async fn admin_trend_queue_renders_previews_badges_and_omits_the_action_bar(pool
 
 /// Rejecting a trending post or link is a dismissal: it leaves the review queue
 /// entirely, because the `all_admin` queries drop `trendable = false`.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rejecting_a_trending_post_or_link_removes_it_from_the_queue(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -7686,7 +7686,7 @@ async fn rejecting_a_trending_post_or_link_removes_it_from_the_queue(pool: PgPoo
 
 /// Unlike a post or link, rejecting a trending hashtag keeps it listed — marked
 /// "Rejected" — so a moderator can still see and reverse the decision.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rejecting_a_trending_hashtag_keeps_it_listed_as_rejected(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -7725,7 +7725,7 @@ async fn rejecting_a_trending_hashtag_keeps_it_listed_as_rejected(pool: PgPool) 
 /// Boost collapse: several people boosting the same post cost one card
 /// naming all of them, and the API keeps every row. A community's Announce
 /// This is exempt — it is the post reaching the community, not a repetition.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn home_merges_repeated_boosts_into_one_card(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let erin = create_local_account(&pool, "erin", "Erin").await;
@@ -7859,7 +7859,7 @@ async fn home_merges_repeated_boosts_into_one_card(pool: PgPool) {
 /// the cards), and the operator's lookback window suppresses a boost of a post
 /// already shown on an earlier page — the one case where a row does disappear,
 /// because there is no card left on this page to merge into.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn boost_collapse_leaves_paging_alone_and_honours_the_lookback(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let erin = create_local_account(&pool, "erin", "Erin").await;
@@ -7960,7 +7960,7 @@ async fn boost_collapse_leaves_paging_alone_and_honours_the_lookback(pool: PgPoo
 /// When the boosted post is itself on the page it wins the card, hoisted
 /// to the newest occurrence's slot, and the boosters ride along as an "also
 /// boosted by" line rather than a separate card.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn home_folds_a_boost_into_the_post_it_boosts(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let erin = create_local_account(&pool, "erin", "Erin").await;
@@ -8010,7 +8010,7 @@ async fn home_folds_a_boost_into_the_post_it_boosts(pool: PgPool) {
 /// Thread grouping: a reply and the post it answers both land in the page
 /// and are drawn together, parent first, at the newest one's position — with
 /// everything else in the feed left where it was.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn home_groups_a_reply_with_the_post_it_answers(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -8081,7 +8081,7 @@ async fn home_groups_a_reply_with_the_post_it_answers(pool: PgPool) {
 /// A long exchange keeps its ends and folds the middle into a disclosure, and a
 /// boost of one of its posts never joins the group — it is in the feed because
 /// someone repeated it, not because of what it answers.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_long_thread_folds_its_middle_and_leaves_boosts_out(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -8142,7 +8142,7 @@ async fn a_long_thread_folds_its_middle_and_leaves_boosts_out(pool: PgPool) {
 /// also carried boosts of it is still a post, so its thread closes around
 /// it — and the group inherits the slot the boost won, so the reader's place in
 /// the feed does not move.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_boosted_post_joins_its_thread_and_keeps_the_booster_line(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -8198,7 +8198,7 @@ async fn a_boosted_post_joins_its_thread_and_keeps_the_booster_line(pool: PgPool
 /// card carries a line of it — who and what — instead of only "Replying to
 /// @someone". A parent behind a content warning shows nothing, following
 /// Phanpy: the reader put a gate there and an excerpt would walk past it.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_reply_shows_a_line_of_the_parent_that_is_off_the_page(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     custom_emoji::create_local(&pool, "party", "reply-peek.png", "image/png", 0, None)
@@ -8287,7 +8287,7 @@ async fn a_reply_shows_a_line_of_the_parent_that_is_off_the_page(pool: PgPool) {
 
 /// A parent that *is* on the page needs no peek — the thread grouping already
 /// put the two cards together — and a muted author's post never peeks at all.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_peek_is_skipped_for_a_parent_on_the_page_or_from_a_muted_author(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -8337,7 +8337,7 @@ async fn a_peek_is_skipped_for_a_parent_on_the_page_or_from_a_muted_author(pool:
 /// is that trigger: the parent is fetched out of band and adoption links
 /// the reply. Exact resolution is context-only, so the next view uses the
 /// parent peek without injecting the resolved object as its own timeline card.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_orphan_reply_chases_its_parent_in_the_background(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -8438,7 +8438,7 @@ async fn an_orphan_reply_chases_its_parent_in_the_background(pool: PgPool) {
 /// hydrated reply's own permalink must be enough local intent to chase its
 /// missing parent. These rows cannot appear in the home/list feeds that were
 /// previously the only parent-fetch trigger.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_history_orphan_permalink_chases_its_parent(pool: PgPool) {
     seed_alice(&pool).await;
     let bob = RemoteUser::new("history.example", "bob");
@@ -8530,7 +8530,7 @@ async fn a_history_orphan_permalink_chases_its_parent(pool: PgPool) {
 /// *solely* by a followed tag: a stranger's tagged post is banner-flagged, but a
 /// followed account's or the viewer's own tagged post — which would be in the
 /// feed regardless — is not, even though all three carry the followed tag.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn home_banner_flags_only_followed_tag_injections(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let carol = create_local_account(&pool, "carol", "Carol").await;
@@ -8588,7 +8588,7 @@ async fn home_banner_flags_only_followed_tag_injections(pool: PgPool) {
     assert!(home.body.contains("/tags/rust"), "banner links to the tag");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_manages_hashtag_registry(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -8625,7 +8625,7 @@ async fn admin_manages_hashtag_registry(pool: PgPool) {
     assert!(updated.reviewed_at.is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_lists_known_instances(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -8655,7 +8655,7 @@ async fn admin_lists_known_instances(pool: PgPool) {
     assert!(page.body.contains("Limited"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_oversees_all_invites(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -8744,7 +8744,7 @@ async fn seed_remote_account(pool: &PgPool, domain: &str, username: &str) -> acc
     .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_lists_and_shows_accounts(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -8769,7 +8769,7 @@ async fn admin_lists_and_shows_accounts(pool: PgPool) {
     assert!(show.body.contains("Moderate this user's custom emoji"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_account_page_shows_saved_registration_metadata(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -8852,7 +8852,7 @@ async fn admin_account_page_shows_saved_registration_metadata(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_pending_applications_searches_and_previews_registration_reason(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -8902,7 +8902,7 @@ async fn admin_pending_applications_searches_and_previews_registration_reason(po
     assert!(page.body.contains("Reject selected"), "{}", page.body);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_pending_queue_distinguishes_page_and_all_matching_selection(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9009,7 +9009,7 @@ async fn admin_pending_queue_distinguishes_page_and_all_matching_selection(pool:
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_bulk_rejection_snapshots_revalidates_and_audits(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9132,7 +9132,7 @@ async fn admin_bulk_rejection_snapshots_revalidates_and_audits(pool: PgPool) {
     assert_eq!(audit_count, 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_suspends_account_via_web(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9183,7 +9183,7 @@ async fn admin_suspends_account_via_web(pool: PgPool) {
 /// TZ slice 2: the admin console renders in the moderator's zone, not raw
 /// UTC. Seeded across a UTC midnight so the two zones disagree about the date
 /// — the only case where a zone bug is visible at day resolution.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_audit_log_renders_in_the_moderator_zone(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9232,7 +9232,7 @@ async fn admin_audit_log_renders_in_the_moderator_zone(pool: PgPool) {
     assert!(log.body.contains("Europe/Berlin ("), "{}", log.body);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_audit_log_records_and_lists_actions(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9306,7 +9306,7 @@ async fn admin_audit_log_records_and_lists_actions(pool: PgPool) {
     assert!(log.body.contains("href=\"/admin/audit-log\""));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_records_and_deletes_a_note(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9352,7 +9352,7 @@ async fn admin_records_and_deletes_a_note(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_action_rejects_a_bad_csrf(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9397,7 +9397,7 @@ async fn seed_report(pool: &PgPool, reporter: i64, target: i64, comment: &str) -
     .id
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_lists_and_shows_reports(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9419,7 +9419,7 @@ async fn admin_lists_and_shows_reports(pool: PgPool) {
     assert!(show.body.contains("posting spam links"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_assigns_and_resolves_a_report(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9469,7 +9469,7 @@ async fn admin_assigns_and_resolves_a_report(pool: PgPool) {
     assert!(r.action_taken_at.is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_records_and_deletes_a_report_note(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9517,7 +9517,7 @@ async fn admin_records_and_deletes_a_report_note(pool: PgPool) {
 /// A3: the report page's category/rules edit form updates the report; the
 /// checkbox set is authoritative, so saving with none checked clears the
 /// cited rules. An unknown category is refused.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_edits_report_category_and_rules(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9582,7 +9582,7 @@ async fn admin_edits_report_category_and_rules(pool: PgPool) {
 /// A3: arriving at the account page from a report threads the report through
 /// the action form; applying the action cites the report on the strike and
 /// resolves it in the same step, then returns to the report.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_takes_action_from_a_report(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9698,7 +9698,7 @@ async fn admin_takes_action_from_a_report(pool: PgPool) {
 /// A2: permanent purge requires re-typing the handle, is offered only for a
 /// temporarily suspended account, never on the moderator's own account, and
 /// retains the reserved tombstone.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_hard_deletes_an_account(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9772,7 +9772,7 @@ async fn admin_hard_deletes_an_account(pool: PgPool) {
 /// #48: a Moderator holds `MANAGE_USERS` but not `DELETE_USER_DATA`, so the web
 /// hard-delete form is not offered and a forged `op=destroy` is refused — the
 /// previous code let anyone with `MANAGE_USERS` permanently delete any account.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn moderator_cannot_hard_delete_an_account(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let moderator = role::find_by_name(&pool, "Moderator")
@@ -9809,7 +9809,7 @@ async fn moderator_cannot_hard_delete_an_account(pool: PgPool) {
 /// A6: without SMTP the mail-dependent verbs disappear and the generated
 /// one-time password takes over: shown exactly once, sessions revoked, and
 /// the new password actually works.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_sets_a_password_without_smtp(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9848,7 +9848,7 @@ async fn admin_sets_a_password_without_smtp(pool: PgPool) {
 
 /// O1/O2: the instances page carries the server-wide delivery-health tables —
 /// queue summary plus the circuit breaker's unreachable hosts.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_instances_show_delivery_health(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -9881,7 +9881,7 @@ async fn admin_instances_show_delivery_health(pool: PgPool) {
     assert!(page.body.contains("id=\"delivery-health\""));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_manages_instance_policy_records(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -10051,7 +10051,7 @@ async fn admin_manages_instance_policy_records(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_manages_instance_rules(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -10105,7 +10105,7 @@ async fn admin_manages_instance_rules(pool: PgPool) {
 /// admin's zone, not raw RFC 3339 UTC. Mirrors the composer's
 /// `scheduling_a_post_queues_it_instead_of_publishing`: Berlin noon in January
 /// (UTC+1) must store as 11:00Z, and echo back as noon on the form.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_schedules_an_announcement_in_their_own_zone(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -10165,7 +10165,7 @@ async fn admin_schedules_an_announcement_in_their_own_zone(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_manages_announcements(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -10265,7 +10265,7 @@ async fn admin_manages_announcements(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_manages_custom_emojis(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -10467,7 +10467,7 @@ async fn admin_manages_custom_emojis(pool: PgPool) {
     assert_eq!(instance_emoji.category.as_deref(), Some("Featured members"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn member_manages_personal_emoji_and_permission_only_gates_additions(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let state = common::test_state_with(pool.clone(), std::sync::Arc::default());
@@ -10695,7 +10695,7 @@ async fn member_manages_personal_emoji_and_permission_only_gates_additions(pool:
     assert!(remaining[0].borrowed);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn member_borrow_uses_federated_source_and_renders_failures_in_context(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let stub = std::sync::Arc::new(StubFederation::default());
@@ -10846,7 +10846,7 @@ async fn member_borrow_uses_federated_source_and_renders_failures_in_context(poo
     assert_eq!(stub.media_fetches(), vec![source_url, broken_url]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_manages_webhooks(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -10973,7 +10973,7 @@ async fn admin_manages_webhooks(pool: PgPool) {
     assert!(webhook::list(&pool).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_webhook_events_require_matching_permissions(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let hook_role = role::create(
@@ -11016,7 +11016,7 @@ async fn admin_webhook_events_require_matching_permissions(pool: PgPool) {
     assert!(webhook::list(&pool).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_manages_instance_settings(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -11167,7 +11167,7 @@ async fn admin_manages_instance_settings(pool: PgPool) {
 /// submit must write only its own group — in particular the checkboxes it
 /// does not carry (absent = off, within the group) must not zero out the
 /// switches of every other group.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_settings_sections_save_independently(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -11357,7 +11357,7 @@ async fn admin_settings_sections_save_independently(pool: PgPool) {
     assert!(page.body.contains(r#"id="sec-federation" open"#));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_manages_site_uploads(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -11490,7 +11490,7 @@ async fn favicon_bytes(app: &Router) -> Vec<u8> {
     png_bytes(app, "/favicon.ico").await
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_manages_relays(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -11579,7 +11579,7 @@ async fn admin_manages_relays(pool: PgPool) {
     assert!(plamenu_db::relay::list(&pool).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn composer_quote_policy_selector_posts_and_follows_the_preference(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -11671,7 +11671,7 @@ async fn composer_quote_policy_selector_posts_and_follows_the_preference(pool: P
     assert_eq!(stored.quote_approval_policy, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn composer_language_selector_follows_the_enabled_set(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -11760,7 +11760,7 @@ async fn composer_language_selector_follows_the_enabled_set(pool: PgPool) {
     assert!(compose_page.body.contains(r#"<option value="tok">"#));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn language_forms_reject_unknown_codes(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -11814,7 +11814,7 @@ async fn language_forms_reject_unknown_codes(pool: PgPool) {
 
 // ---- Emoji reaction chips -------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unicode_reaction_catalog_is_complete_lazy_and_immutable(pool: PgPool) {
     let app = common::test_app(pool);
     let catalog = get(&app, "/assets/emoji-17.0.json", None).await;
@@ -11842,7 +11842,7 @@ async fn unicode_reaction_catalog_is_complete_lazy_and_immutable(pool: PgPool) {
     assert!(!worker.body.contains("emoji-17.0.json"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn full_reaction_picker_works_without_javascript_and_returns(pool: PgPool) {
     let categorized = custom_emoji::create_local(&pool, "party", "7.png", "image/png", 0, None)
         .await
@@ -11927,7 +11927,7 @@ async fn full_reaction_picker_works_without_javascript_and_returns(pool: PgPool)
     assert!(!unsafe_return.body.contains("evil.example"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reaction_chips_toggle_through_the_form(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -11978,7 +11978,7 @@ async fn reaction_chips_toggle_through_the_form(pool: PgPool) {
     assert!(!thread.body.contains("data-reaction-name"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn custom_emoji_reaction_chip_shows_the_image(pool: PgPool) {
     custom_emoji::create_local(&pool, "party", "7.png", "image/png", 0, None)
         .await
@@ -12006,7 +12006,7 @@ async fn custom_emoji_reaction_chip_shows_the_image(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_viewers_get_inert_reaction_chips(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -12030,7 +12030,7 @@ async fn anonymous_viewers_get_inert_reaction_chips(pool: PgPool) {
     assert!(!anon.body.contains("data-reaction-picker"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_custom_reactions_toggle_by_joining(pool: PgPool) {
     let bob = create_local_account(&pool, "bob", "Bob").await;
     seed_alice(&pool).await;
@@ -12089,7 +12089,7 @@ async fn remote_custom_reactions_toggle_by_joining(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edit_page_prefills_source_and_saves(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -12165,7 +12165,7 @@ async fn edit_page_prefills_source_and_saves(pool: PgPool) {
     assert!(history.body.contains("cw label"), "{}", history.body);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edit_preview_renders_for_js_and_no_js_without_mutating_the_post(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -12266,7 +12266,7 @@ async fn edit_preview_renders_for_js_and_no_js_without_mutating_the_post(pool: P
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edit_updates_media_alt_text_and_drops_unkept(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -12436,7 +12436,7 @@ async fn alice_id(pool: &PgPool) -> i64 {
         .id
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edit_is_owner_only(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -12489,7 +12489,7 @@ async fn seed_filter(pool: &PgPool, account_id: i64, action: &str, context: &[&s
     .unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn warn_filter_collapses_matching_posts_in_feeds(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -12513,7 +12513,7 @@ async fn warn_filter_collapses_matching_posts_in_feeds(pool: PgPool) {
     assert!(!bob_view.body.contains("Filtered:"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hide_filter_drops_matching_posts_from_feeds(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -12534,7 +12534,7 @@ async fn hide_filter_drops_matching_posts_from_feeds(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hide_downgrades_to_the_warn_bar_on_the_focused_post(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -12552,7 +12552,7 @@ async fn hide_downgrades_to_the_warn_bar_on_the_focused_post(pool: PgPool) {
     assert!(page.body.contains("verboten wares for sale"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hide_filtered_status_drops_its_whole_notification(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -12580,7 +12580,7 @@ async fn hide_filtered_status_drops_its_whole_notification(pool: PgPool) {
     assert!(page.body.contains("followed you"), "others still render");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_manages_custom_roles(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -12705,7 +12705,7 @@ async fn admin_manages_custom_roles(pool: PgPool) {
     assert_eq!(role_lines, ["destroy", "update", "create"]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_warning_presets_fill_moderation_actions(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -12785,7 +12785,7 @@ async fn admin_warning_presets_fill_moderation_actions(pool: PgPool) {
     assert!(warning_preset::list(&pool).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_manages_username_blocklist(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -12878,7 +12878,7 @@ async fn admin_manages_username_blocklist(pool: PgPool) {
     assert_eq!(lines, ["destroy", "update", "create"]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn terms_of_service_editor_publishes(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -12967,7 +12967,7 @@ async fn terms_of_service_editor_publishes(pool: PgPool) {
     assert!(editor.body.contains("(current)"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_user_access_ops(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -13098,7 +13098,7 @@ async fn admin_user_access_ops(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn user_appeals_strike_and_admin_resolves(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -13252,7 +13252,7 @@ async fn user_appeals_strike_and_admin_resolves(pool: PgPool) {
     assert!(resp.location.as_deref().unwrap_or("").contains("error"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn domain_block_purges_cached_media(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -13349,7 +13349,7 @@ async fn domain_block_purges_cached_media(pool: PgPool) {
     assert_eq!(friend.avatar_file_name.as_deref(), Some("keep.webp"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn featured_tags_page_features_and_unfeatures(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -13397,7 +13397,7 @@ async fn featured_tags_page_features_and_unfeatures(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn relationships_page_bulk_unfollows(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -13431,7 +13431,7 @@ async fn relationships_page_bulk_unfollows(pool: PgPool) {
 
 /// The blocked/muted/blocked-domains views list what the viewer has blocked or
 /// muted and bulk-lift those relationships.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn relationships_page_lists_and_lifts_blocks_and_mutes(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -13523,7 +13523,7 @@ async fn relationships_page_lists_and_lifts_blocks_and_mutes(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_dashboard_shows_software_update_banner(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     // The seeded Admin role carries ADMINISTRATOR, implying view_devops.
@@ -13555,7 +13555,7 @@ async fn admin_dashboard_shows_software_update_banner(pool: PgPool) {
     assert!(resp.body.contains("https://example.com/notes"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_dashboard_hides_banner_without_updates(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let admin = role::find_by_name(&pool, "Admin").await.unwrap().unwrap();
@@ -13571,7 +13571,7 @@ async fn admin_dashboard_hides_banner_without_updates(pool: PgPool) {
     assert!(!resp.body.contains("admin-update"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn missing_png_placeholder_is_served(pool: PgPool) {
     // The account serializer hands out `/static/missing.png` for image-less
     // accounts; clients that don't special-case the name (unlike Phanpy) must
@@ -13599,7 +13599,7 @@ async fn missing_png_placeholder_is_served(pool: PgPool) {
 
 /// A list timeline collapses repeated boosts exactly as home does: the
 /// feed shape is the same, so the presentation is too.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_timeline_merges_repeated_boosts(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let erin = create_local_account(&pool, "erin", "Erin").await;
@@ -13642,7 +13642,7 @@ async fn list_timeline_merges_repeated_boosts(pool: PgPool) {
 /// The full list lifecycle through the web UI: create, populate (membership
 /// gated on following), watch a member's post land on the timeline, edit,
 /// and delete.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn lists_crud_and_membership_flow(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -13851,7 +13851,7 @@ async fn lists_crud_and_membership_flow(pool: PgPool) {
 }
 
 /// A list a viewer doesn't own is a styled 404, not the API's JSON error.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn other_accounts_list_is_not_found(pool: PgPool) {
     seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -13871,7 +13871,7 @@ async fn other_accounts_list_is_not_found(pool: PgPool) {
 /// profile panel — renders in the owner's stored locale, and a refused write
 /// carries a code that the page it lands on re-states in that language rather
 /// than an English sentence smuggled through the query string.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn lists_pages_use_stored_russian_locale(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -14004,7 +14004,7 @@ async fn lists_pages_use_stored_russian_locale(pool: PgPool) {
 /// The "add or remove from lists" panel reached from a profile toggles the
 /// account's membership across the viewer's lists, and the endorsement verbs
 /// feature the account on the viewer's own profile.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_lists_panel_and_endorsements(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -14128,7 +14128,7 @@ async fn make_discoverable(pool: &PgPool, account_id: i64) {
 /// The full collection flow through the web UI: create one under settings,
 /// feature an account in it, and see it surface on the profile, the public
 /// collection page, and the profile overflow menu's checkbox panel.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collections_create_feature_and_display(pool: PgPool) {
     seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -14290,7 +14290,7 @@ async fn feature_in_collection(
 /// The "Featuring you" half: a collection owned by someone else that features
 /// you shows under Settings › Collections with the owner's handle, and you can
 /// remove yourself from it.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collections_featuring_you_can_be_left(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let carol = create_local_account(&pool, "carol", "Carol").await;
@@ -14332,7 +14332,7 @@ async fn collections_featuring_you_can_be_left(pool: PgPool) {
 
 /// A collection's public page is anon-reachable, so it renders in the locale
 /// the visitor's `Accept-Language` negotiated rather than always in English.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_collection_page_negotiates_russian(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let collection = plamenu_db::collection::create(
@@ -14371,7 +14371,7 @@ async fn anonymous_collection_page_negotiates_russian(pool: PgPool) {
 /// Public pages carry the link-preview metadata scrapers read: a profile is
 /// an `og:type profile` card with the avatar, follower summary and canonical
 /// URL, plus the `rel=alternate` hop to the `ActivityPub` actor.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_page_carries_open_graph_metadata(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -14410,7 +14410,7 @@ async fn profile_page_carries_open_graph_metadata(pool: PgPool) {
 /// A thread page is an `og:type article` card: the status text as the
 /// description, its publication time, the Mastodon-style quoted `<title>`,
 /// and the `rel=alternate` hop to the `ActivityPub` object.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn thread_page_carries_open_graph_metadata(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -14455,7 +14455,7 @@ async fn thread_page_carries_open_graph_metadata(pool: PgPool) {
 
 /// The instance-level entry points (`/login`, where bare-domain shares land,
 /// and the public explore timeline) carry the instance's own preview card.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_entry_points_carry_site_metadata(pool: PgPool) {
     let app = app_with_alice(pool).await;
 
@@ -14512,7 +14512,7 @@ async fn instance_entry_points_carry_site_metadata(pool: PgPool) {
 
 /// A collection page is `noindex` (like Mastodon's) but still previews with
 /// its name and canonical URL, and offers the AP collection as the alternate.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_page_carries_metadata_and_noindex(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let carol = create_local_account(&pool, "carol", "Carol").await;
@@ -14543,7 +14543,7 @@ async fn collection_page_carries_metadata_and_noindex(pool: PgPool) {
 
 /// `/@alice` answers the actor document to an `ActivityPub` `Accept`, so a peer
 /// resolving a pasted profile link finds the account.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pretty_profile_url_serves_activitypub_to_peers(pool: PgPool) {
     let app = app_with_alice(pool).await;
 
@@ -14570,7 +14570,7 @@ async fn pretty_profile_url_serves_activitypub_to_peers(pool: PgPool) {
 
 /// `/@alice/{id}` answers the Note document to an `ActivityPub` `Accept` — the
 /// case Pleroma/Akkoma/GoToSocial search-by-link failed on before.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pretty_status_url_serves_activitypub_to_peers(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -14608,7 +14608,7 @@ async fn pretty_status_url_serves_activitypub_to_peers(pool: PgPool) {
 
 /// `/@carol/collections/{id}` answers the FEP-7aa9 collection document to an
 /// `ActivityPub` `Accept`.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pretty_collection_url_serves_activitypub_to_peers(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let carol = create_local_account(&pool, "carol", "Carol").await;
@@ -14637,7 +14637,7 @@ async fn pretty_collection_url_serves_activitypub_to_peers(pool: PgPool) {
 /// gate as the canonical object URL: an unsigned AP fetch is rejected, so
 /// serving AP off the pretty route opens no secure-mode bypass. Browsers still
 /// pass through to the HTML page.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pretty_status_url_requires_signature_under_authorized_fetch(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -14660,7 +14660,7 @@ async fn pretty_status_url_requires_signature_under_authorized_fetch(pool: PgPoo
 /// The profile's Activity tab defaults to Mastodon's "Posts and boosts":
 /// replies to others hidden, boosts shown — and the `replies`/`boosts` query
 /// flags switch all four filter states.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_activity_filter_switches_replies_and_boosts(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -14722,7 +14722,7 @@ async fn profile_activity_filter_switches_replies_and_boosts(pool: PgPool) {
 
 /// A full profile page offers "Load older posts" carrying the filter flags,
 /// and the next page picks up where it left off.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_activity_pages_older_posts(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     for n in 0..21 {
@@ -14755,7 +14755,7 @@ async fn profile_activity_pages_older_posts(pool: PgPool) {
 
 /// `/@handle/media` shows only posts with attachments, is linked from the
 /// section tabs, and the owner's `show_media` setting turns it off.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_media_tab_gated_by_show_media(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     status::create_local(
@@ -14827,7 +14827,7 @@ async fn profile_media_tab_gated_by_show_media(pool: PgPool) {
 
 /// `/@handle/featured` lists the endorsed accounts (moved off the main
 /// profile page), and the owner's `show_featured` setting turns it off.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_featured_tab_gated_by_show_featured(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -14864,7 +14864,7 @@ async fn profile_featured_tab_gated_by_show_featured(pool: PgPool) {
 
 /// A featured hashtag shows as a chip on the Activity tab and
 /// `/@handle/tagged/{tag}` narrows the feed to that tag.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_featured_hashtag_links_tagged_view(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let tagged = status::create_local(
@@ -14900,7 +14900,7 @@ async fn profile_featured_hashtag_links_tagged_view(pool: PgPool) {
 
 /// The group creation flow through `/groups`: empty state, create, land on
 /// the group's profile, and see it under "Your groups".
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn groups_page_creates_and_lists(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -14985,7 +14985,7 @@ async fn groups_page_creates_and_lists(pool: PgPool) {
 
 /// With `group_creation_policy = admins`, ordinary accounts see no create
 /// form and their POST is turned away.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn groups_creation_respects_the_instance_policy(pool: PgPool) {
     seed_alice(&pool).await;
     let settings = plamenu_db::instance_settings::get(&pool).await.unwrap();
@@ -15031,7 +15031,7 @@ async fn groups_creation_respects_the_instance_policy(pool: PgPool) {
 /// The group management console: the owner reaches every tab, the
 /// settings form persists and refreshes the locked flag, and a group that
 /// isn't theirs (or doesn't exist) 404s.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_management_console_owner_flow(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -15124,7 +15124,7 @@ async fn group_management_console_owner_flow(pool: PgPool) {
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_groups_console_lists_transfers_and_deletes(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -15251,7 +15251,7 @@ async fn compose_direct(app: &Router, cookie: &str, text: &str) -> String {
     posted.location.expect("redirect to the new post")
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn conversations_page_tracks_direct_threads(pool: PgPool) {
     seed_user(&pool, "alice", EMAIL, PASSWORD).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -15291,7 +15291,7 @@ async fn conversations_page_tracks_direct_threads(pool: PgPool) {
     assert!(!page.body.contains("is-unread"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn conversation_row_verbs(pool: PgPool) {
     seed_user(&pool, "alice", EMAIL, PASSWORD).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -15362,7 +15362,7 @@ async fn conversation_row_verbs(pool: PgPool) {
     assert!(page.body.contains("No conversations yet"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn direct_reply_composer_is_locked(pool: PgPool) {
     seed_user(&pool, "alice", EMAIL, PASSWORD).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -15409,7 +15409,7 @@ async fn direct_reply_composer_is_locked(pool: PgPool) {
     assert!(page.body.contains(r#"<select name="visibility""#));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_mentions_use_inline_addresses_through_preview_and_publish(pool: PgPool) {
     seed_user(&pool, "alice", EMAIL, PASSWORD).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -15469,7 +15469,7 @@ async fn private_mentions_use_inline_addresses_through_preview_and_publish(pool:
     assert_eq!(get(&app, &thread, None).await.status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_thread_reply_can_become_a_private_mention_without_a_to_field(pool: PgPool) {
     seed_user(&pool, "alice", EMAIL, PASSWORD).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -15526,7 +15526,7 @@ async fn public_thread_reply_can_become_a_private_mention_without_a_to_field(poo
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn role_form_round_trips_manage_groups(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     make_staff(&pool, alice.id).await;
@@ -15573,7 +15573,7 @@ async fn role_form_round_trips_manage_groups(pool: PgPool) {
     assert!(kept.can(role::permission::MANAGE_GROUPS));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn relationships_requests_view_accepts_and_rejects(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -15659,7 +15659,7 @@ async fn relationships_requests_view_accepts_and_rejects(pool: PgPool) {
     assert!(page.body.contains("No pending follow requests."));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_filters_crud(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -15881,7 +15881,7 @@ async fn settings_filters_crud(pool: PgPool) {
 /// The web filter form enforces the same per-account cardinality cap as the
 /// REST API (audit #58): at the limit a create is bounced back to the form with
 /// an error instead of persisting another filter.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn settings_filters_enforce_account_cap(pool: PgPool) {
     use plamenu_db::custom_filter::MAX_FILTERS_PER_ACCOUNT;
 
@@ -15930,7 +15930,7 @@ async fn settings_filters_enforce_account_cap(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn privacy_saves_all_notification_policy_categories(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -15970,7 +15970,7 @@ async fn privacy_saves_all_notification_policy_categories(pool: PgPool) {
     assert_eq!(policy.for_bots.as_str(), "filter");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn notification_requests_page_accepts_and_dismisses(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -16037,7 +16037,7 @@ async fn notification_requests_page_accepts_and_dismisses(pool: PgPool) {
 // ---- Scheduled posts ----------------------------------------------------
 
 /// Choosing Article publishes a titled `ActivityPub` Article.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn composer_publishes_a_long_form_post(pool: PgPool) {
     let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
     seed_alice(&state.pool).await;
@@ -16082,7 +16082,7 @@ async fn composer_publishes_a_long_form_post(pool: PgPool) {
 /// in an Article while retaining another ordinary attachment. Both remain in
 /// the Mastodon API array; the built-in client renders one inline and one in
 /// the gallery without duplicating the inline image.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn composer_posts_article_with_inline_and_regular_media(pool: PgPool) {
     let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
     let alice = seed_alice(&state.pool).await;
@@ -16194,7 +16194,7 @@ async fn composer_posts_article_with_inline_and_regular_media(pool: PgPool) {
 }
 
 /// A malformed request with conflicting post types is refused.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn composer_refuses_two_post_kinds_at_once(pool: PgPool) {
     let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
     seed_alice(&state.pool).await;
@@ -16225,7 +16225,7 @@ async fn composer_refuses_two_post_kinds_at_once(pool: PgPool) {
 
 /// toolbar toggle; the group composer drops both (group posts can't be
 /// scheduled).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn composer_offers_a_schedule_field_except_for_groups(pool: PgPool) {
     let (app, group_id) = app_with_alice_owning_group(pool).await;
     let cookie = login(&app).await;
@@ -16252,7 +16252,7 @@ async fn composer_offers_a_schedule_field_except_for_groups(pool: PgPool) {
 /// machines (R4), and whose tooltip carries *both* readings so UTC is always
 /// one hover away (R3). Seeded near a UTC midnight so the two readings fall on
 /// different calendar days — the case a single-reading tooltip gets wrong.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn timestamps_render_in_the_viewer_zone_with_a_dual_tooltip(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     sqlx::query("UPDATE users SET time_zone = 'Europe/Berlin' WHERE account_id = $1")
@@ -16310,7 +16310,7 @@ async fn timestamps_render_in_the_viewer_zone_with_a_dual_tooltip(pool: PgPool) 
     assert!(!cell.contains("Europe/Berlin"), "{cell}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scheduling_a_post_queues_it_instead_of_publishing(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     // Berlin winter is UTC+1, so 12:00 wall clock must store as 11:00 UTC.
@@ -16363,7 +16363,7 @@ async fn scheduling_a_post_queues_it_instead_of_publishing(pool: PgPool) {
 /// Scheduling honours the API's minimum offset: a time in the past re-renders
 /// the composer with the validation banner and the draft (text and chosen
 /// time) intact.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scheduling_in_the_past_reprompts_with_the_draft_kept(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -16405,7 +16405,7 @@ async fn scheduling_in_the_past_reprompts_with_the_draft_kept(pool: PgPool) {
 
 /// A crafted group submission with a schedule is refused server-side (the
 /// group composer hides the field, but the guard must hold regardless).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_posts_cannot_be_scheduled(pool: PgPool) {
     let (app, group_id) = app_with_alice_owning_group(pool).await;
     let cookie = login(&app).await;
@@ -16429,7 +16429,7 @@ async fn group_posts_cannot_be_scheduled(pool: PgPool) {
 
 /// The scheduled listing shows the queue in the viewer's zone and its
 /// reschedule / cancel verbs work (and are keyed to the owner's session).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scheduled_page_lists_reschedules_and_cancels(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -16559,7 +16559,7 @@ async fn scheduled_page_lists_reschedules_and_cancels(pool: PgPool) {
 /// embedded and the shared progressively enhanced reaction picker; reacting
 /// toggles a chip and dismissing collapses the banner to the "Announcements"
 /// link, with the full page still listing it as read.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn announcements_banner_react_and_dismiss(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let cited = status::create_local(
@@ -16697,7 +16697,7 @@ async fn announcements_banner_react_and_dismiss(pool: PgPool) {
 
 /// A home timeline with no announcements at all renders neither banner nor
 /// link — the common case stays clean.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn home_without_announcements_shows_nothing(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -16711,7 +16711,7 @@ async fn home_without_announcements_shows_nothing(pool: PgPool) {
 
 /// The hashtag page's follow control follows and unfollows the tag, and the
 /// relationships manager's Hashtags tab lists and bulk-unfollows it.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hashtag_follow_control_and_relationships_tab(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -16777,7 +16777,7 @@ async fn hashtag_follow_control_and_relationships_tab(pool: PgPool) {
 /// The profile's private-note disclosure saves a note, shows it back open on
 /// the next visit, and a whitespace-only save clears it. One's own profile
 /// never offers the form.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_note_saves_and_clears_on_the_profile(pool: PgPool) {
     let bob = create_local_account(&pool, "bob", "bob").await;
     let app = app_with_alice(pool.clone()).await;
@@ -16841,7 +16841,7 @@ async fn private_note_saves_and_clears_on_the_profile(pool: PgPool) {
 /// The thread page offers Translate independently of language metadata,
 /// `?translate=1` renders the translated content with attribution and a
 /// Show-original link, and a backend failure falls back with a notice.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn thread_translate_link_translates_the_focus_post(pool: PgPool) {
     const ENDPOINT: &str = "http://libretranslate.test";
     seed_alice(&pool).await;
@@ -16992,7 +16992,7 @@ async fn thread_translate_link_translates_the_focus_post(pool: PgPool) {
 
 /// The per-post Translate form: a fetch POST returns the translation as JSON
 /// for the in-place swap; a plain submit 303s to the translated permalink.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn translate_button_posts_json_in_place(pool: PgPool) {
     const ENDPOINT: &str = "http://libretranslate.test";
     seed_alice(&pool).await;
@@ -17097,7 +17097,7 @@ async fn translate_button_posts_json_in_place(pool: PgPool) {
 
 /// The dedicated translate-to preference: stores, round-trips through the
 /// form, and empty falls back to the posting language.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn translate_language_preference_round_trips(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -17209,7 +17209,7 @@ async fn seed_explore_trends(pool: &PgPool) -> i64 {
     tag_id
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explore_lists_trending_posts_tags_and_links(pool: PgPool) {
     seed_alice(&pool).await;
     seed_explore_trends(&pool).await;
@@ -17254,7 +17254,7 @@ async fn explore_lists_trending_posts_tags_and_links(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explore_trends_disabled_shows_hint(pool: PgPool) {
     seed_alice(&pool).await;
     seed_explore_trends(&pool).await;
@@ -17278,7 +17278,7 @@ async fn explore_trends_disabled_shows_hint(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explore_people_suggests_follows_and_lists_directory(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let carol = create_local_account(&pool, "carol", "Carol").await;
@@ -17352,7 +17352,7 @@ async fn explore_people_suggests_follows_and_lists_directory(pool: PgPool) {
     assert_eq!(legacy.location.as_deref(), Some("/people?scope=local"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explore_directory_disabled_shows_hint(pool: PgPool) {
     seed_alice(&pool).await;
     let current = plamenu_db::instance_settings::get(&pool).await.unwrap();
@@ -17372,7 +17372,7 @@ async fn explore_directory_disabled_shows_hint(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn discovery_pages_gated_for_anonymous_when_knobs_off(pool: PgPool) {
     seed_alice(&pool).await;
     let current = plamenu_db::instance_settings::get(&pool).await.unwrap();
@@ -17414,7 +17414,7 @@ async fn post_anon_form(app: &Router, uri: &str, fields: &[(&str, &str)]) -> Res
     send(app, request).await
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_interaction_interstitial_flow(pool: PgPool) {
     seed_alice(&pool).await;
     let stub = StubFederation::with_users(&[]);
@@ -17512,7 +17512,7 @@ async fn remote_interaction_interstitial_flow(pool: PgPool) {
     assert_eq!(signed_in.location.as_deref(), Some("/@alice"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn groups_directory_readable_anonymously(pool: PgPool) {
     let app = app_with_alice(pool.clone()).await;
     let cookie = login(&app).await;
@@ -17566,7 +17566,7 @@ async fn groups_directory_readable_anonymously(pool: PgPool) {
 /// `statusToTextMentions` convention): the parent's author plus its active
 /// mentions, minus the viewer. Without them the reply carries no Mention tags
 /// and Mastodon-lineage recipients are never notified of it.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reply_composer_prefills_thread_mentions(pool: PgPool) {
     let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
     seed_alice(&pool).await;
@@ -17667,7 +17667,7 @@ async fn reply_composer_prefills_thread_mentions(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unicode_handles_stay_readable_in_reply_and_account_management_forms(pool: PgPool) {
     seed_alice(&pool).await;
     let mut chinese = RemoteUser::new("i18n.example", "%E4%BD%A0%E5%A5%BD");
@@ -17773,7 +17773,7 @@ async fn unicode_handles_stay_readable_in_reply_and_account_management_forms(poo
 
 /// Both reply entry points inherit a declared language from the post being
 /// answered instead of retaining the viewer's default posting language.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reply_composers_inherit_the_parent_language(pool: PgPool) {
     let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
     seed_alice(&pool).await;
@@ -17820,7 +17820,7 @@ async fn reply_composers_inherit_the_parent_language(pool: PgPool) {
 /// Both reply entry points enable and prefill the parent's content warning.
 /// The value remains an ordinary editable field, so the author can change or
 /// clear it before posting.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reply_composers_inherit_the_parent_content_warning(pool: PgPool) {
     let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
     seed_alice(&pool).await;
@@ -17883,7 +17883,7 @@ async fn reply_composers_inherit_the_parent_content_warning(pool: PgPool) {
 /// three of them carry no button at all — an invite-only event, a full one and
 /// one happening on the origin's own site each send the viewer somewhere
 /// different, so they must not collapse into one greyed-out control.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn event_posts_render_an_rsvp_cluster_per_join_mode(pool: PgPool) {
     seed_alice(&pool).await;
     let organizer = create_local_account(&pool, "grace", "Grace").await;
@@ -18002,7 +18002,7 @@ async fn event_posts_render_an_rsvp_cluster_per_join_mode(pool: PgPool) {
 /// A consumed community's own rules drive its page: a mods-only Lemmy
 /// community offers no composer to a stranger, states what it published about
 /// itself, and lists the moderators we mirrored from its collection.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_community_facts_drive_the_group_page(pool: PgPool) {
     let state = common::test_state_with(pool, StubFederation::with_actors([]));
     let alice = seed_alice(&state.pool).await;
@@ -18061,7 +18061,7 @@ async fn remote_community_facts_drive_the_group_page(pool: PgPool) {
 /// The members-only policy only a Plamenu peer can state: a follower may post,
 /// a stranger may not. Lemmy's boolean cannot carry this, which is why the
 /// actor also publishes our own `postingPolicy` term.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_members_only_community_offers_the_composer_to_members(pool: PgPool) {
     let state = common::test_state_with(pool, StubFederation::with_actors([]));
     let alice = seed_alice(&state.pool).await;
@@ -18102,7 +18102,7 @@ async fn remote_members_only_community_offers_the_composer_to_members(pool: PgPo
 /// profile: avatar, banner (with alt text) and metadata fields, plus a
 /// sidebar-length description. A group is a local account with no `users` row,
 /// so `update_credentials` can never reach it — this form is the only path.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_console_edits_the_communitys_profile(pool: PgPool) {
     let (app, group_id) = app_with_alice_owning_group(pool.clone()).await;
     let cookie = login(&app).await;
@@ -18165,7 +18165,7 @@ async fn group_console_edits_the_communitys_profile(pool: PgPool) {
 
 /// The description is a community sidebar, so it takes far more than a bio —
 /// but not without limit.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_description_is_capped_not_unbounded(pool: PgPool) {
     let (app, group_id) = app_with_alice_owning_group(pool.clone()).await;
     let cookie = login(&app).await;
@@ -18215,7 +18215,7 @@ async fn group_description_is_capped_not_unbounded(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn composer_event_uses_selected_zone_and_retains_draft(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     sqlx::query("UPDATE users SET time_zone = 'Asia/Tbilisi' WHERE account_id = $1")
@@ -18331,7 +18331,7 @@ async fn composer_event_uses_selected_zone_and_retains_draft(pool: PgPool) {
     assert_eq!(row.end_time.unwrap().hour(), 19);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn composer_event_rejects_bad_zone_and_dst_times(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -18378,7 +18378,7 @@ async fn composer_event_rejects_bad_zone_and_dst_times(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn composer_type_change_and_article_preview_keep_title_and_body(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -18413,7 +18413,7 @@ async fn composer_type_change_and_article_preview_keep_title_and_body(pool: PgPo
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn composer_type_fallback_renders_matching_help_and_placeholder(pool: PgPool) {
     let app = app_with_alice(pool).await;
     let cookie = login(&app).await;
@@ -18457,7 +18457,7 @@ async fn composer_type_fallback_renders_matching_help_and_placeholder(pool: PgPo
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn composer_schedules_an_article_and_publishes_its_title_and_body(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -18517,7 +18517,7 @@ async fn composer_schedules_an_article_and_publishes_its_title_and_body(pool: Pg
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 #[allow(
     clippy::too_many_lines,
     reason = "channel profile permissions, publication and rejection share one upload lifecycle fixture"
@@ -18690,7 +18690,7 @@ async fn channel_manager_uploads_shared_profile_images_with_editor_authority(poo
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn client_private_messages_appear_in_activity_and_share_thread_read_state(pool: PgPool) {
     let alice = seed_user(&pool, "alice", EMAIL, PASSWORD).await;
     let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -18796,7 +18796,7 @@ async fn client_private_messages_appear_in_activity_and_share_thread_read_state(
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_reply_likes_reactions_and_mentions_are_visible_and_read_on_open(pool: PgPool) {
     let alice = seed_user(&pool, "alice", EMAIL, PASSWORD).await;
     let bob = seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -18912,7 +18912,7 @@ async fn private_reply_likes_reactions_and_mentions_are_visible_and_read_on_open
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn client_can_reuse_owned_media_in_a_note_without_changing_the_original(pool: PgPool) {
     let alice = seed_user(&pool, "alice", EMAIL, PASSWORD).await;
     seed_user(&pool, "bob", "bob@example.com", PASSWORD).await;
@@ -18998,7 +18998,7 @@ async fn client_can_reuse_owned_media_in_a_note_without_changing_the_original(po
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn client_first_video_and_live_setup_do_not_require_channel_address_creation(pool: PgPool) {
     let alice = seed_user(&pool, "alice", EMAIL, PASSWORD).await;
     let state = common::test_state_with(pool.clone(), StubFederation::with_actors([]));

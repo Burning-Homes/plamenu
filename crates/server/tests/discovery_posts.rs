@@ -1,5 +1,4 @@
 //! Outbox-to-canonical-post acquisition, local search and explicit-open reconciliation.
-mod common;
 use axum::{
     Router,
     body::Body,
@@ -13,6 +12,7 @@ use plamenu::{
 };
 use plamenu_db::{PgPool, discovery_store as db};
 use plamenu_federation::{FederationClient, ProxyConfig};
+use plamenu_test_support as common;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -238,7 +238,7 @@ async fn first_post(f: &Fixture, name: &str) -> db::Entry {
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbox_sampling_is_bounded_canonical_and_side_effect_free(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     seed(&f, &["alice"]);
@@ -251,7 +251,7 @@ async fn outbox_sampling_is_bounded_canonical_and_side_effect_free(pool: PgPool)
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(entries, 1);
+    assert_eq!(entries, 8);
     assert_eq!(cold_counts(&pool).await, before);
     let post = first_post(&f, "alice").await;
     assert_eq!(post.summary.as_deref(), Some("Canonical orchid alice 0"));
@@ -266,7 +266,14 @@ async fn outbox_sampling_is_bounded_canonical_and_side_effect_free(pool: PgPool)
     );
     assert_eq!(post.indexable, "missing");
     let page = posts::page(&f.state, 1, None, "orchid").await.unwrap();
-    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries.len(), 4); // existing per-origin browse-page limit
+    let next = posts::page(&f.state, 1, page.next, "orchid").await.unwrap();
+    assert_eq!(next.entries.len(), 4);
+    assert!(
+        page.entries
+            .iter()
+            .all(|a| next.entries.iter().all(|b| a.id != b.id))
+    );
     assert!(
         posts::page(&f.state, 1, None, "untrusted")
             .await
@@ -274,7 +281,7 @@ async fn outbox_sampling_is_bounded_canonical_and_side_effect_free(pool: PgPool)
             .entries
             .is_empty()
     );
-    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 5);
+    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 14);
     let before = f.peer.requests.lock().unwrap().len();
     f.drain().await;
     assert_eq!(
@@ -283,20 +290,31 @@ async fn outbox_sampling_is_bounded_canonical_and_side_effect_free(pool: PgPool)
         "daily rounds do not repeat immediately"
     );
     let requests = f.peer.requests.lock().unwrap();
-    assert_eq!(requests.len(), 5);
-    assert!(
-        requests
-            .iter()
-            .all(|(p, s)| p.starts_with(directory::PATH) || *s)
-    );
+    assert_eq!(requests.len(), 14);
+    for n in 0..8 {
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|(p, _)| p == &format!("/posts/alice/{n}"))
+                .count(),
+            1
+        );
+    }
+    assert!(requests.iter().all(|(p, s)| {
+        if p.starts_with(directory::PATH) || p == "/api/v2/instance" || p == "/favicon.ico" {
+            !*s
+        } else {
+            *s
+        }
+    }));
     assert!(
         !requests
             .iter()
-            .any(|(p, _)| p.contains("crawl") || p.contains("image") || p.ends_with("/4"))
+            .any(|(p, _)| p.contains("crawl") || p.contains("image") || p.ends_with("/8"))
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn indexing_is_independent_of_profile_listing_and_recommendations(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     seed(&f, &["hidden", "refused", "invalid"]);
@@ -368,7 +386,7 @@ async fn indexing_is_independent_of_profile_listing_and_recommendations(pool: Pg
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_visibility_and_authorship_refusals_never_become_documents(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     seed(&f, &["alice"]);
@@ -406,7 +424,7 @@ async fn canonical_visibility_and_authorship_refusals_never_become_documents(poo
     assert_eq!(cold_counts(&pool).await, vec![0; 10]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn missing_policy_tightening_erases_text_without_restore_on_relaxation(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     seed(&f, &["alice", "bob"]);
@@ -449,7 +467,7 @@ async fn missing_policy_tightening_erases_text_without_restore_on_relaxation(poo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn actor_revocation_fences_inflight_post_and_removes_cached_excerpts(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     seed(&f, &["alice"]);
@@ -497,7 +515,7 @@ async fn actor_revocation_fences_inflight_post_and_removes_cached_excerpts(pool:
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn post_updates_deletes_and_access_failures_erase_payload_and_guard_identity(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     seed(&f, &["alice"]);
@@ -617,20 +635,17 @@ fn outbox_hints_ignore_boosts_foreign_origins_wrong_actors_and_duplicate_objects
     assert_eq!(plamenu::discovery::outbox::hints(&page, &actor), vec![id]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pending_deletion_cancels_first_post_fetch_and_retains_guard(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     seed(&f, &["alice"]);
     setup_author(&f, "alice", actor("alice"), 1);
-    for _ in 0..3 {
-        worker::run_due(&f.state).await.unwrap();
-    }
     let started = Arc::new(Notify::new());
     let release = Arc::new(Semaphore::new(0));
     *f.peer.hold.lock().unwrap() =
         Some(("/posts/alice/0".into(), started.clone(), release.clone()));
     let state = f.state.clone();
-    let task = tokio::spawn(async move { worker::run_due(&state).await.unwrap() });
+    let task = tokio::spawn(async move { while worker::run_due(&state).await.unwrap() != 0 {} });
     tokio::time::timeout(Duration::from_secs(5), started.notified())
         .await
         .unwrap();
@@ -665,7 +680,7 @@ async fn pending_deletion_cancels_first_post_fetch_and_retains_guard(pool: PgPoo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mechanism_switches_and_shared_catalogue_allowance_bound_post_work(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     seed(&f, &["alice"]);
@@ -675,7 +690,7 @@ async fn mechanism_switches_and_shared_catalogue_allowance_bound_post_work(pool:
     settings.max_entries = 2;
     db::save_settings(&pool, &settings).await.unwrap();
     f.drain().await;
-    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 2);
+    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 4); // includes branding
     settings = db::settings(&pool).await.unwrap();
     settings.disabled_mechanisms.retain(|m| m != "outbox");
     db::save_settings(&pool, &settings).await.unwrap();
@@ -702,7 +717,10 @@ async fn mechanism_switches_and_shared_catalogue_allowance_bound_post_work(pool:
             .len(),
         1
     );
-    sqlx::query("UPDATE discovery_entries SET valid_until=now()-interval '1 minute',verified_at=now()-interval '1 day' WHERE kind='post'").execute(&pool).await.unwrap();
+    // The retention trigger derives expiry from immutable first discovery,
+    // rather than accepting an arbitrary legacy valid_until assignment.
+    sqlx::query("UPDATE discovery_identity SET first_discovered_at=now()-interval '181 days' WHERE kind='post'").execute(&pool).await.unwrap();
+    sqlx::query("UPDATE discovery_entries SET valid_until=now()-interval '1 minute',verified_at=now()-interval '2 days' WHERE kind='post'").execute(&pool).await.unwrap();
     assert!(
         posts::page(&f.state, 1, None, "orchid")
             .await
@@ -713,7 +731,7 @@ async fn mechanism_switches_and_shared_catalogue_allowance_bound_post_work(pool:
     assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, before);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn personal_dismissal_domain_blocks_and_content_filters_apply_without_import(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     seed(&f, &["alice"]);
@@ -861,7 +879,7 @@ async fn request(
     (status, headers, body)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_open_reconciles_once_with_delivery_and_preserves_personal_search(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let member = session(&f.state).await;

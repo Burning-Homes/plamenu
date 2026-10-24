@@ -6,7 +6,7 @@ use axum::{
 use common::{RemoteUser, StubFederation, TEST_DOMAIN, create_local_account, test_state_with};
 use plamenu::{
     AppState,
-    auth::{generate_secret, hash_password, hash_secret},
+    auth::{generate_secret, hash_secret},
     music_assets,
     music_entities::{self, Kind},
     music_publications,
@@ -31,7 +31,7 @@ async fn fixture(pool: PgPool) -> Fixture {
         &pool,
         owner.id,
         Some("alice@plamenu.test"),
-        &hash_password("fixture-password").unwrap(),
+        &common::fixture_password_hash(),
     )
     .await
     .unwrap();
@@ -120,7 +120,7 @@ async fn text(response: axum::response::Response) -> String {
     )
     .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn new_owned_albums_keep_private_details_when_a_track_becomes_public(pool: PgPool) {
     let mut f = fixture(pool).await;
     let created = music_entities::create(
@@ -158,7 +158,7 @@ async fn new_owned_albums_keep_private_details_when_a_track_becomes_public(pool:
     assert!(!doc.to_string().contains("Private creation journal"));
     assert!(!doc.to_string().contains("private-creation-tag"));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn album_member_api_keeps_scopes_roster_and_removal_owner_only(pool: PgPool) {
     let f = fixture(pool).await;
     let bob = create_local_account(&f.state.pool, "bob", "Bob").await;
@@ -166,7 +166,7 @@ async fn album_member_api_keeps_scopes_roster_and_removal_owner_only(pool: PgPoo
         &f.state.pool,
         bob.id,
         Some("bob@plamenu.test"),
-        &hash_password("fixture-password").unwrap(),
+        &common::fixture_password_hash(),
     )
     .await
     .unwrap();
@@ -259,7 +259,7 @@ async fn album_member_api_keeps_scopes_roster_and_removal_owner_only(pool: PgPoo
         StatusCode::OK
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_album_access_forms_require_csrf_and_keep_the_member_roster_private(pool: PgPool) {
     let f = fixture(pool).await;
     create_local_account(&f.state.pool, "bob", "Bob").await;
@@ -433,7 +433,7 @@ async fn asset(f: &Fixture, visibility: &str) -> i64 {
         .bind(format!("{asset:064x}")).execute(&f.state.pool).await.unwrap();
     asset
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn album_member_roster_pages_without_duplicates_and_rejects_invalid_cursors(pool: PgPool) {
     let f = fixture(pool).await;
     for index in 0..60 {
@@ -469,7 +469,7 @@ async fn album_member_roster_pages_without_duplicates_and_rejects_invalid_cursor
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn grant_waiting_on_recipient_retirement_cannot_recreate_erased_membership(pool: PgPool) {
     let f = fixture(pool).await;
     let track = asset(&f, "private").await;
@@ -561,7 +561,7 @@ async fn grant_waiting_on_recipient_retirement_cannot_recreate_erased_membership
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn direct_tombstone_waits_for_inflight_recipient_grant_before_cleanup(pool: PgPool) {
     let f = fixture(pool).await;
     let bob = create_local_account(&f.state.pool, "bob", "Bob").await;
@@ -638,7 +638,7 @@ async fn direct_tombstone_waits_for_inflight_recipient_grant_before_cleanup(pool
     assert_eq!(count, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reciprocal_track_grants_do_not_deadlock_on_owner_fences(pool: PgPool) {
     let f = fixture(pool).await;
     let bob = create_local_account(&f.state.pool, "bob", "Bob").await;
@@ -703,7 +703,7 @@ async fn reciprocal_track_grants_do_not_deadlock_on_owner_fences(pool: PgPool) {
             .is_ok()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn blocks_suspension_and_raw_recipient_purge_revoke_album_derived_access(pool: PgPool) {
     let f = fixture(pool).await;
     let bob = create_local_account(&f.state.pool, "bob", "Bob").await;
@@ -802,7 +802,7 @@ async fn snapshot(
         .unwrap();
     (album, asset, status, jobs)
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn album_privacy_and_audio_updates_roll_back_together_and_stale_revisions_are_refused(
     pool: PgPool,
 ) {
@@ -853,7 +853,7 @@ async fn album_privacy_and_audio_updates_roll_back_together_and_stale_revisions_
         .unwrap();
     assert!(!doc.to_string().contains("Private album journal"));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn album_grants_collect_the_artist_without_implicitly_granting_private_tracks(pool: PgPool) {
     let f = fixture(pool).await;
     let bob = create_local_account(&f.state.pool, "bob", "Bob").await;
@@ -939,7 +939,7 @@ async fn album_grants_collect_the_artist_without_implicitly_granting_private_tra
             .is_none()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn source_mode_never_exposes_private_siblings_and_independent_direct_grants_survive(
     pool: PgPool,
 ) {
@@ -982,7 +982,7 @@ async fn source_mode_never_exposes_private_siblings_and_independent_direct_grant
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn empty_public_album_has_independent_metadata_without_publishing_tracks(pool: PgPool) {
     let f = fixture(pool).await;
     assert!(
@@ -1033,7 +1033,7 @@ async fn empty_public_album_has_independent_metadata_without_publishing_tracks(p
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_empty_album_and_artist_follows_retract_together_when_metadata_becomes_private(
     pool: PgPool,
 ) {
@@ -1118,7 +1118,7 @@ async fn signed_empty_album_and_artist_follows_retract_together_when_metadata_be
         assert!(sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM delivery_jobs WHERE activity->>'type'='Delete' AND activity->'object'->>'id'=$1)").bind(music_entities::uri(TEST_DOMAIN,kind,id)).fetch_one(&f.state.pool).await.unwrap());
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_album_notes_are_redacted_while_public_track_credits_remain(pool: PgPool) {
     let f = fixture(pool).await;
     let asset = id::next();

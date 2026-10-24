@@ -170,7 +170,7 @@ fn assert_no_authentication_material_or_body(fixture: &Fixture) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn real_http_federation_same_origin_redirect_succeeds_when_policy_allows(pool: PgPool) {
     let fixture = fixture(&pool, SAME_ORIGIN_DESTINATION, false).await;
     assert!(
@@ -194,7 +194,7 @@ async fn real_http_federation_same_origin_redirect_succeeds_when_policy_allows(p
     assert_no_authentication_material_or_body(&fixture);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn real_http_federation_redirect_rechecks_policy_changed_after_first_origin_get(
     pool: PgPool,
 ) {
@@ -249,7 +249,7 @@ async fn real_http_federation_redirect_rechecks_policy_changed_after_first_origi
     assert_no_authentication_material_or_body(&fixture);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn real_http_federation_foreign_origin_redirect_never_receives_request(pool: PgPool) {
     let fixture = fixture(&pool, FOREIGN_DESTINATION, false).await;
     // Both destinations are allowed by domain policy. Origin equality itself

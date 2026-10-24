@@ -2,7 +2,7 @@
 //! `/api/v1/followed_tags`, the `following` flag on search results, and the
 //! followed-tag home-timeline injection.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -113,7 +113,7 @@ fn ids_of(page: &Value) -> Vec<String> {
         .collect()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn featured_tags_rest_lifecycle(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -214,7 +214,7 @@ async fn featured_tags_rest_lifecycle(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn featuring_a_tag_federates_add_and_remove(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -282,7 +282,7 @@ async fn featuring_a_tag_federates_add_and_remove(pool: PgPool) {
     assert_eq!(delivery::run_due(&state).await, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn tag_follow_lifecycle(pool: PgPool) {
     common::open_previews(&pool).await;
     let (_alice, token) = user_with_token(&pool, "alice").await;
@@ -417,7 +417,7 @@ async fn tag_follow_lifecycle(pool: PgPool) {
     assert_eq!(listing.as_array().unwrap().len(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn tag_entity_reports_usage_history(pool: PgPool) {
     common::open_previews(&pool).await;
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
@@ -474,7 +474,7 @@ async fn tag_entity_reports_usage_history(pool: PgPool) {
     assert_eq!(tag["featuring"], false);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn followed_tags_paginate_by_follow_id(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     for name in ["rust", "go"] {
@@ -511,7 +511,7 @@ async fn followed_tags_paginate_by_follow_id(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn followed_tag_injects_posts_into_home(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -583,7 +583,7 @@ async fn followed_tag_injects_posts_into_home(pool: PgPool) {
 /// The actor advertises `featuredTags` and lists each featured tag as a
 /// `Hashtag` in its `tag` array; the collection endpoint serves the
 /// Mastodon `Collection`-of-`Hashtag` shape.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn featured_tags_ride_the_actor_and_its_collection(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let (status, _) = api(
@@ -639,7 +639,7 @@ async fn featured_tags_ride_the_actor_and_its_collection(pool: PgPool) {
 /// backfills the profile's featured tags from that collection, and a later
 /// sync drops tags the origin stopped listing (Mastodon's
 /// `SynchronizeFeaturedTagsCollectionWorker` semantics).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_featured_tags_sync_from_the_collection(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let mut actor = bob.actor.clone();

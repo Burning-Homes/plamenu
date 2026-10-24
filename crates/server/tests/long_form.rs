@@ -146,7 +146,7 @@ async fn user_with_token(pool: &PgPool, username: &str) -> String {
     token["access_token"].as_str().unwrap().to_owned()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn article_is_stored_typed_and_served_whole(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -182,7 +182,7 @@ async fn article_is_stored_typed_and_served_whole(pool: PgPool) {
     assert!(!stored.content.contains("<h1>"), "{}", stored.content);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn the_create_and_the_served_object_agree(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let remote = RemoteUser::new("remote.test", "bob");
@@ -218,7 +218,7 @@ async fn the_create_and_the_served_object_agree(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn the_client_entity_reports_the_kind_and_folds_the_title(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -244,7 +244,7 @@ async fn the_client_entity_reports_the_kind_and_folds_the_title(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn long_form_refuses_the_shapes_other_kinds_own(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -307,7 +307,7 @@ async fn long_form_refuses_the_shapes_other_kinds_own(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn long_form_measures_against_its_own_character_limit(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -336,7 +336,7 @@ async fn long_form_measures_against_its_own_character_limit(pool: PgPool) {
     assert_eq!(stored.object_type.as_deref(), Some("Article"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_headline_can_be_fixed_and_federates_as_an_update(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let remote = RemoteUser::new("remote.test", "bob");
@@ -394,7 +394,7 @@ async fn a_headline_can_be_fixed_and_federates_as_an_update(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_untitled_post_refuses_a_title(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
@@ -435,7 +435,7 @@ async fn an_untitled_post_refuses_a_title(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn the_api_takes_the_kind_and_refuses_an_unknown_one(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
 
@@ -482,7 +482,7 @@ async fn the_api_takes_the_kind_and_refuses_an_unknown_one(pool: PgPool) {
     assert_eq!(entity["object_type"], Value::Null);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn articles_can_be_scheduled_but_events_cannot(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let far_future = "2099-01-01T12:00:00Z";

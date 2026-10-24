@@ -141,7 +141,7 @@ async fn ready_with_poster(f: &Fixture, owner: i64, compatibility_poster: bool) 
     media
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_native_candidate_gets_an_interoperable_poster_before_atomic_adoption(
     pool: PgPool,
 ) {
@@ -194,7 +194,7 @@ async fn publish(f: &Fixture, media: i64) -> plamenu_db::status::Status {
     .unwrap()
     .0
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn source_edit_api_and_html_require_intent_scopes_and_private_ownership(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let original = ready(&f, f.owner).await;
@@ -412,7 +412,7 @@ async fn value<
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stable_media_identity_atomic_signed_update_and_acknowledged_old_file_cleanup(
     pool: PgPool,
 ) {
@@ -614,7 +614,7 @@ async fn stable_media_identity_atomic_signed_update_and_acknowledged_old_file_cl
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failures_stale_forms_concurrent_application_and_cancel_leave_old_film_intact(
     pool: PgPool,
 ) {
@@ -690,7 +690,7 @@ async fn failures_stale_forms_concurrent_application_and_cancel_leave_old_film_i
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn editor_authority_quota_debt_and_revocation_are_rechecked_at_commit(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let old = ready(&f, f.owner).await;
@@ -766,7 +766,7 @@ async fn editor_authority_quota_debt_and_revocation_are_rechecked_at_commit(pool
     assert_eq!(debts, vec![f.owner]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn html_and_api_require_current_authority_csrf_confirmation_and_both_write_scopes(
     pool: PgPool,
 ) {
@@ -908,7 +908,7 @@ async fn rendered_attachment(
         .clone()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 #[allow(
     clippy::too_many_lines,
     reason = "populated extension equivalence and readiness/visibility transitions share one publication"
@@ -1096,7 +1096,7 @@ async fn batched_extensions_match_populated_native_sidecars_and_preserve_fences(
     assert!(private["hls"].get("p2p").is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn batched_extensions_match_remote_ladder_peer_hints_and_legacy_captions(pool: PgPool) {
     use plamenu_db::remote_hls_peers::{self, RemoteHlsPeers};
     let f = fixture(pool).await;

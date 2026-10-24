@@ -17,7 +17,7 @@ fn input(mount: &str, visibility: &str) -> New {
         visibility: visibility.into(),
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn output_management_is_revisioned_private_tokens_are_one_time_and_retirement_revokes_access(
     pool: PgPool,
 ) {
@@ -168,7 +168,7 @@ async fn output_management_is_revisioned_private_tokens_are_one_time_and_retirem
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn output_worker_lease_is_single_flight_and_transport_or_token_generation_fences_old_worker(
     pool: PgPool,
 ) {
@@ -471,7 +471,7 @@ async fn real_output_source(pool: PgPool, codec: &str, kind: &str) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_output_listener_body_revokes_current_tokens_and_releases_connection_lease(
     pool: PgPool,
 ) {
@@ -585,7 +585,7 @@ async fn text(response: axum::response::Response) -> String {
     )
     .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_stream_forms_use_one_music_workspace_csrf_and_current_owner_session_for_private_audio(
     pool: PgPool,
 ) {
@@ -735,23 +735,23 @@ async fn native_stream_forms_use_one_music_workspace_csrf_and_current_owner_sess
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_output_encodes_two_queue_occurrences_into_one_decodable_mp3_stream(pool: PgPool) {
     real_output_codec(pool, "mp3").await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_output_encodes_two_queue_occurrences_into_one_decodable_ogg_stream(pool: PgPool) {
     real_output_codec(pool, "ogg").await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_output_encodes_two_queue_occurrences_into_one_decodable_opus_stream(pool: PgPool) {
     real_output_codec(pool, "opus").await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_output_encodes_guarded_podcast_enclosures_into_one_decodable_stream(pool: PgPool) {
     real_output_source(pool, "mp3", "episode").await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_output_encodes_verified_remote_audio_into_one_decodable_stream(pool: PgPool) {
     real_output_source(pool, "mp3", "remote").await;
 }
@@ -888,16 +888,16 @@ async fn late_ogg_listener(pool: PgPool, codec: &str) {
     );
     assert!(std::fs::metadata(decoded).unwrap().len() > 1000);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn late_ogg_listener_gets_initialization_and_complete_audio_pages(pool: PgPool) {
     late_ogg_listener(pool, "ogg").await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn late_opus_listener_gets_initialization_and_complete_audio_pages(pool: PgPool) {
     late_ogg_listener(pool, "opus").await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn broadcast_metadata_is_opt_in_ordered_and_head_does_not_admit_a_listener(pool: PgPool) {
     use axum::{body::Body, http::Request};
     use http_body_util::BodyExt;
@@ -1070,7 +1070,7 @@ async fn checkpoint_fixture(
     (state, row, queue, dir)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn checkpoint_never_overwrites_a_seek_or_a_reclaimed_worker_and_stop_resets_queue(
     pool: PgPool,
 ) {
@@ -1194,7 +1194,7 @@ async fn assert_stream_destination(app: &axum::Router, cookie: &str, row: &music
     assert!(page.contains(&format!("/web/music/streams/{}/command", row.id)));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stream_restart_applies_current_role_bitrate_and_encoder_failure_releases_lease(
     pool: PgPool,
 ) {
@@ -1269,7 +1269,7 @@ async fn wait_for_checkpoint(state: &plamenu::AppState, output: i64, owner: i64,
     .await
     .unwrap();
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn shutdown_keeps_server_playback_intent_and_restarted_worker_resumes_saved_position(
     pool: PgPool,
 ) {
@@ -1394,7 +1394,7 @@ async fn shutdown_keeps_server_playback_intent_and_restarted_worker_resumes_save
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn listener_bearer_capability_grants_only_bytes_and_rotation_revokes_it(pool: PgPool) {
     use axum::{
         body::Body,

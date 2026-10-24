@@ -114,7 +114,7 @@ async fn login(app: &Router) -> String {
     cookie_pair(&resp.set_cookie.expect("session cookie")).to_owned()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn active_sessions_lists_the_current_browser(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -128,7 +128,7 @@ async fn active_sessions_lists_the_current_browser(pool: PgPool) {
     assert!(page.body.contains("This device"), "current session marked");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_second_session_can_be_revoked(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -173,7 +173,7 @@ async fn a_second_session_can_be_revoked(pool: PgPool) {
     let _ = uid;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn logout_revokes_the_active_token_server_side(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -212,7 +212,7 @@ async fn logout_revokes_the_active_token_server_side(pool: PgPool) {
 /// Logout is a state-changing form like any other signed-in mutation: a forged
 /// POST that cannot know the session-bound token must neither revoke the token
 /// nor clear the cookie, on top of the `SameSite=Lax` protection.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn logout_requires_the_session_csrf_token(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -238,7 +238,7 @@ async fn logout_requires_the_session_csrf_token(pool: PgPool) {
 /// unreachable), logout refuses — `503`, no cookie cleared — so the browser
 /// keeps the token and a simple resubmit retries the revocation, instead of
 /// looking signed out while the credential stays live server-side.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn logout_fails_closed_when_revocation_cannot_be_confirmed(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -261,7 +261,7 @@ async fn logout_fails_closed_when_revocation_cannot_be_confirmed(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn changing_the_password_signs_out_everywhere_and_rotates_this_session(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -361,7 +361,7 @@ async fn changing_the_password_signs_out_everywhere_and_rotates_this_session(poo
     ));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn password_change_enforces_the_shared_length_policy(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -399,7 +399,7 @@ async fn password_change_enforces_the_shared_length_policy(pool: PgPool) {
     ));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn current_session_cannot_be_revoked_here(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -427,7 +427,7 @@ async fn current_session_cannot_be_revoked_here(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authorized_apps_list_and_revoke(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -489,7 +489,7 @@ async fn authorized_apps_list_and_revoke(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authentication_history_records_success_and_failure(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -517,7 +517,7 @@ async fn authentication_history_records_success_and_failure(pool: PgPool) {
 /// a wrong password for a real one — not only in status/body but in the
 /// expensive Argon2 work it performs, or its latency becomes an account
 /// (e-mail) enumeration oracle.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unknown_identifier_login_still_spends_a_password_verification(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -569,7 +569,7 @@ async fn unknown_identifier_login_still_spends_a_password_verification(pool: PgP
 /// this browser in — login CSRF / session swapping. The sign-in
 /// POST is refused unless it demonstrably came from our own origin, while the
 /// identical same-origin submit still works.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cross_site_login_form_cannot_change_the_active_session(pool: PgPool) {
     seed_alice(&pool).await;
     let app = common::test_app(pool.clone());
@@ -641,7 +641,7 @@ async fn bearer_verify(app: &Router, raw_token: &str) -> StatusCode {
 /// authenticating on both the cookie and the raw-bearer paths, while a
 /// third-party API token of the same age keeps working — Mastodon's own tokens
 /// do not expire by design.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_session_expires_after_the_advertised_lifetime(pool: PgPool) {
     let uid = seed_alice(&pool).await;
     let app = common::test_app(pool.clone());

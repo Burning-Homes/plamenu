@@ -1,7 +1,7 @@
 //! Integration tests: the full router against a real (per-test) Postgres
 //! database, driven through tower without binding a socket.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -75,13 +75,13 @@ async fn get(app: Router, uri: &str, accept: Option<&str>) -> (StatusCode, Strin
     (status, content_type, json)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn health_works(pool: PgPool) {
     let (status, _, _) = get(test_app(pool), "/health", None).await;
     assert_eq!(status, StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn readiness_reflects_database_availability(pool: PgPool) {
     let app = test_app(pool.clone());
     // Liveness is a constant OK regardless of the datastore.
@@ -101,7 +101,7 @@ async fn readiness_reflects_database_availability(pool: PgPool) {
 /// Readiness also reflects supervisor state — a restart-looping
 /// background worker turns the instance unready (naming the subsystem), while
 /// an isolated crash that recovers does not.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn readiness_reflects_worker_restart_loops(pool: PgPool) {
     let state = common::test_state_with(pool, std::sync::Arc::default());
     let workers = state.workers.clone();
@@ -135,7 +135,7 @@ async fn readiness_reflects_worker_restart_loops(pool: PgPool) {
     assert_eq!(get(app, "/health", None).await.0, StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn webfinger_lists_avatar_link_when_account_has_one(pool: PgPool) {
     create_alice(&pool).await;
     let uri = "/.well-known/webfinger?resource=acct:alice@plamenu.test";
@@ -164,7 +164,7 @@ async fn webfinger_lists_avatar_link_when_account_has_one(pool: PgPool) {
     assert_eq!(avatar["href"], "https://plamenu.test/media/ava-9.jpg");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn webfinger_is_case_insensitive_and_canonicalizes(pool: PgPool) {
     create_alice(&pool).await;
     let uri = "/.well-known/webfinger?resource=acct:ALICE@PLAMENU.TEST";
@@ -173,7 +173,7 @@ async fn webfinger_is_case_insensitive_and_canonicalizes(pool: PgPool) {
     assert_eq!(body["subject"], "acct:alice@plamenu.test");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn webfinger_actor_and_profile_urls_resolve_to_the_same_jrd(pool: PgPool) {
     let alice = create_immutable_local_account(&pool, "alice", "Alice").await;
     let actor_url = alice.uri.as_deref().expect("immutable actor URI");
@@ -199,7 +199,7 @@ async fn webfinger_actor_and_profile_urls_resolve_to_the_same_jrd(pool: PgPool) 
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn split_domain_webfinger_maps_short_handles_to_the_host_domain(pool: PgPool) {
     create_alice(&pool).await;
     let app = || test_app_split_domain(pool.clone(), "social.example.test", "example.test");
@@ -295,7 +295,7 @@ async fn split_domain_webfinger_maps_short_handles_to_the_host_domain(pool: PgPo
 /// accounts; a reversibly suspended account still answers so peers can
 /// dereference the actor and read `suspended: true`. The suspended actor's
 /// collections answer 403 (temporary) instead of 410.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn webfinger_and_collections_follow_the_availability_ladder(pool: PgPool) {
     create_alice(&pool).await;
     let alice = plamenu_db::account::find_local_by_username(&pool, "alice")
@@ -346,7 +346,7 @@ async fn webfinger_and_collections_follow_the_availability_ladder(pool: PgPool) 
     assert_eq!(status, StatusCode::GONE, "deleted: collections are gone");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn webfinger_unknown_user_is_404(pool: PgPool) {
     let uri = "/.well-known/webfinger?resource=acct:ghost@plamenu.test";
     let (status, _, body) = get(test_app(pool), uri, None).await;
@@ -354,7 +354,7 @@ async fn webfinger_unknown_user_is_404(pool: PgPool) {
     assert_eq!(body["error"], "Record not found");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn webfinger_foreign_domain_is_404(pool: PgPool) {
     create_alice(&pool).await;
     let uri = "/.well-known/webfinger?resource=acct:alice@elsewhere.example";
@@ -362,7 +362,7 @@ async fn webfinger_foreign_domain_is_404(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn webfinger_url_resources_reject_unknown_foreign_and_non_account_urls(pool: PgPool) {
     create_alice(&pool).await;
     let app = || test_app(pool.clone());
@@ -386,14 +386,14 @@ async fn webfinger_url_resources_reject_unknown_foreign_and_non_account_urls(poo
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn webfinger_malformed_resource_is_400(pool: PgPool) {
     let uri = "/.well-known/webfinger?resource=acct:not-an-acct";
     let (status, _, _) = get(test_app(pool), uri, None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn host_meta_serves_xrd_xml_by_default(pool: PgPool) {
     let response = test_app(pool)
         .oneshot(
@@ -419,7 +419,7 @@ async fn host_meta_serves_xrd_xml_by_default(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn host_meta_answers_json_for_json_accept_and_extension(pool: PgPool) {
     let app = test_app(pool);
     for (uri, accept) in [
@@ -437,7 +437,7 @@ async fn host_meta_answers_json_for_json_accept_and_extension(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn actor_serves_html_to_browsers_and_ap_to_clients(pool: PgPool) {
     create_alice(&pool).await;
     // A browser (HTML/no Accept) gets the human profile page, like Mastodon.
@@ -485,7 +485,7 @@ async fn actor_serves_html_to_browsers_and_ap_to_clients(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unknown_actor_is_404(pool: PgPool) {
     let (status, _, _) = get(
         test_app(pool),
@@ -496,7 +496,7 @@ async fn unknown_actor_is_404(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn nodeinfo_is_discoverable_and_counts_users(pool: PgPool) {
     create_alice(&pool).await;
     let (status, _, index) = get(test_app(pool.clone()), "/.well-known/nodeinfo", None).await;
@@ -531,7 +531,7 @@ async fn nodeinfo_is_discoverable_and_counts_users(pool: PgPool) {
     assert_eq!(body["version"], "2.0");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_entities_use_one_settings_snapshot_for_registrations(pool: PgPool) {
     use plamenu_db::instance_settings::{self, RegistrationsMode};
     use std::sync::Arc;
@@ -588,7 +588,7 @@ async fn instance_entities_use_one_settings_snapshot_for_registrations(pool: PgP
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_v1_has_mastodon_shape(pool: PgPool) {
     create_alice(&pool).await;
     let (status, _, body) = get(test_app(pool), "/api/v1/instance", None).await;
@@ -602,7 +602,7 @@ async fn instance_v1_has_mastodon_shape(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_v2_has_mastodon_shape(pool: PgPool) {
     let (status, _, body) = get(test_app(pool), "/api/v2/instance", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -617,7 +617,7 @@ async fn instance_v2_has_mastodon_shape(pool: PgPool) {
     assert_eq!(body["api_versions"]["mastodon"], 11);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_config_endpoints_serve_empty_states(pool: PgPool) {
     let (status, _, body) = get(test_app(pool.clone()), "/api/v1/instance/rules", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -645,7 +645,7 @@ async fn instance_config_endpoints_serve_empty_states(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_rules_serve_published_rules(pool: PgPool) {
     // Create out of priority order to prove display ordering.
     plamenu_db::rule::create(&pool, "Be kind", "", Some(1))
@@ -673,7 +673,7 @@ async fn instance_rules_serve_published_rules(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_entities_reflect_operator_settings(pool: PgPool) {
     create_alice(&pool).await;
     let current = plamenu_db::instance_settings::get(&pool).await.unwrap();
@@ -722,7 +722,7 @@ async fn instance_entities_reflect_operator_settings(pool: PgPool) {
     assert!(body["updated_at"].is_string());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_serves_site_upload_thumbnail_and_icon(pool: PgPool) {
     // Without uploads: v1 thumbnail is null, v2 keeps the static fallback and
     // omits `icon` (Mastodon falls back to bundled frontend assets there).
@@ -846,7 +846,7 @@ async fn method_probe(app: Router, method: &str, uri: &str) -> StatusCode {
 /// "Edit profile" broke. Method routing is resolved before any extractor, so
 /// an unauthenticated probe still distinguishes "method not registered" (405)
 /// from "registered, needs a token" (401) — no fixtures required.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn update_routes_answer_both_put_and_patch(pool: PgPool) {
     let shared = test_app(pool);
     // Rails `resource(s) ... :update` declarations in Mastodon's routes/api.rb.
@@ -896,7 +896,7 @@ async fn update_routes_answer_both_put_and_patch(pool: PgPool) {
 /// token to decide how to authorize — Phanpy enables PKCE only when
 /// `code_challenge_methods_supported` names S256, so an absent document
 /// silently downgrades every login to the plain code flow.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oauth_authorization_server_metadata(pool: PgPool) {
     let (status, _, body) = get(
         test_app(pool),
@@ -949,7 +949,7 @@ async fn oauth_authorization_server_metadata(pool: PgPool) {
 /// editor from. `supported_mime_types` in particular must never be empty:
 /// clients read an empty list as "nothing is allowed" rather than "unknown",
 /// which made Phanpy reject every file before it reached the upload endpoint.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_configuration_advertises_client_limits(pool: PgPool) {
     for uri in ["/api/v1/instance", "/api/v2/instance"] {
         let (status, _, body) = get(test_app(pool.clone()), uri, None).await;

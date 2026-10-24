@@ -102,7 +102,7 @@ fn public_post(text: &str) -> actions::PostParams<'_> {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn status_and_its_outbox_commit_together(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -121,7 +121,7 @@ async fn status_and_its_outbox_commit_together(pool: PgPool) {
     assert_eq!(job::pending_count(&pool).await.unwrap(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_failed_delivery_enqueue_rolls_back_the_whole_post(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -173,7 +173,7 @@ async fn a_failed_delivery_enqueue_rolls_back_the_whole_post(pool: PgPool) {
     assert_eq!(job::pending_count(&pool).await.unwrap(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_remote_follow_and_its_follow_job_commit_together(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -196,7 +196,7 @@ async fn a_remote_follow_and_its_follow_job_commit_together(pool: PgPool) {
     assert_eq!(job::pending_count(&pool).await.unwrap(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_failed_follow_enqueue_rolls_back_the_follow_edge(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");

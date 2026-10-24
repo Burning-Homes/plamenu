@@ -85,7 +85,7 @@ fn selection(asset: &music_assets::Asset, album: Option<i64>) -> Album {
         album_id: album.map(|id| id.to_string()),
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn notes_credits_and_rich_caption_remain_in_sync_through_edits_and_republishing(
     pool: PgPool,
 ) {
@@ -198,7 +198,7 @@ async fn notes_credits_and_rich_caption_remain_in_sync_through_edits_and_republi
         "text/html"
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn exact_album_assignment_keeps_performer_overrides_and_current_compilation_access(
     pool: PgPool,
 ) {
@@ -332,7 +332,7 @@ async fn exact_album_assignment_keeps_performer_overrides_and_current_compilatio
     assert_eq!(detached.album_id, None);
     assert_eq!(detached.genre, "Ambient");
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn details_and_album_assignment_roll_back_on_outbox_failure(pool: PgPool) {
     let f = fixture(pool).await;
     let own = album(&f, f.owner.id, "A new album").await;
@@ -407,7 +407,7 @@ async fn details_and_album_assignment_roll_back_on_outbox_failure(pool: PgPool) 
         jobs
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stale_foreign_and_unbounded_details_are_rejected_without_mutating_sources(pool: PgPool) {
     let f = fixture(pool).await;
     let before = music_assets::get(&f.state, f.source, None).await.unwrap();

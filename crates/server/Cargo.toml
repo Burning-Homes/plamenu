@@ -85,6 +85,7 @@ zeroize = { workspace = true }
 rustix = { workspace = true }
 
 [dev-dependencies]
+plamenu-test-support = { path = "../test-support" }
 criterion = { workspace = true }
 ml-dsa = { workspace = true }
 # The RFC 9421 inbox tests hand-sign requests with an actor's Ed25519 key.
@@ -98,6 +99,213 @@ tower = { workspace = true }
 
 [lints]
 workspace = true
+
+# account_api includes these unchanged sources in one default harness, avoiding
+# four copies of test code generation/linking. Explicit --test NAME still works.
+[[test]]
+name = "account_collections"
+test = false
+
+[[test]]
+name = "applications_settings"
+test = false
+
+[[test]]
+name = "account_feed"
+test = false
+
+[[test]]
+name = "local_identity"
+test = false
+
+# notifications_api groups these unchanged sources with the same explicit-target
+# compatibility as account_api. The shared wiring guard covers both groups.
+[[test]]
+name = "notification_delivery"
+test = false
+
+[[test]]
+name = "notification_filtering"
+test = false
+
+[[test]]
+name = "notification_inbox"
+test = false
+
+[[test]]
+name = "notification_retention"
+test = false
+
+[[test]]
+name = "notifications_v2"
+test = false
+
+# admin_api groups the admin sources without changing their individual targets.
+[[test]]
+name = "admin_accounts"
+test = false
+
+[[test]]
+name = "admin_instance_policy"
+test = false
+
+[[test]]
+name = "admin_metrics"
+test = false
+
+[[test]]
+name = "admin_reports"
+test = false
+
+# auth_api groups registration, credentials and token admission without changing
+# the original sources or their explicit-target compatibility.
+[[test]]
+name = "invites"
+test = false
+
+[[test]]
+name = "key_storage"
+test = false
+
+[[test]]
+name = "multi_account"
+test = false
+
+[[test]]
+name = "oauth_scopes"
+test = false
+
+[[test]]
+name = "oauth_token_admission"
+test = false
+
+[[test]]
+name = "password_reset"
+test = false
+
+[[test]]
+name = "registration"
+test = false
+
+# social_api groups relationships, curation and polls without changing the
+# original sources or their explicit-target compatibility.
+[[test]]
+name = "blocks_mutes"
+test = false
+
+[[test]]
+name = "filters"
+test = false
+
+[[test]]
+name = "follow_requests"
+test = false
+
+[[test]]
+name = "follow_settings"
+test = false
+
+[[test]]
+name = "lists"
+test = false
+
+[[test]]
+name = "markers"
+test = false
+
+[[test]]
+name = "pins_bookmarks"
+test = false
+
+[[test]]
+name = "polls"
+test = false
+
+# http_api groups router, HTTP contract and wire-fixture tests without changing
+# the original sources or their explicit-target compatibility.
+[[test]]
+name = "api"
+test = false
+
+[[test]]
+name = "client_compat"
+test = false
+
+[[test]]
+name = "content_negotiation"
+test = false
+
+[[test]]
+name = "cors"
+test = false
+
+[[test]]
+name = "forwarded"
+test = false
+
+[[test]]
+name = "instance_meta"
+test = false
+
+[[test]]
+name = "rate_limit"
+test = false
+
+[[test]]
+name = "security_headers"
+test = false
+
+[[test]]
+name = "wire_shapes"
+test = false
+
+# search_api groups search, directory, tags and trends without changing the
+# original sources or their explicit-target compatibility.
+[[test]]
+name = "directory"
+test = false
+
+[[test]]
+name = "search"
+test = false
+
+[[test]]
+name = "tags"
+test = false
+
+[[test]]
+name = "trends"
+test = false
+
+# discovery_api groups guarded discovery acquisition and lifecycle tests while
+# retaining every original explicit target and the shared default-wiring guard.
+[[test]]
+name = "discovery"
+test = false
+
+[[test]]
+name = "discovery_communities"
+test = false
+
+[[test]]
+name = "discovery_diversity"
+test = false
+
+[[test]]
+name = "discovery_expansion"
+test = false
+
+[[test]]
+name = "discovery_posts"
+test = false
+
+[[test]]
+name = "discovery_videos"
+test = false
+
+[[test]]
+name = "discovery_wider"
+test = false
 
 # Hot-path latency benches against the persistent seeded plamenu_bench
 # database; budgets checked by bench/bench_budgets.py (see bench/README.md).

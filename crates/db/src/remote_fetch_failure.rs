@@ -116,7 +116,7 @@ pub async fn clear(pool: &PgPool, scope: &str, key: &str) -> Result<(), DbError>
 mod tests {
     use super::*;
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn slash_actor_alias_migration_clears_only_the_old_identity_mismatch(pool: PgPool) {
         let alias = "https://books.example/user/instance/";
         let mismatch = format!(
@@ -159,7 +159,7 @@ mod tests {
         }
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn failure_budget_becomes_terminal_and_success_clears(pool: PgPool) {
         for attempt in 1..=MAX_ATTEMPTS {
             record_failure(&pool, "resource", "https://dead.example/actor", "gone")
@@ -189,7 +189,7 @@ mod tests {
         );
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn retry_after_backoff_is_durable_without_consuming_attempts(pool: PgPool) {
         let key = "https://paced.example/outbox";
         record_backoff(&pool, "resource", key, 120, "remote answered 429")
@@ -225,7 +225,7 @@ mod tests {
         assert!(!allowed);
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn authorization_failures_are_isolated_per_fetch_actor(pool: PgPool) {
         let uri = "https://remote.example/users/bob/statuses/private";
         for _ in 0..MAX_ATTEMPTS {

@@ -185,7 +185,7 @@ async fn killed_after_filesystem(f: &Fixture, operation: &str) {
         "mutation child failed before durable filesystem boundary"
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn process_death_and_database_failure_recover_rename_delete_and_tag_exchange(pool: PgPool) {
     for operation in ["rename", "delete", "tags"] {
         let f = fixture(pool.clone()).await;
@@ -255,7 +255,7 @@ async fn process_death_and_database_failure_recover_rename_delete_and_tag_exchan
             .unwrap();
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_uncommitted_intent_never_changes_the_source(pool: PgPool) {
     let f = fixture(pool).await;
     let mount = f.container.path().join("mount");
@@ -293,7 +293,7 @@ async fn an_uncommitted_intent_never_changes_the_source(pool: PgPool) {
         f.folder.revision
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn recovery_refuses_a_replaced_mount_and_does_not_touch_substitute_files(pool: PgPool) {
     let f = fixture(pool).await;
     reject_file_updates(&f.state.pool).await;
@@ -324,7 +324,7 @@ async fn recovery_refuses_a_replaced_mount_and_does_not_touch_substitute_files(p
     std::fs::rename(&old, &mount).unwrap();
     journal::recover(&f.state, mid).await.unwrap();
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn removing_the_index_rolls_back_a_pending_physical_delete_instead_of_erasing_operator_audio(
     pool: PgPool,
 ) {

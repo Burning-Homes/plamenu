@@ -114,7 +114,7 @@ async fn user_with_token(pool: &PgPool, username: &str) -> (plamenu_db::account:
     (account, token)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_quote_accepts_notifies_and_serves_a_stamp(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -244,7 +244,7 @@ async fn local_quote_accepts_notifies_and_serves_a_stamp(pool: PgPool) {
 /// A public post whose quote policy is restricted still federates as quotable,
 /// but a local quoter who doesn't satisfy the automatic policy is refused at
 /// compose time — mirroring the inbound `QuoteRequest` decision.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_quote_honours_followers_and_nobody_policy(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -323,7 +323,7 @@ async fn local_quote_honours_followers_and_nobody_policy(pool: PgPool) {
     assert_eq!(body["quote"]["state"], "accepted");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_quote_request_is_accepted_for_public_posts(pool: PgPool) {
     let (alice, _token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -520,7 +520,7 @@ async fn inbound_quote_request_is_accepted_for_public_posts(pool: PgPool) {
     assert_eq!(reject["object"]["type"], "QuoteRequest");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbound_quote_of_remote_post_completes_the_handshake(pool: PgPool) {
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -702,7 +702,7 @@ async fn outbound_quote_of_remote_post_completes_the_handshake(pool: PgPool) {
 /// A policy-less remote post and one that explicitly limits automatic quote
 /// approval to its author are both non-quotable. Refusing before status/quote
 /// creation prevents an eternal `pending` row for non-quote-aware servers.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbound_quote_requires_remote_permission(pool: PgPool) {
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -757,7 +757,7 @@ async fn outbound_quote_requires_remote_permission(pool: PgPool) {
     assert_eq!(pending, 0, "a denied attempt must create no quote row");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn third_party_quotes_are_verified_via_the_stamp(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -953,7 +953,7 @@ async fn third_party_quotes_are_verified_via_the_stamp(pool: PgPool) {
     assert_eq!(row[&self_status.id].state, "accepted");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn third_party_quote_fetches_missing_quoted_status_before_accepting(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let mastodon = RemoteUser::new("mastodon.social", "mastodon");
@@ -1092,7 +1092,7 @@ async fn third_party_quote_fetches_missing_quoted_status_before_accepting(pool: 
 /// post because somebody boosts it. Resolving the unknown boost target is not
 /// a live Create delivery, but the fetched Note's quote edge is still canonical
 /// object structure and must be persisted and exposed to clients.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn person_announce_of_unknown_quote_preserves_the_quote_attachment(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let quoter = RemoteUser::new("mastodon.example", "ashed");
@@ -1233,7 +1233,7 @@ async fn post_public(state: &plamenu::AppState, username: &str, text: &str) -> s
     .0
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn interaction_policy_updates_quote_approval_and_refederates(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1310,7 +1310,7 @@ async fn interaction_policy_updates_quote_approval_and_refederates(pool: PgPool)
     assert_eq!(code, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn followers_only_policy_gates_inbound_quote_requests(pool: PgPool) {
     let (alice, _token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1386,7 +1386,7 @@ async fn followers_only_policy_gates_inbound_quote_requests(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn revoking_a_quote_withdraws_the_authorization(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1496,7 +1496,7 @@ async fn revoking_a_quote_withdraws_the_authorization(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_accepts_quote_approval_policy(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -1565,7 +1565,7 @@ async fn create_accepts_quote_approval_policy(pool: PgPool) {
     assert_eq!(stored.quote_approval_policy, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edit_applies_quote_approval_policy_only_when_present(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -1622,7 +1622,7 @@ async fn edit_applies_quote_approval_policy_only_when_present(pool: PgPool) {
 /// remote quoted author deletes the `QuoteAuthorization` stamp it issued for a
 /// local quote (M31), which revokes the quote and re-federates the quoting
 /// post without its stamp.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_stamp_deletion_revokes_a_local_quote(pool: PgPool) {
     let (carol, carol_token) = user_with_token(&pool, "carol").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1773,7 +1773,7 @@ async fn inbound_stamp_deletion_revokes_a_local_quote(pool: PgPool) {
 /// delivers the stamp afterwards in an Update whose visible content is
 /// unchanged. That implicit Update must upgrade the pending quote (this froze
 /// real universeodon quotes at `pending` on staging).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn implicit_update_with_stamp_upgrades_pending_quote(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let dave = RemoteUser::new("elsewhere.example", "dave");
@@ -1869,7 +1869,7 @@ async fn implicit_update_with_stamp_upgrades_pending_quote(pool: PgPool) {
 /// A relay may never forward that stamp-carrying Update; the verify worker
 /// re-fetches the quoting post from its origin, whose JSON carries the stamp
 /// once the handshake completed, and settles the quote.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn verify_worker_recovers_stamp_from_origin(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let dave = RemoteUser::new("elsewhere.example", "dave");
@@ -1960,7 +1960,7 @@ async fn verify_worker_recovers_stamp_from_origin(pool: PgPool) {
 /// Mastodon's four accepted aliases) and never carry a stamp — the quote row
 /// stays `pending` in storage while clients display the resolved target,
 /// just like other pending quotes.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn legacy_quoteurl_alias_creates_pending_quote(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let misskey = RemoteUser::new("notes.example", "misskeyuser");
@@ -2037,7 +2037,7 @@ async fn legacy_quoteurl_alias_creates_pending_quote(pool: PgPool) {
 /// A `quoteAuthorization` whose stamp is permanently gone at the origin
 /// (404/410) rejects the quote — Mastodon's `quote.reject!` on a deleted
 /// approval object.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn permanently_gone_stamp_rejects_the_quote(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let dave = RemoteUser::new("elsewhere.example", "dave");
@@ -2115,7 +2115,7 @@ async fn permanently_gone_stamp_rejects_the_quote(pool: PgPool) {
 
 /// Pending quotes share the accepted nesting cap and leave the inner fallback
 /// available when its target is referenced only by id.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pending_quote_chain_keeps_the_nesting_cap(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -2153,7 +2153,7 @@ async fn pending_quote_chain_keeps_the_nesting_cap(pool: PgPool) {
 
 /// First exposure to a cross-server quote must fetch its target immediately,
 /// even when the remote approval handshake has not produced a stamp yet.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pending_cross_origin_quotes_fetch_the_target_on_first_ingest(pool: PgPool) {
     common::open_previews(&pool).await;
     let (_alice, token) = user_with_token(&pool, "alice").await;
@@ -2270,7 +2270,7 @@ async fn assert_pending_quote_is_displayed(
 
 /// An initial target fetch can fail. Old exhausted quotes must be requeued
 /// and recover without a stamp or any user separately resolving the target.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unresolved_pending_quote_recovers_after_retry_backfill(pool: PgPool) {
     common::open_previews(&pool).await;
     let (_alice, token) = user_with_token(&pool, "alice").await;
@@ -2353,7 +2353,7 @@ async fn unresolved_pending_quote_recovers_after_retry_backfill(pool: PgPool) {
 }
 
 /// Removing the stamp prerequisite must retain the synchronous fetch bound.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pending_cross_origin_quote_fetches_keep_the_depth_limit(pool: PgPool) {
     let dave = RemoteUser::new("quoter.example", "dave");
     let bob = RemoteUser::new("original.example", "bob");

@@ -2,7 +2,7 @@
 //! API, and the `filtered` attribute statuses carry for an authenticated
 //! viewer — `/api/v1/filters*` and `/api/v2/filters*`.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -115,7 +115,7 @@ async fn post_status(pool: &PgPool, token: &str, text: &str) -> Value {
     entity
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn v2_filter_crud_lifecycle(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -244,7 +244,7 @@ async fn v2_filter_crud_lifecycle(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn v2_validation_wording(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
 
@@ -292,7 +292,7 @@ async fn v2_validation_wording(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn v2_form_body_with_arrays(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
 
@@ -317,7 +317,7 @@ async fn v2_form_body_with_arrays(pool: PgPool) {
     assert_eq!(created["keywords"][0]["whole_word"], true);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn v2_keyword_and_status_subresources(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -462,7 +462,7 @@ async fn v2_keyword_and_status_subresources(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn filtered_attribute_on_statuses(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
 
@@ -562,7 +562,7 @@ async fn filtered_attribute_on_statuses(pool: PgPool) {
     assert!(anon.get("filtered").is_none(), "{anon}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn v1_deprecated_api(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
 
@@ -639,7 +639,7 @@ async fn v1_deprecated_api(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn v1_multiple_keyword_guard(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
 
@@ -693,7 +693,7 @@ fn home() -> Vec<String> {
 }
 
 /// One create body can't persist an unbounded keyword set.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_rejects_too_many_keywords(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let keywords: Vec<Value> = (0..=MAX_KEYWORDS_PER_FILTER)
@@ -724,7 +724,7 @@ async fn create_rejects_too_many_keywords(pool: PgPool) {
 
 /// An account can't accumulate unbounded filters — both API versions refuse
 /// once it is at the per-account cap.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_rejects_at_filter_limit(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     for i in 0..MAX_FILTERS_PER_ACCOUNT {
@@ -779,7 +779,7 @@ async fn create_rejects_at_filter_limit(pool: PgPool) {
 
 /// Both keyword-adding paths on an existing filter refuse to push it past the
 /// per-filter keyword cap.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn keyword_adds_reject_over_filter_keyword_limit(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let keywords: Vec<NewKeyword> = (0..MAX_KEYWORDS_PER_FILTER)

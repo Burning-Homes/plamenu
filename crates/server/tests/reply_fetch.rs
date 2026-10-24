@@ -31,7 +31,7 @@ fn note(id: &str, author: &str, body: &str, in_reply_to: Option<&str>, replies: 
     })
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn crawl_ingests_and_recurses_same_host_replies(pool: PgPool) {
     // A remote thread on remote.test: alice's root, bob's reply, bob's
     // reply-to-the-reply (depth 2), plus a cross-host reply on evil.test that
@@ -164,7 +164,7 @@ async fn crawl_ingests_and_recurses_same_host_replies(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn thread_open_gates_on_remote_distributable_and_cooldown(pool: PgPool) {
     let account = create_local_account(&pool, "carol", "").await;
     let state = test_state_with(pool.clone(), Arc::new(StubFederation::default()));
@@ -255,7 +255,7 @@ async fn thread_open_gates_on_remote_distributable_and_cooldown(pool: PgPool) {
 /// A reply that arrived while its parent was unreachable is joined to that
 /// parent the moment the parent turns up by any other route — the whole ingest
 /// path, not just the DB helper. Without this the thread stayed split forever.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn late_parent_adopts_the_reply_that_was_waiting(pool: PgPool) {
     let alice = RemoteUser::new("remote.test", "alice");
     let bob = RemoteUser::new("remote.test", "bob");
@@ -336,7 +336,7 @@ async fn late_parent_adopts_the_reply_that_was_waiting(pool: PgPool) {
 /// scope-widening clamp by arriving while its parent was unfetchable — and
 /// delivery order is the sender's to choose. Adoption re-runs the clamp, over the
 /// adopted reply *and* everything below it.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn adoption_reapplies_the_scope_clamp_to_the_subtree(pool: PgPool) {
     let alice = RemoteUser::new("remote.test", "alice");
     let bob = RemoteUser::new("remote.test", "bob");

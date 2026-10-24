@@ -4,7 +4,7 @@
 //! form). These tests pin the served `Content-Type` strings and the Accept
 //! forms that must select the `ActivityPub` representation.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -53,7 +53,7 @@ async fn create_public_status(pool: &PgPool) -> i64 {
     .id
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ap_documents_are_served_with_the_exact_activitypub_content_type(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let status_id = create_public_status(&pool).await;
@@ -76,7 +76,7 @@ async fn ap_documents_are_served_with_the_exact_activitypub_content_type(pool: P
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profiled_ld_json_accept_selects_the_ap_representation(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let status_id = create_public_status(&pool).await;
@@ -137,7 +137,7 @@ async fn get_with_cache_control(app: Router, path: &str) -> (String, Value) {
     (cache_control, serde_json::from_slice(&bytes).unwrap())
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn nodeinfo_counts_are_live_and_responses_are_cacheable(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     create_public_status(&pool).await;
@@ -152,7 +152,7 @@ async fn nodeinfo_counts_are_live_and_responses_are_cacheable(pool: PgPool) {
     assert_eq!(doc["usage"]["users"]["total"], 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_stats_count_local_posts_and_known_domains(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     create_public_status(&pool).await;
@@ -163,7 +163,7 @@ async fn instance_stats_count_local_posts_and_known_domains(pool: PgPool) {
     assert_eq!(body["stats"]["domain_count"], 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn webfinger_serves_jrd_with_the_full_mastodon_link_set(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let (status, content_type, jrd) = get(

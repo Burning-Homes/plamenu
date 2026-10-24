@@ -2,7 +2,7 @@
 //! exclusive-list home filtering — `/api/v1/lists*`,
 //! `/api/v1/timelines/list/{id}` and `/api/v1/accounts/{id}/lists`.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -138,7 +138,7 @@ fn ids_of(page: &Value) -> Vec<&str> {
         .collect()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_crud_lifecycle(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -246,7 +246,7 @@ async fn list_crud_lifecycle(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_validations_match_mastodons_wording(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
 
@@ -326,7 +326,7 @@ async fn list_validations_match_mastodons_wording(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_membership_requires_a_follow(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let (bob, _) = user_with_token(&pool, "bob").await;
@@ -474,7 +474,7 @@ async fn list_membership_requires_a_follow(pool: PgPool) {
     assert_eq!(members, json!([]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_accounts_paginate_by_account_id(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let mut member_ids = Vec::new();
@@ -564,7 +564,7 @@ async fn list_accounts_paginate_by_account_id(pool: PgPool) {
 /// `limit=0` ("whole list") is bounded. A list larger than the
 /// cap returns exactly the cap (newest account first) plus a `next` Link,
 /// instead of materializing and rendering an unbounded membership set.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_accounts_limit_zero_is_capped_and_paginates(pool: PgPool) {
     // Mirrors `FULL_LIST_LIMIT` in `routes::lists`.
     const CAP: usize = 500;
@@ -623,7 +623,7 @@ async fn list_accounts_limit_zero_is_capped_and_paginates(pool: PgPool) {
     assert!(link.contains("max_id="), "{link}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_timeline_and_exclusive_home_filtering(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -721,7 +721,7 @@ async fn list_timeline_and_exclusive_home_filtering(pool: PgPool) {
     assert_eq!(ids_of(&page), [bob_post["id"].as_str().unwrap()]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_timeline_applies_replies_policy(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -791,7 +791,7 @@ async fn list_timeline_applies_replies_policy(pool: PgPool) {
 /// A duplicate `account_ids` array is deduplicated, so repeating
 /// one valid followed account in a single request succeeds (adding it once)
 /// rather than failing its own uniqueness check on the second copy.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_add_deduplicates_account_ids(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let (bob, _) = user_with_token(&pool, "bob").await;
@@ -831,7 +831,7 @@ async fn list_add_deduplicates_account_ids(pool: PgPool) {
 
 /// An `account_ids` array past the per-request cap is rejected
 /// with 422 before the per-id existence probe and membership transaction.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_add_over_the_cap_is_rejected(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
 
@@ -863,7 +863,7 @@ async fn list_add_over_the_cap_is_rejected(pool: PgPool) {
 /// accounts to a list issues the same number of queries as adding one — proof
 /// both the route's per-id existence probe and the per-entry membership loop
 /// are gone. Each call targets a fresh list so no id is a repeat member.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn list_add_query_count_is_flat(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
 

@@ -147,7 +147,7 @@ async fn call(app: &axum::Router, method: &str, password: &str, extra: &[(&str, 
     let body = read(response).await;
     serde_json::from_str::<Value>(&body).unwrap()["subsonic-response"].clone()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn protocol_formats_version_forms_authentication_and_reference_noops_are_compatible(
     pool: PgPool,
 ) {
@@ -215,7 +215,7 @@ async fn protocol_formats_version_forms_authentication_and_reference_noops_are_c
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn catalogue_methods_use_current_private_tracks_metadata_album_order_and_folder_membership(
     pool: PgPool,
 ) {
@@ -363,7 +363,7 @@ async fn catalogue_methods_use_current_private_tracks_metadata_album_order_and_f
         "Current title"
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn protocol_playlist_crud_preserves_repeats_current_indices_scope_and_native_revision(
     pool: PgPool,
 ) {
@@ -454,7 +454,7 @@ async fn protocol_playlist_crud_preserves_repeats_current_indices_scope_and_nati
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stars_and_explicit_completed_plays_reuse_native_favourites_opt_out_and_replay_keys(
     pool: PgPool,
 ) {
@@ -550,7 +550,7 @@ async fn stars_and_explicit_completed_plays_reuse_native_favourites_opt_out_and_
             .is_empty()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn now_playing_is_explicit_private_by_default_opt_in_current_and_ttl_bounded(pool: PgPool) {
     let f = fixture(pool).await;
     let app = plamenu::build_router(f.state.clone());
@@ -707,7 +707,7 @@ async fn binary(
         .await
         .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn binary_stream_download_art_and_avatar_ranges_never_count_plays_and_stop_on_revocation(
     pool: PgPool,
 ) {
@@ -847,7 +847,7 @@ async fn binary_stream_download_art_and_avatar_ranges_never_count_plays_and_stop
     assert!(stream.into_body().collect().await.is_err());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn client_transcoding_uses_real_native_worker_codec_role_cap_and_head_without_admission(
     pool: PgPool,
 ) {
@@ -971,7 +971,7 @@ async fn client_transcoding_uses_real_native_worker_codec_role_cap_and_head_with
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn now_playing_limits_playable_entries_after_a_large_private_prefix_and_rechecks_own_expiry(
     pool: PgPool,
 ) {

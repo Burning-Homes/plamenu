@@ -133,7 +133,7 @@ fn rfc3339_in(minutes: i64) -> String {
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn far_future_scheduled_at_queues_instead_of_posting(pool: PgPool) {
     let (account, token) = user_with_token(&pool, "alice").await;
     let scheduled_at = rfc3339_in(30);
@@ -181,7 +181,7 @@ async fn far_future_scheduled_at_queues_instead_of_posting(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scheduled_at_in_the_past_posts_immediately(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let (status, body) = api(
@@ -198,7 +198,7 @@ async fn scheduled_at_in_the_past_posts_immediately(pool: PgPool) {
     assert!(body["scheduled_at"].is_null());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scheduled_at_within_minimum_offset_is_rejected(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let (status, _) = api(
@@ -212,7 +212,7 @@ async fn scheduled_at_within_minimum_offset_is_rejected(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn crud_show_reschedule_and_delete(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let (_, created) = api(
@@ -267,7 +267,7 @@ async fn crud_show_reschedule_and_delete(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn daily_limit_is_enforced(pool: PgPool) {
     let (account, token) = user_with_token(&pool, "alice").await;
     // Seed the day's quota directly (25 = Mastodon's DAILY_LIMIT).
@@ -317,7 +317,7 @@ async fn daily_limit_is_enforced(pool: PgPool) {
 /// UTC-bucketed cap would let them exceed their quota (and, on the other side
 /// of their midnight, cut it short). Two instants on the same Auckland day but
 /// different UTC days must share one bucket.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn daily_limit_counts_the_owners_day_not_the_utc_day(pool: PgPool) {
     let (account, token) = user_with_token(&pool, "alice").await;
     sqlx::query("UPDATE users SET time_zone = 'Pacific/Auckland' WHERE account_id = $1")
@@ -399,7 +399,7 @@ async fn daily_limit_counts_the_owners_day_not_the_utc_day(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sweeper_publishes_due_status(pool: PgPool) {
     let (account, token) = user_with_token(&pool, "alice").await;
     // A row already due (publishing-time set in the past, bypassing the API's
@@ -457,7 +457,7 @@ async fn sweeper_publishes_due_status(pool: PgPool) {
     assert_eq!(posts[0]["content"], "<p>published by the sweeper</p>");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scheduling_resolves_and_replays_the_quote_policy(pool: PgPool) {
     let (account, token) = user_with_token(&pool, "alice").await;
     // The policy is resolved to the bitmap at schedule time and surfaced as
@@ -549,7 +549,7 @@ async fn due_note(pool: &PgPool, account_id: i64, text: &str) -> scheduled_statu
     .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failed_publication_keeps_scheduled_post(pool: PgPool) {
     let (account, _) = user_with_token(&pool, "alice").await;
     let row = due_note(&pool, account.id, "Must survive a database failure").await;
@@ -595,7 +595,7 @@ async fn published_count(pool: &PgPool, account_id: i64) -> i64 {
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn abandoned_batch_is_recovered_after_restart(pool: PgPool) {
     let (account, _) = user_with_token(&pool, "alice").await;
     for n in 0..20 {
@@ -638,7 +638,7 @@ async fn abandoned_batch_is_recovered_after_restart(pool: PgPool) {
     assert_eq!(published_count(&pool, account.id).await, 20);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn expired_claim_cannot_publish_after_takeover(pool: PgPool) {
     let (account, _) = user_with_token(&pool, "alice").await;
     due_note(&pool, account.id, "Only the current claim may publish").await;
@@ -670,7 +670,7 @@ async fn expired_claim_cannot_publish_after_takeover(pool: PgPool) {
     assert_eq!(published_count(&pool, account.id).await, 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn concurrent_publication_commits_one_post_and_outbox(pool: PgPool) {
     let (account, _) = user_with_token(&pool, "alice").await;
     let remote = common::RemoteUser::new("remote.example", "bob");
@@ -706,7 +706,7 @@ async fn concurrent_publication_commits_one_post_and_outbox(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rescheduling_and_cancellation_invalidate_inflight_claims(pool: PgPool) {
     let (account, _) = user_with_token(&pool, "alice").await;
     let state = test_state_with(pool.clone(), StubFederation::with_users(&[]));
@@ -756,7 +756,7 @@ async fn rescheduling_and_cancellation_invalidate_inflight_claims(pool: PgPool) 
     assert_eq!(published_count(&pool, account.id).await, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 #[allow(
     clippy::too_many_lines,
     reason = "failure and recovery across scheduling, media, and the outbox"
@@ -865,7 +865,7 @@ async fn failed_outbox_keeps_post_and_media_reservation_for_retry(pool: PgPool) 
     assert_eq!(attachment.1, None);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn one_failed_post_does_not_block_the_batch(pool: PgPool) {
     let (account, _) = user_with_token(&pool, "alice").await;
     let failed = due_note(&pool, account.id, "Reject this scheduled post").await;

@@ -238,7 +238,7 @@ fn state_and_app(pool: PgPool) -> (AppState, Router) {
 
 // ---- Tests -------------------------------------------------------------
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn upload_creates_unconfirmed_import_and_review_page(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     create_local_account(&pool, "bob", "Bob").await;
@@ -275,7 +275,7 @@ async fn upload_creates_unconfirmed_import_and_review_page(pool: PgPool) {
     assert!(review.body.contains("following_accounts.csv"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn confirm_runs_worker_and_applies_follows(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -346,7 +346,7 @@ async fn confirm_runs_worker_and_applies_follows(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_suspended_account_import_applies_no_rows(pool: PgPool) {
     // A confirmed import claimed just before its owner self-deletes must not
     // recreate follows or federate from the tombstone.
@@ -410,7 +410,7 @@ async fn a_suspended_account_import_applies_no_rows(pool: PgPool) {
     assert_eq!(none, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn headerless_blocks_and_mute_defaults(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -453,7 +453,7 @@ async fn headerless_blocks_and_mute_defaults(pool: PgPool) {
     assert!(mute.hide_notifications);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn lists_import_creates_list_and_membership(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -480,7 +480,7 @@ async fn lists_import_creates_list_and_membership(pool: PgPool) {
     assert_eq!(members, vec![bob.id]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn overwrite_reconciles_removed_follows(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -522,7 +522,7 @@ async fn overwrite_reconciles_removed_follows(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mismatched_type_is_flagged(pool: PgPool) {
     seed_alice(&pool).await;
     let (_state, app) = state_and_app(pool.clone());
@@ -553,7 +553,7 @@ async fn mismatched_type_is_flagged(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn over_row_limit_is_rejected(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let (_state, app) = state_and_app(pool.clone());
@@ -586,7 +586,7 @@ async fn over_row_limit_is_rejected(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn upload_is_refused_at_the_pending_import_cap(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     // Fill the per-account in-flight quota with cheap zero-row imports.
@@ -665,7 +665,7 @@ async fn upload_is_refused_at_the_pending_import_cap(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn imports_are_scoped_to_their_owner(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     create_local_account(&pool, "bob", "Bob").await;
@@ -712,7 +712,7 @@ async fn imports_are_scoped_to_their_owner(pool: PgPool) {
 /// the multipart body is buffered, turns the flood away with a `429` once the
 /// budget is exhausted — while the accepted uploads never exceed the account's
 /// unfinished-import cap.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn import_uploads_are_admission_limited_per_account(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     create_local_account(&pool, "bob", "Bob").await;
@@ -777,7 +777,7 @@ async fn import_uploads_are_admission_limited_per_account(pool: PgPool) {
 /// and the review page render in the signed-in account's stored locale. The
 /// page is the only place the six import types and the archive states are
 /// named for a reader, so a missed catalog lookup shows up here as English.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn import_and_export_page_uses_stored_russian_locale(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     create_local_account(&pool, "bob", "Bob").await;
@@ -855,7 +855,7 @@ async fn import_and_export_page_uses_stored_russian_locale(pool: PgPool) {
 
 /// A refused upload redirects with a stable `?error=` code; the page re-states
 /// it from the catalog, and anything else in that parameter renders nothing.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn upload_refusal_preserves_type_and_mode_through_review(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let (_state, app) = state_and_app(pool.clone());
@@ -923,7 +923,7 @@ async fn upload_refusal_preserves_type_and_mode_through_review(pool: PgPool) {
     assert!(!unknown.body.contains("id=\"import-error\""));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn upload_refusals_are_codes_restated_in_the_readers_language(pool: PgPool) {
     let alice = seed_alice(&pool).await;
     let stored = user::find_by_account_id(&pool, alice.id)

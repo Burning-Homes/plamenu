@@ -164,7 +164,7 @@ fn create_note(bob: &RemoteUser, note_id: u64, content: &str, tag: &Value) -> Va
 // ---------------------------------------------------------------------------
 // Inbound
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_note_emoji_is_stored_and_rendered(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -230,7 +230,7 @@ async fn inbound_note_emoji_is_stored_and_rendered(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn update_note_refreshes_the_emoji_image(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -289,7 +289,7 @@ async fn update_note_refreshes_the_emoji_image(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_actor_emoji_render_on_the_account_entity(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let mut bob = RemoteUser::new("remote.example", "bob");
@@ -335,7 +335,7 @@ async fn remote_actor_emoji_render_on_the_account_entity(pool: PgPool) {
 // ---------------------------------------------------------------------------
 // Local emoji
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn custom_emojis_endpoint_lists_the_picker(pool: PgPool) {
     let visible = custom_emoji::create_local(&pool, "party", "1.png", "image/png", 0, None)
         .await
@@ -403,7 +403,7 @@ async fn custom_emojis_endpoint_lists_the_picker(pool: PgPool) {
     let _ = visible;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_status_renders_and_federates_its_emoji(pool: PgPool) {
     custom_emoji::create_local(&pool, "party", "7.png", "image/png", 0, None)
         .await
@@ -488,7 +488,7 @@ async fn local_status_renders_and_federates_its_emoji(pool: PgPool) {
     assert_eq!(history[0]["emojis"][0]["shortcode"], "party");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_status_page_renders_local_emoji_images(pool: PgPool) {
     // The web UI must swap `:shortcode:` for the emoji image everywhere the
     // entity's texts show: body, content warning, and the author's display
@@ -545,7 +545,7 @@ async fn web_status_page_renders_local_emoji_images(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_status_page_renders_remote_emoji_images(pool: PgPool) {
     // A remote post's emoji resolve against the sender's domain and render
     // from the remote image URL.
@@ -589,7 +589,7 @@ async fn web_status_page_renders_remote_emoji_images(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn delivered_create_carries_the_emoji_tag(pool: PgPool) {
     // The fanned-out Create is built separately from the object endpoint
     // (actions::post_status vs note_for_status) — both must advertise the
@@ -633,7 +633,7 @@ async fn delivered_create_carries_the_emoji_tag(pool: PgPool) {
     assert_eq!(emoji_tag["icon"]["url"], "https://plamenu.test/media/7.png");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn poll_options_carry_their_emoji(pool: PgPool) {
     custom_emoji::create_local(&pool, "party", "7.png", "image/png", 0, None)
         .await
@@ -672,7 +672,7 @@ async fn poll_options_carry_their_emoji(pool: PgPool) {
     assert_eq!(poll["emojis"][0]["shortcode"], "party");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn actor_document_carries_profile_emoji(pool: PgPool) {
     custom_emoji::create_local(&pool, "wave", "3.png", "image/png", 0, None)
         .await
@@ -703,7 +703,7 @@ async fn actor_document_carries_profile_emoji(pool: PgPool) {
     assert_eq!(entity["emojis"][0]["shortcode"], "wave");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn emoji_object_endpoint_handles_missing_and_disabled(pool: PgPool) {
     let emoji = custom_emoji::create_local(&pool, "party", "7.png", "image/png", 0, None)
         .await
@@ -734,7 +734,7 @@ async fn emoji_object_endpoint_handles_missing_and_disabled(pool: PgPool) {
     assert_eq!(code, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn proxy_cache_recodes_still_emoji_and_keeps_animated_ones(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);

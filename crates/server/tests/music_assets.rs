@@ -97,7 +97,7 @@ async fn request(f: &Fixture, path: &str, range: Option<&str>) -> axum::response
         .await
         .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn tagged_originals_are_private_reusable_deduplicated_and_range_streamed(pool: PgPool) {
     let f = fixture(pool).await;
     let a = import(&f, f.alice, true).await;
@@ -187,7 +187,7 @@ async fn tagged_originals_are_private_reusable_deduplicated_and_range_streamed(p
         StatusCode::NOT_FOUND
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn grants_revoke_metadata_and_bytes_without_social_follow_access(pool: PgPool) {
     let f = fixture(pool).await;
     let a = import(&f, f.alice, true).await;
@@ -231,7 +231,7 @@ async fn grants_revoke_metadata_and_bytes_without_social_follow_access(pool: PgP
         .unwrap();
     assert_eq!(follows, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stale_edits_foreign_deletes_and_cleanup_debt_are_atomic(pool: PgPool) {
     let f = fixture(pool).await;
     let a = import(&f, f.alice, true).await;
@@ -286,7 +286,7 @@ async fn stale_edits_foreign_deletes_and_cleanup_debt_are_atomic(pool: PgPool) {
         .unwrap();
     assert_eq!(debt, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn import_failures_leave_no_files_and_quota_rejects_before_writes(pool: PgPool) {
     let mut f = fixture(pool).await;
     Arc::make_mut(&mut f.state.config).music.per_account_mib = 0;
@@ -312,7 +312,7 @@ async fn import_failures_leave_no_files_and_quota_rejects_before_writes(pool: Pg
     assert_eq!(assets, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_deletion_revokes_assets_and_retains_global_deletion_debt(pool: PgPool) {
     let f = fixture(pool).await;
     let a = import(&f, f.alice, true).await;
@@ -342,7 +342,7 @@ async fn account_deletion_revokes_assets_and_retains_global_deletion_debt(pool: 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failed_asset_commit_retains_private_files_and_durable_cleanup_journal(pool: PgPool) {
     let f = fixture(pool).await;
     sqlx::raw_sql("CREATE FUNCTION reject_music_asset() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'asset store unavailable'; END; $$; CREATE TRIGGER reject_music_asset BEFORE INSERT ON music_assets FOR EACH ROW EXECUTE FUNCTION reject_music_asset();").execute(&f.state.pool).await.unwrap();
@@ -397,7 +397,7 @@ async fn failed_asset_commit_retains_private_files_and_durable_cleanup_journal(p
     assert_eq!(debt, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn standalone_tracks_keep_release_year_without_creating_a_fake_album(pool: PgPool) {
     let f = fixture(pool).await;
     let a = import(&f, f.alice, true).await;
@@ -451,7 +451,7 @@ fn pcm24_variant(low_bits: i32, channels: u16, rate: u32) -> Vec<u8> {
     wav.extend(data);
     wav
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn audio_deduplication_preserves_low_sample_bits_channels_and_sample_rate(pool: PgPool) {
     let f = fixture(pool).await;
     let mut ids = Vec::new();
@@ -484,7 +484,7 @@ async fn audio_deduplication_preserves_low_sample_bits_channels_and_sample_rate(
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn vorbis_and_opus_stream_tags_are_imported_with_the_original_container(pool: PgPool) {
     let f = fixture(pool).await;
     let dir = tempfile::tempdir().unwrap();

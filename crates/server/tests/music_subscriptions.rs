@@ -43,7 +43,7 @@ async fn audio(
     .0
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_library_follow_delivers_audio_without_social_follow_or_private_posts(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let remote = RemoteUser::new("songhive.test", "sylvia");
@@ -162,7 +162,7 @@ async fn signed_library_follow_delivers_audio_without_social_follow_or_private_p
     assert!(music::list(&state, subscriber.id).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbound_resource_follow_checks_owner_exact_follow_and_undo(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let remote = RemoteUser::new("songhive.test", "sylvia");
@@ -243,7 +243,7 @@ async fn outbound_resource_follow_checks_owner_exact_follow_and_undo(pool: PgPoo
     assert!(music::follow(&state, &alice, target).await.is_err());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn track_follow_repeat_undo_blocks_and_atomic_response(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let remote = RemoteUser::new("songhive.test", "sylvia");
@@ -317,7 +317,7 @@ async fn track_follow_repeat_undo_blocks_and_atomic_response(pool: PgPool) {
     assert!(music::list(&state, subscriber.id).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_library_pages_hide_deleted_private_and_wrong_actor_resources(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -384,7 +384,7 @@ async fn public_library_pages_hide_deleted_private_and_wrong_actor_resources(poo
     assert!(music::library(&state, &alice, None).await.is_err());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn metadata_resource_subscribers_receive_their_own_updates_and_tombstones(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let remote = RemoteUser::new("songhive.test", "sylvia");

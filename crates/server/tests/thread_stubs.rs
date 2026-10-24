@@ -135,7 +135,7 @@ async fn stubbed_middle(pool: &PgPool, token: &str) -> (String, String, String) 
     (root_id, mid_id, leaf_id)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn the_ap_object_of_a_stub_answers_410(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let (_, mid_id, _) = stubbed_middle(&pool, &token).await;
@@ -152,7 +152,7 @@ async fn the_ap_object_of_a_stub_answers_410(pool: PgPool) {
     assert_eq!(doc["type"], "Tombstone", "{doc}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn context_serves_the_placeholder_for_a_deleted_middle(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let (root_id, mid_id, leaf_id) = stubbed_middle(&pool, &token).await;
@@ -178,7 +178,7 @@ async fn context_serves_the_placeholder_for_a_deleted_middle(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_inbound_delete_with_a_local_reply_leaves_a_stub(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -257,7 +257,7 @@ async fn an_inbound_delete_with_a_local_reply_leaves_a_stub(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn the_web_thread_renders_a_tombstone_card(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let (_, _, leaf_id) = stubbed_middle(&pool, &token).await;
@@ -288,7 +288,7 @@ async fn the_web_thread_renders_a_tombstone_card(pool: PgPool) {
 /// straight to the builder (as a collection missing its STUBFILTER would), the
 /// wire object is a placeholder — no author words, no attachments, threading
 /// kept.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn the_note_builder_serves_a_placeholder_for_a_stub(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let (root_id, mid_id, _) = stubbed_middle(&pool, &token).await;

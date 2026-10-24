@@ -168,7 +168,7 @@ async fn recheck(f: &Fixture, name: &str) {
     f.drain(2).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_verification_preserves_missing_signals_and_has_no_imports(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     f.page(0,json!([{ "url":format!("{ORIGIN}/@alice"),"discoverable":true,"display_name":"Wrong name"}]));
@@ -212,7 +212,7 @@ async fn canonical_verification_preserves_missing_signals_and_has_no_imports(poo
     assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 3);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn directory_refusals_invalid_flags_private_profiles_and_foreign_ids_are_excluded(
     pool: PgPool,
 ) {
@@ -263,7 +263,7 @@ async fn directory_refusals_invalid_flags_private_profiles_and_foreign_ids_are_e
     assert_eq!(f.peer.requests.lock().unwrap().len(), 5);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn configured_missing_default_and_authoritative_reentry_are_applied(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     f.page(0, json!([hint("alice")]));
@@ -296,7 +296,7 @@ async fn configured_missing_default_and_authoritative_reentry_are_applied(pool: 
     assert!(profiles::eligible(&f.state, &uri).await.unwrap().is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn refresh_expiry_access_denial_and_deletion_do_not_poison_other_profiles(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     f.page(0, json!([hint("alice"), hint("bob")]));
@@ -339,7 +339,7 @@ async fn refresh_expiry_access_denial_and_deletion_do_not_poison_other_profiles(
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn verified_revocation_fences_an_older_inflight_positive_result(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     f.page(0, json!([hint("alice")]));
@@ -371,7 +371,7 @@ async fn verified_revocation_fences_an_older_inflight_positive_result(pool: PgPo
     assert!(profiles::eligible(&f.state, &uri).await.unwrap().is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_block_hides_and_invalidates_cached_profile_without_fetching(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     f.page(0, json!([hint("alice")]));
@@ -405,7 +405,7 @@ async fn local_block_hides_and_invalidates_cached_profile_without_fetching(pool:
     assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, before);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sampling_advances_after_a_bounded_round_instead_of_repeating_the_first_page(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     for offset in [0_u8, 20] {
@@ -441,7 +441,7 @@ async fn sampling_advances_after_a_bounded_round_instead_of_repeating_the_first_
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unavailable_directory_is_backed_off_without_claiming_capability(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let url =
@@ -472,7 +472,7 @@ fn malformed_directory_shape_and_foreign_hints_never_gain_authority() {
 
 /// Explicit opt-in: reads the configured development instance signer but writes
 /// discovery state only to the disposable test database. No peer mutation.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 #[ignore = "requires the owned Mastodon peer and PLAMENU_DISCOVERY_LIVE_CONFIG"]
 async fn owned_mastodon_directory_round_trip(pool: PgPool) {
     let path =
@@ -559,7 +559,7 @@ async fn owned_mastodon_directory_round_trip(pool: PgPool) {
     signer_pool.close().await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn silenced_domain_is_excluded_even_though_it_can_still_federate(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     f.page(0, json!([hint("alice")]));
@@ -599,7 +599,7 @@ async fn silenced_domain_is_excluded_even_though_it_can_still_federate(pool: PgP
     assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, before);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_refusal_clears_old_text_even_when_profile_metadata_is_malformed(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     f.page(0, json!([hint("alice")]));
@@ -621,7 +621,7 @@ async fn canonical_refusal_clears_old_text_even_when_profile_metadata_is_malform
     assert!(profiles::eligible(&f.state, &uri).await.unwrap().is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn first_fetch_tombstone_guard_requires_a_known_canonical_recheck(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let uri = format!("{ORIGIN}/users/alice");

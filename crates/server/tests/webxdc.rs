@@ -73,7 +73,7 @@ fn library_package_with_description(
     writer.finish().unwrap().into_inner()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn session_creation_unifies_app_choice_metadata_and_standard_defaults(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     plamenu_db::user::create(&pool, alice.id, None, "unused")
@@ -325,7 +325,7 @@ async fn post_signed(
         .status()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn actor_bundle_landing_and_isolated_runtime_are_distinct_surfaces(pool: PgPool) {
     let (state, alice, session) = local_session(&pool).await;
     let app = build_router(state.clone());
@@ -503,7 +503,7 @@ async fn actor_bundle_landing_and_isolated_runtime_are_distinct_surfaces(pool: P
     assert_eq!(cert_refused.status(), StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn invitation_is_an_ordinary_note_with_stable_fep_enhancement(pool: PgPool) {
     let (state, alice, session) = local_session(&pool).await;
     let before = sqlx::query_scalar!(
@@ -551,7 +551,7 @@ async fn invitation_is_an_ordinary_note_with_stable_fep_enhancement(pool: PgPool
     assert_eq!(after, 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unsupported_server_visitor_can_join_and_update_as_session_guest(pool: PgPool) {
     let (state, _alice, session) = local_session(&pool).await;
     let app = build_router(state);
@@ -629,7 +629,7 @@ async fn unsupported_server_visitor_can_join_and_update_as_session_guest(pool: P
     assert_eq!(stored[0].actor_uri, guest.participant_uri);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admission_boundary_replay_and_live_fanout_share_the_durable_log(pool: PgPool) {
     let (state, alice, session) = local_session(&pool).await;
     let first = protocol::submit_update(
@@ -704,7 +704,7 @@ async fn admission_boundary_replay_and_live_fanout_share_the_durable_log(pool: P
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_inbox_requires_the_marker_sequences_once_and_honors_undo(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -825,7 +825,7 @@ async fn signed_inbox_requires_the_marker_sequences_once_and_honors_undo(pool: P
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn owner_delete_federates_then_purges_application_state_and_serves_gone(pool: PgPool) {
     let (state, alice, session) = local_session(&pool).await;
     protocol::submit_update(
@@ -1048,7 +1048,7 @@ async fn owner_delete_federates_then_purges_application_state_and_serves_gone(po
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn coordinator_accounts_stay_out_of_generic_account_and_group_surfaces(pool: PgPool) {
     let (state, alice, session) = local_session(&pool).await;
     let coordinator = account::find_by_id(&pool, session.account_id)
@@ -1158,7 +1158,7 @@ async fn coordinator_accounts_stay_out_of_generic_account_and_group_surfaces(poo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn lifecycle_hides_idle_session_then_purges_it_after_the_grace_period(pool: PgPool) {
     let (state, alice, session) = local_session(&pool).await;
     sqlx::query!(
@@ -1205,7 +1205,7 @@ async fn lifecycle_hides_idle_session_then_purges_it_after_the_grace_period(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn storage_quota_refuses_an_update_without_allocating_a_serial(pool: PgPool) {
     let (state, alice, session) = local_session(&pool).await;
     let limits = db::Limits {
@@ -1250,7 +1250,7 @@ async fn storage_quota_refuses_an_update_without_allocating_a_serial(pool: PgPoo
     assert!(db::all_updates(&pool, session.id).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn leaving_the_last_local_remote_membership_sends_undo_and_drops_the_cache(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), Arc::<StubFederation>::default());
@@ -1279,7 +1279,7 @@ async fn leaving_the_last_local_remote_membership_sends_undo_and_drops_the_cache
     assert_eq!(queued[0].account_id, Some(alice.id));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authenticated_remote_delete_is_idempotent_and_purges_the_cached_session(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (coordinator, session) = cached_remote_session(&pool, &alice).await;
@@ -1403,7 +1403,7 @@ async fn ephemeral_bytes(socket: &mut TestSocket) -> Vec<u8> {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ephemeral_websockets_deliver_binary_without_storage_or_replay_and_close_on_revocation(
     pool: PgPool,
 ) {
@@ -1502,7 +1502,7 @@ async fn ephemeral_websockets_deliver_binary_without_storage_or_replay_and_close
     server.abort();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ephemeral_signed_federation_authenticates_and_bypasses_durable_jobs(pool: PgPool) {
     use plamenu::webxdc_realtime as realtime;
     let (mut state, alice, session) = local_session(&pool).await;
@@ -1616,7 +1616,7 @@ async fn ephemeral_account_cookie(pool: &PgPool, account: &plamenu_db::account::
     format!("__Host-plamenu_session={token}")
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ephemeral_remote_host_accepts_only_its_coordinator_and_sends_without_a_job(pool: PgPool) {
     use futures_util::{SinkExt as _, StreamExt as _};
     use plamenu::webxdc_realtime as realtime;
@@ -1720,7 +1720,7 @@ async fn ephemeral_remote_host_accepts_only_its_coordinator_and_sends_without_a_
     server.abort();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cached_remote_app_runs_on_its_local_isolated_origin(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let (_, session) = cached_remote_session(&pool, &alice).await;
@@ -1771,7 +1771,7 @@ fn compose_multipart(fields: &[(&str, &str)]) -> String {
     body
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn full_composer_previews_and_posts_an_invitation_then_edit_can_remove_it(pool: PgPool) {
     let (state, alice, session) = local_session(&pool).await;
     let cookie = ephemeral_account_cookie(&pool, &alice).await;
@@ -1900,7 +1900,7 @@ async fn full_composer_previews_and_posts_an_invitation_then_edit_can_remove_it(
     assert!(entity["webxdc_invitation"].is_null());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_invitation_card_does_not_download_or_start_the_app(pool: PgPool) {
     let remote = RemoteUser::new("remote.example", "alice");
     let author = plamenu::remote::store_remote_actor(&pool, &remote.actor)
@@ -1942,7 +1942,7 @@ async fn remote_invitation_card_does_not_download_or_start_the_app(pool: PgPool)
     assert!(entity["webxdc_invitation"].is_null());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scheduled_invitation_uses_the_same_posting_path(pool: PgPool) {
     let (state, alice, session) = local_session(&pool).await;
     let text = format!("Join this app: {}", session.coordinator_uri);
@@ -2044,7 +2044,7 @@ async fn upload_package(
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn upload_limits_are_live_and_multipart_failures_preserve_the_form(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), Arc::<StubFederation>::default());
@@ -2161,7 +2161,7 @@ fn package_limits_reject_expansion_and_individual_files_independently() {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_webxdc_limits_save_independently_and_validate_storage_budget(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let cookie = ephemeral_account_cookie(&pool, &alice).await;
@@ -2252,7 +2252,7 @@ fn storage_package(length: usize, fill: u8) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn identical_packages_share_storage_and_cleanup_preserves_other_sessions(pool: PgPool) {
     let (state, alice, first) = local_session(&pool).await;
     let bytes = db::bundle(&pool, first.id).await.unwrap().unwrap();
@@ -2308,7 +2308,7 @@ async fn identical_packages_share_storage_and_cleanup_preserves_other_sessions(p
     assert_eq!(files, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn personal_library_promotes_reuses_and_retains_immutable_packages(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     plamenu_db::user::create(&pool, alice.id, None, "unused")
@@ -2453,7 +2453,7 @@ fn package_metadata_is_bounded_and_filename_fallback_is_portable() {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn external_catalog_is_advisory_guarded_and_imported_hidden(pool: PgPool) {
     let moderator = create_local_account(&pool, "moderator", "Moderator").await;
     plamenu_db::user::create(&pool, moderator.id, None, "unused")
@@ -2573,7 +2573,7 @@ async fn external_catalog_is_advisory_guarded_and_imported_hidden(pool: PgPool) 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_quota_counts_distinct_apps_and_server_quota_serializes_creations(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     plamenu_db::user::create(&pool, alice.id, None, "unused")
@@ -2659,7 +2659,7 @@ async fn admin_request(
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn app_index_cards_show_identity_activity_people_and_explicit_details(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     plamenu_db::user::create(&pool, alice.id, None, "unused")
@@ -2718,7 +2718,7 @@ async fn app_index_cards_show_identity_activity_people_and_explicit_details(pool
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_app_library_is_compact_searchable_and_identifies_owners(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice Admin").await;
     plamenu_db::user::create(&pool, alice.id, None, "unused")
@@ -2830,7 +2830,7 @@ async fn admin_app_library_is_compact_searchable_and_identifies_owners(pool: PgP
     assert!(!html.contains(">More</summary>"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn creation_permission_is_not_staff_and_admin_actions_require_permission_and_csrf(
     pool: PgPool,
 ) {

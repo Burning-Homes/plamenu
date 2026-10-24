@@ -191,7 +191,7 @@ pub async fn unreachable_hosts(pool: &PgPool) -> Result<Vec<HostReachability>, D
 mod tests {
     use super::*;
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn transient_failures_open_the_breaker_only_after_a_long_streak(pool: PgPool) {
         // Nine transient failures: under the counter threshold, closed.
         for _ in 0..UNREACHABLE_MIN_FAILURES - 1 {
@@ -229,7 +229,7 @@ mod tests {
         assert_eq!(row.unreachable_since, stamp);
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn open_breaker_eventually_abandons_until_proven_success(pool: PgPool) {
         sqlx::query!(
             "INSERT INTO host_reachability
@@ -252,7 +252,7 @@ mod tests {
         assert!(row.unreachable_since.is_none());
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn alive_but_unwilling_hosts_never_open_the_breaker(pool: PgPool) {
         for class in [CLASS_GONE, CLASS_PERMANENT, CLASS_RATE_LIMITED] {
             for _ in 0..UNREACHABLE_MIN_FAILURES + 2 {
@@ -268,7 +268,7 @@ mod tests {
         assert_eq!(row.last_failure_class.as_deref(), Some(CLASS_RATE_LIMITED));
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn success_closes_the_breaker_and_resets_the_streak(pool: PgPool) {
         record_failure(&pool, "flaky.example", CLASS_TRANSIENT, "timeout")
             .await
@@ -296,7 +296,7 @@ mod tests {
         assert!(find(&pool, "healthy.example").await.unwrap().is_none());
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn probe_slot_is_claimed_once_per_interval(pool: PgPool) {
         record_failure(&pool, "down.example", CLASS_TRANSIENT, "timeout")
             .await

@@ -126,7 +126,7 @@ fn sha256_hex(value: &str) -> String {
         })
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn suspended_domain_skips_delivery_and_hides_existing_remote_content(pool: PgPool) {
     common::open_previews(&pool).await;
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -211,7 +211,7 @@ async fn suspended_domain_skips_delivery_and_hides_existing_remote_content(pool:
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn allowlist_denies_unlisted_remote_resolution_without_fetch(pool: PgPool) {
     instance_policy::create_domain_allow(&pool, "friend.example")
         .await
@@ -233,7 +233,7 @@ async fn allowlist_denies_unlisted_remote_resolution_without_fetch(pool: PgPool)
     assert!(stub.fetches().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oauth_login_rejects_email_canonical_and_no_access_ip_blocks(pool: PgPool) {
     let client_id = register_app(&pool).await;
     create_user(&pool, "blocked", "blocked@spam.example").await;
@@ -336,7 +336,7 @@ async fn limit_domain(pool: &PgPool, domain: &str, reject_media: bool, reject_re
     .unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reject_reports_drops_inbound_flags(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     limit_domain(&pool, "reporty.example", false, true).await;
@@ -431,7 +431,7 @@ fn create_with_media(user: &RemoteUser) -> Value {
     })
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reject_media_skips_attachment_profile_and_emoji_caching(pool: PgPool) {
     limit_domain(&pool, "flashy.example", true, false).await;
 
@@ -495,7 +495,7 @@ async fn reject_media_skips_attachment_profile_and_emoji_caching(pool: PgPool) {
     assert!(stub.media_fetches().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn late_reject_media_block_abandons_queued_downloads(pool: PgPool) {
     let bob = RemoteUser::new("late.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);

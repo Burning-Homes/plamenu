@@ -3,7 +3,7 @@
 //! preferences, app credential verification), notification type filtering,
 //! and the favourites listings.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -152,7 +152,7 @@ async fn post_status(pool: &PgPool, token: &str, body: Value) -> Value {
 // ---------------------------------------------------------------------------
 // Bootstrap stubs
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_stub_endpoints_serve_empty_arrays(pool: PgPool) {
     for uri in [
         "/api/v1/custom_emojis",
@@ -167,7 +167,7 @@ async fn public_stub_endpoints_serve_empty_arrays(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_endpoints_accept_mastodon_py_trailing_slashes(pool: PgPool) {
     // Mastodon.py requests `/api/v{1,2}/instance/` with a trailing slash;
     // Rails collapses it, axum routes it separately. Without the aliases the
@@ -179,7 +179,7 @@ async fn instance_endpoints_accept_mastodon_py_trailing_slashes(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authenticated_stub_endpoints_require_a_token(pool: PgPool) {
     // `followed_tags` is a real endpoint now (covered in `tags.rs`); only
     // `announcements` remains an always-empty stub.
@@ -192,7 +192,7 @@ async fn authenticated_stub_endpoints_require_a_token(pool: PgPool) {
     assert_eq!(body, json!([]), "{uri}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn preferences_serve_mastodon_defaults(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
 
@@ -244,7 +244,7 @@ async fn preferences_serve_mastodon_defaults(pool: PgPool) {
     assert_eq!(prefs["posting:default:visibility"], "private");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stored_preferences_feed_api_and_compose_defaults(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let user_row = user::find_by_email(&pool, "alice@plamenu.test")
@@ -330,7 +330,7 @@ async fn stored_preferences_feed_api_and_compose_defaults(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn apps_verify_credentials_returns_the_tokens_app(pool: PgPool) {
     // Without (or with a bogus) token: Mastodon's 401.
     let (status, body) = api(
@@ -432,7 +432,7 @@ async fn seed_notifications(pool: &PgPool) -> (Account, String, Account, String)
     (alice, alice_token, bob, bob_token)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn notifications_filter_by_types_and_exclude_types(pool: PgPool) {
     let (_alice, alice_token, bob, _bob_token) = seed_notifications(&pool).await;
 
@@ -533,7 +533,7 @@ async fn notifications_filter_by_types_and_exclude_types(pool: PgPool) {
 // ---------------------------------------------------------------------------
 // Favourites listings
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn favourites_index_lists_favourited_statuses(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -622,7 +622,7 @@ async fn favourites_index_lists_favourited_statuses(pool: PgPool) {
     assert_eq!(body, json!([]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn favourited_by_and_reblogged_by_list_accounts(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;

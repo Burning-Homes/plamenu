@@ -99,7 +99,7 @@ async fn bytes(f: &Fixture, job: i64, key: Option<&str>) -> axum::response::Resp
         .await
         .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn durable_singleflight_encodes_real_audio_and_rechecks_acl_before_every_range(pool: PgPool) {
     let f = fixture(pool).await;
     let job = create(&f).await;
@@ -170,7 +170,7 @@ async fn durable_singleflight_encodes_real_audio_and_rechecks_acl_before_every_r
         .unwrap();
     assert_eq!(debt, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cache_retirement_preserves_quota_debt_until_physical_cleanup(pool: PgPool) {
     let mut f = fixture(pool).await;
     let job = create(&f).await;
@@ -241,7 +241,7 @@ async fn started(marker: &std::path::Path) {
     .await
     .unwrap();
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cancellation_kills_inflight_encoder_and_keeps_durable_cleanup_charge(pool: PgPool) {
     let f = fixture(pool).await;
     let job = create(&f).await;
@@ -283,7 +283,7 @@ async fn cancellation_kills_inflight_encoder_and_keeps_durable_cleanup_charge(po
         .unwrap();
     assert_eq!(debt, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn expired_lease_uses_new_key_and_stale_encoder_cannot_retire_successor(pool: PgPool) {
     let f = fixture(pool).await;
     let job = create(&f).await;
@@ -332,7 +332,7 @@ async fn expired_lease_uses_new_key_and_stale_encoder_cannot_retire_successor(po
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn revoked_grant_aborts_requester_job_and_asset_deletion_retires_ready_cache(pool: PgPool) {
     let f = fixture(pool).await;
     plamenu::music_assets::grant(&f.state, f.owner, f.asset, f.reader, true)
@@ -386,7 +386,7 @@ async fn revoked_grant_aborts_requester_job_and_asset_deletion_retires_ready_cac
         .unwrap();
     assert_eq!(rows, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn queue_and_active_scratch_admission_remain_bounded(pool: PgPool) {
     let mut f = fixture(pool).await;
     Arc::make_mut(&mut f.state.config).music.rendition_jobs = 1;
@@ -425,7 +425,7 @@ async fn queue_and_active_scratch_admission_remain_bounded(pool: PgPool) {
             .unwrap()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ready_renditions_count_against_new_upload_budget_and_retirement_journals(pool: PgPool) {
     let mut f = fixture(pool).await;
     let job = create(&f).await;
@@ -489,7 +489,7 @@ async fn ready_renditions_count_against_new_upload_budget_and_retirement_journal
             .unwrap();
     assert_eq!(debt, ready.size_bytes);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_cached_bitrate_cannot_bypass_current_member_ceiling(pool: PgPool) {
     let mut f = fixture(pool).await;
     Arc::make_mut(&mut f.state.config).music.user_max_bitrate = 320;
@@ -570,7 +570,7 @@ async fn shared_request(
         .await
         .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn share_format_forms_prepare_private_audio_and_revoke_all_cached_byte_aliases(pool: PgPool) {
     let f = fixture(pool).await;
     let link = share(&f).await;
@@ -654,7 +654,7 @@ async fn share_format_forms_prepare_private_audio_and_revoke_all_cached_byte_ali
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn share_principal_retirement_cannot_downgrade_an_inflight_job_to_anonymous(pool: PgPool) {
     let f = fixture(pool).await;
     let link = share(&f).await;
@@ -714,7 +714,7 @@ async fn share_principal_retirement_cannot_downgrade_an_inflight_job_to_anonymou
         "account"
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn share_collection_renditions_preserve_exact_membership_and_foreign_asset_acl(pool: PgPool) {
     let f = fixture(pool).await;
     let collection = plamenu::music_collections::create(
@@ -935,27 +935,27 @@ async fn cold_format(pool: PgPool, format: &str, magic: &[u8]) {
         .unwrap();
     assert_eq!(range.status(), StatusCode::PARTIAL_CONTENT);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cold_mp3_delivers_decodable_audio_before_encoder_finishes(pool: PgPool) {
     cold_format(pool, "mp3", b"ID3").await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cold_vorbis_delivers_decodable_audio_before_encoder_finishes(pool: PgPool) {
     cold_format(pool, "ogg", b"OggS").await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cold_flac_delivers_decodable_audio_before_encoder_finishes(pool: PgPool) {
     cold_format(pool, "flac", b"fLaC").await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cold_aac_delivers_fragmented_mp4_before_encoder_finishes(pool: PgPool) {
     cold_format(pool, "aac", b"ftyp").await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cold_opus_delivers_decodable_audio_before_encoder_finishes(pool: PgPool) {
     cold_format(pool, "opus", b"OggS").await;
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cold_listener_drop_cancels_running_work_but_explicit_prebuild_survives(pool: PgPool) {
     let f = fixture(pool).await;
     let (state, marker) = blocked(&f);
@@ -986,7 +986,7 @@ async fn cold_listener_drop_cancels_running_work_but_explicit_prebuild_survives(
             .unwrap()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cold_head_does_not_admit_jobs_and_listener_limits_precede_encoding(pool: PgPool) {
     let f = fixture(pool).await;
     sqlx::query("UPDATE music_assets SET visibility='public' WHERE id=$1")
@@ -1042,7 +1042,7 @@ async fn cold_head_does_not_admit_jobs_and_listener_limits_precede_encoding(pool
         "cancelled"
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cold_share_revocation_stops_body_and_encoder_before_remaining_private_audio(pool: PgPool) {
     use http_body_util::BodyExt;
     let f = fixture(pool).await;
@@ -1092,7 +1092,7 @@ async fn cold_share_revocation_stops_body_and_encoder_before_remaining_private_a
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cold_visibility_revocation_stops_public_stream_and_retains_cleanup_debt(pool: PgPool) {
     use http_body_util::BodyExt;
     let f = fixture(pool).await;
@@ -1135,7 +1135,7 @@ async fn cold_visibility_revocation_stops_public_stream_and_retains_cleanup_debt
         .unwrap();
     assert_eq!(count, 1);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cold_embed_codec_gate_ignores_credentials_and_capabilities_before_admission(pool: PgPool) {
     let f = fixture(pool).await;
     let link = share(&f).await;

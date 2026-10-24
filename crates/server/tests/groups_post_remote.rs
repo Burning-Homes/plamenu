@@ -112,7 +112,7 @@ async fn announce_own_post_back(
     post_signed(app, &announce, community).await
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn subscribed_titled_post_reaches_the_community_inbox_as_a_page(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let hiking = community("hiking");
@@ -173,7 +173,7 @@ async fn subscribed_titled_post_reaches_the_community_inbox_as_a_page(pool: PgPo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn subscribed_untitled_post_federates_as_a_note(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let hiking = community("hiking");
@@ -206,7 +206,7 @@ async fn subscribed_untitled_post_federates_as_a_note(pool: PgPool) {
     assert_eq!(create.activity["object"]["audience"], hiking.actor.id);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn posting_to_an_unfollowed_community_is_allowed(pool: PgPool) {
     // We don't own a remote community's policy, so we defer to it: a user
     // may post without following first; the remote enforces its own rules and
@@ -244,7 +244,7 @@ async fn posting_to_an_unfollowed_community_is_allowed(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn community_announce_of_own_post_attributes_without_duplicating(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let hiking = community("hiking");
@@ -313,7 +313,7 @@ async fn community_announce_of_own_post_attributes_without_duplicating(pool: PgP
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edit_of_a_community_post_reaches_the_community_inbox(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let hiking = community("hiking");
@@ -363,7 +363,7 @@ async fn edit_of_a_community_post_reaches_the_community_inbox(pool: PgPool) {
     assert_eq!(update.activity["object"]["content"], "<p>after</p>");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn delete_of_a_community_post_reaches_the_community_inbox(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let hiking = community("hiking");
@@ -408,7 +408,7 @@ async fn delete_of_a_community_post_reaches_the_community_inbox(pool: PgPool) {
 /// fan-out, so the reply stays invisible on the origin (the reported bug). The
 /// parent is attributed to the community by a BOOST row (not a mention), which
 /// the mention-based reply discovery used to miss entirely.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reply_to_a_consumed_community_post_reaches_the_community_inbox(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let hiking = community("hiking");
@@ -514,7 +514,7 @@ async fn reply_to_a_consumed_community_post_reaches_the_community_inbox(pool: Pg
 /// it back — the same claim we serve as the post's `audience`, so there is
 /// nothing to fetch from ourselves. Without both, the lock silently vanished
 /// and the member's own copy stayed open.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn community_lock_of_our_members_own_post_reaches_the_member(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let hiking = community("hiking");
@@ -605,7 +605,7 @@ async fn community_lock_of_our_members_own_post_reaches_the_member(pool: PgPool)
 /// the boost row keeps whichever id arrived first, while the retraction can
 /// only ever name the compat one. Matching the boost by what the Announce
 /// points *at* is what makes a removal actually remove.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn community_retraction_removes_the_attribution_it_recorded(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let hiking = community("hiking");

@@ -80,7 +80,7 @@ async fn oauth_token(state: &AppState, user: i64, scopes: &str) -> (i64, String)
     .unwrap();
     (row.id, token)
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn client_passwords_support_encoded_keys_and_salted_auth_without_plaintext_storage(
     pool: PgPool,
 ) {
@@ -153,7 +153,7 @@ async fn client_passwords_support_encoded_keys_and_salted_auth_without_plaintext
     assert!(authenticate(&state, &api).await.is_err());
     assert!(authenticate(&state, &salted).await.is_err());
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn client_parent_grants_expiry_scope_changes_and_operator_key_rotation_are_current(
     pool: PgPool,
 ) {
@@ -225,7 +225,7 @@ async fn client_parent_grants_expiry_scope_changes_and_operator_key_rotation_are
     sqlx::query("UPDATE music_client_keys SET expires_at=now()-interval '1 second',created_at=now()-interval '2 days' WHERE id=$1").bind(independent.key.id).execute(&state.pool).await.unwrap();
     assert!(principal.current(&state).await.is_err());
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn password_auth_uses_native_login_policy_and_client_keys_cannot_bypass_account_retirement(
     pool: PgPool,
 ) {
@@ -322,7 +322,7 @@ async fn text(response: axum::response::Response) -> String {
     )
     .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_client_forms_show_password_once_require_csrf_and_keep_one_music_workspace(
     pool: PgPool,
 ) {
@@ -435,7 +435,7 @@ async fn native_client_forms_show_password_once_require_csrf_and_keep_one_music_
     assert!(authenticate(&state, &credentials(password)).await.is_err());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn legacy_password_clients_reuse_verification_and_close_on_password_or_mfa_changes(
     pool: PgPool,
 ) {

@@ -362,7 +362,7 @@ mod tests {
             .id
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn challenge_lifecycle(pool: PgPool) {
         let user_id = seed_user(&pool).await;
         create_challenge(&pool, "hash-1", user_id, "web", None)
@@ -393,7 +393,7 @@ mod tests {
         );
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn challenge_attempt_cap_invalidates(pool: PgPool) {
         let user_id = seed_user(&pool).await;
         create_challenge(&pool, "hash-1", user_id, "web", None)
@@ -416,7 +416,7 @@ mod tests {
         );
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn challenge_consumes_once(pool: PgPool) {
         let user_id = seed_user(&pool).await;
         create_challenge(&pool, "hash-1", user_id, "web", None)
@@ -442,7 +442,7 @@ mod tests {
     /// claim always carries the credential update, a lost claim never touches
     /// the credential, and concurrent completions of one challenge admit
     /// exactly one winner.
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn consume_with_credential_update_is_atomic_and_single_winner(pool: PgPool) {
         let user_id = seed_user(&pool).await;
         let cred = crate::webauthn_credential::create(
@@ -523,7 +523,7 @@ mod tests {
         assert_eq!(winners, 1, "exactly one concurrent completion may win");
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn backup_codes_consume_once(pool: PgPool) {
         let user_id = seed_user(&pool).await;
         replace_backup_codes(&pool, user_id, &["a".to_owned(), "b".to_owned()])
@@ -546,7 +546,7 @@ mod tests {
     /// requirement, and replaces the recovery codes as one transaction. A failed
     /// step leaves nothing half-applied — 2FA is never on without freshly issued
     /// codes, and a rolled-back attempt does not consume its timestep.
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn confirm_otp_enrollment_is_all_or_nothing(pool: PgPool) {
         let user_id = seed_user(&pool).await;
         let codes = vec!["c1".to_owned(), "c2".to_owned()];

@@ -81,7 +81,7 @@ async fn bytes(response: Response) -> Vec<u8> {
         .to_bytes()
         .to_vec()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_syndication_filters_before_limit_and_round_trips_both_feed_readers(
     pool: PgPool,
 ) {
@@ -123,7 +123,7 @@ async fn collection_syndication_filters_before_limit_and_round_trips_both_feed_r
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn current_permission_and_source_changes_precede_feed_conditional_not_modified(pool: PgPool) {
     let (state, owner, _, parent) = fixture(pool).await;
     let asset = track(&state, owner, parent.id, "First title", "public").await;
@@ -184,7 +184,7 @@ async fn current_permission_and_source_changes_precede_feed_conditional_not_modi
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn podcast_collection_feed_preserves_typed_enclosures_and_repeat_identity_without_listen_events(
     pool: PgPool,
 ) {
@@ -238,7 +238,7 @@ async fn podcast_collection_feed_preserves_typed_enclosures_and_repeat_identity_
     assert_eq!(played, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn profile_feeds_use_native_post_privacy_and_actual_audio_mime_and_hide_retired_profiles(
     pool: PgPool,
 ) {
@@ -320,7 +320,7 @@ async fn profile_feeds_use_native_post_privacy_and_actual_audio_mime_and_hide_re
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn artist_release_feed_keeps_standalone_tracks_when_album_is_hidden_and_merges_latest_visible_releases(
     pool: PgPool,
 ) {
@@ -401,7 +401,7 @@ async fn artist_release_feed_keeps_standalone_tracks_when_album_is_hidden_and_me
     assert!(music_feeds::artist(&state, artist, None, 50).await.is_err());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn term_feeds_merge_exact_visible_entities_and_collections_before_limits(pool: PgPool) {
     use plamenu::music_feeds::Term;
     let (state, owner, _, parent) = fixture(pool).await;
@@ -519,7 +519,7 @@ async fn term_feeds_merge_exact_visible_entities_and_collections_before_limits(p
             .any(|item| item.link.contains("/music/collections/"))
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn music_term_browse_pages_link_to_current_sources_and_advertise_both_feeds(pool: PgPool) {
     let (state, owner, _, parent) = fixture(pool).await;
     let asset = track(&state, owner, parent.id, "Genre page track", "public").await;
@@ -561,7 +561,7 @@ async fn music_term_browse_pages_link_to_current_sources_and_advertise_both_feed
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn tagged_posts_merge_with_native_music_and_disappear_after_block_or_delete(pool: PgPool) {
     use plamenu::actions::{self, PostParams};
     let (state, owner, viewer, parent) = fixture(pool).await;
@@ -623,7 +623,7 @@ async fn tagged_posts_merge_with_native_music_and_disappear_after_block_or_delet
     assert!(!xml.contains("listening notes"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn large_episode_notes_remain_bounded_valid_feeds_and_metadata_edits_change_etags(
     pool: PgPool,
 ) {
@@ -696,7 +696,7 @@ async fn large_episode_notes_remain_bounded_valid_feeds_and_metadata_edits_chang
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_share_feeds_preserve_exact_child_scope_and_recheck_before_304(pool: PgPool) {
     use plamenu::{
         music_saved::{Kind, Reference},
@@ -822,7 +822,7 @@ async fn collection_share_feeds_preserve_exact_child_scope_and_recheck_before_30
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn term_browse_keysets_reach_every_source_and_recheck_visibility(pool: PgPool) {
     use music_feeds::Term;
     use std::collections::HashSet;

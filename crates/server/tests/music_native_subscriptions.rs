@@ -5,13 +5,10 @@ use axum::{
 };
 use common::{StubFederation, create_local_account, test_state_with};
 use http_body_util::BodyExt;
-use plamenu::{
-    auth::{hash_password, hash_secret},
-    music_entities::Kind,
-};
+use plamenu::{auth::hash_secret, music_entities::Kind};
 use plamenu_db::{PgPool, id, user};
 use tower::ServiceExt;
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_artist_album_and_library_controls_use_music_follows_and_return_to_the_resource(
     pool: PgPool,
 ) {
@@ -21,7 +18,7 @@ async fn native_artist_album_and_library_controls_use_music_follows_and_return_t
         &pool,
         viewer,
         Some("bob@example.test"),
-        &hash_password("fixture-password").unwrap(),
+        &common::fixture_password_hash(),
     )
     .await
     .unwrap();

@@ -23,7 +23,7 @@ fn config(visibility: &str) -> New {
         visibility: visibility.into(),
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_station_config_never_appears_in_public_or_granted_views(pool: PgPool) {
     let (state, owner, viewer) = fixture(pool).await;
     let radio = music_radios::create(&state, owner, &config("private"))
@@ -78,7 +78,7 @@ async fn private_station_config_never_appears_in_public_or_granted_views(pool: P
         .await
         .unwrap();
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn current_blocks_mutes_and_retirement_override_station_grants(pool: PgPool) {
     let (state, owner, viewer) = fixture(pool).await;
     let radio = music_radios::create(&state, owner, &config("public"))
@@ -144,7 +144,7 @@ async fn current_blocks_mutes_and_retirement_override_station_grants(pool: PgPoo
         Err(ApiError::NotFound)
     ));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn revision_checks_serialize_competing_edits_and_refuse_foreign_deletion(pool: PgPool) {
     let (state, owner, viewer) = fixture(pool).await;
     let radio = music_radios::create(&state, owner, &config("private"))
@@ -179,7 +179,7 @@ async fn revision_checks_serialize_competing_edits_and_refuse_foreign_deletion(p
         Err(ApiError::NotFound)
     ));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn station_limits_are_owned_and_configuration_remains_bounded_opaque_text(pool: PgPool) {
     let (state, owner, viewer) = fixture(pool).await;
     let mut input = config("private");
@@ -215,7 +215,7 @@ async fn station_limits_are_owned_and_configuration_remains_bounded_opaque_text(
     assert_eq!(second.len(), 50);
     assert!(second.iter().all(|r| r.id < page[49].id));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_purge_cleans_station_settings_and_shared_memberships(pool: PgPool) {
     let (state, owner, viewer) = fixture(pool).await;
     let radio = music_radios::create(&state, owner, &config("private"))
@@ -268,7 +268,7 @@ async fn account_purge_cleans_station_settings_and_shared_memberships(pool: PgPo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn radio_api_scopes_and_owner_config_redaction_remain_independent(pool: PgPool) {
     use axum::{
         body::Body,
@@ -367,7 +367,7 @@ async fn radio_api_scopes_and_owner_config_redaction_remain_independent(pool: Pg
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_catalogue_respects_preview_policy_and_never_grants_private_access(pool: PgPool) {
     use axum::{
         body::Body,
@@ -468,7 +468,7 @@ async fn anonymous_catalogue_respects_preview_policy_and_never_grants_private_ac
     assert_eq!(page.status(), StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn station_search_filters_before_paging_and_never_searches_hidden_configuration(
     pool: PgPool,
 ) {

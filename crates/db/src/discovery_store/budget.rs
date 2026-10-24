@@ -14,6 +14,22 @@ pub enum Reservation {
     Budget,
 }
 
+fn request_purpose(lease: &Lease) -> &'static str {
+    if lease.exploration {
+        "exploration"
+    } else if lease.operation == "refresh_presentation"
+        || (lease.entry_revision.is_some()
+            && matches!(
+                lease.operation.as_str(),
+                "refresh_entry" | "revalidate_entry"
+            ))
+    {
+        "maintenance"
+    } else {
+        "acquisition"
+    }
+}
+
 /// Each wire attempt, including redirects and signature negotiation, reserves
 /// a full body before network I/O. The row lock makes all limits process-wide.
 /// Discovery currently follows only same-origin redirects; new origins need
@@ -42,19 +58,7 @@ pub async fn reserve_request(
         count(*) FILTER (WHERE NOT completed AND active_until>clock_timestamp()) AS "active!",
         count(*) FILTER (WHERE origin=$1 AND NOT completed AND active_until>clock_timestamp()) AS "origin_active!"
         FROM discovery_requests"#,origin).fetch_one(&mut *tx).await?;
-    let purpose = if lease.exploration {
-        "exploration"
-    } else if lease.operation == "refresh_presentation"
-        || (lease.entry_revision.is_some()
-            && matches!(
-                lease.operation.as_str(),
-                "refresh_entry" | "revalidate_entry"
-            ))
-    {
-        "maintenance"
-    } else {
-        "acquisition"
-    };
+    let purpose = request_purpose(lease);
     let allowance: (i64, i64, i64, bool) = sqlx::query_as(
         "SELECT
         count(*) FILTER(WHERE purpose='acquisition'),count(*) FILTER(WHERE purpose='maintenance'),
@@ -66,8 +70,13 @@ pub async fn reserve_request(
     )
     .fetch_one(&mut *tx)
     .await?;
+    // Migration 0187 constrains this persisted limit to 1..=100_000.
+    let refill_rate = f64::from(
+        i32::try_from(settings.requests_per_day)
+            .map_err(|_| invalid("discovery request limit is out of range"))?,
+    );
     let tokens: f64=sqlx::query_scalar("UPDATE discovery_pacing SET tokens=LEAST(42,tokens+EXTRACT(epoch FROM now()-refilled_at)::double precision*$1/86400),refilled_at=now() RETURNING tokens")
-        .bind(settings.requests_per_day as f64).fetch_one(&mut *tx).await?;
+        .bind(refill_rate).fetch_one(&mut *tx).await?;
     let continuing: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM discovery_requests WHERE lease_token=$1)")
             .bind(lease.lease_token)
@@ -299,8 +308,49 @@ pub async fn origin_diagnostics(pool: &PgPool) -> Result<Vec<OriginDiagnostic>, 
     Ok(sqlx::query_as!(OriginDiagnostic,r#"SELECT origin,count(*) AS "requests!",COALESCE(sum(bytes),0)::bigint AS "charged_bytes!" FROM discovery_requests WHERE started_at>clock_timestamp()-interval '24 hours' GROUP BY origin ORDER BY count(*) DESC,origin LIMIT 200"#).fetch_all(pool).await?)
 }
 
+async fn budget_delay(
+    tx: &mut super::Tx<'_>,
+    lease: &Lease,
+    s: &super::Settings,
+) -> Result<i32, DbError> {
+    let origin = address(&lease.target_uri)?.1;
+    let purpose = request_purpose(lease);
+    let seconds: f64=sqlx::query_scalar("SELECT GREATEST(1,
+      COALESCE((SELECT EXTRACT(epoch FROM min(started_at)+interval '24 hours'-now()) FROM discovery_requests HAVING count(*) >= $1 OR sum(bytes)+2097152>$3),0),
+      COALESCE((SELECT EXTRACT(epoch FROM min(started_at)+interval '24 hours'-now()) FROM discovery_requests WHERE origin=$2 HAVING count(*) >= $4),0),
+      COALESCE((SELECT EXTRACT(epoch FROM min(started_at)+interval '24 hours'-now()) FROM discovery_requests WHERE purpose=$5 HAVING count(*) >= CASE $5 WHEN 'exploration' THEN GREATEST(1,$1/10) WHEN 'maintenance' THEN GREATEST(1,$1/5) ELSE GREATEST(1,$1*7/10) END),0),
+      (SELECT GREATEST(0,1-tokens)*86400/$1 FROM discovery_pacing))::double precision")
+      .bind(s.requests_per_day).bind(origin).bind(s.bytes_per_day).bind(s.requests_per_origin).bind(purpose)
+      .fetch_one(&mut **tx).await?;
+    Ok(bounded_delay(seconds))
+}
+
+fn bounded_delay(seconds: f64) -> i32 {
+    std::time::Duration::try_from_secs_f64(seconds.ceil().clamp(1.0, 86400.0)).map_or(1, |delay| {
+        i32::try_from(delay.as_secs()).expect("delay is bounded to one day")
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn delay_rounds_up_and_saturates_at_the_existing_bounds() {
+        for (seconds, expected) in [
+            (f64::NAN, 1),
+            (f64::NEG_INFINITY, 1),
+            (-1.0, 1),
+            (0.0, 1),
+            (1.0, 1),
+            (1.001, 2),
+            (86399.001, 86400),
+            (86400.0, 86400),
+            (f64::MAX, 86400),
+            (f64::INFINITY, 86400),
+        ] {
+            assert_eq!(super::bounded_delay(seconds), expected);
+        }
+    }
+
     use super::*;
     use crate::discovery_store::{self as db, Admission, Operation};
     async fn setup(pool: &PgPool, uri: &str) -> Lease {
@@ -321,7 +371,7 @@ mod tests {
         };
         id
     }
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn request_limits_are_atomic_and_settlement_is_idempotent(pool: PgPool) {
         let lease = setup(&pool, "https://a.example/source").await;
         let (first, second) = tokio::join!(
@@ -359,7 +409,7 @@ mod tests {
         );
         assert_eq!(diagnostics(&pool).await.unwrap().requests_24h, 1);
     }
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn request_and_origin_caps_survive_reclaims(pool: PgPool) {
         setup(&pool, "https://a.example/source").await;
         let mut settings = db::settings(&pool).await.unwrap();
@@ -397,7 +447,7 @@ mod tests {
         );
         assert_eq!(diagnostics(&pool).await.unwrap().requests_24h, 2);
     }
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn crash_charges_full_body_until_rolling_window_expires(pool: PgPool) {
         setup(&pool, "https://a.example/source").await;
         let mut settings = db::settings(&pool).await.unwrap();
@@ -440,7 +490,7 @@ mod tests {
         );
         assert_eq!(diagnostics(&pool).await.unwrap().requests_24h, 1);
     }
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn pause_fences_requests_without_freeing_physical_slots(pool: PgPool) {
         let lease = setup(&pool, "https://a.example/source").await;
         let ticket = receipt(
@@ -475,7 +525,7 @@ mod tests {
         );
         assert_eq!(diagnostics(&pool).await.unwrap().requests_24h, 2);
     }
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn local_deferral_preserves_cursor_and_remote_retry_allowance(pool: PgPool) {
         let lease = setup(&pool, "https://a.example/source").await;
         assert_eq!(
@@ -494,7 +544,7 @@ mod tests {
             Completion::Stale
         );
     }
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn negative_cache_survives_job_exhaustion_and_limits_whole_origin(pool: PgPool) {
         let lease = setup(&pool, "https://a.example/source").await;
         let mut settings = db::settings(&pool).await.unwrap();
@@ -547,33 +597,4 @@ mod tests {
         assert!(status.last_failure_at.is_some());
         assert_eq!(status.last_failure_reason.as_deref(), Some("rate_limited"));
     }
-}
-
-async fn budget_delay(
-    tx: &mut super::Tx<'_>,
-    lease: &Lease,
-    s: &super::Settings,
-) -> Result<i32, DbError> {
-    let origin = address(&lease.target_uri)?.1;
-    let purpose = if lease.exploration {
-        "exploration"
-    } else if lease.operation == "refresh_presentation"
-        || (lease.entry_revision.is_some()
-            && matches!(
-                lease.operation.as_str(),
-                "refresh_entry" | "revalidate_entry"
-            ))
-    {
-        "maintenance"
-    } else {
-        "acquisition"
-    };
-    let seconds: f64=sqlx::query_scalar("SELECT GREATEST(1,
-      COALESCE((SELECT EXTRACT(epoch FROM min(started_at)+interval '24 hours'-now()) FROM discovery_requests HAVING count(*) >= $1 OR sum(bytes)+2097152>$3),0),
-      COALESCE((SELECT EXTRACT(epoch FROM min(started_at)+interval '24 hours'-now()) FROM discovery_requests WHERE origin=$2 HAVING count(*) >= $4),0),
-      COALESCE((SELECT EXTRACT(epoch FROM min(started_at)+interval '24 hours'-now()) FROM discovery_requests WHERE purpose=$5 HAVING count(*) >= CASE $5 WHEN 'exploration' THEN GREATEST(1,$1/10) WHEN 'maintenance' THEN GREATEST(1,$1/5) ELSE GREATEST(1,$1*7/10) END),0),
-      (SELECT GREATEST(0,1-tokens)*86400/$1 FROM discovery_pacing))::double precision")
-      .bind(s.requests_per_day).bind(origin).bind(s.bytes_per_day).bind(s.requests_per_origin).bind(purpose)
-      .fetch_one(&mut **tx).await?;
-    Ok((seconds.ceil() as i32).clamp(1, 86400))
 }

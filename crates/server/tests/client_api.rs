@@ -204,7 +204,7 @@ async fn token_with_scopes(pool: &PgPool, username: &str, scopes: &str) -> Strin
     token
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn full_pkce_flow_grants_a_working_token(pool: PgPool) {
     create_user(&pool, "alice", "alice@plamenu.test", "correct horse").await;
     let (client_id, client_secret) = register_app(&pool).await;
@@ -249,7 +249,7 @@ fn urlencoding(s: &str) -> String {
         .split_off(2)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wrong_pkce_verifier_or_password_is_rejected(pool: PgPool) {
     create_user(&pool, "alice", "alice@plamenu.test", "correct horse").await;
     let (client_id, client_secret) = register_app(&pool).await;
@@ -293,7 +293,7 @@ async fn wrong_pkce_verifier_or_password_is_rejected(pool: PgPool) {
     assert_eq!(response.status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn client_credentials_token_has_no_user(pool: PgPool) {
     create_user(&pool, "alice", "alice@plamenu.test", "pw").await;
     let (client_id, client_secret) = register_app(&pool).await;
@@ -321,7 +321,7 @@ async fn client_credentials_token_has_no_user(pool: PgPool) {
     assert_eq!(me.status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn posting_and_home_timeline_work(pool: PgPool) {
     create_user(&pool, "alice", "alice@plamenu.test", "pw").await;
     let token = user_token(&pool, "alice@plamenu.test", "pw").await;
@@ -422,7 +422,7 @@ async fn posting_and_home_timeline_work(pool: PgPool) {
     assert_eq!(shown.json["content"], "<p>hello &lt;clients&gt;</p>");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn status_application_follows_mastodon_visibility(pool: PgPool) {
     create_user(&pool, "alice", "alice@plamenu.test", "pw").await;
     let token = user_token(&pool, "alice@plamenu.test", "pw").await;
@@ -480,7 +480,7 @@ async fn status_application_follows_mastodon_visibility(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn content_warnings_round_trip_through_the_api(pool: PgPool) {
     create_user(&pool, "alice", "alice@plamenu.test", "pw").await;
     let token = user_token(&pool, "alice@plamenu.test", "pw").await;
@@ -537,7 +537,7 @@ async fn content_warnings_round_trip_through_the_api(pool: PgPool) {
     assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scopes_and_visibility_are_enforced(pool: PgPool) {
     create_user(&pool, "alice", "alice@plamenu.test", "pw").await;
     // A read-only app/token.
@@ -647,7 +647,7 @@ async fn scopes_and_visibility_are_enforced(pool: PgPool) {
     assert_eq!(garbage.status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn granular_scope_does_not_grant_broad_family(pool: PgPool) {
     // A resource-specific scope used to satisfy the whole family
     // — a `read:statuses` token could read notifications, a `write:accounts`
@@ -716,7 +716,7 @@ async fn granular_scope_does_not_grant_broad_family(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn revoked_tokens_stop_working(pool: PgPool) {
     create_user(&pool, "alice", "alice@plamenu.test", "pw").await;
     let (client_id, client_secret) = register_app(&pool).await;
@@ -745,7 +745,7 @@ async fn revoked_tokens_stop_working(pool: PgPool) {
     assert_eq!(me.status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oob_flow_shows_the_code_inline(pool: PgPool) {
     create_user(&pool, "alice", "alice@plamenu.test", "pw").await;
     let response = post_form(
@@ -780,7 +780,7 @@ async fn oob_flow_shows_the_code_inline(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn batch_statuses_returns_visible_in_request_order(pool: PgPool) {
     create_user(&pool, "alice", "alice@plamenu.test", "pw").await;
     let token = user_token(&pool, "alice@plamenu.test", "pw").await;
@@ -832,7 +832,7 @@ async fn batch_statuses_returns_visible_in_request_order(pool: PgPool) {
     assert_eq!(ids, vec![second_id.as_str(), first_id.as_str()]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn batch_statuses_over_limit_is_unprocessable(pool: PgPool) {
     create_user(&pool, "alice", "alice@plamenu.test", "pw").await;
     let token = user_token(&pool, "alice@plamenu.test", "pw").await;
@@ -852,7 +852,7 @@ async fn batch_statuses_over_limit_is_unprocessable(pool: PgPool) {
 /// A `silence` domain block marks every account on that server `limited` in
 /// the Mastodon account entity, so clients can flag them — the same signal a
 /// per-account silence emits.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn domain_silence_marks_remote_account_limited(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let remote = plamenu::remote::store_remote_actor(&pool, &bob.actor)
@@ -890,7 +890,7 @@ async fn domain_silence_marks_remote_account_limited(pool: PgPool) {
 /// The timeline-order preference: `published` (the default) sorts by post
 /// date, `received` by ingest order — stored server-side, so it applies to
 /// every client of the account.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn timeline_order_setting_reorders_home(pool: PgPool) {
     create_user(&pool, "alice", "alice@plamenu.test", "pw").await;
     let token = user_token(&pool, "alice@plamenu.test", "pw").await;
@@ -1011,7 +1011,7 @@ async fn register_app_form(pool: &PgPool, fields: &[(&str, &str)]) -> ApiRespons
     post_form(test_app(pool.clone()), "/api/v1/apps", fields).await
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn app_registration_rejects_blank_name(pool: PgPool) {
     let response = register_app_form(
         &pool,
@@ -1026,7 +1026,7 @@ async fn app_registration_rejects_blank_name(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn app_registration_rejects_dangerous_redirect_uris(pool: PgPool) {
     // A script-scheme callback would run in the browser if it ever reached a
     // navigation; it must never be storable.
@@ -1062,7 +1062,7 @@ async fn app_registration_rejects_dangerous_redirect_uris(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn app_registration_rejects_non_http_website(pool: PgPool) {
     let response = register_app_form(
         &pool,
@@ -1081,7 +1081,7 @@ async fn app_registration_rejects_non_http_website(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn app_registration_rejects_unknown_scope(pool: PgPool) {
     let response = register_app_form(
         &pool,
@@ -1100,7 +1100,7 @@ async fn app_registration_rejects_unknown_scope(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn app_registration_accepts_and_normalizes_scopes(pool: PgPool) {
     // Granular scopes are accepted, and duplicates collapse (first-seen order).
     let response = register_app_form(

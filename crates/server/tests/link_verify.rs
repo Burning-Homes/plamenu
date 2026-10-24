@@ -48,7 +48,7 @@ async fn verified_at(pool: &PgPool, account_id: i64) -> Option<String> {
         .map(str::to_owned)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn backlink_gets_verified(pool: PgPool) {
     let (state, stub, alice) = account_with_link(&pool, SITE_URL).await;
     // The linked site links back to alice's `/@handle` URL with rel="me".
@@ -75,7 +75,7 @@ async fn backlink_gets_verified(pool: PgPool) {
     assert_eq!(link_verification::pending_count(&pool).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anchor_backlink_to_actor_id_verifies(pool: PgPool) {
     let (state, stub, alice) = account_with_link(&pool, SITE_URL).await;
     // An <a rel="me"> pointing at the ActivityPub id also counts.
@@ -89,7 +89,7 @@ async fn anchor_backlink_to_actor_id_verifies(pool: PgPool) {
     assert!(verified_at(&pool, alice.id).await.is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn no_backlink_is_not_verified(pool: PgPool) {
     let (state, stub, alice) = account_with_link(&pool, SITE_URL).await;
     // The page exists but never links back.
@@ -98,7 +98,7 @@ async fn no_backlink_is_not_verified(pool: PgPool) {
     assert!(verified_at(&pool, alice.id).await.is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn editing_the_link_clears_verification(pool: PgPool) {
     let (state, stub, alice) = account_with_link(&pool, SITE_URL).await;
     stub.serve_page(
@@ -128,7 +128,7 @@ async fn editing_the_link_clears_verification(pool: PgPool) {
     assert!(verified_at(&pool, alice.id).await.is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unchanged_link_keeps_verification_across_save(pool: PgPool) {
     let (state, stub, alice) = account_with_link(&pool, SITE_URL).await;
     stub.serve_page(
@@ -202,7 +202,7 @@ async fn remote_with_link(pool: &PgPool, field_value: &str) -> account::Account 
     .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_account_anchor_field_gets_verified(pool: PgPool) {
     let stub = Arc::new(StubFederation::default());
     let state = test_state_with(pool.clone(), stub.clone());
@@ -221,7 +221,7 @@ async fn remote_account_anchor_field_gets_verified(pool: PgPool) {
     assert!(verified_at(&pool, bob.id).await.is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_deceptive_anchor_is_not_verified(pool: PgPool) {
     let stub = Arc::new(StubFederation::default());
     let state = test_state_with(pool.clone(), stub.clone());

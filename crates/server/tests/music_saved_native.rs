@@ -45,7 +45,7 @@ async fn text(response: Response) -> String {
     )
     .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_saved_forms_require_csrf_revoke_metadata_and_remove_unavailable_rows(pool: PgPool) {
     let owner = create_local_account(&pool, "alice", "Alice").await.id;
     let viewer = create_local_account(&pool, "bob", "Bob").await.id;

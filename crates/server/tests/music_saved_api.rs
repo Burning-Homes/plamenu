@@ -44,7 +44,7 @@ async fn tokens(pool: &PgPool, owner: i64, email: &str) -> (String, String) {
     }
     (result.remove(0), result.remove(0))
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn saved_api_enforces_scopes_owner_private_cache_and_station_config_redaction(pool: PgPool) {
     let owner = create_local_account(&pool, "alice", "Alice").await.id;
     let viewer = create_local_account(&pool, "bob", "Bob").await.id;

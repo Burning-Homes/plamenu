@@ -79,7 +79,7 @@ async fn response_text(state: &AppState, stub: &Arc<StubFederation>, uri: &str) 
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_status_link_gets_an_opengraph_card(pool: PgPool) {
     let (state, stub) = state_with_news_page(&pool);
     let stored = post_and_crawl(&state, "alice", &format!("read this: {NEWS_URL} now")).await;
@@ -120,7 +120,7 @@ async fn local_status_link_gets_an_opengraph_card(pool: PgPool) {
 /// A Lemmy-style link post keeps its MAIN link (the Page's `Link` attachment,
 /// stored as `external_url`) for the card — not a URL that happens to sit in the
 /// body text (a crosspost backlink). The body link is never even fetched.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn link_post_cards_its_main_link_not_a_body_url(pool: PgPool) {
     const MAIN_URL: &str = "https://main.example/topic";
     let (state, stub) = state_with_news_page(&pool); // NEWS_URL is the body red herring
@@ -164,7 +164,7 @@ async fn link_post_cards_its_main_link_not_a_body_url(pool: PgPool) {
     assert_eq!(card["title"], "Main Topic");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn statuses_without_eligible_links_get_no_card(pool: PgPool) {
     let (state, stub) = state_with_news_page(&pool);
     // No link at all, and a link to our own instance: neither is crawled.
@@ -184,7 +184,7 @@ async fn statuses_without_eligible_links_get_no_card(pool: PgPool) {
     assert_eq!(preview_card::pending_crawl_count(&pool).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn statuses_with_media_or_quotes_get_no_card(pool: PgPool) {
     let (state, stub) = state_with_news_page(&pool);
     let alice = create_local_account(&pool, "alice", "alice").await;
@@ -247,7 +247,7 @@ async fn statuses_with_media_or_quotes_get_no_card(pool: PgPool) {
     assert!(stub.page_fetches().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cards_are_shared_and_refreshed_after_two_weeks(pool: PgPool) {
     let (state, stub) = state_with_news_page(&pool);
     let first = post_and_crawl(&state, "alice", &format!("a {NEWS_URL}")).await;
@@ -276,7 +276,7 @@ async fn cards_are_shared_and_refreshed_after_two_weeks(pool: PgPool) {
     assert_eq!(stub.page_fetches().len(), 2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn editing_the_text_resets_and_recrawls_the_card(pool: PgPool) {
     let (state, stub) = state_with_news_page(&pool);
     let other_url = "https://blog.example/post";
@@ -316,7 +316,7 @@ async fn editing_the_text_resets_and_recrawls_the_card(pool: PgPool) {
     assert_eq!(card["url"], other_url);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn editing_a_link_post_removes_derived_audio_before_recrawl(pool: PgPool) {
     let audio_page = "https://pod.example/episodes/one";
     let audio_url = "https://cdn.pod.example/one.mp3";
@@ -361,7 +361,7 @@ async fn editing_a_link_post_removes_derived_audio_before_recrawl(pool: PgPool) 
     assert_eq!(entity["card"]["url"], NEWS_URL);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_status_anchors_get_cards_skipping_tags_and_mentions(pool: PgPool) {
     let (state, stub) = state_with_news_page(&pool);
     create_local_account(&pool, "alice", "alice").await;
@@ -400,7 +400,7 @@ async fn remote_status_anchors_get_cards_skipping_tags_and_mentions(pool: PgPool
 /// page advertises the actual episode through Open Graph. Promote that stream
 /// into the regular attachment pipeline so the web UI and Mastodon API both
 /// expose a player, with the existing cache/direct-fallback policy intact.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn castopod_episode_link_becomes_a_playable_audio_attachment(pool: PgPool) {
     const EPISODE: &str = "https://solarcast.cc/@solarcast/episodes/invisible-internet";
     const AUDIO: &str = "https://op3.dev/solarcast.cc/audio/invisible-internet.mp3?from=og";
@@ -561,7 +561,7 @@ async fn castopod_episode_link_becomes_a_playable_audio_attachment(pool: PgPool)
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn oembed_endpoints_are_preferred_over_opengraph(pool: PgPool) {
     let stub = Arc::new(StubFederation::default());
     let page_url = "https://tube.example/v/9";
@@ -620,7 +620,7 @@ async fn oembed_endpoints_are_preferred_over_opengraph(pool: PgPool) {
     assert!(html.contains("sandbox=\"allow-scripts"), "{html}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn redirects_store_the_card_under_the_canonical_url(pool: PgPool) {
     let stub = Arc::new(StubFederation::default());
     let short = "https://sho.example/abc";
@@ -652,7 +652,7 @@ async fn redirects_store_the_card_under_the_canonical_url(pool: PgPool) {
     assert_eq!(card["title"], "Article");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failed_and_non_html_fetches_leave_no_card(pool: PgPool) {
     let stub = Arc::new(StubFederation::default());
     stub.serve_page_as(
@@ -681,7 +681,7 @@ async fn failed_and_non_html_fetches_leave_no_card(pool: PgPool) {
 /// when its attribution domains authorize the page's domain — including via
 /// a parent suffix — and the Status entity's `authors[].account` carries the
 /// full Account entity.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn fediverse_creator_attribution_respects_attribution_domains(pool: PgPool) {
     let stub = Arc::new(StubFederation::default());
     let creator_page = concat!(
@@ -745,7 +745,7 @@ async fn fediverse_creator_attribution_respects_attribution_domains(pool: PgPool
 /// filtered via the batched mention map — set `a` crawled through
 /// `crawl_status` (the per-job fallback), set `b` drained through `run_due`
 /// (the batch path), then compared arm by arm.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn crawl_batch_matches_the_per_job_path(pool: PgPool) {
     use plamenu_db::media::NewRemoteMedia;
     use plamenu_db::preview_card::NewPreviewCard;

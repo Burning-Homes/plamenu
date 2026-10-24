@@ -13,7 +13,7 @@ use plamenu_db::{PgPool, id, media};
 
 /// The backfill records the stored byte length of a media row that has a file
 /// on disk but no recorded `file_size`, and reports it as filled.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn backfill_fills_missing_media_sizes(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -72,7 +72,7 @@ async fn backfill_fills_missing_media_sizes(pool: PgPool) {
 /// The sweep pages through a backlog larger than one keyset page and still
 /// fills every row, and a row whose file is missing from the store is skipped
 /// (counted, cursor stepped past) without stalling the walk.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn backfill_pages_through_a_large_backlog_and_skips_unreadable(pool: PgPool) {
     // More rows than a single keyset page (500) so the walk must span several
     // pages; every stored file is one byte so total bytes equals the count.

@@ -124,7 +124,7 @@ async fn status(f: &Fixture, path: &str) -> StatusCode {
         .unwrap()
         .status()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_album_notes_do_not_revoke_a_cover_inherited_by_a_readable_track(pool: PgPool) {
     let f = fixture(pool).await;
     let cover = upload(&f, Target::Albums, f.album, "cover").await;
@@ -176,7 +176,7 @@ async fn private_album_notes_do_not_revoke_a_cover_inherited_by_a_readable_track
         StatusCode::NOT_FOUND
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn normalized_artwork_obeys_current_source_access_and_never_uses_bearer_files(pool: PgPool) {
     let f = fixture(pool).await;
     for (target, entity, slot) in [
@@ -265,7 +265,7 @@ async fn normalized_artwork_obeys_current_source_access_and_never_uses_bearer_fi
         StatusCode::NOT_FOUND
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn artwork_replacement_cascades_and_account_retirement_keep_storage_debt(pool: PgPool) {
     let f = fixture(pool).await;
     let old = upload(&f, Target::Assets, f.asset, "image").await;
@@ -319,7 +319,7 @@ async fn artwork_replacement_cascades_and_account_retirement_keep_storage_debt(p
         );
     }
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn artwork_audio_and_resource_updates_commit_together_and_failures_keep_private_cleanup(
     pool: PgPool,
 ) {
@@ -390,7 +390,7 @@ async fn artwork_audio_and_resource_updates_commit_together_and_failures_keep_pr
         StatusCode::NOT_FOUND
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn invalid_artwork_foreign_edits_and_stale_revisions_do_not_store_files(pool: PgPool) {
     let f = fixture(pool).await;
     assert!(
@@ -444,7 +444,7 @@ async fn invalid_artwork_foreign_edits_and_stale_revisions_do_not_store_files(po
     assert_eq!(count, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn track_artwork_falls_back_to_album_then_artist_without_bypassing_source_access(
     pool: PgPool,
 ) {

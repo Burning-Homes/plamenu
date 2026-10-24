@@ -2,7 +2,7 @@
 //! create/show/update/delete, membership, visibility, `in_collections`, and
 //! the outbound consent flow for a remote member.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -89,7 +89,7 @@ async fn api_on(
     (status, value)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_with_local_member_accepts_and_notifies(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -152,7 +152,7 @@ async fn create_with_local_member_accepts_and_notifies(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_accepts_rails_style_form_account_ids(pool: PgPool) {
     // Mastodon clients send `account_ids[]` form-encoded, not as a JSON array.
     let (_alice, token) = user_with_token(&pool, "alice").await;
@@ -176,7 +176,7 @@ async fn create_accepts_rails_style_form_account_ids(pool: PgPool) {
     assert_eq!(collection["items"][0]["account_id"], bob.id.to_string());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn index_hides_nondiscoverable_from_strangers(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let (_bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -228,7 +228,7 @@ async fn index_hides_nondiscoverable_from_strangers(pool: PgPool) {
     assert_eq!(names, vec!["Public"]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn in_collections_is_self_only(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let (bob, bob_token) = user_with_token(&pool, "bob").await;
@@ -269,7 +269,7 @@ async fn in_collections_is_self_only(pool: PgPool) {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn update_delete_and_item_management(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -357,7 +357,7 @@ async fn update_delete_and_item_management(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_member_is_pending_and_gets_a_feature_request(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let bob = common::RemoteUser::new("remote.example", "bob");
@@ -384,7 +384,7 @@ async fn remote_member_is_pending_and_gets_a_feature_request(pool: PgPool) {
     assert!(jobs >= 1, "a feature request should be enqueued");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_member_without_feature_policy_is_rejected(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let mut bob = common::RemoteUser::new("remote.example", "bob");
@@ -412,13 +412,58 @@ async fn remote_member_without_feature_policy_is_rejected(pool: PgPool) {
     );
 }
 
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
+async fn cached_feature_denial_is_refreshed_without_inventing_consent(pool: PgPool) {
+    let (_alice, token) = user_with_token(&pool, "alice").await;
+    for (name, current_public, fetchable) in [
+        ("now_public", true, true),
+        ("still_private", false, true),
+        ("unreachable", false, false),
+    ] {
+        let mut remote_user = common::RemoteUser::new("remote.example", name);
+        remote_user.actor.interaction_policy = Some(json!({
+            "canFeature": {"automaticApproval": [remote_user.actor.id.clone()]}
+        }));
+        let cached = remote::store_remote_actor(&pool, &remote_user.actor)
+            .await
+            .unwrap();
+        assert_ne!(cached.feature_approval_policy, 0, "explicit cached denial");
+        if current_public {
+            remote_user.actor.interaction_policy = Some(json!({
+                "canFeature": {"automaticApproval": ["https://www.w3.org/ns/activitystreams#Public"]}
+            }));
+        }
+        let stub = StubFederation::with_actors(fetchable.then_some(remote_user.actor).into_iter());
+        let (code, body) = api_on(
+            test_app_with(pool.clone(), stub),
+            "POST",
+            "/api/v1/collections",
+            Some(&token),
+            Some(json!({"name": name, "account_ids": [cached.id.to_string()]})),
+        )
+        .await;
+        if current_public {
+            assert_eq!(code, StatusCode::OK, "{body}");
+            assert_eq!(body["collection"]["items"][0]["state"], "pending");
+        } else {
+            assert_eq!(code, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+            assert!(
+                body["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Account can't be added")
+            );
+        }
+    }
+}
+
 /// Regression: the account entity's `feature_approval.current_user` must be
 /// computed against the *authenticated viewer*, not a null viewer. A client
 /// (e.g. Phanpy) reads this field to decide whether an account can be added to
 /// a collection; when it was hardcoded to a null viewer every account came back
 /// `"denied"` and the client greyed them all out. A discoverable, unlocked
 /// account is featureable, so an authenticated viewer must see `"automatic"`.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn account_feature_approval_current_user_reflects_viewer(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;

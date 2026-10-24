@@ -4,7 +4,7 @@
 //! never retain them. These assert the middleware is actually wired into the
 //! real router — the path classifier itself is unit-tested in the crate.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -49,7 +49,7 @@ async fn head(
     )
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn credential_page_is_frame_denied_and_no_store(pool: PgPool) {
     let app = test_app(pool);
     let (status, content_type, xfo, csp, cache) = head(&app, "/login").await;
@@ -63,7 +63,7 @@ async fn credential_page_is_frame_denied_and_no_store(pool: PgPool) {
     assert_eq!(cache.as_deref(), Some("no-store"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_html_is_frame_denied_but_still_cacheable(pool: PgPool) {
     // The anonymous landing page is HTML: it must be frame-denied (clickjacking
     // defence) but NOT forced `no-store` — it is a public, cacheable surface.
@@ -130,7 +130,7 @@ async fn signed_in_csp(app: &Router, cookie: &str) -> String {
         .to_owned()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn direct_media_csp_follows_the_stored_viewer_preference(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice").await;
     let password = plamenu::auth::hash_password("pw").unwrap();
@@ -178,7 +178,7 @@ async fn direct_media_csp_follows_the_stored_viewer_preference(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn static_asset_is_untouched(pool: PgPool) {
     // A non-HTML asset gets no frame headers, and its own long-lived caching is
     // preserved (its path is not a credential path).
@@ -200,7 +200,7 @@ async fn static_asset_is_untouched(pool: PgPool) {
 /// hash recomputed here from the *rendered* page, so the emitted script and
 /// the policy cannot drift apart (drift is the classic way a CSP silently
 /// breaks a page).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn enforced_csp_covers_html_and_admits_only_the_bootstrap(pool: PgPool) {
     use base64::Engine;
     use sha2::Digest;
@@ -261,7 +261,7 @@ async fn enforced_csp_covers_html_and_admits_only_the_bootstrap(pool: PgPool) {
 /// pinned stylesheet by hash instead of weakening `style-src` with
 /// `unsafe-inline`; a widget upgrade that changes the CSS must update this
 /// assertion and receive a real-browser CSP pass.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn enforced_csp_admits_only_the_pinned_altcha_stylesheet(pool: PgPool) {
     let app = test_app(pool);
     let (_, _, _, csp, _) = head(&app, "/signup").await;
@@ -279,7 +279,7 @@ async fn enforced_csp_admits_only_the_pinned_altcha_stylesheet(pool: PgPool) {
 
 /// The policy is HTML-only — on an asset or API response it would be dead
 /// weight on every attachment byte served.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn enforced_csp_stays_off_non_html(pool: PgPool) {
     let app = test_app(pool);
     for path in ["/assets/app.css", "/api/v1/instance"] {
@@ -297,7 +297,7 @@ async fn enforced_csp_stays_off_non_html(pool: PgPool) {
 
 /// Reporting is wholly absent by default: browsers receive no reporting
 /// directive and a caller cannot discover a live sink at the conventional URL.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn csp_reporting_is_absent_by_default(pool: PgPool) {
     let app = test_app(pool);
     let page = app
@@ -329,7 +329,7 @@ async fn csp_reporting_is_absent_by_default(pool: PgPool) {
 /// An explicit opt-in adds the matching directive and sink. The sink accepts a
 /// browser-shaped report (logging it) and answers a malformed body the same way
 /// — `204`, never an error an attacker can farm.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn csp_reporting_opt_in_adds_directive_and_sink(pool: PgPool) {
     let app = test_app_csp_reporting(pool);
     let page = app
@@ -367,7 +367,7 @@ async fn csp_reporting_opt_in_adds_directive_and_sink(pool: PgPool) {
 /// would run it on our own origin. `Referrer-Policy` keeps the path and query
 /// — where password-reset and confirmation links carry their token — out of
 /// the `Referer` sent to other sites.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn every_response_refuses_sniffing_and_bounds_the_referrer(pool: PgPool) {
     let app = test_app(pool);
     for path in ["/login", "/", "/assets/app.css", "/api/v1/instance"] {

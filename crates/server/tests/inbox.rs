@@ -194,7 +194,7 @@ async fn follower_ids(pool: &PgPool) -> Option<(i64, i64)> {
     Some((bob.id, alice.id))
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_follow_creates_follower_and_sends_accept(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -231,7 +231,7 @@ async fn signed_follow_creates_follower_and_sends_accept(pool: PgPool) {
     assert_eq!(accept.activity["object"], follow);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn shared_inbox_cannot_target_a_pending_local_actor(pool: PgPool) {
     let pending = create_immutable_local_account(&pool, "pending", "Pending").await;
     let password_hash = plamenu::auth::hash_password("correct horse battery").unwrap();
@@ -333,7 +333,7 @@ async fn shared_inbox_cannot_target_a_pending_local_actor(pool: PgPool) {
     assert!(notifications.is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn immutable_actor_inbox_and_follow_target_resolve_by_numeric_id(pool: PgPool) {
     let alice = create_immutable_local_account(&pool, "immutable", "Immutable").await;
     let actor_uri = alice.uri.clone().unwrap();
@@ -375,7 +375,7 @@ async fn immutable_actor_inbox_and_follow_target_resolve_by_numeric_id(pool: PgP
 /// `<actor id>#main-key` (seen live from relay.dresden.network). The bare
 /// keyId must still resolve to the actor and, once the actor is cached, must
 /// not force a refetch on every delivery.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bare_actor_keyid_is_accepted_and_cached(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -406,7 +406,7 @@ async fn bare_actor_keyid_is_accepted_and_cached(pool: PgPool) {
     assert_eq!(stub.fetches(), [bob.actor.id.as_str()]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rsa_multikey_only_actor_authenticates_a_real_inbox_request(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let mut bob = RemoteUser::new("remote.example", "bob");
@@ -447,7 +447,7 @@ async fn rsa_multikey_only_actor_authenticates_a_real_inbox_request(pool: PgPool
 /// real owner in the signer cache: with the impostor cached first, a signed
 /// delivery from the true owner still authenticates as them and dispatches
 /// instead of being silently dropped as an unproven forward.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn foreign_key_id_claim_does_not_shadow_the_owner(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -475,7 +475,7 @@ async fn foreign_key_id_claim_does_not_shadow_the_owner(pool: PgPool) {
     assert!(follow::exists(&pool, follower_id, alice_id).await.unwrap());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_synchronization_reconciles_local_followers_after_digest_match(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let carol = create_local_account(&pool, "carol", "Carol").await;
@@ -589,7 +589,7 @@ async fn collection_synchronization_reconciles_local_followers_after_digest_matc
     }));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_synchronization_does_not_remove_when_digest_mismatches(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -641,7 +641,7 @@ async fn collection_synchronization_does_not_remove_when_digest_mismatches(pool:
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unsigned_follow_is_rejected(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -658,7 +658,7 @@ async fn unsigned_follow_is_rejected(pool: PgPool) {
     assert!(stub.deliveries().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn follow_signed_with_wrong_key_is_rejected(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -685,7 +685,7 @@ async fn follow_signed_with_wrong_key_is_rejected(pool: PgPool) {
     assert!(stub.deliveries().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn impersonating_another_actor_is_rejected(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -719,7 +719,7 @@ async fn impersonating_another_actor_is_rejected(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stale_signature_is_rejected(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -737,7 +737,7 @@ async fn stale_signature_is_rejected(pool: PgPool) {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn tampered_body_is_rejected(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -764,7 +764,7 @@ async fn tampered_body_is_rejected(pool: PgPool) {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn key_rotation_triggers_refetch_and_succeeds(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -824,7 +824,7 @@ async fn key_rotation_triggers_refetch_and_succeeds(pool: PgPool) {
     assert!(follow::exists(&pool, bob_id, alice_id).await.unwrap());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn undo_removes_follower(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -869,7 +869,7 @@ async fn undo_removes_follower(pool: PgPool) {
     assert!(notifications(pool.clone()).await.is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_note_stores_status_idempotently(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -918,7 +918,7 @@ async fn create_note_stores_status_idempotently(pool: PgPool) {
     assert_eq!(again.id, stored.id);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn iri_create_matches_inline_delivery_and_uses_inbox_recipient(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1041,7 +1041,7 @@ async fn iri_create_matches_inline_delivery_and_uses_inbox_recipient(pool: PgPoo
     assert_eq!(notifications().await.len(), 2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn iri_create_shared_inbox_uses_addressed_recipient(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1132,7 +1132,7 @@ async fn iri_create_shared_inbox_uses_addressed_recipient(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn iri_create_rejects_cross_origin_and_foreign_attribution(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1209,7 +1209,7 @@ async fn iri_create_rejects_cross_origin_and_foreign_attribution(pool: PgPool) {
 /// threads and grants silent audience access, but—like Mastodon—does not turn
 /// that delivery address into a mention notification. An edit stays silent,
 /// as does a `cc`-only bystander.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn to_addressed_reply_without_mention_tag_stays_silent(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1356,7 +1356,7 @@ async fn to_addressed_reply_without_mention_tag_stays_silent(pool: PgPool) {
 /// top-level Note's `to` without a Mention tag. That is delivery/access
 /// addressing, not a reply or a mention: retain the silent audience row but do
 /// not manufacture a "mentioned you" notification.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn to_addressed_non_reply_is_silent_and_does_not_notify(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1427,7 +1427,7 @@ async fn to_addressed_non_reply_is_silent_and_does_not_notify(pool: PgPool) {
 /// per-username `find_local_by_username` loop is gone and a hostile signed
 /// delivery packing thousands of local URLs cannot drive a serial query /
 /// mention / notification fan-out.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_note_audience_resolution_query_count_is_flat(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);
@@ -1492,7 +1492,7 @@ async fn inbound_note_audience_resolution_query_count_is_flat(pool: PgPool) {
 /// the edit lose their rows, added ones gain them, and a real (tag) mention
 /// outranks a silent audience one for the same account — with no stray rows left
 /// from the previous version.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_note_edit_rebuilds_mention_set(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let carol = create_local_account(&pool, "carol", "Carol").await;
@@ -1586,7 +1586,7 @@ async fn inbound_note_edit_rebuilds_mention_set(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_note_stores_content_warning_sensitive_and_language(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1653,7 +1653,7 @@ async fn create_note_stores_content_warning_sensitive_and_language(pool: PgPool)
     assert_eq!(stored.language.as_deref(), Some("en"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_note_attributed_to_someone_else_is_ignored(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1688,7 +1688,7 @@ async fn create_note_attributed_to_someone_else_is_ignored(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn delete_removes_own_status_only(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1757,7 +1757,7 @@ async fn delete_removes_own_status_only(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn delete_of_unknown_actor_is_accepted_without_fetching(pool: PgPool) {
     let stub: Arc<StubFederation> = Arc::default();
     let delete = json!({
@@ -1774,7 +1774,7 @@ async fn delete_of_unknown_actor_is_accepted_without_fetching(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn delete_of_known_actor_removes_account_and_follows(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1803,7 +1803,7 @@ async fn delete_of_known_actor_removes_account_and_follows(pool: PgPool) {
     assert_eq!(follow::count_followers(&pool, alice_id).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn follow_of_unknown_local_user_is_404(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);
@@ -1817,7 +1817,7 @@ async fn follow_of_unknown_local_user_is_404(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn user_inbox_of_unknown_user_is_404(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);
@@ -1831,7 +1831,7 @@ async fn user_inbox_of_unknown_user_is_404(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unhandled_activity_types_are_accepted_quietly(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1845,7 +1845,7 @@ async fn unhandled_activity_types_are_accepted_quietly(pool: PgPool) {
     assert_eq!(status, StatusCode::ACCEPTED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn non_json_body_is_400(pool: PgPool) {
     let request = Request::builder()
         .method("POST")
@@ -1895,7 +1895,7 @@ async fn stored_status(pool: &PgPool, uri: &str) -> Option<status::Status> {
     status::find_by_uri(pool, uri).await.unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reply_to_unknown_status_backfills_ancestor_chain(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1944,7 +1944,7 @@ async fn reply_to_unknown_status_backfills_ancestor_chain(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn plain_note_ingest_does_not_wait_for_inline_image_media(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stored_bob = remote::store_remote_actor(&pool, &bob.actor).await.unwrap();
@@ -1968,7 +1968,7 @@ async fn plain_note_ingest_does_not_wait_for_inline_image_media(pool: PgPool) {
     assert_eq!(stored.uri.as_deref(), Some(uri_of(&object).as_str()));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_ancestor_fetch_keeps_supplied_account_or_instance_signer(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "First eligible follower").await;
     let reader = create_local_account(&pool, "reader", "Explicit reader").await;
@@ -2016,7 +2016,7 @@ async fn explicit_ancestor_fetch_keeps_supplied_account_or_instance_signer(pool:
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn known_reply_parents_do_not_select_an_ancestor_fetch_recipient(pool: PgPool) {
     use plamenu_db::conversation::{self, ContextRefs, EnsureConversation};
 
@@ -2120,7 +2120,7 @@ async fn known_reply_parents_do_not_select_an_ancestor_fetch_recipient(pool: PgP
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reply_to_known_status_fetches_nothing(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2146,7 +2146,7 @@ async fn reply_to_known_status_fetches_nothing(pool: PgPool) {
     assert_eq!(stub.fetches(), [bob.actor.id.as_str()]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn backfill_stops_at_the_ancestor_cap(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2189,7 +2189,7 @@ async fn backfill_stops_at_the_ancestor_cap(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reply_to_unfetchable_status_is_stored_flat(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2214,7 +2214,7 @@ async fn reply_to_unfetchable_status_is_stored_flat(pool: PgPool) {
     assert_eq!(stored_leaf.in_reply_to_id, None);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn backfill_refuses_cross_host_ancestors(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2249,7 +2249,7 @@ async fn backfill_refuses_cross_host_ancestors(pool: PgPool) {
     assert_eq!(stored_leaf.in_reply_to_id, None);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn backfill_survives_reply_cycles(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2287,7 +2287,7 @@ async fn backfill_survives_reply_cycles(pool: PgPool) {
 /// The full relay lifecycle: subscribe (instance-actor Follow to the relay
 /// inbox), the relay's Accept flipping state, public fan-out including the
 /// relay, and a relayed Announce ingesting the object instead of boosting.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn relay_subscription_accept_and_relayed_announce(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let relay_user = RemoteUser::new("relay.example", "actor");
@@ -2436,7 +2436,7 @@ async fn relay_subscription_accept_and_relayed_announce(pool: PgPool) {
 }
 
 /// A relay's Reject marks the subscription rejected.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn relay_reject_marks_subscription_rejected(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let relay_user = RemoteUser::new("relay.example", "actor");
@@ -2504,7 +2504,7 @@ async fn post_signed_rfc9421(
 
 /// RFC 9421: an inbox delivery signed with `Signature-Input` /
 /// `Signature` instead of draft-cavage verifies and processes end-to-end.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rfc9421_signed_follow_is_processed(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2530,7 +2530,7 @@ async fn rfc9421_signed_follow_is_processed(pool: PgPool) {
 
 /// An RFC 9421 signature by the wrong key must be rejected like any other
 /// bad signature.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rfc9421_signed_with_wrong_key_is_rejected(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2554,7 +2554,7 @@ async fn rfc9421_signed_with_wrong_key_is_rejected(pool: PgPool) {
 /// An RFC 9421 delivery signed with the actor's FEP-521a Ed25519 key
 /// (`alg="ed25519"`, keyid `#ed25519-key`) — the shape Mitra produces with
 /// `rfc9421_enabled` — verifies against the stored Multikey.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rfc9421_ed25519_signed_follow_is_processed(pool: PgPool) {
     use base64::Engine;
 
@@ -2620,7 +2620,7 @@ async fn rfc9421_ed25519_signed_follow_is_processed(pool: PgPool) {
 /// delivery is signed with the actor's new key — one actor refetch updates
 /// the stored key and the signature verifies, mirroring the RSA
 /// `key_rotation_triggers_refetch_and_succeeds` path.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ed25519_key_rotation_triggers_refetch_and_succeeds(pool: PgPool) {
     use base64::Engine;
 
@@ -2715,7 +2715,7 @@ async fn ed25519_key_rotation_triggers_refetch_and_succeeds(pool: PgPool) {
 // (featuredTags + outbox), growing the pending-task population without limit.
 // The refresh coordinator coalesces them: the first Update admits two refreshes,
 // later ones within the freshness window admit none.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn flooded_actor_updates_spawn_a_bounded_number_of_refreshes(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2790,7 +2790,7 @@ where
 // fetch hangs, floods identical Updates, and proves the fan-out stays bounded:
 // exactly one outbound fetch per collection and one DB reconciliation each, no
 // matter how deep the flood, with only the first pair of tasks ever pending.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn slow_origin_actor_update_flood_keeps_refresh_fan_out_bounded(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);

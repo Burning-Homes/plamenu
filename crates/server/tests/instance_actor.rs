@@ -53,7 +53,7 @@ async fn get_signed(app: Router, path: &str, signer: &RequestSigner) -> (StatusC
     (status, body)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_actor_document_is_served_and_key_is_stable(pool: PgPool) {
     let (status, doc) = get_with_accept(test_app(pool.clone()), "/actor", ACCEPT_AP).await;
     assert_eq!(status, StatusCode::OK);
@@ -100,7 +100,7 @@ async fn instance_actor_document_is_served_and_key_is_stable(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_actor_outbox_is_empty(pool: PgPool) {
     let (status, doc) = get_with_accept(test_app(pool), "/actor/outbox", ACCEPT_AP).await;
     assert_eq!(status, StatusCode::OK);
@@ -109,7 +109,7 @@ async fn instance_actor_outbox_is_empty(pool: PgPool) {
     assert_eq!(doc["totalItems"], 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn webfinger_resolves_the_instance_actor_in_all_forms(pool: PgPool) {
     for resource in [
         "acct:plamenu.test@plamenu.test",
@@ -139,7 +139,7 @@ async fn webfinger_resolves_the_instance_actor_in_all_forms(pool: PgPool) {
     assert_eq!(jrd["subject"], "acct:alice@plamenu.test");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn actor_inbox_processes_activities_like_the_shared_inbox(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -184,7 +184,7 @@ async fn actor_inbox_processes_activities_like_the_shared_inbox(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authorized_fetch_rejects_unsigned_object_gets(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let app = || test_app_secure(pool.clone(), Arc::default());
@@ -221,7 +221,7 @@ async fn authorized_fetch_rejects_unsigned_object_gets(pool: PgPool) {
 /// key-only "blanked" actor (id + type + key material, no profile) rather than
 /// a 401, so peers that dereference us unsigned (e.g. default-config Lemmy) can
 /// still read our public key to verify our deliveries.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authorized_fetch_serves_key_only_actor_to_unsigned_callers(pool: PgPool) {
     // `create_local_account` gives alice a display name ("Alice") and a bio
     // ("test account"); both must be withheld from the unsigned key-only view.
@@ -261,7 +261,7 @@ async fn authorized_fetch_serves_key_only_actor_to_unsigned_callers(pool: PgPool
 /// With `authorized_fetch_unsigned = "profile"`, an *unsigned* actor fetch
 /// under secure mode returns the profile document (display name, bio) — the
 /// Lemmy-interop posture — while the object routes stay gated.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authorized_fetch_unsigned_profile_serves_profile_to_unsigned_callers(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
 
@@ -292,7 +292,7 @@ async fn authorized_fetch_unsigned_profile_serves_profile_to_unsigned_callers(po
     assert_eq!(followers, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authorized_fetch_accepts_signed_gets_and_caches_the_signer(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -311,7 +311,7 @@ async fn authorized_fetch_accepts_signed_gets_and_caches_the_signer(pool: PgPool
     assert_eq!(stub.fetches().len(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authorized_fetch_resolves_gotosocial_main_key_without_poisoning_fallback(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let mut sleyka = RemoteUser::new("social.example", "sleyka");
@@ -389,7 +389,7 @@ fn bookwyrm_actor_document(remote: &RemoteUser) -> Value {
     })
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authorized_fetch_resolves_bookwyrm_slash_key_and_caches_canonical_actor(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let mut remote = RemoteUser::new("books.example", "lena");
@@ -417,7 +417,7 @@ async fn authorized_fetch_resolves_bookwyrm_slash_key_and_caches_canonical_actor
     assert_eq!(stub.fetches().len(), 2, "canonical actor key is cached");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authorized_fetch_slash_alias_requires_canonical_key_ownership_and_signature(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     for mode in [
@@ -460,7 +460,7 @@ async fn authorized_fetch_slash_alias_requires_canonical_key_ownership_and_signa
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authorized_fetch_rejects_bad_signatures(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -540,7 +540,7 @@ async fn assert_no_fetch_identity_written(pool: &PgPool, remote: &RemoteUser) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_authenticates_null_and_missing_inbox_without_account_writes(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let (remote, mut document) = internal_fetch_fixture();
@@ -585,7 +585,7 @@ async fn internal_fetch_authenticates_null_and_missing_inbox_without_account_wri
     assert_no_fetch_identity_written(&pool, &remote).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_rejects_malformed_foreign_and_unowned_key_documents(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let (remote, document) = internal_fetch_fixture();
@@ -632,7 +632,7 @@ async fn internal_fetch_rejects_malformed_foreign_and_unowned_key_documents(pool
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_rotation_uses_current_key_and_rejects_old_signature(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let (old, document) = internal_fetch_fixture();
@@ -667,7 +667,7 @@ async fn internal_fetch_rotation_uses_current_key_and_rejects_old_signature(pool
     assert_no_fetch_identity_written(&pool, &new).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_rejects_unsupported_cavage_algorithm_label(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let (remote, document) = internal_fetch_fixture();
@@ -700,7 +700,7 @@ async fn internal_fetch_rejects_unsupported_cavage_algorithm_label(pool: PgPool)
     assert_no_fetch_identity_written(&pool, &remote).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_domain_block_denies_before_fetch(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     plamenu_db::instance_policy::create_domain_block(
@@ -751,7 +751,7 @@ async fn real_internal_fetch_transport_denies_literal_private_address() {
     ));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_outbox_preserves_origin_domain_block(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     plamenu_db::status::create_local(
@@ -775,7 +775,7 @@ async fn internal_fetch_outbox_preserves_origin_domain_block(pool: PgPool) {
     assert_no_fetch_identity_written(&pool, &remote).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_outbox_revalidation_failure_is_fail_closed(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     plamenu_db::status::create_local(
@@ -818,7 +818,7 @@ async fn internal_fetch_outbox_revalidation_failure_is_fail_closed(pool: PgPool)
     assert_no_fetch_identity_written(&pool, &remote).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_local_origin_variants_reject_before_transport(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     for origin in ["https://PLAMENU.TEST", "https://plamenu.test:443"] {
@@ -841,7 +841,7 @@ async fn internal_fetch_local_origin_variants_reject_before_transport(pool: PgPo
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_cannot_read_private_context_history(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let (remote, document) = internal_fetch_fixture();
@@ -877,7 +877,7 @@ async fn internal_fetch_cannot_read_private_context_history(pool: PgPool) {
     assert_no_fetch_identity_written(&pool, &remote).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_accepts_supported_cavage_labels_and_omission(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let (remote, document) = internal_fetch_fixture();
@@ -942,7 +942,7 @@ async fn real_internal_fetch_transport_private_dns_never_reaches_connector() {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_preexisting_account_cannot_grant_private_audience(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let (remote, document) = internal_fetch_fixture();
@@ -1005,7 +1005,7 @@ async fn internal_fetch_preexisting_account_cannot_grant_private_audience(pool: 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_rejects_malformed_rfc9421_input_before_fetch_or_writes(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let (remote, document) = internal_fetch_fixture();
@@ -1054,7 +1054,7 @@ async fn internal_fetch_rejects_malformed_rfc9421_input_before_fetch_or_writes(p
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn internal_fetch_query_and_userinfo_actor_uris_reject_before_transport(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     for actor_id in [

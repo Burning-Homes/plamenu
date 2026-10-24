@@ -1,6 +1,6 @@
 mod common;
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn delivered_audience_matches_public_and_unlisted_playlist_object(pool: PgPool) {
     let (state, alice, _, channel) = setup(&pool).await;
     let viewer = RemoteUser::new("remote.test", "viewer");
@@ -32,7 +32,7 @@ async fn delivered_audience_matches_public_and_unlisted_playlist_object(pool: Pg
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_delete_uses_the_current_channel_owner_not_a_stale_creator(pool: PgPool) {
     let (stub, owner, channel, url) = remote_fixture();
     let state = test_state_with(pool.clone(), stub.clone());
@@ -103,7 +103,7 @@ async fn remote_delete_uses_the_current_channel_owner_not_a_stale_creator(pool: 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn accepted_publishers_only_manage_their_own_playlists_and_revocation_is_immediate(
     pool: PgPool,
 ) {
@@ -196,7 +196,7 @@ async fn accepted_publishers_only_manage_their_own_playlists_and_revocation_is_i
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn first_party_app_bootstrap_is_safe_for_simultaneous_creators(pool: PgPool) {
     let state = test_state_with(pool.clone(), StubFederation::with_actors([]));
     let states = (0..16).map(|_| state.clone()).collect::<Vec<_>>();
@@ -219,7 +219,7 @@ async fn first_party_app_bootstrap_is_safe_for_simultaneous_creators(pool: PgPoo
     assert_eq!(count, 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_limits_and_batched_large_entry_rendering(pool: PgPool) {
     let (state, alice, _, channel) = setup(&pool).await;
     let video = video(&state, &alice, channel, "public").await;
@@ -289,7 +289,7 @@ async fn collection_limits_and_batched_large_entry_rendering(pool: PgPool) {
     ));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn copied_first_party_permalink_with_anchor_is_a_valid_video_reference(pool: PgPool) {
     let (state, alice, _, channel) = setup(&pool).await;
     let video = video(&state, &alice, channel, "public").await;
@@ -413,7 +413,7 @@ async fn change(
     service::change(state, actor, p.id, &input).await
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stable_duplicates_reorder_clips_removal_and_missing_video(pool: PgPool) {
     let (state, alice, _, channel) = setup(&pool).await;
     let film = video(&state, &alice, channel, "public").await;
@@ -563,7 +563,7 @@ async fn stable_duplicates_reorder_clips_removal_and_missing_video(pool: PgPool)
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_and_unlisted_never_widen_a_video_audience(pool: PgPool) {
     let (state, alice, bob, channel) = setup(&pool).await;
     let film = video(&state, &alice, channel, "private").await;
@@ -712,7 +712,7 @@ async fn private_and_unlisted_never_widen_a_video_audience(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collaboration_transfer_revision_and_deletion_authority(pool: PgPool) {
     let (state, alice, bob, channel) = setup(&pool).await;
     let p = create(&state, &alice, channel, "public").await;
@@ -847,7 +847,7 @@ async fn collaboration_transfer_revision_and_deletion_authority(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn playlist_outbox_failure_rolls_back_create_edit_and_delete(pool: PgPool) {
     let (state, alice, _, channel) = setup(&pool).await;
     let viewer = RemoteUser::new("remote.test", "viewer");
@@ -919,7 +919,7 @@ fn remote_fixture() -> (
     (stub, owner, channel, url)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_metadata_only_update_stable_identity_and_delete_retention(pool: PgPool) {
     let (stub, owner, _, url) = remote_fixture();
     let state = test_state_with(pool.clone(), stub.clone());
@@ -971,7 +971,7 @@ async fn remote_metadata_only_update_stable_identity_and_delete_retention(pool: 
     assert!(db::entries(&pool, p.id).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_hostile_origins_loops_counts_clips_and_foreign_signers(pool: PgPool) {
     let (stub, _, _, url) = remote_fixture();
     let state = test_state_with(pool.clone(), stub.clone());

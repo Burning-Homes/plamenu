@@ -38,7 +38,7 @@ async fn post(
         .unwrap();
     post
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn permanent_mentions_survive_notification_clear_but_reflect_private_audiences_edits_and_deletes(
     pool: PgPool,
 ) {
@@ -104,7 +104,7 @@ async fn permanent_mentions_survive_notification_clear_but_reflect_private_audie
             .is_empty()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn archive_paging_skips_hidden_senders_and_deduplicates_current_edges_and_sources(
     pool: PgPool,
 ) {
@@ -177,7 +177,7 @@ async fn archive_paging_skips_hidden_senders_and_deduplicates_current_edges_and_
         .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_and_api_archives_require_the_current_recipient_and_show_private_cards(
     pool: PgPool,
 ) {
@@ -289,7 +289,7 @@ async fn native_and_api_archives_require_the_current_recipient_and_show_private_
     assert!(text.contains("Only non-public mentions"));
     assert!(text.contains("/notifications/inbox"));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn website_and_activity_mentions_share_the_archive_without_creating_an_actor(pool: PgPool) {
     let owner = create_local_account(&pool, "alice", "Alice").await.id;
     let author = create_local_account(&pool, "bob", "Bob").await.id;

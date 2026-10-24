@@ -58,7 +58,7 @@ async fn scan(state: &AppState) -> folders::Folder {
         .await
         .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scanner_deduplicates_pcm_without_copying_and_watches_missing_files_without_resurrecting_removals(
     pool: PgPool,
 ) {
@@ -174,7 +174,7 @@ async fn scanner_deduplicates_pcm_without_copying_and_watches_missing_files_with
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn assignments_reject_unknown_roots_traversal_and_symlinks_and_scan_generations_fence_disable(
     pool: PgPool,
 ) {
@@ -288,7 +288,7 @@ async fn api(
         .await
         .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mount_assignment_api_requires_operator_role_and_scopes_and_never_exposes_absolute_paths(
     pool: PgPool,
 ) {
@@ -380,7 +380,7 @@ async fn mount_assignment_api_requires_operator_role_and_scopes_and_never_expose
     let roots = roots.into_body().collect().await.unwrap().to_bytes();
     assert!(!String::from_utf8_lossy(&roots).contains(root.path().to_str().unwrap()));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_source_mutations_require_owner_and_operator_capabilities_and_preserve_pcm_tags_and_no_clobber(
     pool: PgPool,
 ) {
@@ -543,7 +543,7 @@ async fn explicit_source_mutations_require_owner_and_operator_capabilities_and_p
     assert_eq!(scan(&state).await.indexed, 0);
     assert!(state.media.list().await.unwrap().is_empty());
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mounted_original_stream_and_publication_use_real_native_encoders_and_keep_original_out_of_storage(
     pool: PgPool,
 ) {
@@ -803,7 +803,7 @@ async fn mounted_original_stream_and_publication_use_real_native_encoders_and_ke
         .unwrap();
     assert_eq!(revoked.status(), StatusCode::NOT_FOUND);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_reindex_restores_no_copy_membership_and_disconnect_preserves_files_and_fences_workers(
     pool: PgPool,
 ) {
@@ -902,7 +902,7 @@ async fn explicit_reindex_restores_no_copy_membership_and_disconnect_preserves_f
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn musical_probe_refuses_manifest_demuxers_and_indexes_only_the_bounded_audio_file(
     pool: PgPool,
 ) {
@@ -965,7 +965,7 @@ async fn web(
         .await
         .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_folder_forms_use_local_handles_current_csrf_and_explicit_no_copy_restore_disconnect(
     pool: PgPool,
 ) {
@@ -1118,7 +1118,7 @@ async fn native_folder_forms_use_local_handles_current_csrf_and_explicit_no_copy
         wave()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn owner_scan_choices_select_extensions_subfolders_and_exclusions_then_reconcile_current_membership(
     pool: PgPool,
 ) {
@@ -1261,7 +1261,7 @@ async fn illustrated_mp3(state: &AppState, root: &std::path::Path) -> Vec<u8> {
     );
     std::fs::read(output).unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn embedded_pictures_are_normalized_for_mounted_and_uploaded_audio_with_current_private_artwork_permissions(
     pool: PgPool,
 ) {
@@ -1362,7 +1362,7 @@ fn selected_png() -> Vec<u8> {
     image.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
     bytes.into_inner()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn selected_track_cover_and_tags_write_back_to_five_real_containers_without_changing_pcm_or_copying_originals(
     pool: PgPool,
 ) {
@@ -1504,7 +1504,7 @@ async fn external_tags(state: &AppState, path: &std::path::Path, title: &str) ->
     std::fs::rename(temporary.path(), path).unwrap();
     std::fs::read(path).unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn external_tag_only_edits_sync_current_publication_until_owner_personalization_and_keep_the_audio_identity(
     pool: PgPool,
 ) {
@@ -1621,7 +1621,7 @@ async fn external_tag_only_edits_sync_current_publication_until_owner_personaliz
     assert_eq!(protected_post.title.as_deref(), Some("My title"));
     assert!(state.media.open(&first.original_file).await.is_err());
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn duplicate_pcm_original_fallback_uses_the_current_container_size_and_filename_and_pages_past_stale_locations(
     pool: PgPool,
 ) {

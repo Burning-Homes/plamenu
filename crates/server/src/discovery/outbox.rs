@@ -99,6 +99,26 @@ pub fn hints(document: &Value, actor: &str) -> Vec<String> {
     hints
 }
 
+fn observed_versions(document: &Value, actor: &str) -> Vec<(String, String)> {
+    items(document)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let object = if item.get("type").and_then(Value::as_str) == Some("Create") {
+                item.get("object")?
+            } else {
+                item
+            };
+            Some((
+                id_of(object)?.to_owned(),
+                object.get("updated")?.as_str()?.to_owned(),
+            ))
+        })
+        .take(32)
+        .filter(|(uri, _)| same_origin(uri, actor))
+        .collect()
+}
+
 pub async fn fetch(state: &AppState, lease: &Lease) -> Result<(), FederationError> {
     let db_error = |e: plamenu_db::DbError| FederationError::Admission(e.to_string());
     let actor = db::entry(&state.pool, &lease.target_uri)
@@ -168,23 +188,7 @@ pub async fn fetch(state: &AppState, lease: &Lease) -> Result<(), FederationErro
     } else {
         return Err(invalid());
     };
-    let versions: Vec<_> = items(&document)
-        .into_iter()
-        .flatten()
-        .filter_map(|item| {
-            let object = if item.get("type").and_then(Value::as_str) == Some("Create") {
-                item.get("object")?
-            } else {
-                item
-            };
-            Some((
-                id_of(object)?.to_owned(),
-                object.get("updated")?.as_str()?.to_owned(),
-            ))
-        })
-        .take(32)
-        .filter(|(uri, _)| same_origin(uri, &actor.canonical_uri))
-        .collect();
+    let versions = observed_versions(&document, &actor.canonical_uri);
     db::observe_versions(&state.pool, lease, &versions)
         .await
         .map_err(db_error)?;

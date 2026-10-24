@@ -345,7 +345,7 @@ fn alpha_animated_gif() -> Vec<u8> {
     bytes
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn image_upload_carries_blurhash_small_style_and_focus(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -418,7 +418,7 @@ async fn image_upload_carries_blurhash_small_style_and_focus(pool: PgPool) {
     assert_eq!(updated["meta"]["focus"]["y"], 0.2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_disk_queued_video_processes_from_its_borrowed_path(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let root = tempfile::tempdir().unwrap();
@@ -462,7 +462,7 @@ async fn local_disk_queued_video_processes_from_its_borrowed_path(pool: PgPool) 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn v2_video_upload_processes_in_background_and_federates_metadata(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -566,7 +566,7 @@ async fn v2_video_upload_processes_in_background_and_federates_metadata(pool: Pg
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn v1_av_uploads_process_synchronously(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -628,7 +628,7 @@ async fn v1_av_uploads_process_synchronously(pool: PgPool) {
     assert_eq!(code, StatusCode::OK, "{posted}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn animated_gifs_become_gifv(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -661,7 +661,7 @@ async fn animated_gifs_become_gifv(pool: PgPool) {
     assert!(uploaded["blurhash"].is_string());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn media_delete_and_in_use_rules(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -727,7 +727,7 @@ async fn media_delete_and_in_use_rules(pool: PgPool) {
     assert_eq!(code, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn upload_and_attach_validations(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -768,7 +768,7 @@ async fn upload_and_attach_validations(pool: PgPool) {
     assert_eq!(body["error"], "Cannot attach more than 6 files");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_attachment_metadata_is_stored(pool: PgPool) {
     const GOOD_HASH: &str = "UBL_:rOpGG-;~qRjWBay0fI]%2s:S$M{R*of";
     let token = user_with_token(&pool, "alice").await;
@@ -875,7 +875,7 @@ async fn inbound_attachment_metadata_is_stored(pool: PgPool) {
 /// Inbound federated media beyond the local posting limit is preserved, not
 /// truncated the way Mastodon (and Plamenu before this) capped it at 4. Remote
 /// servers legitimately allow far more, so a 6-image Note keeps all 6.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_media_beyond_local_limit_is_kept(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -924,7 +924,7 @@ async fn inbound_media_beyond_local_limit_is_kept(pool: PgPool) {
     assert_eq!(shown["media_attachments"].as_array().unwrap().len(), 6);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_image_is_downloaded_and_served_locally(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1031,7 +1031,7 @@ async fn inbound_image_is_downloaded_and_served_locally(pool: PgPool) {
 /// resolves to `complete` without a cached file (this left 20 permanently-
 /// "queued" rows on staging). The client still only ever sees a proxy URL,
 /// never the origin.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn exhausted_remote_download_still_only_proxies(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1177,7 +1177,7 @@ async fn inbound_gif_under_mode(
     (state, attachment)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_animated_gif_is_kept_as_arrived(pool: PgPool) {
     // Under the explicit `keep` setting, a federated GIF keeps the origin's exact
     // bytes — re-encoding to gifv cost pixel art its quality and rendered
@@ -1194,7 +1194,7 @@ async fn inbound_animated_gif_is_kept_as_arrived(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_animated_gif_converts_when_opted_in(pool: PgPool) {
     // The pre-M39 behavior survives as the opt-in `gifv` mode: an opaque
     // remote GIF re-encodes to a looping soundless mp4…
@@ -1221,7 +1221,7 @@ async fn inbound_animated_gif_converts_when_opted_in(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_animated_gif_reencodes_to_webp_by_default(pool: PgPool) {
     // The default re-encodes to animated WebP, preserving transparency.
     // (Skipped gracefully in code — falls back to keeping the GIF — when
@@ -1236,7 +1236,7 @@ async fn inbound_animated_gif_reencodes_to_webp_by_default(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_actor_avatar_and_header_are_cached_locally(pool: PgPool) {
     let mut bob = RemoteUser::new("remote.example", "bob");
     let avatar_origin = "https://remote.example/avatars/bob.png";
@@ -1283,7 +1283,7 @@ async fn remote_actor_avatar_and_header_are_cached_locally(pool: PgPool) {
     assert_eq!(media_worker::run_due_account_media(&state).await, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cached_avatars_keep_animation_and_honour_passthrough(pool: PgPool) {
     let mut bob = RemoteUser::new("remote.example", "bob");
     let bob_origin = "https://remote.example/avatars/bob.gif";
@@ -1335,7 +1335,7 @@ async fn cached_avatars_keep_animation_and_honour_passthrough(pool: PgPool) {
     assert!(file.ends_with(".avatar.png"), "{file}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn evicted_remote_media_is_redownloaded_on_demand(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1405,7 +1405,7 @@ async fn evicted_remote_media_is_redownloaded_on_demand(pool: PgPool) {
     assert_eq!(stub.media_fetches().len(), 2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn admin_retention_setting_overrides_the_config_default(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1505,7 +1505,7 @@ async fn admin_retention_setting_overrides_the_config_default(pool: PgPool) {
     assert_eq!(fetch_media_file(&state, &local_url).await, StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn form_encoded_media_ids_attach(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -1581,7 +1581,7 @@ async fn seed_remote_attachment(
 /// The proxy fetches an uncached remote attachment on demand (the server, not
 /// the client, contacts the origin) and 302s to our immutable copy; a second
 /// hit serves the cache without re-fetching.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn media_proxy_fetches_on_demand_then_serves_cache(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);
@@ -1612,7 +1612,7 @@ async fn media_proxy_fetches_on_demand_then_serves_cache(pool: PgPool) {
 
 /// Cached legacy proxy URLs for both split and muxed HLS videos upgrade to the
 /// compatibility gateway. Even `?d=1` never bypasses it to a silent origin.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn legacy_hls_proxy_urls_upgrade_to_the_compatibility_gateway(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);
@@ -1661,7 +1661,7 @@ async fn legacy_hls_proxy_urls_upgrade_to_the_compatibility_gateway(pool: PgPool
 /// and serves its result (the eager-drop regression of 2026-07-12 instead
 /// deadlocked the runtime here). Both requests must succeed off a single
 /// origin fetch.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn media_proxy_concurrent_requests_coalesce_into_one_fetch(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_actors([bob.actor.clone()]);
@@ -1679,7 +1679,7 @@ async fn media_proxy_concurrent_requests_coalesce_into_one_fetch(pool: PgPool) {
 
 /// When the proxy cannot cache a file it fails closed with a 404 by default,
 /// and only redirects to the origin when the viewer opted in (`?d=1`).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn media_proxy_fails_closed_without_optin(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     // The stub never serves this URL, so every download attempt fails.
@@ -1705,7 +1705,7 @@ async fn media_proxy_fails_closed_without_optin(pool: PgPool) {
 /// icon URL from its initial Create at a permanent 404. The first failed poster
 /// request refreshes the canonical object, persists its replacement icon and
 /// serves that image without exposing either origin URL to the browser.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn video_poster_recovers_from_a_rotated_icon(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1784,7 +1784,7 @@ async fn video_poster_recovers_from_a_rotated_icon(pool: PgPool) {
 }
 
 /// An unknown proxy kind or id is a 404, never a redirect.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn media_proxy_unknown_is_not_found(pool: PgPool) {
     let state = test_state_with(pool.clone(), Arc::default());
     let (status, _) = proxy_get(&state, "/media/proxy/attachment/999999").await;
@@ -1795,7 +1795,7 @@ async fn media_proxy_unknown_is_not_found(pool: PgPool) {
 
 /// A separated-audio HLS ingest remains ready but never enters the detached
 /// whole-file worker lane. Format/range/sound are covered by `hls_proxy`.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn separated_audio_video_never_queues_the_whole_file_lane(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1856,7 +1856,7 @@ async fn separated_audio_video_never_queues_the_whole_file_lane(pool: PgPool) {
     assert_eq!(jobs, 0, "the legacy proxy redirect queues no download");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn retention_grades_evict_profile_images_and_size_capped_attachments(pool: PgPool) {
     // M39 retention grades: cached remote avatars/headers evict on their own
     // clock (refetched on demand), and the attachment size cap evicts oldest
@@ -1961,7 +1961,7 @@ async fn retention_grades_evict_profile_images_and_size_capped_attachments(pool:
 /// formerly public `/media/...` URL 404s at the origin instead of serving the
 /// deleted attachment's bytes forever. The capture-and-enqueue happens in the
 /// delete transaction; the leased cleanup worker then removes the files.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn deleting_a_status_makes_its_media_urls_404(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -2035,7 +2035,7 @@ async fn deleting_a_status_makes_its_media_urls_404(pool: PgPool) {
 /// The reconciliation sweep enqueues a file no database row
 /// references (an orphan from a pre-fix deletion) while sparing every file that
 /// is still referenced.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reconcile_enqueues_orphans_and_spares_referenced_files(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -2104,7 +2104,7 @@ async fn reconcile_enqueues_orphans_and_spares_referenced_files(pool: PgPool) {
 /// public status ids bracketing the upload can walk the range against the
 /// handful of extensions we emit. The stored name now carries 128 bits of
 /// randomness.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn attachment_file_names_are_not_derivable_from_the_media_id(pool: PgPool) {
     let token = user_with_token(&pool, "alice").await;
     let state = test_state_with(pool.clone(), Arc::default());

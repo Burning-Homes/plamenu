@@ -39,7 +39,7 @@ fn group() -> RemoteUser {
 const PERSON_URI: &str = "https://lemmy.example/u/collision";
 const GROUP_URI: &str = "https://lemmy.example/c/collision";
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn person_and_group_collision_resolves_by_type(pool: PgPool) {
     let stub = StubFederation::with_users(&[&person(), &group()]);
     let state = test_state_with(pool.clone(), stub);
@@ -75,7 +75,7 @@ async fn person_and_group_collision_resolves_by_type(pool: PgPool) {
 
 /// The `WebFinger` link order must not decide which actor a typed lookup gets:
 /// Lemmy puts Person first, but the type — not position — is authoritative.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn resolution_is_independent_of_webfinger_order(pool: PgPool) {
     // Group registered FIRST, so it leads the candidate list.
     let stub = StubFederation::with_users(&[&group(), &person()]);
@@ -98,7 +98,7 @@ async fn resolution_is_independent_of_webfinger_order(pool: PgPool) {
 /// Refreshing one actor of a collided handle must never replace or delete the
 /// other: after both are cached, forcing a re-webfinger of the Person leaves the
 /// Group row intact.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn refresh_of_one_actor_leaves_the_other(pool: PgPool) {
     let stub = StubFederation::with_users(&[&person(), &group()]);
     let state = test_state_with(pool.clone(), stub);

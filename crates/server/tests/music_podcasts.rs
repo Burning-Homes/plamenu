@@ -36,7 +36,7 @@ async fn fixture(pool: PgPool) -> (AppState, Arc<StubFederation>, Account, Accou
     (state, stub, owner, viewer)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn podcast_website_resolves_the_feed_and_preserves_its_existing_identity(pool: PgPool) {
     let (state, stub, owner, viewer) = fixture(pool).await;
     let (original, _) = music_podcasts::subscribe(&state, owner.id, URL)
@@ -72,7 +72,7 @@ async fn podcast_website_resolves_the_feed_and_preserves_its_existing_identity(p
     assert_eq!(episodes.items[0]["title"], "Updated episode");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn podcast_website_does_not_crawl_recursively_or_follow_script_links(pool: PgPool) {
     let (state, stub, owner, _) = fixture(pool).await;
     let site = "https://podcast.example/";
@@ -99,7 +99,7 @@ async fn podcast_website_does_not_crawl_recursively_or_follow_script_links(pool:
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn subscription_refresh_retains_episode_identity_play_state_and_last_good_catalogue(
     pool: PgPool,
 ) {
@@ -221,7 +221,7 @@ async fn subscription_refresh_retains_episode_identity_play_state_and_last_good_
         .unwrap();
     assert_eq!(published, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn opml_round_trips_escaped_titles_and_collects_all_feed_failures(pool: PgPool) {
     let (state, stub, owner, _) = fixture(pool).await;
     serve(
@@ -255,7 +255,7 @@ async fn opml_round_trips_escaped_titles_and_collects_all_feed_failures(pool: Pg
         .unwrap();
     assert_eq!(shows, 1);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn refresh_lease_serializes_network_requests_and_account_erasure_cleans_subscriptions(
     pool: PgPool,
 ) {
@@ -350,7 +350,7 @@ async fn text(response: Response) -> String {
     )
     .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_podcast_forms_use_one_music_workspace_and_require_csrf(pool: PgPool) {
     let (state, stub, owner, _) = fixture(pool).await;
     plamenu_db::user::create(
@@ -517,7 +517,7 @@ async fn native_podcast_forms_use_one_music_workspace_and_require_csrf(pool: PgP
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn episodes_join_playlists_device_queues_and_elapsed_played_reports_without_social_posts(
     pool: PgPool,
 ) {
@@ -724,7 +724,7 @@ async fn episodes_join_playlists_device_queues_and_elapsed_played_reports_withou
     assert_eq!(social, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn enclosure_endpoint_serves_current_ranges_without_a_local_download_or_played_event(
     pool: PgPool,
 ) {
@@ -791,7 +791,7 @@ async fn enclosure_endpoint_serves_current_ranges_without_a_local_download_or_pl
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn podcast_api_scopes_preserve_private_subscriptions_and_current_per_listener_counts(
     pool: PgPool,
 ) {
@@ -944,7 +944,7 @@ async fn podcast_api_scopes_preserve_private_subscriptions_and_current_per_liste
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unknown_episode_duration_keeps_resume_position_and_removal_clears_it(pool: PgPool) {
     use plamenu::music_queues::{self, Action, Change, Source};
     let (state, _, owner, _) = fixture(pool).await;
@@ -1033,7 +1033,7 @@ async fn unknown_episode_duration_keeps_resume_position_and_removal_clears_it(po
     assert!(queue.position_seconds.abs() < f64::EPSILON);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn displayed_episode_queue_and_bulk_played_are_bounded_ordered_and_listener_private(
     pool: PgPool,
 ) {
@@ -1145,7 +1145,7 @@ async fn displayed_episode_queue_and_bulk_played_are_bounded_ordered_and_listene
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn podcast_artwork_uses_current_catalogue_urls_and_rejects_active_content(pool: PgPool) {
     let (state, stub, owner, _) = fixture(pool).await;
     let show = music_podcasts::subscribe(&state, owner.id, URL)
@@ -1217,7 +1217,7 @@ async fn podcast_artwork_uses_current_catalogue_urls_and_rejects_active_content(
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn new_listener_refreshes_shared_catalogue_before_subscription_and_failures_preserve_it(
     pool: PgPool,
 ) {
@@ -1266,7 +1266,7 @@ async fn new_listener_refreshes_shared_catalogue_before_subscription_and_failure
     assert_eq!(stub.podcast_fetches.lock().unwrap().len(), fetches);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn selected_episodes_join_owned_collections_atomically_with_revision_and_library_rules(
     pool: PgPool,
 ) {

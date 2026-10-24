@@ -1,7 +1,7 @@
 //! Bookmarks and status pins: client API, the featured AP collection, and
 //! Add/Remove federation in both directions.
 
-mod common;
+use plamenu_test_support as common;
 
 use std::time::SystemTime;
 
@@ -185,7 +185,7 @@ fn ids_of(body: &Value) -> Vec<&str> {
         .collect()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bookmark_lifecycle(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let posted = post_status(&pool, &token, json!({"status": "keep this"})).await;
@@ -267,7 +267,7 @@ async fn bookmark_lifecycle(pool: PgPool) {
     assert_eq!(body.as_array().unwrap().len(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bookmarks_require_visibility_and_auth(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -305,7 +305,7 @@ async fn bookmarks_require_visibility_and_auth(pool: PgPool) {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bookmarks_listing_paginates_by_bookmark_id(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let mut post_ids = Vec::new();
@@ -355,7 +355,7 @@ async fn bookmarks_listing_paginates_by_bookmark_id(pool: PgPool) {
     assert_eq!(ids_of(&body), [post_ids[0].as_str()]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pin_lifecycle_and_listings(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let first = post_status(&pool, &token, json!({"status": "first"})).await;
@@ -446,7 +446,7 @@ async fn pin_lifecycle_and_listings(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pin_validates_like_mastodon(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -563,7 +563,7 @@ async fn pin_validates_like_mastodon(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_pins_stay_visibility_gated(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -620,7 +620,7 @@ async fn private_pins_stay_visibility_gated(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pin_federates_add_and_remove_to_followers(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -685,7 +685,7 @@ fn featured_change(bob: &RemoteUser, kind: &str, object: &Value) -> Value {
     })
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_add_and_remove_track_remote_pins(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -785,7 +785,7 @@ async fn inbound_add_and_remove_track_remote_pins(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_add_remove_track_remote_featured_tags(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -840,7 +840,7 @@ async fn inbound_add_remove_track_remote_featured_tags(pool: PgPool) {
     assert!(body.as_array().unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_add_fetches_unknown_status_and_refuses_foreign_ones(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");

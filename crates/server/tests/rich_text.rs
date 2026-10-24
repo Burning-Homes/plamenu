@@ -113,7 +113,7 @@ async fn api(
     (status, value)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unicode_and_bridge_mentions_render_and_deliver_in_all_post_formats(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     // A prefix account catches accidental partial matching of @GrüneGera.
@@ -220,7 +220,7 @@ async fn unicode_and_bridge_mentions_render_and_deliver_in_all_post_formats(pool
     assert_eq!(count, 0, "a username prefix must not receive notifications");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unicode_domain_alias_of_local_account_never_webfingers(pool: PgPool) {
     let bob = create_local_account(&pool, "bob", "Bob").await;
     let stub = StubFederation::with_users(&[]);
@@ -244,7 +244,7 @@ async fn unicode_domain_alias_of_local_account_never_webfingers(pool: PgPool) {
     assert!(stub.deliveries().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn channel_mentions_deliver_without_group_submission_and_keep_person_preference(
     pool: PgPool,
 ) {
@@ -361,7 +361,7 @@ async fn ap_object(app: Router, path: &str) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn markdown_post_renders_html_and_keeps_source(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let (_bob, _) = user_with_token(&pool, "bob").await;
@@ -432,7 +432,7 @@ async fn markdown_post_renders_html_and_keeps_source(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn markdown_leaves_code_and_existing_links_alone(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let (status, posted) = api(
@@ -456,7 +456,7 @@ async fn markdown_leaves_code_and_existing_links_alone(pool: PgPool) {
     assert!(posted["tags"].as_array().unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn html_post_is_sanitized_and_linkified(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let (status, posted) = api(
@@ -478,7 +478,7 @@ async fn html_post_is_sanitized_and_linkified(pool: PgPool) {
     assert!(!content.contains("onclick"), "{content}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unsupported_and_absent_content_types_stay_plain(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -518,7 +518,7 @@ async fn unsupported_and_absent_content_types_stay_plain(pool: PgPool) {
     assert_eq!(source["content_type"], "text/plain");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn user_default_format_applies_when_param_absent(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let user_row = user::find_by_email(&pool, "alice@plamenu.test")
@@ -562,7 +562,7 @@ async fn user_default_format_applies_when_param_absent(pool: PgPool) {
     assert_eq!(explicit["content"], "<p>**literal**</p>");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edit_can_switch_format_and_keeps_it_otherwise(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -618,7 +618,7 @@ async fn edit_can_switch_format_and_keeps_it_otherwise(pool: PgPool) {
     assert_eq!(source["text"], "**two**");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn format_only_edit_is_a_real_edit(pool: PgPool) {
     // Same text, same rendered HTML, different format: the no-change
     // shortcut must not swallow it, or `/source` would lie to editors.
@@ -654,7 +654,7 @@ async fn format_only_edit_is_a_real_edit(pool: PgPool) {
     assert_eq!(source["content_type"], "text/markdown");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scheduled_status_captures_and_replays_format(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -710,7 +710,7 @@ async fn scheduled_status_captures_and_replays_format(pool: PgPool) {
     assert!(content.contains("<strong>later</strong>"), "{content}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn instance_metadata_advertises_post_formats(pool: PgPool) {
     let app = || test_app(pool.clone());
     let expected = json!(["text/plain", "text/markdown", "text/html"]);

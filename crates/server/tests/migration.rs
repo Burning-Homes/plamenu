@@ -95,7 +95,7 @@ async fn deliver_move(
     status
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_move_repoints_local_followers(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob_old = RemoteUser::new("remote.example", "bob");
@@ -154,7 +154,7 @@ async fn inbound_move_repoints_local_followers(pool: PgPool) {
     assert_eq!(to_old.activity["object"]["type"], "Follow");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_move_requires_alias_back_reference(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob_old = RemoteUser::new("remote.example", "bob");
@@ -193,7 +193,7 @@ async fn inbound_move_requires_alias_back_reference(pool: PgPool) {
 /// sending server's request open until it timed out and redelivered the same
 /// `Move` (the 2026-07 bench audit's finding, in git history). What the
 /// request owes is the redirect and a queued replay.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_move_queues_the_replay_instead_of_running_it_inline(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob_old = RemoteUser::new("remote.example", "bob");
@@ -274,7 +274,7 @@ async fn inbound_move_queues_the_replay_instead_of_running_it_inline(pool: PgPoo
     assert_eq!(migration::run_due(&state).await, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_move_carries_local_blocks_and_mutes_over(pool: PgPool) {
     let blocker = create_local_account(&pool, "blocker", "Blocker").await;
     let muter = create_local_account(&pool, "muter", "Muter").await;
@@ -310,7 +310,7 @@ async fn inbound_move_carries_local_blocks_and_mutes_over(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_move_is_idempotent(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob_old = RemoteUser::new("remote.example", "bob");
@@ -350,7 +350,7 @@ async fn inbound_move_is_idempotent(pool: PgPool) {
 /// refresh of the source actor — a signature verification is enough — records
 /// the redirect first. That must not make the real activity look like a replay:
 /// the redirect is a fact about the account, the follower migration is the work.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_move_still_repoints_after_the_actor_advertised_the_redirect(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob_old = RemoteUser::new("remote.example", "bob");
@@ -392,7 +392,7 @@ async fn inbound_move_still_repoints_after_the_actor_advertised_the_redirect(poo
 /// Somebody moving *onto* this server: the destination is a local account, so
 /// the followers here belong on that row — not on a remote duplicate of an
 /// account we host ourselves.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_move_onto_this_server_repoints_to_the_local_account(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let carol = create_local_account(&pool, "carol", "Carol").await;
@@ -450,7 +450,7 @@ async fn inbound_move_onto_this_server_repoints_to_the_local_account(pool: PgPoo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbound_migrate_repoints_followers_and_publishes_redirect(pool: PgPool) {
     let dave = create_local_account(&pool, "dave", "Dave").await;
     let dave_uri = format!("https://{TEST_DOMAIN}/users/dave");
@@ -521,7 +521,7 @@ async fn outbound_migrate_repoints_followers_and_publishes_redirect(pool: PgPool
     assert!(eve_types.contains(&"Move".to_owned()), "{eve_types:?}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbound_migrate_rejects_target_without_alias(pool: PgPool) {
     create_local_account(&pool, "dave", "Dave").await;
     // dave_new does not list dave as an alias.
@@ -547,7 +547,7 @@ async fn outbound_migrate_rejects_target_without_alias(pool: PgPool) {
     assert_eq!(dave.moved_to_uri, None);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn alias_is_declared_and_published_on_the_actor(pool: PgPool) {
     create_local_account(&pool, "dave", "Dave").await;
     let other = RemoteUser::new("new.example", "dave");
@@ -580,7 +580,7 @@ async fn alias_is_declared_and_published_on_the_actor(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn alias_rows_keep_the_typed_acct_for_display(pool: PgPool) {
     let dave = create_local_account(&pool, "dave", "Dave").await;
     let other = RemoteUser::new("new.example", "dave");
@@ -611,7 +611,7 @@ async fn alias_rows_keep_the_typed_acct_for_display(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbound_migrate_records_history_and_enforces_cooldown(pool: PgPool) {
     let dave = create_local_account(&pool, "dave", "Dave").await;
     let dave_uri = format!("https://{TEST_DOMAIN}/users/dave");
@@ -778,7 +778,7 @@ async fn web_login(app: &Router, pool: &PgPool, username: &str, password: &str) 
         .to_owned()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_aliases_page_adds_and_removes(pool: PgPool) {
     let other = RemoteUser::new("new.example", "dave");
     let stub = StubFederation::with_users(&[&other]);
@@ -836,7 +836,7 @@ async fn web_aliases_page_adds_and_removes(pool: PgPool) {
     assert!(page.body.contains("You have no declared aliases"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_migration_page_moves_the_account(pool: PgPool) {
     let dave_uri = format!("https://{TEST_DOMAIN}/users/dave");
     let dave_new = aliased("new.example", "dave", &dave_uri);
@@ -938,7 +938,7 @@ async fn web_migration_page_moves_the_account(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_migration_pages_negotiate_russian_including_refusals(pool: PgPool) {
     // The remote account exists but does not claim dave as an alias, so the
     // move is refused — the refusal the reader sees comes from the catalog.
@@ -1009,7 +1009,7 @@ fn urlencoding_of(text: &str) -> String {
         .to_owned()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbound_move_rolls_back_redirect_history_and_replay_when_delivery_fails(pool: PgPool) {
     let dave = create_local_account(&pool, "dave", "Dave").await;
     let dave_new = aliased(

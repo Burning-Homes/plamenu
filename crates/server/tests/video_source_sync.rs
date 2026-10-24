@@ -106,7 +106,7 @@ async fn count(f: &Fixture, table: &str) -> i64 {
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn source_discovers_new_videos_as_private_labelled_drafts_without_publication(pool: PgPool) {
     let f = fixture(pool).await;
     feed(&f, 1);
@@ -166,7 +166,7 @@ async fn source_discovers_new_videos_as_private_labelled_drafts_without_publicat
     assert_eq!(count(&f, "video_source_sync_items").await, 2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bounded_feed_cursor_progress_and_quota_refusal_do_not_drop_or_orphan_items(pool: PgPool) {
     let mut f = fixture(pool).await;
     feed(&f, 30);
@@ -203,7 +203,7 @@ async fn bounded_feed_cursor_progress_and_quota_refusal_do_not_drop_or_orphan_it
     assert_eq!(count(&f, "video_source_sync_items").await, 30);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pauses_restarts_ownership_and_dedup_survive_copy_deletion(pool: PgPool) {
     let f = fixture(pool).await;
     feed(&f, 1);
@@ -267,7 +267,7 @@ async fn pauses_restarts_ownership_and_dedup_survive_copy_deletion(pool: PgPool)
     assert_eq!(count(&f, "video_source_sync_items").await, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn source_limits_concurrent_creation_and_manual_check_rate_are_bounded(pool: PgPool) {
     let f = fixture(pool).await;
     assert!(
@@ -324,7 +324,7 @@ async fn source_limits_concurrent_creation_and_manual_check_rate_are_bounded(poo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hostile_pages_objects_audiences_and_untrusted_licences_are_not_adopted(pool: PgPool) {
     let f = fixture(pool).await;
     for kind in [
@@ -390,7 +390,7 @@ async fn hostile_pages_objects_audiences_and_untrusted_licences_are_not_adopted(
     assert!(licence.is_none());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pausing_during_real_admission_wait_rolls_back_all_reservations(pool: PgPool) {
     let f = fixture(pool).await;
     feed(&f, 1);
@@ -426,7 +426,7 @@ async fn pausing_during_real_admission_wait_rolls_back_all_reservations(pool: Pg
     assert_eq!(count(&f, "video_source_sync_items").await, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_playlist_can_reference_a_guarded_foreign_video_without_copying_clip_or_actor_identity(
     pool: PgPool,
 ) {
@@ -454,7 +454,7 @@ async fn public_playlist_can_reference_a_guarded_foreign_video_without_copying_c
     assert!(draft.contains(video));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn history_limit_pauses_without_forgetting_deduplication_or_allocating_more_media(
     pool: PgPool,
 ) {
@@ -470,7 +470,7 @@ async fn history_limit_pauses_without_forgetting_deduplication_or_allocating_mor
     assert_eq!(count(&f, "video_source_sync_items").await, 10000);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn peertube_element_iris_advance_within_an_embedded_playlist_and_deduplicate_videos(
     pool: PgPool,
 ) {
@@ -518,7 +518,7 @@ async fn peertube_element_iris_advance_within_an_embedded_playlist_and_deduplica
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn html_sources_require_rights_csrf_scopes_and_current_authority_and_status_is_private(
     pool: PgPool,
 ) {

@@ -1,4 +1,3 @@
-mod common;
 use common::{StubFederation, create_local_account, test_state_with};
 use plamenu::auth::hash_password;
 use plamenu::{AppState, notification_config::NotificationsConfig, notification_mail, webmentions};
@@ -9,6 +8,7 @@ use plamenu_db::{
     status::{self, NewLocalStatus},
     user,
 };
+use plamenu_test_support as common;
 use std::sync::Arc;
 use time::OffsetDateTime;
 async fn fixture(pool: PgPool) -> (AppState, i64, i64, i64) {
@@ -55,7 +55,7 @@ fn notification_config_has_reference_defaults_and_rejects_invalid_days_and_utc_h
     let c = c.validate().unwrap();
     assert_eq!((c.retention_days, c.purge_hour, c.digest_hour), (12, 23, 0));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn retention_preserves_unseen_overrides_recent_rows_and_disabled_delivery_kinds(
     pool: PgPool,
 ) {
@@ -107,7 +107,7 @@ async fn retention_preserves_unseen_overrides_recent_rows_and_disabled_delivery_
             .unwrap();
     assert_eq!(remaining, vec![ids[0], ids[3], ids[4]]);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn retention_is_bounded_and_repeated_ticks_drain_only_old_seen_rows(pool: PgPool) {
     let (state, owner, uid, actor) = fixture(pool).await;
     let base = id::next();
@@ -134,7 +134,7 @@ async fn retention_is_bounded_and_repeated_ticks_drain_only_old_seen_rows(pool: 
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn retention_keeps_private_and_website_mentions_and_reverification_does_not_renotify(
     pool: PgPool,
 ) {
@@ -196,7 +196,7 @@ async fn retention_keeps_private_and_website_mentions_and_reverification_does_no
         .unwrap();
     assert_eq!(count, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn digest_clock_and_initial_eligibility_use_the_configured_utc_hour(pool: PgPool) {
     let (mut state, owner, _, actor) = fixture(pool).await;
     let config = Arc::make_mut(&mut state.config);

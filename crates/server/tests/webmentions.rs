@@ -51,7 +51,7 @@ async fn notification_count(state: &AppState, owner: i64) -> i64 {
     .await
     .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn receiver_is_durable_idempotent_updates_one_card_and_retracts_removed_sources(
     pool: PgPool,
 ) {
@@ -120,7 +120,7 @@ async fn receiver_is_durable_idempotent_updates_one_card_and_retracts_removed_so
     );
     assert_eq!(notification_count(&state, owner.id).await, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn transient_verification_keeps_old_card_and_private_targets_and_capabilities_are_rejected(
     pool: PgPool,
 ) {
@@ -176,7 +176,7 @@ async fn transient_verification_keeps_old_card_and_private_targets_and_capabilit
             .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn redelivery_during_fetch_fences_old_content_and_404_retracts_without_duplicate_notifications(
     pool: PgPool,
 ) {
@@ -221,7 +221,7 @@ async fn redelivery_during_fetch_fences_old_content_and_404_retracts_without_dup
     worker::run(&state, id).await.unwrap();
     assert_eq!(notification_count(&state, owner.id).await, 0);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outgoing_discovers_endpoint_retains_removed_targets_and_public_source_obeys_current_privacy(
     pool: PgPool,
 ) {
@@ -298,7 +298,7 @@ async fn outgoing_discovers_endpoint_retains_removed_targets_and_public_source_o
     ));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_website_reactions_are_native_public_notes_with_atomic_edges_and_microformats(
     pool: PgPool,
 ) {
@@ -374,7 +374,7 @@ async fn explicit_website_reactions_are_native_public_notes_with_atomic_edges_an
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn photo_proxy_decodes_raster_hides_origin_and_obeys_current_target_and_source_policy(
     pool: PgPool,
 ) {
@@ -426,7 +426,7 @@ async fn photo_proxy_decodes_raster_hides_origin_and_obeys_current_target_and_so
         Err(ApiError::NotFound)
     ));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn archive_paging_advances_past_many_currently_hidden_targets_without_starving_older_cards(
     pool: PgPool,
 ) {
@@ -467,7 +467,7 @@ async fn archive_paging_advances_past_many_currently_hidden_targets_without_star
     assert_eq!(page.items[0].id, readable);
     assert!(page.before.is_none());
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_library_mentions_appear_on_native_collection_pages_and_disappear_on_privacy_change(
     pool: PgPool,
 ) {
@@ -538,7 +538,7 @@ async fn canonical_library_mentions_appear_on_native_collection_pages_and_disapp
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn self_mentions_stay_archived_while_a_different_local_website_author_notifies_the_target_owner(
     pool: PgPool,
 ) {
@@ -581,7 +581,7 @@ async fn self_mentions_stay_archived_while_a_different_local_website_author_noti
     assert_eq!(notification_count(&state, owner.id).await, 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn source_document_excludes_incoming_card_links_from_its_authored_microformat_entry(
     pool: PgPool,
 ) {
@@ -619,7 +619,7 @@ async fn source_document_excludes_incoming_card_links_from_its_authored_microfor
             .is_none()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_archive_forms_use_current_csrf_and_publish_only_the_explicit_owner_action(
     pool: PgPool,
 ) {

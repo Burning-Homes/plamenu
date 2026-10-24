@@ -10,7 +10,7 @@ use plamenu_db::PgPool;
 use serde_json::Value;
 use tower::ServiceExt;
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn peertube_channel_profile_renders_name_and_markdown_in_api_and_no_js_page(pool: PgPool) {
     let mut channel = RemoteUser::channel("video.example", "forum_demos");
     channel.actor.name = Some("Forum Demos & <b>Keynotes</b>".into());
@@ -85,7 +85,7 @@ async fn peertube_channel_profile_renders_name_and_markdown_in_api_and_no_js_pag
     assert!(updated.note.contains("href=\"https://video.example/new\""));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn actor_summary_format_is_explicit_or_scoped_to_peertube(pool: PgPool) {
     let mut actor = RemoteUser::new("other.example", "someone").actor;
     actor.summary = Some("<p>Literal **stars** &amp; safe</p>".into());

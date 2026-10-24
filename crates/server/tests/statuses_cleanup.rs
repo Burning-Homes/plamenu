@@ -62,7 +62,7 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for DeletionReadCounte
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn deletion_reuses_captured_author_and_group_memberships(pool: PgPool) {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tracing_subscriber::layer::SubscriberExt;
@@ -135,7 +135,7 @@ fn default_policy() -> PolicyUpdate {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sweep_deletes_old_statuses_and_federates(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -187,7 +187,7 @@ async fn sweep_deletes_old_statuses_and_federates(pool: PgPool) {
     assert_eq!(deleted, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn sweep_stops_at_the_run_budget(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     for _ in 0..53 {
@@ -206,7 +206,7 @@ async fn sweep_stops_at_the_run_budget(pool: PgPool) {
     assert_eq!(status::count_by_account(&pool, alice.id).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn disabled_policy_is_never_swept(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let kept = old_status(&pool, alice.id, "public", 2 * TWO_WEEKS_SECS).await;
@@ -227,7 +227,7 @@ async fn disabled_policy_is_never_swept(pool: PgPool) {
     assert!(status::find_by_id(&pool, kept).await.unwrap().is_some());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unfavouriting_own_status_rolls_the_cursor_back(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let own = old_status(&pool, alice.id, "public", 2 * TWO_WEEKS_SECS).await;
@@ -335,7 +335,7 @@ async fn post_form(
     (status, body)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cleanup_form_renders_and_saves(pool: PgPool) {
     let alice = web_user(&pool).await;
     let app = common::test_app(pool.clone());
@@ -413,7 +413,7 @@ async fn cleanup_form_renders_and_saves(pool: PgPool) {
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn cleanup_form_requires_a_session(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let app = common::test_app(pool.clone());
@@ -425,7 +425,7 @@ async fn cleanup_form_requires_a_session(pool: PgPool) {
     assert_eq!(status, StatusCode::SEE_OTHER, "redirects to /login");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn delivery_backlog_defers_the_sweep(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let kept = old_status(&pool, alice.id, "public", 2 * TWO_WEEKS_SECS).await;

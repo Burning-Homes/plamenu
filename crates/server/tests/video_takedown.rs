@@ -66,7 +66,7 @@ async fn get(state: &AppState, path: &str) -> StatusCode {
     response.status()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failed_cleanup_retains_revocation_and_eventually_acknowledges_repaired_storage(
     pool: PgPool,
 ) {
@@ -114,7 +114,7 @@ async fn failed_cleanup_retains_revocation_and_eventually_acknowledges_repaired_
     assert_eq!(get(&state, "/media/12345.mp4").await, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mirror_failover_keeps_authority_and_failed_replica_delete_keeps_cleanup_debt(
     pool: PgPool,
 ) {
@@ -333,7 +333,7 @@ async fn public_lanes(f: &Film, allowed: bool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn current_owner_suspension_revokes_every_native_lane_after_transfer(pool: PgPool) {
     let f = film(pool.clone()).await;
     let owner = common::create_local_account(&pool, "bob", "Bob").await;
@@ -364,7 +364,7 @@ async fn current_owner_suspension_revokes_every_native_lane_after_transfer(pool:
     public_lanes(&f, true).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn tombstoned_or_private_native_status_revokes_playback_and_swarm(pool: PgPool) {
     let f = film(pool.clone()).await;
     public_lanes(&f, true).await;
@@ -391,7 +391,7 @@ async fn tombstoned_or_private_native_status_revokes_playback_and_swarm(pool: Pg
     public_lanes(&f, false).await;
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn live_session_dvr_and_swarm_obey_current_owner_and_status_authority(pool: PgPool) {
     async fn check(f: &Film, hash: &str, allowed: bool) {
         let pool = &f.state.pool;

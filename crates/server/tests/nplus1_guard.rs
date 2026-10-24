@@ -70,7 +70,7 @@ impl<S: tracing::Subscriber> Layer<S> for ApplicationSettingsReadCounter {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn status_application_settings_reuse_author_snapshot_and_preserve_wire_visibility(
     pool: PgPool,
 ) {
@@ -225,7 +225,7 @@ impl<S: tracing::Subscriber> Layer<S> for ViewerFlagsReadCounter {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn status_viewer_flags_share_one_snapshot_and_stay_viewer_specific(pool: PgPool) {
     use plamenu_db::{bookmark, dislike, favourite, pin};
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -392,7 +392,7 @@ async fn status_viewer_flags_share_one_snapshot_and_stay_viewer_specific(pool: P
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn status_media_keys_share_one_snapshot_without_losing_cleanup_or_ownership(pool: PgPool) {
     use plamenu_db::{media, media_cleanup};
     async fn attachment(
@@ -616,7 +616,7 @@ impl<S: tracing::Subscriber> Layer<S> for RemoteMediaWriteCounter {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_media_insert_and_processing_share_fresh_policy_snapshot(pool: PgPool) {
     use plamenu_db::{instance_policy, media};
     let author = remote_account(&pool, "media.example", "alice").await;
@@ -877,7 +877,7 @@ async fn remote_media_insert_and_processing_share_fresh_policy_snapshot(pool: Pg
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn hashtag_upsert_and_links_share_snapshot_preserving_names_dates_and_rollback(pool: PgPool) {
     use plamenu_db::tag;
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -1021,7 +1021,7 @@ async fn seed_followers(pool: &PgPool, viewer: i64, n: usize) -> Vec<plamenu_db:
     accounts
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_accounts_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -1063,7 +1063,7 @@ async fn render_accounts_query_count_is_flat(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_channel_account_rendering_is_batched(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -1111,7 +1111,7 @@ async fn native_channel_account_rendering_is_batched(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_relationships_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -1145,7 +1145,7 @@ async fn render_relationships_query_count_is_flat(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_statuses_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -1221,7 +1221,7 @@ async fn render_statuses_query_count_is_flat(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn video_metadata_rendering_is_batched(pool: PgPool) {
     use plamenu_db::{media, video_metadata};
     let counter = Arc::new(AtomicUsize::new(0));
@@ -1289,7 +1289,7 @@ async fn video_metadata_rendering_is_batched(pool: PgPool) {
 /// (`RenderMaps` and `NoteBatch` both), and a stub renders from data the batch
 /// already holds — a per-stub query here would turn every thread with deleted
 /// middles into an N+1.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn stubs_do_not_add_per_row_queries(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -1352,7 +1352,7 @@ async fn stubs_do_not_add_per_row_queries(pool: PgPool) {
 /// ONE recursive pass — the old per-quote `find_by_id` + full renderer call
 /// multiplied the entire render cost by the page's quote count, invisible to
 /// the plain fixture above.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_statuses_with_quotes_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -1481,7 +1481,7 @@ async fn remote_account(
 /// `moved_to_uri` used to live-render its target (~8 queries each) inside the
 /// otherwise-batched loop — invisible to the plain fixture above, which never
 /// sets `moved_to_uri`. The targets must resolve and render as one batch.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_accounts_with_migrations_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -1539,7 +1539,7 @@ async fn render_accounts_with_migrations_query_count_is_flat(pool: PgPool) {
 /// nested `moved` was stripped only *after* rendering it. The embedded target
 /// must render exactly one level deep, identically on the live and batched
 /// paths.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn moved_render_is_one_level_even_on_a_cycle(pool: PgPool) {
     let viewer = create_local_account(&pool, "viewer", "Viewer").await;
     let a = remote_account(&pool, "old.example", "ouro").await;
@@ -1577,7 +1577,7 @@ async fn moved_render_is_one_level_even_on_a_cycle(pool: PgPool) {
 /// tagged onto many statuses used to re-fetch its owner and member items once
 /// per (status, collection) pair. Owners, tags and items are fetched per page
 /// and each distinct collection renders once, so the count stays flat.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_statuses_with_tagged_collections_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -1730,7 +1730,7 @@ async fn render_statuses_with_tagged_collections_query_count_is_flat(pool: PgPoo
 /// `fediverse:creator` resolved to a known account used to live-render that
 /// author (~6 queries per distinct author). The bench seed hardcodes
 /// `author_account_id: None`, so only this fixture executes the branch.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_statuses_with_card_authors_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -1808,7 +1808,7 @@ async fn render_statuses_with_card_authors_query_count_is_flat(pool: PgPool) {
 /// `custom_emoji::lookup` inside the otherwise-batched loop — invisible to
 /// the plain fixture above, whose seeded profiles carry no colons. The whole
 /// page's profile emoji must resolve in one query.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_accounts_with_profile_emoji_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -1888,7 +1888,7 @@ async fn render_accounts_with_profile_emoji_query_count_is_flat(pool: PgPool) {
 /// reaction-group occurrence — with no negative memo — and one emoji lookup
 /// per poll). All three artifacts are dark in the bench seed, so only this
 /// fixture executes the branches.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_statuses_with_apps_reactions_and_poll_emoji_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -2030,7 +2030,7 @@ async fn render_statuses_with_apps_reactions_and_poll_emoji_is_flat(pool: PgPool
 /// (Mastodon renders a repeated id twice), so the renderer receives the raw
 /// capped target list. Rebuilding one relationship per occurrence must not cost
 /// a query per occurrence — otherwise a body repeating one id amplifies queries.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_relationships_is_flat_over_duplicate_ids(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -2068,7 +2068,7 @@ async fn render_relationships_is_flat_over_duplicate_ids(pool: PgPool) {
 /// `familiar_followers` used to probe every requested id with a
 /// serial `find_by_id`. The batched lookup must issue a fixed number of queries
 /// regardless of how many ids (existing or not) are requested.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn familiar_followers_lookup_is_flat_over_id_count(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -2135,7 +2135,7 @@ async fn seed_conversations(pool: &PgPool, viewer: i64, n: usize) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_conversations_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -2184,7 +2184,7 @@ async fn render_conversations_query_count_is_flat(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn filter_viewable_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -2234,7 +2234,7 @@ async fn filter_viewable_query_count_is_flat(pool: PgPool) {
 
 /// `filter_viewable` must decide each status identically to the per-item
 /// `can_view` it replaces, across every visibility and relationship.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn filter_viewable_matches_can_view(pool: PgPool) {
     let viewer = create_local_account(&pool, "viewer", "Viewer").await;
     let followed = create_local_account(&pool, "followed", "F").await;
@@ -2397,7 +2397,7 @@ const NO_FILTER: NotificationFilter<'static> = NotificationFilter {
     include_filtered: false,
 };
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_notifications_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -2448,7 +2448,7 @@ async fn render_notifications_query_count_is_flat(pool: PgPool) {
 /// per-item primitives (`account_json` / `render_status`) it replaced would,
 /// and keep the kind-specific key rules (`status` only on status-bearing
 /// kinds, `emoji` only on reactions).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn render_notifications_matches_per_item_primitives(pool: PgPool) {
     let viewer = create_local_account(&pool, "viewer", "Viewer").await;
     let faver = create_local_account(&pool, "faver", "Faver").await;
@@ -2577,7 +2577,7 @@ async fn seed_note_page(
 /// row before any optional artifact, which is what made the benched replies
 /// page cost 1,143 for 61 replies. `NoteBatch` must load the whole page once,
 /// so the count does not move with the page length.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn note_batch_query_count_is_flat(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let state = common::test_state_with(pool.clone(), Arc::default());
@@ -2621,7 +2621,7 @@ async fn note_batch_query_count_is_flat(pool: PgPool) {
 /// one does — the flatness assertion above is worthless if the page renders
 /// something different from what a single dereference of the same status
 /// returns.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn note_batch_seeded_parent_preserves_other_parents_and_documents(pool: PgPool) {
     let state = common::test_state_with(pool.clone(), Arc::default());
     let author = create_local_account(&pool, "author", "Author").await;
@@ -2663,7 +2663,7 @@ async fn note_batch_seeded_parent_preserves_other_parents_and_documents(pool: Pg
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn note_batch_matches_per_status_render(pool: PgPool) {
     let state = common::test_state_with(pool.clone(), Arc::default());
     let author = create_local_account(&pool, "author", "Author").await;
@@ -2716,7 +2716,7 @@ async fn note_batch_matches_per_status_render(pool: PgPool) {
 /// private-mention policy), so the two measurements exercise identical
 /// branches; the per-recipient pipeline this replaced cost 6-8 statements
 /// *per recipient*.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mention_filing_query_count_is_independent_of_recipient_count(pool: PgPool) {
     use plamenu_db::notification_policy::{Disposition, Policy};
 
@@ -2796,7 +2796,7 @@ async fn mention_filing_query_count_is_independent_of_recipient_count(pool: PgPo
 /// Before the batch cache every job re-read the host and
 /// signer facts too (~8 per job); if someone uncaches them the marginal cost
 /// here roughly doubles and this fails.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn delivery_drain_marginal_cost_per_job_is_constant(pool: PgPool) {
     use serde_json::json;
 
@@ -2861,7 +2861,7 @@ async fn delivery_drain_marginal_cost_per_job_is_constant(pool: PgPool) {
 /// per job only the local-status `source_of` read and the job completion
 /// remain. Before the batch context every job issued the whole set (~6 per
 /// job even for a linkless post).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn link_crawl_drain_marginal_cost_per_job_is_constant(pool: PgPool) {
     // Per job: `source_of` (the local-status link scan) + `complete_crawl`.
     const PER_JOB: usize = 2;
@@ -2932,7 +2932,7 @@ fn hub_subscribe(
 /// recipient paid a full ~25-statement render (and every list stream a
 /// second one); if a per-viewer read sneaks back in, the wide fan-out here
 /// jumps by that read times nine and this fails.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn streaming_status_fanout_query_count_is_flat_over_viewers(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -3024,7 +3024,7 @@ async fn streaming_status_fanout_query_count_is_flat_over_viewers(pool: PgPool) 
 /// anonymous reaction pass plus the batched per-viewer rows, one viewer-set
 /// entity render (the cited status included). It used to be ≥5 statements
 /// per connected viewer.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn streaming_announcement_fanout_query_count_is_flat_over_viewers(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let _guard = tracing::subscriber::set_default(
@@ -3112,7 +3112,7 @@ async fn streaming_announcement_fanout_query_count_is_flat_over_viewers(pool: Pg
 /// paid ~5-6 statements per relationship on the request path; if a per-edge
 /// read or delete sneaks back into the worker, the wide domain here costs 10
 /// edges more and this fails.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn domain_severance_query_count_is_flat_over_relationship_count(pool: PgPool) {
     let counter = Arc::new(AtomicUsize::new(0));
     let state = common::test_state_with(pool.clone(), Arc::default());

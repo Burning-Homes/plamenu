@@ -2,7 +2,7 @@
 //! text search over accounts/statuses/hashtags, exact acct matches,
 //! webfinger resolution and search-by-URL, through the real router.
 
-mod common;
+use plamenu_test_support as common;
 
 use std::sync::Arc;
 
@@ -144,7 +144,7 @@ fn section<'a>(results: &'a Value, name: &str) -> &'a Vec<Value> {
     results[name].as_array().unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn search_requires_q_and_read_scope(pool: PgPool) {
     common::open_previews(&pool).await;
     let (status, _) = api(test_app(pool.clone()), "GET", "/api/v2/search", None, None).await;
@@ -183,7 +183,7 @@ async fn search_requires_q_and_read_scope(pool: PgPool) {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn anonymous_search_is_restricted(pool: PgPool) {
     common::open_previews(&pool).await;
     create_local_account(&pool, "abba", "Abba").await;
@@ -251,7 +251,7 @@ async fn anonymous_search_is_restricted(pool: PgPool) {
     assert!(section(&results, "statuses").is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn combined_search_finds_accounts_statuses_and_hashtags(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "searcher", "read write").await;
     create_local_account(&pool, "rustfan", "Rust Fan").await;
@@ -319,7 +319,7 @@ async fn combined_search_finds_accounts_statuses_and_hashtags(pool: PgPool) {
     assert!(section(&results, "hashtags").is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn status_search_is_visibility_scoped(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "searcher", "read write").await;
     create_local_account(&pool, "author", "Author").await;
@@ -350,7 +350,7 @@ async fn status_search_is_visibility_scoped(pool: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn exact_acct_match_resolves_with_webfinger(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_users(&[&bob]);
@@ -473,7 +473,7 @@ async fn exact_acct_match_resolves_with_webfinger(pool: PgPool) {
     assert_eq!(section(&results, "accounts")[0]["acct"], "searcher");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unicode_and_long_bridge_handles_resolve_and_search(pool: PgPool) {
     let mut unicode = RemoteUser::new("loops.example", "unicode");
     unicode.actor.preferred_username = "GrüneGera".to_owned();
@@ -549,7 +549,7 @@ async fn unicode_and_long_bridge_handles_resolve_and_search(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn url_search_resolves_local_and_remote_resources(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let stub = StubFederation::with_users(&[&bob]);
@@ -646,7 +646,7 @@ async fn url_search_resolves_local_and_remote_resources(pool: PgPool) {
     assert!(section(&results, "accounts").is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn url_search_follows_permalinks_to_canonical_id(pool: PgPool) {
     // A status's browser permalink (its AP `url`) differs from its canonical
     // `id`; resolving the permalink must follow to the id and ingest it.
@@ -705,7 +705,7 @@ async fn url_search_follows_permalinks_to_canonical_id(pool: PgPool) {
 /// A post may predate support for media advertised by its linked page, or its
 /// original best-effort crawl may have failed. Resolving the already-known URL
 /// must repair that missing enrichment instead of returning the stale shell.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn url_search_backfills_audio_for_an_already_known_status(pool: PgPool) {
     const POST: &str = "https://pod.example/@show/posts/episode";
     const EPISODE: &str = "https://pod.example/@show/episodes/one";
@@ -765,7 +765,7 @@ async fn url_search_backfills_audio_for_an_already_known_status(pool: PgPool) {
     assert_eq!(stub.page_fetches(), vec![EPISODE.to_owned()]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn exact_owncast_homepage_resolves_and_is_cached(pool: PgPool) {
     let mut caster = RemoteUser::new("owncast.example", "inex");
     caster.actor.kind = "Service".into();
@@ -816,7 +816,7 @@ async fn exact_owncast_homepage_resolves_and_is_cached(pool: PgPool) {
 /// Accept), while its plugin exposes the category through `WebFinger` and a
 /// topic's canonical AP object id in public topic JSON. URL search bridges
 /// exactly those advertised identities and caches the resulting web URLs.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn url_search_resolves_discourse_category_and_topic_pages(pool: PgPool) {
     let mut forum = RemoteUser::new("discourse.example", "federation");
     forum.actor.kind = "Group".to_owned();
@@ -921,7 +921,7 @@ async fn url_search_resolves_discourse_category_and_topic_pages(pool: PgPool) {
 /// in `title`, the full body as `content` (not Mastodon's `<h2>`-plus-link
 /// compaction), the excerpt `summary` dropped rather than shown, and the
 /// attachment still proxied through the instance.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn url_search_resolves_non_note_status_types_natively(pool: PgPool) {
     let bob = RemoteUser::new("lemmy.test", "bob");
     let stub = StubFederation::with_users(&[&bob]);
@@ -991,7 +991,7 @@ async fn url_search_resolves_non_note_status_types_natively(pool: PgPool) {
     assert!(!url.contains("lemmy.test"), "{url}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn v1_account_search_returns_entities(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "searcher", "read write").await;
     create_local_account(&pool, "mira", "Mira").await;
@@ -1020,7 +1020,7 @@ fn urlencode(s: &str) -> String {
 
 /// One Lemmy handle served as both a Person (`/u/collision`) and a Group
 /// (`/c/collision`): `@` finds the person, `!` the group, a bare handle both.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn search_disambiguates_lemmy_person_and_group(pool: PgPool) {
     let mut person = RemoteUser::new("lemmy.test", "collision");
     person.actor.id = "https://lemmy.test/u/collision".to_owned();

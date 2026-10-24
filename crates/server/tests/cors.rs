@@ -2,7 +2,7 @@
 //! to read discovery and API responses from any origin, mirroring Mastodon's
 //! CORS policy.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::body::Body;
 use axum::http::header::HeaderName;
@@ -44,7 +44,7 @@ async fn preflight(pool: PgPool, uri: &str, method: &str) -> Response<Body> {
     test_app(pool).oneshot(request).await.unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn simple_get_requests_allow_any_origin(pool: PgPool) {
     // Discovery, the Mastodon API and media all answer with `ACAO: *` so
     // browser clients (Elk, Phanpy) can read them cross-origin. The CORS layer
@@ -80,7 +80,7 @@ async fn simple_get_requests_allow_any_origin(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn preflight_requests_allow_post(pool: PgPool) {
     // Both the app-registration and the token endpoints answer a browser
     // preflight with `ACAO: *` and `POST` among the allowed methods; the
@@ -108,7 +108,7 @@ async fn preflight_requests_allow_post(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn federation_endpoints_get_no_cors(pool: PgPool) {
     let response = get_with_origin(pool, "/health").await;
     assert_eq!(response.status(), StatusCode::OK);

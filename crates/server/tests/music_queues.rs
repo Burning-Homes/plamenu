@@ -56,7 +56,7 @@ fn ids(queue: &Queue) -> Vec<String> {
 }
 
 #[allow(clippy::too_many_lines)] // One lifecycle journey checks the transitions together.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn queues_restore_original_order_repeat_positions_and_device_isolation(pool: PgPool) {
     let (state, alice, bob) = fixture(pool).await;
     let a = asset(&state, alice, "First track", "private").await;
@@ -190,7 +190,7 @@ async fn queues_restore_original_order_repeat_positions_and_device_isolation(poo
     );
 }
 #[allow(clippy::too_many_lines)] // One lifecycle journey checks the transitions together.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn queues_never_retain_private_metadata_after_grants_blocks_or_source_retirement(
     pool: PgPool,
 ) {
@@ -316,7 +316,7 @@ async fn queues_never_retain_private_metadata_after_grants_blocks_or_source_reti
     );
 }
 #[allow(clippy::too_many_lines)] // One lifecycle journey checks the transitions together.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn concurrent_first_writes_and_stale_seeks_cannot_replace_another_selection(pool: PgPool) {
     let (state, alice, _) = fixture(pool).await;
     let a = asset(&state, alice, "Concurrent recording", "private").await;
@@ -380,7 +380,7 @@ async fn concurrent_first_writes_and_stale_seeks_cannot_replace_another_selectio
     );
 }
 #[allow(clippy::too_many_lines)] // One lifecycle journey checks the transitions together.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_queue_import_filters_every_source_and_queue_order_is_atomic(pool: PgPool) {
     use plamenu::music_collections::{self, Add, New};
     let (state, alice, bob) = fixture(pool).await;
@@ -501,7 +501,7 @@ async fn collection_queue_import_filters_every_source_and_queue_order_is_atomic(
     );
 }
 #[allow(clippy::too_many_lines)] // One lifecycle journey checks the transitions together.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn queue_inputs_are_bounded_and_account_lifecycle_remains_authoritative(pool: PgPool) {
     let (state, alice, _) = fixture(pool).await;
     let a = asset(&state, alice, "Bounded source", "private").await;
@@ -637,7 +637,7 @@ async fn tokens(state: &AppState, owner: i64) -> (String, String) {
     }
     (read, write)
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn queue_api_keeps_scopes_revisions_and_cache_private(pool: PgPool) {
     use axum::{
         body::Body,
@@ -708,7 +708,7 @@ async fn queue_api_keeps_scopes_revisions_and_cache_private(pool: PgPool) {
             .is_empty()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn audio_status_queues_preserve_origin_and_hide_retracted_publications(pool: PgPool) {
     use common::RemoteUser;
     use plamenu::{

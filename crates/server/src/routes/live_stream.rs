@@ -333,6 +333,11 @@ fn spawn_session(state: &AppState, media_id: i64, native_session: Option<String>
             // trailer index — there is no end of file to write one at.
             "-movflags",
             "empty_moov+frag_keyframe+default_base_moof+delay_moov+skip_trailer",
+            // Publish each completed fragment without waiting for the next
+            // keyframe to fill FFmpeg's output buffer. Progressive clients
+            // cannot independently request the missing tail like HLS can.
+            "-flush_packets",
+            "1",
             "pipe:1",
         ])
         .stdin(Stdio::null())

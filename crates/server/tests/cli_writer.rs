@@ -16,7 +16,7 @@ async fn run_cli(config: &std::path::Path, args: &[&str]) -> std::process::Outpu
         .unwrap()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn online_cli_has_disjoint_ids_and_refuses_a_second_cli(pool: PgPool) {
     let directory = tempfile::tempdir().unwrap();
     let mut database_url = url::Url::parse(&std::env::var("DATABASE_URL").unwrap()).unwrap();

@@ -2,7 +2,7 @@
 //! anti-enumeration behavior, the e-mailed edit link, validation, the
 //! sign-out-everywhere side effect, and the no-SMTP refusal.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -165,7 +165,7 @@ async fn api_get(app: &Router, path: &str, token: &str) -> (StatusCode, Value) {
     )
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reset_flow_changes_password_and_signs_out_everywhere(pool: PgPool) {
     let (_, api_token) = seed_user(&pool, "vesna", "old password").await;
     let app = test_app_smtp(pool.clone());
@@ -277,7 +277,7 @@ async fn reset_flow_changes_password_and_signs_out_everywhere(pool: PgPool) {
 /// The anonymous reset-completion POST validates the token before
 /// spending an Argon2 hash, so an invented token cannot turn the route into a
 /// hashing oracle. A live token still hashes exactly once.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reset_completion_validates_the_token_before_hashing(pool: PgPool) {
     seed_user(&pool, "vesna", "old password").await;
     let app = test_app_smtp(pool.clone());
@@ -328,7 +328,7 @@ async fn reset_completion_validates_the_token_before_hashing(pool: PgPool) {
     assert_eq!(login.status, StatusCode::SEE_OTHER);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reset_request_does_not_leak_account_existence(pool: PgPool) {
     seed_user(&pool, "vesna", "old password").await;
     let app = test_app_smtp(pool.clone());
@@ -376,7 +376,7 @@ async fn reset_request_does_not_leak_account_existence(pool: PgPool) {
     assert!(missing.body.contains("Invalid reset link"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reset_unavailable_without_smtp(pool: PgPool) {
     seed_user(&pool, "vesna", "old password").await;
     let app = test_app(pool.clone());
@@ -393,7 +393,7 @@ async fn reset_unavailable_without_smtp(pool: PgPool) {
     assert_eq!(email::pending(&pool).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reset_pages_negotiate_russian_and_the_mail_follows_the_recipient(pool: PgPool) {
     let (user_id, _) = seed_user(&pool, "vesna", "old password").await;
     let app = test_app_smtp(pool.clone());

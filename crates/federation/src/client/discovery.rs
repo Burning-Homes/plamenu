@@ -132,7 +132,7 @@ impl FederationClient {
             let body = limited_bytes(
                 response,
                 if format == DiscoveryFormat::Image {
-                    262144
+                    262_144
                 } else {
                     FEDERATION_JSON_LIMIT
                 },
@@ -150,7 +150,7 @@ impl FederationClient {
                 document,
                 final_url: current.to_string(),
                 body_bytes: body.len(),
-                image: (format == DiscoveryFormat::Image).then(|| body.to_vec()),
+                image: (format == DiscoveryFormat::Image).then(|| body.clone()),
             });
         }
         Err(FederationError::InvalidUrl(

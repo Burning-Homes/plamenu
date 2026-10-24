@@ -110,7 +110,7 @@ mod tests {
     use super::*;
     use crate::PgPool;
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn cli_commands_are_serialized_while_the_server_keeps_its_lock(pool: PgPool) {
         let options = (*pool.connect_options()).clone();
         let connect = || PgConnection::connect_with(&options);
@@ -142,7 +142,7 @@ mod tests {
 
     /// A second writer is refused while the first holds the lock, and the lock
     /// becomes available again once the first releases it.
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn refuses_a_second_writer_and_frees_on_release(pool: PgPool) {
         let options = (*pool.connect_options()).clone();
         let connect = || {
@@ -168,7 +168,7 @@ mod tests {
             .expect("the lock is available once the first writer releases it");
         second.release().await.unwrap();
     }
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn monitor_reports_lost_session_without_reacquiring(pool: PgPool) {
         let options = (*pool.connect_options()).clone();
         let mut conn = PgConnection::connect_with(&options).await.unwrap();

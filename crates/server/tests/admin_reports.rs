@@ -3,7 +3,7 @@
 //! (`MANAGE_REPORTS` + `admin:*`), the `Admin::Report` entity shape, the
 //! resolved/unresolved status filter, and the action lifecycle.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -156,7 +156,7 @@ async fn api(
     (status, value)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rejects_user_without_role(pool: PgPool) {
     let (_, token) = user_with_scope(&pool, "alice", "read write admin:read admin:write").await;
     let (status, _) = api(
@@ -170,7 +170,7 @@ async fn rejects_user_without_role(pool: PgPool) {
     assert_eq!(status, StatusCode::FORBIDDEN, "no role → 403");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rejects_write_verb_without_write_scope(pool: PgPool) {
     // Holds the role and admin:read, but resolve needs admin:write.
     let (admin_account, token) = user_with_scope(&pool, "moddy", "read admin:read").await;
@@ -190,7 +190,7 @@ async fn rejects_write_verb_without_write_scope(pool: PgPool) {
     assert_eq!(status, StatusCode::FORBIDDEN, "missing admin:write → 403");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn show_returns_admin_entity(pool: PgPool) {
     let (token, reporter, target) = fixture(&pool).await;
     let id = file_report(&pool, reporter.id, target.id, "spam").await;
@@ -219,7 +219,7 @@ async fn show_returns_admin_entity(pool: PgPool) {
     assert_eq!(body["rules"], json!([]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn index_defaults_to_unresolved(pool: PgPool) {
     let (token, reporter, target) = fixture(&pool).await;
     let open = file_report(&pool, reporter.id, target.id, "spam").await;
@@ -273,7 +273,7 @@ async fn index_defaults_to_unresolved(pool: PgPool) {
     assert_eq!(all.as_array().unwrap().len(), 2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn resolve_and_reopen_lifecycle(pool: PgPool) {
     let (token, reporter, target) = fixture(&pool).await;
     let id = file_report(&pool, reporter.id, target.id, "spam").await;
@@ -305,7 +305,7 @@ async fn resolve_and_reopen_lifecycle(pool: PgPool) {
     assert_eq!(reopened["action_taken_by_account"], Value::Null);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn assign_and_unassign(pool: PgPool) {
     let (token, reporter, target) = fixture(&pool).await;
     let id = file_report(&pool, reporter.id, target.id, "spam").await;
@@ -332,7 +332,7 @@ async fn assign_and_unassign(pool: PgPool) {
     assert_eq!(unassigned["assigned_account"], Value::Null);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn update_category_and_rules(pool: PgPool) {
     let (token, reporter, target) = fixture(&pool).await;
     let id = file_report(&pool, reporter.id, target.id, "other").await;
@@ -353,7 +353,7 @@ async fn update_category_and_rules(pool: PgPool) {
     assert_eq!(stored.rule_ids, Some(vec![3, 7]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn report_resolves_cited_rules(pool: PgPool) {
     let (token, reporter, target) = fixture(&pool).await;
     // Two live rules; the report cites them out of priority order.
@@ -412,7 +412,7 @@ async fn report_resolves_cited_rules(pool: PgPool) {
     assert_eq!(body["rules"].as_array().unwrap().len(), 2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn missing_report_is_404(pool: PgPool) {
     let (token, _, _) = fixture(&pool).await;
     let (status, _) = api(

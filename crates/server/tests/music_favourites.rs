@@ -37,7 +37,7 @@ async fn notes(state: &AppState, recipient: i64) -> Vec<notification::Notificati
     .await
     .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn concurrent_saves_are_idempotent_and_current_notifications_retract_on_undo(pool: PgPool) {
     let (state, owner, viewer, asset) = fixture(pool).await;
     music_assets::grant(&state, owner, asset, viewer, true)
@@ -123,7 +123,7 @@ async fn concurrent_saves_are_idempotent_and_current_notifications_retract_on_un
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn saves_respect_revocation_blocks_and_source_or_account_deletion(pool: PgPool) {
     let (state, owner, viewer, asset) = fixture(pool).await;
     let source = source(asset);
@@ -205,7 +205,7 @@ async fn saves_respect_revocation_blocks_and_source_or_account_deletion(pool: Pg
         0
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn music_events_obey_the_existing_sender_policy(pool: PgPool) {
     let (state, owner, viewer, asset) = fixture(pool).await;
     music_assets::grant(&state, owner, asset, viewer, true)
@@ -263,7 +263,7 @@ async fn music_events_obey_the_existing_sender_policy(pool: PgPool) {
         .unwrap();
     assert!(notes(&state, owner).await.is_empty());
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_saves_preserve_origin_without_likes_and_hide_tombstones(pool: PgPool) {
     let (state, _, viewer, _) = fixture(pool).await;
     let remote = RemoteUser::new("songhive.test", "sylvia");
@@ -319,7 +319,7 @@ async fn remote_saves_preserve_origin_without_likes_and_hide_tombstones(pool: Pg
         .unwrap();
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failed_save_insertion_rolls_back_the_event(pool: PgPool) {
     let (state, owner, viewer, asset) = fixture(pool).await;
     music_assets::grant(&state, owner, asset, viewer, true)
@@ -340,7 +340,7 @@ async fn failed_save_insertion_rolls_back_the_event(pool: PgPool) {
     );
     assert!(notes(&state, owner).await.is_empty());
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn favourites_api_requires_scopes_and_private_cache_policy(pool: PgPool) {
     use axum::{
         body::Body,
@@ -430,7 +430,7 @@ async fn favourites_api_requires_scopes_and_private_cache_policy(pool: PgPool) {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn paging_counts_only_currently_readable_saves(pool: PgPool) {
     let (state, _, viewer, template) = fixture(pool).await;
     for index in 0..157 {

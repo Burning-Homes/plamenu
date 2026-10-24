@@ -1,5 +1,4 @@
 //! Real guarded HTTP and the member web workflow, using two public API families.
-mod common;
 use axum::{
     Router,
     body::Body,
@@ -14,6 +13,7 @@ use plamenu::{
 };
 use plamenu_db::{PgPool, discovery_store as db};
 use plamenu_federation::{FederationClient, ProxyConfig};
+use plamenu_test_support as common;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -284,7 +284,7 @@ fn run_id(start: db::SearchStart) -> i64 {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn explicit_search_verifies_only_selected_origins_preserves_local_results_and_caches_receipts(
     pool: PgPool,
 ) {
@@ -365,7 +365,7 @@ async fn explicit_search_verifies_only_selected_origins_preserves_local_results_
     assert_eq!(f.calls().len(), 2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn older_account_urls_resolve_only_on_selected_origin_and_never_enqueue_aliases(
     pool: PgPool,
 ) {
@@ -411,7 +411,7 @@ async fn older_account_urls_resolve_only_on_selected_origin_and_never_enqueue_al
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn public_community_search_needs_canonical_group_and_current_individual_record(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let user = session(&f.state).await;
@@ -450,7 +450,7 @@ async fn public_community_search_needs_canonical_group_and_current_individual_re
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authentication_failure_is_cached_without_disabling_directory_or_forwarding(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let user = session(&f.state).await;
@@ -490,7 +490,7 @@ async fn authentication_failure_is_cached_without_disabling_directory_or_forward
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn deadline_preserves_local_and_partial_results_without_background_continuation(
     pool: PgPool,
 ) {
@@ -539,7 +539,7 @@ async fn deadline_preserves_local_and_partial_results_without_background_continu
     assert_eq!(f.calls().len(), 4);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn deletion_during_first_search_verification_keeps_its_guard_after_receipt_cleanup(
     pool: PgPool,
 ) {
@@ -592,7 +592,7 @@ async fn deletion_during_first_search_verification_keeps_its_guard_after_receipt
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn viewer_domain_changes_cancel_inflight_requests(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let user = session(&f.state).await;
@@ -632,7 +632,7 @@ async fn viewer_domain_changes_cancel_inflight_requests(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn interactive_leases_share_budgets_are_throttled_and_never_enter_background_work(
     pool: PgPool,
 ) {
@@ -712,7 +712,7 @@ async fn interactive_leases_share_budgets_are_throttled_and_never_enter_backgrou
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_opt_outs_and_global_pause_win_over_search_hints(pool: PgPool) {
     let f = fixture(pool.clone()).await;
     let user = session(&f.state).await;
@@ -786,7 +786,7 @@ fn query_parameters_and_hint_bounds_do_not_request_recursion() {
     assert!(wider::term(&"a".repeat(257)).is_err());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn canonical_and_alias_rate_limits_stop_remaining_candidates_and_pause_the_origin(
     pool: PgPool,
 ) {

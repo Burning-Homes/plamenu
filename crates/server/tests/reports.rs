@@ -193,7 +193,7 @@ async fn post_signed(app: Router, body: &Value, signer: &RequestSigner) -> Statu
     app.oneshot(request).await.unwrap().status()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reporting_a_remote_account_federates_a_flag_from_the_instance_actor(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -287,7 +287,7 @@ async fn reporting_a_remote_account_federates_a_flag_from_the_instance_actor(poo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reporting_a_local_account_is_never_federated(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let (carol, _) = user_with_token(&pool, "carol").await;
@@ -316,7 +316,7 @@ async fn reporting_a_local_account_is_never_federated(pool: PgPool) {
     assert!(stub.deliveries().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rule_ids_force_the_violation_category(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let (carol, _) = user_with_token(&pool, "carol").await;
@@ -338,7 +338,7 @@ async fn rule_ids_force_the_violation_category(pool: PgPool) {
     assert_eq!(body["rule_ids"], json!(["3", "7"]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn report_input_validations(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let (carol, _) = user_with_token(&pool, "carol").await;
@@ -410,7 +410,7 @@ async fn report_input_validations(pool: PgPool) {
     assert_eq!(code, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reporting_requires_the_write_scope(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "alice").await;
     let email = "alice@plamenu.test";
@@ -433,7 +433,7 @@ async fn reporting_requires_the_write_scope(pool: PgPool) {
     assert_eq!(code, StatusCode::FORBIDDEN, "{body:?}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_flag_stores_a_report_about_a_local_user(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     // A local status by alice, posted through the API.
@@ -491,7 +491,7 @@ async fn inbound_flag_stores_a_report_about_a_local_user(pool: PgPool) {
 /// its `object` array must not fan out into thousands of reports and webhooks:
 /// `flag_object_uris` deduplicates before dispatch, so exactly one report is
 /// filed for the account.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_flag_with_repeated_targets_files_one_report(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
 
@@ -529,7 +529,7 @@ async fn inbound_flag_with_repeated_targets_files_one_report(pool: PgPool) {
     assert_eq!(stored[0].target_account_id, alice.id);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_flag_naming_no_local_target_stores_nothing(pool: PgPool) {
     let remote_actor = RemoteUser::new("remote.example", "actor");
     let stub = StubFederation::with_actors([remote_actor.actor.clone()]);
@@ -563,7 +563,7 @@ async fn inbound_flag_naming_no_local_target_stores_nothing(pool: PgPool) {
 /// A `Flag` naming many *distinct* local accounts must not fan out
 /// past the object cap. Sixty distinct local targets — over `MAX_FLAG_OBJECTS`
 /// (50) — file exactly fifty reports, not sixty (or thousands).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_flag_distinct_targets_are_capped(pool: PgPool) {
     let mut object = Vec::new();
     for i in 0..60 {
@@ -604,7 +604,7 @@ async fn inbound_flag_distinct_targets_are_capped(pool: PgPool) {
 /// Flag naming many distinct local URLs that resolve to nothing issues the same
 /// number of queries as one — proof the former per-URI `find_local_by_username`
 /// / `find_by_id` chain is gone and cannot be driven serial by a hostile array.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_flag_resolution_query_count_is_flat(pool: PgPool) {
     let remote_actor = RemoteUser::new("remote.example", "actor");
     let stub = StubFederation::with_actors([remote_actor.actor.clone()]);
@@ -659,7 +659,7 @@ async fn inbound_flag_resolution_query_count_is_flat(pool: PgPool) {
 /// The client's `status_ids` array is deduplicated before any
 /// per-status work, so citing the same status twice stores (and forwards) it
 /// once rather than amplifying into duplicate lookups and object URIs.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn report_status_ids_are_deduplicated(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -717,7 +717,7 @@ async fn report_status_ids_are_deduplicated(pool: PgPool) {
 
 /// A `status_ids` array beyond the distinct cap is rejected with
 /// 422 before any per-status database lookup runs.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn report_status_ids_over_the_cap_are_rejected(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let (carol, _) = user_with_token(&pool, "carol").await;
@@ -745,7 +745,7 @@ async fn report_status_ids_over_the_cap_are_rejected(pool: PgPool) {
 /// one — proof the former per-status `find_by_id` loop is gone. Measured at the
 /// action layer so the count reflects report creation itself, not the shared
 /// rate-limiter/token caches the HTTP entry point warms.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn report_status_validation_query_count_is_flat(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -848,7 +848,7 @@ async fn staff_notifications(pool: &PgPool, token: &str) -> Vec<Value> {
     body.as_array().unwrap().clone()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn filing_a_report_notifies_managing_staff_with_the_report_embedded(pool: PgPool) {
     let (reporter, reporter_token) = user_with_token(&pool, "alice").await;
     let (staff, staff_token) = user_with_token(&pool, "mod").await;
@@ -897,7 +897,7 @@ async fn filing_a_report_notifies_managing_staff_with_the_report_embedded(pool: 
 
 /// A staff member filing a report is not notified about it (the standard
 /// self-notification guard), while other staff still are.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn a_reporting_staff_member_is_not_self_notified(pool: PgPool) {
     let (mod1, mod1_token) = user_with_token(&pool, "modone").await;
     let (mod2, mod2_token) = user_with_token(&pool, "modtwo").await;
@@ -922,7 +922,7 @@ async fn a_reporting_staff_member_is_not_self_notified(pool: PgPool) {
 
 /// An inbound `Flag` raises the staff notification too, and a redelivered
 /// `Flag` (same report URI) does not raise it twice.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn an_inbound_flag_notifies_staff_once(pool: PgPool) {
     let (_alice, _) = user_with_token(&pool, "alice").await;
     let (staff, staff_token) = user_with_token(&pool, "mod").await;

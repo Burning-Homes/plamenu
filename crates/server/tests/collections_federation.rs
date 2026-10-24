@@ -122,7 +122,7 @@ fn remote_collection(owner: &RemoteUser, uri: &str, items: &[Value]) -> Value {
     })
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_feature_request_is_accepted_and_a_stamp_is_served(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     make_discoverable(&pool, alice.id).await;
@@ -202,7 +202,7 @@ async fn inbound_feature_request_is_accepted_and_a_stamp_is_served(pool: PgPool)
     assert_eq!(stamp["interactingObject"], collection_uri.as_str());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_feature_request_is_rejected_when_not_featureable(pool: PgPool) {
     // Fresh accounts are discoverable by default (migration 0127); opt alice
     // out so she is not featureable, which is what this test exercises.
@@ -257,7 +257,7 @@ async fn inbound_feature_request_is_rejected_when_not_featureable(pool: PgPool) 
     assert_eq!(sent.last().unwrap().activity["type"], "Reject");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbound_feature_request_accept_then_revoke(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -349,7 +349,7 @@ async fn outbound_feature_request_accept_then_revoke(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbound_feature_request_reject(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -397,7 +397,7 @@ async fn outbound_feature_request_reject(pool: PgPool) {
     assert_eq!(item.state, "rejected");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_add_featured_collection_ingests_a_remote_member(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let carol = RemoteUser::new("remote.example", "carol");
@@ -451,7 +451,7 @@ async fn inbound_add_featured_collection_ingests_a_remote_member(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn serves_featured_collections_and_a_collection_document(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;

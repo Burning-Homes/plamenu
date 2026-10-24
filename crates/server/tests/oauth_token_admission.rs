@@ -4,7 +4,7 @@
 //! parser, and app-level tokens are capped per app so an anonymous caller that
 //! registered one app cannot grow the token table without limit.
 
-mod common;
+use plamenu_test_support as common;
 
 use std::net::SocketAddr;
 
@@ -73,7 +73,7 @@ async fn body_json(response: Response<Body>) -> Value {
 /// `POST /oauth/token` now counts against a per-IP bucket, so a flood of token
 /// mints from one address is turned away with 429 — before, this endpoint drew
 /// from no bucket at all.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn token_endpoint_is_throttled_per_ip(pool: PgPool) {
     // The token endpoint shares the login-attempts budget.
     sqlx::query!("UPDATE instance_settings SET rate_limit_login_attempts = 2")
@@ -110,7 +110,7 @@ async fn token_endpoint_is_throttled_per_ip(pool: PgPool) {
 /// A `client_credentials` request cannot mint scopes broader than the app
 /// registered, and an unrecognized scope string is rejected outright — so the
 /// persisted `scopes` value is bounded by the canonical parser.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn client_credentials_scope_is_bounded(pool: PgPool) {
     let client_id = seed_app(&pool, "read").await;
     let app = plamenu::build_router(test_state_with(pool, std::sync::Arc::default()));
@@ -144,7 +144,7 @@ async fn client_credentials_scope_is_bounded(pool: PgPool) {
 
 /// Minting app-level tokens through the endpoint holds one app to a bounded
 /// number of live tokens, however many are requested.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn app_level_tokens_are_capped_end_to_end(pool: PgPool) {
     // Raise the admission budget so the cap, not the throttle, is what bounds
     // the row count in this test.
@@ -184,7 +184,7 @@ async fn app_level_tokens_are_capped_end_to_end(pool: PgPool) {
 /// minted token, so an app that registered for `read` could ask for — and be
 /// issued — `write`, or `admin:write`, entirely outside its registration
 /// (RFC 6749 §4.1.2.1 `invalid_scope`).
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn authorization_code_scope_cannot_exceed_the_app_registration(pool: PgPool) {
     use plamenu_db::user;
 

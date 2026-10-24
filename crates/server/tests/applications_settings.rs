@@ -3,7 +3,7 @@
 //! UI, the one-time credential reveal, the owner access token's lifecycle
 //! (regenerate, scope-change regeneration, deletion), and owner scoping.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -142,7 +142,7 @@ async fn create_app(app: &Router, cookie: &str, name: &str, scopes: &[&str]) -> 
     resp
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn index_lists_without_a_create_form(pool: PgPool) {
     seed_user(&pool, "dev", EMAIL).await;
     let app = common::test_app(pool.clone());
@@ -175,7 +175,7 @@ async fn index_lists_without_a_create_form(pool: PgPool) {
     assert!(index.body.contains("Development"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_reveals_working_credentials_once(pool: PgPool) {
     seed_user(&pool, "dev", EMAIL).await;
     let app = common::test_app(pool.clone());
@@ -226,7 +226,7 @@ async fn create_reveals_working_credentials_once(pool: PgPool) {
     assert!(index.body.contains("Fishbot"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn api_registered_and_foreign_apps_stay_invisible(pool: PgPool) {
     seed_user(&pool, "dev", EMAIL).await;
     let other_uid = seed_user(&pool, "rival", "rival@example.com").await;
@@ -287,7 +287,7 @@ async fn api_registered_and_foreign_apps_stay_invisible(pool: PgPool) {
     assert_eq!(regen.status, StatusCode::NOT_FOUND);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_validates_like_mastodon(pool: PgPool) {
     seed_user(&pool, "dev", EMAIL).await;
     let app = common::test_app(pool.clone());
@@ -350,7 +350,7 @@ async fn create_validates_like_mastodon(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn scope_change_regenerates_the_owner_token(pool: PgPool) {
     seed_user(&pool, "dev", EMAIL).await;
     let app = common::test_app(pool.clone());
@@ -440,7 +440,7 @@ async fn scope_change_regenerates_the_owner_token(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn regenerate_swaps_the_token(pool: PgPool) {
     seed_user(&pool, "dev", EMAIL).await;
     let app = common::test_app(pool.clone());
@@ -485,7 +485,7 @@ async fn regenerate_swaps_the_token(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn delete_kills_the_app_and_its_tokens(pool: PgPool) {
     seed_user(&pool, "dev", EMAIL).await;
     let app = common::test_app(pool.clone());
@@ -527,7 +527,7 @@ async fn delete_kills_the_app_and_its_tokens(pool: PgPool) {
     assert!(index.body.contains("You have no applications yet."));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn create_requires_a_valid_csrf_token(pool: PgPool) {
     seed_user(&pool, "dev", EMAIL).await;
     let app = common::test_app(pool.clone());

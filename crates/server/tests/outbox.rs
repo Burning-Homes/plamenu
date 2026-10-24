@@ -99,7 +99,7 @@ async fn post(pool: &PgPool, username: &str, text: &str, visibility: &str) -> st
     .0
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbox_envelope_counts_federatable_statuses_only(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     create_local_account(&pool, "bob", "Bob").await;
@@ -128,7 +128,7 @@ async fn outbox_envelope_counts_federatable_statuses_only(pool: PgPool) {
     assert!(!body.as_object().unwrap().contains_key("orderedItems"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbox_page_inlines_creates_and_announces(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     create_local_account(&pool, "bob", "Bob").await;
@@ -208,7 +208,7 @@ async fn outbox_page_inlines_creates_and_announces(pool: PgPool) {
     assert!(!create.as_object().unwrap().contains_key("@context"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbox_pages_paginate_by_keyset(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let mut ids = Vec::new();
@@ -280,7 +280,7 @@ async fn outbox_pages_paginate_by_keyset(pool: PgPool) {
 /// `AccountStatusesFilter` keyed on `signed_request_account`: an accepted
 /// follower also receives followers-only statuses, and a mentioned requester
 /// the statuses that mention them — direct messages included.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbox_pages_are_viewer_aware(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -365,7 +365,7 @@ async fn outbox_pages_are_viewer_aware(pool: PgPool) {
 /// A requester the account blocks — directly or via a personal domain block
 /// — is served an empty page (Mastodon's `Status.none` for `blocked?`),
 /// never a 403 that would advertise the block.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbox_page_is_empty_for_blocked_requesters(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -407,7 +407,7 @@ async fn outbox_page_is_empty_for_blocked_requesters(pool: PgPool) {
 /// Boosts of an author the requester blocks (or is blocked by) are withheld
 /// from their page — the federated slice of Mastodon's
 /// `excluded_from_timeline_account_ids` reblog filter.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbox_page_hides_boosts_of_authors_the_viewer_blocks(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let dave = create_local_account(&pool, "dave", "Dave").await;
@@ -450,7 +450,7 @@ async fn outbox_page_hides_boosts_of_authors_the_viewer_blocks(pool: PgPool) {
     assert_eq!(item_objects(&page).len(), 2);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn outbox_requires_ap_accept_and_known_user(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
 
@@ -478,7 +478,7 @@ async fn outbox_requires_ap_accept_and_known_user(pool: PgPool) {
 /// account's `statuses_count` — Mastodon's
 /// `ProcessAccountService#set_fetchable_attributes!` semantics, including
 /// keeping the stored baseline when a later fetch reports no numeric total.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_outbox_total_items_becomes_statuses_count(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let outbox_uri = format!("{}/outbox", bob.actor.id);
@@ -536,7 +536,7 @@ async fn remote_outbox_total_items_becomes_statuses_count(pool: PgPool) {
 
 /// A non-https `outbox` value is dropped at ingest like the other
 /// collection URLs, and never overrides local counting.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn remote_outbox_rejects_invalid_uris(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let mut actor = bob.actor.clone();

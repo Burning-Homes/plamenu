@@ -2,7 +2,7 @@
 //! (`update_credentials`, actor document), inbound follows held for review,
 //! and the authorize / reject endpoints with their federated responses.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::Router;
 use axum::body::Body;
@@ -176,7 +176,7 @@ async fn post_signed(app: Router, path: &str, body: &Value, signer: &RequestSign
     app.oneshot(request).await.unwrap().status()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn locked_flag_updates_entities_and_actor_document(pool: PgPool) {
     let (_alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -223,7 +223,7 @@ async fn locked_flag_updates_entities_and_actor_document(pool: PgPool) {
     assert_eq!(actor["manuallyApprovesFollowers"], false);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_follow_to_locked_account_waits_for_authorization(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -370,7 +370,7 @@ async fn inbound_follow_to_locked_account_waits_for_authorization(pool: PgPool) 
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn rejecting_a_follow_request_federates_reject(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -428,7 +428,7 @@ async fn rejecting_a_follow_request_federates_reject(pool: PgPool) {
     assert!(notifications.as_array().unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn repeat_follow_when_already_following_is_re_accepted(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -495,7 +495,7 @@ async fn repeat_follow_when_already_following_is_re_accepted(pool: PgPool) {
     assert_eq!(notifications[0]["type"], "follow");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_follow_of_locked_account_needs_authorization(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -601,7 +601,7 @@ async fn local_follow_of_locked_account_needs_authorization(pool: PgPool) {
     assert_eq!(notifications[0]["type"], "follow");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn follow_request_endpoints_require_auth(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let app = || test_app(pool.clone());

@@ -264,10 +264,7 @@ async fn actor_document(
         let signals = DiscoverySignals::from_document(&document);
         let withdrawn = document["type"] == "Tombstone";
         let public = !withdrawn && profiles::public_profile(&document);
-        if !public
-            || matches!(signals.discoverable, Signal::Deny | Signal::Invalid)
-            || matches!(signals.indexable, Signal::Deny | Signal::Invalid)
-        {
+        if !public || matches!(signals.indexable, Signal::Deny | Signal::Invalid) {
             // Preserve this target's refusal before revoking the actor, which
             // cancels all dependent jobs (including the current lease). Fresh
             // negative evidence must also suppress other retained videos.
@@ -294,6 +291,9 @@ async fn actor_document(
             }
             return Err(FederationError::DiscoveryStale);
         }
+        // A public actor's discovery opt-out restricts promotion, independently
+        // of indexing. Canonical ownership checks still precede caching it;
+        // save_actor_evidence also fences recommendations of cached siblings.
     }
     Ok(document)
 }

@@ -7,7 +7,7 @@ use common::{StubFederation, create_local_account, test_state_with};
 use http_body_util::BodyExt;
 use plamenu::{
     AppState,
-    auth::{generate_secret, hash_password, hash_secret},
+    auth::{generate_secret, hash_secret},
     music_jobs::{self, Reference},
 };
 use plamenu_db::{PgPool, id, oauth, role, user};
@@ -30,7 +30,7 @@ async fn fixture(pool: PgPool) -> Fixture {
         &pool,
         admin,
         Some("admin@example.test"),
-        &hash_password("fixture-password").unwrap(),
+        &common::fixture_password_hash(),
     )
     .await
     .unwrap()
@@ -39,7 +39,7 @@ async fn fixture(pool: PgPool) -> Fixture {
         &pool,
         owner,
         Some("owner@example.test"),
-        &hash_password("fixture-password").unwrap(),
+        &common::fixture_password_hash(),
     )
     .await
     .unwrap();
@@ -127,7 +127,7 @@ async fn token(f: &Fixture, scope: &str) -> String {
     .unwrap();
     token
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn operator_cancellation_is_audited_fences_workers_and_preserves_saved_configuration(
     pool: PgPool,
 ) {
@@ -177,7 +177,7 @@ async fn operator_cancellation_is_audited_fences_workers_and_preserves_saved_con
     let audits:i64=sqlx::query_scalar("SELECT count(*) FROM admin_action_logs WHERE account_id=$1 AND target_type='MusicJob' AND action='cancel'").bind(f.admin).fetch_one(&f.state.pool).await.unwrap();
     assert_eq!(audits, 4);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn completed_work_and_durable_file_recovery_are_not_terminated(pool: PgPool) {
     let f = fixture(pool).await;
     sqlx::query("UPDATE music_renditions SET state='failed' WHERE id=$1")
@@ -237,7 +237,7 @@ async fn completed_work_and_durable_file_recovery_are_not_terminated(pool: PgPoo
     assert!(page.items.iter().any(|j| j.kind == "recovery"));
     assert!(!page.items.iter().any(|j| j.kind == "folder"));
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn job_api_requires_role_and_admin_scopes_and_native_cancellation_requires_csrf(
     pool: PgPool,
 ) {
@@ -340,7 +340,7 @@ async fn job_api_requires_role_and_admin_scopes_and_native_cancellation_requires
     assert_eq!(r.status(), StatusCode::SEE_OTHER);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn batch_cancellation_validates_before_changes_and_reports_only_stopped_runs(pool: PgPool) {
     let f = fixture(pool).await;
     let invalid = [

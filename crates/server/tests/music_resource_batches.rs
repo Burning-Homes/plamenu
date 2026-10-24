@@ -20,7 +20,7 @@ impl<S: tracing::Subscriber> Layer<S> for Counter {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn entity_batches_preserve_identity_current_source_access_and_flat_query_count(pool: PgPool) {
     let owner = create_local_account(&pool, "alice", "Alice").await.id;
     let viewer = create_local_account(&pool, "bob", "Bob").await.id;
@@ -140,7 +140,7 @@ async fn entity_batches_preserve_identity_current_source_access_and_flat_query_c
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn container_batches_recheck_grants_blocks_retirement_and_station_config_privacy(
     pool: PgPool,
 ) {

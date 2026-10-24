@@ -61,7 +61,7 @@ async fn create(
     .await
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn initial_announcement_metadata_is_validated_before_allocation_and_matches_create(
     pool: PgPool,
 ) {
@@ -146,7 +146,7 @@ async fn initial_announcement_metadata_is_validated_before_allocation_and_matche
     assert!(!default.status.sensitive);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn recurring_replay_snapshots_terms_and_keeps_warnings_across_retries_and_new_sessions(
     pool: PgPool,
 ) {
@@ -330,7 +330,7 @@ async fn recurring_replay_snapshots_terms_and_keeps_warnings_across_retries_and_
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn html_creation_and_live_controls_respect_csrf_scopes_and_preserve_invalid_form(
     pool: PgPool,
 ) {

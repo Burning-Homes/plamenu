@@ -95,7 +95,7 @@ async fn follow(state: &AppState, subscriber: &Account, collection: i64) -> Valu
     follow
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn contents_sharing_changes_and_library_delivery_commit_or_rollback_together(pool: PgPool) {
     let (state, owner, subscriber) = setup(pool).await;
     let library = collection(&state, owner.id, "public").await;
@@ -158,7 +158,7 @@ async fn contents_sharing_changes_and_library_delivery_commit_or_rollback_togeth
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn named_library_follow_delivers_scoped_audio_edits_retractions_and_exact_undo(pool: PgPool) {
     let (state, owner, subscriber) = setup(pool).await;
     let library = collection(&state, owner.id, "public").await;
@@ -241,7 +241,7 @@ async fn named_library_follow_delivers_scoped_audio_edits_retractions_and_exact_
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn named_library_withdrawal_and_deletion_are_atomic_and_hide_private_metadata(pool: PgPool) {
     let (state, owner, subscriber) = setup(pool).await;
     let library = collection(&state, owner.id, "public").await;
@@ -306,7 +306,7 @@ async fn named_library_withdrawal_and_deletion_are_atomic_and_hide_private_metad
     assert!(!music_follows::incoming(&state,&subscriber,&json!({"id":"https://songhive.test/follows/private","type":"Follow","actor":subscriber.uri,"object":libraries::uri(TEST_DOMAIN,library.id)})).await.unwrap());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn named_library_pages_are_bounded_and_foreign_audio_keeps_origin_ownership(pool: PgPool) {
     let (state, owner, subscriber) = setup(pool).await;
     let library = collection(&state, owner.id, "public").await;
@@ -355,7 +355,7 @@ async fn named_library_pages_are_bounded_and_foreign_audio_keeps_origin_ownershi
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn retained_original_enters_federated_library_only_after_explicit_publication(pool: PgPool) {
     let (state, owner, subscriber) = setup(pool).await;
     let artist = id::next();

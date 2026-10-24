@@ -266,7 +266,7 @@ pub async fn activity_totals(pool: &PgPool) -> Result<Vec<(i64, RelayActivity)>,
 mod tests {
     use super::*;
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn relay_handshake_lifecycle(pool: PgPool) {
         let relay = create(&pool, " https://relay.example/inbox ", None)
             .await
@@ -317,7 +317,7 @@ mod tests {
         assert!(list(&pool).await.unwrap().is_empty());
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn relay_activity_rollup(pool: PgPool) {
         let relay = create(&pool, "https://relay.example/inbox", None)
             .await

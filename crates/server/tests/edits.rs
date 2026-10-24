@@ -125,7 +125,7 @@ async fn post_status(app: Router, token: &str, body: Value) -> Value {
     entity
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edit_updates_content_history_and_source(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -231,7 +231,7 @@ async fn edit_updates_content_history_and_source(pool: PgPool) {
     assert_eq!(note["updated"], edited["edited_at"]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edit_is_scoped_and_validated(pool: PgPool) {
     let (_alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -329,7 +329,7 @@ async fn edit_is_scoped_and_validated(pool: PgPool) {
     assert_eq!(own, StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edit_federates_update_and_notifies_only_new_mentions(pool: PgPool) {
     let (alice, alice_token) = user_with_token(&pool, "alice").await;
     let (_carol, carol_token) = user_with_token(&pool, "carol").await;
@@ -385,7 +385,7 @@ async fn edit_federates_update_and_notifies_only_new_mentions(pool: PgPool) {
     assert_eq!(mentions.len(), 1, "{notifications}");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edit_reconciles_media_attachments(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -468,7 +468,7 @@ async fn edit_reconciles_media_attachments(pool: PgPool) {
     assert_eq!(steal, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edit_applies_media_attributes(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let app = || test_app(pool.clone());
@@ -560,7 +560,7 @@ async fn post_signed(app: Router, path: &str, body: &Value, signer: &RequestSign
     app.oneshot(request).await.unwrap().status()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inbound_edit_records_history_and_ignores_no_change_redelivery(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -747,7 +747,7 @@ fn remote_note(actor: &RemoteUser, uri: &str, content: &str) -> Value {
         "to": ["https://www.w3.org/ns/activitystreams#Public"]})
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn concurrent_original_creates_share_row_and_delivery_claim(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -786,7 +786,7 @@ async fn concurrent_original_creates_share_row_and_delivery_claim(pool: PgPool) 
     assert_eq!(history.as_array().unwrap().len(), 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn queued_parentless_create_rechecks_owner_after_another_signer_reserves_uri(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let mallory = RemoteUser::new("remote.example", "mallory");
@@ -839,7 +839,7 @@ async fn queued_parentless_create_rechecks_owner_after_another_signer_reserves_u
     assert_eq!(count, 1);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failed_first_create_retry_repairs_attachments_without_duplicate_row(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -898,7 +898,7 @@ async fn failed_first_create_retry_repairs_attachments_without_duplicate_row(poo
     assert_eq!(files[0].description.as_deref(), Some("repaired alt"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_other_author_cannot_reassign_known_uri_or_reserve_foreign_origin(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1028,7 +1028,7 @@ async fn signed_other_author_cannot_reassign_known_uri_or_reserve_foreign_origin
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn held_initial_create_finishes_before_update_and_cannot_restore_stale_video_sidecars(
     pool: PgPool,
 ) {
@@ -1127,7 +1127,7 @@ async fn held_initial_create_finishes_before_update_and_cannot_restore_stale_vid
     assert_eq!(chapters[0].title, "edited chapter");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn nested_cyclic_quotes_resolve_inserted_rows_without_reentrant_write_deadlock(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1177,7 +1177,7 @@ async fn nested_cyclic_quotes_resolve_inserted_rows_without_reentrant_write_dead
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn saturated_nested_quote_ingest_returns_retryable_error_then_repairs_cycle(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -1261,7 +1261,7 @@ async fn saturated_nested_quote_ingest_returns_retryable_error_then_repairs_cycl
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edited_cold_first_create_promotes_canonical_media_mentions_tags_and_quote_once(
     pool: PgPool,
 ) {
@@ -1498,7 +1498,7 @@ async fn edited_cold_first_create_promotes_canonical_media_mentions_tags_and_quo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn unstamped_question_tallies_after_real_edit_preserve_body_options_history_and_timestamp(
     pool: PgPool,
 ) {
@@ -1694,7 +1694,7 @@ async fn unstamped_question_tallies_after_real_edit_preserve_body_options_histor
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edited_cold_video_promotion_preserves_canonical_captions_chapters_and_metadata(
     pool: PgPool,
 ) {
@@ -1826,7 +1826,7 @@ async fn edited_cold_video_promotion_preserves_canonical_captions_chapters_and_m
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn held_explicit_origin_create_and_stale_history_cannot_restore_newer_live_edit(
     pool: PgPool,
 ) {
@@ -1929,7 +1929,7 @@ async fn held_explicit_origin_create_and_stale_history_cannot_restore_newer_live
     assert_eq!(after_history, before_history);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edited_explicit_private_promotion_never_records_public_emoji_usage(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let carol = create_local_account(&pool, "carol", "Carol").await;
@@ -2091,7 +2091,7 @@ async fn edited_explicit_private_promotion_never_records_public_emoji_usage(pool
     assert_eq!(uses, 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_foreign_known_uri_cannot_be_reinterpreted_as_a_poll_vote(pool: PgPool) {
     let (alice, token) = user_with_token(&pool, "alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -2238,7 +2238,7 @@ async fn complete_remote_video_snapshot(pool: &PgPool, status_id: i64) -> (Value
     (row, media, edits)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_unstamped_video_updates_clear_accessibility_without_snapshot_rollback(
     pool: PgPool,
 ) {
@@ -2396,7 +2396,7 @@ async fn signed_unstamped_video_updates_clear_accessibility_without_snapshot_rol
 
 /// Lifetime changes are publication state, even when authored content and the
 /// HLS URL are unchanged. Exercise the signature/authority path, not direct SQL.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_live_lifetime_update_preserves_media_identity_and_updates_permanence(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let app = test_app_with(pool.clone(), StubFederation::with_users(&[&bob]));
@@ -2570,7 +2570,7 @@ async fn signed_live_lifetime_update_preserves_media_identity_and_updates_perman
 
 /// Record the existing unknown-value behavior before adding a conservative
 /// declaration projection. Ordinary rendering treats these values as false.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_live_unknown_lifetime_keeps_ordinary_projection_false(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let app = test_app_with(pool.clone(), StubFederation::with_users(&[&bob]));
@@ -2617,7 +2617,7 @@ async fn signed_live_unknown_lifetime_keeps_ordinary_projection_false(pool: PgPo
 
 /// Old/imported rows do not acquire current lifetime authority from the legacy
 /// false flag. Only a current signed declaration can establish it.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signed_live_history_and_wrong_author_do_not_grant_lifetime_authority(pool: PgPool) {
     let bob = RemoteUser::new("remote.example", "bob");
     let mallory = RemoteUser::new("remote.example", "mallory");

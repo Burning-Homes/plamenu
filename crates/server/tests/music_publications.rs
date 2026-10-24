@@ -63,7 +63,7 @@ async fn count(f: &Fixture, table: &'static str) -> i64 {
         .await
         .unwrap()
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn publish_withdraw_republish_retains_bytes_and_uses_a_fresh_audio_identity(pool: PgPool) {
     let f = fixture(pool).await;
     let first = music_publications::publish(&f.state, &f.owner, f.asset)
@@ -128,7 +128,7 @@ async fn publish_withdraw_republish_retains_bytes_and_uses_a_fresh_audio_identit
         f.asset
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn metadata_updates_and_privacy_retraction_share_the_asset_transaction(pool: PgPool) {
     let f = fixture(pool).await;
     let first = music_publications::publish(&f.state, &f.owner, f.asset)
@@ -211,7 +211,7 @@ async fn metadata_updates_and_privacy_retraction_share_the_asset_transaction(poo
     let deletion:i64=sqlx::query_scalar("SELECT count(*) FROM delivery_jobs WHERE activity->>'type'='Delete' AND activity->'object'->>'id'=$1").bind(object["id"].as_str().unwrap()).fetch_one(&f.state.pool).await.unwrap();
     assert_eq!(deletion, 1);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn publication_and_private_transition_failures_roll_back_every_related_row(pool: PgPool) {
     let f = fixture(pool).await;
     sqlx::raw_sql("CREATE FUNCTION reject_music_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'outbox unavailable'; END; $$; CREATE TRIGGER reject_music_delivery BEFORE INSERT ON delivery_jobs FOR EACH ROW EXECUTE FUNCTION reject_music_delivery();").execute(&f.state.pool).await.unwrap();
@@ -269,7 +269,7 @@ async fn publication_and_private_transition_failures_roll_back_every_related_row
     );
     assert_eq!(count(&f, "music_publications").await, 1);
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ordinary_audio_delete_and_source_delete_use_distinct_storage_lifetimes(pool: PgPool) {
     let f = fixture(pool).await;
     let first = music_publications::publish(&f.state, &f.owner, f.asset)

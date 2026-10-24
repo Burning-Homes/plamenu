@@ -77,7 +77,10 @@ const _: &str = COLS; // documentation: every query selects exactly these
 
 /// Inserts or refreshes the card for `new.url` (cards are keyed by URL and
 /// shared across statuses; a re-fetch replaces every field).
-pub async fn upsert(pool: &PgPool, new: NewPreviewCard<'_>) -> Result<PreviewCard, DbError> {
+pub async fn upsert<'e, E: PgExecutor<'e>>(
+    executor: E,
+    new: NewPreviewCard<'_>,
+) -> Result<PreviewCard, DbError> {
     let card = sqlx::query_as!(
         PreviewCard,
         r#"
@@ -144,7 +147,7 @@ pub async fn upsert(pool: &PgPool, new: NewPreviewCard<'_>) -> Result<PreviewCar
         new.published_at,
         new.author_account_id,
     )
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await?;
     Ok(card)
 }
@@ -247,8 +250,8 @@ pub async fn evict_cached_images(
 
 /// Attaches a card to a status, remembering the link as it appeared in the
 /// status (`original_url`). Idempotent.
-pub async fn attach(
-    pool: &PgPool,
+pub async fn attach<'e, E: PgExecutor<'e>>(
+    executor: E,
     status_id: i64,
     preview_card_id: i64,
     original_url: &str,
@@ -263,7 +266,7 @@ pub async fn attach(
         status_id,
         original_url,
     )
-    .execute(pool)
+    .execute(executor)
     .await?;
     Ok(())
 }

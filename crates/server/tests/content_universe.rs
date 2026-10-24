@@ -47,7 +47,7 @@ fn bookwyrm_activity(user: &RemoteUser, kind: &str, object: &Value) -> Value {
     })
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bookwyrm_native_edits_refresh_the_standard_book_representation(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -108,7 +108,7 @@ async fn bookwyrm_native_edits_refresh_the_standard_book_representation(pool: Pg
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn bookwyrm_native_edits_require_known_owner_and_valid_canonical_fallback(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -232,7 +232,7 @@ async fn stored_media(pool: &PgPool, status_id: i64) -> Vec<media::Media> {
 /// (`href`, not `url`): the target must land in `external_url`, the `Link`
 /// must not be stored as media (the real `Image` attachment still is), and
 /// the `language: {identifier}` shape must be read.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn lemmy_link_post_stores_external_url_not_media(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -269,7 +269,7 @@ async fn lemmy_link_post_stores_external_url_not_media(pool: PgPool) {
 /// types — a stock client reads only `content`, so a title/link confined to
 /// Plamenu's extension keys would be invisible there. The extension keys stay
 /// too (feature detection); the first-party UI renders the folded content.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn titled_link_post_folds_title_and_link_into_api_content(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -314,7 +314,7 @@ async fn titled_link_post_folds_title_and_link_into_api_content(pool: PgPool) {
 
 /// `NodeBB` sends explicit `"inReplyTo": null` / `"updated": null`; explicit
 /// null must read as absent everywhere.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn nodebb_explicit_nulls_are_tolerated(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -338,7 +338,7 @@ async fn nodebb_explicit_nulls_are_tolerated(pool: PgPool) {
 /// A Lemmy `Page` ingests natively: real title, the full body (not
 /// Mastodon's `<h2>`-plus-link compaction), the stored object type, and the
 /// link-post target.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn lemmy_page_ingests_natively(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -371,7 +371,7 @@ async fn lemmy_page_ingests_natively(pool: PgPool) {
 }
 
 /// An `Update(Page)` re-hoists the edited title alongside the body.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn lemmy_page_update_edits_title(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -397,7 +397,7 @@ async fn lemmy_page_update_edits_title(pool: PgPool) {
 
 /// `Discourse` titles plain `Note`s: `name` on a top-level Note is a real
 /// title (hoisted), not ignored — and the type stays a Note.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn discourse_titled_note_hoists_title(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -417,7 +417,7 @@ async fn discourse_titled_note_hoists_title(pool: PgPool) {
 /// `WriteFreely` bakes a titled Note's title into `content` as `<h1>…</h1>`
 /// (its Mastodon workaround) *and* sets `name`; the duplicate heading must
 /// be stripped so the title doesn't render twice.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn writefreely_titled_note_strips_duplicate_heading(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -446,7 +446,7 @@ async fn writefreely_titled_note_strips_duplicate_heading(pool: PgPool) {
 /// twice on purpose — as `name` and as a leading `<h1>` — so this pins the round
 /// trip: a Plamenu instance receiving a Plamenu article stores one title and one
 /// copy of the body, exactly as it does for `WriteFreely`'s identical workaround.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn our_own_article_shape_round_trips(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -513,7 +513,7 @@ async fn our_own_article_shape_round_trips(pool: PgPool) {
 
 /// A `WordPress` `Article` arrives with the full, never-truncated body and its
 /// image gallery; the `summary` excerpt must NOT become a content warning.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wordpress_article_keeps_full_body_and_media(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -548,7 +548,7 @@ async fn wordpress_article_keeps_full_body_and_media(pool: PgPool) {
 /// shared URL stores/downloads once, an inline-only image is still exposed to
 /// Mastodon API clients, alt text survives, and the built-in client renders
 /// inline placements without duplicating them in its attachment gallery.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn article_merges_inline_images_and_attachments_without_duplicates(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -686,7 +686,7 @@ async fn article_merges_inline_images_and_attachments_without_duplicates(pool: P
 /// `WordPress` swaps the excerpt for the CW text and flags `sensitive: true`
 /// when a post carries a content warning — then (and only then) `summary`
 /// is a CW on a converted type.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn inline_wordpress_variants_and_video_use_one_player_and_preserve_other_attachments(
     pool: PgPool,
 ) {
@@ -774,7 +774,7 @@ async fn inline_wordpress_variants_and_video_use_one_player_and_preserve_other_a
     assert!(!body.contains("<p>Watch <div"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn wordpress_sensitive_article_summary_is_cw(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -796,7 +796,7 @@ async fn wordpress_sensitive_article_summary_is_cw(pool: PgPool) {
 /// `Document` stays media. The Status *entity* then carries the extension
 /// fields — `title`, `object_type`, `external_url` and the typed `event` — so
 /// clients (our web UI included) can render them.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn status_entity_carries_content_universe_fields(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -898,7 +898,7 @@ async fn status_entity_carries_content_universe_fields(pool: PgPool) {
 /// The live-captured **group-attributed** Mobilizon `Event` (the only shape
 /// that reaches a follower at all) ingests with the capacity/participation
 /// facts the older corpus capture doesn't carry, and with the `Place` id.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn group_event_capture_ingests_participation_facts(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -957,7 +957,7 @@ async fn group_event_capture_ingests_participation_facts(pool: PgPool) {
 /// laxer-dialect copy could still reach our inbox, and republishing an
 /// organizer's unfinished draft to our own followers is a disclosure we cannot
 /// take back.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn draft_event_is_refused(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -983,7 +983,7 @@ async fn draft_event_is_refused(pool: PgPool) {
 /// and a fetchable `QuoteAuthorization` stamp (issued by the quoted author,
 /// hosted on their origin) links as an *accepted, non-legacy* quote — the
 /// full consent handshake, claimed by behavior.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn fep_044f_stamped_quote_is_accepted(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -1033,7 +1033,7 @@ async fn fep_044f_stamped_quote_is_accepted(pool: PgPool) {
 /// `preferredUsername`, webfinger optional) import under their canonical id.
 /// Two such actors on one domain — here both with the same trailing id
 /// segment — must not conflate through acct uniqueness.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn fep_03c1_actors_without_acct_import_distinctly(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -1079,7 +1079,7 @@ async fn fep_03c1_actors_without_acct_import_distinctly(pool: PgPool) {
 /// The public web page of a non-microblog status renders the new blocks: the title
 /// heading, the event facts box, and (for a link post) the external-link
 /// pill.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_page_renders_title_event_and_external_link(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -1139,7 +1139,7 @@ async fn web_page_renders_title_event_and_external_link(pool: PgPool) {
 /// A lotide `Page` may be title-only — no `content` at all, `summary`
 /// duplicating the title. It must store as a titled, empty-bodied post
 /// (never a fully empty status), with `summary` not becoming a CW.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn lotide_title_only_page_stores_titled(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -1174,7 +1174,7 @@ async fn lotide_title_only_page_stores_titled(pool: PgPool) {
 /// The `PeerTube` `Video`'s playable file is mined out of the `url` Link tree
 /// (nested inside the HLS playlist's `tag`): the largest mp4 becomes media
 /// with the preview image as its poster.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn peertube_video_stores_playable_media(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -1291,7 +1291,7 @@ async fn peertube_video_stores_playable_media(pool: PgPool) {
 /// and sends an `Update`. Even though the chosen rendition (what the attachment
 /// diff compares on) is unchanged, the differing master must force a re-ingest
 /// — otherwise the caching proxy keeps serving a stale, now-404 master forever.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn peertube_retranscode_update_refreshes_the_hls_master(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();
@@ -1352,7 +1352,7 @@ async fn peertube_retranscode_update_refreshes_the_hls_master(pool: PgPool) {
 /// `height: 0` file Link carries the audio. Ingest must pair the chosen
 /// rendition with that audio stream (muxed at cache time) and defer the
 /// download to first play.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn peertube_separated_audio_pairs_streams_and_defers(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = sender();

@@ -2,7 +2,7 @@
 //! toggle, the eligibility filtering, ordering, paging and the signed-in
 //! viewer's block/mute/domain-block exclusions.
 
-mod common;
+use plamenu_test_support as common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
@@ -162,7 +162,7 @@ async fn user_with_token(pool: &PgPool, username: &str) -> (Account, String) {
     (account, token)
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn directory_gated_on_operator_setting(pool: PgPool) {
     // On by default (Mastodon's `profile_directory: true`), empty until
     // someone opts in.
@@ -176,7 +176,7 @@ async fn directory_gated_on_operator_setting(pool: PgPool) {
     assert_eq!(body["error"], "Record not found");
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn directory_lists_only_eligible_discoverable_accounts(pool: PgPool) {
     listed_account(&pool, "alice").await;
     // Explicitly opted out of discovery.
@@ -211,7 +211,7 @@ async fn directory_lists_only_eligible_discoverable_accounts(pool: PgPool) {
     assert_eq!(listed, ["alice", "gina@remote.example"]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn directory_orders_by_activity_or_newness(pool: PgPool) {
     let alice = listed_account(&pool, "alice").await;
     let bob = listed_account(&pool, "bob").await;
@@ -251,7 +251,7 @@ async fn directory_orders_by_activity_or_newness(pool: PgPool) {
     assert_eq!(usernames(&body), ["carol", "bob", "alice"]);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn directory_local_flag_and_offset_paging(pool: PgPool) {
     listed_account(&pool, "alice").await;
     listed_account(&pool, "bob").await;
@@ -268,7 +268,7 @@ async fn directory_local_flag_and_offset_paging(pool: PgPool) {
     assert_eq!(body, json!([]));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn directory_hides_blocked_muted_and_domain_blocked_for_the_viewer(pool: PgPool) {
     let (viewer, token) = user_with_token(&pool, "viewer").await;
     // The viewer is just the observer here, not a directory inhabitant.

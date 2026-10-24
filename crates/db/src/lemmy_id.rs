@@ -181,7 +181,7 @@ mod tests {
     use super::{Kind, alias_for, aliases_for, resolve, resolve_many};
     use crate::PgPool;
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn aliases_are_stable_typed_i32_values(pool: PgPool) {
         let native = 117_081_485_687_195_812_i64;
         let post = alias_for(&pool, Kind::Status, native).await.unwrap();
@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(resolve(&pool, Kind::Account, post).await.unwrap(), None);
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn batch_allocation_deduplicates_and_round_trips(pool: PgPool) {
         let ids = [
             117_081_485_687_195_812,
@@ -226,7 +226,7 @@ mod tests {
         assert!(reverse.values().all(|native| aliases.contains_key(native)));
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn concurrent_first_exposure_converges(pool: PgPool) {
         let native = 117_081_485_687_195_812_i64;
         let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(12));

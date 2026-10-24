@@ -1,6 +1,6 @@
 //! Encrypted normalized-key migration, audit, contract and rotation.
 
-mod common;
+use plamenu_test_support as common;
 
 use common::{
     StubFederation, TEST_DOMAIN, create_immutable_local_account, test_config, test_state_with,
@@ -8,7 +8,7 @@ use common::{
 use plamenu::key_store::LegacyPrivateDisposition;
 use plamenu_db::{PgPool, actor_key};
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn legacy_plaintext_backfill_is_verified_resumable_and_contractible(pool: PgPool) {
     let rsa = plamenu_ap::keys::generate_keypair().unwrap();
     let ed = plamenu_ap::keys::generate_ed25519_keypair();
@@ -122,7 +122,7 @@ async fn legacy_plaintext_backfill_is_verified_resumable_and_contractible(pool: 
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn mismatched_legacy_public_half_aborts_without_clearing_source(pool: PgPool) {
     let rsa = plamenu_ap::keys::generate_keypair().unwrap();
     sqlx::query(
@@ -147,7 +147,7 @@ async fn mismatched_legacy_public_half_aborts_without_clearing_source(pool: PgPo
     assert!(actor_key::private_rows(&pool).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn signing_rotation_overlaps_then_rewraps_to_new_envelope_root(pool: PgPool) {
     let account = create_immutable_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), std::sync::Arc::new(StubFederation::default()));
@@ -275,7 +275,7 @@ async fn signing_rotation_overlaps_then_rewraps_to_new_envelope_root(pool: PgPoo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn pending_replacements_publish_before_they_become_signers(pool: PgPool) {
     let account = create_immutable_local_account(&pool, "staged", "Staged").await;
     let state = test_state_with(pool.clone(), std::sync::Arc::new(StubFederation::default()));
@@ -361,7 +361,7 @@ async fn pending_replacements_publish_before_they_become_signers(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn concurrent_rotations_keep_exactly_one_unbounded_current_key(pool: PgPool) {
     let account = create_immutable_local_account(&pool, "racer", "Racer").await;
     let state = test_state_with(pool.clone(), std::sync::Arc::new(StubFederation::default()));
@@ -436,7 +436,7 @@ async fn concurrent_rotations_keep_exactly_one_unbounded_current_key(pool: PgPoo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn concurrent_instance_provisioning_is_atomic_and_idempotent(pool: PgPool) {
     let config = test_config();
     let ring = plamenu::crypto::FederationKeyring::from_config(&config).unwrap();

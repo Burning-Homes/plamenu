@@ -83,7 +83,7 @@ fn reference(kind: Kind, id: i64) -> Reference {
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn typed_playlists_are_saveable_but_notes_and_boost_wrappers_are_not_music_sources(
     pool: PgPool,
 ) {
@@ -148,7 +148,7 @@ async fn typed_playlists_are_saveable_but_notes_and_boost_wrappers_are_not_music
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn entity_previews_and_legacy_publication_references_follow_current_access_and_identity(
     pool: PgPool,
 ) {
@@ -217,7 +217,7 @@ async fn entity_previews_and_legacy_publication_references_follow_current_access
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn exact_saves_are_concurrently_idempotent_and_do_not_create_social_activity(pool: PgPool) {
     let f = fixture(pool).await;
     let target = reference(Kind::Track, f.asset);
@@ -289,7 +289,7 @@ async fn exact_saves_are_concurrently_idempotent_and_do_not_create_social_activi
     }
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn withdrawn_local_audio_keeps_normalized_saved_source_and_independent_favourite(
     pool: PgPool,
 ) {
@@ -367,7 +367,7 @@ async fn withdrawn_local_audio_keeps_normalized_saved_source_and_independent_fav
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn manager_reads_live_metadata_and_can_remove_unavailable_references_without_access(
     pool: PgPool,
 ) {
@@ -435,7 +435,7 @@ async fn manager_reads_live_metadata_and_can_remove_unavailable_references_witho
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failed_saved_insert_rolls_back_and_purge_without_deleted_marker_erases_personal_refs(
     pool: PgPool,
 ) {

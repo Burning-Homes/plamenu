@@ -50,7 +50,7 @@ fn serve_status(stub: &StubFederation, online: bool, connected_at: OffsetDateTim
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn live_note_becomes_hls_and_old_note_never_rearms_for_later_session(pool: PgPool) {
     let (_caster, stub) = owncast_stub();
     let state = test_state_with(pool.clone(), stub.clone());
@@ -132,7 +132,7 @@ async fn live_note_becomes_hls_and_old_note_never_rearms_for_later_session(pool:
     assert_eq!(account_live.live_state.as_deref(), Some("live"));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ordinary_service_with_hls_is_not_mistaken_for_owncast(pool: PgPool) {
     let mut service = RemoteUser::new("video.example", "caster");
     service.actor.kind = "Service".into();
@@ -168,7 +168,7 @@ async fn ordinary_service_with_hls_is_not_mistaken_for_owncast(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn released_owncast_config_account_fallback_is_supported(pool: PgPool) {
     let mut caster = RemoteUser::new("legacy-owncast.example", "streamer");
     caster.actor.kind = "Service".into();

@@ -155,7 +155,7 @@ async fn post_status(pool: &PgPool, token: &str, body: Value) -> (StatusCode, Va
     .await
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn character_limit_counts_like_mastodons_validator(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
 
@@ -229,7 +229,7 @@ async fn character_limit_counts_like_mastodons_validator(pool: PgPool) {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn configured_limits_are_advertised_and_enforced(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     set_limits(&pool, 10, 2, 3).await;
@@ -307,7 +307,7 @@ async fn configured_limits_are_advertised_and_enforced(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn edits_respect_the_character_limit(pool: PgPool) {
     let (_, token) = user_with_token(&pool, "alice").await;
     let (status, created) = post_status(&pool, &token, json!({"status": "short"})).await;

@@ -24,7 +24,7 @@ async fn upload(pool: &PgPool, account: i64, mime: &str) -> i64 {
     media::create_local(pool, input).await.unwrap().id
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn native_audio_create_served_object_edit_and_delete_keep_one_identity(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let remote = RemoteUser::new("songhive.test", "sylvia");
@@ -167,7 +167,7 @@ async fn native_audio_create_served_object_edit_and_delete_keep_one_identity(poo
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn invalid_audio_never_publishes_or_claims_an_attachment(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -213,7 +213,7 @@ async fn invalid_audio_never_publishes_or_claims_an_attachment(pool: PgPool) {
     assert_eq!(attached, None);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn catalogue_respects_private_visibility_blocks_and_literal_search(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -269,7 +269,7 @@ async fn catalogue_respects_private_visibility_blocks_and_literal_search(pool: P
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn incoming_songhive_music_metadata_is_escaped_and_retained(pool: PgPool) {
     let remote = RemoteUser::new("songhive.test", "sylvia");
     let state = test_state_with(
@@ -314,7 +314,7 @@ async fn incoming_songhive_music_metadata_is_escaped_and_retained(pool: PgPool) 
     assert_eq!(wrapped["reblog"]["music"]["release_year"], 2020);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn audio_outbox_failure_rolls_back_metadata_status_and_attachment(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let remote = RemoteUser::new("songhive.test", "follower");
@@ -362,7 +362,7 @@ async fn audio_outbox_failure_rolls_back_metadata_status_and_attachment(pool: Pg
     assert_eq!((statuses, metadata, attachment), (0, 0, None));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn music_documents_use_parent_actor_visibility_and_deletion_gates(pool: PgPool) {
     use axum::{
         body::Body,

@@ -26,7 +26,7 @@ use tower::ServiceExt;
 
 const AP_JSON: &str = "application/activity+json";
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn fresh_conversations_initialize_identity_without_rewriting_the_row(pool: PgPool) {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tracing_subscriber::layer::SubscriberExt;
@@ -195,7 +195,7 @@ async fn cheap_remote(pool: &PgPool, username: &str) -> account::Account {
 }
 
 /// A local reply may not widen the audience past its conversation root.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_reply_visibility_clamped_to_root(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     create_local_account(&pool, "bob", "Bob").await;
@@ -220,7 +220,7 @@ async fn compose_reply_visibility_clamped_to_root(pool: PgPool) {
 
 /// A private/direct reply inherits the parent's audience, so it reaches the
 /// thread even when the author did not re-mention anyone.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn compose_direct_reply_inherits_parent_audience(pool: PgPool) {
     let alice = create_local_account(&pool, "alice", "Alice").await;
     let bob = create_local_account(&pool, "bob", "Bob").await;
@@ -250,7 +250,7 @@ async fn compose_direct_reply_inherits_parent_audience(pool: PgPool) {
 /// An inbound remote reply into a locally-rooted private conversation cannot be
 /// ingested as more public than the conversation, even with a forged wider
 /// `to`/`cc`.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn ingest_reply_cannot_widen_private_conversation(pool: PgPool) {
     let state = test_state_with(pool.clone(), Arc::default());
     create_local_account(&pool, "alice", "Alice").await;
@@ -289,7 +289,7 @@ async fn ingest_reply_cannot_widen_private_conversation(pool: PgPool) {
 
 /// The FEP-171b container wraps a private conversation's posts as
 /// `Add(Create(Note))`, attributed to the owner.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn container_wraps_private_conversation_posts(pool: PgPool) {
     let state = test_state_containers(pool.clone(), Arc::default());
     let alice = create_local_account(&pool, "alice", "Alice").await;
@@ -323,7 +323,7 @@ async fn container_wraps_private_conversation_posts(pool: PgPool) {
 
 /// The container is served only when enabled, and only to an authorized
 /// (verified, in-audience) requester — never to an unsigned request.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn container_route_is_gated(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let root = post(&pool, "alice", "secret", "private", None).await;
@@ -363,7 +363,7 @@ async fn container_route_is_gated(pool: PgPool) {
 
 /// With the container flag on, a private root advertises `contextHistory` (and
 /// no public `context`); a public root advertises the reverse.
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn context_links_follow_visibility_and_flag(pool: PgPool) {
     let state = test_state_containers(pool.clone(), Arc::default());
     create_local_account(&pool, "alice", "Alice").await;

@@ -191,7 +191,7 @@ mod tests {
             .id
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn webauthn_id_is_minted_once(pool: PgPool) {
         let user_id = seed_user(&pool).await;
         let first = ensure_webauthn_id(&pool, user_id, "handle-a")
@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(second, "handle-a");
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn crud_and_nickname_uniqueness(pool: PgPool) {
         let user_id = seed_user(&pool).await;
         assert_eq!(count_by_user(&pool, user_id).await.unwrap(), 0);
@@ -251,7 +251,7 @@ mod tests {
         assert_eq!(count_by_user(&pool, user_id).await.unwrap(), 0);
     }
 
-    #[sqlx::test(migrations = "./migrations")]
+    #[sqlx::test(migrator = "crate::MIGRATOR")]
     async fn disabling_totp_removes_keys(pool: PgPool) {
         let user_id = seed_user(&pool).await;
         create(&pool, user_id, "ext-1", "Key", &json!({}), 0)

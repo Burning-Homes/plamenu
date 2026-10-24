@@ -159,7 +159,7 @@ fn subscription_body(p256dh: &str, auth: &str) -> Value {
     })
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_settings_store_raw_json_for_session_cookie(pool: PgPool) {
     let (_, user_id) =
         create_user(&pool, "alice", "alice@example.com", "correct horse battery").await;
@@ -193,7 +193,7 @@ async fn web_settings_store_raw_json_for_session_cookie(pool: PgPool) {
     assert_eq!(stored, data);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_push_subscription_lifecycle_by_id(pool: PgPool) {
     let (_, user_id, token) = user_with_token(&pool, "alice", "read write push").await;
     let (p256dh, auth) = client_keys();
@@ -258,7 +258,7 @@ async fn web_push_subscription_lifecycle_by_id(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn web_embed_returns_oembed_for_visible_local_status(pool: PgPool) {
     let account = create_local_account(&pool, "alice", "Alice Example").await;
     let item = status::create_local(

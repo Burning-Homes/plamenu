@@ -23,7 +23,7 @@ async fn fixture(pool: PgPool) -> (AppState, i64, i64, music_collections::Collec
     .unwrap();
     (state, owner, viewer, collection)
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_tags_normalize_merge_remove_and_keep_repeated_changes_idempotent(pool: PgPool) {
     let (state, owner, _, mut current) = fixture(pool).await;
     current = music_collections::tags(
@@ -115,7 +115,7 @@ async fn collection_tags_normalize_merge_remove_and_keep_repeated_changes_idempo
         tags
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_tag_edits_require_owner_current_revision_and_valid_bounds(pool: PgPool) {
     let (state, owner, viewer, current) = fixture(pool).await;
     music_collections::grant(&state, owner, current.id, current.revision, viewer, true)
@@ -173,7 +173,7 @@ async fn collection_tag_edits_require_owner_current_revision_and_valid_bounds(po
         .is_err()
     );
 }
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn collection_tag_search_filters_acl_before_paging_and_my_music_uses_current_tags(
     pool: PgPool,
 ) {

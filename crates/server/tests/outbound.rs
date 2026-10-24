@@ -69,7 +69,7 @@ async fn post_signed(app: Router, path: &str, body: &Value, signer: &RequestSign
     app.oneshot(request).await.unwrap().status()
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn post_fans_out_to_distinct_follower_inboxes(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     // Two followers on one instance (shared inbox) plus one on another.
@@ -124,7 +124,7 @@ async fn post_fans_out_to_distinct_follower_inboxes(pool: PgPool) {
     assert_eq!(job::pending_count(&pool).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn private_post_delivery_carries_followers_synchronization_header(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -180,7 +180,7 @@ async fn private_post_delivery_carries_followers_synchronization_header(pool: Pg
     assert!(header.contains(&followers_digest([dave.actor.id.as_str()].into_iter())));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn content_warning_federates_as_summary(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -210,7 +210,7 @@ async fn content_warning_federates_as_summary(pool: PgPool) {
     assert_eq!(object["contentMap"], json!({"en": "<p>spider pics</p>"}));
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn post_with_no_followers_enqueues_nothing(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -232,7 +232,7 @@ async fn post_with_no_followers_enqueues_nothing(pool: PgPool) {
     assert_eq!(job::pending_count(&pool).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn empty_post_is_rejected(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
@@ -270,7 +270,7 @@ async fn empty_post_is_rejected(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn failed_deliveries_are_retried_with_backoff_then_succeed(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -309,7 +309,7 @@ async fn failed_deliveries_are_retried_with_backoff_then_succeed(pool: PgPool) {
     assert_eq!(job::pending_count(&pool).await.unwrap(), 0);
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn follow_remote_resolves_stores_and_enqueues(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -361,7 +361,7 @@ async fn follow_remote_resolves_stores_and_enqueues(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn accept_marks_outgoing_follow_accepted(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -406,7 +406,7 @@ async fn accept_marks_outgoing_follow_accepted(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn accept_with_bare_follow_id_also_works(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -451,7 +451,7 @@ async fn accept_with_bare_follow_id_also_works(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn reject_removes_outgoing_follow(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let bob = RemoteUser::new("remote.example", "bob");
@@ -493,7 +493,7 @@ async fn reject_removes_outgoing_follow(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrations = "../db/migrations")]
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
 async fn local_status_is_served_as_note(pool: PgPool) {
     create_local_account(&pool, "alice", "Alice").await;
     let state = test_state_with(pool.clone(), Arc::default());
