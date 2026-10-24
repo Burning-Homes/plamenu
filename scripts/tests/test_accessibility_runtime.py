@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 import smtplib
+import socket
 import subprocess
 import tempfile
 import time
@@ -21,7 +22,44 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+class ContainerCleanupTests(unittest.TestCase):
+    def test_cleanup_requires_run_label_and_uses_immutable_container_id(self):
+        with patch.object(MODULE.subprocess, "check_output", return_value="owned-id\n") as listing, patch.object(MODULE.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as remove:
+            MODULE.remove_container("fixture-name", "run-token")
+        self.assertIn("label=plamenu.fixture.run=run-token", listing.call_args.args[0])
+        self.assertEqual(remove.call_args.args[0], ["docker", "rm", "--force", "--volumes", "owned-id"])
+        with patch.object(MODULE.subprocess, "check_output", return_value=""), patch.object(MODULE.subprocess, "run") as remove:
+            MODULE.remove_container("foreign-name", "run-token")
+            remove.assert_not_called()
+
+    def test_auto_removal_race_is_ok_but_surviving_container_is_an_error(self):
+        failed = subprocess.CompletedProcess([], 1, stderr="failed removal")
+        with patch.object(MODULE.subprocess, "check_output", side_effect=["owned-id\n", ""]), patch.object(MODULE.subprocess, "run", return_value=failed):
+            MODULE.remove_container("fixture-name", "run-token")
+        with patch.object(MODULE.subprocess, "check_output", return_value="owned-id\n"), patch.object(MODULE.subprocess, "run", return_value=failed), self.assertRaisesRegex(RuntimeError, "cleanup failed"):
+            MODULE.remove_container("fixture-name", "run-token")
+
+
 class MailboxFixtureTests(unittest.TestCase):
+    def test_reset_drains_incomplete_smtp_before_clearing_previous_attempt(self):
+        port, url, close = MODULE.fixture_mailbox("127.0.0.1")
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=5) as stalled:
+                stalled.recv(4096)
+                stalled.sendall(b"DATA\r\n")
+                stalled.recv(4096)
+                stalled.sendall(b"To: reader@example.test\r\nSubject: stale\r\n\r\nstale\r\n")
+                close.reset()
+            with urllib.request.urlopen(url + "?recipient=reader%40example.test") as response:
+                self.assertEqual(json.load(response), [])
+            with smtplib.SMTP("127.0.0.1", port, timeout=5) as smtp:
+                smtp.sendmail("sender@example.test", ["reader@example.test"],
+                              "To: reader@example.test\r\nSubject: new\r\n\r\nnew\r\n")
+            with urllib.request.urlopen(url + "?recipient=reader%40example.test") as response:
+                self.assertEqual([m['subject'] for m in json.load(response)], ['new'])
+        finally:
+            close()
+
     def test_real_smtp_delivery_recipient_isolation_and_nonce(self):
         port, url, close = MODULE.fixture_mailbox("127.0.0.1")
         try:
@@ -46,21 +84,24 @@ class MailboxFixtureTests(unittest.TestCase):
 
 
 class ColdRenditionFixtureTests(unittest.TestCase):
-    def test_realtime_encoder_is_confined_to_rendition_output(self):
+    def test_ordinary_encoders_are_not_paced_and_cold_option_only_gates_renditions(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             encoder = root / "ffmpeg"
             encoder.write_text("#!/usr/bin/python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n")
             encoder.chmod(0o700)
+            control = MODULE.ColdRenditions(root / "control")
             with patch.object(MODULE.shutil, "which", return_value=str(encoder)):
-                wrapper = MODULE.rendition_encoder(root)
-            for output, realtime in (("encoded.m4a",True),("encoded.mp3",True),("upload.mp3",False),("poster.jpg",False)):
+                wrapper = MODULE.rendition_encoder(root, control)
+            for output in ("encoded.m4a", "encoded.mp3", "upload.mp3", "poster.jpg"):
                 actual = json.loads(subprocess.check_output([str(wrapper),"-y","-i","source.wav",output],text=True))
-                expected = ["-y", *(["-re"] if realtime else []), "-i", "source.wav", output]
+                expected = ["-y", "-i", "source.wav", output]
                 self.assertEqual(actual, expected)
+            control.begin("cold-case", True)
             # An input with that name cannot slow an ordinary upload encoder.
             actual = json.loads(subprocess.check_output([str(wrapper),"-i","encoded.mp3","upload.mp3"],text=True))
             self.assertEqual(actual, ["-i", "encoded.mp3", "upload.mp3"])
+            control.end()
 
 
 class OfflineProxyFixtureTests(unittest.TestCase):
@@ -110,6 +151,7 @@ class OfflineProxyFixtureTests(unittest.TestCase):
                     with self.assertRaises(urllib.error.HTTPError) as rejected:
                         urllib.request.urlopen(wrong, timeout=5)
                     self.assertEqual(rejected.exception.code, 403)
+                    rejected.exception.close()
                     mutate.assert_not_called()
                     request = urllib.request.Request(url + "/offline", method="POST")
                     with urllib.request.urlopen(request, timeout=5) as response:
@@ -120,6 +162,7 @@ class OfflineProxyFixtureTests(unittest.TestCase):
                     with self.assertRaises(urllib.error.HTTPError) as rejected:
                         urllib.request.urlopen(urllib.request.Request(url + "/online", method="POST"), timeout=5)
                     self.assertEqual(rejected.exception.code, 500)
+                    rejected.exception.close()
                     self.assertEqual(mutate.call_count, 1)
                     identity["State"]["Pid"] = 123
                 finally:
@@ -181,6 +224,27 @@ class ApplicationBindingTests(unittest.TestCase):
         replacement.replace(self.binary)
         with self.assertRaisesRegex(RuntimeError, "changed"):
             application.command(self.root / "fixture.toml", "serve")
+
+    def test_equal_size_write_with_restored_mtime_is_not_a_cached_pass(self):
+        application = MODULE.ApplicationBinary(self.binary)
+        original = self.binary.stat()
+        with self.binary.open("r+b") as stream:
+            stream.seek(-1, os.SEEK_END)
+            byte = stream.read(1)
+            stream.seek(-1, os.SEEK_END)
+            stream.write(bytes([byte[0] ^ 1]))
+        os.utime(self.binary, ns=(original.st_atime_ns, original.st_mtime_ns))
+        self.assertEqual(self.binary.stat().st_size, original.st_size)
+        self.assertEqual(self.binary.stat().st_mtime_ns, original.st_mtime_ns)
+        with self.assertRaisesRegex(RuntimeError, "changed"):
+            application.command(self.root / "fixture.toml", "serve")
+
+    def test_unchanged_commands_do_not_read_the_entire_binary_again(self):
+        with patch.object(MODULE.hashlib, "file_digest", wraps=hashlib.file_digest) as digest:
+            application = MODULE.ApplicationBinary(self.binary)
+            for _ in range(3):
+                application.command(self.root / "fixture.toml", "serve")
+        self.assertEqual(digest.call_count, 1)
 
     def test_invalid_explicit_candidate_never_builds_or_falls_back(self):
         for value in ["relative-candidate", str(self.root / "missing")]:

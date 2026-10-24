@@ -8,7 +8,7 @@ import os
 import re
 import subprocess
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -121,7 +121,7 @@ def test_storyboard_raster_comparison_rejects_changed_content(tmp_path):
         )
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -150,7 +150,7 @@ def test_scheduled_native_video_is_delivered_once_when_due(plamenu_api: Api, db:
                 mime="video/mp4",
                 description="Moving test pattern",
             )
-        when = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        when = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
         queued = plamenu_api.post(
             "/api/v1/videos",
             channel_id=channel["id"],
@@ -291,7 +291,7 @@ def test_no_js_video_review_can_schedule_reschedule_and_cancel(
         assert 'value="13" selected' in review.text
         assert 'value="2" selected' in review.text
         assert 'value="Flashing imagery"' in review.text
-        when = datetime.now(timezone.utc) + timedelta(days=30)
+        when = datetime.now(UTC) + timedelta(days=30)
         local = when.strftime("%Y-%m-%dT%H:%M")  # fixture account uses UTC
         scheduled = browser.post(
             f"{config.PLAMENU_URL}/web/videos",
@@ -379,7 +379,7 @@ def test_no_js_video_review_can_schedule_reschedule_and_cancel(
         expiry = db._value(
             "SELECT expires_at FROM video_drafts WHERE media_id = %s", media_id
         )
-        assert expiry < datetime.now(timezone.utc) + timedelta(days=8)
+        assert expiry < datetime.now(UTC) + timedelta(days=8)
     finally:
         if scheduled_id is not None:
             plamenu_api._request("DELETE", f"/api/v1/scheduled_statuses/{scheduled_id}")
@@ -400,7 +400,7 @@ def test_no_js_video_review_can_schedule_reschedule_and_cancel(
                 )
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -632,7 +632,7 @@ def test_native_video_channel_publication_update_and_delete(
         assert response.status_code in (204, 404), response.text
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",

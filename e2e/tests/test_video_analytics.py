@@ -21,7 +21,7 @@ from plamenu_e2e.steps import step, wait_for
 from test_video_backup_restore import _csrf, _stop_process
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -50,7 +50,7 @@ def test_native_delivery_analytics_with_real_peer_ranges_and_live_encoder():
     evidence.chmod(0o700)
     try:
         with step("create a native film with analytics disabled by default"):
-            peer.start()
+            peer.start(suite_settings=True)
             # Allocate only this disposable instance's RTMP listener. Never
             # restart, reconfigure or publish to the standing development server.
             with socket.socket() as allocator:
@@ -66,7 +66,6 @@ def test_native_delivery_analytics_with_real_peer_ranges_and_live_encoder():
                 )
             )
             peer._launch(120, append_log=True)
-            peer.apply_suite_settings()
             user, api = peer.user_api("deliveryauthor")
             channel = api.post(
                 "/api/v1/video_channels",

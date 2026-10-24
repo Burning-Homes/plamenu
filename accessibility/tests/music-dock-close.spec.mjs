@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import {signIn,freshMusicAudio,openDetailsFor} from '../session.mjs';
 
 test('closing the music player returns keyboard focus to the unfinished upload',async({page},info)=>{

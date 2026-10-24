@@ -18,7 +18,7 @@ from plamenu_e2e.steps import step, wait_for
 from test_video_backup_restore import _csrf, _playback_assets, _stop_process
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -46,8 +46,7 @@ def test_native_paired_disks_seed_failover_revoke_and_resume():
     evidence.chmod(0o700)
     try:
         with step("seed a pre-existing real film when opting into two native disks"):
-            peer.start()
-            peer.apply_suite_settings()
+            peer.start(suite_settings=True)
             user, api = peer.user_api("mirrorauthor")
             channel = api.post(
                 "/api/v1/video_channels",

@@ -19,7 +19,7 @@ def events(api, kind, status=None):
     ]
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(direction="both", peer="peertube")
 def test_peertube_channel_notifications_have_context_and_do_not_fabricate_mentions():
     # The harness owns this disposable endpoint and database; standing servers
@@ -31,8 +31,7 @@ def test_peertube_channel_notifications_have_context_and_do_not_fabricate_mentio
     subscribed = False
     video = None
     try:
-        peer.start()
-        peer.apply_suite_settings()
+        peer.start(suite_settings=True)
         _owner, api = peer.user_api("actorowner")
         editor, editor_api = peer.user_api("actoreditor")
         publisher, publisher_api = peer.user_api("actorpublisher")

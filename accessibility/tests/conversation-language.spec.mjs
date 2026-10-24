@@ -1,5 +1,5 @@
 import {signInParticipant,participantUsername} from '../session.mjs';
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import {signIn,chooseVideoLanguage} from '../session.mjs';
 
 async function declaredLanguageJourney(page,browser,info) {

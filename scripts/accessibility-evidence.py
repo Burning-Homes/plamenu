@@ -9,6 +9,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from browser_fixture import validate_lifecycle
+from gate_inventory import inventory_digest, load_inventory
+
 ROOT = Path(__file__).resolve().parent.parent
 CATALOG = ROOT / "accessibility/criteria.json"
 MANUAL = ROOT / "accessibility/manual-checks.json"
@@ -186,24 +190,114 @@ def validate_catalogs():
 
 def validate_automated(path, required_revision=None, release=False):
     report = read_json(path)
-    if report.get("schema") != 1 or report.get("standard") != "WCAG 2.2":
-        raise EvidenceError("automated report has an unsupported schema or standard")
+    if report.get("schema") != 2 or report.get("standard") != "WCAG 2.2":
+        raise EvidenceError(
+            "automated report requires inventory-backed schema 2; rerun the browser gate"
+        )
     if required_revision and report.get("source_revision") != required_revision:
         raise EvidenceError("automated report was produced from a different revision")
-    if release and report.get("source_dirty"):
-        raise EvidenceError("release evidence cannot come from a dirty working tree")
-    if report.get("status") != "passed":
-        raise EvidenceError("automated accessibility suite did not pass")
+    if release and report.get("source_dirty") is not False:
+        raise EvidenceError(
+            "release evidence cannot come from a dirty or unknown working tree"
+        )
+    try:
+        inventory = load_inventory(ROOT, "browser")
+    except (OSError, ValueError, KeyError) as error:
+        raise EvidenceError(str(error)) from error
+    if report.get("inventory_sha256") != inventory_digest(inventory):
+        raise EvidenceError("automated report has a different test inventory")
+    if (
+        report.get("status") != "passed"
+        or report.get("runner_status") != "passed"
+        or report.get("full_pass") is not True
+        or report.get("complete") is not True
+        or report.get("errors") != []
+        or report.get("fixture_cleanup_pending") is True
+        or (
+            "fixture_cleanup_pending" in report
+            and report.get("fixture_cleanup_complete") is not True
+        )
+    ):
+        raise EvidenceError(
+            "automated accessibility suite did not produce a complete full pass"
+        )
     projects = report.get("projects")
-    if not isinstance(projects, dict) or set(projects) != EXPECTED_PROJECTS:
+    if (
+        not isinstance(projects, list)
+        or len(projects) != len(EXPECTED_PROJECTS)
+        or set(projects) != EXPECTED_PROJECTS
+    ):
         raise EvidenceError(
             "automated report does not contain the complete browser/project matrix"
         )
-    for name, counts in projects.items():
-        if counts.get("failed") or counts.get("skipped") or not counts.get("passed"):
-            raise EvidenceError(f"automated project {name} is incomplete or failed")
-    if not report.get("tests"):
-        raise EvidenceError("automated report contains no test results")
+    expected = {case["id"]: case for case in inventory["tests"]}
+    selected = report.get("selected")
+    tests = report.get("tests")
+    if (
+        not isinstance(selected, list)
+        or len(selected) != len(expected)
+        or set(selected) != set(expected)
+        or not isinstance(tests, list)
+        or len(tests) != len(expected)
+    ):
+        raise EvidenceError(
+            "partial browser selection or execution cannot qualify as full"
+        )
+    policy = read_json(ROOT / "accessibility/coverage-policy.json")
+    seen, exclusions = set(), set()
+    for test in tests:
+        nodeid = test.get("id")
+        if nodeid not in expected or nodeid in seen:
+            raise EvidenceError("duplicate or unknown browser result")
+        seen.add(nodeid)
+        case = expected[nodeid]
+        if any(test.get(key) != case[key] for key in ("file", "title", "project")):
+            raise EvidenceError("browser result does not match its declared case")
+        attempts = test.get("attempts")
+        if (
+            not isinstance(attempts, list)
+            or len(attempts) != 1
+            or attempts[0].get("retry") != 0
+        ):
+            raise EvidenceError(
+                "retries or missing attempts cannot qualify as a full pass"
+            )
+        status = attempts[0].get("status")
+        annotations = test.get("annotations")
+        if (
+            status == "passed"
+            and test.get("expected_status") == "passed"
+            and annotations == []
+        ):
+            continue
+        allowed = (
+            status == "skipped"
+            and isinstance(annotations, list)
+            and len(annotations) == 1
+            and annotations[0].get("type") == "skip"
+            and any(
+                rule["file"] == case["file"]
+                and rule["title"] == case["title"]
+                and case["project"] in rule["projects"]
+                and rule["reason"] == annotations[0].get("description")
+                for rule in policy["exclusions"]
+            )
+        )
+        if not allowed:
+            raise EvidenceError(
+                f"required browser case failed, skipped, or is a known defect: {nodeid}"
+            )
+        exclusions.add(nodeid)
+    if (
+        sorted(exclusions) != sorted(report.get("exclusions", []))
+        or report.get("failures") != []
+    ):
+        raise EvidenceError("browser outcome summary disagrees with individual results")
+    if "fixture_cleanup_pending" in report:
+        try:
+            validate_lifecycle(report)
+        except (ValueError, KeyError, TypeError) as error:
+            raise EvidenceError(str(error)) from error
     return report
 
 
@@ -281,7 +375,7 @@ def validate_evidence(args):
             if not entry.get("tester") or not entry.get("checked_at"):
                 raise EvidenceError(f"manual check {check_id} lacks tester or date")
             try:
-                datetime.fromisoformat(entry["checked_at"].replace("Z", "+00:00"))
+                datetime.fromisoformat(entry["checked_at"])
             except (TypeError, ValueError) as error:
                 raise EvidenceError(
                     f"manual check {check_id} has an invalid date"

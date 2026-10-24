@@ -1,4 +1,4 @@
-import { expect, request, test } from '@playwright/test';
+import { expect, request, test } from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import { spawn, spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
@@ -878,14 +878,14 @@ test('live schedule picker adds a date accessibly before publishing', async ({ p
   expect((await new AxeBuilder({ page }).include('form[data-live-schedules]').analyze()).violations).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   if (test.info().project.name.endsWith('mobile')) {
-    await page.screenshot({ path: `../target/e2e/live-schedule-${test.info().project.name}.png`, fullPage: true });
+    await page.screenshot({ path: test.info().outputPath(`live-schedule-${test.info().project.name}.png`), fullPage: true });
   }
   await schedule.getByRole('button', { name: 'Save planned start' }).click();
   expect((await liveMedia(page, id)).live.schedules).toHaveLength(1);
   await page.goto(`/web/statuses/${id}`);
   expect((await new AxeBuilder({ page }).include('figure.media--live-offline').analyze()).violations).toEqual([]);
   if (test.info().project.name.endsWith('mobile')) {
-    await page.screenshot({ path: `../target/e2e/live-calendar-${test.info().project.name}.png`, fullPage: true });
+    await page.screenshot({ path: test.info().outputPath(`live-calendar-${test.info().project.name}.png`), fullPage: true });
   }
 });
 
@@ -932,7 +932,7 @@ test('@no-js live rewind serves a seekable, bounded native clip', async ({ page 
     await video.evaluate(element => { element.currentTime = Math.min(3, element.duration - 1); });
     await expect.poll(() => video.evaluate(element => element.currentTime)).toBeGreaterThan(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-    await page.screenshot({ path: '../target/e2e/live-rewind-nojs-mobile.png', fullPage: true });
+    await page.screenshot({ path: test.info().outputPath('live-rewind-nojs-mobile.png'), fullPage: true });
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
     const bottomClear = await page.evaluate(() => {
       const hint = document.querySelector('.live-rewind-player + .settings-field__hint');

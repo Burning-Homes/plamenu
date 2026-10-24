@@ -9,12 +9,11 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-
-import tomllib
 
 from .core import ReleaseError, Runner, clean, files, fingerprint, git, write_json
 from .forge import Forge, NoRedirect

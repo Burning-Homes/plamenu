@@ -18,10 +18,7 @@ from plamenu_e2e import candidate, config, peertube, unique
 from plamenu_e2e.api import ApiError
 from plamenu_e2e.steps import log, step, wait_for
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("PLAMENU_CRASH_DRILL") != "1",
-    reason="destructive local-server restart drill is opt-in",
-)
+pytestmark = pytest.mark.capability("PLAMENU_CRASH_DRILL")
 
 
 def _ready():

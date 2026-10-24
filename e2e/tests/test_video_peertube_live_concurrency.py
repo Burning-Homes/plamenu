@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 import requests
-from plamenu_e2e import config, ephemeral, peertube, unique
+from plamenu_e2e import config, ephemeral, peertube, shell, unique
 from plamenu_e2e.steps import step, wait_for
 from tests.test_video_backup_restore import _stop_process
 from tests.test_video_delivery_scale import _children, _process, _tree_bytes
@@ -25,10 +25,7 @@ from tests.test_video_live_concurrency import _clock_publisher, _port
 from tests.test_video_offload import _freeze
 
 
-@pytest.mark.skipif(
-    os.environ.get("AP09_CONCURRENCY_VERIFY") != "1",
-    reason="owned actual PeerTube concurrency/TCP fault drill",
-)
+@pytest.mark.capability("AP09_CONCURRENCY_VERIFY")
 @pytest.mark.federation(
     direction="inbound",
     peer="peertube",
@@ -66,7 +63,7 @@ def test_two_peertube_broadcasts_eight_decoders_survive_scoped_tracker_tcp_loss(
         with step(
             "one frozen native consumer and scoped bridge to actual PeerTube's private tracker backend"
         ):
-            source.start()
+            source.start(suite_settings=True)
             candidate = _freeze(source, evidence, monkeypatch)
             _stop_process(source)
             upstream = _port()
@@ -78,22 +75,14 @@ def test_two_peertube_broadcasts_eight_decoders_survive_scoped_tracker_tcp_loss(
             source._config_path.chmod(0o600)
             # Resolve the service owned by the configured fixture. Isolated
             # release fleets use distinct Compose projects and fresh volumes.
-            service = subprocess.run(
-                [
-                    "docker",
-                    "compose",
-                    "--file",
-                    str(config.PEERTUBE_DIR / "compose.dev.yml"),
-                    "ps",
-                    "--quiet",
-                    "peertube",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
+            service = shell.fixture_compose(
+                config.PEERTUBE_DIR,
+                "ps",
+                "--quiet",
+                "peertube",
                 timeout=15,
             )
-            containers = service.stdout.split()
+            containers = service.split()
             assert len(containers) == 1, "exactly one configured PeerTube service"
             inspected = subprocess.run(
                 [
@@ -172,7 +161,6 @@ def test_two_peertube_broadcasts_eight_decoders_survive_scoped_tracker_tcp_loss(
                 timeout=10,
             )
             source._launch(120, append_log=True)
-            source.apply_suite_settings()
             _, api = source.user_api("ptconcurrentviewer")
             root = api.resolve_account(f"root@{config.PEERTUBE_DOMAIN}")
             api.follow(root["id"])

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import { openDetailsFor, signIn } from '../session.mjs';
 

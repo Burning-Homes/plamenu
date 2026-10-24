@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import {signIn,openDetailsFor,ensureVideoFormChannel} from '../session.mjs';
 const source=process.env.A11Y_SOURCE_SYNC_URL;

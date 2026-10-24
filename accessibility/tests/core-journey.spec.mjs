@@ -1,5 +1,5 @@
 import {signInParticipant} from '../session.mjs';
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import { openDetailsFor, signIn } from '../session.mjs';
 

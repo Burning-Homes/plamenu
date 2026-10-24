@@ -15,7 +15,7 @@ import struct
 import subprocess
 import tempfile
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -28,9 +28,7 @@ from plamenu_e2e.steps import log, step, wait_for
 
 urllib3.disable_warnings()
 
-pytestmark = pytest.mark.skipif(
-    not peertube.reachable(), reason="peertube.local is not up"
-)
+pytestmark = pytest.mark.requires_peer("peertube")
 
 
 def _get(url: str) -> requests.Response:
@@ -678,8 +676,7 @@ def test_peertube_live_federates_and_plays_in_every_client(
     with step("PeerTube announces a live that has not started"):
         live_name = f"Plamenu e2e live {time.time_ns()}"
         dates = [
-            (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
-            for hours in (2, 4)
+            (datetime.now(UTC) + timedelta(hours=hours)).isoformat() for hours in (2, 4)
         ]
         video = pt.create_live(live_name, latency_mode=2, schedules=dates)
         # An announced live counts against the per-user live limit until it is

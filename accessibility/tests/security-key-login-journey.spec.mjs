@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import {totp} from '../authenticator.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import {useFixtureClient} from '../session.mjs';

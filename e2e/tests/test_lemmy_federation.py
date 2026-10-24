@@ -454,14 +454,31 @@ def test_plamenu_originates_post_into_lemmy_community(
         lemmy_post_id = post_view["post"]["id"]
 
     with step("the community announces it back as group content on Plamenu"):
+        # Home deliberately suppresses a community wrapper when its original
+        # already belongs there (including the viewer's own post). Observe
+        # the real incoming Announce on the community's account timeline.
         boost = wait_for(
-            lambda: plamenu_api.home_reblog_containing(marker),
+            lambda: next(
+                (
+                    s
+                    for s in plamenu_api.get(f"/api/v1/accounts/{group['id']}/statuses")
+                    if s.get("reblog") and s["reblog"]["id"] == posted["id"]
+                ),
+                None,
+            ),
             desc="the community's Announce of our own post",
         )
         assert boost["account"]["group"] is True
         assert boost["account"]["acct"] == f"{name}@{config.LEMMY_DOMAIN}"
         # The boost points at our own original post — not a re-ingested copy.
         assert boost["reblog"]["id"] == posted["id"]
+        home_copies = [
+            s
+            for s in plamenu_api.home_timeline()
+            if s["id"] == posted["id"]
+            or (s.get("reblog") or {}).get("id") == posted["id"]
+        ]
+        assert [s["id"] for s in home_copies] == [posted["id"]], home_copies
 
     with step("a Plamenu edit reaches Lemmy"):
         edited = unique("plamedit")

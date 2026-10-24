@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -27,7 +27,7 @@ def rtmps_tls_args():
     return ["-cafile", ca, "-tls_verify", "1"] if ca else ["-tls_verify", "0"]
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.parametrize(
     "transport",
     [
@@ -35,10 +35,7 @@ def rtmps_tls_args():
         "https",
         pytest.param(
             "rtmps",
-            marks=pytest.mark.skipif(
-                os.environ.get("PLAMENU_RTMPS") != "1",
-                reason="native RTMPS is not configured",
-            ),
+            marks=pytest.mark.capability("PLAMENU_RTMPS"),
         ),
     ],
 )
@@ -80,10 +77,10 @@ def test_native_live_hls_and_peertube(
             form = browser.get(f"{config.PLAMENU_URL}/videos/live/new", timeout=30)
             form.raise_for_status()
             csrf = re.search(r'name="csrf" value="([^"]+)"', form.text).group(1)
-            planned = (datetime.now(timezone.utc) + timedelta(hours=2)).strftime(
+            planned = (datetime.now(UTC) + timedelta(hours=2)).strftime(
                 "%Y-%m-%dT%H:%M"
             )
-            next_planned = (datetime.now(timezone.utc) + timedelta(hours=4)).strftime(
+            next_planned = (datetime.now(UTC) + timedelta(hours=4)).strftime(
                 "%Y-%m-%dT%H:%M"
             )
             created = browser.post(
@@ -584,7 +581,7 @@ def _remote_live_schedule(pt, uuid: str, planned: str):
     )
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -835,10 +832,7 @@ async def _tracker_announce(infohash: str):
         "https",
         pytest.param(
             "rtmps",
-            marks=pytest.mark.skipif(
-                os.environ.get("PLAMENU_RTMPS") != "1",
-                reason="native RTMPS is not configured",
-            ),
+            marks=pytest.mark.capability("PLAMENU_RTMPS"),
         ),
     ],
 )
@@ -1150,7 +1144,7 @@ def test_rotating_stream_key_revokes_active_encoder(
                 log("Disposable cleanup request failed")
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.parametrize(
     "transport",
     [
@@ -1158,10 +1152,7 @@ def test_rotating_stream_key_revokes_active_encoder(
         "https",
         pytest.param(
             "rtmps",
-            marks=pytest.mark.skipif(
-                os.environ.get("PLAMENU_RTMPS") != "1",
-                reason="native RTMPS is not configured",
-            ),
+            marks=pytest.mark.capability("PLAMENU_RTMPS"),
         ),
     ],
 )

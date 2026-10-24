@@ -1,4 +1,4 @@
-import {test, expect} from '@playwright/test';
+import {test, expect} from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import {deflateSync} from 'node:zlib';
 import {randomUUID} from 'node:crypto';
@@ -51,7 +51,12 @@ async function journey(page, info, noScript) {
   await expect(page.locator('form[action="/web/music/play"]')).toHaveCount(0);
   await openDetailsFor(page.getByText('Change artwork', {exact: true}));
   await page.getByLabel('Image file', {exact: true}).setInputFiles(largeArtwork());
-  await page.getByRole('button', {name: 'Upload image', exact: true}).press('Enter');
+  const artworkButton = page.getByRole('button', {name: 'Upload image', exact: true});
+  const artworkAction = await artworkButton.evaluate(button => new URL(button.form.action).pathname);
+  const artworkCommitted = page.waitForResponse(response => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === artworkAction);
+  await artworkButton.press('Enter');
+  expect((await artworkCommitted).status()).toBe(303);
   await page.goto('/music?q=' + encodeURIComponent(title));
   const row = page.locator('.music-listening-results > li').filter({has: page.getByRole('heading', {name: title, exact: true})});
   await expect(row).toHaveCount(1);

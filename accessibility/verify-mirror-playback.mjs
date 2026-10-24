@@ -8,7 +8,7 @@ const browser=await chromium.launch();
 const observations=[];
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function sample(video) {
-  return video.evaluate(v=>({time:v.currentTime,ready:v.readyState,paused:v.paused,seeking:v.seeking,error:v.error?.code||null,
+  return video.evaluate(v=>({time:v.currentTime,ready:v.readyState,paused:v.paused,seeking:v.seeking,error:v.error?.code||null,height:v.videoHeight,
     frames:v.getVideoPlaybackQuality().totalVideoFrames,dropped:v.getVideoPlaybackQuality().droppedVideoFrames,
     adaptiveFallback:v.dataset.p2pFallback||null}));
 }
@@ -82,9 +82,23 @@ try {
         const video=page.locator(peer?'video.vjs-tech':'video[data-hls]').first();
         await video.waitFor({state:'attached'});
         if(peer&&await page.locator('.vjs-big-play-button').isVisible())await page.locator('.vjs-big-play-button').click();
+        if(peer){
+          // The complete copied ladder is checked before this browser phase.
+          // Exercise failover/seek at one explicitly selected rung so Auto's
+          // simultaneous rendition changes do not create a different outage
+          // workload on each run. Use the stock receiving player's controls.
+          await video.hover({force:true});
+          await page.locator('.vjs-settings').click();
+          await page.locator('.vjs-main-menu .vjs-menu-item').filter({hasText:'Quality'}).click();
+          const menu=page.locator('.vjs-menu').filter({
+            has:page.locator('.vjs-back-button').filter({hasText:'Quality'}),
+          });
+          await menu.locator('[role="menuitemradio"]',{hasText:'480p'}).click();
+        }
         const started=Date.now();
         await video.evaluate(v=>{v.muted=true;v.play().catch(()=>{});});
-        const initial=await until(video,s=>!s.paused&&s.ready>=2&&s.frames>=3,10000);
+        const initial=await until(video,s=>!s.paused&&s.ready>=2&&s.frames>=3&&(!peer||s.height===480),10000);
+        if(peer&&await video.evaluate(v=>v.videoHeight)!==480)throw new Error('selected mirror rendition did not decode');
         const startupMs=Date.now()-started;
         const seeking=Date.now();
         await video.evaluate(v=>{v.currentTime=12;});

@@ -1,5 +1,5 @@
 import {freshMusicAudio} from '../session.mjs';
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import {signIn,openDetailsFor} from '../session.mjs';
 import {randomUUID} from 'node:crypto';

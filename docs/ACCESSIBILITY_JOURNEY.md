@@ -206,7 +206,7 @@ not establish screen-reader interoperability or whole-site conformance.
 | A56 | No-JavaScript settings show an inert security-key enrollment form because grid styling overrides hidden. | Native-fallback operability/usability; WCAG does not require WebAuthn to function without JavaScript. | Fixed for enrollment: honor hidden and retain the existing explanation. Desktop/mobile native pairs reviewed; native recovery-code sign-in passes. The equivalent sign-in-control issue is tracked in iteration 48. |
 | A57 | No-JavaScript second-factor pages expose an inert security-key sign-in button despite hidden markup. | Native fallback operability/usability; the available code form remains the supported path. | Fixed: native key control honors hidden. Both Chromium-width journeys complete recovery-code sign-in with an existing-key fixture. |
 | A58 | A temporary security-key sign-in failure drops focus when its button is re-enabled. | 2.4.3 focus continuity and asynchronous recovery. | Fixed: both Chromium-width journeys restore focus after refusal, preserve changed focus during delayed failure, then authenticate and remove the virtual key. |
-| A59 | Narrow video controls visibly ellipsize the current-time/duration display. | 1.4.10 reflow / 1.4.12 text-spacing concern: full time remains in the seek slider aria-valuetext, but the visible clock clips. | Reproduced in all six scripted profiles at 320px, with and without text spacing. Unfixed; deferred at the user-requested wrap-up. Reproduction and baseline evidence retained below. |
+| A59 | Narrow video controls visibly ellipsize the current-time/duration display. | 1.4.10 reflow / 1.4.12 text-spacing concern: full time remains in the seek slider aria-valuetext, but the visible clock clips. | Reproduced in all six scripted profiles at 320px, with and without text spacing. The 22 October repair preserves the full clock and 44px controls; all six focused profiles passed. Historical failed baseline evidence is retained below; full-gate qualification is separate. |
 | A60 | Refused video-source imports retain text but do not focus the visible explanation. | 2.4.3 focus continuity and error-recovery usability. | Reproduced in all seven browser profiles after fixing channel prerequisites. Fixed: native error-summary focus passes all seven profiles; source fetching and publication rules unchanged. |
 
 ## Visual changes for review
@@ -2176,16 +2176,27 @@ and [text-spacing baseline image](media/accessibility-2026-10-19/video-clock-unr
 are retained. These are **unfixed baseline images**, not a before/after pair.
 The six failures are in the final combined report linked in iteration 49.
 
-`accessibility/tests/video-clock-readability.spec.mjs` is deliberately marked
-`test.fixme` with A59. To resume, temporarily remove that one annotation and run:
+At the 19 October handoff,
+`accessibility/tests/video-clock-readability.spec.mjs` was marked `test.fixme`
+with A59. The 22 October gate work removed that annotation and reproduced all
+six failures in the complete browser run. The repair now allows the clock its
+intrinsic width and a separate row in narrow players, preserving the existing
+controls and target sizes. Forced-colour controls use the system palette.
+All six scripted timer profiles passed the focused 22 October run, including
+320px text spacing and 44px controls. The same run passed the distribution
+journey's forced-colour checks. Its local evidence is in
+`target/full-gates/20261022T122841Z-23c3d73c/browser-focused-1/automated.json`;
+that partial run is explicitly not a full gate pass.
+
+Run the active regression with:
 
 ```sh
 A11Y_OFFLINE_FIXTURE=0 ./dev a11y video-clock-readability.spec.mjs
 ```
 
 The original baseline executed before that annotation; the manifest records both
-versions' hashes. No passing timer run is claimed. After implementing a verified
-repair, remove the annotation and add genuine before/after pairs to the same gallery.
+versions' hashes. The historical images remain failed baseline evidence; they
+must not be presented as evidence for the current repair.
 
 ## Decisions and outstanding coverage
 

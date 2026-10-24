@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import { signIn, signInParticipant, participantUsername, openVideoOptions, createVideoChannel ,videoChannelForm} from '../session.mjs';
 

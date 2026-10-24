@@ -6,12 +6,12 @@ fixtures. Importing never borrows the remote Video's identity or publishes on GE
 
 import re
 import tempfile
+import tomllib
 from pathlib import Path
 from urllib.parse import urljoin
 
 import pytest
 import requests
-import tomllib
 from plamenu_e2e import config, peertube, unique
 from plamenu_e2e.steps import step, wait_for
 
@@ -22,7 +22,7 @@ def _csrf(html):
     return found[1]
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(direction="both", peer="peertube")
 @pytest.mark.parametrize("source_kind", ["file", "activitypub"])
 def test_peertube_source_import_is_private_native_and_explicitly_publishable(

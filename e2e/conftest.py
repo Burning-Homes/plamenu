@@ -5,9 +5,11 @@ Function-scoped: a fresh Plamenu user (and client-API login) per test, so
 tests are independent and re-runnable without cleanup.
 """
 
+import signal
 import time
 
-pytest_plugins = ["plamenu_e2e.release_policy", "plamenu_e2e.progress"]
+# Release policy uses progress.source_identity; load and rewrite progress first.
+pytest_plugins = ["plamenu_e2e.progress", "plamenu_e2e.release_policy"]
 
 import psycopg
 import pytest
@@ -27,11 +29,37 @@ from plamenu_e2e import (
     plamenu,
     pleroma,
     plup,
+    schema_template,
     sharkey,
     unique,
 )
 from plamenu_e2e.api import Api, ApiError
 from plamenu_e2e.db import Db
+from plamenu_e2e.lifecycle import Lease
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _fleet_lease():
+    # Fixed peer domains and standing accounts are a serial resource, across
+    # worktrees as well as pytest processes. Collection does not take the lock.
+    with Lease("e2e-standing-fleet"):
+
+        def interrupt(signum, frame):
+            raise KeyboardInterrupt(f"E2E fixture received signal {signum}")
+
+        previous = signal.signal(signal.SIGTERM, interrupt)
+        try:
+            yield
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _disposable_schema(_fleet_lease):
+    # Lazy preparation uses only real SQLx migrations. Each ordinary peer still
+    # validates the cloned ledger and initializes its own identity in the CLI.
+    with schema_template.session():
+        yield
 
 
 @pytest.fixture(scope="session")
@@ -42,7 +70,7 @@ def db() -> Db:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _preflight(db):
+def _preflight(db, _fleet_lease):
     """Fail fast, with instructions, when the dev stack isn't up."""
     problems = []
     for name, url in (
@@ -67,7 +95,7 @@ def _preflight(db):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _suite_instance_settings(db, _preflight):
+def _suite_instance_settings(db, _preflight, request):
     """Pin the instance settings the suite depends on for the run.
 
     * Rate limiting off: every test drives the API from a single
@@ -86,6 +114,21 @@ def _suite_instance_settings(db, _preflight):
         "       timeline_preview_local, timeline_preview_tag, public_search"
         " FROM instance_settings"
     ).fetchone()
+    if previous is None:
+        raise RuntimeError("Cannot pin missing instance settings")
+
+    def restore():
+        db.conn.execute(
+            "UPDATE instance_settings SET rate_limiting_enabled = %s,"
+            " timeline_preview_federated = %s, timeline_preview_local = %s,"
+            " timeline_preview_tag = %s, public_search = %s",
+            tuple(previous),
+        )
+        # Keep the fleet lease until the standing server's cached override
+        # expires too; the next run must observe the restored policy.
+        time.sleep(6)
+
+    request.addfinalizer(restore)
     db.conn.execute(
         "UPDATE instance_settings SET rate_limiting_enabled = false,"
         " timeline_preview_federated = true, timeline_preview_local = true,"
@@ -93,14 +136,6 @@ def _suite_instance_settings(db, _preflight):
     )
     # Outlast the SettingsCache TTL so the changes are live before any request.
     time.sleep(6)
-    yield
-    if previous is not None:
-        db.conn.execute(
-            "UPDATE instance_settings SET rate_limiting_enabled = %s,"
-            " timeline_preview_federated = %s, timeline_preview_local = %s,"
-            " timeline_preview_tag = %s, public_search = %s",
-            tuple(previous),
-        )
 
 
 @pytest.fixture(scope="session")
@@ -262,25 +297,25 @@ def funkwhale_fiona() -> funkwhale.FunkwhaleApi:
     return funkwhale.fiona()
 
 
-@pytest.fixture(scope="module")
-def plamenu2(db) -> ephemeral.Instance:
+@pytest.fixture
+def plamenu2(db, request) -> ephemeral.Instance:
     """A second Plamenu instance (https://plamenu2.local), started for this
-    module and stopped before another module owns its guarded fixture port.
+    test and stopped before another test owns its guarded fixture port.
 
     Every other peer is foreign software that implements part of what this
     server emits; this one implements all of it, so the Plamenu-to-Plamenu
     tests are the only ones that can hold both halves of a dialect to
     account at once.
 
-    The peer is a fresh install each module (new database, new keys), so the
+    The peer is a fresh install each test (new database, new keys), so the
     dev instance is first made to forget the previous one — otherwise its
     abandoned fetch budget and cached keys would greet the new server."""
-    db.forget_host(ephemeral.PEER_DOMAIN)
     instance = ephemeral.peer()
-    instance.start()
-    instance.apply_suite_settings()
-    yield instance
-    instance.stop()
+    request.addfinalizer(instance.stop)
+    instance.start(suite_settings=True)
+    # Start first: a conflicting fixture owner must prevent cache mutations.
+    db.forget_host(ephemeral.PEER_DOMAIN)
+    return instance
 
 
 @pytest.fixture

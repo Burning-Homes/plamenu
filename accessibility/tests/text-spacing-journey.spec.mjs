@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import {writeFile} from 'node:fs/promises';
 import {signIn,chooseInterfaceLanguage} from '../session.mjs';
 

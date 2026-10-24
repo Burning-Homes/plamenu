@@ -23,6 +23,7 @@ import requests
 import urllib3
 
 from . import config
+from .media_inputs import make_sample_mp4
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -304,38 +305,6 @@ def root() -> PeertubeApi:
     TOKEN_FILE.write_text(f"{token}\n")
     TOKEN_FILE.chmod(0o600)
     return PeertubeApi(config.PEERTUBE_URL, token=token)
-
-
-def make_sample_mp4(path, seconds: int = 5, size: str = "320x240") -> Path:
-    """Generate a tiny H.264/AAC test clip with the host ffmpeg."""
-    path = Path(path)
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            f"testsrc=duration={seconds}:size={size}:rate=30",
-            "-f",
-            "lavfi",
-            "-i",
-            f"sine=frequency=440:duration={seconds}",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-shortest",
-            "-y",
-            str(path),
-        ],
-        check=True,
-    )
-    return path
 
 
 def make_sample_audio(path, seconds: int = 9) -> Path:

@@ -6,6 +6,8 @@ shellcheck dev scripts/*.sh scripts/ci/*.sh docs/examples/*.sh \
   e2e/peers/discourse-test/entrypoint.sh e2e/peers/hubzilla-test/entrypoint.sh \
   e2e/peers/pleroma-test/docker-entrypoint.sh e2e/peers/pleroma-upstream-test/entrypoint-seed.sh
 python3 scripts/ci/check-static.py
+python3 scripts/update-gate-inventory.py --check-sources
+python3 e2e/tools/federation_coverage.py
 python3 scripts/accessibility-evidence.py matrix
 ruff check e2e
 ruff format --check e2e

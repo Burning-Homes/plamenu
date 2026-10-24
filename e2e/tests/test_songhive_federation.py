@@ -1120,7 +1120,11 @@ def test_retained_music_named_library_songhive_exchange(
         plamenu_api._request("DELETE", f"/api/v1/music/assets/{asset['id']}")
 
 
-@pytest.mark.federation(direction="incoming", peer="songhive")
+@pytest.mark.federation(
+    direction="inbound",
+    peer="songhive",
+    one_way_reason="Songhive-specific anonymous catalogue import and playback before an ActivityPub publication exists",
+)
 def test_songhive_unpublished_public_album_native_playback(
     songhive, plamenu_api, tmp_path
 ):

@@ -1,4 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
+import path from 'node:path';
+import {runDirectory} from './gate-evidence.mjs';
 
 const baseURL = process.env.A11Y_BASE_URL || 'https://plamenu.local';
 const canonicalOrigin = process.env.A11Y_CANONICAL_ORIGIN;
@@ -27,7 +29,7 @@ export default defineConfig({
   workers: 1,
   timeout: 60_000,
   expect: { timeout: 10_000 },
-  outputDir: '../target/accessibility/test-results',
+  outputDir: process.env.A11Y_OUTPUT_DIR || path.join(runDirectory, 'test-results'),
   reporter: [
     ['line'],
     ['./evidence-reporter.mjs'],

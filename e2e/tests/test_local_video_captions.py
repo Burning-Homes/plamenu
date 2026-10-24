@@ -19,7 +19,7 @@ def _csrf(html):
     return match.group(1)
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",

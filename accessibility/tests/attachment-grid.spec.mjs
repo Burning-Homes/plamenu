@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures.mjs';
 
 const stylesheet = readFileSync(new URL('../../crates/server/src/web/assets/app.css', import.meta.url), 'utf8');
 

@@ -4,22 +4,32 @@ Only dedicated local fixtures are changed. A scheduled source never borrows
 the creator's identity or publishes; publication remains a separate HTML POST.
 """
 
+import json
 import os
 import subprocess
+import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 import pytest
 import requests
-import tomllib
 from plamenu_e2e import config, peertube, unique
 from plamenu_e2e.steps import step, wait_for
 from test_video_source_import import _csrf
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(direction="both", peer="peertube")
-@pytest.mark.parametrize("kind", ["channel", "playlist"])
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "channel",
+        pytest.param(
+            "playlist", marks=pytest.mark.nested_capability("AP09_BROWSER_SOURCE_SYNC")
+        ),
+    ],
+)
 def test_scheduled_peertube_source_copies_are_private_deduplicated_and_reviewable(
     plamenu_api, plamenu_user, db, kind
 ):
@@ -283,21 +293,57 @@ def test_scheduled_peertube_source_copies_are_private_deduplicated_and_reviewabl
                 "all pinned desktop/mobile/no-JS projects author, pause, decode, cancel and remove a source"
             ):
                 root = config.PLAMENU_DIR
-                report = "target/accessibility/ap09-source-sync-20260929/final/automated.json"
+                evidence_root = root / "target/e2e/source-sync-browser"
+                evidence_root.mkdir(parents=True, exist_ok=True)
+                evidence = Path(tempfile.mkdtemp(prefix=f"{name}-", dir=evidence_root))
+                evidence.chmod(0o700)
+                report = evidence / "automated.json"
                 subprocess.run(
                     [
-                        "python3",
+                        sys.executable,
                         str(root / "scripts/run-accessibility-tests.py"),
                         "video-source-sync.spec.mjs",
+                        "--workers=1",
                         "--retries=0",
-                        "--output=../target/accessibility/ap09-source-sync-20260929/final/test-results",
+                        "--max-failures=0",
+                        f"--output={evidence / 'test-results'}",
                     ],
                     cwd=root,
                     env=os.environ
-                    | {"A11Y_SOURCE_SYNC_URL": source_url, "A11Y_REPORT_PATH": report},
+                    | {
+                        "A11Y_SOURCE_SYNC_URL": source_url,
+                        "A11Y_REPORT_PATH": str(report),
+                    },
                     check=True,
-                    timeout=900,
                 )
+                result = json.loads(report.read_text())
+                inventory = json.loads(
+                    (root / "accessibility/inventory.json").read_text()
+                )
+                expected = {
+                    case["id"]
+                    for case in inventory["tests"]
+                    if case["file"] == "video-source-sync.spec.mjs"
+                }
+                rows = result["tests"]
+                assert expected and len(rows) == len(expected)
+                assert (
+                    {row["id"] for row in rows} == expected == set(result["selected"])
+                )
+                assert result["fixture_cleanup_complete"] is True
+                assert result["fixture_cleanup_pending"] is False
+                assert result["runner_status"] == "passed"
+                assert result["errors"] == result["failures"] == []
+                assert (
+                    result["full_pass"] is False
+                )  # This is one journey, not the full browser gate.
+                for row in rows:
+                    assert (
+                        row["expected_status"] == "passed" and row["annotations"] == []
+                    )
+                    assert len(row["attempts"]) == 1
+                    assert row["attempts"][0]["status"] == "passed"
+                    assert row["attempts"][0]["retry"] == 0
 
         with step(
             "removing discovery keeps copies; separate publication gets a new federated identity"

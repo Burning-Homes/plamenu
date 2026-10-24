@@ -80,7 +80,7 @@ def test_native_video_private_history_opt_in_forget_disable_and_deletion(plamenu
         )
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="inbound",
     peer="peertube",

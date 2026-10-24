@@ -47,8 +47,28 @@ physical-device swipe/pinch coverage. It runs axe rules tagged for WCAG 2.0,
 2.1, and 2.2 Level A/AA, plus document structure, duplicate-ID, skip-link,
 keyboard-focus, reflow, Russian, dark-theme, reduced-motion, forced-colours,
 and no-JavaScript contracts. The result is
-`target/accessibility/automated.json`. A passing axe scan is only evidence for
+`target/accessibility/runs/<run-id>/automated.json`, alongside that run's
+server identity, server log and browser artifacts. An explicit `A11Y_REPORT_PATH`
+must also name a new file; existing reports are never overwritten. A passing axe scan is only evidence for
 the rules it can evaluate; it is never treated as a conformance determination.
+
+Every test attempt restores a database and media copy from the offline seeded
+baseline and starts its own application process. Sessions are reused only
+within that journey; passwords, MFA, rate limits, notifications, drafts and
+background jobs cannot carry over to the next test or retry. The mailbox and
+offline proxy are reset at the same boundary. Existing seed accounts and UI
+assertions are unchanged. The server and encoder process group are stopped
+before teardown completes, with a two-second graceful stop budget before forced
+termination. This disposable teardown does not qualify graceful-shutdown behavior.
+`fixtures.json` records ownership transitions,
+reset duration and each attempt's server log/identity paths.
+
+Execution remains serial: multiple workers are rejected. Use `./dev a11y`,
+including for filtered runs; direct Playwright execution against a standing
+instance is rejected. Test success remains `pending-cleanup`, with
+`full_pass: false`, until the runner has closed its services and removed its
+containers. Interrupted setup or cleanup cannot qualify a report. The reset
+cost is recorded so later optimizations can be measured without sharing state.
 
 Use Playwright arguments to narrow a diagnostic run, for example:
 
@@ -56,8 +76,19 @@ Use Playwright arguments to narrow a diagnostic run, for example:
 ./dev a11y --project chromium-desktop -g 'signed-out'
 ```
 
-A release report must come from the complete seven-project matrix. Narrowed,
-skipped, failed, or dirty-source reports are rejected.
+A release report must match every case in the source-bound browser inventory.
+Schema-2 reports retain the selected IDs and every attempt; qualification checks
+the individual results rather than trusting aggregate counters. Narrowed,
+interrupted, retried, failed, stale-inventory, or dirty-source reports are rejected.
+Schema-1 reports require a new run. Collection-only output is never execution evidence.
+
+`accessibility/coverage-policy.json` lists exact case/project/reason combinations
+for intentional catalogue duplication and limitations of the pinned browser
+runtime (CDP authentication, MediaRecorder and DOM fullscreen). These remain
+visible as exclusions, not passing tests. A missing fixture, an unexpected skip,
+or a `fixme` for a known defect still prevents full qualification. Changing the
+exclusion policy requires reviewing and refreshing the inventory. Manual evidence
+continues to cover physical hardware and assistive technology outside the runtime.
 
 ## Criterion and manual evidence gate
 
@@ -77,7 +108,7 @@ After the automated matrix passes on a clean release-candidate commit, create
 the manual record:
 
 ```sh
-./dev a11y-evidence /secure/release-evidence.json
+./dev a11y-evidence target/accessibility/runs/RUN_ID/automated.json /secure/release-evidence.json
 ```
 
 Complete every generated check with:

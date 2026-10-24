@@ -11,16 +11,15 @@ import socket
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 from pathlib import Path
 from urllib.parse import urljoin
 
 import psycopg
 import pytest
 import requests
-import tomllib
 from plamenu_e2e import config, ephemeral, peertube, unique
 from plamenu_e2e.steps import step, wait_for
-from psycopg import sql
 from tests.test_video_backup_restore import _digest, _manifest, _stop_process
 from tests.test_video_offload import _freeze
 
@@ -172,12 +171,7 @@ def _restore_warm_cache(source, restored, evidence, candidate):
     escrow = evidence / "consumer-configuration-escrow.toml"
     escrow.write_text(original_config)
     escrow.chmod(0o600)
-    with psycopg.connect(config.DB_DSN, autocommit=True) as connection:
-        connection.execute(
-            sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(
-                sql.Identifier(restored.db_name)
-            )
-        )
+    restored.create_database()
     subprocess.run(
         [
             "pg_restore",
@@ -233,6 +227,7 @@ def _restore_warm_cache(source, restored, evidence, candidate):
         )
         == cache_rows
     )
+    source.release_listener_after_exit()
     restored._launch(120, append_log=False)
     assert _digest(Path(f"/proc/{restored._proc.pid}/exe")) == candidate
     return {
@@ -245,7 +240,7 @@ def _restore_warm_cache(source, restored, evidence, candidate):
     }
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="inbound",
     peer="peertube",
@@ -281,7 +276,7 @@ def test_real_remote_vod_live_cache_refuses_current_channel_and_signed_delete(
     recovery = None
     deleted = False
     try:
-        consumer.start()
+        consumer.start(suite_settings=True)
         _freeze(consumer, evidence, monkeypatch)
         _retain_fixture_instance_identity(consumer)
         _stop_process(consumer)
@@ -294,7 +289,6 @@ def test_real_remote_vod_live_cache_refuses_current_channel_and_signed_delete(
         consumer._config_path.chmod(0o600)
         consumer._launch(120, append_log=True)
         candidate_sha = _digest(Path(f"/proc/{consumer._proc.pid}/exe"))
-        consumer.apply_suite_settings()
         _, api = consumer.user_api("remoteviewer")
         _, admin = consumer.admin("remoteoperator")
         root = api.resolve_account(f"root@{config.PEERTUBE_DOMAIN}")

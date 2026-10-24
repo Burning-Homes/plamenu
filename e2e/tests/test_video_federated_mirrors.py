@@ -12,13 +12,13 @@ import subprocess
 import tarfile
 import tempfile
 import time
+import tomllib
 from pathlib import Path
 from urllib.parse import urljoin
 
 import psycopg
 import pytest
 import requests
-import tomllib
 from plamenu_e2e import config, ephemeral, peertube, unique
 from plamenu_e2e.api import ApiError
 from plamenu_e2e.steps import step, wait_for
@@ -32,10 +32,7 @@ def _get(url, **kwargs):
     return requests.get(url, verify=False, timeout=30, **kwargs)
 
 
-@pytest.mark.skipif(
-    os.environ.get("AP09_MIRROR_VERIFY") != "1",
-    reason="owned two-instance signed redundancy drill",
-)
+@pytest.mark.capability("AP09_MIRROR_VERIFY")
 @pytest.mark.federation(direction="both", peer="peertube")
 @pytest.mark.parametrize("product", ["native", "peertube"])
 def test_native_mirror_copies_complete_graph_and_sends_real_cachefile_undo(
@@ -69,7 +66,7 @@ def test_native_mirror_copies_complete_graph_and_sends_real_cachefile_undo(
         with step(
             "frozen native mirror with bounded quota, pacing and retained instance identity"
         ):
-            mirror.start()
+            mirror.start(suite_settings=True)
             candidate = _freeze(mirror, evidence, monkeypatch)
             _stop_process(mirror)
             with mirror._config_path.open("a") as output:
@@ -78,15 +75,13 @@ def test_native_mirror_copies_complete_graph_and_sends_real_cachefile_undo(
                 )
             mirror._launch(120, append_log=True)
             _retain_fixture_instance_identity(mirror)
-            mirror.apply_suite_settings()
             _, operator = mirror.admin("mirroroperator")
             movie = peertube.make_sample_mp4(
                 evidence / "source.mp4", seconds=20, size="640x480"
             )
             title = f"Complete {product} mirror {label}"
             if product == "native":
-                source.start()
-                source.apply_suite_settings()
+                source.start(suite_settings=True)
                 user, source_api = source.admin("sourcecreator")
                 source_channel = source_api.post(
                     "/api/v1/video_channels",

@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "exclusions": [
+    {
+      "file": "client-navigation-review.spec.mjs",
+      "title": "connected client screens retain their hierarchy at phone and desktop sizes",
+      "reason": "Visual catalogue is recorded once; the individual journeys cover each engine.",
+      "projects": [
+        "chromium-mobile",
+        "firefox-desktop",
+        "firefox-mobile",
+        "webkit-desktop",
+        "webkit-mobile"
+      ]
+    },
+    {
+      "file": "live-broadcast.spec.mjs",
+      "title": "browser camera and screen publish through one stable broadcast",
+      "reason": "This browser runtime has no MediaRecorder. External encoder ingest, native replay, and player controls remain covered.",
+      "projects": [
+        "webkit-desktop",
+        "webkit-mobile"
+      ]
+    },
+    {
+      "file": "live-broadcast.spec.mjs",
+      "title": "browser capture failures and stalled startup recover without leaking devices",
+      "reason": "This browser runtime has no MediaRecorder. External encoder ingest, native replay, and player controls remain covered.",
+      "projects": [
+        "webkit-desktop",
+        "webkit-mobile"
+      ]
+    },
+    {
+      "file": "live-broadcast.spec.mjs",
+      "title": "browser publisher can recover after an unexpected socket close",
+      "reason": "This browser runtime has no MediaRecorder. External encoder ingest, native replay, and player controls remain covered.",
+      "projects": [
+        "webkit-desktop",
+        "webkit-mobile"
+      ]
+    },
+    {
+      "file": "live-broadcast.spec.mjs",
+      "title": "browser switches camera and screen inside one uninterrupted live session",
+      "reason": "This browser runtime has no MediaRecorder. External encoder ingest, native replay, and player controls remain covered.",
+      "projects": [
+        "webkit-desktop",
+        "webkit-mobile"
+      ]
+    },
+    {
+      "file": "live-broadcast.spec.mjs",
+      "title": "camera preview stays private until Go live and cancellation releases devices",
+      "reason": "This browser runtime has no MediaRecorder. External encoder ingest, native replay, and player controls remain covered.",
+      "projects": [
+        "webkit-desktop",
+        "webkit-mobile"
+      ]
+    },
+    {
+      "file": "live-broadcast.spec.mjs",
+      "title": "fatal live HLS failure offers accessible basic and refresh paths",
+      "reason": "This browser runtime has no MediaRecorder. External encoder ingest, native replay, and player controls remain covered.",
+      "projects": [
+        "webkit-desktop",
+        "webkit-mobile"
+      ]
+    },
+    {
+      "file": "live-broadcast.spec.mjs",
+      "title": "live DVR rewinds and returns to the live edge accessibly",
+      "reason": "This browser runtime has no MediaRecorder. External encoder ingest, native replay, and player controls remain covered.",
+      "projects": [
+        "webkit-desktop",
+        "webkit-mobile"
+      ]
+    },
+    {
+      "file": "live-broadcast.spec.mjs",
+      "title": "one-shot browser broadcast becomes a playable replay",
+      "reason": "This browser runtime has no MediaRecorder. External encoder ingest, native replay, and player controls remain covered.",
+      "projects": [
+        "webkit-desktop",
+        "webkit-mobile"
+      ]
+    },
+    {
+      "file": "live-broadcast.spec.mjs",
+      "title": "unavailable browser audio releases capture and permits a real retry",
+      "reason": "This browser runtime has no MediaRecorder. External encoder ingest, native replay, and player controls remain covered.",
+      "projects": [
+        "webkit-desktop",
+        "webkit-mobile"
+      ]
+    },
+    {
+      "file": "security-key-login-journey.spec.mjs",
+      "title": "Existing security-key sign-in recovers focus after refusal and still authenticates",
+      "reason": "Chromium CDP virtual authenticator coverage only; physical prompts are unverified.",
+      "projects": [
+        "firefox-desktop",
+        "firefox-mobile",
+        "webkit-desktop",
+        "webkit-mobile"
+      ]
+    },
+    {
+      "file": "vod-controls.spec.mjs",
+      "title": "VOD fullscreen fits a landscape phone",
+      "reason": "This browser runtime does not expose DOM fullscreen.",
+      "projects": [
+        "webkit-mobile"
+      ]
+    },
+    {
+      "file": "vod-controls.spec.mjs",
+      "title": "fullscreen yields the whole picture and reveals controls on interaction",
+      "reason": "This browser runtime does not expose DOM fullscreen.",
+      "projects": [
+        "webkit-mobile"
+      ]
+    }
+  ]
+}

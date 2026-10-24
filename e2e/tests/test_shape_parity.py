@@ -324,6 +324,20 @@ def test_notifications_shapes_match_mastodon(alice, plamenu_api, plamenu_user, m
         # Diff the group entity itself (the top-level accounts/statuses arrays
         # differ in account locality on a persistent Mastodon, so scope to the
         # group).
+        # The pinned Mastodon alpha serializes synthetic ungrouped IDs as
+        # JSON integers. Plamenu deliberately keeps opaque IDs as strings so
+        # JavaScript clients cannot lose precision. Check that contract before
+        # normalizing only this reference field for the remaining shape diff.
+        assert m_g["group_key"].startswith("ungrouped-")
+        assert p_g["group_key"].startswith("ungrouped-")
+        assert type(m_g["most_recent_notification_id"]) in (int, str)
+        assert isinstance(p_g["most_recent_notification_id"], str)
+        assert p_g["most_recent_notification_id"].isdigit()
+        assert p_g["page_max_id"] == p_g["most_recent_notification_id"]
+        m_g = {
+            **m_g,
+            "most_recent_notification_id": str(m_g["most_recent_notification_id"]),
+        }
         _plain_status_shape("v2 collection group", m_g, p_g, allow_extra=PLEROMA_EXT)
         assert p_g["collection"]["items"], (
             f"v2 group must carry the collection's items: {p_g}"
@@ -364,7 +378,10 @@ def test_timelines_context_search_shapes_match_mastodon(alice, plamenu_api, mark
         plamenu_api.post_status(f"#e2etl{marker} tagged")
         m_s = alice.search(f"e2etl{marker}", resolve=False)
         p_s = plamenu_api.search(f"e2etl{marker}", resolve=False)
-        assert set(m_s) == set(p_s), f"search top keys differ: {set(m_s)} vs {set(p_s)}"
+        assert set(p_s) == set(m_s) | {"discovery"}, (
+            f"search top keys differ: {set(m_s)} vs {set(p_s)}"
+        )
+        assert isinstance(p_s["discovery"], list)
         assert_same_shape("search hashtags[]", m_s["hashtags"][:1], p_s["hashtags"][:1])
         log("search envelope + Tag entity shape identical")
 

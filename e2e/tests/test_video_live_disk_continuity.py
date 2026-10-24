@@ -14,11 +14,11 @@ import socket
 import subprocess
 import tempfile
 import time
+import tomllib
 from pathlib import Path
 
 import pytest
 import requests
-import tomllib
 from plamenu_e2e import config, ephemeral, peertube, unique
 from plamenu_e2e.steps import step, wait_for
 from tests.test_video_backup_restore import _csrf, _digest, _stop_process
@@ -53,10 +53,7 @@ def _stage(browser, evidence, name):
     return json.loads(report.read_text()).get("stage") == name
 
 
-@pytest.mark.skipif(
-    os.environ.get("AP09_LIVE_DISK_VERIFY") != "1",
-    reason="explicit real primary filesystem fault drill",
-)
+@pytest.mark.capability("AP09_LIVE_DISK_VERIFY")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -91,7 +88,7 @@ def test_live_publisher_and_three_decoders_survive_primary_io_failure(
         with step(
             "configure only an owned primary fault mount and independently durable replica"
         ):
-            origin.start()
+            origin.start(suite_settings=True)
             candidate = _freeze(origin, evidence, monkeypatch)
             _stop_process(origin)
             filesystem = PrimaryFilesystem(evidence / "primary-filesystem")
@@ -110,7 +107,6 @@ def test_live_publisher_and_three_decoders_survive_primary_io_failure(
             origin._config_path.write_text(text)
             origin._config_path.chmod(0o600)
             origin._launch(120, append_log=True)
-            origin.apply_suite_settings()
             user, api = origin.user_api("resilientcaster")
             channel = api.post(
                 "/api/v1/video_channels",

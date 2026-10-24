@@ -1,4 +1,4 @@
-import { expect, request, test } from '@playwright/test';
+import { expect, request, test } from '../fixtures.mjs';
 import { signIn } from '../session.mjs';
 
 test('@no-js private posts cannot be embedded through a signed-in frame', async ({ page }) => {

@@ -12,16 +12,14 @@ import socket
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
-import psycopg
 import pytest
 import requests
-import tomllib
 from plamenu_e2e import config, ephemeral, peertube, unique
 from plamenu_e2e.steps import step, wait_for
-from psycopg import sql
 
 
 def _csrf(page):
@@ -86,7 +84,7 @@ def _playback_assets(session, media):
     }
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -125,8 +123,7 @@ def test_native_video_restore_preserves_assets_offsets_preferences_and_peer_iden
         with step(
             "prepare native renditions, captions, history and an unfinished upload"
         ):
-            source.start()
-            source.apply_suite_settings()
+            source.start(suite_settings=True)
             user, api = source.user_api("restoreauthor")
             channel = api.post(
                 "/api/v1/video_channels",
@@ -320,12 +317,7 @@ def test_native_video_restore_preserves_assets_offsets_preferences_and_peer_iden
         with step(
             "restore into a fresh database and media directory without changing canonical domains"
         ):
-            with psycopg.connect(config.DB_DSN, autocommit=True) as connection:
-                connection.execute(
-                    sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(
-                        sql.Identifier(restored.db_name)
-                    )
-                )
+            restored.create_database()
             subprocess.run(
                 [
                     "pg_restore",

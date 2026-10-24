@@ -1,7 +1,7 @@
 import {freshMusicAudio} from '../session.mjs';
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
-import {signIn,openDetailsFor} from '../session.mjs';
+import {signIn,openDetailsFor,openMusicUpload} from '../session.mjs';
 import {randomUUID} from 'node:crypto';
 
 async function audit(page,noScript){
@@ -32,11 +32,11 @@ async function journey(page,browser,info,noScript){
   const title='Feed music '+randomUUID().slice(0,8);
   const tag='qa_'+randomUUID().replaceAll('-','');
   await signIn(page);
-  await page.goto('/music/assets?mine=true');
+  await openMusicUpload(page);
   const upload=page.locator('form[action="/web/music/assets/import"]');
   await openDetailsFor(upload);
   await upload.getByLabel('Audio file',{exact:true}).setInputFiles(await freshMusicAudio());
-  await upload.getByRole('button',{name:'Upload audio',exact:true}).press('Enter');
+  await upload.getByRole('button',{name:'Save privately',exact:true}).press('Enter');
   await page.waitForURL(url=>/^\/music\/assets\/\d+$/.test(url.pathname));
   const track=page.url();
   const id=new URL(track).pathname.split('/').at(-1);
@@ -79,7 +79,7 @@ async function journey(page,browser,info,noScript){
   const add=page.locator(`form[action="/web/music/collections/${collectionId}/add"]`);
   await openDetailsFor(add);
   await add.getByLabel('Track, Audio post or podcast episode URL',{exact:true}).fill(track);
-  await add.getByRole('button',{name:'Add a track',exact:true}).press('Enter');
+  await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),add.getByRole('button',{name:'Add a track',exact:true}).press('Enter')]);
   const tags=page.locator(`form[action="/web/music/collections/${collectionId}/tags"]`);
   await openDetailsFor(tags);
   await tags.getByLabel('Tags',{exact:true}).fill(tag);

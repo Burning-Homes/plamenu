@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures.mjs';
 import { uiFixture } from '../ui-fixture.mjs';
 
 const labels = Object.fromEntries(['play', 'pause', 'seek', 'mute', 'unmute', 'volume', 'captions', 'off', 'fullscreen', 'settings', 'speed', 'pip', 'live'].map(key => [key, key[0].toUpperCase() + key.slice(1)]));

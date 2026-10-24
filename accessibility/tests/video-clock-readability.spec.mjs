@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import {randomUUID} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
 import AxeBuilder from '@axe-core/playwright';
@@ -23,7 +23,6 @@ async function textSpacing(page,active) {
 }
 
 test('Published video clock stays readable at narrow widths and text spacing',async({page},info)=>{
-  test.fixme(true, 'Known A59: narrow video time is clipped; deferred at user-requested audit wrap-up. See docs/ACCESSIBILITY_JOURNEY.md.');
   test.setTimeout(180000);
   await signIn(page);
   await page.goto('/videos/upload');

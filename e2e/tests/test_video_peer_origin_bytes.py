@@ -24,10 +24,7 @@ from tests.test_video_live_concurrency import _port
 from tests.test_video_offload import _freeze, _submit
 
 
-@pytest.mark.skipif(
-    os.environ.get("AP09_PEER_BYTES_VERIFY") != "1",
-    reason="owned matched eight-viewer real HTTP-body/RTC measurement",
-)
+@pytest.mark.capability("AP09_PEER_BYTES_VERIFY")
 @pytest.mark.federation(direction="both", peer="peertube")
 @pytest.mark.parametrize("product", ["native", "peertube"])
 def test_both_source_products_reduce_native_http_emission_including_seed_cost(
@@ -57,7 +54,7 @@ def test_both_source_products_reduce_native_http_emission_including_seed_cost(
         with step(
             "owned frozen native service behind an actual body-counting constrained TCP bridge"
         ):
-            origin.start()
+            origin.start(suite_settings=True)
             candidate = _freeze(origin, evidence, monkeypatch)
             _stop_process(origin)
             upstream = _port()
@@ -103,7 +100,6 @@ def test_both_source_products_reduce_native_http_emission_including_seed_cost(
 
             wait_for(ready, desc="owned native HTTP body bridge is ready", timeout=10)
             origin._launch(120, append_log=True)
-            origin.apply_suite_settings()
             user, api = origin.user_api("peerbytesviewer")
             title = f"Matched eight-viewer emission {label}"
             movie = peertube.make_sample_mp4(

@@ -13,12 +13,12 @@ import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 import psycopg
 import pytest
 import requests
 from plamenu_e2e import config, unique
+from plamenu_e2e.resources import Resources
 from plamenu_e2e.steps import step, wait_for
 
 MAX_SOURCE = 2 * 1024**3
@@ -66,75 +66,6 @@ class MultipartFile:
 
     def close(self):
         self.file.close()
-
-
-class Resources:
-    """Sample only the disposable instance and its own encoder children."""
-
-    def __init__(self, instance):
-        self.instance = instance
-        self.parent_peak_kib = self.child_peak_kib = self.disk_peak = 0
-        self.jobs_peak = self.uploaders_peak = 0
-        self.stop = threading.Event()
-        self.thread = threading.Thread(target=self.sample, daemon=True)
-
-    def sample(self):
-        with psycopg.connect(self.instance.dsn, autocommit=True) as connection:
-            self.sample_process(connection)
-
-    def sample_process(self, connection):
-        while not self.stop.is_set():
-            try:
-                process = self.instance._proc.pid
-                status = Path(f"/proc/{process}/status").read_text()
-                rss = int(re.search(r"VmRSS:\s+(\d+)", status)[1])
-                self.parent_peak_kib = max(self.parent_peak_kib, rss)
-                # Tokio may fork from any worker thread; the leader's children
-                # file alone would falsely report zero encoder memory.
-                children = set()
-                for task in Path(f"/proc/{process}/task").glob("*/children"):
-                    try:
-                        children.update(task.read_text().split())
-                    except FileNotFoundError:
-                        pass
-                child_rss = 0
-                for child in children:
-                    try:
-                        value = re.search(
-                            r"VmRSS:\s+(\d+)", Path(f"/proc/{child}/status").read_text()
-                        )
-                        child_rss += int(value[1]) if value else 0
-                    except FileNotFoundError:
-                        pass
-                self.child_peak_kib = max(self.child_peak_kib, child_rss)
-                root = Path(self.instance._dir.name) / "media"
-                self.disk_peak = max(
-                    self.disk_peak,
-                    sum(p.stat().st_size for p in root.rglob("*") if p.is_file()),
-                )
-                jobs, uploaders = connection.execute(
-                    "SELECT count(*),count(DISTINCT account_id) FROM video_drafts WHERE state='processing' AND lease_until>now()"
-                ).fetchone()
-                self.jobs_peak = max(self.jobs_peak, jobs)
-                self.uploaders_peak = max(self.uploaders_peak, uploaders)
-            except (FileNotFoundError, TypeError):
-                pass  # A deliberately killed process/renamed scratch is transient.
-            self.stop.wait(0.05)
-
-    def __enter__(self):
-        self.sample_once = int(
-            re.search(
-                r"VmRSS:\s+(\d+)",
-                Path(f"/proc/{self.instance._proc.pid}/status").read_text(),
-            )[1]
-        )
-        self.started = time.monotonic()
-        self.thread.start()
-        return self
-
-    def __exit__(self, *_):
-        self.stop.set()
-        self.thread.join(timeout=3)
 
 
 def hour_source(path):
@@ -206,7 +137,7 @@ def test_default_maximum_decodable_hour_survives_upload_and_processing(
         "transcript": "An intentionally silent blue image for one hour.",
     }
     draft_id = None
-    with Resources(plamenu2) as resources:
+    with Resources(plamenu2, connect=psycopg.connect) as resources:
         with step(
             "stream an actual default-ceiling source without allocating its body"
         ):
@@ -466,7 +397,7 @@ def test_concurrent_real_uploads_use_two_bounded_worker_slots_and_two_uploaders(
         finally:
             body.close()
 
-    with Resources(plamenu2) as resources:
+    with Resources(plamenu2, connect=psycopg.connect) as resources:
         with ThreadPoolExecutor(max_workers=3) as writers:
             futures = [writers.submit(upload, owner) for owner in [0, 0, 1]]
             drafts = [future.result(timeout=240) for future in futures]

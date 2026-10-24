@@ -23,8 +23,7 @@ def bookwyrm_plamenu(bookwyrm):
     # Never reset or occupy the standing Plamenu-against-Plamenu peer.
     instance = ephemeral.Instance()
     try:
-        instance.start()
-        instance.apply_suite_settings()
+        instance.start(suite_settings=True)
         yield instance
     finally:
         instance.stop()

@@ -11,11 +11,11 @@ import socket
 import subprocess
 import tempfile
 import time
+import tomllib
 from pathlib import Path
 
 import pytest
 import requests
-import tomllib
 from plamenu_e2e import config, ephemeral, peertube, unique
 from plamenu_e2e.steps import step, wait_for
 from tests.test_video_backup_restore import _csrf, _stop_process
@@ -24,10 +24,7 @@ from tests.test_video_live_backup_restore import _stop_encoder
 from tests.test_video_offload import _freeze
 
 
-@pytest.mark.skipif(
-    os.environ.get("AP09_CAPTURE_VERIFY") != "1",
-    reason="owned real capture/performance drill",
-)
+@pytest.mark.capability("AP09_CAPTURE_VERIFY")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -56,7 +53,7 @@ def test_first_party_camera_and_screen_capture_decoded_budgets(monkeypatch):
         with step(
             "paired native storage and an owned permanent broadcast followed by actual PeerTube"
         ):
-            origin.start()
+            origin.start(suite_settings=True)
             candidate = _freeze(origin, evidence, monkeypatch)
             _stop_process(origin)
             replica = evidence / "replica:paired|capture"
@@ -69,7 +66,6 @@ def test_first_party_camera_and_screen_capture_decoded_budgets(monkeypatch):
             )
             origin._config_path.chmod(0o600)
             origin._launch(120, append_log=True)
-            origin.apply_suite_settings()
             user, api = origin.user_api("capturecaster")
             channel = api.post(
                 "/api/v1/video_channels",

@@ -7,9 +7,8 @@ import math
 import re
 import subprocess
 import sys
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INPUTS = [
@@ -66,6 +65,26 @@ def valid_source(record, policy, seed_version):
 
 
 def validate_hot(record, budgets, policy):
+    # Historical committed evidence predates attempt boundaries. Newly emitted
+    # records carry them and must prove successful finalization as well.
+    if "run_schema" in record:
+        require(
+            type(record["run_schema"]) is int
+            and record["run_schema"] == 1
+            and record.get("run_status") == "complete"
+            and isinstance(record.get("run_id"), str)
+            and re.fullmatch(r"run-[a-zA-Z0-9_-]+", record["run_id"]),
+            "incomplete benchmark run boundary",
+        )
+    require(
+        record.get("focused_read_case") is None, "focused read run is not full evidence"
+    )
+    arguments = record.get("criterion_arguments", [])
+    require(
+        isinstance(arguments, list)
+        and all(arg in ("--bench", "--noplot") for arg in arguments),
+        "custom Criterion arguments are diagnostic evidence",
+    )
     measurements = record.get("benchmarks", {})
     require(
         set(measurements) == set(budgets),

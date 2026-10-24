@@ -92,6 +92,8 @@ Development:
   build [CARGO_ARGS...]         Build the workspace
   test [NEXTEST_ARGS...]        Start PostgreSQL and run workspace tests
   check                         Run formatting, Clippy, and offline Cargo checks
+  test-harness [--profile full] Run standalone Python/JS tests (full includes FUSE)
+  gate-inventory [--write]      Check or refresh complete test inventories
   ci                            Run check, tests, and cargo-deny when installed
   docs-build [VERSION]          Build the searchable static guide (default: dev)
   docs-deploy [--ref TAG]       Build, publish and verify Codefloe Pages
@@ -109,7 +111,7 @@ Development:
   a11y-install                  Install pinned browser packages and container
   a11y [PLAYWRIGHT_ARGS...]     Run the WCAG browser regression matrix
   a11y-matrix                   Validate WCAG criterion-to-evidence coverage
-  a11y-evidence OUTPUT          Create a pending release-evidence record
+  a11y-evidence REPORT OUTPUT   Create evidence from an explicit full browser report
   provision-peers [--no-start|--check]
                                 Fetch pinned peer sources and prepare the live fleet
   smoke-install                 Rehearse a clean production-shaped container install
@@ -180,9 +182,10 @@ db_up() {
 
 # Seed the schema into Postgres' `template1` so `#[sqlx::test]` — which creates
 # every per-test database with a bare `CREATE DATABASE` (inheriting template1) —
-# gets a fast file-copy of the finished schema instead of replaying all 18
-# migrations from scratch on each of the ~1000 tests. sqlx's per-test migrator
-# then finds `_sqlx_migrations` already satisfied and no-ops. Migrations are
+# gets a fast file-copy of the finished schema instead of replaying every
+# migration from scratch on thousands of tests. sqlx's per-test migrator
+# then validates `_sqlx_migrations` and no-ops. Upgrade tests explicitly clear
+# their own per-test schemas before replaying the old versions. Migrations are
 # append-only here, so re-running this is idempotent (only new migrations apply)
 # and cheap (~0.4s). Purely an optimization: if sqlx-cli is absent we skip it
 # and the tests still pass, just slower. The dev database is disposable, so
@@ -360,11 +363,14 @@ full_peer_preflight() {
   local checks=(
     "mastodon|${MASTODON_URL:-https://mastodon.local}/api/v1/instance"
     "pleroma|${PLEROMA_URL:-https://pleroma.local}/api/v1/instance"
+    "plup|${PLUP_URL:-https://plup.local}/api/v1/instance"
     "gotosocial|${GOTOSOCIAL_URL:-https://gotosocial.local}/api/v1/instance"
     "mitra|${MITRA_URL:-https://mitra.local}/api/v1/instance"
+    "onion|${ONION_MITRA_URL:-http://127.0.0.1:8381}/api/v1/instance"
     "lemmy|${LEMMY_URL:-https://lemmy.local}/api/v3/site"
     "peertube|${PEERTUBE_URL:-https://peertube.local}/api/v1/config"
     "owncast|${OWNCAST_URL:-https://owncast.local}/api/status"
+    "mobilizon|${MOBILIZON_URL:-https://mobilizon.local}/.well-known/nodeinfo"
     "discourse|${DISCOURSE_URL:-https://discourse.local}/about.json"
     "hubzilla|${HUBZILLA_URL:-https://hubzilla.local}/"
     "songhive|${SONGHIVE_URL:-https://songhive.local}/.well-known/nodeinfo"
@@ -395,7 +401,7 @@ run_e2e() {
   app_up
   if [[ "$full" == true ]]; then
     full_peer_preflight
-    set -- --release-matrix "$@"
+    set -- --release-matrix "$@" --matrix-profile full --maxfail=0
   fi
   (
     cd e2e
@@ -505,20 +511,18 @@ case "$action" in
     }
     db_up
     seed_test_template
-    cargo nextest run --locked --workspace "$@"
+    cargo nextest run --locked --workspace --no-fail-fast "$@"
     ;;
   check)
+    python3 scripts/update-gate-inventory.py --check-sources
+    python3 e2e/tools/federation_coverage.py
     cargo fmt --all -- --check
     cargo clippy --locked --workspace --all-targets -- -D warnings
     SQLX_OFFLINE=true cargo check --locked --workspace --all-targets
-    # The benchmark gate decides whether a change ships; its exit-code
-    # contract is cheap to check and needs no database.
-    if python3 -c 'import pytest' 2>/dev/null; then
-      python3 -m pytest bench/test_bench_budgets.py -q
-    else
-      echo "Skipping bench-gate tests (pytest not installed)"
-    fi
+    python3 scripts/test-harness.py --profile portable
     ;;
+  test-harness) exec python3 scripts/test-harness.py "$@" ;;
+  gate-inventory) exec python3 scripts/update-gate-inventory.py "$@" ;;
   docs-build) exec "$ROOT/scripts/build-docs-site.sh" "${1:-dev}" ;;
   docs-serve) exec mdbook serve docs "$@" ;;
   docs-check) exec "$ROOT/scripts/check-docs.sh" ;;
@@ -558,9 +562,9 @@ case "$action" in
   a11y) run_a11y "$@" ;;
   a11y-matrix) exec python3 "$ROOT/scripts/accessibility-evidence.py" matrix ;;
   a11y-evidence)
-    [[ $# -eq 1 ]] || { echo "Usage: ./dev a11y-evidence OUTPUT" >&2; exit 2; }
+    [[ $# -eq 2 ]] || { echo "Usage: ./dev a11y-evidence REPORT OUTPUT" >&2; exit 2; }
     exec python3 "$ROOT/scripts/accessibility-evidence.py" init \
-      --automated "$ROOT/target/accessibility/automated.json" "$1"
+      --automated "$1" "$2"
     ;;
   provision-peers) exec "$PEER_PROVISIONER" "$@" ;;
   smoke-install) exec "$ROOT/scripts/rehearse-deployment.sh" install ;;

@@ -6,6 +6,12 @@ case "$mode" in quick|clippy|verify) ;; *) exit 2 ;; esac
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends ca-certificates curl git build-essential \
   pkg-config perl python3 python3-yaml python3-venv shellcheck time zstd
+if [ "$mode" = verify ]; then
+  apt-get install -y -qq --no-install-recommends nodejs npm python3-pytest
+  /usr/bin/python3 -m venv --system-site-packages /tmp/plamenu-verify-tools
+  /tmp/plamenu-verify-tools/bin/pip install --quiet -r scripts/requirements-tests.txt
+  printf '%s\n' /tmp/plamenu-verify-tools/bin >> "$GITHUB_PATH"
+fi
 case "$(uname -m)" in
   x86_64) triple=x86_64-unknown-linux-gnu; digest=20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c ;;
   aarch64) triple=aarch64-unknown-linux-gnu; digest=e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c ;;

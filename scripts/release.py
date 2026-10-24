@@ -9,9 +9,9 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
-import tomllib
 from plamenu_release import build, checks, docs, worker
 from plamenu_release.core import (
     ReleaseError,
@@ -56,14 +56,14 @@ def prerequisites(args):
     if not args.check_only:
         tools.add("readelf")
     if args.checks_on == "local":
-        tools.update(("mdbook", "cargo-deny", "ruff", "shellcheck"))
+        tools.update(("mdbook", "cargo-deny", "ruff", "shellcheck", "node", "npm"))
     if args.publish:
         tools.add("cosign")
     if args.with_e2e:
         tools.add("uv")
     missing = sorted(t for t in tools if not shutil.which(t))
     if args.checks_on == "local":
-        for module in ("yaml", "pytest"):
+        for module in ("yaml", "pytest", "websockets"):
             if subprocess.run(
                 [sys.executable, "-c", "import " + module],
                 stdout=subprocess.DEVNULL,

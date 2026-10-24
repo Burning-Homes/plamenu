@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Run the browser accessibility matrix against an isolated Plamenu fixture."""
 
+import email.parser
+import email.policy
 import hashlib
 import html
 import http.server
-import email.parser
-import email.policy
 import ipaddress
 import json
 import os
@@ -20,9 +20,16 @@ import tempfile
 import threading
 import time
 import urllib.parse
+from contextlib import ExitStack
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "e2e"))
+sys.path.insert(0, str(ROOT / "scripts"))
+from browser_fixture import BrowserFixture, finalize_report
+from cold_rendition_fixture import ColdRenditions
+from plamenu_e2e.lifecycle import owns_listener, serve_in_thread, stop_process
+
 BROWSER_IMAGE = (
     "mcr.microsoft.com/playwright@"
     "sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27"
@@ -143,6 +150,10 @@ def offline_proxy_control(address, proxy, fixture):
         current = target
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(15)
+
         def do_POST(self):
             if self.path not in (f"/{token}/offline", f"/{token}/online"):
                 self.send_error(403)
@@ -159,31 +170,29 @@ def offline_proxy_control(address, proxy, fixture):
             pass
 
     control = http.server.HTTPServer((address, 0), Handler)
-    threading.Thread(target=control.serve_forever, daemon=True).start()
+    stop_control = serve_in_thread(control)
 
     def close():
-        control.shutdown()
-        control.server_close()
+        stop_control()
         if current != original:
             change(True)
 
+    close.reset = lambda: change(True) if current != original else None
     return f"http://{address}:{control.server_port}/{token}", close
 
 
-def rendition_encoder(fixture):
-    """Use real-time input only for the owned native rendition output names."""
+def rendition_encoder(fixture, control):
+    """Ordinary encodes run normally; only an opted-in attempt holds input."""
     real = shutil.which("ffmpeg")
     if not real:
         raise RuntimeError("Cold rendition fixture requires FFmpeg")
     script = fixture / "rendition-encoder.py"
     script.write_text(
         f"#!{sys.executable}\n"
-        "import os,sys\n"
-        f"args=[{real!r}]+sys.argv[1:]\n"
-        "outputs={'encoded.mp3','encoded.ogg','encoded.flac','encoded.m4a','encoded.opus'}\n"
-        "if os.path.basename(args[-1]) in outputs and '-i' in args:\n"
-        "    args.insert(args.index('-i'),'-re')\n"
-        "os.execv(args[0],args)\n"
+        "import sys\n"
+        f"sys.path.insert(0,{str(ROOT / 'scripts')!r})\n"
+        "from cold_rendition_fixture import encode\n"
+        f"encode({real!r},{str(control.active)!r},sys.argv[1:])\n"
     )
     script.chmod(0o700)
     return script
@@ -203,16 +212,28 @@ class ApplicationBinary:
         self.path = path.resolve()
         if not self.path.is_file() or not os.access(self.path, os.X_OK):
             raise RuntimeError("Plamenu candidate is missing or not executable")
-        self.sha256 = self.digest(self.path)
+        # Hash once, then bind every command and running process to that exact
+        # inode version. Linux ctime cannot be restored with utime: even an
+        # equal-size write with a restored mtime invalidates this binding.
+        # Reject metadata drift too, rather than accepting a later rehash.
+        with self.path.open("rb") as source:
+            self.version = self.file_version(os.fstat(source.fileno()))
+            self.sha256 = hashlib.file_digest(source, "sha256").hexdigest()
+            if self.file_version(os.fstat(source.fileno())) != self.version:
+                raise RuntimeError("Plamenu candidate changed while being bound")
+        self.verify(self.path)
 
     @staticmethod
-    def digest(path):
-        with Path(path).open("rb") as source:
-            return hashlib.file_digest(source, "sha256").hexdigest()
+    def file_version(stat):
+        return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns,
+                stat.st_ctime_ns, stat.st_mode)
+
+    def verify(self, path):
+        if self.file_version(Path(path).stat()) != self.version:
+            raise RuntimeError("Plamenu candidate changed during the browser fixture")
 
     def command(self, config, *arguments):
-        if self.digest(self.path) != self.sha256:
-            raise RuntimeError("Plamenu candidate changed during the browser fixture")
+        self.verify(self.path)
         return [str(self.path), "--config", str(config), *arguments]
 
     def running_identity(self, process):
@@ -220,10 +241,12 @@ class ApplicationBinary:
         if (
             process.poll() is not None
             or (proc / "exe").resolve() != self.path
-            or self.digest(proc / "exe") != self.sha256
         ):
             raise RuntimeError("Running browser fixture differs from its candidate")
-        return {"pid": process.pid, "executable": str(self.path), "sha256": self.sha256}
+        self.verify(self.path)
+        self.verify(proc / "exe")
+        return {"pid": process.pid, "executable": str(self.path), "sha256": self.sha256,
+                "file_version": self.version}
 
 
 def prepare_application():
@@ -344,18 +367,21 @@ def wait_for_database(name):
 
 
 def wait_for_server(server, url, log):
-    for _ in range(180):
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline:
+        if server.poll() is not None:
+            raise RuntimeError(f"Plamenu fixture exited; see {log}")
         healthy = subprocess.run(
             ["curl", "--noproxy", "*", "-fsS", "--max-time", "2", url + "/health"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
         )
-        if healthy.returncode == 0:
+        if healthy.returncode == 0 and owns_listener(server, urllib.parse.urlsplit(url).port):
             return
         if server.poll() is not None:
             raise RuntimeError(f"Plamenu fixture exited; see {log}")
-        time.sleep(1)
+        time.sleep(0.1)
     raise RuntimeError(f"Plamenu fixture timed out; see {log}")
 
 
@@ -420,6 +446,10 @@ def podcast_producer(address, audio, poster):
     """A real bounded RSS/enclosure origin confined to the disposable fixture."""
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(15)
+
         def do_GET(self):
             parsed = urllib.parse.urlsplit(self.path)
             if parsed.path == "/show.xml":
@@ -466,7 +496,7 @@ def podcast_producer(address, audio, poster):
             pass
 
     producer = http.server.ThreadingHTTPServer((address, 0), Handler)
-    threading.Thread(target=producer.serve_forever, daemon=True).start()
+    producer.close_fixture = serve_in_thread(producer)
     return producer
 
 
@@ -519,6 +549,10 @@ def fixture_mailbox(address):
                     self.wfile.write(b"502 Unsupported\r\n")
 
     class Inbox(http.server.BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(15)
+
         def do_GET(self):
             parsed = urllib.parse.urlsplit(self.path)
             if parsed.path != f"/{nonce}":
@@ -537,18 +571,78 @@ def fixture_mailbox(address):
         def log_message(self, *args):
             pass
 
-    smtp = socketserver.ThreadingTCPServer(("127.0.0.1", 0), SMTP)
-    smtp.daemon_threads = True
-    inbox = http.server.ThreadingHTTPServer((address, 0), Inbox)
-    for service in (smtp, inbox):
-        threading.Thread(target=service.serve_forever, daemon=True).start()
+    class SMTPServer(socketserver.ThreadingTCPServer):
+        def __init__(self, *args):
+            self.connections = set()
+            self.changed = threading.Condition()
+            super().__init__(*args)
+
+        def get_request(self):
+            connection, address = super().get_request()
+            with self.changed:
+                self.connections.add(connection)
+            return connection, address
+
+        def shutdown_request(self, connection):
+            try:
+                super().shutdown_request(connection)
+            finally:
+                with self.changed:
+                    self.connections.discard(connection)
+                    self.changed.notify_all()
+
+        def drain(self):
+            # Called after the application stops. Flush every accepted SMTP
+            # handler before clearing the mailbox, including incomplete DATA.
+            with self.changed:
+                for connection in self.connections:
+                    try:
+                        connection.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                if not self.changed.wait_for(lambda: not self.connections, timeout=20):
+                    raise RuntimeError("Fixture SMTP requests did not stop")
+
+    with ExitStack() as setup:
+        smtp = SMTPServer(("127.0.0.1", 0), SMTP)
+        setup.callback(smtp.server_close)
+        inbox = http.server.ThreadingHTTPServer((address, 0), Inbox)
+        setup.callback(inbox.server_close)
+        setup.callback(serve_in_thread(smtp))
+        setup.callback(serve_in_thread(inbox))
+        setup.callback(smtp.drain)
+        services = setup.pop_all()
 
     def close():
-        for service in (smtp, inbox):
-            service.shutdown()
-            service.server_close()
+        services.close()
+
+    def reset():
+        smtp.drain()
+        with lock:
+            messages.clear()
+
+    close.reset = reset
 
     return smtp.server_address[1], f"http://{address}:{inbox.server_port}/{nonce}", close
+
+
+def remove_container(name, owner):
+    def owned_ids():
+        return subprocess.check_output(
+            ["docker", "ps", "--all", "--no-trunc", "--filter", f"name=^/{name}$",
+             "--filter", f"label=plamenu.fixture.run={owner}", "--format", "{{.ID}}"],
+            text=True, timeout=30,
+        ).splitlines()
+
+    for identifier in owned_ids():
+        result = subprocess.run(
+            ["docker", "rm", "--force", "--volumes", identifier],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=30,
+            check=False,
+        )
+        # --rm may remove the browser between listing and removal.
+        if result.returncode and identifier in owned_ids():
+            raise RuntimeError(f"Owned container cleanup failed: {result.stderr.strip()}")
 
 
 def main():
@@ -562,8 +656,18 @@ def main():
         if not shutil.which(tool):
             print(f"Accessibility fixture requires {tool}", file=sys.stderr)
             return 1
+    run_dir = ROOT / "target/accessibility/runs" / secrets.token_hex(16)
+    report_path = Path(os.environ.get("A11Y_REPORT_PATH", run_dir / "automated.json"))
+    if not report_path.is_absolute():
+        report_path = ROOT / report_path
+    if report_path.exists():
+        print("Accessibility report already exists; choose a fresh path", file=sys.stderr)
+        return 1
+    run_dir.mkdir(parents=True, mode=0o700)
+    print(f"Accessibility run: {run_dir}", flush=True)
     name = "plamenu-a11y-db-" + secrets.token_hex(6)
     proxy_name = "plamenu-a11y-tls-" + secrets.token_hex(6)
+    browser_name = "plamenu-a11y-browser-" + secrets.token_hex(6)
     password = secrets.token_hex(24)
     server = None
     podcasts = None
@@ -584,12 +688,14 @@ def main():
             print(str(error), file=sys.stderr)
             return 1
     try:
+        run("python3", "scripts/update-gate-inventory.py", "--suite", "browser")
         application = prepare_application()
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"Accessibility candidate failed: {error}", file=sys.stderr)
         return 1
     encoder_image = BROWSER_IMAGE if local_browsers else browser_image()
-    with tempfile.TemporaryDirectory(prefix="plamenu-a11y-") as temporary:
+    with ExitStack() as cleanup:
+        temporary = cleanup.enter_context(tempfile.TemporaryDirectory(prefix="plamenu-a11y-"))
         fixture = Path(temporary)
         try:
             video_fixture = fixture / "native-video.mp4"
@@ -643,10 +749,12 @@ def main():
                 "1",
                 str(poster_fixture),
             )
+            cleanup.callback(remove_container, name, run_dir.name)
             run(
                 "docker",
                 "run",
                 "--detach",
+                "--label", f"plamenu.fixture.run={run_dir.name}",
                 "--name",
                 name,
                 "--publish",
@@ -692,6 +800,7 @@ def main():
                 )
             if os.environ.get("A11Y_PODCAST_FIXTURE") == "1":
                 podcasts = podcast_producer(app_address, audio_fixture, poster_fixture)
+                cleanup.callback(podcasts.close_fixture)
             app_port = free_port(app_address)
             live_port = free_port(app_address)
             tls_port = free_port() if local_browsers else 443
@@ -704,10 +813,12 @@ def main():
                     offline=os.environ.get("A11Y_OFFLINE_FIXTURE", "1") == "1",
                 )
             )
+            cleanup.callback(remove_container, proxy_name, run_dir.name)
             run(
                 "docker",
                 "run",
                 "--detach",
+                "--label", f"plamenu.fixture.run={run_dir.name}",
                 "--name",
                 proxy_name,
                 *(
@@ -743,9 +854,10 @@ def main():
                 f"postgres://postgres:{password}@127.0.0.1:{database_port}/plamenu_a11y"
             )
             config = fixture / "plamenu.toml"
+            cold_renditions = ColdRenditions(fixture / "cold-renditions") if os.environ.get("A11Y_COLD_RENDITION_FIXTURE") == "1" else None
             rendition_config = (
-                f"ffmpeg_path = {json.dumps(str(rendition_encoder(fixture)))}\n"
-                if os.environ.get("A11Y_COLD_RENDITION_FIXTURE") == "1"
+                f"ffmpeg_path = {json.dumps(str(rendition_encoder(fixture, cold_renditions)))}\n"
+                if cold_renditions
                 else ""
             )
             # Explicit local-peer import drills permit local addresses; ordinary
@@ -760,6 +872,7 @@ def main():
                 else ""
             )
             smtp_port, mailbox_url, mailbox_close = fixture_mailbox(app_address)
+            cleanup.callback(mailbox_close)
             config.write_text(
                 'domain = "localhost"\n'
                 f'trusted_proxies = ["{proxy_address}/32"]\n'
@@ -857,21 +970,74 @@ def main():
                 text=True,
                 stdout=subprocess.DEVNULL,
             )
-            log = ROOT / "target/accessibility/server.log"
-            log.parent.mkdir(parents=True, exist_ok=True)
-            log_handle = log.open("wb")
-            server = subprocess.Popen(
-                application.command(config, "serve"),
-                cwd=ROOT,
-                stdout=log_handle,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
+            # Seed once, then clone this offline baseline for every test attempt.
+            # No application connection or background worker can reach the template.
+            def database(sql):
+                run("docker", "exec", "-i", name, "psql", "-U", "postgres",
+                    "-d", "postgres", "-v", "ON_ERROR_STOP=1", input=sql,
+                    text=True, stdout=subprocess.DEVNULL)
+
+            database("CREATE DATABASE plamenu_a11y_baseline TEMPLATE plamenu_a11y; "
+                     "ALTER DATABASE plamenu_a11y_baseline ALLOW_CONNECTIONS false;")
+            baseline_media = fixture / "baseline-media"
+            shutil.copytree(fixture / "media", baseline_media)
+            attempt = 0
             base_url = f"http://{app_address}:{app_port}"
-            wait_for_server(server, base_url, log)
-            (log.parent / "application.json").write_text(
-                json.dumps(application.running_identity(server), indent=2) + "\n"
-            )
+
+            def stop_server():
+                nonlocal server, log_handle
+                process, server = server, None
+                try:
+                    stop_process(process, timeout=2)
+                finally:
+                    if log_handle:
+                        log_handle.close()
+                        log_handle = None
+
+            cleanup.callback(stop_server)
+
+            def reset_server():
+                nonlocal server, log_handle, attempt
+                phases = {}
+                checkpoint = time.monotonic()
+
+                def measured(name):
+                    nonlocal checkpoint
+                    now = time.monotonic()
+                    phases[name] = now - checkpoint
+                    checkpoint = now
+
+                stop_server()
+                measured("stop")
+                if offline_close:
+                    offline_close.reset()
+                mailbox_close.reset()
+                measured("auxiliary_reset")
+                database("DROP DATABASE plamenu_a11y WITH (FORCE); "
+                         "CREATE DATABASE plamenu_a11y TEMPLATE plamenu_a11y_baseline;")
+                measured("database_clone")
+                shutil.rmtree(fixture / "media")
+                shutil.copytree(baseline_media, fixture / "media")
+                measured("media_copy")
+                attempt += 1
+                log = run_dir / f"server-{attempt}.log"
+                log_handle = log.open("wb")
+                command = application.command(config, "serve")
+                measured("candidate_validation")
+                server = subprocess.Popen(
+                    command, cwd=ROOT,
+                    stdout=log_handle, stderr=subprocess.STDOUT, start_new_session=True,
+                )
+                wait_for_server(server, f"http://{app_address}:{app_port}", log)
+                measured("process_readiness")
+                (run_dir / f"application-{attempt}.json").write_text(
+                    json.dumps(application.running_identity(server), indent=2) + "\n"
+                )
+                measured("running_identity")
+                return {"log": str(log), "identity": str(run_dir / f"application-{attempt}.json"),
+                        "phase_seconds": phases}
+
+            reset_server()
             if local_browsers:
                 base_url = f"https://localhost:{tls_port}"
                 readiness_url = base_url
@@ -919,15 +1085,21 @@ def main():
                 "A11Y_PASSWORD": "plamenu-development-only",
                 "A11Y_CANONICAL_ORIGIN": "https://localhost",
                 "A11Y_MAILBOX_URL": mailbox_url,
-                "A11Y_REPORT_PATH": os.environ.get(
-                    "A11Y_REPORT_PATH", "target/accessibility/automated.json"
-                ),
+                "A11Y_REPORT_PATH": str(report_path),
+                "A11Y_RUN_DIR": str(run_dir),
+                "A11Y_OUTPUT_DIR": str(run_dir / "test-results"),
             }
             if os.environ.get("A11Y_OFFLINE_FIXTURE", "1") == "1":
                 control_url, offline_close = offline_proxy_control(
                     app_address, proxy_name, fixture
                 )
                 environment["A11Y_OFFLINE_CONTROL_URL"] = control_url
+            if offline_close:
+                cleanup.callback(offline_close)
+            control = BrowserFixture(app_address, reset=reset_server, stop=stop_server,
+                                     report=run_dir / "fixtures.json", cold_renditions=cold_renditions)
+            cleanup.callback(control.close)
+            environment["A11Y_FIXTURE_CONTROL_URL"] = control.url
             if podcasts:
                 environment["A11Y_PODCAST_SOURCE_URL"] = (
                     f"http://{app_address}:{podcasts.server_port}/show.xml"
@@ -973,6 +1145,8 @@ def main():
                     "docker",
                     "run",
                     "--rm",
+                    "--name", browser_name,
+                    "--label", f"plamenu.fixture.run={run_dir.name}",
                     "--network",
                     f"container:{proxy_name}",
                     "--ipc",
@@ -1073,7 +1247,10 @@ def main():
                             "A11Y_PASSWORD",
                             "A11Y_CANONICAL_ORIGIN",
                             "A11Y_REPORT_PATH",
+                            "A11Y_RUN_DIR",
+                            "A11Y_OUTPUT_DIR",
                             "A11Y_MAILBOX_URL",
+                            "A11Y_FIXTURE_CONTROL_URL",
                         )
                         for item in ("--env", f"{name}={environment[name]}")
                     ),
@@ -1092,43 +1269,20 @@ def main():
                     "--",
                     *sys.argv[1:],
                 ]
+            cleanup.callback(remove_container, browser_name, run_dir.name)
             result = subprocess.run(command, cwd=ROOT, env=environment, check=False)
-            return result.returncode
+            outcome = result.returncode
         except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
             print(f"Accessibility fixture failed: {error}", file=sys.stderr)
-            return 1
-        finally:
-            try:
-                if offline_close:
-                    offline_close()
-            finally:
-                if podcasts:
-                    podcasts.shutdown()
-                    podcasts.server_close()
-                if server and server.poll() is None:
-                    os.killpg(server.pid, signal.SIGTERM)
-                    try:
-                        server.wait(timeout=30)
-                    except subprocess.TimeoutExpired:
-                        os.killpg(server.pid, signal.SIGKILL)
-                        server.wait()
-                if log_handle:
-                    log_handle.close()
-                if mailbox_close:
-                    mailbox_close()
-                subprocess.run(
-                    ["docker", "rm", "--force", "--volumes", proxy_name],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-                subprocess.run(
-                    ["docker", "rm", "--force", "--volumes", name],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
+            outcome = 1
+    finalize_report(report_path, control.events if 'control' in locals() else [], outcome)
+    return outcome
+
 
 
 if __name__ == "__main__":
+    def interrupted(signum, frame):
+        raise KeyboardInterrupt(f"Fixture runner received signal {signum}")
+
+    signal.signal(signal.SIGTERM, interrupted)
     sys.exit(main())

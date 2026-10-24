@@ -29,5 +29,8 @@ filterwarnings = ["ignore::urllib3.exceptions.InsecureRequestWarning"]
 # Real federation is slow (delivery queues on both sides); these are not
 # unit tests. Run with -s to watch the >> step lines live.
 markers = [
+    "nested_capability(environment_variable): explicit nested browser journey required for full evidence; ordinary and standard profiles retain the core test without it",
+    "requires_peer(name): probe a live peer once at execution, never during collection",
+    "capability(environment_variable): explicit opt-in required for this drill; never enabled by the runner",
     "federation(direction, reverse_of, one_way_reason, peer): pairs a directional federation test with its opposite-direction reverse_of, or records a one_way_reason. direction is one of inbound/outbound/both; exactly one of {reverse_of, one_way_reason} when direction != both, neither when direction == both. peer is inferred from the filename when omitted. Audited by tools/federation_coverage.py.",
 ]

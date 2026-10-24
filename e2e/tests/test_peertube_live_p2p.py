@@ -14,7 +14,7 @@ from plamenu_e2e.api import Api
 from plamenu_e2e.steps import step, wait_for
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="inbound",
     peer="peertube",

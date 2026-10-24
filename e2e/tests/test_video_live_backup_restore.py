@@ -16,17 +16,15 @@ import subprocess
 import tarfile
 import tempfile
 import time
+import tomllib
 from pathlib import Path
 from urllib.parse import urlsplit
 
-import psycopg
 import pytest
 import requests
-import tomllib
 import websockets
 from plamenu_e2e import config, ephemeral, peertube, unique
 from plamenu_e2e.steps import step, wait_for
-from psycopg import sql
 from tests.test_video_backup_restore import _csrf, _digest, _manifest, _stop_process
 from tests.test_video_offload import _freeze
 
@@ -99,7 +97,7 @@ def _stop_encoder(publisher):
             publisher.wait(timeout=10)
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.parametrize("paired", [False, True], ids=["single-disk", "paired-disks"])
 @pytest.mark.federation(
     direction="outbound",
@@ -140,7 +138,7 @@ def test_interrupted_live_recording_restores_into_fresh_database_and_storage(
         with step(
             "start a real recurring native encoder with a surviving PeerTube follower"
         ):
-            source.start()
+            source.start(suite_settings=True)
             _freeze(source, evidence, monkeypatch)
             _stop_process(source)
             with socket.socket() as allocator:
@@ -156,7 +154,6 @@ def test_interrupted_live_recording_restores_into_fresh_database_and_storage(
                 original_config += f'\n[media_mirror]\ndirectory = "{replica}"\nbandwidth_mib_per_second = 32\nmin_free_gib = 0\n'
             source._config_path.write_text(original_config)
             source._launch(120, append_log=True)
-            source.apply_suite_settings()
             user, api = source.user_api("recoverycaster")
             channel = api.post(
                 "/api/v1/video_channels",
@@ -477,12 +474,7 @@ def test_interrupted_live_recording_restores_into_fresh_database_and_storage(
         with step(
             "restore into fresh DB and directories, retaining original encrypted identities"
         ):
-            with psycopg.connect(config.DB_DSN, autocommit=True) as connection:
-                connection.execute(
-                    sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(
-                        sql.Identifier(restored.db_name)
-                    )
-                )
+            restored.create_database()
             subprocess.run(
                 [
                     "pg_restore",

@@ -14,13 +14,13 @@ import socket
 import subprocess
 import tempfile
 import time
+import tomllib
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import psycopg
 import pytest
 import requests
-import tomllib
 from plamenu_e2e import config, ephemeral, peertube, unique
 from plamenu_e2e.steps import step, wait_for
 from tests.test_video_backup_restore import _csrf, _digest, _stop_process
@@ -274,10 +274,7 @@ def _source_path(origin, media):
     return matches[0]
 
 
-@pytest.mark.skipif(
-    os.environ.get("AP09_OFFLOAD_VERIFY") != "1",
-    reason="explicit native processor drill",
-)
+@pytest.mark.capability("AP09_OFFLOAD_VERIFY")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -308,7 +305,7 @@ def test_two_private_native_processors_peer_outputs_leases_and_worker_crash(
     followed = []
     receipts = {}
     try:
-        origin.start()
+        origin.start(suite_settings=True)
         _freeze(origin, evidence, monkeypatch)
         _stop_process(origin)
         with step(
@@ -347,7 +344,6 @@ def test_two_private_native_processors_peer_outputs_leases_and_worker_crash(
             )
             origin._config_path.chmod(0o600)
             origin._launch(120, append_log=True)
-            origin.apply_suite_settings()
             candidate = _digest(Path(f"/proc/{origin._proc.pid}/exe"))
             assert all(
                 _digest(Path(f"/proc/{processor.proc.pid}/exe")) == candidate

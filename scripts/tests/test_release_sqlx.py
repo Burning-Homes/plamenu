@@ -1,16 +1,67 @@
 """SQLx checks tolerate overridden inference, never query/type changes or missing output."""
 
+import contextlib
 import copy
 import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
+from plamenu_release import checks
 from plamenu_release.core import ReleaseError
 from plamenu_release.sqlx import compare, effective_metadata
+
+
+class TestDatabaseTemplateTests(unittest.TestCase):
+    def test_owned_template_is_prepared_before_unfiltered_serial_tests(self):
+        runner = Mock()
+        url = "postgres://fixture@127.0.0.1/owned"
+        with (
+            patch.object(checks, "database", return_value=contextlib.nullcontext(url)),
+            patch("plamenu_release.sqlx.check") as metadata,
+        ):
+            checks.application(runner, Path("evidence"))
+        commands = runner.run.call_args_list
+        self.assertEqual(len(commands), 3)
+        self.assertEqual(commands[0].kwargs["env"]["DATABASE_URL"], url)
+        self.assertEqual(
+            commands[1].kwargs["env"]["DATABASE_URL"],
+            url.rsplit("/", 1)[0] + "/template1",
+        )
+        self.assertEqual(
+            commands[2].args,
+            (
+                "cargo",
+                "nextest",
+                "run",
+                "--no-fail-fast",
+                "--locked",
+                "--workspace",
+                "--test-threads",
+                "1",
+            ),
+        )
+        metadata.assert_called_once_with(runner, Path("evidence"), url)
+
+    def test_template_failure_cannot_fall_through_to_a_successful_gate(self):
+        runner = Mock()
+        runner.run.side_effect = [None, ReleaseError("template failed")]
+        with (
+            patch.object(
+                checks,
+                "database",
+                return_value=contextlib.nullcontext("postgres://fixture/owned"),
+            ),
+            patch("plamenu_release.sqlx.check") as metadata,
+            self.assertRaisesRegex(ReleaseError, "template failed"),
+        ):
+            checks.application(runner, Path("evidence"))
+        self.assertEqual(runner.run.call_count, 2)
+        metadata.assert_not_called()
 
 
 class SqlxMetadataTests(unittest.TestCase):

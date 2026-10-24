@@ -25,7 +25,7 @@ def _replace(pt, video_id, chapters):
     assert response.status_code == 204, response.text[:500]
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="inbound",
     peer="peertube",

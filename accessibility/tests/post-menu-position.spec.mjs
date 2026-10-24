@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../fixtures.mjs';
 import { uiFixture } from '../ui-fixture.mjs';
 
 for (const prefix of ['', '@no-js ']) {

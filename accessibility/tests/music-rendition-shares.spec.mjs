@@ -1,14 +1,14 @@
 import {playNativeAudio} from '../session.mjs';
 import {freshMusicAudio} from '../session.mjs';
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
-import {signIn,openDetailsFor} from '../session.mjs';
+import {signIn,openDetailsFor,openMusicUpload} from '../session.mjs';
 async function journey(page,browser,info,noScript){
   test.setTimeout(180000);
-  await signIn(page);await page.goto('/music/assets?mine=true');
+  await signIn(page);await openMusicUpload(page);
   const upload=page.locator('form[action="/web/music/assets/import"]');await openDetailsFor(upload);
   await upload.getByLabel('Audio file',{exact:true}).setInputFiles(await freshMusicAudio());
-  await upload.getByRole('button',{name:'Upload audio',exact:true}).press('Enter');
+  await upload.getByRole('button',{name:'Save privately',exact:true}).press('Enter');
   await page.waitForURL(url=>/^\/music\/assets\/\d+$/.test(url.pathname));
   const id=new URL(page.url()).pathname.split('/').at(-1);
   await page.getByRole('link',{name:'Create share link',exact:true}).press('Enter');

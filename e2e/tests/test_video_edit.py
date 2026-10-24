@@ -102,7 +102,7 @@ def prepare(browser, channel, movie, title, transcript):
     return draft
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -409,7 +409,7 @@ def test_native_replacement_preserves_social_media_and_peertube_identity(
         )
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",

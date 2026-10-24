@@ -1,5 +1,5 @@
 import {useFixtureClient} from '../session.mjs';
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import {createHmac} from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 

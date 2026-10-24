@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../fixtures.mjs';
 import { uiFixture } from '../ui-fixture.mjs';
 
 test('long composer input keeps the editing line visible without page scroll jumps', async ({ page }) => {

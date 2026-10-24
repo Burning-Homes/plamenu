@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../fixtures.mjs';
 
 test('native tracker refuses arbitrary swarms before allocating a peer', async ({ page }) => {
   await page.goto('/');

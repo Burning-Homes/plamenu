@@ -1,0 +1,4 @@
+# Portable standalone harness. Match the live harness's pinned pytest/websockets.
+pytest==9.0.3
+PyYAML==6.0.3
+websockets==16.0

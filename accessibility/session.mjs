@@ -34,11 +34,14 @@ export async function playNativeAudio(audio, info) {
   }
 }
 
-// Each worker signs in through the real browser form once. Reuse only its
-// session cookie in fresh test contexts: public-page tests remain signed out,
+// Each journey signs in through the real browser form. Reuse only its
+// session cookie across pages in that journey: public-page tests remain signed out,
 // without creating storage-state files. Do not raise production rate limits
 // to accommodate an expanding matrix of tests against one fixture account.
 const sessions = new Map();
+// The database and server are recreated between attempts. Cookies may only
+// be reused by pages participating in the same journey.
+export function clearSessions() { sessions.clear(); }
 
 // Exercise the same native disclosure a keyboard/no-JS author uses. Read the
 // open state rather than descendant visibility (which differs across engines).
@@ -147,6 +150,14 @@ export async function ensureVideoFormChannel(page, form) {
   await createVideoChannel(page, channel.getByRole('button', { name: 'Create a video channel', exact: true }));
   await page.goto(returnUrl);
   await expect(form).toBeVisible();
+}
+
+export async function openMusicUpload(page) {
+  await page.goto('/music/assets?mine=true');
+  await page.getByRole('link', { name: 'Upload audio', exact: true }).press('Enter');
+  const form = page.locator('form[action="/web/music/assets/import"]');
+  await expect(form).toBeVisible();
+  return form;
 }
 
 export async function openDetailsFor(control) {

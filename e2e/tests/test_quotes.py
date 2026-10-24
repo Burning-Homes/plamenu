@@ -82,13 +82,14 @@ def test_plamenu_quote_of_mastodon_post(
         )
 
     with step("quote alice's post from Plamenu (QuoteRequest -> Mastodon Accept)"):
-        quote = plamenu_api.post_status(
-            f"Replying with a quote {marker}", quoted_status_id=target_id
-        )
-        state = (quote.get("quote") or {}).get("state", "")
-        assert state == "pending", (
-            f"fresh remote quote should be pending (state={state})"
-        )
+        with db.deferred_deliveries(plamenu_user.username):
+            quote = plamenu_api.post_status(
+                f"Replying with a quote {marker}", quoted_status_id=target_id
+            )
+            # The immediate card is readable; only the persisted row grants
+            # consent. Observe it before releasing the real QuoteRequest.
+            assert (quote.get("quote") or {}).get("state") == "accepted", quote
+            assert db.quote_for_status(int(quote["id"])) == ("pending", None)
 
         def accepted_with_approval():
             row = db.quote_for_status(int(quote["id"]))
@@ -96,7 +97,7 @@ def test_plamenu_quote_of_mastodon_post(
                 return row
             return None
 
-        state, approval_uri = wait_for(
+        _state, approval_uri = wait_for(
             accepted_with_approval,
             timeout=120,
             desc="the quote row to become accepted with an http(s) approval URI",

@@ -27,6 +27,25 @@ Only non-PR runs on `main` save caches. The compilation cache includes compresse
 dependency downloads and is saved only below a 1 GiB uncompressed limit.
 Installing `zstd` before restore and save keeps the cache format consistent.
 
+Quick checks also verify the source hashes in the browser/E2E inventories and
+audit federation direction pairing. These are static checks, with no browser,
+database or peer startup. Manual verification and release static checks invoke
+the same portable standalone Python/JavaScript gate, including benchmark-grader
+and E2E helper regressions. Its report identifies the portable profile and any
+scanner skips; it does not claim full product qualification. See
+[development](DEVELOPMENT.md#choose-a-check) for dependencies and the full
+standalone profile, including the owned FUSE test.
+
+Manual verification compiles the ordinary program and tests through nextest
+using the committed offline query metadata. Its final online SQLx preparation
+checks every workspace target, including benchmarks, and verifies freshly
+generated query metadata. A separate `cargo check --all-targets` before that
+pass would repeat the same target checks and is omitted.
+The original compatibility targets for grouped integration sources have
+`test = false`. The pinned Cargo toolchain excludes these standalone duplicates
+from `--all-targets`; their grouped targets still include the same sources and
+queries. Explicit `--test NAME` remains available without extra features.
+
 The repository protection configuration in
 [ci/codefloe-settings.json](https://codefloe.com/plamenu/plamenu/src/branch/main/ci/codefloe-settings.json) requires both PR
 statuses before merging into `main`, including for administrators. Direct and

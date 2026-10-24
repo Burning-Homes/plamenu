@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
@@ -319,7 +319,7 @@ async function publish(page, projectName, noScript) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   if (projectName === 'chromium-mobile') {
     await discovered.scrollIntoViewIfNeeded();
-    await page.screenshot({ path: '../target/e2e/video-explore-mobile.png' });
+    await page.screenshot({ path: test.info().outputPath('video-explore-mobile.png') });
   }
   if (!noScript) {
     const audit = await new AxeBuilder({ page }).include('.video-explore').analyze();
@@ -337,7 +337,7 @@ async function publish(page, projectName, noScript) {
     .filter({ hasText: 'Browser video ' + name })).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   if (projectName === 'chromium-mobile') {
-    await page.screenshot({ path: '../target/e2e/video-channel-library-mobile.png' });
+    await page.screenshot({ path: test.info().outputPath('video-channel-library-mobile.png') });
   }
   if (!noScript) {
     const audit = await new AxeBuilder({ page }).include('.video-explore').analyze();
@@ -417,7 +417,7 @@ async function publish(page, projectName, noScript) {
       const choice = frame.getByRole('checkbox', { name: 'Share video with other viewers' });
       await openVideoSettings(frame);
       await expect(choice).toBeChecked();
-      await host.locator('iframe.plamenu-embed').screenshot({ path: '../target/e2e/native-video-p2p-embed-before.png' });
+      await host.locator('iframe.plamenu-embed').screenshot({ path: test.info().outputPath('native-video-p2p-embed-before.png') });
       await choice.focus();
       await host.keyboard.press('Space');
       await expect(choice).not.toBeChecked();
@@ -428,10 +428,10 @@ async function publish(page, projectName, noScript) {
       expect(trackerSockets).toEqual([]);
       expect(peerAssets).toEqual([]);
       expect(await host.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-      await host.locator('iframe.plamenu-embed').screenshot({ path: '../target/e2e/native-video-p2p-embed.png' });
+      await host.locator('iframe.plamenu-embed').screenshot({ path: test.info().outputPath('native-video-p2p-embed.png') });
       await host.locator('iframe.plamenu-embed').evaluate(element => { element.width = '320'; });
       expect(await frame.locator('body').evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-      await host.locator('iframe.plamenu-embed').screenshot({ path: '../target/e2e/native-video-p2p-embed-320.png' });
+      await host.locator('iframe.plamenu-embed').screenshot({ path: test.info().outputPath('native-video-p2p-embed-320.png') });
     } finally {
       await host.close();
       await new Promise(resolve => hostServer.close(resolve));
@@ -513,6 +513,13 @@ async function scheduleVideo(page, noScript) {
   await signIn(page);
   await page.goto('/videos/upload');await openVideoOptions(page);
   const form = page.locator('form[action="/web/videos"]');
+  if (await form.getByRole('combobox', { name: 'Channel', exact: true }).locator('option').count() === 0) {
+    const create = await videoChannelForm(page);
+    await create.getByLabel('Channel address').fill(`schedule_${Date.now()}`);
+    await create.getByLabel('Channel name').fill('Scheduled browser films');
+    await createVideoChannel(page, create.getByRole('button', { name: 'Create a video channel' }));
+  }
+  await openVideoOptions(page);
   const channel = form.getByRole('combobox', { name: 'Channel', exact: true });
   await channel.selectOption({ index: 0 });
   const title = `Scheduled browser film ${Date.now()}`;

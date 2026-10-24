@@ -50,6 +50,17 @@ Crash and offload drills freeze the running executable's inode and bind their
 restarts, CLI commands and processors to that copy, so a later build replacing
 the original pathname cannot change the program under test.
 
+Within pytest, ordinary disposable Plamenu peers clone one session-owned schema
+prepared by `cargo sqlx migrate run` (requires `cargo-sqlx`). It starts from
+`template0`, contains only migration data and is sealed against connections.
+The template is bound to the candidate's file identity and digest, database and
+exact migration checksums; changes or preparation failures fail fixture setup.
+Each clone still runs the real candidate's migration-ledger checks and generates
+fresh actor keys with its own encryption secret, media directory and process.
+Backup/restore targets created independently remain blank `template0` databases.
+The session removes its schema template at teardown; no standing `template1` or
+application database is modified.
+
 Add `--progress-events PATH` to retain live execution evidence in a fresh JSON
 Lines file. Each event is flushed before execution continues. Collection records
 the selected inventory; test start records the current nodeid, and test finish
@@ -67,7 +78,11 @@ against a persistent GoToSocial leaves that peer holding the previous keys;
 authorized fetch then fails before federation assertions can run. Updating the
 application executable alone preserves identity. Recreating the database must
 also isolate the peer state; do not delete standing peer caches or relax signature
-checks to make the suite pass.
+checks to make the suite pass. The same boundary applies when a disposable foreign
+peer is reinstalled at an existing domain: its old remote actors must not coexist
+with the replacement in the campaign-owned main database. Prepare that owned cache
+before tests start, and retain the ownership and cleanup receipts. Reusing the same
+peer identities across repeat runs avoids introducing another reinstall boundary.
 
 For an already running disposable main instance, the explicit wrapper below
 provides a fresh official GoToSocial with its own database, account credentials
@@ -127,6 +142,55 @@ itself from the working tree (`plamenu_e2e/ephemeral.py`): `plamenu2.local`,
 which `tests/test_plamenu2_*.py` federates against, and `doomed.local`, whose
 whole life is one self-destruct. Each gets a throwaway database on the dev
 Postgres, its own media directory and its own port (8422 and 8421).
+
+`plamenu2` is fresh for each test. Default database names are unique; explicit
+names must not already exist. Startup never drops a preexisting database.
+Setup failures roll back resources already acquired, and teardown reaps the
+owned server/encoder process group (allowing two seconds before forced termination),
+closes database connections, removes the
+created database and media, and retains logs under `target/e2e/logs/`.
+Repeated teardown is safe. Backup/restore drills that create their own restore
+database continue to own its cleanup.
+
+Startup and crash recovery make bounded early readiness checks before returning
+to the existing half-second cadence. The owned child must still hold the
+listener, initialize its schema, and answer HTTP health checks within the full
+startup timeout. Media and fault observation windows are unchanged.
+
+Scalar observations reuse one private connection on the instance's owning
+thread. Every call commits and discards session state, retaining fresh
+autocommit visibility and releasing settings, temporary objects and advisory
+locks. This connection is separate from `instance.db` transactions and closes
+before database removal. Calls from other threads retain independent short
+sessions; no additional worker or polling parallelism is introduced.
+
+Tests needing the suite's open discovery settings use
+`instance.start(suite_settings=True)`. The real CLI initializes only the fresh
+owned database, then the fixture seeds settings before starting the HTTP server.
+This avoids waiting six seconds for a cache populated with the wrong initial
+values. Default startup retains production defaults. Tests of live settings
+changes and cache expiry still use the production cache and its normal TTL.
+The interrupted offload recovery drill also seeds its forced `veryslow` preset
+while the origin is stopped, before restarting it. The live preset change in
+the offload protocol test still waits for normal cache expiry.
+
+The standing peer fleet remains serial. A host-local lock prevents overlapping
+pytest runs, including runs from separate worktrees; per-port locks protect
+disposable peers. Standing instance settings are restored even if setup fails,
+and the lock is held through the settings cache expiry. SIGTERM follows the
+same pytest cleanup path as interruption. A force kill cannot run finalizers;
+unique database names prevent a later run from silently adopting its leftovers.
+Standing foreign peers are still external dependencies, not recreated by this
+fixture layer.
+
+Repeated `make_sample_mp4` inputs are encoded by the host FFmpeg once per
+duration, dimensions, encoding arguments and encoder file version within a
+single Python process. A memory cache retains at most 16 clips and 16 MiB;
+larger clips are copied without retention. Each test receives its own writable
+file, never a shared path or hard link. FFmpeg must still be present on every
+call; replacing it invalidates the entry, and encoding errors propagate.
+The cache disappears with the process and does not cover application encodes,
+live sources, cold-rendition barriers, or calibrated observation windows.
 
 `./dev provision-peers` installs their host entries and includes their TLS
 vhosts in the shared Caddy configuration, proxying to
@@ -206,24 +270,56 @@ uv run pytest tests/test_follow.py
 uv run pytest
 ```
 
-Every test uses fresh marker values and accounts. Failure output identifies the
-last named `step(...)`. Optional-peer fixtures skip when their service is not
-available; release validation treats unexpected skips as a failed full-matrix
-run. `./dev e2e-full` passes `--release-matrix` to pytest: skips are allowed
-only in the Tor, Plup, and Mobilizon modules, plus the explicitly documented
-Akkoma outgoing-blocks, destructive GtS Move fixture, and unsupported Mitra
-reports cases. These three exceptions match exact test names and reason text;
-other skips in the same peer modules still fail. Other skips (including collection skips), an empty
-run, or deselecting tests fail release validation. Explicit test paths,
-`--ignore`/`--ignore-glob`, `--lf`, and `--sw` are also rejected: release mode
-must collect the configured full test tree. Expected failures retain
-their pytest semantics and are recorded with their reasons.
+Every test uses fresh marker values and accounts. Default `wait_for` polling
+checks early at 0.1, 0.25 and 0.5 seconds, then uses a one-second cadence. This
+adds at most three early observations to a long wait. The full timeout remains
+available, check errors propagate, and explicitly specified intervals retain
+their fixed cadence. Calibrated media observation windows are separate and
+unchanged. Failure output identifies the last named `step(...)`. Optional-peer fixtures skip when their service is not
+available during a diagnostic run. Peer readiness is checked at execution,
+never while importing tests or collecting the inventory.
 
-Each full run writes `target/e2e/release-<timestamp>.json`, with the source
+`./dev e2e-full` forces `--release-matrix --matrix-profile full` and disables
+fail-fast execution. A full pass requires the exact source-bound `inventory.json`
+selection and completed setup/call/teardown phases. It includes the Tor, Plup and
+Mobilizon peers and every explicitly enabled drill. Capability markers name the
+required environment flags; the runner never enables destructive drills itself.
+Nested capabilities are listed separately in the inventory: the playlist source
+sync case requires `AP09_BROWSER_SOURCE_SYNC=1` for full qualification. Its
+browser journey uses fresh artifacts for each invocation and verifies every
+configured browser project. Ordinary and standard runs retain the core source
+sync assertions when that nested opt-in is disabled.
+Missing opt-ins or peers, collection errors, unexpected skips, xfails/xpasses,
+retries, empty runs and interrupted execution prevent full qualification.
+The three documented unsupported peer behaviors (Akkoma outgoing blocks,
+destructive GtS Move on a standing fixture, and Mitra reports) retain exact
+test-and-reason exceptions and remain visible in evidence.
+
+For a deliberately narrower, strict ordinary-federation run:
+
+```sh
+./dev e2e --release-matrix --matrix-profile standard
+```
+
+This profile excludes the declared opt-in drills and optional-peer modules. Its
+report lists the exclusions and can record `profile_pass: true`, but always
+records `full_pass: false`. Release qualification requires the full profile.
+Explicit test paths, `--ignore`/`--ignore-glob`, `--lf`, `--sw`, or further
+deselection cannot qualify even as a complete standard profile.
+
+The four stack-free manifest/tracker helper tests now live in `unit/` and run
+through `./dev test-harness`, together with the standalone fault-proxy tests.
+All live cases remain in `tests/`; no behavioral case was removed. Refresh and
+review the canonical inventory with `./dev gate-inventory --write` after changes.
+
+Each matrix run writes `target/e2e/release-<run-id>.json`, with the source
 revision, tracked changes, configured and checked-out peer revisions, running
 container image IDs, and every test phase/outcome/skip/xfail reason. Archive it
 with the release candidate; a failed report is diagnostic evidence, not a pass.
-Use `--matrix-report PATH` to choose its location. Configured revisions alone
+Use `--matrix-report PATH` to choose a new location; reuse is refused before
+execution. The path is reserved with a non-passing running record, and final
+evidence distinguishes selected, expected and completed cases. Source/candidate
+changes during execution invalidate qualification. Configured revisions alone
 do not prove which code a remote service is running.
 
 Never commit peer tokens, cookies, private keys, local CA keys, or captured

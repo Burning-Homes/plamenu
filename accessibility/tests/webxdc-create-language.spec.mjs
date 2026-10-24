@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import {fileURLToPath} from 'node:url';
 import {signIn,chooseInterfaceLanguage} from '../session.mjs';

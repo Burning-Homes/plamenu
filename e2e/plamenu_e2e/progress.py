@@ -95,7 +95,7 @@ class ExecutionProgress:
             "run_id": self.run_id,
             "sequence": self.sequence,
             "event": event,
-            "utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "utc": datetime.datetime.now(datetime.UTC).isoformat(),
             "elapsed_seconds": time.monotonic() - self.began,
             "current_nodeid": self.current,
             "completed": self.completed,

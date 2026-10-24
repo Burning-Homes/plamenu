@@ -24,7 +24,7 @@ Run standalone (no stack needed) for a per-peer coverage table + violations:
     uv run python tools/federation_coverage.py
 or as a module:
     uv run python -m tools.federation_coverage
-The in-suite gate tests/test_coverage_manifest.py calls audit() directly.
+The standalone gate unit/test_coverage_manifest.py calls audit() directly.
 """
 
 from __future__ import annotations

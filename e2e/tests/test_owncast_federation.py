@@ -11,9 +11,7 @@ from plamenu_e2e.steps import log, step, wait_for
 
 urllib3.disable_warnings()
 
-pytestmark = pytest.mark.skipif(
-    not owncast.reachable(), reason="owncast.local is not up"
-)
+pytestmark = pytest.mark.requires_peer("owncast")
 
 
 def _get(url: str, **kwargs) -> requests.Response:

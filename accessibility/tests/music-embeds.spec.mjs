@@ -1,8 +1,8 @@
 import {playNativeAudio} from '../session.mjs';
 import {freshMusicAudio} from '../session.mjs';
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
-import {signIn,openDetailsFor} from '../session.mjs';
+import {signIn,openDetailsFor,openMusicUpload} from '../session.mjs';
 import {randomUUID} from 'node:crypto';
 import {createServer} from 'node:http';
 
@@ -17,11 +17,11 @@ async function journey(page,browser,info,noScript){
   test.setTimeout(180000);
   const title='Embed music '+randomUUID().slice(0,8);
   await signIn(page);
-  await page.goto('/music/assets?mine=true');
+  await openMusicUpload(page);
   const upload=page.locator('form[action="/web/music/assets/import"]');
   await openDetailsFor(upload);
   await upload.getByLabel('Audio file',{exact:true}).setInputFiles(await freshMusicAudio());
-  await upload.getByRole('button',{name:'Upload audio',exact:true}).press('Enter');
+  await upload.getByRole('button',{name:'Save privately',exact:true}).press('Enter');
   await page.waitForURL(url=>/^\/music\/assets\/\d+$/.test(url.pathname));
   const track=page.url();
   const id=new URL(track).pathname.split('/').at(-1);
@@ -29,14 +29,14 @@ async function journey(page,browser,info,noScript){
   await openDetailsFor(edit);
   await edit.getByLabel('Title',{exact:true}).fill(title);
   await edit.getByLabel('Who can listen',{exact:true}).selectOption('public');
-  await edit.getByRole('button',{name:'Save track',exact:true}).press('Enter');
+  await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),edit.getByRole('button',{name:'Save track',exact:true}).press('Enter')]);
   await openDetailsFor(page.getByRole('link',{name:'Embed music',exact:true,includeHidden:true}));
   await page.getByRole('link',{name:'Embed music',exact:true}).press('Enter');
   await expect(page.locator('#music-embed-code')).toHaveValue(/<audio/);
   await audit(page,noScript);
   await page.screenshot({path:info.outputPath('music-embed-code.png'),fullPage:true});
   await page.getByLabel('Embed format',{exact:true}).selectOption(noScript?'iframe':'script');
-  await page.getByRole('button',{name:'Show embed code',exact:true}).press('Enter');
+  await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.getByRole('button',{name:'Show embed code',exact:true}).press('Enter')]);
   // Map only the fixture's canonical HTTPS origin to its disposable TLS port.
   // The generated snippet, resource paths and external publisher remain real.
   const snippet=(await page.locator('#music-embed-code').inputValue()).replaceAll(
@@ -55,7 +55,7 @@ async function journey(page,browser,info,noScript){
   const add=page.locator(`form[action="/web/music/collections/${collectionId}/add"]`);
   await openDetailsFor(add);
   await add.getByLabel('Track, Audio post or podcast episode URL',{exact:true}).fill(track);
-  await add.getByRole('button',{name:'Add a track',exact:true}).press('Enter');
+  await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),add.getByRole('button',{name:'Add a track',exact:true}).press('Enter')]);
   await openDetailsFor(page.getByRole('link',{name:'Embed music',exact:true,includeHidden:true}));
   await page.getByRole('link',{name:'Embed music',exact:true}).press('Enter');
   await expect(page.locator('#music-embed-code')).toHaveValue(/plamenu-music-list/);

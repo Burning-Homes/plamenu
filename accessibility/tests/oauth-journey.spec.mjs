@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import {createHash,randomBytes} from 'node:crypto';
 import AxeBuilder from '@axe-core/playwright';
 import {totp} from '../authenticator.mjs';

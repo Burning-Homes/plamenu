@@ -1,5 +1,5 @@
 // Local decoded-playback budgets, not WAN/device or production capacity.
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures.mjs';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

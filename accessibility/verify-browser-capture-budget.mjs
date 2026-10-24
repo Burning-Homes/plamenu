@@ -72,6 +72,10 @@ try{
     const publisher=creator.locator('[data-live-browser]');
     const started=Date.now();
     await publisher.getByRole('button',{name:kind==='camera'?'Use camera and microphone':'Share screen',exact:true}).press('Enter');
+    // Source selection now previews locally. Broadcasting requires the
+    // separate explicit creator action, including for the second generation.
+    await publisher.locator('[data-live-preview]').waitFor({state:'visible'});
+    await publisher.locator('[data-live-start]').click();
     for(;;){const response=await creator.request.get(new URL(`/api/v1/statuses/${manifest.status}`,manifest.manage).href);
       if(response.ok()&&(await response.json()).media_attachments[0].live?.state==='live')break;
       if(Date.now()-started>result.budgets.onAirMs)throw new Error(`${kind} never on air`);await pause(200);}

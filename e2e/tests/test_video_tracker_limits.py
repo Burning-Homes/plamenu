@@ -55,7 +55,7 @@ def _closed(tracker, timeout=8):
         tracker.recv(timeout=timeout)
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -159,8 +159,7 @@ def test_native_tracker_bounds_atomic_signaling_and_fault_recovery():
         with step(
             "publish two real ladders and import the first into unmodified PeerTube"
         ):
-            peer.start()
-            peer.apply_suite_settings()
+            peer.start(suite_settings=True)
             metrics["executable_sha256"] = _digest(Path(f"/proc/{peer._proc.pid}/exe"))
             user, api = peer.user_api("trackercreator")
             _, admin = peer.admin("trackeroperator")

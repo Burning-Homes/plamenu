@@ -5,21 +5,18 @@ port are affected. Consistent backups, source films and escrow are retained.
 """
 
 import json
-import os
 import socket
 import subprocess
 import tarfile
 import tempfile
-import time
+import tomllib
 from pathlib import Path
 
 import psycopg
 import pytest
 import requests
-import tomllib
 from plamenu_e2e import config, ephemeral, peertube, unique
 from plamenu_e2e.steps import step, wait_for
-from psycopg import sql
 from tests.test_video_backup_restore import _digest, _manifest, _stop_process
 from tests.test_video_offload import (
     Processor,
@@ -31,10 +28,7 @@ from tests.test_video_offload import (
 )
 
 
-@pytest.mark.skipif(
-    os.environ.get("AP09_OFFLOAD_RESTORE_VERIFY") != "1",
-    reason="explicit private offload restore drill",
-)
+@pytest.mark.capability("AP09_OFFLOAD_RESTORE_VERIFY")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -73,7 +67,7 @@ def test_interrupted_offload_restores_fenced_source_claim_and_peer_publication(
         with step(
             "origin crash interrupts a real remote encode without losing its committed private source"
         ):
-            origin.start()
+            origin.start(suite_settings=True)
             _freeze(origin, evidence, monkeypatch)
             _stop_process(origin)
             processor = Processor(evidence / "processor", tls=True)
@@ -83,13 +77,15 @@ def test_interrupted_offload_restores_fenced_source_claim_and_peer_publication(
                 + f"\n[[video_offload]]\nurl={json.dumps(processor.url + '/')}\ntoken={json.dumps(processor.token)}\n"
             )
             origin._config_path.chmod(0o600)
-            origin._launch(120, append_log=True)
-            origin.apply_suite_settings()
+            # Seed this forced-encode fixture while the origin is stopped,
+            # before its first settings snapshot. Live cache-expiry coverage
+            # remains in test_video_offload.
+            assert origin._proc.poll() is not None
             with psycopg.connect(origin.dsn, autocommit=True) as connection:
                 connection.execute(
                     "UPDATE instance_settings SET media_video_preset='veryslow'"
                 )
-            time.sleep(6)
+            origin._launch(120, append_log=True)
             user, api = origin.user_api("offloadrecover")
             channel = api.post(
                 "/api/v1/video_channels",
@@ -206,12 +202,7 @@ def test_interrupted_offload_restores_fenced_source_claim_and_peer_publication(
         with step(
             "restore original identity and interrupted claim into a fresh DB/root"
         ):
-            with psycopg.connect(config.DB_DSN, autocommit=True) as connection:
-                connection.execute(
-                    sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(
-                        sql.Identifier(restored.db_name)
-                    )
-                )
+            restored.create_database()
             subprocess.run(
                 [
                     "pg_restore",
@@ -270,6 +261,7 @@ def test_interrupted_offload_restores_fenced_source_claim_and_peer_publication(
                 )
                 == reservations
             )
+            origin.release_listener_after_exit()
             restored._launch(120, append_log=False)
             active = restored
             assert _digest(Path(f"/proc/{restored._proc.pid}/exe")) == candidate

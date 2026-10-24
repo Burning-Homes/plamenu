@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../fixtures.mjs';
 import { uiFixture } from '../ui-fixture.mjs';
 
 const description = 'A blue and golden bird on a branch. '.repeat(70);
@@ -43,6 +43,7 @@ for (const prefix of ['', '@no-js ']) {
 }
 
 test('ALT text closes on a tap but survives drag, double click and long press selection', async ({ page }) => {
+  await page.clock.install();
   const errors = await uiFixture(page, body);
   const button = page.locator('.media__badge').first();
   const panel = page.locator('#alt-0');
@@ -64,15 +65,20 @@ test('ALT text closes on a tap but survives drag, double click and long press se
   await expect(panel).toBeVisible();
   expect(await page.evaluate(() => getSelection().toString().length)).toBeGreaterThan(0);
   await page.evaluate(() => getSelection().removeAllRanges());
-  // A recognized double-click may arrive slower than a quick two-tap gesture.
+  // Keep native pointer/selection events, but control the app's timer for
+  // this exact 400ms double-click boundary. Protocol assertion latency must
+  // not turn it into a >600ms single click on a busy browser host.
+  const clockPause = await page.evaluate(() => Date.now() + 1000);
+  await page.clock.pauseAt(clockPause);
   await page.mouse.click(box.x + 25, box.y + 20);
-  await page.waitForTimeout(400);
+  await page.clock.runFor(400);
   await expect(panel).toBeVisible();
   await page.mouse.click(box.x + 25, box.y + 20, { clickCount: 2 });
-  await page.waitForTimeout(750);
+  await page.clock.runFor(750);
   await expect(panel).toBeVisible();
   expect(await page.evaluate(() => getSelection().toString().length)).toBeGreaterThan(0);
   await page.evaluate(() => getSelection().removeAllRanges());
+  await page.clock.resume();
   await panel.click({ position: { x: 25, y: 20 }, delay: 600 });
   await expect(panel).toBeVisible();
   await page.keyboard.press('Escape');

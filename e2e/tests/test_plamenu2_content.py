@@ -412,12 +412,19 @@ def test_quote_handshake_and_revocation(
         theirs = interop.delivered(plamenu2_api, marker)
 
     with step("the peer quotes it; the handshake settles at accepted"):
-        quote = plamenu2_api.post_status(
-            f"look at this {marker}q", quoted_status_id=theirs["id"]
-        )
-        assert (quote.get("quote") or {}).get("state") == "pending", quote
+        with plamenu2.db.deferred_deliveries(plamenu2_user.username):
+            quote = plamenu2_api.post_status(
+                f"look at this {marker}q", quoted_status_id=theirs["id"]
+            )
+            assert (quote.get("quote") or {}).get("state") == "accepted", quote
+            assert plamenu2.db.quote_for_status(int(quote["id"])) == ("pending", None)
         wait_for(
-            lambda: plamenu2_api.quote_state(quote["id"]) == "accepted",
+            lambda: (
+                (row := plamenu2.db.quote_for_status(int(quote["id"])))
+                and row[0] == "accepted"
+                and (row[1] or "").startswith("https://")
+                and plamenu2_api.quote_state(quote["id"]) == "accepted"
+            ),
             timeout=120,
             desc="the Accept(QuoteRequest) and its stamp to be verified",
         )

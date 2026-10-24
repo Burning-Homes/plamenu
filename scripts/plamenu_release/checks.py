@@ -8,9 +8,8 @@ import secrets
 import shutil
 import subprocess
 import time
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 from .build import verify_build
 from .core import ReleaseError, write_json
@@ -31,8 +30,10 @@ def static(runner, folder):
         ),
         ("python3", "scripts/ci/check-static.py"),
         ("python3", "scripts/accessibility-evidence.py", "matrix"),
-        ("python3", "-m", "unittest", "discover", "-s", "scripts/tests"),
-        ("python3", "-m", "pytest", "bench/test_bench_budgets.py", "-q"),
+        ("python3", "scripts/update-gate-inventory.py", "--check-sources"),
+        ("python3", "e2e/tools/federation_coverage.py"),
+        ("npm", "--prefix", "accessibility", "ci", "--ignore-scripts"),
+        ("python3", "scripts/test-harness.py", "--profile", "portable"),
         (
             "ruff",
             "check",
@@ -129,9 +130,12 @@ def database(runner):
         )
 
 
-def application(runner, folder):
-    with database(runner) as url:
-        # Keep template1 empty: migration tests deliberately start at older schemas.
+def seed_test_database(runner, url):
+    # This PostgreSQL belongs exclusively to this release stage. Ordinary
+    # SQLx tests clone the schema, then still validate the migration ledger.
+    # Upgrade tests explicitly clear their own per-test schema and replay
+    # the old migrations; never share mutable test data in this template.
+    for database_url in (url, url.rsplit("/", 1)[0] + "/template1"):
         runner.run(
             "cargo",
             "sqlx",
@@ -139,8 +143,13 @@ def application(runner, folder):
             "run",
             "--source",
             "crates/db/migrations",
-            env={"DATABASE_URL": url},
+            env={"DATABASE_URL": database_url},
         )
+
+
+def application(runner, folder):
+    with database(runner) as url:
+        seed_test_database(runner, url)
         runner.run(
             "cargo",
             "nextest",
@@ -149,7 +158,7 @@ def application(runner, folder):
             "--locked",
             "--workspace",
             "--test-threads",
-            str(min(os.cpu_count() or 2, 8)),
+            "1",
             env={"DATABASE_URL": url},
         )
         from . import sqlx
@@ -273,6 +282,7 @@ def e2e(runner, folder, origin):
     if not reports:
         raise ReleaseError("The developer E2E suite produced no release report")
     for path in reports:
+        runner.run("python3", "scripts/check-e2e-evidence.py", "--release", path)
         shutil.copy2(path, folder / path.name)
 
 

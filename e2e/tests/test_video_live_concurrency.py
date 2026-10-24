@@ -82,11 +82,8 @@ def _clock_publisher(server, key, *, size="320x180"):
     )
 
 
-@pytest.mark.skipif(
-    os.environ.get("AP09_CONCURRENCY_VERIFY") != "1",
-    reason="owned multi-browser fault drill is opt-in",
-)
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.capability("AP09_CONCURRENCY_VERIFY")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -124,7 +121,7 @@ def test_two_broadcasts_eight_decoders_survive_real_tracker_tcp_loss(monkeypatch
     control_url = f"http://127.0.0.1:{control_port}"
     try:
         with step("start only owned native server and real tracker fault bridge"):
-            source.start()
+            source.start(suite_settings=True)
             from tests.test_video_offload import _freeze
 
             _freeze(source, evidence, monkeypatch)
@@ -171,7 +168,6 @@ def test_two_broadcasts_eight_decoders_survive_real_tracker_tcp_loss(monkeypatch
 
             wait_for(bridge_ready, desc="owned TCP bridge is listening", timeout=10)
             source._launch(120, append_log=True)
-            source.apply_suite_settings()
             user, api = source.user_api("concurrentcaster")
             channel = api.post(
                 "/api/v1/video_channels",

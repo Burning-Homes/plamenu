@@ -112,6 +112,30 @@ class ReleasePreflight(unittest.TestCase):
         self.record(dirty=True)
         self.assertNotEqual(self.check().returncode, 0)
 
+    def test_rejects_focused_selection_even_with_a_complete_measurement_set(self):
+        self.record(
+            mutate=lambda kind, record: (
+                record.update(focused_read_case="api/home_sparse")
+                if kind == "hot"
+                else None
+            )
+        )
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("focused read run is not full evidence", result.stderr)
+
+    def test_rejects_criterion_test_mode_with_fresh_complete_results(self):
+        self.record(
+            mutate=lambda kind, record: (
+                record.update(criterion_arguments=["--test"]) if kind == "hot" else None
+            )
+        )
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "custom Criterion arguments are diagnostic evidence", result.stderr
+        )
+
     def test_rejects_code_changed_after_measurement(self):
         self.record()
         (self.root / "crates/lib.rs").write_text("changed code\n")
@@ -143,6 +167,12 @@ class ReleasePreflight(unittest.TestCase):
             "noise": lambda r: r["benchmarks"]["ap/actor"].update(mad_ms=1.0),
             "wrong machine": lambda r: r["machine"].update(cpu="another CPU"),
             "wrong seed": lambda r: r.update(seed_version="obsolete"),
+            "incomplete attempt": lambda r: r.update(
+                run_schema=1, run_status="running", run_id="run-interrupted"
+            ),
+            "unknown boundary": lambda r: r.update(
+                run_schema=2, run_status="complete", run_id="run-unknown"
+            ),
         }
         for name, mutation in mutations.items():
             with self.subTest(name=name):

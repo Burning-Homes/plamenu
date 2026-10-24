@@ -13,10 +13,7 @@ from plamenu_e2e.steps import step, wait_for
 from tests.test_video_offload import _freeze, _submit
 
 
-@pytest.mark.skipif(
-    os.environ.get("AP09_P2P_FAULT_VERIFY") != "1",
-    reason="owned real RTC integrity/fallback drill",
-)
+@pytest.mark.capability("AP09_P2P_FAULT_VERIFY")
 @pytest.mark.federation(direction="both", peer="peertube")
 @pytest.mark.parametrize("product", ["native", "peertube"])
 def test_both_origin_corrupt_and_stale_peer_bytes_are_rejected_before_decode(
@@ -42,9 +39,8 @@ def test_both_origin_corrupt_and_stale_peer_bytes_are_rejected_before_decode(
         with step(
             "frozen owned native instance and an actual checksum-backed film from the selected origin"
         ):
-            origin.start()
+            origin.start(suite_settings=True)
             candidate = _freeze(origin, evidence, monkeypatch)
-            origin.apply_suite_settings()
             user, api = origin.user_api("peerchecker")
             movie = peertube.make_sample_mp4(
                 evidence / "source.mp4", seconds=180, size="640x480"

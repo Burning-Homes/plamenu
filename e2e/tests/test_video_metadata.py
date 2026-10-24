@@ -8,7 +8,7 @@ from plamenu_e2e import peertube, unique
 from plamenu_e2e.steps import wait_for
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="inbound",
     peer="peertube",

@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import {signIn} from '../session.mjs';
 
 // Opt-in local federation drill, reusing the disposable runner's explicit

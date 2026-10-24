@@ -8,9 +8,7 @@ import pytest
 from plamenu_e2e import ephemeral, peertube, unique
 from plamenu_e2e.steps import step, wait_for
 
-pytestmark = pytest.mark.skipif(
-    not peertube.reachable(), reason="peertube.local is not up"
-)
+pytestmark = pytest.mark.requires_peer("peertube")
 
 
 @pytest.mark.federation(

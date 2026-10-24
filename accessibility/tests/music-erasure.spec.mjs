@@ -1,5 +1,5 @@
-import {freshMusicAudio} from '../session.mjs';
-import { test, expect } from '@playwright/test';
+import {freshMusicAudio,openDetailsFor} from '../session.mjs';
+import { test, expect } from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
 import { randomUUID } from 'node:crypto';
 
@@ -36,6 +36,7 @@ async function journey(page, browser, info, noScript) {
   await page.getByLabel('Description', { exact: true }).fill('Private notes without any retained track.');
   await submit(page, page.getByRole('button', { name: 'Create artist', exact: true }));
   const artistUrl = page.url();
+  await openDetailsFor(page.getByRole('link', { name: 'Create album', exact: true, includeHidden: true }));
   await page.getByRole('link', { name: 'Create album', exact: true }).press('Enter');
   await page.waitForURL(url => url.pathname === '/music/albums/new');
   await page.getByLabel('Name', { exact: true }).fill('Unpublished album ' + randomUUID());
@@ -43,14 +44,14 @@ async function journey(page, browser, info, noScript) {
   await submit(page, page.getByRole('button', { name: 'Create album', exact: true }));
   const albumUrl = page.url();
   await page.goto('/music/assets?mine=true');
-  await page.getByText('Upload audio', { exact: true }).first().press('Enter');
+  await page.getByRole('link', { name: 'Upload audio', exact: true }).press('Enter');
   await page.getByLabel('Audio file', { exact: true }).setInputFiles(await freshMusicAudio());
-  await submit(page, page.getByRole('button', { name: 'Upload audio', exact: true }));
+  await submit(page, page.getByRole('button', { name: 'Save privately', exact: true }));
   const assetUrl = page.url();
   const assetId = new URL(assetUrl).pathname.split('/').at(-1);
   const streamUrl = new URL(`/music/assets/${assetId}/stream`, assetUrl).href;
-  await page.getByText('Edit track', { exact: true }).press('Enter');
   const edit = page.locator(`form[action="/web/music/assets/${assetId}/edit"]`);
+  await openDetailsFor(edit);
   await edit.getByLabel('Title', { exact: true }).fill('Recording removed with its account');
   await edit.getByLabel('Who can listen', { exact: true }).selectOption('public');
   await submit(page, edit.getByRole('button', { name: 'Save track', exact: true }));

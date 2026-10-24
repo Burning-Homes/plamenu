@@ -68,11 +68,8 @@ def _tree_bytes(root):
     return total
 
 
-@pytest.mark.skipif(
-    os.environ.get("AP09_SCALE_VERIFY") != "1",
-    reason="five-minute scale drill is explicitly opt-in",
-)
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.capability("AP09_SCALE_VERIFY")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -104,7 +101,7 @@ def test_sustained_native_live_and_exact_peer_ranges_have_bounded_resources():
     samples = []
     try:
         with step("prepare real native film, PeerTube offer and opted-in live creator"):
-            peer.start()
+            peer.start(suite_settings=True)
             _stop_process(peer)
             with socket.socket() as allocator:
                 allocator.bind(("127.0.0.1", 0))
@@ -116,7 +113,6 @@ def test_sustained_native_live_and_exact_peer_ranges_have_bounded_resources():
                 )
             )
             peer._launch(120, append_log=True)
-            peer.apply_suite_settings()
             user, api = peer.user_api("scalecaster")
             _, admin = peer.admin("scaleoperator")
             owner = api.get("/api/v1/accounts/verify_credentials")["id"]

@@ -6,12 +6,12 @@ import shutil
 import statistics
 import subprocess
 import time
+import tomllib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 import requests
-import tomllib
 from plamenu_e2e import config, unique
 from plamenu_e2e.api import Api, ApiError
 from plamenu_e2e.db import Db

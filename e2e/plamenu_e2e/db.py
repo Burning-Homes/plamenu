@@ -1,7 +1,11 @@
-"""Read-only queries against Plamenu's Postgres, for asserting on the rows
-that federation must produce (follows, statuses, quotes, notifications)."""
+"""Database assertions and scoped controls for disposable federation fixtures."""
+
+import datetime
+import secrets
+from contextlib import contextmanager
 
 import psycopg
+from psycopg import sql
 
 
 class Db:
@@ -22,6 +26,51 @@ class Db:
     def _value(self, sql: str, *params):
         row = self.conn.execute(sql, params).fetchone()
         return row[0] if row else None
+
+    @contextmanager
+    def deferred_deliveries(self, username: str):
+        """Hold this fresh author's new outbox jobs until phase assertions finish.
+
+        Real workers and real peer responses remain in use. Only scheduling
+        is controlled, so a fast peer cannot erase the pending-consent phase
+        before the test observes it. Never change another author's queue.
+        """
+        account_id = self._value(
+            "SELECT id FROM accounts WHERE username=%s AND domain IS NULL", username
+        )
+        if account_id is None:
+            raise RuntimeError("delivery barrier requires a local fixture author")
+        name = sql.Identifier("e2e_delivery_barrier_" + secrets.token_hex(8))
+        held_until = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
+        with self.conn.transaction():
+            self.conn.execute(
+                sql.SQL("""
+                CREATE FUNCTION {}() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF NEW.account_id = {} THEN NEW.run_at = {}; END IF;
+                    RETURN NEW;
+                END $$
+            """).format(name, sql.Literal(account_id), sql.Literal(held_until))
+            )
+            self.conn.execute(
+                sql.SQL("""
+                CREATE TRIGGER {} BEFORE INSERT ON delivery_jobs
+                FOR EACH ROW EXECUTE FUNCTION {}()
+            """).format(name, name)
+            )
+        try:
+            yield
+        finally:
+            with self.conn.transaction():
+                self.conn.execute(
+                    sql.SQL("DROP TRIGGER {} ON delivery_jobs").format(name)
+                )
+                self.conn.execute(sql.SQL("DROP FUNCTION {}()").format(name))
+                self.conn.execute(
+                    "UPDATE delivery_jobs SET run_at=now() WHERE account_id=%s AND run_at=%s",
+                    (account_id, held_until),
+                )
+                self.conn.execute("NOTIFY plamenu_delivery")
 
     # ── domain queries ────────────────────────────────────────────────
 

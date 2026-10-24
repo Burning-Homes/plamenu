@@ -147,8 +147,8 @@ class Bridge:
             ]
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         except (
+            TimeoutError,
             OSError,
-            asyncio.TimeoutError,
             asyncio.IncompleteReadError,
             asyncio.LimitOverrunError,
         ):
@@ -226,9 +226,9 @@ class Bridge:
             )
             await writer.drain()
         except (
+            TimeoutError,
             OSError,
             UnicodeError,
-            asyncio.TimeoutError,
             asyncio.IncompleteReadError,
             asyncio.LimitOverrunError,
         ):

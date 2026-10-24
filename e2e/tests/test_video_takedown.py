@@ -11,7 +11,7 @@ from plamenu_e2e.steps import step, wait_for
 from test_video_edit import csrf, prepare
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",

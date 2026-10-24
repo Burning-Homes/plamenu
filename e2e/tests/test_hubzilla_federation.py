@@ -1,5 +1,6 @@
 """Hubzilla's native top-level file publications ingest without conversion."""
 
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -11,9 +12,7 @@ from plamenu_e2e.api import Api
 from plamenu_e2e.db import Db
 from plamenu_e2e.steps import step, wait_for
 
-pytestmark = pytest.mark.skipif(
-    not hubzilla.reachable(), reason="hubzilla.local is not up"
-)
+pytestmark = pytest.mark.requires_peer("hubzilla")
 
 
 def _make_native_files(
@@ -60,15 +59,42 @@ def _make_native_files(
             "lavfi",
             "-i",
             "testsrc=duration=1:size=64x48:rate=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=523:duration=1",
             "-pix_fmt",
             "yuv420p",
             "-c:v",
             "libx264",
+            "-threads",
+            "2",
+            "-c:a",
+            "aac",
+            "-shortest",
             str(video),
         ],
     ]
     for command in commands:
         subprocess.run(command, check=True)
+    # A silent short MP4 is intentionally classified as gifv by media
+    # processing. This fixture exercises an ordinary native Video with audio.
+    streams = json.loads(
+        subprocess.check_output(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "json",
+                str(video),
+            ],
+            text=True,
+        )
+    )["streams"]
+    assert {stream["codec_type"] for stream in streams} == {"video", "audio"}
     document.write_text(f"# Native Hubzilla document\n\n{marker}\n", encoding="utf-8")
     return [
         ("Image", image, "image", "image/", "shared an image"),
@@ -135,6 +161,16 @@ def test_hubzilla_native_file_objects_arrive_without_loss(
                 ),
                 desc=f"Hubzilla {object_type} delivery to reach the home timeline",
             )
+            if object_type == "Video":
+                attachment_id = int(received["media_attachments"][0]["id"])
+                wait_for(
+                    lambda attachment_id=attachment_id: db.conn.execute(
+                        "SELECT processing='complete' FROM media_attachments WHERE id=%s",
+                        (attachment_id,),
+                    ).fetchone()[0],
+                    desc="native Video metadata processing finishes before type assertions",
+                )
+                received = plamenu_api.get_status(received["id"])
             assert received["uri"] == published["id"], received
             assert received["object_type"] == object_type, received
             assert received["account"]["acct"] == hubzilla.HAZEL_HANDLE

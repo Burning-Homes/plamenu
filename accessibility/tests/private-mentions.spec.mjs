@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures.mjs';
 import { signIn, signInParticipant, participantUsername } from '../session.mjs';
 
 for (const prefix of ['', '@no-js ']) {

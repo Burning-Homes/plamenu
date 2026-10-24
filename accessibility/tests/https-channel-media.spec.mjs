@@ -1,6 +1,6 @@
-import {test, expect} from '@playwright/test';
+import {test, expect} from '../fixtures.mjs';
 import {readFileSync} from 'node:fs';
-import {signIn, openVideoOptions, videoChannelForm, createVideoChannel, freshMusicAudio, openDetailsFor} from '../session.mjs';
+import {signIn, openVideoOptions, videoChannelForm, createVideoChannel, freshMusicAudio, openDetailsFor,openMusicUpload} from '../session.mjs';
 
 test.use({serviceWorkers:'allow'});
 async function qualification(page, info, noScript) {
@@ -67,11 +67,11 @@ test('Music private pages stay out of the offline cache and recover online', asy
   });
   await page.reload();
   expect(await page.evaluate(()=>Boolean(navigator.serviceWorker.controller))).toBe(true);
-  await page.goto('/music/assets?mine=true');
+  await openMusicUpload(page);
   const form=page.locator('form[action="/web/music/assets/import"]');
   await openDetailsFor(form);
   await form.getByLabel('Audio file',{exact:true}).setInputFiles(await freshMusicAudio());
-  await form.getByRole('button',{name:'Import audio',exact:true}).press('Enter');
+  await form.getByRole('button',{name:'Save privately',exact:true}).press('Enter');
   await page.waitForURL(url=>/^\/music\/assets\/\d+$/.test(url.pathname));
   const track=page.url();const title=await page.getByRole('heading',{level:1}).innerText();
   await expect(page.locator('section.music-library > p').filter({hasText:/^Only me and people I share with$/})).toBeVisible();
@@ -82,6 +82,7 @@ test('Music private pages stay out of the offline cache and recover online', asy
   };
   const workerProof=await page.evaluate(async()=>({controller:navigator.serviceWorker.controller?.state,scope:(await navigator.serviceWorker.getRegistration())?.scope,offlineCached:Boolean(await caches.match('/offline'))}));
   expect(workerProof).toMatchObject({controller:'activated',offlineCached:true});
+  await openDetailsFor(page.getByRole('link',{name:'Activities',exact:true,includeHidden:true}));
   try{
     await availability('offline');
     const shell=await page.evaluate(async()=>fetch('/assets/app.css',{cache:'no-store'}).then(r=>({status:r.status})).catch(e=>({error:e.name})));

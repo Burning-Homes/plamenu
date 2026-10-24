@@ -22,10 +22,7 @@ from tests.test_video_live_concurrency import _port
 from tests.test_video_offload import _freeze, _submit
 
 
-@pytest.mark.skipif(
-    os.environ.get("AP09_COLD_VERIFY") != "1",
-    reason="finite real cold/constrained decoder benchmark",
-)
+@pytest.mark.capability("AP09_COLD_VERIFY")
 @pytest.mark.federation(
     direction="outbound",
     peer="peertube",
@@ -56,7 +53,7 @@ def test_cold_far_seek_and_constrained_decoders_have_actual_origin_byte_receipts
         with step(
             "owned canonical HTTPS origin uses actual bounded TCP network fixture"
         ):
-            origin.start()
+            origin.start(suite_settings=True)
             candidate = _freeze(origin, evidence, monkeypatch)
             _stop_process(origin)
             upstream, control_port = _port(), _port()
@@ -103,7 +100,6 @@ def test_cold_far_seek_and_constrained_decoders_have_actual_origin_byte_receipts
 
             wait_for(ready, desc="actual owned TCP bridge listens", timeout=10)
             origin._launch(120, append_log=True)
-            origin.apply_suite_settings()
             user, api = origin.user_api("coldcaster")
             channel = api.post(
                 "/api/v1/video_channels",

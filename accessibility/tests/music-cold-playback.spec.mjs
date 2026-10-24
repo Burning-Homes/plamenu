@@ -1,14 +1,15 @@
 import {playNativeAudio} from '../session.mjs';
 import {freshMusicAudio} from '../session.mjs';
-import {test,expect} from '@playwright/test';
+import {test,expect} from '../fixtures.mjs';
 import AxeBuilder from '@axe-core/playwright';
-import {signIn,openDetailsFor} from '../session.mjs';
-async function journey(page,browser,info,shared,format=shared?'aac':'mp3'){
+import {signIn,openDetailsFor,openMusicUpload} from '../session.mjs';
+test.use({coldRendition:true});
+async function journey(page,browser,coldEncoding,info,shared,format=shared?'aac':'mp3'){
   test.setTimeout(180000);
-  await signIn(page);await page.goto('/music/assets?mine=true');
+  await signIn(page);await openMusicUpload(page);
   const upload=page.locator('form[action="/web/music/assets/import"]');await openDetailsFor(upload);
   await upload.getByLabel('Audio file',{exact:true}).setInputFiles(await freshMusicAudio(30));
-  await upload.getByRole('button',{name:'Upload audio',exact:true}).press('Enter');
+  await upload.getByRole('button',{name:'Save privately',exact:true}).press('Enter');
   await page.waitForURL(url=>/^\/music\/assets\/\d+$/.test(url.pathname));
   const id=new URL(page.url()).pathname.split('/').at(-1);
   let context=null;let player=page;
@@ -38,6 +39,7 @@ async function journey(page,browser,info,shared,format=shared?'aac':'mp3'){
     expect(await player.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     if(!shared){const result=await new AxeBuilder({page:player}).withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze();expect(result.violations).toEqual([]);}
     await player.screenshot({path:info.outputPath('music-cold-player-during-encoding.png'),fullPage:true});
+    await coldEncoding.release();
     await expect.poll(rowState,{timeout:45000}).toContain('Ready to play');
     const src=await player.locator('audio').getAttribute('src');
     const range=await player.request.get(src,{headers:{Range:'bytes=0-31'}});expect(range.status()).toBe(206);
@@ -45,7 +47,7 @@ async function journey(page,browser,info,shared,format=shared?'aac':'mp3'){
     await player.screenshot({path:info.outputPath('music-cold-player-ready-cache.png'),fullPage:true});
   }finally{if(context)await context.close();}
 }
-test('music starts playing while the real cold encoder is running',async({page,browser},info)=>journey(page,browser,info,false));
-test('shared AAC cold playback works without JavaScript @no-js',async({page,browser},info)=>journey(page,browser,info,true));
+test('music starts playing while the real cold encoder is running',async({page,browser,coldEncoding},info)=>journey(page,browser,coldEncoding,info,false));
+test('shared AAC cold playback works without JavaScript @no-js',async({page,browser,coldEncoding},info)=>journey(page,browser,coldEncoding,info,true));
 
-for(const format of ['ogg','flac','opus'])test(`remaining ${format} cold format decodes during encoding`,async({page,browser},info)=>journey(page,browser,info,false,format));
+for(const format of ['ogg','flac','opus'])test(`remaining ${format} cold format decodes during encoding`,async({page,browser,coldEncoding},info)=>journey(page,browser,coldEncoding,info,false,format));

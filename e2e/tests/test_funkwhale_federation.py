@@ -11,9 +11,7 @@ from plamenu_e2e.db import Db
 from plamenu_e2e.funkwhale import FunkwhaleApi
 from plamenu_e2e.steps import step, wait_for
 
-pytestmark = pytest.mark.skipif(
-    not funkwhale.reachable(), reason="funkwhale.local is not up"
-)
+pytestmark = pytest.mark.requires_peer("funkwhale")
 
 
 def _make_audio(path: Path) -> None:

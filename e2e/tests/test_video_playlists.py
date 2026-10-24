@@ -130,7 +130,7 @@ def test_playlist_api_scopes_conflicts_and_no_js_csrf_confirmation(
         )
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(direction="both", peer="peertube")
 def test_native_playlist_round_trip_duplicates_clips_reorder_visibility_delete(
     plamenu_api, plamenu_user, cli, db
@@ -370,7 +370,7 @@ def test_native_playlist_round_trip_duplicates_clips_reorder_visibility_delete(
         )
 
 
-@pytest.mark.skipif(not peertube.reachable(), reason="peertube.local is not up")
+@pytest.mark.requires_peer("peertube")
 @pytest.mark.federation(direction="both", peer="peertube")
 def test_peertube_playlist_import_signed_updates_and_delete(
     plamenu_api, plamenu_user, db
