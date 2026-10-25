@@ -1,8 +1,0 @@
-{
-  "baseline_executable_sha256": "979514892d88640d51e611bc3ecead65cfd1a03bcff18248427a98dae0fbc59f",
-  "verified_executable_sha256": "626816f6f4b794b986c98fe2141c7c9e8c4e220dc49957134d970410dd2df090",
-  "files": {
-    "crates/server/src/web/interact.rs": "db527a4171d34ef36efddf13ef36d3fc928678d2f3ba6ba9084f9da36d00bd25",
-    "accessibility/tests/remote-interaction-journey.spec.mjs": "58ac82722aa9d27ce804e9c76d7980f644ee351491a62e47ee7f0c1b4d1d37b3"
-  }
-}

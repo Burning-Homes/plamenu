@@ -196,19 +196,12 @@ proactive zero-delay teardown of every idle WebRTC connection after moderation.
 
 ## Interpretation
 
-The eight-decoder/two-broadcast native-origin workload passed on 2026-09-30:
-eight actual tracker sockets were interrupted and reconnected, while every
-native/PeerTube decoder continued through all phases; native pixel-clock p95
-was 9.5 seconds, peak service/direct-child RSS 328,638,464 bytes, with two ingest
-children. The closure record pins candidate/evidence and retains intermediate
-harness failures. Bridge-forwarded aggregate bytes are not dedicated origin
-body accounting or proof of P2P savings. PeerTube-origin concurrency/corrupted
-peer data and browser-capture latency are still separate required gates.
+Keep each run's source/binary identity, environment, parameters, results and
+failure evidence together under ignored `target/`. Report each delivery lane
+separately: bridge-forwarded bytes are not dedicated origin-body accounting or
+proof of P2P savings. Record failures and incomplete phases as such.
 
-Pass/fail evidence must be added to the AP09 operations record after the run.
-Defining this workload does not mark PERF01, PERF02 or M7 complete. A default
-debug executable on one development host does not establish production fleet
-limits. The separate local decoder slice does not close larger/cold/WAN/device
-startup/seek/rebuffer, live latency, slow-client faults, browser/P2P concurrency
-or wider independent storage/offload gates; they still need their own retained
-measurements.
+A focused decoder slice does not qualify the full browser/E2E gates, a release,
+or arbitrary fleet capacity. Cold/WAN/device startup, seek/rebuffer, live
+latency, peer concurrency and storage/offload faults require their own current
+measurements. Never shorten a calibrated interval or omit a case to claim a pass.

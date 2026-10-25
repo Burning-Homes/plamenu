@@ -30,8 +30,9 @@ Plamenu equivalent are rejected.
 - Account deletion requires `delete_content=true`. Restore requests for deleted
   or removed content are unsupported.
 - Editing a post cannot change its external URL or custom thumbnail.
-- Post lists use chronological Plamenu timelines for every requested Lemmy
-  sort value. Lemmy ranking modes are not implemented.
+- Community-specific listings support Hot, Active, Old and Top variants.
+  Active uses latest reply time, not Lemmy's complete scored decay. Aggregate
+  All/Local/Subscribed listings remain chronological; ranking parity is incomplete.
 - Private messages are Plamenu direct conversations. Changing one message's
   read state changes the state reported for its conversation.
 - The modlog API, private-message reports, and some notification, language,

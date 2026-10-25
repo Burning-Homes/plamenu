@@ -56,7 +56,7 @@ memory, database growth, and media storage under the workload you expect.
 Video processing and account archives also need temporary space. Keep room
 for a restore and alert before storage is exhausted.
 
-[Creator delivery analytics](../VIDEO_ANALYTICS.md) offers optional bounded
+[Creator delivery analytics](../members/channels.md) offers optional bounded
 UTC body-byte/response aggregates. It records no viewer identities and does
 not measure P2P bytes, unique views or confirmed wire transfer. Use process,
 network and database resource measurements for capacity planning instead of

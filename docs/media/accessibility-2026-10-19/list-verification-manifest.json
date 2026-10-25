@@ -1,9 +1,0 @@
-{
-  "baseline_executable_sha256": "2ff896189b5a4f99448664a49c39a9baf75981e813f087abac93f18bba53e6f1",
-  "verified_executable_sha256": "0ad4e22011c09273ad4822649bbc9dee86e81d9716c5a6fdc37621762a6bf75d",
-  "files": {
-    "crates/server/src/web/lists.rs": "c99b39c476b0ee7be84ecc852fa152b85ceab3c1cb0bf5f74da2c83a2b14de88",
-    "crates/server/tests/web.rs": "8efbfe1b74e8367cdd56bc4fcd3c0f37a8bfcfdf13e1d0f48938c0d7873ca163",
-    "accessibility/tests/list-journey.spec.mjs": "9823151a623e7c1fe84e5848ceb04cdb9a640e11d1cf53afdf5d55604dbe0403"
-  }
-}

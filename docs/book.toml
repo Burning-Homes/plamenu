@@ -3,7 +3,7 @@ authors = ["Plamenu contributors"]
 description = "User, operator, API, federation, and contributor documentation for Plamenu"
 language = "en"
 src = "."
-title = "Plamenu documentation"
+title = "Plamenu handbook"
 
 [build]
 build-dir = "../target/docs/book"
@@ -16,3 +16,31 @@ git-repository-url = "https://codefloe.com/plamenu/plamenu"
 enable = true
 limit-results = 30
 use-boolean-and = true
+
+# Keep previously published guide URLs usable after consolidation.
+[output.html.redirect]
+"VIDEO_ACCESSIBILITY.html" = "members/accessibility.html"
+"VIDEO_ANALYTICS.html" = "members/channels.html"
+"VIDEO_CHANNELS.html" = "members/channels.html"
+"VIDEO_EDITING.html" = "members/video.html"
+"VIDEO_IMPORTS.html" = "members/video.html"
+"VIDEO_PLAYLISTS.html" = "members/video.html"
+"VIDEO_PUBLISHING.html" = "members/video.html"
+"VIDEO_STORAGE.html" = "operators/media.html"
+"VIDEO_VIEWING.html" = "members/video.html"
+"AP09-VIDEO-PROGRESS.html" = "members/video.html"
+"AP09-FEATURE-INVENTORY.html" = "members/video.html"
+"AP09-M1-M4-CLOSURE.html" = "members/video.html"
+"AP09-M2-M3-CLOSURE.html" = "members/accessibility.html"
+"AP09-M6-M7-CLOSURE.html" = "operators/media.html"
+"ACCESSIBILITY_JOURNEY.html" = "ACCESSIBILITY.html"
+"DISCOVERY_IMPLEMENTATION_PLAN.html" = "operators/discovery.html"
+"SONGHIVE_PARITY.html" = "members/music.html"
+"SONGHIVE_COMPLETION_CHECKLIST.html" = "members/music.html"
+"SONGHIVE_NATIVE_REVIEW.html" = "members/music.html"
+"PHANPY_PARITY.html" = "api/index.html"
+"MEDIA_UX_REVIEW.html" = "members/index.html"
+"MUSIC_DISCOVERY_REPAIR.html" = "members/music.html"
+"MUSIC_UX_MOBILE_CORRECTION.html" = "members/music.html"
+"MUSIC_UX_REDESIGN_CHECKLIST.html" = "members/music.html"
+"BUGFIX_CHECKLIST_2026-10-21.html" = "KNOWN_ISSUES.html"

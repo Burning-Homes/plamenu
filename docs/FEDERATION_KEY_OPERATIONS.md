@@ -21,8 +21,27 @@ Do not include private keys, ciphertext, or encryption secrets in bug reports.
 
 ## Rotate the encryption secret
 
-This changes encryption at rest while keeping the published signing keys.
-Generate a new secret:
+**Current limitation:** `federation keys rewrap` covers federation keys only.
+TOTP secrets use the current `encryption_secret`; they do not read
+`encryption_previous_secrets`. Changing the primary secret can therefore break
+existing TOTP sign-in even when the federation audit passes.
+
+Do not perform this procedure on a server with stored TOTP secrets until those
+secrets have a supported migration/re-enrollment plan. Check for both completed
+and pending enrollments with a read-only query against the correct database:
+
+```sql
+SELECT count(*) AS stored_totp_secrets FROM users WHERE otp_secret IS NOT NULL;
+```
+
+A nonzero result requires resolving TOTP migration first. Keep the original
+secret available for recovery; do not manually erase enrollment data. A passing
+federation audit says nothing about TOTP. Test a second-factor sign-in as part
+of any later secret-rotation rehearsal.
+
+For an installation with no stored TOTP secrets, the following changes
+federation-key encryption while keeping the published signing keys. Prevent new
+TOTP enrollment during the change and generate a new secret:
 
 ```sh
 openssl rand -hex 32

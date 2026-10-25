@@ -14,6 +14,18 @@ cannot cache a file. This exposes your browser's IP address to the media host
 when the browser loads from it; turn **Allow direct remote media** off to keep
 media requests on your instance.
 
+## Profile, relationships and collections
+
+Add profile metadata such as your website. A website linking back with `rel="me"`
+can earn a link-verification checkmark; that verifies the link, not a legal
+identity. Use **Relationships** for follows/followers and requests, **Lists**
+for selected followed accounts, and **Featured hashtags** for profile links.
+
+**Collections** curates shareable sets of accounts. Inclusion requires the
+account's discovery/featuring consent; pending invitations are not accepted
+members. The same page shows collections featuring you and lets you leave them.
+These account collections are separate from music collections and video playlists.
+
 ## Live notifications
 
 Live notifications are off by default. Enabling them in the built-in client
@@ -35,8 +47,13 @@ Contact your server's operators if you cannot recover access.
 
 ## Import, export, and migration
 
-**Import & export** provides CSV transfers and full account archives. An account
-archive is a downloadable snapshot; it cannot restore a whole server.
+**Import & export** accepts CSV following, blocking, muting, domain-blocking,
+bookmark and list data. Choose **Merge** to add to existing data or **Overwrite**
+to replace the selected set. Review the import before confirming, then check
+**Recent imports** for successes and failed rows; completion can be partial.
+
+A full account archive is a downloadable snapshot, not a server backup or an
+implemented historical-post import. Protect it as private data.
 
 To move followers, first add the old account as an alias at the destination,
 then start migration from the old account. Other servers process the move
@@ -44,9 +61,15 @@ asynchronously. Posts and all other account data do not move with followers.
 
 ## Deletion
 
+**Automated deletion** continuously removes old posts under your chosen age,
+exceptions and popularity thresholds. Review the policy before enabling it:
+deletions are permanent and federate to other servers.
+
 Export anything you need before deleting an account. Plamenu queues local
 cleanup and remote deletion notices. Remote servers and independent archives
-may retain copies.
+may retain copies. Your username remains reserved. Stored music, queues,
+history and owned channels are also affected; transfer channels deliberately
+before retirement, and remember that your original videos are still deleted.
 
 ## Identity proofs (experimental)
 

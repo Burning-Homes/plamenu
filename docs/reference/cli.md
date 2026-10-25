@@ -1294,6 +1294,10 @@ Options:
           Comma-separated mechanism names; an empty string enables all mechanisms
       --requests-per-day <REQUESTS_PER_DAY>
 
+      --max-entries <MAX_ENTRIES>
+
+      --entries-per-origin <ENTRIES_PER_ORIGIN>
+
       --requests-per-origin <REQUESTS_PER_ORIGIN>
 
       --bytes-per-day <BYTES_PER_DAY>

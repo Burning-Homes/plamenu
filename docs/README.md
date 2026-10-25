@@ -1,17 +1,24 @@
-# Plamenu documentation
+# Plamenu handbook
 
-Plamenu is an experimental ActivityPub server with a web interface and a
-Mastodon-compatible API. Experimental releases may change database and
-configuration formats incompatibly.
+Plamenu is an experimental federated social server with a web interface,
+communities, music, video and shared apps. Use this handbook with the matching
+server release. Experimental releases can change configuration and database
+formats; operators need independent, tested backups.
 
-- [Use the web interface](members/index.md): navigation, posting, and account settings.
-- [Install a server](start/install.md): requirements and deployment examples.
-- [Operate a server](operators/index.md): configuration, moderation, backups,
-  upgrades, and troubleshooting.
-- [Connect a client](api/index.md): authentication and API compatibility.
-- [Federation](federation/protocol.md): objects, signatures, and extensions.
-- [Contribute](contributing/index.md): development and documentation.
-- [Known issues](KNOWN_ISSUES.md): unresolved behavior and limitations.
+| I want to… | Start here |
+| --- | --- |
+| Find people, write posts or manage my account | [Using Plamenu](members/index.md) |
+| Listen, upload music or manage a private library | [Music](members/music.md) |
+| Watch, publish or broadcast video | [Video](members/video.md) |
+| Moderate a community or run the instance | [Administration](operators/administration.md) |
+| Install Plamenu on a host or container platform | [Installation](start/install.md) |
+| Back up, upgrade or troubleshoot a running server | [Operator guide](operators/index.md) |
+| Connect a client or integrate another server | [Clients and APIs](api/index.md), [federation](federation/protocol.md) |
 
-Use documentation from the same revision or release as your server. The
-[command-line reference](reference/cli.md) is generated from the program's help.
+Features available to you depend on your server's policy and your role.
+Contact **your server's administrators** for account access and moderation;
+use [project support](reference/getting-help.md) for software bugs.
+Read [limitations](KNOWN_ISSUES.md) before choosing a deployment or client.
+
+The handbook describes shipped behavior, not planned features or a certification
+that every supported workflow has passed release testing.

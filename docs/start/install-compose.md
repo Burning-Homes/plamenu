@@ -6,7 +6,8 @@ Docker Engine, Compose, and a release image. Choose a version from
 
 ## Prepare the deployment
 
-Replace `v0.6.0` with the selected release tag and copy its examples:
+Set `PLAMENU_VERSION` to the selected release number without the `v` prefix,
+then copy that release's examples:
 
 ```sh
 {{#include ../examples/install-compose.sh:prepare}}

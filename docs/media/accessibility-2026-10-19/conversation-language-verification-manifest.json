@@ -1,9 +1,0 @@
-{
-  "baseline_executable_sha256": "46c8b7cb6d2e6a17c676d715fdba76050fb498b38d5b3492db0e929d81148ab4",
-  "verified_executable_sha256": "7c2695f3a399c2a21ecaee90216cdf8f41244d47925179d940edaba531c101cd",
-  "files": {
-    "crates/server/src/web/view.rs": "0371c8769f63b9b698bf76d8b1e6d9d65b0e2676b7ab79586c1ea4eed1cfa6d2",
-    "accessibility/tests/conversation-language.spec.mjs": "2348992b551173f18bfcaa614027fd5c1a8131172ca184bb24e535faa0012671"
-  },
-  "excluded_runs": "Initial browser assertions assumed en instead of the actual en-US document language. A library-only build also left the old web binary unchanged; its obsolete browser matrix was interrupted. Only the corrected baseline and explicitly rebuilt executable matrix are verification evidence."
-}

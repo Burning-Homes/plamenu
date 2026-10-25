@@ -22,8 +22,10 @@ network.
 ## Install a release
 
 Choose a version from [Releases](https://codefloe.com/plamenu/plamenu/releases)
-and follow its verification instructions. Replace `0.6.0` with the selected version
-in the `version` variable. The commands select the host architecture:
+and follow its verification instructions before installing. Set
+`PLAMENU_VERSION` to that version without the `v` prefix (for example,
+`export PLAMENU_VERSION=VERSION`, replacing `VERSION`). An unset version fails
+before downloading; the commands select the host architecture:
 
 ```sh
 {{#include ../examples/install.sh:release}}

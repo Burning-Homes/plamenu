@@ -18,7 +18,8 @@ In the Proxmox web interface:
 4. Add persistent storage at `/var/lib/plamenu/media` and make it writable by
    UID/GID 10001. Put the secret-bearing configuration at
    `/etc/plamenu/plamenu.toml`, readable by that UID.
-5. Give `/tmp` at least 1 GiB of writable space, connect the container to a
+5. Size writable `/tmp` for [media processing](../operators/media.md#capacity-and-quotas),
+   connect the container to a
    private PostgreSQL service, and reverse proxy private port 8420 over HTTPS.
 
 If the first boot stops with `Network unreachable`, delay the image entrypoint

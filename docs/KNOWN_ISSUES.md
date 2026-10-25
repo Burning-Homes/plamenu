@@ -1,51 +1,29 @@
-# Known issues
+# Known limitations
 
-## Live notifications disrupt navigation and scroll position
+Plamenu is experimental. Use a matching release's documentation and test upgrades
+on restored data. There is no general production, capacity or WCAG conformance
+certification. A working feature or a passing focused test does not establish release-wide
+validation.
 
-Enabling **Live notifications** in the built-in web client can disrupt
-navigation context and scroll position when returning to a previous page.
-Live notifications are disabled by default while this issue remains unresolved.
+| Area | Limitation and practical response |
+| --- | --- |
+| Deployment | One serving process per database. Do not run a second web replica against it; optional processors are DB-less. |
+| Identity and upgrades | Public/handle domains are permanent after federation. Forward migrations can prevent binary-only rollback; keep a consistent recovery set. |
+| Encryption-secret rotation | Federation-key rewrap does not migrate TOTP secrets. Do not rotate the shared secret on an enrolled installation without a migration plan; see [key operations](FEDERATION_KEY_OPERATIONS.md#rotate-the-encryption-secret). |
+| Private content | Private mentions are not end-to-end encrypted. Revocation cannot recall delivered copies or rewrite old backups. |
+| Clients | Mastodon compatibility does not expose every native music, video or app feature. The Lemmy adapter has [explicit gaps](LEMMY_API_COMPATIBILITY.md). |
+| Live notifications | The optional web setting can disrupt navigation context/scroll restoration; it defaults off. Disable it if affected. |
+| Video | Native publication is public/unlisted. Browser capture depends on device/browser support; third-party media may lack playable formats or alternatives. |
+| Peer delivery | HTTP playback success does not establish P2P delivery. PeerTube live exchange and cold-origin-loss redundancy have qualification limits. |
+| Live performance | Prior qualification did not establish all decoded-latency/smoothness budgets, including the multi-broadcast workload. Do not advertise a guaranteed live latency or scale from those results. |
+| Accessibility | Automated checks do not replace human assistive-technology verification; no site-wide WCAG 2.2 AA claim is made. |
 
-## Staging 0.7.0 live-video qualification limits (2 October 2026)
+Known qualification gaps remain open until the applicable tests pass on the
+revision being shipped. Historical timings and session transcripts belong to
+validation artifacts, not the operating manual. Maintainers use the
+[release procedure](RELEASING.md) and [video verification guide](VIDEO_SCALE_VERIFICATION.md)
+to collect current evidence.
 
-The staging candidate retains the existing live player and progressive remux.
-Experimental changes to live buffering recovery, native segment selection,
-automatic playback-speed catchup and peer scheduling are excluded.
-The original test budgets remain unchanged; the following results remain failures
-or incomplete qualifications rather than passes.
-
-- Progressive live playback with JavaScript disabled can buffer for approximately
-  two seconds and exceed the 10-second decoded latency budget. A related-source
-  screen trial measured 10.9 seconds; a later isolated segment-selection trial
-  also measured 10.9 seconds and approximately 2.08 seconds of lost progress.
-  The latter trial does not qualify the unchanged staging implementation.
-- PeerTube live playback does not reliably demonstrate validated inbound peer
-  segments in the original first-party-player test. HTTP playback remains a
-  separate delivery path; successful playback is not proof of peer delivery.
-- The original two-broadcast/eight-decoder workload has not met its decoded live
-  latency gate. A prior revision with byte-identical live-player and remux source
-  measured a combined p95 of 10.9 seconds against the unchanged 10-second budget.
-  Later experimental changes passed live peer exchange but regressed presented
-  frames and latency; those changes are excluded.
-
-The earlier browser replica-EIO case stopped in its six-second healthy no-JS
-phase, before injecting any fault, because the dropped-frame counter increased
-by two. It does not demonstrate a replica-EIO storage or recovery defect. A later
-original case passed all fault and repair phases on an isolated candidate with
-byte-identical remux/backend code; its native JS player used experimental recovery,
-so this is not an exact unchanged-source whole-case pass. Healthy no-JS smoothness
-and exact revision coverage remain incomplete.
-
-The earlier PeerTube adversarial VOD exchange startup failure subsequently passed
-the original test on the same baseline plus a change restricted to the live-only
-handler. VOD does not execute that handler, and all other product files are
-identical. This establishes a passing unchanged VOD implementation path without
-claiming an exact unchanged-source whole-suite run. There is no evidence of corrupt
-or stale byte acceptance.
-
-Full-suite validation has not been rerun for this staging version. The signed
-baseline has passed static checks, Clippy, 2,815 Rust tests with no skipped tests,
-and an independent 1,742-query SQLx comparison. All 70 performance measurements
-had zero hard-budget failures and all three contention cases passed; the strict
-performance checker still reported 10 headroom warnings and 32 lower-query-count
-warnings. This is a staging candidate, not a fully green release declaration.
+For an account problem, contact your instance's administrators. For a software
+problem, include the exact version, action, expected/actual result and redacted
+logs using [Getting help](reference/getting-help.md).

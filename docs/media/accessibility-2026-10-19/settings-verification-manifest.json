@@ -1,9 +1,0 @@
-{
-  "baseline_executable_sha256": "979514892d88640d51e611bc3ecead65cfd1a03bcff18248427a98dae0fbc59f",
-  "verified_executable_sha256": "35df6127760b815ebbdb9abb3b5c51b8d29d78f53ff5ed869a317ae79d9b2e33",
-  "files": {
-    "crates/server/src/web/settings.rs": "c682b5abbfe9a6de15ee62b6744dc752cc715ebb5f8307df5391bd97a6f7adc2",
-    "crates/server/tests/web.rs": "533f8e784248bab3faaaf9c9cd3bb06f5d91ccec95b4cec19fcba4e1bbaf45bb",
-    "accessibility/tests/settings-journey.spec.mjs": "cab4075b56bb0e50b03880c7310201455b8bc9b0faab69d62d3c3afd9544a5cf"
-  }
-}

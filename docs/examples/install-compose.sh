@@ -4,8 +4,9 @@ set -eu
 # This file is included in the Compose guide and checked by CI.
 
 # ANCHOR: prepare
-# Replace v0.6.0 with the release you want to install.
-git clone --branch v0.6.0 --depth 1 \
+# Set PLAMENU_VERSION to the selected release, without the v prefix.
+version=${PLAMENU_VERSION:?Set PLAMENU_VERSION to the selected release first}
+git clone --branch "v$version" --depth 1 \
   https://codefloe.com/plamenu/plamenu.git
 cd plamenu
 cp deploy/.env.example deploy/.env

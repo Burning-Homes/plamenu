@@ -55,6 +55,9 @@ Streaming apps use **External encoder and stream key**; those credentials are
 not needed for broadcasting from the browser. Screen capture and browser
 recording availability depend on your browser and device.
 
+For the complete workflows, see [video publishing](video.md) and
+[live broadcasting](live.md).
+
 ## Visibility
 
 | Visibility | Access |
@@ -68,6 +71,11 @@ recording availability depend on your browser and device.
 Private mentions are not end-to-end encrypted. Operators of servers storing a
 post can access it. Edits and deletion requests may reach remote servers late,
 and cannot remove independent copies.
+
+**Who can quote** offers Anyone, Followers or Only me. This controls Plamenu's
+consent-aware quote workflow; it cannot stop independent copying or force every
+remote server to honor the policy. Visibility and quoting permission are
+separate decisions.
 
 ## Polls, scheduling, and edits
 
@@ -102,7 +110,8 @@ tentative status. **Who can attend** selects
 open attendance, approval, invitation, or an external attendance link.
 
 Events federate as ActivityPub `Event` objects. Remote software may display
-only a link and may not offer RSVP controls.
+only a link and may not offer RSVP controls. See [organizing events](groups-and-events.md#organize-an-event)
+for participation and cancellation.
 
 ## Groups
 

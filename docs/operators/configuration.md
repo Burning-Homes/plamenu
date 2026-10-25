@@ -27,10 +27,11 @@ point. The configuration tests parse both files.
   match `POSTGRES_PASSWORD` in `deploy/.env`.
 
 `encryption_secret` and `encryption_secret_version`
-: Root used to encrypt federation private keys. Generate a strong independent
+: Root used to encrypt federation private keys and TOTP secrets. Generate a strong independent
   value, restrict file access, and escrow it outside database and media
   backups. Follow the [key runbook](../FEDERATION_KEY_OPERATIONS.md) to rotate
-  it; do not simply replace the value.
+  it; do not simply replace the value. That guide documents the current TOTP
+  migration limitation.
 
 `trusted_proxies`
 : Exact proxy addresses or tight subnets whose forwarding headers are trusted.
@@ -46,7 +47,7 @@ point. The configuration tests parse both files.
   delivery analytics. Each channel still defaults to **off** until its owner
   opts in. Set `false` to stop collection server-wide on restart and remove
   retained aggregates in bounded maintenance. No viewer identifiers are stored.
-  See [Private creator delivery analytics](../VIDEO_ANALYTICS.md).
+  See [Private creator delivery analytics](../members/channels.md).
 
 ## Split-domain handles
 
@@ -79,232 +80,51 @@ Configure the relay, restart Plamenu, and test delivery before allowing those
 workflows. Keep relay credentials out of version control and limit the sender's
 permissions at the provider.
 
-## Status translation
+## Optional services
 
-Translation is disabled unless `[translation]` is configured. The `openai`
-backend accepts an OpenAI-compatible Chat Completions API, including local
-translation models and hosted reasoning models. Configure the exact request
-URL, model, bearer key and languages your model supports:
+| Section or key | Configure when… |
+| --- | --- |
+| `[translation]` | Members should translate posts via DeepL, LibreTranslate or an OpenAI-compatible service. Choose its endpoint/model/languages; content is sent to that provider. |
+| `[notifications]` | Change seen-notification retention (default 90 days) and UTC purge/digest hours (03:00/08:00). Unseen notifications are preserved; mail delivery can repeat after a crash. |
+| `[federation]` | Route guarded outbound federation through a proxy or hidden-service transport; see [Tor/I2P](../TOR_TRANSPORT.md). |
+| `conversation_containers` | Opt into hosting experimental private conversation containers. Default is off. |
+| `update_check_url` | Poll a selected JSON release feed for update notices. This does not automatically install a release. |
+| `csp_reporting` | Collect CSP reports. They may contain sensitive URLs; plan log access/retention. |
 
-```toml
-[translation]
-backend = "openai"
-chat_completions_url = "https://llm.example.com/api/chat/completions"
-model = "your-translation-model"
-api_key = "replace-with-your-provider-key"
-languages = ["en", "es", "de", "ru"]
+The generated template contains accepted fields and defaults. Unknown fields
+are rejected. Keep provider credentials outside version control. Do not assume
+federation proxy settings also route translation services or webhooks.
 
-[translation.request_options]
-reasoning_effort = "low"
-thinking = { type = "enabled" }
-max_tokens = 4096
-```
+## Native video storage and processing
 
-`chat_completions_url` is used exactly as supplied, including its path and
-optional query string. Existing configurations can keep
-`endpoint = "http://127.0.0.1:8080"`, which appends `/v1/chat/completions`.
-Choose one of these settings. Authentication uses `api_key`; URLs with userinfo
-or fragments are rejected. Omit `api_key` for a service that needs no bearer key.
+`[native_video]` defaults include a 2 GiB source ceiling, 50 GiB per account,
+1 TiB global storage, 8 GiB pending storage, 32 unfinished drafts, two processing
+slots and a 1 GiB disk floor. Processing can reserve much more than the source:
+it must admit retained originals, output qualities and scratch before work starts.
+Avoid tuning from the final film's size alone.
 
-`request_options` is an optional TOML table of JSON body fields. Nested tables,
-arrays, numbers, booleans and strings are forwarded to the provider. Choose
-parameters and values accepted by that provider and model; Plamenu does not
-translate reasoning levels between providers. Options apply to both the
-structured request for a post's title, content, content warning and other
-fragments, and any fallback requests for individual fragments.
+For music, `[music]` controls storage, role/instance bitrate ceilings, renditions
+and download jobs. Its default retained-audio budgets are 50 GiB per account
+and 1 TiB overall. Read [media operations](media.md) before enabling paired
+storage, remote video copies, processors or mounted libraries.
 
-Plamenu supplies `model`, `messages` and `stream = false`; configuring those
-fields in `request_options` is rejected at startup. The token budget defaults
-to `max_tokens = 4096`. Override it with a positive integer, or configure
-`max_completion_tokens` to use that field instead. Supplying both budget fields
-is rejected. The API must return translated text in
-`choices[0].message.content`; separate reasoning content is not shown to users.
+## Live ingest
 
-`languages` controls the capabilities advertised to clients and the targets
-accepted by the translation endpoint. If omitted or empty, it retains the
-legacy Hy-MT2 language list. Set it explicitly for a different model. Keep the key in the
-protected server configuration and restart Plamenu after changing settings.
-The existing access checks, rate limits and persistent translation cache apply.
-The existing Translate control is offered regardless of a post's declared
-language, including when it matches the reader's target. The provider detects
-the source from the text; only its supported target languages gate an explicit
-request. Attribution names a source language only when the provider reports one.
+`live_ingest_bind` controls plaintext RTMP, loopback by default. `[live_rtmps]`
+provides a separate TLS listener with certificate/key paths. Configure the
+actual encoder path, firewall and certificates before advertising it to members.
+The website's HTTPS reverse proxy does not automatically expose an RTMP port.
+Keep stream credentials private. See [live broadcasting](../members/live.md).
 
-For example, the [Z.ai Coding Chat Completions API](https://docs.z.ai/devpack/quick-start)
-can be configured through these generic options:
+## Apply a change
 
-```toml
-[translation]
-backend = "openai"
-chat_completions_url = "https://api.z.ai/api/coding/paas/v4/chat/completions"
-model = "glm-5.3-flash"
-api_key = "replace-with-your-provider-key"
-languages = ["en", "ru"]
+Protect the TOML file so only administrators and the service account can read
+its secrets. Restart for file-based configuration changes, inspect startup logs
+and `/ready`, then test the affected workflow. UI-managed instance policy is
+stored in PostgreSQL and generally takes effect without a process restart.
 
-[translation.request_options]
-reasoning_effort = "low"
-thinking = { type = "enabled" }
-max_tokens = 4096
-```
-
-Extend the example's language list after checking the required translations.
-For GLM-5.3, `low` is the lowest supported reasoning level and thinking stays
-enabled; see the provider's [thinking parameters](https://docs.z.ai/guides/capabilities/thinking).
-Model availability depends on the provider account.
-
-## Optional encrypted live encoder ingest
-
-Live broadcasting works without another service: Plamenu accepts local
-plaintext RTMP and HTTPS-FLV through its normal HTTPS origin. For encoders that
-require the RTMPS protocol, opt in to Plamenu's own TLS listener:
-
-```toml
-live_ingest_bind = "127.0.0.1:1935"
-[live_rtmps]
-bind = "0.0.0.0:1936"
-cert = "/etc/letsencrypt/live/social.example.com/fullchain.pem"
-key = "/etc/letsencrypt/live/social.example.com/privkey.pem"
-```
-
-Use a certificate valid for `domain`, grant the Plamenu process read access to
-the certificate and key, and allow the RTMPS port through the host firewall.
-Plamenu checks the certificate/key at startup and reloads them for new
-connections within a minute of renewal. Existing broadcasts keep running.
-The listener forwards decrypted RTMP to the local native pipeline; it does not
-spawn a proxy or a separate transcoder. Keep the plaintext listener on loopback
-unless a trusted local network genuinely requires it. Without `[live_rtmps]`,
-no RTMPS port is opened and installation steps do not change.
-
-## Native Video storage and processing
-
-Native uploads use Plamenu's own durable database queue, media store and
-existing encoder runtime. No companion server or additional install step is
-introduced. Defaults can be overridden in TOML:
-
-```toml
-[native_video]
-max_upload_mib = 2048
-per_account_gib = 50
-global_gib = 1024
-pending_gib = 8
-unfinished_drafts = 32
-jobs = 2
-min_free_gib = 1
-```
-
-Quotas count retained originals and all journaled output revisions. A file
-scheduled for deletion stays charged until the storage worker acknowledges
-removal. A restart recovers committed upload offsets, source reservations and
-generation-fenced processing leases. Failed encoding retains the source for
-retry; unfinished drafts expire, but published media is not draft-expired.
-
-Worker slots are bounded before a job is claimed. Temporary-space reservations
-cover the source spool, original and compatibility MP4 outputs, at most six
-HLS files and possible destination copies, poster scratch and a 2 MiB
-storyboard plus its copy. For a
-default-ceiling 2 GiB source, this conservative reservation is about 34 GiB
-plus 16 MiB per active job, in addition to the free-space floor. Actual outputs
-are often much smaller. Insufficient free space leaves work queued; it does
-not delete the original or relax the output ceilings. Other processes can use
-the same filesystem, so monitor real free space too. Do not place large-video
-test/production media on a small RAM-backed `/tmp` mount.
-
-Uploader turns persist in PostgreSQL. Eligible uploaders with fewer active
-jobs and older turns take precedence, retaining FIFO within an uploader.
-Only the short claim/turn transaction is serialized; encoding holds no queue
-transaction. One account's older bulk uploads therefore cannot monopolize
-both free slots while another eligible account waits. Account suspension and
-lease/generation fences continue to apply.
-
-Native jobs also bound FFmpeg decoder/encoder thread shares to half the
-available CPUs divided by the configured worker slots (at least one, at most
-eight threads per decoder/encoder); filter execution uses one thread. Lower
-renditions are sequential, not a second unbounded pool. Increasing `jobs`
-therefore changes CPU shares as well as disk admission; measure the actual
-workload before raising it.
-
-The normal installation remains a single native media directory. An optional
-`[media_mirror]` pairs it with a second existing disk directory, with serialized
-bandwidth and free-space controls and acknowledged deletion on both disks.
-Read [Native media storage and replication](../VIDEO_STORAGE.md) before
-enabling it: completed media and upload prefixes are mirrored, but active
-live/DVR scratch is not, and replication does not replace a consistent backup.
-
-## Federation fetch and proxies
-
-Authorized fetch and remote transport affect interoperability and privacy.
-Route `.onion` or `.i2p` destinations with their dedicated proxy settings so
-ordinary clearnet fetches retain Plamenu's DNS/IP destination checks. A global
-proxy is an advanced deployment that requires its own egress controls. Read the
-[Tor and I2P runbook](../TOR_TRANSPORT.md) before enabling it.
-
-## What belongs in the admin interface
-
-Use the admin interface for registration, retention, media limits, federation
-policy, trends, and moderation settings. The TOML file configures identity,
-networking, database, storage, encryption, mail transport, and outbound routing.
-
-### Mounted music roots
-
-Configure approved roots at the top level with `[[music_local_roots]]`:
-
-```toml
-[[music_local_roots]]
-id = "archive"
-label = "Music archive"
-path = "/srv/music"
-allow_tag_writeback = false
-allow_rename = false
-allow_delete = false
-```
-
-Roots require unique IDs, absolute server paths and readable directories. Up to
-32 roots may be configured. The absolute paths remain private; management APIs
-return IDs and labels. The service account needs write access only when the
-corresponding source mutations are enabled. Original files are not media-store
-objects, and media cleanup never unlinks them.
-
-An operator with both settings and user management permission assigns a root or
-relative subfolder to a local account by username through Music → Local folders, or
-`POST /api/v1/admin/music/folders` with `owner_id`, `root_id`, `directory`,
-`name`, and `watch`. OAuth callers also need `admin:write`. New libraries are
-private. Owners can manage their scans using the native forms or
-`PUT /api/v1/music/folders/{id}` with the current revision, `enabled` and `watch`. An optional `options` object
-sets `recursive`, `extensions`, and `exclude`; the native form exposes these
-under Files to include. Default extensions match the seven Songhive audio
-formats. Exclusions match root-relative paths or basenames; manifest extensions
-are refused. Empty extensions disable indexing while leaving originals intact.
-
-The supervised worker scans at most 10,000 tracks and 10,000 directories per
-assignment and polls watched folders every minute. Scan and indexing leases
-fence cancelled or reclaimed work. Incomplete scans report an error rather than
-declaring unseen files missing. Directory traversal, child symlinks and special
-files are rejected. Replacing a root mount requires an operator reassignment;
-its saved device and inode prevent silently treating a different mount as the
-approved library.
-
-## Notification delivery and retention
-
-Members choose in-app, immediate email and daily email digests per notification
-kind at `/settings/notification-delivery`. Email channels default off and require
-a confirmed, approved, enabled account and configured SMTP. Queued summaries
-recheck the current recipient, sender policy, channel choices and post access;
-receipts are recorded only after SMTP accepts a message.
-
-An optional top-level table controls the UTC schedules:
-
-```toml
-[notifications]
-retention_days = 90
-purge_hour = 3
-digest_hour = 8
-```
-
-Hours must be 0–23; retention must be 1–365000 days. Starting at `purge_hour`,
-the hourly maintenance worker removes at most 2000 old seen notifications per
-tick, draining a backlog over successive ticks. Unseen notifications, including
-explicit unread overrides below the shared read marker, are preserved. Clearing
-or expiring notifications does not erase the current permanent mention archive.
-
-SMTP delivery is at least once: a crash after the relay accepts a message but
-before its receipt commits can cause a duplicate after retry.
+Generate templates into a **new file** for comparison; do not overwrite a live
+configuration to pick up defaults. Keep permanent identity values and use the
+[key procedure](../FEDERATION_KEY_OPERATIONS.md) for secret rotation. Maintain an
+inventory of the release, image/binary checksum, proxy config, external mounts,
+mail/translation services and independent secret escrow.

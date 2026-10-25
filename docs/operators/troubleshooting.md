@@ -46,9 +46,9 @@ Never ask a member to send their old password or TOTP secret.
 Try the exact handle and then the canonical public URL. Use read-only diagnosis:
 
 ```bash
-plamenu federation webfinger user@example.com
-plamenu federation fetch https://example.com/@user
-plamenu federation reachability
+plamenu --config /etc/plamenu/plamenu.toml federation webfinger user@example.com
+plamenu --config /etc/plamenu/plamenu.toml federation fetch https://example.com/@user
+plamenu --config /etc/plamenu/plamenu.toml federation reachability
 ```
 
 Check DNS, TLS, WebFinger links, HTTP signatures, authorized fetch, local and

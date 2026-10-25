@@ -65,7 +65,9 @@ use `QuoteRequest` and `QuoteAuthorization`; account collection inclusion uses
 | `Article` | Articles | Yes |
 | `Event` | Events | Yes |
 | `Page` | Titled group discussions | Yes |
-| `Document`, `Image`, `Audio`, `Video` as posts | No | Yes |
+| `Audio` | Audio posts and explicitly published stored tracks | Yes |
+| `Video` | Channel films, live announcements and recordings | Yes |
+| `Document`, `Image` as standalone posts | No | Yes |
 
 Reactions are sent as `EmojiReact`. Incoming reactions also accept
 `EmojiReaction` and `Like` with emoji content. Remote HTML is sanitized;

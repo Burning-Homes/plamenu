@@ -83,21 +83,3 @@ single successful download is insufficient evidence of compatibility.
 
 The separately observed HTTP/3 transport slowdown remains an open investigation;
 a smaller MP4 changes transfer cost, not the underlying transport behavior.
-
-Local qualification on 2026-10-03 passed 67 serial targeted regressions,
-workspace/all-target Clippy with warnings denied, and SQLx metadata generation.
-The 185.1-second sample produced a 68,271,209-byte 720p MP4 from a
-794,304,971-byte delivery file, with all 11,106 frames decoding and identical
-compressed video packets in its HLS rung. Chromium, Firefox and supported
-Linux WebKit passed metadata, tail seeking and EOF. Short production fixtures
-also passed normal-speed full playback, ranges/resume, adaptive playback and
-missing-file fallback across those engines.
-
-With a 256,000-byte/second throttle per response, Firefox needed 19.5 seconds
-to begin the long sample: its measured video bitrate is about 2.84 Mbps plus
-AAC and container overhead. At 512,000 bytes/second it began in 2.0 seconds.
-That initial 15-second test-bound failure is retained as a buffering limitation;
-it is not a fatal media failure or a guarantee for slow connections. The
-sample's nonfatal QuickTime chapter-reference warning exists in the preserved
-original too. Native Safari/iOS, a deployment trial and the final fleet/release
-gate were not run in this phase.

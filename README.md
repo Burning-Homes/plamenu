@@ -2,23 +2,16 @@
 
 **An experimental ActivityPub server written in Rust**
 
-![Plamenu home timeline screenshot](docs/media/plamenu_exp_screenshot_sm.png)
-
 > [!WARNING]
 > Plamenu is experimental. Database and configuration compatibility between
 > experimental releases is not guaranteed.
 > Do not use it yet for a production-critical community, and keep tested
 > independent backups.
 
-> [!WARNING]
-> Currently, Plamenu is being developed with LLM assistance. Nobody is particularly proud of that fact, but it wouldn't exist otherwise.
-> Once either the active prototyping phase is over or a community capable of maintaining and developing the project emerges, we hope to stop relying on AI-powered tools for writing code, limiting their use to security reviews and additional QA.
-> Whether that's possible or not, only time will tell.
-
 Plamenu has a built-in web interface and a Mastodon-compatible client API.
 Its compatibility target is Mastodon 4.7.1.
 
-## Features
+## What you can do
 
 - Timelines, follows, replies, quotes, boosts, favourites, bookmarks, emoji
   reactions, lists, filters, and notifications.
@@ -28,7 +21,12 @@ Its compatibility target is Mastodon 4.7.1.
   articles, events, and Webxdc app sessions.
 - Account import/export, follower migration, two-factor authentication,
   reporting, and moderation tools.
-- Extended compatibility with PeerTube and Owncast, including support for watching livestreams.
+- Private music libraries, artists/albums, playlists, podcasts, Subsonic clients
+  and server-hosted audio streams.
+- Video channels, reviewed uploads/imports, editing, playlists and live
+  broadcasting, with PeerTube-oriented ActivityPub interoperability.
+- Independent discovery of people, posts, communities and videos, with
+  operator-controlled sources, consent policies and acquisition budgets.
 
 See [posting](https://docs.plamenu.codefloe.page/members/posting.html) for the controls available in the web client.
 
@@ -52,6 +50,9 @@ multi-architecture OCI image.
 - [Federation](https://docs.plamenu.codefloe.page/federation/protocol.html)
 - [Known issues](https://docs.plamenu.codefloe.page/KNOWN_ISSUES.html)
 
+For users, start with the [handbook](docs/README.md). Administrators and hosters
+can follow the [operator guide](docs/operators/index.md).
+
 To build, test, and publish from source, see the
 [release procedure](https://docs.plamenu.codefloe.page/RELEASING.html).
 
@@ -69,6 +70,9 @@ and [contribution guide](https://docs.plamenu.codefloe.page/contributing/index.h
 
 Report vulnerabilities privately using [security policy](https://docs.plamenu.codefloe.page/reference/security.html).
 For other questions and bug reports, see [Getting help](https://docs.plamenu.codefloe.page/reference/getting-help.html).
+
+Development uses LLM assistance; changes remain subject to contributor review
+and the project's verification requirements.
 
 ## License
 

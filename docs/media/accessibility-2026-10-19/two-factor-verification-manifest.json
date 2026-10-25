@@ -1,9 +1,0 @@
-{
-  "baseline_executable_sha256": "9d6bb558a10cb6550274182deabdaf2a98a2453fd3e3630d58816b3addb78728",
-  "verified_executable_sha256": "2ae6c72620ab31e3645ebefa28af0a3d576d4f29341528d9c399c18f2f18218a",
-  "files": {
-    "crates/server/src/web/session.rs": "74a85867ed1c7fbc42cd2d673f4f005b0800bdce81656a404826781869c318f2",
-    "crates/server/tests/two_factor.rs": "38ae900686440bd88621e2ecb72f93f89adab8f91d1d96cd206723da3996d8c3",
-    "accessibility/tests/two-factor-journey.spec.mjs": "2b14d5e54439c680a0454e2f982e7f1c3a9dde7cd91250f10249987ac882cf41"
-  }
-}

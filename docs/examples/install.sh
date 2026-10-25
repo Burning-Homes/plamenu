@@ -14,8 +14,8 @@ sudo -u postgres createdb --owner=plamenu plamenu
 # ANCHOR_END: host
 
 # ANCHOR: release
-# Replace 0.6.0 with the release you want to install.
-version=0.6.0
+# Set PLAMENU_VERSION to the selected verified release, without the v prefix.
+version=${PLAMENU_VERSION:?Set PLAMENU_VERSION to the selected release first}
 case "$(uname -m)" in
   x86_64) arch=amd64 ;;
   aarch64) arch=arm64 ;;

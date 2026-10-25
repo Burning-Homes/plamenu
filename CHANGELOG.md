@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Replace development diaries and duplicate feature notes with a task-oriented
+  handbook for members, administrators and hosters. Add discovery, apps,
+  notifications, music streams and media recovery guidance; correct stale
+  federation and client-compatibility descriptions.
+
 - Keep long inbox participant links visible and independently truncated,
   with usable hit areas and room for keyboard focus outlines.
 

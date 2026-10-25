@@ -14,7 +14,9 @@ On a split-domain installation, use the hosting domain (for example,
 
 - [OAuth and authentication](authentication.md)
 - [Lemmy API](../LEMMY_API_COMPATIBILITY.md)
-- [Phanpy feature parity audit](../PHANPY_PARITY.md)
+- [Native music API](music.md)
+- [Video editing, history and analytics](video.md)
+- [Media operator API](media-operations.md)
 
 Test authentication, timelines, posting, uploads, and notifications against the
 exact Plamenu version you intend to support. Plamenu-specific APIs may change
@@ -22,7 +24,7 @@ incompatibly during the experimental release series.
 
 ## Video playlists (experimental)
 
-These are native Plamenu endpoints; see the [playlist guide](../VIDEO_PLAYLISTS.md).
+These are native Plamenu endpoints; see the [playlist guide](../members/video.md).
 Reads use `read:statuses` when authenticated; mutations require `write:statuses`.
 
 - `GET /api/v1/video_playlists`: public catalogue, optionally `mine=true` for
@@ -53,7 +55,7 @@ never exposed. This does not weaken authorized fetch on general status routes.
 ## Native video (experimental)
 
 These are Plamenu APIs, not a PeerTube REST API implementation. ActivityPub
-video interoperability is tracked separately in the [AP09 inventory](../AP09-FEATURE-INVENTORY.md).
+video interoperability follows the [federation contract](../federation/protocol.md).
 
 Mastodon-compatible Status entities add `video_channels`: an array of Account
 entities identifying verified publication channels visible to the requesting
@@ -83,7 +85,7 @@ it does not enumerate the author's channel memberships or collaborator grants.
   Finish/cancel unpublished uploads, scheduled videos and live broadcasts before
   accepting ownership. Existing Video authors, URLs and social identities remain
   unchanged. Channel deletion removes its videos, including collaborators'
-  publications, but not their accounts. See [the channel guide](../VIDEO_CHANNELS.md).
+  publications, but not their accounts. See [the channel guide](../members/channels.md).
 - Upload video through the shared media endpoint, then
   `POST /api/v1/videos` (`write:statuses`) with `channel_id`, `media_id`, `title`,
   optional `description`, `language`, and `visibility` (`public` or `unlisted`).
@@ -128,7 +130,7 @@ fully replaces that attachment's structured alternatives. Null/empty transcript
 clears it, a 50,000-character limit applies, and the two soundtrack claims
 cannot both be true. The update shares the status edit/outbox transaction and
 channel authority. The Status media entity includes equivalent keys and
-language-specific caption/transcript links. See [Video accessibility](../VIDEO_ACCESSIBILITY.md)
+language-specific caption/transcript links. See [Video accessibility](../members/accessibility.md)
 and the [federated alternative vocabulary](../federation/media.md).
 
 Video attachments include a Plamenu `video_metadata` extension when metadata

@@ -99,122 +99,30 @@ the original domains and an isolated peer for delivery checks. A separate
 Compose project alone does not prevent background jobs from reaching real
 recipients.
 
-## Repository restore drill
+## Media and interrupted work
 
-`./dev backup-restore` creates disposable Docker projects, posts and media,
-backs up one server, destroys its volumes, and restores it. It checks existing
-credentials, post identities, media bytes, pending delivery, and new federation
-in both directions, then removes its own test resources.
+Capture the **whole** primary media root, including private drafts, retained video
+sources, live scratch and storage markers. For paired storage, preserve matching
+roots/markers from the same stopped-write recovery point; never mix generations.
+An asynchronous live checkpoint can lag and is not a backup. Mounted music
+source roots are outside `media_dir`: include them in your recovery plan and
+restore their expected mount identity before enabling scans or source writes.
 
-The drill requires Bash, Docker Compose, Git, `sha256sum`, and `diff`. It builds
-a native image by default. To use an existing candidate:
+The origin owns private processor recovery; worker scratch is disposable.
+After restore, inspect pending processing, live recording finalization and media
+cleanup. A previous encoder must not appear on air merely because its waiting
+publication exists. Verify a recovered recording and a new broadcast separately.
+See [media operations](media.md) for mirror and processor boundaries.
 
-```sh
-PLAMENU_DRILL_SKIP_BUILD=true \
-PLAMENU_DRILL_IMAGE=your-candidate-image \
-./dev backup-restore
-```
+## Rehearse and retain
 
-Retain the log, script revision, and tested image identity with release evidence.
-`./dev smoke-install` runs the initial installation and exchange checks only.
-Both use an isolated network and local CA. Test public DNS/TLS setup and recovery
-from your own backups separately.
+Regularly restore a real recovery set into an isolated environment with outbound
+federation and mail blocked. A separate container project alone does not stop
+outgoing requests. Keep the live server as the only public owner of its identity.
+Check readiness, key decryption, accounts, old media, source mounts and queued
+work before accepting the recovery procedure.
 
-## Native-video recovery rehearsal
-
-The AP09 E2E rehearsal supplements the deployment drill with real native
-processing and a surviving PeerTube subscriber:
-
-```sh
-e2e/.venv/bin/pytest -q -s e2e/tests/test_video_backup_restore.py
-```
-
-It requires the documented local E2E peer harness, PostgreSQL's matching
-`pg_dump`/`pg_restore` major version and a free `plamenu2.local` fixture port.
-It does not stop or restore the standing development server. Disposable
-databases are uniquely named and created from `template0`, so an optionally
-seeded developer `template1` cannot leak unrelated data into the fixture.
-
-The test stops its writer before capturing the database and **entire** media
-tree, then removes only its original disposable source directory and restores
-into a new database and directory. It verifies exact files before startup,
-original Video/media identities, compatibility MP4, captions, posters,
-storyboard, every HLS rendition, integrity manifests and exact HTTP ranges.
-Private sources remain unreadable; existing credentials, separate P2P/history
-preferences, positions and private clipped playlists survive. A partly uploaded
-source resumes from its committed offset, finishes native processing and refunds
-its storage reservations only after acknowledged cancellation cleanup.
-
-The matching encryption root is escrowed separately from the media/database
-archive. An incorrect root fails the key audit; the correct root passes, and
-the restored original signer sends a Video Update accepted by the surviving
-PeerTube subscriber without changing its remote UUID.
-
-Evidence is retained under `target/e2e/video-restore/`: mode-0700 directories,
-mode-0600 recovery files/configuration, candidate and archive SHA-256 manifests,
-logs and result records. These backups contain **private account data and
-federation secrets**. Do not publish or upload the archives or escrow files;
-apply a protected evidence/backup retention policy. Keep the original domains,
-binary and PostgreSQL major version when reproducing recovery.
-
-This is native VOD and unfinished-upload recovery evidence, not a claim that
-all live-session/cache fault cases, remote storage or production disaster
-scenarios have been exercised. The separately documented live crash tests and
-the broader AP09 operations/release gates remain necessary.
-
-### Interrupted live recording rehearsal
-
-The extended native-live drill uses a uniquely owned disposable broadcaster,
-not the standing instance:
-
-```sh
-e2e/.venv/bin/pytest -q -s e2e/tests/test_video_live_backup_restore.py
-```
-
-It tests both the normal single disk and optional paired durable disks. A real
-encoder produces complete HLS segments and a fragmented recording. Only its
-owned server is crashed; its remaining writer is quiesced before PostgreSQL
-and the **entire primary media tree** are captured. With paired disks, capture
-the entire replica and both pairing markers too. Active HLS and complete MP4
-fragments have asynchronous checkpoints, not synchronous durability; do not
-omit primary scratch from an ordinary consistent backup. See
-[Native media storage](../VIDEO_STORAGE.md) for lag/failure boundaries.
-
-The paired fixture additionally verifies missing-primary-segment HTTP/integrity
-fallback and real narrow Chromium JS/no-JS playback. After quiescence it moves
-only its exact primary generation into protected evidence before archiving,
-forcing fresh-root recovery from the replica's committed recording prefix.
-This deliberate loss drill is not a recommendation to omit healthy primary
-recordings or mix unrelated backup generations.
-
-The drill removes only the fixture's original directories, restores into
-fresh directories and a fresh `template0` database, audits the original
-encrypted federation identities, and signs in with the previous credentials.
-Startup must mark orphaned on-air sessions interrupted, not expose phantom
-live playback. Old generation HLS paths and off-air tracker announcements
-must be refused. Original ingest credentials reconnect the same Video with
-a new recording generation. PeerTube-compatible swarm identity remains based
-on the stable Video UUID; it is not a claim that old cached segment bytes can
-be recalled. Current segment URLs and checksums retain their generation fence.
-
-Both the interrupted recording and the subsequent clean recording must become
-separate fully decodable audio/video replay publications, imported by the
-surviving real PeerTube subscriber with exact finite ranges. Paired durable
-replays must have identical copies, serve a range after removal of their exact
-fixture primary file, and remove both copies before acknowledging their storage
-charge. Replay reservations belong to the original broadcast ledger, so
-deletion checks use the exact owned key, not an assumed replay-media ledger ID.
-
-Protected archives, separately escrowed configuration, logs, replay samples,
-SHA-256 manifests and results are retained under
-`target/e2e/video-live-restore/`. Never publish these secret-bearing backups.
-Two logical fixture directories do not establish hardware failure-domain,
-multi-node, remote-offload or full production disaster certification. Refer to
-the AP09 operations record for the actual run's outcome and remaining gates.
-
-## Retention
-
-Keep multiple recovery points and at least one off-host copy. A synchronized
-corruption, compromised credential, or operator mistake can make the newest
-backup useless. Periodically restore the exact files your scheduled job
-produces; “backup completed” is not evidence that the result starts.
+Keep multiple dated recovery points, at least one off-host copy, and a tested
+way to recover secrets independently. Protect backups as private account data;
+account deletion does not rewrite older backups. Record version, PostgreSQL
+major, timestamp, checksums, restoration result and the retention/expiry policy.

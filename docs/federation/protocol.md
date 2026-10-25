@@ -58,7 +58,9 @@ user-owned and separate from the server's federation signing keys.
 
 ## Content
 
-Local publishing includes Notes, polls, Articles, Events, and group threads.
+Local publishing includes Notes, polls, Articles, Events, group threads,
+[Audio publications](../members/music.md) and channel [Videos](../members/video.md),
+including live announcements and recordings.
 Titled ordinary group posts use `Page`. Replies, quotes, favourites, boosts,
 emoji reactions, group moderation, and event participation have federation
 handlers. Groups use experimental FEP-1b12/Lemmy-oriented behavior.

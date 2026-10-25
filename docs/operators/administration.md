@@ -62,7 +62,7 @@ the ordinary `…` menu as **Borrow custom emojis**. Trend accounting covers the
 ranks distinct users before total public, unlisted, and local post/reaction
 uses; private and direct activity is excluded.
 
-## Webxdc sessions and storage
+## Webxdc apps
 
 **Settings → Webxdc apps** controls package uploads and federated package
 fetches. Defaults are 256 MiB per package, 512 MiB after expansion, and
@@ -88,8 +88,14 @@ with package size, reference count and session-data size. Session details show
 how much deletion would release. End or delete a hosted session through the
 normal federated lifecycle, or remove a remote cache and leave for all local
 participants. Actions are audited. Shared files are released only after the
-last referencing session is removed. Existing duplicates are consolidated on
-upgrade. Members can see their quota usage on the Apps page.
+last session and saved app version release them. Members can see their quota
+usage on the Apps page.
+
+The console also manages instance apps and external catalogues. New imported
+instance apps start hidden for review; choose local-instance availability or
+public catalogue publication deliberately. Refreshing a catalogue does not
+install packages. Review new versions explicitly; existing sessions stay pinned
+to their original version. See [app libraries](../WEBXDC-LIBRARY.md).
 
 Changes take effect without a restart. Existing apps remain available when
 limits are lowered; new uploads, fetches and durable updates must fit the new
@@ -107,6 +113,12 @@ Use federation debug and the read-only `plamenu federation` commands to gather
 evidence. A remote timeout does not by itself prove a block; DNS, TLS, signature
 verification, authorized fetch, overloaded queues, and remote policy can
 produce similar symptoms.
+
+## Discovery and media work
+
+Use [Discovery administration](discovery.md) for source policy, acquisition
+budgets and history retention. Use [Media operations](media.md) for storage,
+processing, streams and mounted-folder recovery.
 
 ## High-risk actions
 
@@ -131,3 +143,16 @@ The scoped API is `GET /api/v1/admin/music/jobs` (`admin:read`) and
 `POST /api/v1/admin/music/jobs/cancel` (`admin:write`). Cancellation accepts one
 `{kind,id}` reference or `{jobs:[{kind,id},...]}` with at most 100 unique tasks.
 Completed or already-stopped work is not deleted by a batch cancellation.
+
+## Retire an instance
+
+Announce the closure date, stop new registration and allow time for member exports
+and follower migration. Keep the identity domains and signing keys available
+while departure/deletion notices drain. A stopped service or deleted DNS record
+does not tell other servers that accounts were retired.
+
+The `self-destruct` command deliberately broadcasts account deletion and serves
+410 while work drains. Read its [CLI help](../reference/cli.md) and take the
+required recovery records before confirming; rerunning it reports wind-down
+progress. Do not use it for a temporary outage, upgrade or hosting move. Its
+federated deletions cannot be undone by restoring a local backup.

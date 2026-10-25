@@ -31,5 +31,5 @@ Verify `/api/v1/config` reports 8.3.0, existing videos still play, and run
 Report failures separately from instance health: a healthy upgraded PeerTube
 does not establish that every Plamenu interoperability path works.
 
-The upgrade was exercised locally on 2026-09-22; see
-[the AP09 progress record](../../../docs/AP09-VIDEO-PROGRESS.md) for results.
+See [interoperability testing](../../../docs/INTEROPERABILITY.md) for scope;
+current run results belong in the run artifacts.

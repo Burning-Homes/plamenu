@@ -10,7 +10,8 @@ documented, test on a restored copy before changing the live server.
    `image@sha256:…`, configuration, PostgreSQL version, and free space.
 2. Read the release notes for migrations, configuration changes, removals, and
    post-upgrade work.
-3. Run `plamenu federation keys audit` with the current binary.
+3. Run `plamenu --config /etc/plamenu/plamenu.toml federation keys audit`
+   with the current binary and your installation's configuration path.
 4. Make a coordinated stopped-write database and media backup. Verify that the
    matching encryption secret is independently available.
 5. Test the restore and upgrade on a separate host or isolated project when the

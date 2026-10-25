@@ -67,12 +67,10 @@ an encoded Chinese username. Server-router tests cover Application actors,
 video channels on IDNs, mentions in all post formats, search, profile links,
 and no-script reply/preview and account-management forms.
 
-During the 15 October 2026 investigation, `groeibschi@peertube.gröibschi.ch`
-had a valid WebFinger response but its advertised actor endpoint returned
-`200 text/html`, including to a signed fetch from staging. That origin must
-serve its ActivityPub actor document before it can be imported or followed.
-This is separate from parsing its IDN handle; Plamenu does not treat the HTML
-page or PeerTube's ordinary REST channel response as an authenticated actor.
+A successful WebFinger lookup is insufficient if the advertised actor URL
+returns HTML instead of an ActivityPub document. Check its Content-Type and
+canonical identity separately from IDN parsing; a normal website or REST channel
+response does not authenticate an actor.
 
 ## BookWyrm
 

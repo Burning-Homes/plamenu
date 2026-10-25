@@ -392,5 +392,5 @@ to the upstream source. It must never be used in a production deployment.
 It covers signed account and music-library follows, native Audio delivery and
 withdrawal, metadata and decoded audio in both directions. Library delivery is
 observed before explicit URL lookup so a lookup cannot hide a broken subscription. The fixture is required by
-`e2e-full`, which rejects unexpected skips. Product parity and the remaining
-feature contracts are tracked in [Songhive parity](../docs/SONGHIVE_PARITY.md).
+`e2e-full`, which rejects unexpected skips. See the [music guide](../docs/members/music.md) for current member workflows
+and the [music API reference](../docs/api/music.md) for integration entry points.
