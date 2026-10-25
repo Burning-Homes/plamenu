@@ -2212,12 +2212,14 @@ async fn admin_webxdc_limits_save_independently_and_validate_storage_budget(pool
         )
         .await
         .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
     let body = response.into_body().collect().await.unwrap().to_bytes();
-    assert!(
-        std::str::from_utf8(&body)
-            .unwrap()
-            .contains("up to 200 MiB")
-    );
+    // Fluent isolates interpolated numbers with invisible bidi marks.
+    let body = std::str::from_utf8(&body)
+        .unwrap()
+        .replace(['\u{2068}', '\u{2069}'], "");
+    assert!(body.contains("up to 200 MiB"));
+    assert!(body.contains("data-max-bytes=\"209715200\""));
 }
 
 async fn create_with_package(

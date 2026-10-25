@@ -142,13 +142,14 @@ async fn zip_jobs_preserve_order_and_repeats_safe_names_private_access_and_clean
     let mut names = Vec::new();
     for index in 0..zip.len() {
         let mut file = zip.by_index(index).unwrap();
-        assert!(!file.name().contains('/') && !file.name().contains('\\'));
+        let name = file.name().expect("valid ZIP filename").into_owned();
+        assert!(!name.contains('/') && !name.contains('\\'));
         assert!(
-            std::path::Path::new(file.name())
+            std::path::Path::new(&name)
                 .extension()
                 .is_some_and(|extension| extension.eq_ignore_ascii_case("wav"))
         );
-        names.push(file.name().to_owned());
+        names.push(name);
         let mut payload = Vec::new();
         file.read_to_end(&mut payload).unwrap();
         assert_eq!(payload, f.bytes);

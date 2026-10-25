@@ -91,6 +91,10 @@ impl Altcha {
     /// the counter search remains entirely in the browser's Web Workers.
     pub fn challenge(&self) -> altcha::Result<Challenge> {
         let now = now_epoch();
+        let expires_at =
+            i64::try_from(now.saturating_add(self.config.expires_seconds)).map_err(|_| {
+                altcha::Error::InvalidParameters("challenge expiration is out of range".into())
+            })?;
         let mut data = BTreeMap::new();
         data.insert("purpose".to_owned(), Value::String(PURPOSE.to_owned()));
         create_challenge(CreateChallengeOptions {
@@ -101,7 +105,7 @@ impl Altcha {
             )),
             cost: self.config.cost,
             data: Some(data),
-            expires_at: Some(now.saturating_add(self.config.expires_seconds)),
+            expires_at: Some(expires_at),
             hmac_signature_secret: Some(self.challenge_secret.clone()),
             hmac_key_signature_secret: Some(self.key_secret.clone()),
             ..CreateChallengeOptions::default()
@@ -126,13 +130,19 @@ impl Altcha {
         let payload: Payload =
             serde_json::from_slice(&decoded).map_err(|_| VerifyError::Malformed)?;
         let parameters = &payload.challenge.parameters;
+        // ALTCHA 1.x treats zero as no expiry. Sign-up proofs must always
+        // expire, and the replay ledger keeps the same unsigned epoch values.
+        let expires_at = parameters
+            .expires_at
+            .and_then(|expiry| u64::try_from(expiry).ok())
+            .filter(|&expiry| expiry > 0)
+            .ok_or(VerifyError::Invalid)?;
         if parameters
             .data
             .as_ref()
             .and_then(|data| data.get("purpose"))
             .and_then(Value::as_str)
             != Some(PURPOSE)
-            || parameters.expires_at.is_none()
             || parameters.key_signature.is_none()
         {
             return Err(VerifyError::Invalid);
@@ -156,7 +166,6 @@ impl Altcha {
         }
 
         let now = now_epoch();
-        let expires_at = parameters.expires_at.unwrap_or(now);
         let mut used = self.used.lock().unwrap_or_else(PoisonError::into_inner);
         used.retain(|_, expiry| *expiry >= now);
         if used.contains_key(&signature) {
@@ -242,5 +251,41 @@ mod tests {
         let mut payload = solve(&service);
         payload.replace_range(0..1, "A");
         assert!(service.verify_and_consume(&payload).is_err());
+    }
+
+    #[test]
+    fn signed_proofs_without_a_positive_future_expiry_are_rejected() {
+        let service = service();
+        let decoded = STANDARD.decode(solve(&service)).unwrap();
+        let payload: Payload = serde_json::from_slice(&decoded).unwrap();
+        for expires_at in [None, Some(0), Some(-1), Some(1)] {
+            let mut altered = payload.clone();
+            altered.challenge.parameters.expires_at = expires_at;
+            altered.challenge = altcha::sign_challenge(
+                &altcha::HmacAlgorithm::Sha256,
+                &mut altered.challenge.parameters,
+                None,
+                &service.challenge_secret,
+                None,
+            )
+            .unwrap();
+            let encoded = STANDARD.encode(serde_json::to_vec(&altered).unwrap());
+            assert_eq!(
+                service.verify_and_consume(&encoded),
+                Err(VerifyError::Invalid),
+                "expiry {expires_at:?} must fail even with an authentic signature"
+            );
+        }
+        assert!(service.used.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn unrepresentable_expiry_is_rejected_without_wrapping() {
+        let mut service = service();
+        service.config.expires_seconds = u64::MAX;
+        assert!(matches!(
+            service.challenge(),
+            Err(altcha::Error::InvalidParameters(_))
+        ));
     }
 }

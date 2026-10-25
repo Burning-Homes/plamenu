@@ -591,7 +591,7 @@ async fn oauth_authorize_completes_with_second_factor(pool: PgPool) {
             .contains("id=\"oauth-challenge-error\" role=\"alert\" tabindex=\"-1\" autofocus")
     );
     assert!(rejected.body.contains("autocomplete=\"one-time-code\" required aria-invalid=\"true\" aria-describedby=\"oauth-challenge-error\""));
-    assert!(hidden_value(&rejected.body, "challenge_token") == token);
+    assert_eq!(hidden_value(&rejected.body, "challenge_token"), token);
 
     // The code mints the grant and redirects back with an authorization code.
     let step2 = post(

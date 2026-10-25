@@ -36,6 +36,8 @@ const MAX_FILES: usize = 1024;
 const MAX_PATH_BYTES: usize = 240;
 const MAX_PATH_DEPTH: usize = 32;
 const MAX_COMPRESSION_RATIO: u64 = 200;
+// ZIP's EFS flag requires UTF-8 rather than legacy CP437 filename decoding.
+const ZIP_UTF8_FLAG: u16 = 1 << 11;
 
 fn protocol_db_error(error: plamenu_db::DbError) -> ApiError {
     match error {
@@ -331,7 +333,13 @@ pub fn validate_package_with_limits(
     let mut has_index = false;
     for index in 0..archive.len() {
         let file = archive.by_index(index).map_err(|_| PackageError::Zip)?;
-        let name = file.name().to_owned();
+        let name = if file.flags().as_u16() & ZIP_UTF8_FLAG != 0 {
+            std::str::from_utf8(file.name_raw())
+                .map_err(|_| PackageError::Zip)?
+                .to_owned()
+        } else {
+            file.name().map_err(|_| PackageError::Zip)?.into_owned()
+        };
         if file.is_dir() {
             continue;
         }
@@ -2681,6 +2689,60 @@ mod tests {
             ),
             Err(PackageError::Digest)
         ));
+    }
+
+    #[test]
+    fn package_rejects_malformed_utf8_member_names() {
+        let mut bytes = package(&[("index.html", b"ok"), ("café.js", b"ok()")]);
+        let filename = "café.js".as_bytes();
+        let offsets: Vec<_> = bytes
+            .windows(filename.len())
+            .enumerate()
+            .filter_map(|(offset, value)| (value == filename).then_some(offset))
+            .collect();
+        // Keep local and central headers consistent, including their UTF-8
+        // flags and lengths, while corrupting the actual filename encoding.
+        assert_eq!(offsets.len(), 2);
+        for offset in offsets {
+            bytes[offset + 3] = 0xff;
+        }
+        let mut archive = zip::ZipArchive::new(Cursor::new(&bytes)).unwrap();
+        assert_ne!(
+            archive.by_index(1).unwrap().flags().as_u16() & ZIP_UTF8_FLAG,
+            0
+        );
+        assert!(matches!(
+            validate_package(&bytes, None),
+            Err(PackageError::Zip)
+        ));
+    }
+
+    #[test]
+    fn package_preserves_legacy_cp437_member_names() {
+        let mut bytes = package(&[("index.html", b"ok"), ("cafX.js", b"ok()")]);
+        let filename = b"cafX.js";
+        let offsets: Vec<_> = bytes
+            .windows(filename.len())
+            .enumerate()
+            .filter_map(|(offset, value)| (value == filename).then_some(offset))
+            .collect();
+        assert_eq!(offsets.len(), 2);
+        for offset in offsets {
+            bytes[offset + 3] = 0x82; // CP437 é, valid only without EFS.
+        }
+        let mut archive = zip::ZipArchive::new(Cursor::new(&bytes)).unwrap();
+        assert_eq!(
+            archive.by_index(1).unwrap().flags().as_u16() & ZIP_UTF8_FLAG,
+            0
+        );
+        let validated = validate_package(&bytes, None).unwrap();
+        let file = validated
+            .files
+            .iter()
+            .find(|file| file.0 == "café.js")
+            .unwrap();
+        assert_eq!(file.1, "text/javascript; charset=utf-8");
+        assert_eq!(file.2, b"ok()");
     }
 
     #[test]

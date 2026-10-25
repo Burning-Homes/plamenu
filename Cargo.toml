@@ -18,7 +18,7 @@ aes-gcm = "0.11"
 # Official ALTCHA Proof-of-Work v2 implementation. The web sign-up uses its
 # signed deterministic challenges and key-signature fast path, keeping
 # verification cheap enough to run inline without weakening the client work.
-altcha = "0.2.0"
+altcha = "1.1.0"
 ammonia = "4"
 argon2 = "0.6"
 axum = { version = "0.8", default-features = false, features = [
@@ -49,7 +49,7 @@ ed25519-dalek = { version = "3", features = ["zeroize"] }
 # Mozilla Fluent catalogs for the server-rendered interface. Resources are
 # embedded in the binary; the concurrent bundle is safe to share across Axum
 # request threads.
-encoding_rs = "=0.8.35"
+encoding_rs = "=0.8.42"
 fluent-bundle = "0.16"
 getrandom = "0.4"
 hkdf = "0.13"
@@ -138,7 +138,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # RFC 8785 JSON Canonicalization Scheme, the `jcs` half of eddsa-jcs-2022
 # (FEP-8b32 integrity proofs).
-serde_json_canonicalizer = "0.3"
+serde_json_canonicalizer = "0.4"
 serde_urlencoded = "0.7"
 sqlx = { version = "0.9", default-features = false, features = [
     "runtime-tokio",
@@ -199,7 +199,7 @@ webauthn-rs = { version = "0.6.1-dev", default-features = false, features = [
 # the pure-Rust deflate backend (flate2 → miniz_oxide, already in-tree via
 # `image`/`png`); the `-zlib*` variants would pull C into the static-musl
 # staging build.
-zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 
 # Test-only
 # Bench harness for the hot-path suite (crates/server/benches); async_tokio

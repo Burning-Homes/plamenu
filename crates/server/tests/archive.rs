@@ -56,7 +56,7 @@ fn unzip(bytes: &[u8]) -> HashMap<String, Vec<u8>> {
     let mut files = HashMap::new();
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).unwrap();
-        let name = entry.name().to_owned();
+        let name = entry.name().expect("valid ZIP filename").into_owned();
         let mut buf = Vec::new();
         entry.read_to_end(&mut buf).unwrap();
         files.insert(name, buf);
