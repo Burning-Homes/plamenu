@@ -1650,6 +1650,9 @@ pub async fn find_by_ids<'e, E: sqlx::PgExecutor<'e>>(
     pool: E,
     ids: &[i64],
 ) -> Result<Vec<Status>, DbError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
     let statuses = sqlx::query_as!(
         Status,
         r#"
@@ -3781,6 +3784,9 @@ pub async fn engagement_for(
     pool: &PgPool,
     ids: &[i64],
 ) -> Result<HashMap<i64, Engagement>, DbError> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
     let mut conn = pool.acquire().await?;
     engagement_for_conn(&mut conn, ids).await
 }
@@ -3790,61 +3796,43 @@ pub async fn engagement_for_conn(
     conn: &mut sqlx::PgConnection,
     ids: &[i64],
 ) -> Result<HashMap<i64, Engagement>, DbError> {
-    let mut map: HashMap<i64, Engagement> = HashMap::with_capacity(ids.len());
-    let replies = sqlx::query!(
-        r#"SELECT in_reply_to_id AS "sid!", count(*) AS "count!"
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    // Keep each indexed aggregation and its original visibility/state filter,
+    // but return all five counters in one round trip and database snapshot.
+    let rows = sqlx::query!(
+        r#"SELECT in_reply_to_id AS "sid!", count(*) AS "replies!",
+                  0::bigint AS "reblogs!", 0::bigint AS "favourites!",
+                  0::bigint AS "dislikes!", 0::bigint AS "quotes!"
            FROM statuses
            WHERE in_reply_to_id = ANY($1) AND deleted_at IS NULL -- STUBFILTER
+           GROUP BY 1
+           UNION ALL
+           SELECT reblog_of_id, 0, count(*), 0, 0, 0
+           FROM statuses WHERE reblog_of_id = ANY($1) GROUP BY 1 -- STUBKEEP: a boost wrapper never stubs
+           UNION ALL
+           SELECT status_id, 0, 0, count(*), 0, 0
+           FROM favourites WHERE status_id = ANY($1) GROUP BY 1
+           UNION ALL
+           SELECT status_id, 0, 0, 0, count(*), 0
+           FROM status_dislikes WHERE status_id = ANY($1) GROUP BY 1
+           UNION ALL
+           SELECT quoted_status_id, 0, 0, 0, 0, count(*)
+           FROM quotes WHERE quoted_status_id = ANY($1) AND state = 'accepted'
            GROUP BY 1"#,
         ids,
     )
     .fetch_all(&mut *conn)
     .await?;
-    for row in replies {
-        map.entry(row.sid).or_default().replies = row.count;
-    }
-    let reblogs = sqlx::query!(
-        r#"SELECT reblog_of_id AS "sid!", count(*) AS "count!"
-           FROM statuses WHERE reblog_of_id = ANY($1) GROUP BY 1 -- STUBKEEP: a boost wrapper never stubs"#,
-        ids,
-    )
-    .fetch_all(&mut *conn)
-    .await?;
-    for row in reblogs {
-        map.entry(row.sid).or_default().reblogs = row.count;
-    }
-    let favourites = sqlx::query!(
-        r#"SELECT status_id AS "sid!", count(*) AS "count!"
-           FROM favourites WHERE status_id = ANY($1) GROUP BY 1"#,
-        ids,
-    )
-    .fetch_all(&mut *conn)
-    .await?;
-    for row in favourites {
-        map.entry(row.sid).or_default().favourites = row.count;
-    }
-    let dislikes = sqlx::query!(
-        r#"SELECT status_id AS "sid!", count(*) AS "count!"
-           FROM status_dislikes WHERE status_id = ANY($1) GROUP BY 1"#,
-        ids,
-    )
-    .fetch_all(&mut *conn)
-    .await?;
-    for row in dislikes {
-        map.entry(row.sid).or_default().dislikes = row.count;
-    }
-    // Accepted quotes only, matching Mastodon's `quotes_count` counter cache.
-    let quotes = sqlx::query!(
-        r#"SELECT quoted_status_id AS "sid!", count(*) AS "count!"
-           FROM quotes
-           WHERE quoted_status_id = ANY($1) AND state = 'accepted'
-           GROUP BY 1"#,
-        ids,
-    )
-    .fetch_all(&mut *conn)
-    .await?;
-    for row in quotes {
-        map.entry(row.sid).or_default().quotes = row.count;
+    let mut map: HashMap<i64, Engagement> = HashMap::with_capacity(ids.len());
+    for row in rows {
+        let counts = map.entry(row.sid).or_default();
+        counts.replies += row.replies;
+        counts.reblogs += row.reblogs;
+        counts.favourites += row.favourites;
+        counts.dislikes += row.dislikes;
+        counts.quotes += row.quotes;
     }
     Ok(map)
 }

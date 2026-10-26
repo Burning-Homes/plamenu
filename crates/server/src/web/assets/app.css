@@ -262,6 +262,16 @@ input[type="radio"] {
   vertical-align: -0.2em;
 }
 
+/* Shared page icons inherit their presentation once. Self-contained SVGs
+   (including API fallback markup) retain their explicit stroke attributes. */
+.icon:not([stroke]) {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* Custom emoji images swapped in for :shortcode: references. */
 img.emoji {
   inline-size: auto;

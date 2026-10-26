@@ -118,6 +118,9 @@ pub async fn for_statuses<'e, E: PgExecutor<'e>>(
     status_ids: &[i64],
     active_only: bool,
 ) -> Result<HashMap<i64, Vec<Account>>, DbError> {
+    if status_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
     let rows = sqlx::query!(
         r#"
         SELECT sm.status_id AS "status_id!",

@@ -50,6 +50,34 @@ Crash and offload drills freeze the running executable's inode and bind their
 restarts, CLI commands and processors to that copy, so a later build replacing
 the original pathname cannot change the program under test.
 
+For a freshly recreated Plamenu identity, Lemmy also needs fresh peer state.
+Its persistent instance and delivery records can otherwise suppress federation.
+With the main instance and local proxy already running, use:
+
+```sh
+cd e2e
+../scripts/run-isolated-lemmy.py \
+  --state-dir ../target/lemmy-owned-NEW-RUN \
+  --peer-root peers \
+  --proxy-container mastodon-test-caddy-1 \
+  --bootstrap-actor https://plamenu.local/users/developer \
+  -- .venv/bin/python -m pytest tests/test_lemmy_federation.py --maxfail=0
+```
+
+This creates new Lemmy volumes, uses the pinned peer images, and temporarily
+routes only `lemmy.local` to them. The bootstrap actor must be a real account on
+the disposable main instance. Setup resolves it and waits for Lemmy's initial
+federation checkpoint before test activities are sent; the upstream worker
+otherwise starts at the latest activity and drops earlier queued messages.
+Use the proxy exclusively during the run. Cleanup restores its original
+configuration, exports container logs, and removes owned containers and the
+private network while retaining named data volumes and diagnostic state. It does
+not rewrite standing peer keys, queues or timestamps. This focused command
+cannot qualify as a full pass. The supplied peer enables Lemmy's fast-federation
+mode; community fixtures allow two seconds after Accept for its separate
+one-second follower-cache refresh before creating posts. This is setup time,
+not a shorter delivery timeout or a retry of lost posts.
+
 Within pytest, ordinary disposable Plamenu peers clone one session-owned schema
 prepared by `cargo sqlx migrate run` (requires `cargo-sqlx`). It starts from
 `template0`, contains only migration data and is sealed against connections.

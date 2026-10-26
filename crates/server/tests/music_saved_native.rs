@@ -119,7 +119,7 @@ async fn native_saved_forms_require_csrf_revoke_metadata_and_remove_unavailable_
     let page = request(&app, &cookie, "GET", &format!("/music/radios/{id}"), &[]).await;
     assert_eq!(page.status(), StatusCode::OK);
     let html = text(page).await;
-    assert!(html.contains("Save to My music"));
+    assert!(html.contains("Save to your library"));
     assert!(!html.contains("Owner-only key"));
     let fields = [
         ("csrf", csrf.as_str()),
@@ -135,7 +135,7 @@ async fn native_saved_forms_require_csrf_revoke_metadata_and_remove_unavailable_
     assert_eq!(mine.headers()[header::CACHE_CONTROL], "private, no-store");
     let html = text(mine).await;
     assert!(html.contains("Native saved station"));
-    assert!(html.contains("Remove from My music"));
+    assert!(html.contains("Remove from your library"));
     assert!(!html.contains("Owner-only key"));
     music_radios::update(
         &state,

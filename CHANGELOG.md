@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Reduce repeated database work in timelines, search and notifications while
+  preserving visibility rules and keeping all notification actions available.
+  Recalibrate the notification benchmark for the current 40-item inbox.
+
+- Keep unsigned website-fetch failures separate from signed federation fetches,
+  and interleave live audio/video fragments for reliable replica playback.
+
+- Repair discovery, browser and federation regressions, isolate Lemmy test
+  fixtures, refresh SQLx metadata and avoid compiling the CLI for benchmarks.
+  Temporarily accept the WebAuthn dependency advisory RUSTSEC-2026-0387 pending
+  a published upstream upgrade.
+
 - Replace development diaries and duplicate feature notes with a task-oriented
   handbook for members, administrators and hosters. Add discovery, apps,
   notifications, music streams and media recovery guidance; correct stale

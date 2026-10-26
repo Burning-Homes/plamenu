@@ -7,9 +7,9 @@ import re
 import subprocess
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
-import tomllib
 from plamenu_release import docs
 from plamenu_release.core import ReleaseError, clean, git
 

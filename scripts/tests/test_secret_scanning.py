@@ -7,10 +7,9 @@ import secrets
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
-
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 SCANNER = os.environ.get("GITLEAKS") or shutil.which("gitleaks")
@@ -18,6 +17,48 @@ SCANNER = os.environ.get("GITLEAKS") or shutil.which("gitleaks")
 
 @unittest.skipUnless(SCANNER, "gitleaks is required for scanner integration tests")
 class SecretScanningTests(unittest.TestCase):
+    def test_source_fingerprints_do_not_hide_credentials_in_the_same_inventory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            digest = secrets.token_hex(32)
+            fingerprint = f'  "accessibility/authenticator.mjs": "{digest}",\n'
+            paths = [
+                "accessibility/inventory.json",
+                "e2e/inventory.json",
+                "docs/media/accessibility-2026-10-19/security-key-verification-manifest.json",
+            ]
+            for name in paths:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(fingerprint + f'  "api_key": "{digest}"\n')
+            (root / "production.env").write_text(fingerprint)
+            report = root / "findings.json"
+            result = subprocess.run(
+                [
+                    SCANNER,
+                    "dir",
+                    "--no-banner",
+                    "--redact",
+                    "--config",
+                    str(ROOT / ".gitleaks.toml"),
+                    "--report-path",
+                    str(report),
+                    str(root),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 1, result.stderr)
+            findings = json.loads(report.read_text())
+            self.assertEqual(
+                {
+                    (Path(f["File"]).relative_to(root).as_posix(), f["StartLine"])
+                    for f in findings
+                },
+                {(name, 2) for name in paths} | {("production.env", 1)},
+            )
+
     def test_fixture_exclusions_require_both_exact_value_and_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

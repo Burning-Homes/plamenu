@@ -1,5 +1,6 @@
 // Actual native JS/no-JS decoders and unmodified PeerTube mirror failover.
 import { chromium } from 'playwright';
+import { installPeerTubeWelcomeHandler } from './peertube-session.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const [manifestPath,evidence]=process.argv.slice(2);
@@ -28,6 +29,7 @@ try {
       const peer=kind==='peertube';
       const context=await browser.newContext({ignoreHTTPSErrors:true,javaScriptEnabled:kind!=='native-no-js',viewport:{width:peer?800:320,height:800}});
       const page=await context.newPage();
+      if(peer) await installPeerTubeWelcomeHandler(page);
       const errors=[];
       const mediaResponses=[],failedRequests=[],playerEvents=[];
       let blocked=0,mirrorResponses=0,originalInit=0;

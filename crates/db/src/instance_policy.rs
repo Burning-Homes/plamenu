@@ -329,6 +329,43 @@ pub async fn domain_allows_federation(pool: &PgPool, domain: &str) -> Result<boo
     Ok(allowed)
 }
 
+/// The same live domain policy as the single-domain lookup, in one round trip.
+pub async fn allowed_domains(
+    pool: &PgPool,
+    domains: &[String],
+) -> Result<std::collections::HashSet<String>, DbError> {
+    if domains.is_empty() {
+        return Ok(std::collections::HashSet::new());
+    }
+    let allowed = sqlx::query_scalar::<_, String>(
+        "SELECT domain FROM unnest($1::text[]) AS input(domain)
+         WHERE instance_domain_allowed(domain)",
+    )
+    .bind(domains)
+    .fetch_all(pool)
+    .await?;
+    Ok(allowed.into_iter().collect())
+}
+
+/// Login refuses either kind of email block, without caching moderation state.
+pub async fn email_login_blocked(
+    pool: &PgPool,
+    domain: Option<&str>,
+    canonical_hash: Option<&str>,
+) -> Result<bool, DbError> {
+    if domain.is_none() && canonical_hash.is_none() {
+        return Ok(false);
+    }
+    Ok(sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM email_domain_blocks WHERE domain=$1)
+             OR EXISTS(SELECT 1 FROM canonical_email_blocks WHERE canonical_email_hash=$2)",
+    )
+    .bind(domain)
+    .bind(canonical_hash)
+    .fetch_one(pool)
+    .await?)
+}
+
 pub async fn account_domain_allows_federation(
     pool: &PgPool,
     account_id: i64,
@@ -891,6 +928,48 @@ pub async fn delete_canonical_email_block(pool: &PgPool, block_id: i64) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[sqlx::test]
+    async fn email_login_checks_both_blocklists_and_observes_removal(pool: PgPool) {
+        assert!(
+            !email_login_blocked(&pool, Some("mail.example"), Some("hash"))
+                .await
+                .unwrap()
+        );
+        let domain = create_email_domain_block(&pool, "mail.example", true)
+            .await
+            .unwrap();
+        let canonical = create_canonical_email_block(&pool, "hash", None)
+            .await
+            .unwrap();
+        for (domain, hash, blocked) in [
+            (Some("mail.example"), None, true),
+            (None, Some("hash"), true),
+            (Some("other.example"), Some("hash"), true),
+            (Some("mail.example"), Some("other"), true),
+            (Some("other.example"), Some("other"), false),
+            (None, None, false),
+        ] {
+            assert_eq!(
+                email_login_blocked(&pool, domain, hash).await.unwrap(),
+                blocked
+            );
+        }
+        delete_email_domain_block(&pool, domain.id).await.unwrap();
+        assert!(
+            email_login_blocked(&pool, Some("mail.example"), Some("hash"))
+                .await
+                .unwrap()
+        );
+        delete_canonical_email_block(&pool, canonical.id)
+            .await
+            .unwrap();
+        assert!(
+            !email_login_blocked(&pool, Some("mail.example"), Some("hash"))
+                .await
+                .unwrap()
+        );
+    }
 
     #[sqlx::test]
     async fn domain_block_crud_and_pagination(pool: PgPool) {

@@ -454,9 +454,19 @@ async fn activity_read_includes_private_notifications_is_bounded_and_never_rewin
     notification_read::set_read(&state.pool, owner, newer, false)
         .await
         .unwrap();
+    let advanced = marker::find(&state.pool, uid, "notifications")
+        .await
+        .unwrap()
+        .unwrap();
     notification_read::mark_activity_read(&state.pool, uid, owner, head)
         .await
         .unwrap();
+    let unchanged = marker::find(&state.pool, uid, "notifications")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(unchanged.version, advanced.version);
+    assert_eq!(unchanged.updated_at, advanced.updated_at);
     let states = notification_read::read_states(&state.pool, uid, owner, &[message, newer])
         .await
         .unwrap();

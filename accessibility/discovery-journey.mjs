@@ -23,21 +23,22 @@ try {
     const context = await session({ viewport: { width, height }, colorScheme: name === 'dark' ? 'dark' : 'light', javaScriptEnabled: !name.startsWith('no-js') });
     context.setDefaultTimeout(10000);
     context.setDefaultNavigationTimeout(10000);
-    await context.addInitScript(() => sessionStorage.setItem('discoveryAutoload', 'off'));
+    // Exercise the native manual fallback here; real observers run below.
+    await context.addInitScript(() => { delete window.IntersectionObserver; });
     const remote = [];
     await context.route('**/*', route => {
       if (new URL(route.request().url()).origin !== config.url) { remote.push(route.request().url()); return route.abort(); }
       return route.continue();
     });
     const page = await context.newPage();
-    await page.goto(`${config.url}/discover`);
+    await page.goto(`${config.url}/discover?seen=true`);
     await page.getByRole('heading', { name: 'Discover', exact: true }).waitFor();
-    assert.equal(await page.locator('[data-discovery-card]').count(), 8);
+    assert.equal(await page.locator('[data-discovery-card]').count(), 20);
     const tabRows=await page.locator('.discovery-tabs a').evaluateAll(nodes=>nodes.map(node=>Math.round(node.getBoundingClientRect().top)));
     assert.equal(tabRows.length,6);
     assert.ok(tabRows[0]===tabRows[1] && tabRows[1]===tabRows[2] && tabRows[3]===tabRows[4] && tabRows[4]===tabRows[5] && tabRows[0]<tabRows[3], `${name}: balanced discovery navigation`);
-    await page.getByRole('searchbox', {name:'Search discovered people',exact:true}).fill('alice');
-    await page.getByRole('button', {name:'Search',exact:true}).click();
+    await page.getByRole('searchbox', {name:'Search',exact:true}).fill('alice');
+    await page.getByRole('button', {name:'Apply',exact:true}).click();
     await expect(page.locator('[data-discovery-card]')).toHaveCount(1);
     await page.locator('details.discovery-wider > summary').click();
     await expect(page.getByRole('group', {name:'Send this query to:'})).toBeVisible();
@@ -49,7 +50,7 @@ try {
       assert.deepEqual(issues.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[],`${name}: wider search accessibility`);
     }
     await page.screenshot({path:`/tmp/plamenu-discovery-step10-${name}.png`,fullPage:true});
-    await page.goto(`${config.url}/discover`);
+    await page.goto(`${config.url}/discover?seen=true`);
     assert.ok(await page.locator('body').evaluate(el => el.scrollWidth <= innerWidth), `${name}: horizontal overflow`);
     assert.equal(await page.locator('[data-discovery-card] img, [data-discovery-card] video, [data-discovery-card] audio').count(), 0);
     // axe uses page timers; disabled-script contexts exercise the real interaction path separately.
@@ -62,15 +63,19 @@ try {
       if (await page.evaluate(() => document.activeElement?.textContent ?? '') === 'Open profile') { reached = true; break; }
     }
     assert.ok(reached, `${name}: Open profile reachable by keyboard`);
-    await page.getByRole('link', { name: 'Load more', exact: true }).click();
+    const firstIds = await page.locator('[data-discovery-card]').evaluateAll(nodes => nodes.map(node => node.id));
+    await page.getByRole('link', { name: 'Next page', exact: true }).click();
     if (name.startsWith('no-js')) {
-      assert.equal(await page.locator('[data-discovery-card]').count(), 3);
-      assert.equal(await page.locator(`[data-discovery-card="${config.entry}"]`).count(), 0);
+      assert.equal(await page.locator('[data-discovery-card]').count(), 5);
+      const nextIds = await page.locator('[data-discovery-card]').evaluateAll(nodes => nodes.map(node => node.id));
+      assert.ok(nextIds.every(id => !firstIds.includes(id)), 'continuation does not repeat the first page');
     } else {
-      await expect(page.locator('[data-discovery-card]')).toHaveCount(11);
-      assert.equal(new URL(page.url()).search, '', 'append without navigation');
+      await expect(page.locator('[data-discovery-card]')).toHaveCount(25);
+      assert.equal(new URL(page.url()).search, '?seen=true', 'append without navigation');
       assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'H2', 'manual loading focuses the new results');
-      assert.equal(await page.locator(`[data-discovery-card="${config.entry}"]`).count(), 1);
+      const appendedIds = await page.locator('[data-discovery-card]').evaluateAll(nodes => nodes.map(node => node.id));
+      assert.deepEqual(appendedIds.slice(0, 20), firstIds, 'append preserves the initial page');
+      assert.equal(new Set(appendedIds).size, 25, 'append contains every profile exactly once');
       assert.equal(await page.locator('.discovery-more').count(), 1);
       assert.equal(await page.locator('.discovery-more').isVisible(), false);
     }
@@ -82,11 +87,11 @@ try {
       const serverViolations = (await new AxeBuilder({ page }).include('main').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze()).violations;
       assert.deepEqual(serverViolations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), [], `${name}: server accessibility violations`);
     }
-    await page.goto(`${config.url}/discover/posts`);
-    await page.getByRole('searchbox', { name: 'Search discovered posts', exact: true }).fill('orchids');
-    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await page.goto(`${config.url}/discover/posts?seen=true`);
+    await page.getByRole('searchbox', { name: 'Search', exact: true }).fill('orchids');
+    await page.getByRole('button', { name: 'Apply', exact: true }).click();
     const initialPosts = await page.locator('[data-discovery-post]').count();
-    assert.ok(initialPosts > 0 && initialPosts < 9, `${name}: local post results and bounded first page`);
+    assert.ok(initialPosts === 20, `${name}: local post results and bounded first page`);
     assert.equal(await page.locator('.discovery-post__warning[open]').count(), 0, 'content warnings start closed');
     await page.locator('.discovery-post__warning summary').first().click();
     assert.ok(await page.locator('body').evaluate(el => el.scrollWidth <= innerWidth), `${name}: post cards overflow`);
@@ -95,12 +100,12 @@ try {
       assert.deepEqual(postViolations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), [], `${name}: post accessibility violations`);
     }
     await page.screenshot({ path: `/tmp/plamenu-discovery-step7-${name}.png`, fullPage: true });
-    await page.getByRole('link', { name: 'Load more', exact: true }).click();
-    await expect(page.locator('[data-discovery-post]')).toHaveCount(name.startsWith('no-js') ? 9 - initialPosts : 9);
+    await page.getByRole('link', { name: 'Next page', exact: true }).click();
+    await expect(page.locator('[data-discovery-post]')).toHaveCount(name.startsWith('no-js') ? 27 - initialPosts : 27);
     assert.equal(new URL(page.url()).searchParams.get('q'), 'orchids', 'pagination preserves the query');
-    await page.goto(`${config.url}/discover/communities`);
+    await page.goto(`${config.url}/discover/communities?seen=true`);
     const initialCommunities = await page.locator('[data-discovery-card]').count();
-    assert.ok(initialCommunities > 0 && initialCommunities < 9, `${name}: bounded community page`);
+    assert.ok(initialCommunities === 20, `${name}: bounded community page`);
     await expect(page.getByRole('button', {name: 'Open community', exact:true}).first()).toBeVisible();
     assert.ok(await page.locator('body').evaluate(el => el.scrollWidth <= innerWidth), `${name}: community cards overflow`);
     await page.screenshot({path: `/tmp/plamenu-discovery-step8-${name}.png`, fullPage:true});
@@ -108,13 +113,13 @@ try {
       const issues = (await new AxeBuilder({page}).include('main').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations;
       assert.deepEqual(issues.map(v => ({id:v.id,nodes:v.nodes.map(n=>n.target)})), [], `${name}: community accessibility violations`);
     }
-    await page.getByRole('link', {name: 'Load more', exact:true}).click();
-    await expect(page.locator('[data-discovery-card]')).toHaveCount(name.startsWith('no-js') ? 9-initialCommunities : 9);
-    await page.goto(`${config.url}/discover/videos`);
-    await page.getByRole('searchbox',{name:'Search discovered videos',exact:true}).fill('orchids');
-    await page.getByRole('button',{name:'Search',exact:true}).click();
+    await page.getByRole('link', {name: 'Next page', exact:true}).click();
+    await expect(page.locator('[data-discovery-card]')).toHaveCount(name.startsWith('no-js') ? 25-initialCommunities : 25);
+    await page.goto(`${config.url}/discover/videos?seen=true`);
+    await page.getByRole('searchbox',{name:'Search',exact:true}).fill('orchids');
+    await page.getByRole('button',{name:'Apply',exact:true}).click();
     const initialVideos=await page.locator('[data-discovery-video]').count();
-    assert.ok(initialVideos>0 && initialVideos<9,`${name}: bounded video page`);
+    assert.ok(initialVideos===20,`${name}: bounded video page`);
     await expect(page.getByRole('button',{name:'Open video',exact:true}).first()).toBeVisible();
     assert.equal(await page.locator('[data-discovery-video] img, [data-discovery-video] video').count(),0);
     assert.equal(await page.locator('.discovery-post__warning[open]').count(),0);
@@ -125,8 +130,8 @@ try {
       assert.deepEqual(issues.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[],`${name}: video accessibility`);
     }
     await page.screenshot({path:`/tmp/plamenu-discovery-video-${name}.png`,fullPage:true});
-    await page.getByRole('link',{name:'Load more',exact:true}).click();
-    await expect(page.locator('[data-discovery-video]')).toHaveCount(name.startsWith('no-js')?9-initialVideos:9);
+    await page.getByRole('link',{name:'Next page',exact:true}).click();
+    await expect(page.locator('[data-discovery-video]')).toHaveCount(name.startsWith('no-js')?25-initialVideos:25);
     assert.equal(new URL(page.url()).searchParams.get('q'),'orchids');
     await page.getByRole('link',{name:'Garden films',exact:true}).first().click();
     await expect(page.getByRole('heading',{name:'Garden films',exact:true})).toBeVisible();
@@ -137,7 +142,7 @@ try {
     await page.getByRole('link', {name:'#garden',exact:true}).click();
     await expect(page.getByRole('heading', {name:'#garden',exact:true})).toBeVisible();
     const initialTopics = await page.locator('[data-discovery-results="topics"] > article').count();
-    assert.ok(initialTopics > 0 && initialTopics < 38, `${name}: bounded mixed topic page`);
+    assert.ok(initialTopics > 0 && initialTopics < 102, `${name}: bounded mixed topic page`);
     await page.getByRole('button', {name:'Save topic',exact:true}).click();
     await expect(page.getByRole('button', {name:'Remove saved topic',exact:true})).toBeVisible();
     assert.ok(await page.locator('body').evaluate(el => el.scrollWidth <= innerWidth), `${name}: topic overflow`);
@@ -146,7 +151,7 @@ try {
       assert.deepEqual(issues.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})),[],`${name}: topic accessibility`);
     }
     await page.screenshot({path:`/tmp/plamenu-discovery-step9-${name}.png`,fullPage:true});
-    await page.getByRole('link', {name:'Load more',exact:true}).click();
+    await page.getByRole('link', {name:'Next page',exact:true}).click();
     if (name.startsWith('no-js')) {
       assert.ok(new URL(page.url()).searchParams.has('watermark'));
     } else {
@@ -166,7 +171,7 @@ try {
     await page.goto(`${config.url}/admin/discovery`);
     await page.getByRole('heading', { name: 'Discovery policy', exact: true }).waitFor();
     await expect(page.getByRole('heading', {name:'Acquisition cost',exact:true})).toBeVisible();
-    await expect(page.locator('.discovery-panel table tbody tr')).toHaveCount(3);
+    await expect(page.getByRole('region', {name:'Acquisition cost',exact:true}).locator('tbody tr')).toHaveCount(3);
     assert.ok(await page.locator('body').evaluate(el => el.scrollWidth <= innerWidth), `${name}: admin horizontal overflow`);
     await page.getByText('Enabled mechanisms', { exact: true }).click();
     await expect(page.locator('input[name=directory]')).toBeVisible();
@@ -190,11 +195,12 @@ try {
     const page = await context.newPage();
     let requests = 0;
     await page.route('**/discover?**', async route => {
+      if (!new URL(route.request().url()).searchParams.has('watermark')) return route.continue();
       requests++;
       if (fail && requests === 1) return route.abort();
       return route.continue();
     });
-    await page.goto(`${config.url}/discover`);
+    await page.goto(`${config.url}/discover?seen=true`);
     const first = page.locator('[data-discovery-card]').first();
     await first.getByRole('button', { name: 'Open profile', exact: true }).focus();
     await page.locator('.discovery-pagination').scrollIntoViewIfNeeded();
@@ -203,9 +209,9 @@ try {
       await page.mouse.wheel(0, 400);
       await page.waitForTimeout(250);
       assert.equal(requests, 1, 'failed autoload must not loop');
-      await page.getByRole('link', { name: 'Load more', exact: true }).click();
+      await page.getByRole('link', { name: 'Next page', exact: true }).click();
     }
-    await expect(page.locator('[data-discovery-card]')).toHaveCount(11);
+    await expect(page.locator('[data-discovery-card]')).toHaveCount(25);
     const ids = await page.locator('[data-discovery-card]').evaluateAll(nodes => nodes.map(node => node.id));
     assert.equal(new Set(ids).size, ids.length, 'no duplicate appended cards');
     if (!fail) assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Open profile', 'autoload does not steal focus');
@@ -218,7 +224,7 @@ try {
   context.setDefaultTimeout(10000);
   context.setDefaultNavigationTimeout(10000);
   const page = await context.newPage();
-  await page.goto(`${config.url}/discover`);
+  await page.goto(`${config.url}/discover?q=alice`);
   await page.locator(`[data-discovery-card="${config.entry}"]`).getByRole('button', { name: 'Open profile', exact: true }).click();
   await page.waitForURL('**/@alice@one.example');
   assert.equal(await page.locator('form[action$="/follow"]').count(), 1, 'following stays a separate action');

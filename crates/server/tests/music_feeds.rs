@@ -531,7 +531,12 @@ async fn music_term_browse_pages_link_to_current_sources_and_advertise_both_feed
         let html = String::from_utf8(bytes(response).await).unwrap();
         assert!(html.contains("Genre page track"));
         assert!(html.contains("music-primary"));
-        assert!(html.contains("Advanced music tools"));
+        assert!(
+            !html.contains("Advanced music tools"),
+            "anonymous pages do not offer signed-in tools"
+        );
+        assert!(html.contains("href=\"/music\""));
+        assert!(html.contains("href=\"/music/streams\""));
         assert!(html.contains("rel=\"alternate\" type=\"application/rss+xml\""));
         assert!(html.contains("rel=\"alternate\" type=\"application/atom+xml\""));
     }

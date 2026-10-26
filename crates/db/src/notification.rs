@@ -418,7 +418,7 @@ async fn create_post_notifications(
     }
     if candidates.iter().any(|candidate| candidate.quote) {
         let publication: Option<(i64,i64)> = sqlx::query_as(
-            "SELECT v.channel_id,target.account_id FROM quotes q
+            "SELECT v.channel_id,target.account_id FROM quotes q -- STUBFILTER: both source and target must be live
              JOIN statuses source ON source.id=q.status_id JOIN video_publications v ON v.status_id=q.quoted_status_id
              JOIN statuses target ON target.id=v.status_id
              WHERE q.status_id=$1 AND q.state='accepted' AND source.visibility IN ('public','unlisted')
@@ -1777,6 +1777,7 @@ async fn has_unread_filtered(
     exclude_direct: bool,
 ) -> Result<bool, DbError> {
     let unread = sqlx::query_scalar::<_, bool>(r"
+        -- STUBKEEP: classify direct visibility even for stubs; notification_visible separately gates notification access.
         WITH delivery_kinds AS MATERIALIZED (
             SELECT CASE WHEN NOT EXISTS (
                 SELECT 1 FROM notification_delivery_preferences

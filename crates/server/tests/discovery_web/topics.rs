@@ -63,6 +63,18 @@ async fn topics_and_trails_use_explicit_tags_and_recheck_viewer_policy(pool: PgP
         .execute(&pool)
         .await
         .unwrap();
+    assert_eq!(
+        topics::available(&f.state, other.id).await.unwrap(),
+        ["garden"]
+    );
+    db::invalidate_entry(
+        &pool,
+        "https://one.example/users/alice",
+        db::Invalidation::Denied,
+        "remote_refusal",
+    )
+    .await
+    .unwrap();
     assert!(
         topics::available(&f.state, other.id)
             .await

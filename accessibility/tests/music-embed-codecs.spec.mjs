@@ -20,8 +20,16 @@ async function journey(page,browser,info,noScript){
   await form.locator('#music-embed-format').selectOption(noScript?'iframe':'script');
   await form.getByLabel('Native track audio format',{exact:true}).selectOption('opus');
   await form.getByLabel('Bitrate (kbps)',{exact:true}).fill('320');
-  await form.getByRole('button',{name:'Show embed code',exact:true}).press('Enter');
+  // WebKit can return from Enter before the new document commits. The old
+  // textarea contains the default audio snippet, not the requested widget.
+  await Promise.all([
+    page.waitForURL(url=>url.searchParams.get('format')===(noScript?'iframe':'script')
+      && url.searchParams.get('codec')==='opus' && url.searchParams.get('bitrate')==='320',
+      {waitUntil:'domcontentloaded'}),
+    form.getByRole('button',{name:'Show embed code',exact:true}).press('Enter'),
+  ]);
   const snippet=await page.locator('#music-embed-code').inputValue();
+  expect(snippet).toContain(noScript?'<iframe':'<script');
   expect(snippet).not.toContain('bitrate=320');expect(snippet).not.toContain('data-bitrate="320"');
   await page.screenshot({path:info.outputPath('music-embed-codec-controls.png'),fullPage:true});
   const publisher=createServer((_request,response)=>{response.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});response.end(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Music codec publisher</title><style>body{font:16px system-ui;margin:12px}iframe{border:0;width:100%;max-width:100%}</style><h1>Music codec publisher</h1>${snippet}</html>`);});

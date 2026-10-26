@@ -5,10 +5,10 @@ import argparse
 import os
 import subprocess
 import sys
+import tomllib
 import urllib.error
 from pathlib import Path
 
-import tomllib
 from plamenu_release.core import ReleaseError
 from plamenu_release.release_mirror import mirror_published_release
 

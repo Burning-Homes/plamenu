@@ -430,8 +430,15 @@ impl HttpFederation {
         target: &str,
         request: impl Future<Output = Result<T, FederationError>>,
     ) -> Result<T, FederationError> {
-        self.guarded_inner(target, "resource-instance", target, request, false)
-            .await
+        self.guarded_inner(
+            target,
+            "resource",
+            "resource-instance",
+            target,
+            request,
+            false,
+        )
+        .await
     }
 
     async fn guarded_for_account<T>(
@@ -444,8 +451,15 @@ impl HttpFederation {
         // budget separate from the instance signer and every other account,
         // so an earlier 403 cannot suppress an entitled recipient's fetch.
         let resource_key = format!("{account_id}:{target}");
-        self.guarded_inner(target, "resource-account", &resource_key, request, false)
-            .await
+        self.guarded_inner(
+            target,
+            "resource",
+            "resource-account",
+            &resource_key,
+            request,
+            false,
+        )
+        .await
     }
 
     /// [`Self::guarded`] minus the pre-flight budget refusal: admission
@@ -457,13 +471,41 @@ impl HttpFederation {
         target: &str,
         request: impl Future<Output = Result<T, FederationError>>,
     ) -> Result<T, FederationError> {
-        self.guarded_inner(target, "resource-instance", target, request, true)
-            .await
+        self.guarded_inner(
+            target,
+            "resource",
+            "resource-instance",
+            target,
+            request,
+            true,
+        )
+        .await
+    }
+
+    async fn guarded_website<T>(
+        &self,
+        target: &str,
+        request: impl Future<Output = Result<T, FederationError>>,
+    ) -> Result<T, FederationError> {
+        // An unsigned website response says nothing about the signed AP
+        // representation at the same URL. Neither success nor refusal may
+        // clear or consume the other representation's resource budget.
+        // Transport/server failures still share the existing host budget.
+        self.guarded_inner(
+            target,
+            "resource-website",
+            "resource-website",
+            target,
+            request,
+            false,
+        )
+        .await
     }
 
     async fn guarded_inner<T>(
         &self,
         target: &str,
+        resource_scope: &str,
         authorization_scope: &str,
         authorization_key: &str,
         request: impl Future<Output = Result<T, FederationError>>,
@@ -482,10 +524,9 @@ impl HttpFederation {
             .ok()
             .and_then(|url| url.host_str().map(str::to_lowercase));
         if !ignore_budget {
-            // Objective failures (404, malformed content, and so on) stay
-            // globally bounded, while authorization failures are checked for
-            // the signer that received them.
-            if !plamenu_db::remote_fetch_failure::should_attempt(&self.pool, "resource", target)
+            // Objective failures stay bounded within their representation.
+            // Authorization failures are checked for the signer that received them.
+            if !plamenu_db::remote_fetch_failure::should_attempt(&self.pool, resource_scope, target)
                 .await
                 .map_err(|error| FederationError::Admission(error.to_string()))?
                 || !plamenu_db::remote_fetch_failure::should_attempt(
@@ -509,8 +550,8 @@ impl HttpFederation {
 
         match request.await {
             Ok(value) => {
-                let _ =
-                    plamenu_db::remote_fetch_failure::clear(&self.pool, "resource", target).await;
+                let _ = plamenu_db::remote_fetch_failure::clear(&self.pool, resource_scope, target)
+                    .await;
                 let _ = plamenu_db::remote_fetch_failure::clear(
                     &self.pool,
                     authorization_scope,
@@ -528,7 +569,11 @@ impl HttpFederation {
                     let seconds = retry_after_secs.unwrap_or(60).clamp(1, 86_400);
                     let message = error.to_string();
                     let _ = plamenu_db::remote_fetch_failure::record_backoff(
-                        &self.pool, "resource", target, seconds, &message,
+                        &self.pool,
+                        resource_scope,
+                        target,
+                        seconds,
+                        &message,
                     )
                     .await;
                     if let Some(host) = &host {
@@ -548,7 +593,7 @@ impl HttpFederation {
                     {
                         (authorization_scope, authorization_key)
                     } else {
-                        ("resource", target)
+                        (resource_scope, target)
                     };
                     let _ = plamenu_db::remote_fetch_failure::record_failure(
                         &self.pool,
@@ -769,14 +814,14 @@ impl FederationApi for HttpFederation {
         url: &'a str,
         accept: &'a str,
     ) -> BoxFuture<'a, Result<FetchedPage, FederationError>> {
-        Box::pin(self.guarded(url, self.client.fetch_page(url, accept)))
+        Box::pin(self.guarded_website(url, self.client.fetch_page(url, accept)))
     }
 
     fn fetch_mention_page<'a>(
         &'a self,
         url: &'a str,
     ) -> BoxFuture<'a, Result<MentionPage, FederationError>> {
-        Box::pin(self.guarded(
+        Box::pin(self.guarded_website(
             url,
             self.client.fetch_mention_page_with_guard(url, move |next| {
                 let next = next.to_owned();

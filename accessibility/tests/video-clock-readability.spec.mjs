@@ -38,8 +38,11 @@ test('Published video clock stays readable at narrow widths and text spacing',as
   await upload.getByLabel('Video title',{exact:true}).fill('Readable playback time');
   await chooseVideoLanguage(upload,'en');
   await upload.getByLabel('Video or audio file',{exact:true}).setInputFiles(process.env.A11Y_VIDEO_FIXTURE);
-  await upload.getByRole('button',{name:'Upload video',exact:true}).press('Enter');
-  await expect(page).toHaveURL(url=>/^\/videos\/drafts\/\d+$/.test(url.pathname));
+  // Wait for the draft document, not WebKit's media-dependent load event.
+  await Promise.all([
+    page.waitForURL(url=>/^\/videos\/drafts\/\d+$/.test(url.pathname),{waitUntil:'domcontentloaded'}),
+    upload.getByRole('button',{name:'Upload video',exact:true}).press('Enter',{noWaitAfter:true}),
+  ]);
   await expect(page.getByRole('link',{name:'Review your video',exact:true})).toBeVisible({timeout:60000});
   await page.getByRole('link',{name:'Review your video',exact:true}).press('Enter');
   await page.getByRole('button',{name:'Publish video',exact:true}).press('Enter');

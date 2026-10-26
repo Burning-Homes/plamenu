@@ -24,6 +24,12 @@ provisioning. Initial compilation and database seeding add time before
 measurement. The `dev` wrapper supplies `DATABASE_URL`; a bare `cargo bench`
 needs it exported explicitly. Use only the development database server: the
 harness creates, updates, and sometimes rebuilds its `plamenu_bench` database.
+The wrappers pass `--no-default-features` to avoid Cargo building the unused
+server executable alongside each benchmark. The default `cli` feature gates
+only that executable; the benchmark uses the same complete server library.
+Normal builds, integration tests and release packaging keep `cli` enabled.
+For a bare invocation, use `cargo bench --locked --no-fail-fast
+--no-default-features -p plamenu --bench hot_paths` (or `contention`).
 
 For a focused investigation:
 
@@ -43,6 +49,11 @@ it even if other result files on disk appear fresh.
 
 The existing regex form `./dev bench -- api/home` remains available and retains
 whole-inventory preparation; use the explicit selection above to avoid that cost.
+Set `PLAMENU_BENCH_DIAGNOSTICS` to a private output directory to save the
+untimed response bodies and print SQL events during the metrics pre-pass.
+The `counted request:` marker separates each measured request from its warm-up.
+Diagnostic output is disabled during Criterion timing; sample counts, response
+assertions and measurement windows stay unchanged.
 Custom Criterion arguments are recorded and require diagnostic `--filtered`
 grading. Qualifying full runs use the default mode, with only `--noplot` allowed;
 test/list modes, filters, and changed calibration cannot qualify using leftover
@@ -220,6 +231,28 @@ a change that cannot affect the dataset can explain that with
 or dataset, and lower affected budgets after an optimization. Explain budget
 increases in the change review: what extra work is required, or what was wrong
 with the calibration. A failing run alone is not a reason to raise a ceiling.
+
+## Notifications page calibration (27 October 2026)
+
+`web/web_notifications` now renders 40 notifications; its original July 2026
+calibration rendered 20. The old 153,452-byte baseline and 18.6 ms ceiling
+therefore described a different page workload. These are regression baselines,
+not independently established limits on acceptable user experience.
+
+Two serial focused measurements of the current page returned 322,478 bytes
+and 52 SQL statements, with medians of 18.435 and 18.291 ms. Both retained
+40 notifications, 30 full post cards and all 264 forms. The new raw-body
+baseline is 322,478 bytes, with the existing 15% allowance (370,850 bytes).
+The latency ceiling follows the original calibration convention: twice the
+larger measured median, rounded up to 0.1 ms, giving 36.9 ms. Strict grading
+still requires 25% latency headroom, making its effective limit 27.675 ms.
+The SQL ceiling remains 52.
+
+Repeated control markup compresses well, but raw HTML size does not measure
+compressed network transfer or browser rendering cost. Keep those distinctions
+when reviewing future growth. This recalibration changes no workload, controls,
+sample counts, timing windows or coverage requirements. The focused measurements
+support this calibration only; they do not qualify a full gate or release.
 
 ## Native media account-purge calibration (11 October 2026)
 

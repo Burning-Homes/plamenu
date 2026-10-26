@@ -100,31 +100,25 @@ pub async fn mark_activity_read(
     through: i64,
 ) -> Result<(), DbError> {
     let mut tx = pool.begin().await?;
+    // ON CONFLICT locks the marker even when WHERE prevents an update. Keep
+    // the following delete as a separate statement: its snapshot must begin
+    // after acquiring that lock, including when another page held it first.
     sqlx::query(
-        "INSERT INTO markers(user_id,timeline) VALUES($1,'notifications') ON CONFLICT DO NOTHING",
+        "INSERT INTO markers(user_id,timeline,last_read_id,version)
+         VALUES($1,'notifications',GREATEST(0::bigint,$2),CASE WHEN $2>0 THEN 1 ELSE 0 END)
+         ON CONFLICT(user_id,timeline) DO UPDATE
+         SET last_read_id=$2,version=markers.version+1,updated_at=now()
+         WHERE markers.last_read_id<$2",
     )
     .bind(user_id)
+    .bind(through)
     .execute(&mut *tx)
-    .await?;
-    let _: i64 = sqlx::query_scalar(
-        "SELECT last_read_id FROM markers WHERE user_id=$1 AND timeline='notifications' FOR UPDATE",
-    )
-    .bind(user_id)
-    .fetch_one(&mut *tx)
     .await?;
     sqlx::query(
         "DELETE FROM lemmy_notification_read_overrides o USING notifications n
         WHERE o.account_id=$1 AND n.account_id=$1 AND o.notification_id=n.id AND n.id<=$2",
     )
     .bind(account_id)
-    .bind(through)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query(
-        "UPDATE markers SET last_read_id=$2,version=version+1,updated_at=now()
-        WHERE user_id=$1 AND timeline='notifications' AND last_read_id<$2",
-    )
-    .bind(user_id)
     .bind(through)
     .execute(&mut *tx)
     .await?;
@@ -175,6 +169,7 @@ pub async fn list(
 ) -> Result<Vec<Notification>, DbError> {
     sqlx::query_as::<_, Notification>(
         r"
+        -- STUBKEEP: classify direct visibility even for stubs; notification_visible separately gates notification access.
         WITH delivery_kinds AS MATERIALIZED (
             SELECT ARRAY(SELECT kind FROM unnest(ARRAY['mention','status','reblog','follow','follow_request','favourite','music.favourite','music.share','music.download','webmention','poll','update','severed_relationships','moderation_warning','annual_report','admin.sign_up','admin.report','quote','quoted_update','live','added_to_collection','collection_update','pleroma:emoji_reaction','event.participation','event.accepted','event.rejected','event.changed','event.invite','plamenu:actor.follow','plamenu:actor.follow_request','plamenu:actor.favourite','plamenu:actor.reblog','plamenu:actor.emoji_reaction','plamenu:actor.comment','plamenu:actor.mention','plamenu:actor.quote','plamenu:actor.status','plamenu:actor.invitation','plamenu:actor.transfer']::text[]) k(kind)
                 WHERE ($5::text[] IS NULL OR kind=ANY($5))

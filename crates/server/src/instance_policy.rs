@@ -131,6 +131,50 @@ pub async fn account_visible(
     }
 }
 
+/// Preserve single-account visibility and input order without a query per result.
+pub async fn visible_accounts(
+    pool: &PgPool,
+    local_domain: &str,
+    accounts: Vec<Account>,
+) -> Result<Vec<Account>, plamenu_db::DbError> {
+    let normalized: Vec<Option<String>> = accounts
+        .iter()
+        .map(|account| {
+            if account.is_portable_on(local_domain) {
+                None
+            } else {
+                account.domain.as_deref().map(|domain| {
+                    normalize_domain(Some(domain))
+                        .unwrap_or_else(|_| domain.trim().to_ascii_lowercase())
+                })
+            }
+        })
+        .collect();
+    let mut domains: Vec<String> = normalized
+        .iter()
+        .flatten()
+        .filter(|domain| !domain.eq_ignore_ascii_case(local_domain))
+        .cloned()
+        .collect();
+    domains.sort_unstable();
+    domains.dedup();
+    let allowed = instance_policy::allowed_domains(pool, &domains).await?;
+    Ok(accounts
+        .into_iter()
+        .zip(normalized)
+        .filter_map(|(account, domain)| {
+            let visible = if account.is_portable_on(local_domain) {
+                !account.suspended()
+            } else {
+                domain.is_none_or(|domain| {
+                    domain.eq_ignore_ascii_case(local_domain) || allowed.contains(&domain)
+                })
+            };
+            visible.then_some(account)
+        })
+        .collect())
+}
+
 /// Account visibility for identity-resolution entry points. Rendering code
 /// that already received a published actor keeps using [`account_visible`];
 /// keeping activation here avoids adding a per-author query to status pages.
@@ -214,18 +258,9 @@ pub async fn ensure_ip_login_allowed(
 }
 
 pub async fn ensure_email_login_allowed(pool: &PgPool, email: &str) -> Result<(), ApiError> {
-    if let Some(domain) = domain_from_email(email)
-        && instance_policy::find_email_domain_block_by_domain(pool, &domain)
-            .await?
-            .is_some()
-    {
-        return Err(ApiError::Forbidden("This e-mail address is blocked".into()));
-    }
-    if let Some(hash) = canonical_email_hash_for_login(email)
-        && instance_policy::find_canonical_email_block_by_hash(pool, &hash)
-            .await?
-            .is_some()
-    {
+    let domain = domain_from_email(email);
+    let hash = canonical_email_hash_for_login(email);
+    if instance_policy::email_login_blocked(pool, domain.as_deref(), hash.as_deref()).await? {
         return Err(ApiError::Forbidden("This e-mail address is blocked".into()));
     }
     Ok(())

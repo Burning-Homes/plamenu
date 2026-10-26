@@ -8,7 +8,7 @@ const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 const browser = await chromium.launch();
 const clients = [];
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-const report = { phases: [], status: 'running' };
+const report = { phases: [], status: 'running', progressiveDiagnostics: { events: [], chunks: [] } };
 const reportPath = join(evidence, 'disk-browser.json');
 function save(stage) { report.stage = stage; writeFileSync(reportPath, JSON.stringify(report, null, 2), { mode: 0o600 }); }
 async function sample(client) {
@@ -78,6 +78,27 @@ try {
     const context = await browser.newContext({ ignoreHTTPSErrors: true, javaScriptEnabled: kind !== 'native-no-js',
       viewport: { width: peer ? 800 : 320, height: 800 } });
     const page = await context.newPage();
+    if (kind === 'native-no-js') {
+      // Observe the native decoder and arrival cadence without enabling page
+      // scripts, intercepting media, or altering the measurement windows.
+      const cdp = await context.newCDPSession(page);
+      const requests = new Set();
+      cdp.on('Media.playerEventsAdded', ({ events }) => {
+        report.progressiveDiagnostics.events.push(...events);
+        report.progressiveDiagnostics.events = report.progressiveDiagnostics.events.slice(-1000);
+      });
+      cdp.on('Network.requestWillBeSent', ({ requestId, request }) => {
+        if (new URL(request.url).pathname.endsWith('/stream.mp4')) requests.add(requestId);
+      });
+      cdp.on('Network.dataReceived', ({ requestId, timestamp, dataLength }) => {
+        if (requests.has(requestId)) {
+          report.progressiveDiagnostics.chunks.push({ timestamp, dataLength });
+          report.progressiveDiagnostics.chunks = report.progressiveDiagnostics.chunks.slice(-2000);
+        }
+      });
+      await cdp.send('Media.enable');
+      await cdp.send('Network.enable');
+    }
     const errors = [];
     page.on('pageerror', error => errors.push(String(error)));
     if (peer) {

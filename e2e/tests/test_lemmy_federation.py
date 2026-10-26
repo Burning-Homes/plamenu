@@ -9,6 +9,8 @@ subscribes to (the Page round-trips back as group content). The peer is
 optional: tests skip when it's down.
 """
 
+import time
+
 import pytest
 from plamenu_e2e import config, unique
 from plamenu_e2e.api import Api, ApiError
@@ -28,6 +30,12 @@ def _follow_community(plamenu_api: Api, name: str) -> dict:
         lambda: plamenu_api.relationship(remote["id"])["following"],
         desc="community Accept(Follow) to reach Plamenu",
     )
+    # The configured Lemmy peer enables LEMMY_TEST_FAST_FEDERATION: its
+    # follower-inbox cache refreshes once per second, independently of Accept.
+    # A post sent inside that window is permanently skipped by its deliverer.
+    # Let two cache cycles settle before exercising post delivery; the actual
+    # Follow/Accept and all post/edit/delete assertions still run unchanged.
+    time.sleep(2)
     return remote
 
 

@@ -143,7 +143,7 @@ pub async fn actor_recipients(pool: &PgPool, actor: i64) -> Result<Option<Vec<i6
 /// Only an actual hosted Video publication establishes channel context.
 pub async fn publication(pool: &PgPool, status: i64) -> Result<Option<(i64, i64)>, DbError> {
     Ok(sqlx::query_as(
-        "SELECT v.channel_id,s.account_id FROM video_publications v
+        "SELECT v.channel_id,s.account_id FROM video_publications v -- STUBFILTER: deleted publications never notify
          JOIN statuses s ON s.id=v.status_id JOIN accounts channel ON channel.id=v.channel_id
          JOIN video_channels c ON c.account_id=v.channel_id JOIN accounts owner ON owner.id=c.owner_account_id
          WHERE v.status_id=$1 AND s.deleted_at IS NULL AND s.visibility IN ('public','unlisted')
@@ -156,7 +156,7 @@ pub async fn publication(pool: &PgPool, status: i64) -> Result<Option<(i64, i64)
 /// Recipient visibility is checked separately before creating any notification.
 pub async fn reply_publication(pool: &PgPool, status: i64) -> Result<Option<(i64, i64)>, DbError> {
     Ok(sqlx::query_as(
-        "WITH RECURSIVE ancestors AS (
+        "WITH RECURSIVE ancestors AS ( -- STUBFILTER: every reply ancestor excludes deleted rows
             SELECT s.id,s.in_reply_to_id,ARRAY[s.id] AS path FROM statuses s
             WHERE s.id=$1 AND s.deleted_at IS NULL
             UNION ALL
@@ -185,7 +185,7 @@ pub async fn readable_recipients(
         return Ok(Vec::new());
     }
     Ok(sqlx::query_scalar(
-        "SELECT recipient FROM unnest($2::bigint[]) recipient JOIN statuses s ON s.id=$1
+        "SELECT recipient FROM unnest($2::bigint[]) recipient JOIN statuses s ON s.id=$1 -- STUBFILTER: deleted posts never notify
          WHERE s.deleted_at IS NULL AND (
             s.account_id=recipient OR s.visibility IN ('public','unlisted','local')
             OR EXISTS(SELECT 1 FROM status_mentions m WHERE m.status_id=s.id AND m.account_id=recipient)

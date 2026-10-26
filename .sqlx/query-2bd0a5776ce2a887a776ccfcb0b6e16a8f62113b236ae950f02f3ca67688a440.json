@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT in_reply_to_id AS \"sid!\", count(*) AS \"replies!\",\n                  0::bigint AS \"reblogs!\", 0::bigint AS \"favourites!\",\n                  0::bigint AS \"dislikes!\", 0::bigint AS \"quotes!\"\n           FROM statuses\n           WHERE in_reply_to_id = ANY($1) AND deleted_at IS NULL -- STUBFILTER\n           GROUP BY 1\n           UNION ALL\n           SELECT reblog_of_id, 0, count(*), 0, 0, 0\n           FROM statuses WHERE reblog_of_id = ANY($1) GROUP BY 1 -- STUBKEEP: a boost wrapper never stubs\n           UNION ALL\n           SELECT status_id, 0, 0, count(*), 0, 0\n           FROM favourites WHERE status_id = ANY($1) GROUP BY 1\n           UNION ALL\n           SELECT status_id, 0, 0, 0, count(*), 0\n           FROM status_dislikes WHERE status_id = ANY($1) GROUP BY 1\n           UNION ALL\n           SELECT quoted_status_id, 0, 0, 0, 0, count(*)\n           FROM quotes WHERE quoted_status_id = ANY($1) AND state = 'accepted'\n           GROUP BY 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sid!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "replies!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "reblogs!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "favourites!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "dislikes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "quotes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2bd0a5776ce2a887a776ccfcb0b6e16a8f62113b236ae950f02f3ca67688a440"
+}

@@ -13,7 +13,7 @@ doctest = false
 bench = false
 
 [dependencies]
-plamenu = { path = "../server" }
+plamenu = { path = "../server", default-features = false }
 plamenu-ap = { workspace = true }
 plamenu-db = { workspace = true }
 plamenu-federation = { workspace = true }

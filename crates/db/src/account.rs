@@ -1556,6 +1556,49 @@ pub async fn visibility_batch(
     Ok(rows)
 }
 
+/// Author access facts for a single viewer, including anonymous readers.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent SQL permission facts, not a state machine"
+)]
+#[derive(Debug, sqlx::FromRow)]
+pub struct ViewerAuthorVisibility {
+    pub id: i64,
+    pub allowed: bool,
+    pub is_local: bool,
+    pub blocks_viewer: bool,
+    pub followed_by_viewer: bool,
+}
+
+/// Resolve instance policy and the viewer's author relationships in one snapshot.
+/// Both relationship tables have a unique (`account_id`, `target_account_id`) key,
+/// so the joins cannot multiply authors. Pending follows never grant access.
+pub async fn visibility_for_viewer_batch(
+    pool: &PgPool,
+    ids: &[i64],
+    viewer: Option<i64>,
+) -> Result<Vec<ViewerAuthorVisibility>, DbError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(sqlx::query_as::<_, ViewerAuthorVisibility>(
+        "SELECT a.id,
+                (a.suspended_at IS NULL AND
+                 (a.portable OR COALESCE(instance_domain_allowed(a.domain), false))) AS allowed,
+                (a.domain IS NULL OR a.portable) AS is_local,
+                (b.id IS NOT NULL) AS blocks_viewer,
+                (f.id IS NOT NULL) AS followed_by_viewer
+         FROM accounts a
+         LEFT JOIN blocks b ON b.account_id=a.id AND b.target_account_id=$2
+         LEFT JOIN follows f ON f.account_id=$2 AND f.target_account_id=a.id AND NOT f.pending
+         WHERE a.id=ANY($1)",
+    )
+    .bind(ids)
+    .bind(viewer)
+    .fetch_all(pool)
+    .await?)
+}
+
 /// Looks up a remote account by the keyId it publishes (HTTP signature path).
 pub async fn find_by_key_id(pool: &PgPool, key_id: &str) -> Result<Option<Account>, DbError> {
     let account = sqlx::query_as!(

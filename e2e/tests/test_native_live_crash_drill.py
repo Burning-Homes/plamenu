@@ -9,6 +9,7 @@ import os
 import re
 import signal
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -38,13 +39,19 @@ def _exact_local_server(pid: int):
 
 
 def _restart_candidate(binary: Path):
-    replacement = subprocess.Popen(
-        [str(binary), "--config", config.PLAMENU_CONFIG, "serve"],
-        cwd=config.PLAMENU_DIR,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    evidence = config.PLAMENU_DIR / "target/e2e/native-live-crash"
+    evidence.mkdir(parents=True, exist_ok=True, mode=0o700)
+    output = Path(tempfile.mkdtemp(prefix="restart-", dir=evidence)) / "server.log"
+    with output.open("x") as stream:
+        output.chmod(0o600)
+        replacement = subprocess.Popen(
+            [str(binary), "--config", config.PLAMENU_CONFIG, "serve"],
+            cwd=config.PLAMENU_DIR,
+            stdout=stream,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    log(f"Replacement server diagnostics: {output}")
     # Both opt-in drills run in one session. The next drill must verify and
     # kill the exact replacement, rather than reuse the first dead PID.
     _exact_local_server(replacement.pid)
@@ -204,6 +211,21 @@ def test_native_live_survives_server_crash(plamenu_api, plamenu_user, db):
                 (media_id,),
             ).fetchall()
             assert generations == [(1, True), (2, False)]
+            second_session = db.conn.execute(
+                "SELECT session_id FROM native_live_sessions WHERE media_id = %s AND ended_at IS NULL",
+                (media_id,),
+            ).fetchone()[0]
+            assert second_session != first_session
+            second_recording = recording.parent.parent / second_session / "replay.mp4"
+            # Live admission precedes recorded media. Give the clean generation
+            # the same real committed-fragment requirement as the crashed one.
+            wait_for(
+                lambda: (
+                    second_recording.exists()
+                    and second_recording.stat().st_size > 100_000
+                ),
+                desc="post-crash recurring recording has committed a fragment",
+            )
             publisher.terminate()
             publisher.communicate(timeout=15)
             publisher = None

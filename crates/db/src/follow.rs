@@ -895,6 +895,43 @@ pub async fn count_followers_batch(
         .collect())
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+pub struct FollowCounts {
+    pub followers: u64,
+    pub following: u64,
+}
+
+/// Both accepted-edge counts for a page, without two database round trips.
+/// Each branch retains its indexed direction and excludes pending requests.
+pub async fn counts_batch(
+    pool: &PgPool,
+    account_ids: &[i64],
+) -> Result<HashMap<i64, FollowCounts>, DbError> {
+    if account_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rows = sqlx::query_as::<_, (i64, bool, i64)>(
+        "SELECT target_account_id, TRUE, count(*) FROM follows
+         WHERE target_account_id=ANY($1) AND NOT pending GROUP BY target_account_id
+         UNION ALL
+         SELECT account_id, FALSE, count(*) FROM follows
+         WHERE account_id=ANY($1) AND NOT pending GROUP BY account_id",
+    )
+    .bind(account_ids)
+    .fetch_all(pool)
+    .await?;
+    let mut counts: HashMap<i64, FollowCounts> = HashMap::new();
+    for (id, incoming, count) in rows {
+        let entry = counts.entry(id).or_default();
+        if incoming {
+            entry.followers = u64::try_from(count).unwrap_or(0);
+        } else {
+            entry.following = u64::try_from(count).unwrap_or(0);
+        }
+    }
+    Ok(counts)
+}
+
 /// One `(target, familiar follower)` pair of [`familiar_followers`].
 #[derive(Debug)]
 pub struct FamiliarFollow {

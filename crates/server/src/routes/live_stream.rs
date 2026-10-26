@@ -333,6 +333,13 @@ fn spawn_session(state: &AppState, media_id: i64, native_session: Option<String>
             // trailer index — there is no end of file to write one at.
             "-movflags",
             "empty_moov+frag_keyframe+default_base_moof+delay_moov+skip_trailer",
+            // Keep audio beside its video samples instead of at the tail of
+            // each mdat. Progressive browsers expose complete cache blocks;
+            // a trailing audio run can remain unreadable until the next
+            // fragment arrives, starving audio despite buffered video.
+            // This changes only packet layout, never codecs or timestamps.
+            "-frag_interleave",
+            "1",
             // Publish each completed fragment without waiting for the next
             // keyframe to fill FFmpeg's output buffer. Progressive clients
             // cannot independently request the missing tail like HLS can.

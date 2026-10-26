@@ -7,6 +7,11 @@ license.workspace = true
 rust-version.workspace = true
 publish = false
 
+[features]
+# Only gates the executable target; the server library has no conditional CLI code.
+default = ["cli"]
+cli = []
+
 # `bench = false` on the lib/bin targets keeps `cargo bench` from handing
 # criterion CLI flags (--save-baseline etc.) to libtest, which rejects them.
 [lib]
@@ -16,6 +21,7 @@ bench = false
 name = "plamenu"
 path = "src/main.rs"
 bench = false
+required-features = ["cli"]
 
 [dependencies]
 aes-gcm = { workspace = true }

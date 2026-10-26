@@ -1618,15 +1618,14 @@ pub struct AccountCounts {
     pub last_status_at: Option<OffsetDateTime>,
 }
 
-/// [`AccountCounts`] for every id in `account_ids`, in three batched queries
+/// [`AccountCounts`] for every id in `account_ids`, in two batched queries
 /// total rather than separate counter reads per account. Ids absent from a batch
 /// query (no followers/following/statuses) count as the zero/`None` default.
 pub async fn account_counts_batch(
     pool: &PgPool,
     account_ids: &[i64],
 ) -> Result<HashMap<i64, AccountCounts>, ApiError> {
-    let followers = follow::count_followers_batch(pool, account_ids).await?;
-    let following = follow::count_following_batch(pool, account_ids).await?;
+    let follows = follow::counts_batch(pool, account_ids).await?;
     // Remote accounts whose outbox `totalItems` has been synced report the
     // origin's authoritative total instead of the locally-known slice
     // (Mastodon's `statuses_count`); the fallback logic lives inside the
@@ -1636,8 +1635,8 @@ pub async fn account_counts_batch(
         .iter()
         .map(|&id| {
             let counts = AccountCounts {
-                followers: followers.get(&id).copied().unwrap_or(0),
-                following: following.get(&id).copied().unwrap_or(0),
+                followers: follows.get(&id).map_or(0, |counts| counts.followers),
+                following: follows.get(&id).map_or(0, |counts| counts.following),
                 statuses: statuses.get(&id).map_or(0, |stats| stats.count),
                 last_status_at: statuses.get(&id).and_then(|stats| stats.last_created_at),
             };
@@ -6597,8 +6596,8 @@ pub async fn filter_viewable(
     author_ids.sort_unstable();
     author_ids.dedup();
 
-    // Instance policy + local-author flag for every distinct author, one query.
-    let vis = account::visibility_batch(pool, &author_ids).await?;
+    // Instance policy and author relationships share one database snapshot.
+    let vis = account::visibility_for_viewer_batch(pool, &author_ids, viewer).await?;
     let instance_ok: HashSet<i64> = vis.iter().filter(|v| v.allowed).map(|v| v.id).collect();
     let local_author: HashSet<i64> = vis.iter().filter(|v| v.is_local).map(|v| v.id).collect();
 
@@ -6616,9 +6615,17 @@ pub async fn filter_viewable(
     };
 
     // Authors who block the viewer (`can_view`'s `block::exists(author, viewer)`).
-    let blockers = block::blocked_by_batch(pool, viewer_id, &author_ids).await?;
+    let blockers: HashSet<i64> = vis
+        .iter()
+        .filter(|v| v.blocks_viewer)
+        .map(|v| v.id)
+        .collect();
     // Authors the viewer accepted-follows (unlocks their `private` posts).
-    let accepted = follow::accepted_out_batch(pool, viewer_id, &author_ids).await?;
+    let accepted: HashSet<i64> = vis
+        .iter()
+        .filter(|v| v.followed_by_viewer)
+        .map(|v| v.id)
+        .collect();
     // Status ids that mention the viewer (unlocks `private`/`direct`), one query.
     let gated_ids: Vec<i64> = items
         .iter()

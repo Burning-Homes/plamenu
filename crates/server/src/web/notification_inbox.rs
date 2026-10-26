@@ -66,22 +66,7 @@ pub async fn page(
         )
         .await?;
     }
-    let back = format!(
-        "/notifications?{}",
-        serde_urlencoded::to_string([
-            ("kind", page.kind.as_deref().unwrap_or_default()),
-            ("unread", if unread { "true" } else { "false" }),
-            (
-                "mail",
-                if page.mail.unwrap_or(false) {
-                    "true"
-                } else {
-                    "false"
-                }
-            ),
-        ])
-        .unwrap_or_default()
-    );
+    let back = page_url(&page, None);
     let viewer = user.current.account.id.to_string();
     let ctx = view::Ctx {
         csrf: Some(&user.csrf),
@@ -134,7 +119,7 @@ pub async fn page(
                 (view::notification_item(note,&ctx))
             }
         }
-        @if let Some(before)=before {nav.pager {a.pager__more href=(format!("{back}&before={before}")) {(l.text("pager-older"))}}}
+        @if let Some(before)=before {nav.pager {a.pager__more href=(page_url(&page, Some(before))) {(l.text("pager-older"))}}}
     }};
     Ok((
         [
@@ -211,4 +196,66 @@ pub async fn unread_state(user: WebUser) -> Response {
         })),
     )
         .into_response()
+}
+
+/// Omit default filters from the return URL repeated by every action form.
+/// Paging and active filters retain their original meaning with or without JS.
+fn page_url(page: &Page, before: Option<i64>) -> String {
+    let mut query = Vec::new();
+    if let Some(kind) = page.kind.as_deref().filter(|kind| !kind.is_empty()) {
+        query.push(("kind", kind.to_owned()));
+    }
+    if page.unread == Some(true) {
+        query.push(("unread", "true".to_owned()));
+    }
+    if page.mail == Some(true) {
+        query.push(("mail", "true".to_owned()));
+    }
+    if let Some(before) = before {
+        query.push(("before", before.to_string()));
+    }
+    if query.is_empty() {
+        "/notifications".to_owned()
+    } else {
+        format!(
+            "/notifications?{}",
+            serde_urlencoded::to_string(query).expect("string pairs encode")
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn notification_links_preserve_filters_and_paging_without_default_parameters() {
+        for unread in [None, Some(false), Some(true)] {
+            for mail in [None, Some(false), Some(true)] {
+                for kind in [None, Some(""), Some("pleroma:emoji_reaction")] {
+                    let page = Page {
+                        before: Some(999),
+                        unread,
+                        mail,
+                        kind: kind.map(str::to_owned),
+                    };
+                    for before in [None, Some(42)] {
+                        let url = page_url(&page, before);
+                        let query = url.split_once('?').map_or("", |(_, query)| query);
+                        let parsed: Page = serde_urlencoded::from_str(query).unwrap();
+                        assert_eq!(parsed.before, before);
+                        assert_eq!(parsed.unread.unwrap_or(false), unread.unwrap_or(false));
+                        assert_eq!(parsed.mail.unwrap_or(false), mail.unwrap_or(false));
+                        assert_eq!(parsed.kind.as_deref().unwrap_or(""), kind.unwrap_or(""));
+                        assert!(!url.contains("false"));
+                    }
+                }
+            }
+        }
+        assert_eq!(page_url(&Page::default(), None), "/notifications");
+        assert_eq!(
+            page_url(&Page::default(), Some(42)),
+            "/notifications?before=42"
+        );
+    }
 }

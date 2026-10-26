@@ -48,6 +48,162 @@ impl<S: tracing::Subscriber> Layer<S> for QueryCounter {
 
 struct ApplicationSettingsReadCounter(Arc<AtomicUsize>);
 
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
+async fn combined_follow_counts_preserve_both_directions_pending_and_missing_accounts(
+    pool: PgPool,
+) {
+    let a = create_local_account(&pool, "a", "A").await;
+    let b = create_local_account(&pool, "b", "B").await;
+    let c = create_local_account(&pool, "c", "C").await;
+    for (source, target) in [(a.id, b.id), (b.id, a.id), (c.id, b.id), (a.id, c.id)] {
+        follow::create(&pool, source, target, None).await.unwrap();
+    }
+    sqlx::query("UPDATE follows SET pending=TRUE WHERE account_id=$1 AND target_account_id=$2")
+        .bind(a.id)
+        .bind(c.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let ids = [a.id, b.id, c.id, 0, a.id];
+    let incoming = follow::count_followers_batch(&pool, &ids).await.unwrap();
+    let outgoing = follow::count_following_batch(&pool, &ids).await.unwrap();
+    let counter = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(QueryCounter(counter.clone())),
+    );
+    let counts = follow::counts_batch(&pool, &ids).await.unwrap();
+    assert_eq!(counter.load(Ordering::Relaxed), 1);
+    for id in ids {
+        let actual = counts.get(&id).copied().unwrap_or_default();
+        assert_eq!(actual.followers, incoming.get(&id).copied().unwrap_or(0));
+        assert_eq!(actual.following, outgoing.get(&id).copied().unwrap_or(0));
+    }
+    counter.store(0, Ordering::Relaxed);
+    assert!(follow::counts_batch(&pool, &[]).await.unwrap().is_empty());
+    assert_eq!(counter.load(Ordering::Relaxed), 0);
+}
+
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
+#[allow(clippy::too_many_lines)] // mixed counter states and transaction visibility
+async fn engagement_batch_preserves_all_counters_and_transaction_state(pool: PgPool) {
+    use plamenu_db::{dislike, favourite, quote};
+    let alice = create_local_account(&pool, "alice", "Alice").await;
+    let bob = create_local_account(&pool, "bob", "Bob").await;
+    let root = status::create_local(&pool, NewLocalStatus::new(alice.id, "root", "public", None))
+        .await
+        .unwrap();
+    let empty = status::create_local(
+        &pool,
+        NewLocalStatus::new(alice.id, "empty", "public", None),
+    )
+    .await
+    .unwrap();
+    let off_page = status::create_local(
+        &pool,
+        NewLocalStatus::new(alice.id, "off page", "public", None),
+    )
+    .await
+    .unwrap();
+    for target in [&root, &off_page] {
+        status::create_local(
+            &pool,
+            NewLocalStatus::new(bob.id, "reply", "public", Some(target.id)),
+        )
+        .await
+        .unwrap();
+        let deleted = status::create_local(
+            &pool,
+            NewLocalStatus::new(bob.id, "deleted", "public", Some(target.id)),
+        )
+        .await
+        .unwrap();
+        status::stub_local(&pool, deleted.id, bob.id).await.unwrap();
+        status::create_local_reblog(&pool, bob.id, target.id)
+            .await
+            .unwrap();
+        favourite::create(&pool, bob.id, target.id, None)
+            .await
+            .unwrap();
+        dislike::create(&pool, alice.id, target.id, None)
+            .await
+            .unwrap();
+        for state in ["accepted", "accepted", "pending", "rejected", "revoked"] {
+            let quote_id = id::next();
+            quote::create(
+                &pool,
+                quote::NewQuote {
+                    quote_id,
+                    status_id: None,
+                    status_uri: &format!("https://remote.test/quotes/{quote_id}"),
+                    account_id: bob.id,
+                    quoted_status_id: Some(target.id),
+                    quoted_account_id: Some(alice.id),
+                    state,
+                    activity_uri: None,
+                    approval_uri: None,
+                    quoted_uri: target.uri.as_deref(),
+                    legacy: false,
+                },
+            )
+            .await
+            .unwrap();
+        }
+    }
+    let ids = [root.id, empty.id, root.id, 0];
+    let counter = Arc::new(AtomicUsize::new(0));
+    let guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(QueryCounter(counter.clone())),
+    );
+    let counts = status::engagement_for(&pool, &ids).await.unwrap();
+    assert_eq!(counter.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        counts.len(),
+        1,
+        "empty, missing and off-page IDs stay absent"
+    );
+    let actual = counts[&root.id];
+    assert_eq!(
+        (
+            actual.replies,
+            actual.reblogs,
+            actual.favourites,
+            actual.dislikes,
+            actual.quotes
+        ),
+        (1, 1, 1, 1, 2)
+    );
+    counter.store(0, Ordering::Relaxed);
+    assert!(status::engagement_for(&pool, &[]).await.unwrap().is_empty());
+    assert_eq!(counter.load(Ordering::Relaxed), 0);
+    drop(guard);
+
+    // A mutation must see its uncommitted engagement on the same connection;
+    // the normal pooled read must not observe it, including after rollback.
+    let mut tx = pool.begin().await.unwrap();
+    favourite::create(&mut *tx, alice.id, root.id, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        status::engagement_for_conn(&mut tx, &ids).await.unwrap()[&root.id].favourites,
+        2
+    );
+    assert!(
+        status::engagement_for_conn(&mut tx, &[])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        status::engagement_for(&pool, &ids).await.unwrap()[&root.id].favourites,
+        1
+    );
+    tx.rollback().await.unwrap();
+    assert_eq!(
+        status::engagement_for(&pool, &ids).await.unwrap()[&root.id].favourites,
+        1
+    );
+}
+
 impl<S: tracing::Subscriber> Layer<S> for ApplicationSettingsReadCounter {
     fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
         #[derive(Default)]
@@ -2240,6 +2396,16 @@ async fn filter_viewable_matches_can_view(pool: PgPool) {
     let followed = create_local_account(&pool, "followed", "F").await;
     let stranger = create_local_account(&pool, "stranger", "S").await;
     let blocker = create_local_account(&pool, "blocker", "B").await;
+    let pending = create_local_account(&pool, "pending", "P").await;
+    follow::create(&pool, viewer.id, pending.id, None)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE follows SET pending=TRUE WHERE account_id=$1 AND target_account_id=$2")
+        .bind(viewer.id)
+        .bind(pending.id)
+        .execute(&pool)
+        .await
+        .unwrap();
     follow::create(&pool, viewer.id, followed.id, None)
         .await
         .unwrap();
@@ -2262,6 +2428,7 @@ async fn filter_viewable_matches_can_view(pool: PgPool) {
         mk(followed.id, "private").await,  // followed -> visible
         mk(followed.id, "local").await,    // local author -> visible
         mk(stranger.id, "private").await,  // not followed, no mention -> hidden
+        mk(pending.id, "private").await,   // pending follow does not grant access
     ];
     let dm = mk(stranger.id, "direct").await; // mentioned -> visible
     mention::attach(&pool, dm.id, viewer.id, false)
@@ -2294,6 +2461,81 @@ async fn filter_viewable_matches_can_view(pool: PgPool) {
             "filter_viewable diverged from can_view (viewer={viewer_id:?})"
         );
     }
+}
+
+#[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
+async fn search_visibility_batch_matches_live_policy_without_per_account_queries(pool: PgPool) {
+    let counter = Arc::new(AtomicUsize::new(0));
+    let _guard = tracing::subscriber::set_default(
+        tracing_subscriber::registry().with(QueryCounter(counter.clone())),
+    );
+    let mut accounts = vec![create_local_account(&pool, "local", "Local").await];
+    for index in 0..20 {
+        accounts.push(remote_account(&pool, &format!("d{index}.policy.example"), "remote").await);
+    }
+    accounts[1].domain = Some(" D0.POLICY.EXAMPLE/ ".to_owned());
+    let mut portable = accounts[2].clone();
+    portable.uri = Some("https://local.test/.well-known/apgateway/did:key:fixture".to_owned());
+    accounts.push(portable.clone());
+    portable.suspended_at = Some(time::OffsetDateTime::now_utc());
+    accounts.push(portable);
+    let mut local_alias = accounts[3].clone();
+    local_alias.domain = Some("LOCAL.TEST".to_owned());
+    accounts.push(local_alias);
+    for phase in 0..3 {
+        if phase == 1 {
+            plamenu_db::instance_policy::create_domain_block(
+                &pool,
+                plamenu_db::instance_policy::NewDomainBlock {
+                    domain: "d0.policy.example",
+                    severity: "suspend",
+                    reject_media: false,
+                    reject_reports: false,
+                    private_comment: None,
+                    public_comment: None,
+                    obfuscate: false,
+                },
+            )
+            .await
+            .unwrap();
+        } else if phase == 2 {
+            plamenu_db::instance_policy::create_domain_allow(&pool, "d1.policy.example")
+                .await
+                .unwrap();
+        }
+        let mut expected = Vec::new();
+        for account in &accounts {
+            if plamenu::instance_policy::account_visible(&pool, "local.test", account)
+                .await
+                .unwrap()
+            {
+                expected.push(account.id);
+            }
+        }
+        counter.store(0, Ordering::Relaxed);
+        let actual =
+            plamenu::instance_policy::visible_accounts(&pool, "local.test", accounts.clone())
+                .await
+                .unwrap();
+        assert_eq!(
+            counter.load(Ordering::Relaxed),
+            1,
+            "one batched policy query"
+        );
+        assert_eq!(
+            actual.into_iter().map(|a| a.id).collect::<Vec<_>>(),
+            expected,
+            "policy phase {phase}"
+        );
+    }
+    counter.store(0, Ordering::Relaxed);
+    assert!(
+        plamenu::instance_policy::visible_accounts(&pool, "local.test", Vec::new())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(counter.load(Ordering::Relaxed), 0);
 }
 
 /// Seeds `n` notifications for `viewer`, each from a *distinct* sender and

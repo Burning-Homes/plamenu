@@ -133,6 +133,14 @@ def test_note_create_and_delete_federate_to_sharkey(
             lambda: db.follower_count(plamenu_user.username) == 1,
             desc="carol to follow",
         )
+        # The sender's follower row can commit before Sharkey processes Accept.
+        # Wait for the receiving timeline's real relationship before publishing.
+        wait_for(
+            lambda: sharkey_carol.show_user(
+                plamenu_user.username, host=config.PLAMENU_DOMAIN
+            )["isFollowing"],
+            desc="Sharkey to commit the accepted following relationship",
+        )
 
     with step("Plamenu posts; the note reaches carol's timeline"):
         local = plamenu_api.post_status(f"hello sharkey {marker}", visibility="public")
@@ -190,6 +198,14 @@ def test_note_edit_federates_to_sharkey(
         wait_for(
             lambda: db.follower_count(plamenu_user.username) == 1,
             desc="carol to follow",
+        )
+        # The sender's follower row can commit before Sharkey processes Accept.
+        # Wait for the receiving timeline's real relationship before publishing.
+        wait_for(
+            lambda: sharkey_carol.show_user(
+                plamenu_user.username, host=config.PLAMENU_DOMAIN
+            )["isFollowing"],
+            desc="Sharkey to commit the accepted following relationship",
         )
 
     with step("Plamenu posts; carol resolves her delivered copy"):
@@ -415,6 +431,14 @@ def test_poll_federates_to_sharkey(
             lambda: db.follower_count(plamenu_user.username) == 1,
             desc="carol to follow",
         )
+        # The sender's follower row can commit before Sharkey processes Accept.
+        # Wait for the receiving timeline's real relationship before publishing.
+        wait_for(
+            lambda: sharkey_carol.show_user(
+                plamenu_user.username, host=config.PLAMENU_DOMAIN
+            )["isFollowing"],
+            desc="Sharkey to commit the accepted following relationship",
+        )
 
     with step("Plamenu posts a poll"):
         entity = plamenu_api.post_poll(f"pick one {marker}", ["tea", "coffee"])
@@ -496,6 +520,14 @@ def test_profile_edit_federates_to_sharkey(
             lambda: db.follower_count(plamenu_user.username) == 1,
             desc="carol to follow",
         )
+        # The sender's follower row can commit before Sharkey processes Accept.
+        # Wait for the receiving timeline's real relationship before publishing.
+        wait_for(
+            lambda: sharkey_carol.show_user(
+                plamenu_user.username, host=config.PLAMENU_DOMAIN
+            )["isFollowing"],
+            desc="Sharkey to commit the accepted following relationship",
+        )
 
     with step("Plamenu edits its profile"):
         new_name = f"Renamed {marker}"
@@ -557,6 +589,14 @@ def test_image_attachment_federates_to_sharkey(
         wait_for(
             lambda: db.follower_count(plamenu_user.username) == 1,
             desc="carol to follow",
+        )
+        # The sender's follower row can commit before Sharkey processes Accept.
+        # Wait for the receiving timeline's real relationship before publishing.
+        wait_for(
+            lambda: sharkey_carol.show_user(
+                plamenu_user.username, host=config.PLAMENU_DOMAIN
+            )["isFollowing"],
+            desc="Sharkey to commit the accepted following relationship",
         )
 
     with step("Plamenu uploads an image and posts it"):

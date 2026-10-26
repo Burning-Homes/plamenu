@@ -549,9 +549,9 @@ case "$action" in
   # contention driver, which takes its settings from the environment rather
   # than argv — so a filtered spot-check silently ran the full concurrency
   # scenario too and crossed its exit code into the result.
-  bench) db_up; cargo bench --locked -p plamenu --bench hot_paths "$@" ;;
+  bench) db_up; cargo bench --locked --no-fail-fast --no-default-features -p plamenu --bench hot_paths "$@" ;;
   bench-check) python3 bench/bench_budgets.py "$@" ;;
-  bench-concurrency) db_up; cargo bench --locked -p plamenu --bench contention "$@" ;;
+  bench-concurrency) db_up; cargo bench --locked --no-fail-fast --no-default-features -p plamenu --bench contention "$@" ;;
   e2e) run_e2e false "$@" ;;
   e2e-full) run_e2e true "$@" ;;
   a11y-install)

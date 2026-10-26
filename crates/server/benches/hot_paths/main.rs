@@ -207,10 +207,13 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for ArmedQueryCounter 
 
     fn on_event(
         &self,
-        _event: &tracing::Event<'_>,
+        event: &tracing::Event<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
         QUERIES.fetch_add(1, Ordering::Relaxed);
+        if std::env::var_os("PLAMENU_BENCH_DIAGNOSTICS").is_some() {
+            eprintln!("{event:?}");
+        }
     }
 }
 
@@ -451,6 +454,9 @@ async fn collect_case_metrics(fx: &Fixture, selection: &ReadSelection) {
         // ~300 ms out of the two AP collection cases. Re-warming per case keeps
         // a count a property of the endpoint.
         warm(fx, case).await;
+        if std::env::var_os("PLAMENU_BENCH_DIAGNOSTICS").is_some() {
+            eprintln!("counted request: {group}/{}", case.name);
+        }
         QUERIES.store(0, Ordering::Relaxed);
         let response = fx
             .router
@@ -462,6 +468,12 @@ async fn collect_case_metrics(fx: &Fixture, selection: &ReadSelection) {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let queries = QUERIES.load(Ordering::Relaxed);
         let id = format!("{group}/{}", case.name);
+        if let Some(directory) = std::env::var_os("PLAMENU_BENCH_DIAGNOSTICS") {
+            let directory = std::path::PathBuf::from(directory).join(group);
+            std::fs::create_dir_all(&directory).expect("create diagnostic directory");
+            std::fs::write(directory.join(format!("{}.body", case.name)), &body)
+                .expect("write untimed diagnostic response");
+        }
         eprintln!("{id:<28}{queries:>9}{:>10}", body.len());
 
         if !status.is_success() {

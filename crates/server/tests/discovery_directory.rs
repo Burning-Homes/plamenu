@@ -205,11 +205,26 @@ async fn canonical_verification_preserves_missing_signals_and_has_no_imports(poo
     );
     {
         let requests = f.peer.requests.lock().unwrap();
-        assert_eq!(requests.len(), 3);
-        assert!(!requests[0].1);
-        assert!(requests[1].1 && requests[2].1);
+        assert_eq!(requests.len(), 5);
+        assert_eq!(requests.iter().filter(|(_, signed)| *signed).count(), 2);
+        for (path, signed) in [
+            ("/@alice", true),
+            ("/users/alice", true),
+            ("/api/v2/instance", false),
+            ("/favicon.ico", false),
+        ] {
+            assert!(
+                requests.contains(&(path.into(), signed)),
+                "missing expected request {path}"
+            );
+        }
+        assert!(
+            requests
+                .iter()
+                .any(|(path, signed)| path.starts_with(directory::PATH) && !signed)
+        );
     }
-    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 3);
+    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 5);
 }
 
 #[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
@@ -230,7 +245,7 @@ async fn directory_refusals_invalid_flags_private_profiles_and_foreign_ids_are_e
     let mut foreign = actor("foreign");
     foreign["id"] = json!("http://foreign.onion/users/foreign");
     f.set("/users/foreign", foreign);
-    // Exercise every authority failure independently of the random sample.
+    // Exercise every authority failure independently of page acquisition.
     f.page(0, json!([]));
     f.drain(1).await;
     for name in ["denied", "invalid", "private", "foreign"] {
@@ -260,7 +275,7 @@ async fn directory_refusals_invalid_flags_private_profiles_and_foreign_ids_are_e
             .iter()
             .all(|e| e.title.is_none() && e.summary.is_none())
     );
-    assert_eq!(f.peer.requests.lock().unwrap().len(), 5);
+    assert_eq!(f.peer.requests.lock().unwrap().len(), 7);
 }
 
 #[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
@@ -325,8 +340,11 @@ async fn refresh_expiry_access_denial_and_deletion_do_not_poison_other_profiles(
     recheck(&f, "alice").await;
     sqlx::query!("UPDATE discovery_entries SET verified_at=clock_timestamp()-interval '2 days',valid_until=clock_timestamp()-interval '1 second',updated_at=clock_timestamp()-interval '24 hours' WHERE canonical_uri=$1",uri).execute(&pool).await.unwrap();
     f.status("/users/alice", StatusCode::BAD_GATEWAY);
-    f.drain(2).await;
-    assert!(profiles::eligible(&f.state, &uri).await.unwrap().is_none());
+    recheck(&f, "alice").await;
+    // Temporary unavailability does not erase indefinitely retained profile metadata.
+    let retained = profiles::eligible(&f.state, &uri).await.unwrap().unwrap();
+    assert_eq!(retained.valid_until.year(), 9999);
+    assert_eq!(retained.title.as_deref(), Some("Canonical name"));
     f.status("/users/bob", StatusCode::GONE);
     recheck(&f, "bob").await;
     assert_eq!(
@@ -419,16 +437,22 @@ async fn sampling_advances_after_a_bounded_round_instead_of_repeating_the_first_
         f.page(offset, json!(rows));
     }
     f.drain(45).await;
-    assert_eq!(db::profile_candidates(&pool).await.unwrap().len(), 3);
-    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 4);
+    assert_eq!(db::profile_candidates(&pool).await.unwrap().len(), 20);
+    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 23);
+    // Refill through elapsed fixture time, retaining every rolling receipt and
+    // the production request/origin/byte limits for the second complete page.
+    sqlx::query("UPDATE discovery_pacing SET refilled_at=now()-interval '2 hours'")
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("UPDATE discovery_sampling SET next_at=now() WHERE source_id=$1")
         .bind(f.source)
         .execute(&pool)
         .await
         .unwrap();
-    f.drain(8).await;
-    assert_eq!(db::profile_candidates(&pool).await.unwrap().len(), 6);
-    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 8);
+    f.drain(45).await;
+    assert_eq!(db::profile_candidates(&pool).await.unwrap().len(), 40);
+    assert_eq!(db::diagnostics(&pool).await.unwrap().requests_24h, 44);
     assert_eq!(
         f.peer
             .requests

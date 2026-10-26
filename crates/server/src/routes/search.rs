@@ -490,15 +490,8 @@ pub(crate) async fn search_accounts(
     } else {
         Vec::new()
     };
-    let mut visible = Vec::with_capacity(found.len());
-    for account in found {
-        if crate::instance_policy::account_visible(&state.pool, &state.config.domain, &account)
-            .await?
-        {
-            visible.push(account);
-        }
-    }
-    found = visible;
+    found =
+        crate::instance_policy::visible_accounts(&state.pool, &state.config.domain, found).await?;
     if !exact.is_empty() {
         let exact_ids: std::collections::HashSet<i64> = exact.iter().map(|a| a.id).collect();
         found.retain(|a| !exact_ids.contains(&a.id));

@@ -75,6 +75,12 @@ async fn source(pool: &PgPool, domain: &str) -> i64 {
     sqlx::query("UPDATE discovery_sources SET canonical_uri=endpoint,capabilities=ARRAY['directory'],verified_at=now(),valid_until=now()+interval '1 day',last_success_at=now() WHERE id=$1").bind(id).execute(pool).await.unwrap();
     id
 }
+// Raw fixture inserts must allocate the same stable per-source positions as
+// finish_entry; zero is the cursor sentinel, not a production entry position.
+async fn position(pool: &PgPool, id: i64) {
+    sqlx::query("WITH next AS (UPDATE discovery_sources SET next_ordinal=next_ordinal+1 WHERE id=(SELECT source_id FROM discovery_entries WHERE id=$1) RETURNING next_ordinal) UPDATE discovery_entries SET browse_ordinal=next.next_ordinal FROM next WHERE id=$1")
+        .bind(id).execute(pool).await.unwrap();
+}
 async fn entry(pool: &PgPool, source: i64, domain: &str, name: &str) -> i64 {
     let id = plamenu_db::id::next();
     let uri = format!("https://{domain}/users/{name}");
@@ -82,6 +88,7 @@ async fn entry(pool: &PgPool, source: i64, domain: &str, name: &str) -> i64 {
         .bind(id).bind(uri).bind(source).bind(format!("{name} <name>"))
         .bind("Hello <img src=https://evil.example/track> & friends")
         .execute(pool).await.unwrap();
+    position(pool, id).await;
     id
 }
 async fn fixture(pool: &PgPool) -> Fixture {
@@ -354,7 +361,7 @@ async fn pagination_is_stable_diverse_and_ignores_new_arrivals_until_restart(poo
 }
 
 #[sqlx::test(migrator = "plamenu_db::MIGRATOR")]
-async fn disabled_paused_expired_and_tightened_policy_are_applied_on_each_read(pool: PgPool) {
+async fn disabled_paused_retained_and_tightened_policy_are_applied_on_each_read(pool: PgPool) {
     let f = fixture(&pool).await;
     let mut s = db::settings(&pool).await.unwrap();
     s.paused = true;
@@ -384,6 +391,16 @@ async fn disabled_paused_expired_and_tightened_policy_are_applied_on_each_read(p
     s.enabled = true;
     db::save_settings(&pool, &s).await.unwrap();
     sqlx::query("UPDATE discovery_entries SET verified_at=now()-interval '2 days',valid_until=now()-interval '1 day'").execute(&pool).await.unwrap();
+    // Profiles have no age limit; an explicit authoritative refusal still hides them.
+    assert!(f.get("/discover").await.contains("data-discovery-card="));
+    db::invalidate_entry(
+        &pool,
+        "https://one.example/users/alice",
+        db::Invalidation::Denied,
+        "remote_refusal",
+    )
+    .await
+    .unwrap();
     assert!(!f.get("/discover").await.contains("data-discovery-card="));
 }
 
@@ -469,10 +486,12 @@ async fn seed_browser_posts(pool: &PgPool) {
             .execute(pool)
             .await
             .unwrap();
-        for n in 0..3 {
+        for n in 0..9 {
+            let id = plamenu_db::id::next();
             sqlx::query("INSERT INTO discovery_entries(id,canonical_uri,actor_uri,source_id,kind,policy_revision,discoverable,indexable,visibility,title,summary,verified_at,valid_until,published_at,sensitive) VALUES($1,$2,$3,$4,'post',1,'missing','allow','public',$5,'Garden orchids and small creative experiments. A public post excerpt.',now(),now()+interval '1 day',now()-interval '1 hour',$6)")
-                .bind(plamenu_db::id::next()).bind(format!("{actor}/posts/{n}")).bind(&actor).bind(source)
+                .bind(id).bind(format!("{actor}/posts/{n}")).bind(&actor).bind(source)
                 .bind(if n==0 {"Content warning"} else {""}).bind(n==0).execute(pool).await.unwrap();
+            position(pool, id).await;
         }
     }
 }
@@ -483,11 +502,13 @@ async fn seed_browser_communities(pool: &PgPool) {
             .fetch_all(pool)
             .await
             .unwrap();
-    for n in 0..9 {
+    for n in 0..25 {
         let (source, origin) = &sources[n % 2];
         let uri = format!("{origin}/c/garden{n}");
+        let id = plamenu_db::id::next();
         sqlx::query("INSERT INTO discovery_entries(id,canonical_uri,actor_uri,source_id,kind,policy_revision,discoverable,indexable,visibility,title,summary,verified_at,valid_until,sensitive) VALUES($1,$2,$2,$3,'community',1,'missing','deny','public',$4,'A community for growing things and sharing ideas.',now(),now()+interval '1 day',$5)")
-            .bind(plamenu_db::id::next()).bind(uri).bind(source).bind(format!("Garden community {n}")).bind(n==0).execute(pool).await.unwrap();
+            .bind(id).bind(uri).bind(source).bind(format!("Garden community {n}")).bind(n==0).execute(pool).await.unwrap();
+        position(pool, id).await;
     }
 }
 
@@ -497,14 +518,15 @@ async fn seed_browser_videos(pool: &PgPool) {
             .fetch_all(pool)
             .await
             .unwrap();
-    for n in 0..9 {
+    for n in 0..25 {
         let (source, origin) = &sources[n % 2];
         let id = plamenu_db::id::next();
         let uuid = format!("00000000-0000-4000-8000-{n:012x}");
         let owner = format!("{origin}/accounts/camera");
         let channel = format!("{origin}/video-channels/garden{}", n / 4);
-        sqlx::query("INSERT INTO discovery_entries(id,canonical_uri,actor_uri,source_id,kind,policy_revision,discoverable,indexable,visibility,title,summary,verified_at,valid_until,published_at,sensitive) VALUES($1,$2,$3,$4,'video',1,'missing','missing','public',$5,'Growing orchids, a short film about a small garden.',now(),now()+interval '1 day',now()-interval '1 hour',$6)").bind(id).bind(format!("{origin}/videos/watch/{uuid}")).bind(&owner).bind(source).bind(format!("Garden film {n}")).bind(n==0).execute(pool).await.unwrap();
+        sqlx::query("INSERT INTO discovery_entries(id,canonical_uri,actor_uri,source_id,kind,policy_revision,discoverable,indexable,visibility,title,summary,verified_at,valid_until,published_at,sensitive) VALUES($1,$2,$3,$4,'video',1,'missing','missing','public',$5,'Growing orchids, a short film about a small garden.',now(),now()+interval '1 day',now()-interval '1 hour',$6)").bind(id).bind(format!("{origin}/videos/watch/{uuid}")).bind(&owner).bind(source).bind(format!("Garden film {n}")).bind(n==0 || n==24).execute(pool).await.unwrap();
         sqlx::query("INSERT INTO discovery_video_details(entry_id,uuid,owner_uri,channel_uri,channel_title,duration) VALUES($1,$2,$3,$4,'Garden films',125)").bind(id).bind(uuid).bind(owner).bind(channel).execute(pool).await.unwrap();
+        position(pool, id).await;
     }
 }
 
@@ -514,7 +536,8 @@ async fn browser_discovery_journey(pool: PgPool) {
     use std::io::Write;
     let f = fixture(&pool).await;
     let second = source(&pool, "two.example").await;
-    for n in 0..5 {
+    // More than the current 20-card page so both JS and no-JS paths paginate.
+    for n in 0..12 {
         entry(&pool, f.source, "one.example", &format!("a{n}")).await;
         entry(&pool, second, "two.example", &format!("b{n}")).await;
     }

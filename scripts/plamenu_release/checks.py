@@ -61,14 +61,19 @@ def static(runner, folder):
         ("sh", "scripts/check-public-tree.sh"),
     ):
         runner.run(*command)
-    shell_files = {"dev", "e2e/peers/dev", "e2e/peers/provision.sh"}
+    shell_files = {
+        "dev",
+        "e2e/peers/dev",
+        "e2e/peers/provision.sh",
+        "e2e/peers/songhive-test/peer",
+    }
     for pattern in (
         "scripts/*.sh",
         "scripts/ci/*.sh",
         "docs/examples/*.sh",
-        "e2e/peers/*/entrypoint.sh",
-        "e2e/peers/*/entrypoint-seed.sh",
-        "e2e/peers/*/docker-entrypoint.sh",
+        "e2e/peers/*-test/entrypoint.sh",
+        "e2e/peers/*-test/entrypoint-seed.sh",
+        "e2e/peers/*-test/docker-entrypoint.sh",
     ):
         shell_files.update(
             str(p.relative_to(runner.source)) for p in runner.source.glob(pattern)
@@ -213,9 +218,29 @@ def _performance(runner, folder):
     previous = set((runner.source / "bench/results").glob("*.json"))
     with database(runner) as url:
         for args in (
-            ("cargo", "bench", "--locked", "-p", "plamenu", "--bench", "hot_paths"),
+            (
+                "cargo",
+                "bench",
+                "--locked",
+                "--no-fail-fast",
+                "--no-default-features",
+                "-p",
+                "plamenu",
+                "--bench",
+                "hot_paths",
+            ),
             ("python3", "bench/bench_budgets.py", "--strict"),
-            ("cargo", "bench", "--locked", "-p", "plamenu", "--bench", "contention"),
+            (
+                "cargo",
+                "bench",
+                "--locked",
+                "--no-fail-fast",
+                "--no-default-features",
+                "-p",
+                "plamenu",
+                "--bench",
+                "contention",
+            ),
         ):
             runner.run(*args, env={"DATABASE_URL": url})
     reports = set((runner.source / "bench/results").glob("*.json")) - previous

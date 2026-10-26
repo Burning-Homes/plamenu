@@ -1584,7 +1584,7 @@ async fn mobile_tabbar_is_five_slots_with_a_burger_drawer(pool: PgPool) {
         .0;
     for link in [
         "/",
-        "/explore",
+        "/discover",
         "/public",
         "/notifications",
         "/bookmarks",
@@ -1719,7 +1719,15 @@ async fn anonymous_mobile_tabbar_is_home_plus_burger_drawer(pool: PgPool) {
         .expect("drawer closes")
         .0;
     for link in [
-        "/explore", "/public", "/people", "/groups", "/search", "/rules", "/staff", "/login",
+        "/music",
+        "/videos/explore",
+        "/public",
+        "/people",
+        "/groups",
+        "/search",
+        "/rules",
+        "/staff",
+        "/login",
     ] {
         assert!(
             drawer.contains(&format!("href=\"{link}\"")),
@@ -1961,8 +1969,8 @@ async fn stored_interface_locale_overrides_accept_language(pool: PgPool) {
 
     let conversations = get(&app, "/conversations", Some(cookie)).await;
     assert_eq!(conversations.status, StatusCode::OK);
-    assert!(conversations.body.contains("<h1>Личные упоминания</h1>"));
-    assert!(conversations.body.contains("Новое личное упоминание"));
+    assert!(conversations.body.contains("<h1>Сообщения</h1>"));
+    assert!(conversations.body.contains("Новое сообщение"));
 
     let compose = get(&app, "/compose", Some(cookie)).await;
     assert_eq!(compose.status, StatusCode::OK);
@@ -15069,15 +15077,15 @@ async fn group_management_console_owner_flow(pool: PgPool) {
     assert!(manage.body.contains(r#"aria-label="Group moderation""#));
     assert!(manage.body.contains("Reports"));
 
-    // The console is reached from the privileged-tools shield in the group's
-    // profile card — shown to the owner, absent for a logged-out visitor.
+    // The console is reached from the managed actor controls on the profile,
+    // shown to the owner and absent for a logged-out visitor.
     let profile = get(&app, "/@hiking", Some(&cookie)).await;
     assert_eq!(profile.status, StatusCode::OK);
-    assert!(profile.body.contains("Manage group"));
-    assert!(profile.body.contains("data-privileged-menu"));
+    assert!(profile.body.contains("actor-connections__manage"));
     assert!(profile.body.contains(&format!("/groups/{gid}/manage")));
     let anon = get(&app, "/@hiking", None).await;
-    assert!(!anon.body.contains("Manage group"));
+    assert!(!anon.body.contains("actor-connections__manage"));
+    assert!(!anon.body.contains(&format!("/groups/{gid}/manage")));
 
     // Members, requests, moderators and reports pages all load for the owner.
     for tab in ["members", "requests", "moderators", "reports"] {

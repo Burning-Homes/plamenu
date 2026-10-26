@@ -7,6 +7,16 @@ useDefault = true
 id = "generic-api-key"
 
 [[rules.allowlists]]
+description = "Source-file SHA256 mappings in gate inventories and archived verification manifests"
+condition = "AND"
+paths = [
+  '''(^|/)(accessibility|e2e)/inventory\.json$''',
+  '''(^|/)docs/media/accessibility-2026-10-19/[^/]*manifest\.json$''',
+]
+regexTarget = "line"
+regexes = ['''^\s*"(accessibility|e2e|crates)/[a-zA-Z0-9_./-]+\.(mjs|js|py|rs)":\s*"[a-f0-9]{64}",?\s*$''']
+
+[[rules.allowlists]]
 description = "Public did:key identifier in the canonical actor fixture"
 condition = "AND"
 paths = ['''(^|/)crates/ap/src/actor\.rs$''']
