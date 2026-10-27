@@ -3,6 +3,16 @@ import {readFileSync} from 'node:fs';
 import {signIn, openVideoOptions, videoChannelForm, createVideoChannel, freshMusicAudio, openDetailsFor,openMusicUpload} from '../session.mjs';
 
 test.use({serviceWorkers:'allow'});
+async function saveChannelProfile(page, form) {
+  const action = new URL(await form.getAttribute('action'), page.url()).href;
+  // WebKit can finish click's navigation wait before a service-worker-controlled
+  // form starts its POST. Wait for the committed save before leaving the page.
+  const [response] = await Promise.all([
+    page.waitForResponse(response => response.url() === action && response.request().method() === 'POST'),
+    form.getByRole('button', {name:'Save channel profile', exact:true}).click(),
+  ]);
+  expect(response.status()).toBe(303);
+}
 async function qualification(page, info, noScript) {
   await signIn(page);
   expect(info.project.use.ignoreHTTPSErrors).toBe(false);
@@ -33,7 +43,7 @@ async function qualification(page, info, noScript) {
     await form.locator(`input[name="${kind}"]`).setInputFiles({name:`${kind}.png`,mimeType:'image/png',buffer:png});
     await form.locator(`input[name="${kind}_description"]`).fill(`${name} ${kind} first`);
   }
-  await form.getByRole('button',{name:'Save channel profile',exact:true}).click();
+  await saveChannelProfile(page, form);
   await page.goto(`/@${name}`);
   const avatar = page.locator(`img.profile__avatar[alt="${name} avatar first"]`);
   const header = page.locator(`img[alt="${name} header first"]`);
@@ -49,7 +59,7 @@ async function qualification(page, info, noScript) {
   await page.getByRole('link',{name:`TLS channel ${name}`,exact:true}).click();
   await form.locator('input[name="avatar"]').setInputFiles({name:'fresh.png',mimeType:'image/png',buffer:png});
   await form.locator('input[name="avatar_description"]').fill(`${name} avatar fresh`);
-  await form.getByRole('button',{name:'Save channel profile',exact:true}).click();
+  await saveChannelProfile(page, form);
   await page.goto(`/@${name}`); await page.reload();
   const fresh = page.locator(`img.profile__avatar[alt="${name} avatar fresh"]`);
   await expect.poll(()=>fresh.evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);

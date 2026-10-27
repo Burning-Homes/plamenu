@@ -92,7 +92,7 @@
     "e2e/tests/test_owncast_federation.py": "54bb34cb8b45ea1401903cd2efcd21593ee034f9c36116834a90a3987035d267",
     "e2e/tests/test_peertube_captions.py": "fc957cbb8e94d70615a1365c41e496bd392427a78c2455969a452d4430cd49ac",
     "e2e/tests/test_peertube_chapters.py": "edb36362ce99eca44623d9527fa6d865c2b1a1e443695157973db80a2fd27d02",
-    "e2e/tests/test_peertube_federation.py": "fe01fab67cdb8af324fd0136b451f0b7f8500617a058aae843dcb2e675d7608e",
+    "e2e/tests/test_peertube_federation.py": "eafaf899b0766f0d2a831291705e5979bcdb5d281ad1a4d2185ed81bfe2c921e",
     "e2e/tests/test_peertube_live_p2p.py": "a9f458b52af68ddc01c957aab77c6b63f604c5e580b94c743bdc0d198285c061",
     "e2e/tests/test_peertube_profiles.py": "69167823c882ec3cf1c93cf439a48f0c3f0f753612f488cc9498d59cf6120688",
     "e2e/tests/test_pins.py": "6f7f75b659c10d1c31d90eca8eabe0a6f176991475536e461264d4afd65361de",

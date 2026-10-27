@@ -1,0 +1,8 @@
+--- a/lib/demon/sidekiq.rb
++++ b/lib/demon/sidekiq.rb
+@@ -133 +133,4 @@
+-    Process.setpriority(Process::PRIO_PROCESS, Process.pid, 5)
++    # A reniced development runner may already have a lower priority. Raising
++    # it requires privileges and prevents the entire Sidekiq worker from starting.
++    priority = [5, Process.getpriority(Process::PRIO_PROCESS, Process.pid)].max
++    Process.setpriority(Process::PRIO_PROCESS, Process.pid, priority)

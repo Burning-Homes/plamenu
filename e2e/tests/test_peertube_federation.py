@@ -420,7 +420,10 @@ def test_existing_peertube_video_channel_is_backfilled_automatically(
                     (status_id,),
                 ).fetchone(),
                 desc="automatic legacy PeerTube channel backfill",
-                timeout=180,
+                # The production worker can be in its five-minute idle poll.
+                # Retain the existing 180-second work window after that poll;
+                # otherwise success depends on this case's position in the suite.
+                timeout=300 + 180,
             )
             assert row[0] == channel_uri and row[1] is not None and row[2] is None, row
     finally:

@@ -1,11 +1,13 @@
 # PeerTube reference fixture
 
-This fixture runs the official **PeerTube 8.3.0** image, pinned by digest in
+This fixture runs the official **PeerTube 8.3.1** image, pinned by digest in
 `compose.dev.yml`. `../sources.lock` pins the matching reference source used
 to inspect federation contracts; the fixture itself does not build that source.
 
 The shared fleet proxy serves `https://peertube.local`; RTMP ingest uses port
-1935. See [the E2E setup](../../README.md) for machine-specific requirements.
+1935. The fixture enables 144p and 240p VOD renditions for playback and P2P
+checks, including on fresh volumes. Preserve the RTMP port when isolating
+the fixture. See [the E2E setup](../../README.md) for machine-specific requirements.
 
 ## Upgrading existing 8.2 data
 
@@ -26,7 +28,7 @@ docker compose -f compose.dev.yml up -d --no-deps --wait peertube
 ```
 
 This fills the video search index and migrates existing media infohashes.
-Verify `/api/v1/config` reports 8.3.0, existing videos still play, and run
+Verify `/api/v1/config` reports 8.3.1, existing videos still play, and run
 `tests/test_peertube_federation.py` from the configured E2E environment.
 Report failures separately from instance health: a healthy upgraded PeerTube
 does not establish that every Plamenu interoperability path works.

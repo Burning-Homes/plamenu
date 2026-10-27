@@ -104,6 +104,9 @@ services:
       # The whole *.local fleet resolves to private IPs behind Caddy; the
       # default SSRF guard would refuse every peer, so disable it (dev only).
       PEERTUBE_FEDERATION_PREVENT_SSRF: "false"
+      # VOD playback/P2P tests require this ladder on fresh volumes as well.
+      PEERTUBE_TRANSCODING_144P: "true"
+      PEERTUBE_TRANSCODING_240P: "true"
       # ── live streaming (RTMP ingest + HLS output) ─────────────────────
       # Off by default upstream. Plamenu's live-playback lane needs a real
       # PeerTube live to test against, so enable it here: `live.enabled` also

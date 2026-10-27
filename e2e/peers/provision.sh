@@ -91,6 +91,7 @@ apply_once "$ROOT/lemmy-source" "$ROOT/patches/lemmy-build-jobs.patch"
 apply_once "$ROOT/pleroma-source" "$ROOT/patches/pleroma-dockerfile.patch"
 apply_once "$ROOT/owncast-source" "$ROOT/patches/owncast-build-images.patch"
 apply_once "$ROOT/sharkey-source" "$ROOT/patches/sharkey-build-image.patch"
+apply_once "$ROOT/discourse-source" "$ROOT/patches/discourse-sidekiq-priority.patch"
 
 if [[ "$CHECK" == true ]]; then
   echo "PASS pinned federation peer sources and patches"
