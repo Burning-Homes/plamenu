@@ -90,6 +90,72 @@ or a `fixme` for a known defect still prevents full qualification. Changing the
 exclusion policy requires reviewing and refreshing the inventory. Manual evidence
 continues to cover physical hardware and assistive technology outside the runtime.
 
+### Diagnose recording and fullscreen support
+
+The pinned Playwright 1.63.0 Linux image's WebKit 26.6 does not expose
+`MediaRecorder` in either headless WPE or headed GTK. Both runtimes omit the
+recorder feature; attempting `--features=+MediaRecorder` in WPE reports that
+the feature is unavailable. Installing a microphone or switching to Xvfb does
+not supply this API. The image already includes GStreamer base/good/bad/libav
+plugins, FFmpeg and a private PulseAudio sink. A different WebKit build must
+demonstrate actual recording before removing the nine publisher exclusions in
+each WebKit project.
+
+Playwright also explicitly disables DOM fullscreen when WebKit's `isMobile`
+option is true. This accounts for the two mobile fullscreen exclusions.
+Desktop WebKit fullscreen works. Changing `isMobile` to false tests desktop
+behavior at a narrow viewport; it does not verify Safari on an iPhone.
+
+The standalone diagnostic below needs no Plamenu server or accounts. It checks
+capabilities, records synthetic moving video and audio with the real browser
+encoder, decodes both streams with FFmpeg, and enters/exits real DOM fullscreen
+where exposed. It runs serially and always writes `full_pass: false`; a completed
+diagnostic can contain unsupported capabilities. It never qualifies a gate.
+Use a new output directory for every run; existing evidence is not overwritten.
+
+```sh
+# After ./dev a11y-install, from the repository root:
+probe_image="plamenu-accessibility-encoder:$(sha256sum accessibility/Dockerfile | cut -c1-16)"
+probe_output="target/media-runtime-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir "$probe_output"
+docker run --rm --init --network none --shm-size 1g \
+  --user "$(id -u):$(id -g)" -e A11Y_NULL_AUDIO=1 \
+  -e "A11Y_BROWSER_IMAGE=$(docker image inspect --format '{{.Id}}' "$probe_image")" \
+  -v "$PWD:/work:ro" -v "$PWD/$probe_output:/evidence" -w /work \
+  "$probe_image" node accessibility/probe-media-runtime.mjs /evidence/headless
+```
+
+Add `xvfb-run -a` before `node` and `--headed` after the output directory to
+also compare GTK. Use `--case=chromium-headless-control`,
+`--case=webkit-headless-desktop`, `--case=webkit-headless-mobile`, or
+`--headed --case=webkit-headed-desktop` to investigate one case. On a Mac with
+the matching Playwright browsers and FFmpeg installed, the same Node command
+can write to a local directory without Docker or `A11Y_NULL_AUDIO`. That is a
+WebKit diagnostic, not verification of Apple's shipping Safari.
+
+### Safari and iOS device verification
+
+Use a disposable Plamenu account on a trusted HTTPS test deployment, and record
+the application revision, hardware, OS and Safari versions with the evidence.
+On macOS Safari and an actual iPhone/iPad, check:
+
+1. Camera/microphone permission denial and retry; private preview and cancel;
+   start/stop a broadcast; audio and video received by a second viewer; replay
+   after stopping; and release of the capture indicators after cancel/stop.
+   On platforms offering screen capture, also check camera/screen switching
+   and continuing audio. Record unavailable APIs explicitly.
+2. VOD playback in portrait and landscape; enter/exit fullscreen through the
+   offered controls; verify the whole picture, seek/pause controls, touch
+   reveal, rotation, and return to inline playback. Distinguish DOM fullscreen
+   from the platform's native video fullscreen; a native player does not
+   validate Plamenu's custom DOM fullscreen controls.
+3. The same controls with VoiceOver, including names, focus, errors and recovery.
+
+Attach recordings/screenshots and observations to `manual-media`,
+`manual-adaptation`, `manual-input` and `manual-cross-platform` as applicable.
+If the device is unavailable, keep those checks unverified. Desktop viewport
+emulation and capability probes cannot substitute for these results.
+
 ## Criterion and manual evidence gate
 
 `accessibility/criteria.json` inventories every WCAG 2.2 Level A and AA
@@ -144,6 +210,11 @@ conditional applicability must be explained in the check notes and any public
 conformance or partial-conformance statement.
 
 ## Release command
+
+The reviewed experimental 0.7 exception is a separate
+[release acceptance path](RELEASING.md#experimental-07-validation-exceptions).
+It preserves `full_pass: false` and does not satisfy this conformance protocol.
+The validator below remains strict, including when 0.7 exceptions are accepted.
 
 Supply the completed record explicitly:
 

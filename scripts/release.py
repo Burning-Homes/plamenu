@@ -12,7 +12,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-from plamenu_release import build, checks, docs, worker
+from plamenu_release import acceptance, build, checks, docs, worker
 from plamenu_release.core import (
     ReleaseError,
     clean,
@@ -178,6 +178,13 @@ def parser():
         help="Completed WCAG 2.2 AA evidence record for this exact revision",
     )
     p.add_argument(
+        "--accept-0.7-exceptions",
+        dest="accept_0_7_exceptions",
+        type=Path,
+        metavar="EVIDENCE_ROOT",
+        help="Accept only the source-bound, reviewed 0.7 evidence and gaps; never a full pass",
+    )
+    p.add_argument(
         "--config",
         type=Path,
         default=Path(
@@ -218,7 +225,22 @@ def run(args):
     config = tomllib.loads(args.config.read_text()) if args.config.exists() else {}
     missing = prerequisites(args)
     config_errors = configuration_errors(args, config)
-    if not args.accessibility_evidence:
+    accepted = None
+    if args.accept_0_7_exceptions:
+        args.accept_0_7_exceptions = args.accept_0_7_exceptions.expanduser().resolve()
+        if args.accessibility_evidence:
+            config_errors.append(
+                "choose --accessibility-evidence or --accept-0.7-exceptions, not both "
+                "(also check PLAMENU_A11Y_EVIDENCE)"
+            )
+        try:
+            accepted = acceptance.validate(
+                origin, args.accept_0_7_exceptions, version, identity["source"]
+            )
+            identity["validation_exceptions"] = fingerprint(accepted)
+        except (ReleaseError, OSError, ValueError, KeyError) as error:
+            config_errors.append(str(error))
+    elif not args.accessibility_evidence:
         config_errors.append("missing --accessibility-evidence")
     elif not args.accessibility_evidence.is_file():
         config_errors.append("--accessibility-evidence does not name a regular file")
@@ -249,6 +271,10 @@ def run(args):
             else "not run (machine-specific budgets; --with-performance to enable)"
         )
     )
+    if accepted:
+        print(
+            "Validation: accepted 0.7 exceptions; full_pass=false; no WCAG conformance claim"
+        )
     if args.plan:
         print("Missing prerequisites: " + (", ".join(missing) or "none"))
         print("Configuration: " + ("; ".join(config_errors) or "ready"))
@@ -271,6 +297,8 @@ def run(args):
         )
     clean(origin)
     notes = notes_for(origin, version)
+    if accepted:
+        notes += acceptance.DISCLOSURE
     if args.with_performance:
         checks.performance_machine(origin)
     subprocess.run(
@@ -378,16 +406,29 @@ def run(args):
             rerun=args.rerun,
             env=cargo_env,
         )
-        statuses["accessibility"] = stage(
-            source,
-            root,
-            "accessibility",
-            identity,
-            lambda r, p: checks.accessibility(
-                r, p, args.accessibility_evidence, identity["source"]
-            ),
-            rerun=args.rerun,
-        )
+        if accepted:
+            statuses["validation-exceptions"] = stage(
+                source,
+                root,
+                "validation-exceptions",
+                identity,
+                lambda r, p: acceptance.record(
+                    r, p, args.accept_0_7_exceptions, version, identity["source"]
+                ),
+                rerun=args.rerun,
+            )
+            statuses["accessibility"] = acceptance.accessibility_status()
+        else:
+            statuses["accessibility"] = stage(
+                source,
+                root,
+                "accessibility",
+                identity,
+                lambda r, p: checks.accessibility(
+                    r, p, args.accessibility_evidence, identity["source"]
+                ),
+                rerun=args.rerun,
+            )
         for name, enabled, action in (
             ("e2e", args.with_e2e, lambda r, p: checks.e2e(r, p, origin)),
             ("performance", args.with_performance, checks.performance),
@@ -403,7 +444,14 @@ def run(args):
                 }
             )
         if args.check_only:
-            print("Source checks passed. Logs: " + str(root))
+            print(
+                (
+                    "Source checks completed; validation accepted with exceptions. Logs: "
+                    if accepted
+                    else "Source checks passed. Logs: "
+                )
+                + str(root)
+            )
             return
         for arch, target in build.TARGETS.items():
             where = getattr(args, arch + "_on")
@@ -429,6 +477,8 @@ def run(args):
         ) != build.source_tree(root / "build-arm64" / source_archive):
             raise ReleaseError("Architecture builds returned different source archives")
         report = {"identity": identity, "checks": statuses}
+        if accepted:
+            report.update(full_pass=False, qualification=accepted)
         assets = root / "assets"
         if assets.exists():
             shutil.rmtree(assets)

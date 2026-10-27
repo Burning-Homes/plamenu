@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "version": "0.7.0",
+  "full_pass": false,
+  "wcag_conformance": false,
+  "full_audit_revision": "aed211330f2606bf55fbec4d38071d5aef4c4bb2",
+  "repair_revision": "d6dd6c664f6517b4577b1aefed456cf660427a03",
+  "validated_source_fingerprint": "3eb357427a21d13e6ee4dd0919d4418032dc70a2e57c9f22587e380af4bafd0e",
+  "accepted_gaps": {
+    "browser": {
+      "excluded": 29,
+      "catalogue_duplicates": 5,
+      "non_chromium_webauthn": 4,
+      "webkit_media_recorder": 18,
+      "webkit_mobile_fullscreen": 2
+    },
+    "e2e": {
+      "skipped": [
+        "GoToSocial inbound Move (shared fixture isolation)",
+        "Mitra reports/Flag (unsupported peer functionality)",
+        "Akkoma outgoing Block/Undo (peer configuration)"
+      ],
+      "xfail": [
+        "GoToSocial delete after edit (upstream defect)"
+      ]
+    },
+    "human_accessibility": "not performed; no WCAG conformance claim",
+    "final_revision_full_gate": "not performed; original failed full audit retained, observed failures repaired and verified with focused checks",
+    "performance": "saved full-run measurements strictly regraded after lowering query caps; not remeasured at the repair revision"
+  },
+  "evidence": {
+    "full-gates/20261026T231306Z-aed21133/results.json": "28c67478f4b668e4266c0dfeba6e87f95077fbda78d75a22484046b0d459d3b4",
+    "full-gates/20261026T231306Z-aed21133/qualification.json": "1f3106fcabf58a3f75c49625ba4c1ad00df294ca4e4061f476ac79cc567f6f89",
+    "full-gates/20261026T231306Z-aed21133/exceptions.json": "64ffd2888dcf83e0b3a4cf1e02b7c7e8afab184c6069f68c13ab6defa0407b89",
+    "full-gates/20261026T231306Z-aed21133/browser-full.json": "f57f14b12a4204b41aca9fe9ed8348edeb0047f5916415bf7113ff480e434071",
+    "full-gates/20261026T231306Z-aed21133/e2e.xml": "532dd2e6d91f35ef9f0c10d0a90781d698bb9466368260e23ceb9d19eb0cc3d8",
+    "full-gates/20261026T231306Z-aed21133/rust-tests.xml": "f53081eb19d752df821776c210f1bda4d1fa82d9f150a049e65bc8e12b2770e0",
+    "full-gates/20261026T231306Z-aed21133/rust-live-directory.xml": "242a355ffb4a60736c5f19350101ace0e9aa8379f970302f0e98cadd13e4ae45",
+    "full-gates/20261026T231306Z-aed21133/rust-recovery.xml": "a99261392d223eec471818295b62edcd0646dae40cc040631f302016e7f2cd1e",
+    "release-validation-repairs-20261027T044832Z/FINAL-VALIDATION.json": "61d87cf5e28469b1e99f71ba57f55ee7d85dfcd5b688a9320bfe2265530cba1f",
+    "release-validation-repairs-20261027T044832Z/focused-e2e.xml": "6cb0e288cb6036faa34c8f0c43a6c52baba27d0442494076a1a2b1bdebcbdab5",
+    "release-validation-repairs-20261027T044832Z/fresh-fixture-repeat-3/focused-e2e.xml": "d0c6008b054e3cd7b58c62560d6a066ffe857a6c9342915f7332b2d17863cb4a",
+    "release-validation-repairs-20261027T044832Z/browser-profile-1.json": "e3980a87dfeb2c57056ce056d3b64f2d729d270517949b8ad69326bd1ca93e58",
+    "release-validation-repairs-20261027T044832Z/browser-profile-2.json": "6494ba5d5cc18a3a89b113d0053cf20b9006f963f2aae9297d64dc87561f7206",
+    "release-validation-repairs-20261027T044832Z/bench-budget-regrade.log": "67079c7f20b244f9964f36d4a313c2f1e6eb5b0dc612993e97f8ce223ffc7e7f",
+    "release-validation-repairs-20261027T044832Z/final-static.json": "efdb6e5e06adaf353c8b06ac6085e7e5375de6e31a7d06e88e933165e1ee13db",
+    "release-validation-repairs-20261027T044832Z/postcommit-checks.json": "16fb540dfe6e101479a7fec50694c3b704d52eac1d8f5056b2355d3e36517859",
+    "release-validation-repairs-20261027T044832Z/final-fixture-cleanup.json": "34363effed44521f88a0dfc6a4ff880ec8e39708f617db64339c340f51f89ce4"
+  }
+}

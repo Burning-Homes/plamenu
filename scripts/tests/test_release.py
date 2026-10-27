@@ -18,7 +18,15 @@ from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
-from plamenu_release import build, checks, core, publish, release_mirror, worker
+from plamenu_release import (
+    acceptance,
+    build,
+    checks,
+    core,
+    publish,
+    release_mirror,
+    worker,
+)
 from plamenu_release.forge import Forge
 
 SPEC = importlib.util.spec_from_file_location(
@@ -268,6 +276,102 @@ class PipelineTests(TemporaryTest):
         self.assertEqual(self.artifacts.call_count, 2)
         self.publisher.assert_called_once()
         self.assertEqual(before, core.files(assets))
+
+    def exception_args(self, *flags):
+        (self.source / "Cargo.toml").write_text(
+            '[workspace.package]\nversion = "0.7.0"\n'
+        )
+        (self.source / "CHANGELOG.md").write_text(
+            "## [0.7.0] — 2026-10-27\n\nChanges.\n"
+        )
+        self.git("add", ".")
+        self.git("commit", "-qm", "0.7 fixture")
+        revision = self.git("rev-parse", "HEAD")
+        self.exception_evidence = self.root / "reviewed"
+        self.exception_evidence.mkdir()
+        evidence = self.exception_evidence / "full.json"
+        evidence.write_text(
+            '{"full_pass": false, "status": "completed-with-failures"}\n'
+        )
+        policy = {
+            "schema": 1,
+            "version": "0.7.0",
+            "full_pass": False,
+            "wcag_conformance": False,
+            "full_audit_revision": revision,
+            "repair_revision": revision,
+            "accepted_gaps": {"human": "unverified"},
+            "validated_source_fingerprint": acceptance.source_fingerprint(
+                self.source, revision
+            ),
+            "evidence": {"full.json": core.digest(evidence)},
+        }
+        destination = self.source / acceptance.POLICY
+        destination.parent.mkdir()
+        core.write_json(destination, policy)
+        self.git("add", ".")
+        self.git("commit", "-qm", "reviewed exception policy")
+        args = self.args(
+            "--accept-0.7-exceptions", str(self.exception_evidence), *flags
+        )
+        args.accessibility_evidence = None
+        return args
+
+    def test_exception_release_keeps_failures_and_discloses_scope_on_publication(self):
+        args = self.exception_args("--publish")
+        CLI.run(args)
+        self.accessibility.assert_not_called()
+        self.static.assert_called_once()
+        self.app.assert_called_once()
+        self.assertEqual(self.build.call_count, 2)
+        root = next((self.source / "release-artifacts").glob("v0.7.0/*/assets")).parent
+        report = json.loads((root / "assets/release.json").read_text())
+        self.assertFalse(report["full_pass"])
+        self.assertEqual(report["qualification"]["status"], "accepted-with-exceptions")
+        self.assertEqual(
+            report["checks"]["accessibility"]["status"], "accepted-exception"
+        )
+        self.assertFalse(report["checks"]["accessibility"]["full_pass"])
+        self.assertEqual(report["checks"]["e2e"]["status"], "not-run")
+        self.assertEqual(
+            (root / "validation-exceptions/evidence/full.json").read_bytes(),
+            (self.exception_evidence / "full.json").read_bytes(),
+        )
+        self.assertIn("full_pass=false", self.publisher.call_args.args[-1])
+        CLI.run(args)
+        self.assertEqual(self.build.call_count, 2)
+        (self.exception_evidence / "full.json").write_text('{"full_pass": true}')
+        with self.assertRaisesRegex(core.ReleaseError, "Missing or changed"):
+            CLI.run(args)
+        self.assertEqual(self.publisher.call_count, 2)
+
+    def test_exception_does_not_bypass_failed_checks(self):
+        args = self.exception_args("--publish")
+        self.app.side_effect = core.ReleaseError("application failed")
+        with self.assertRaisesRegex(core.ReleaseError, "application failed"):
+            CLI.run(args)
+        self.build.assert_not_called()
+        self.publisher.assert_not_called()
+
+    def test_exception_cannot_be_combined_with_conformance_evidence(self):
+        args = self.exception_args()
+        args.accessibility_evidence = self.accessibility_evidence
+        with self.assertRaisesRegex(core.ReleaseError, "not both"):
+            CLI.run(args)
+        self.static.assert_not_called()
+
+    def test_exception_arm64_uses_worker_and_retains_artifact_validation(self):
+        args = self.exception_args("--arm64-on", "codefloe")
+
+        def remote(source, root, folder, identity, phase, config, ref):
+            self.assertEqual((phase, identity["arch"]), ("build", "arm64"))
+            self.build_files(core.Runner(source, folder / "run.log"), folder, identity)
+
+        with patch.object(worker, "remote", side_effect=remote) as dispatch:
+            CLI.run(args)
+        dispatch.assert_called_once()
+        self.assertEqual(self.build.call_count, 1)
+        self.assertEqual(self.build.call_args.args[2]["arch"], "amd64")
 
     def test_publication_retry_preserves_check_results_after_a_day(self):
         CLI.run(self.args())

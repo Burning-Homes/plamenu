@@ -13,6 +13,43 @@ handwritten approval files, or separate promotion step are needed.
 Set `PLAMENU_A11Y_EVIDENCE=/secure/release-evidence.json` if you prefer not to
 repeat the accessibility option in the later examples on this page.
 
+## Experimental 0.7 validation exceptions
+
+For 0.7.0, maintainers accepted the reviewed browser/federation coverage gaps
+and unperformed human accessibility checks. The completed historical audit and
+focused repairs do not constitute a clean full pass on the shipping revision.
+Use the explicit alternative below, with ARM64 built and tested natively by
+Codefloe workers:
+
+```sh
+./dev release --accept-0.7-exceptions "$PWD/target" --arm64-on codefloe
+# After reviewing the prepared artifacts:
+./dev release --accept-0.7-exceptions "$PWD/target" --arm64-on codefloe --publish
+```
+
+The evidence root must contain the exact records named and hashed in
+`release/0.7-validation-exceptions.json`; an archived copy of that directory
+layout also works. Missing or modified records stop preparation. Application,
+dependency, fixture and test inputs must match the reviewed repair revision;
+only the bounded release-plumbing changes, documentation prose and standalone
+media diagnostic are permitted. Changed product inputs require new validation,
+not an automatic extension of this exception.
+
+This option applies only to **0.7.0** and cannot be combined with
+`--accessibility-evidence` or `PLAMENU_A11Y_EVIDENCE`. Static and application
+checks, both architecture builds and artifact/restore validation still run.
+Any newly requested E2E or performance run retains its normal strict checks.
+Codefloe needs a pushed branch or tag containing the exact source commit; see
+[optional workers](#optional-workers).
+
+The release record and publication text disclose the exception. Accessibility
+is recorded as `accepted-exception`, with `full_pass=false` and no WCAG
+conformance claim. Original failed/partial reports are retained unchanged in
+the local validation stage, and their hashes and accepted gaps are included
+in the signed release metadata. A passed `validation-exceptions` stage means
+the acceptance receipt was verified, not that the waived tests passed.
+The normal conformance-evidence path below remains strict.
+
 ## Before the first run
 
 Every release includes **Linux AMD64 and ARM64** installation archives and a
@@ -25,8 +62,9 @@ ARM64. It needs:
 - FFmpeg/ffprobe and binutils (`readelf`);
 - cargo-nextest, cargo-sqlx matching the workspace's SQLx version, cargo-deny,
   mdbook, ShellCheck, Ruff, and the Python `pytest` and `PyYAML` packages.
-- a completed WCAG 2.2 AA evidence record for the exact release commit; create
-  it through the [accessibility release protocol](ACCESSIBILITY_RELEASE.md).
+- a completed WCAG 2.2 AA evidence record for the exact release commit, or the
+  explicit 0.7 exception above; create conformance evidence through the
+  [accessibility release protocol](ACCESSIBILITY_RELEASE.md).
 
 The pinned binary installer can install cargo-nextest, cargo-deny, mdbook, and
 Cosign: `python3 scripts/ci/install-tools.py`. Add
@@ -93,7 +131,7 @@ fresh Debian hosts, including a real reboot and restore into empty storage.
 After publication, check anonymous downloads and image pulls; a deployed server
 also needs public DNS, TLS, and readiness checks for its actual domain.
 
-Accessibility evidence is validated against the exact source revision and its
+On the conformance-evidence path, accessibility evidence is validated against the exact source revision and its
 automated-report digest, then copied into the hashed `accessibility/` stage.
 Missing, pending, failed, skipped, dirty-source, or wrong-revision evidence
 stops preparation before any build. Outputs and logs live under

@@ -21,6 +21,7 @@
     "accessibility/peertube-session.mjs": "95e16aab2cd561c34dcc96ecd8a08ed6c165ca6a457f31c43173a91ec435970d",
     "accessibility/peertube-watch.mjs": "a63c7a4bd31ffba7867d85e0a70341de8b400b4bd171e0fd3d7bcea55312e5cc",
     "accessibility/playwright.config.mjs": "aea10cf7b90df90e548f46d5a87806b8fea24e9df3badedf5f441c50c3730cc8",
+    "accessibility/probe-media-runtime.mjs": "6f91e451ae3b8ccc7adf1077469dfe8b96c7c0c77b6b21d4a93769143a5b5ea4",
     "accessibility/session.mjs": "6bff1cff1e44b7fc1b97ac26937326008d72eae6b195e486169d6bc6eb588645",
     "accessibility/tests/actor-profiles.spec.mjs": "cac222d054d2c853a7874deea2f68c3d4523f060e730c3f230fb21e5caea3fe3",
     "accessibility/tests/archive-journey.spec.mjs": "2fe8081fda64058dde4835c1c974f089e646806bfa96f315fd4add59b4ac951a",
