@@ -97,7 +97,8 @@ The optional BuildKit container has a two-CPU quota, 6 GiB RAM limit, and a
 12 GiB memory-plus-swap allowance. This leaves room within the observed 7 GiB
 job memory limit for the worker coordinator. The latter depends on existing worker swap;
 it does not allocate swap. The GNU-hosted Rust toolchain targets musl with
-Fat LTO and one codegen unit. These worker limits are not local-machine
+Thin LTO and 16 codegen units to reduce peak compiler memory. Compilation still
+uses two Cargo jobs. These worker limits are not local-machine
 requirements. Every release targets Linux AMD64 and ARM64; local builds can use QEMU and
 workers must execute natively on the requested architecture.
 

@@ -5,7 +5,7 @@
   "wcag_conformance": false,
   "full_audit_revision": "aed211330f2606bf55fbec4d38071d5aef4c4bb2",
   "repair_revision": "d6dd6c664f6517b4577b1aefed456cf660427a03",
-  "validated_source_fingerprint": "75b8566ae48de09fff072eb6fa495e30f422dd1298b4321a575b4e66ff98ef33",
+  "validated_source_fingerprint": "b7228ab62d7e8d6f4ed96c3a57c6d79a030ad1d0802130c1e5c973ba904ae727",
   "accepted_gaps": {
     "browser": {
       "excluded": 29,
@@ -26,7 +26,7 @@
     },
     "human_accessibility": "not performed; no WCAG conformance claim",
     "final_revision_full_gate": "not performed; original failed full audit retained, observed failures repaired and verified with focused checks",
-    "performance": "saved full-run measurements strictly regraded after lowering query caps; not remeasured at the repair revision"
+    "performance": "saved full-run measurements strictly regraded after lowering query caps; not remeasured at the repair revision; shipping profile changed from fat LTO/1 codegen unit to thin LTO/16 units, with no new calibrated performance qualification"
   },
   "evidence": {
     "full-gates/20261026T231306Z-aed21133/results.json": "28c67478f4b668e4266c0dfeba6e87f95077fbda78d75a22484046b0d459d3b4",
@@ -49,7 +49,9 @@
     "release-07-crypto-update/results.json": "c4d9ec5086d5e23858d3bbf34afbef8afe03b2511f4e1aa0a0c8957f87e7e353",
     "release-07-crypto-update/server-crypto.xml": "a172278cf5f4a2aa74140aad936bc8154c25f896c90b8929e9f6672f00af194f",
     "release-07-crypto-update/federation-crypto.xml": "fb1b8a8b717c83986c617ae750be5f1c93cfab6f8dfc4bb69d3e7b4953d5b642",
-    "release-07-crypto-update/deny.log": "f1a0fca39d4280363937aabd77783990ea6480bd9ca257816de3b68fc8efa845"
+    "release-07-crypto-update/deny.log": "f1a0fca39d4280363937aabd77783990ea6480bd9ca257816de3b68fc8efa845",
+    "release-07-compiler-memory/baseline-application.json": "f87365f264968f946e36bbf16be351745d67aa6fae870c073a8de21f16711290",
+    "release-07-compiler-memory/release-tests.log": "f21e2eed9f263c7345357b524f0457bbb844aedf1077c34cd574c6ecab83927e"
   },
   "validated_source_revision": "8f1ef3d56233c1f2acc00539e8d8b84e3a571186",
   "supplemental_validation": [
@@ -72,6 +74,19 @@
       "full_pass": false,
       "full_gates_repeated": false,
       "benchmarks_remeasured": false
+    },
+    {
+      "application_evidence_revision": "9d647ee761f582bbcd6d499fe75af7603e4307b4",
+      "change": {
+        "profile.deploy.lto": "fat -> thin",
+        "profile.deploy.codegen-units": "1 -> 16"
+      },
+      "application_checks": "reuse only after source equivalence and complete evidence hash verification",
+      "artifact_checks": "both architectures must be rebuilt and pass install/backup/restore/federation drills",
+      "focused_release_tool_tests": 58,
+      "full_gates_repeated": false,
+      "benchmarks_remeasured": false,
+      "full_pass": false
     }
   ]
 }

@@ -345,6 +345,39 @@ class PipelineTests(TemporaryTest):
             CLI.run(args)
         self.assertEqual(self.publisher.call_count, 2)
 
+    def test_application_reuse_still_builds_and_validates_both_architectures(self):
+        args = self.exception_args("--reuse-application-from", str(self.root / "prior"))
+        receipt = {"source_revision": "a" * 40, "full_pass": False}
+        with (
+            patch.object(acceptance, "application_reuse", return_value=receipt),
+            patch.object(
+                acceptance, "record_application_reuse", side_effect=self.check("reuse")
+            ),
+        ):
+            CLI.run(args)
+        self.app.assert_not_called()
+        self.assertEqual(self.build.call_count, 2)
+        self.assertEqual(self.artifacts.call_count, 2)
+        root = next((self.source / "release-artifacts").glob("v0.7.0/*/assets"))
+        report = json.loads((root / "release.json").read_text())
+        self.assertEqual(report["checks"]["application"]["reused_evidence"], receipt)
+        self.assertFalse(report["full_pass"])
+
+    def test_bad_application_reuse_stops_before_any_checks_or_builds(self):
+        args = self.exception_args("--reuse-application-from", str(self.root / "prior"))
+        with (
+            patch.object(
+                acceptance,
+                "application_reuse",
+                side_effect=core.ReleaseError("bad previous run"),
+            ),
+            self.assertRaisesRegex(core.ReleaseError, "bad previous run"),
+        ):
+            CLI.run(args)
+        self.static.assert_not_called()
+        self.app.assert_not_called()
+        self.build.assert_not_called()
+
     def test_exception_does_not_bypass_failed_checks(self):
         args = self.exception_args("--publish")
         self.app.side_effect = core.ReleaseError("application failed")

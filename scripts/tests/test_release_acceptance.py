@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from plamenu_release import acceptance
+from plamenu_release import acceptance, core
 from plamenu_release.core import ReleaseError, digest
 
 
@@ -128,6 +128,114 @@ class AcceptanceTests(unittest.TestCase):
                 (self.source / acceptance.POLICY).write_text(json.dumps(policy))
                 with self.assertRaisesRegex(ReleaseError, "Invalid"):
                     self.validate()
+
+    def prepare_application_reuse(self):
+        manifest = self.source / "Cargo.toml"
+        manifest.write_text(
+            '[workspace.package]\nversion = "0.7.0"\n'
+            '[profile.deploy]\ninherits = "release"\nlto = "fat"\ncodegen-units = 1\n'
+        )
+        self.commit()
+        previous = self.root / "previous"
+        previous.mkdir()
+        identity = {
+            "version": "0.7.0",
+            "source": self.git("rev-parse", "HEAD"),
+            "jobs": 2,
+        }
+        core.write_json(previous / "identity.json", identity)
+        core.stage(
+            self.source,
+            previous,
+            "application",
+            identity,
+            lambda r, p: (p / "run.log").write_text("3594 passed; 2 opt-in excluded\n"),
+        )
+        manifest.write_text(
+            manifest.read_text()
+            .replace('lto = "fat"', 'lto = "thin"')
+            .replace("codegen-units = 1\n", "codegen-units = 16\n")
+        )
+        self.commit()
+        return previous
+
+    def test_profile_only_reuse_retains_original_evidence_and_exclusions(self):
+        previous = self.prepare_application_reuse()
+        revision = self.git("rev-parse", "HEAD")
+        receipt = acceptance.application_reuse(self.source, previous, revision)
+        self.assertFalse(receipt["full_pass"])
+        self.assertNotEqual(receipt["source_revision"], revision)
+        destination = self.root / "reused"
+        destination.mkdir()
+        acceptance.record_application_reuse(
+            core.Runner(self.source, destination / "run.log"),
+            destination,
+            previous,
+            revision,
+            receipt,
+        )
+        self.assertEqual(
+            (previous / "application/stage.json").read_bytes(),
+            (destination / "previous/stage.json").read_bytes(),
+        )
+        self.assertIn(
+            "2 opt-in excluded", (destination / "previous/run.log").read_text()
+        )
+
+    def test_application_reuse_rejects_changed_inputs_and_other_profile_changes(self):
+        previous = self.prepare_application_reuse()
+        baseline = self.git("rev-parse", "HEAD")
+        for name, contents in [
+            ("Cargo.lock", "changed"),
+            ("crates/app.rs", "changed"),
+            ("e2e/test.py", "changed"),
+            ("docs/examples/install.sh", "changed"),
+            ("scripts/plamenu_release/checks.py", "changed"),
+            ("accessibility/inventory.json", "{}"),
+            (
+                "Cargo.toml",
+                (self.source / "Cargo.toml").read_text() + 'panic = "abort"\n',
+            ),
+            (
+                "Cargo.toml",
+                (self.source / "Cargo.toml")
+                .read_text()
+                .replace('version = "0.7.0"', 'version = "0.7.1"'),
+            ),
+        ]:
+            with self.subTest(name=name, contents=contents):
+                (self.source / name).parent.mkdir(parents=True, exist_ok=True)
+                (self.source / name).write_text(contents)
+                self.commit()
+                with self.assertRaises(ReleaseError):
+                    acceptance.application_reuse(
+                        self.source, previous, self.git("rev-parse", "HEAD")
+                    )
+                self.git("reset", "--hard", baseline)
+
+    def test_application_reuse_rejects_failed_missing_and_modified_stage(self):
+        previous = self.prepare_application_reuse()
+        stage = previous / "application/stage.json"
+        original = stage.read_text()
+        for status in ("failed", "running"):
+            record = json.loads(original)
+            record["status"] = status
+            stage.write_text(json.dumps(record))
+            with self.assertRaises(ReleaseError):
+                acceptance.application_reuse(
+                    self.source, previous, self.git("rev-parse", "HEAD")
+                )
+        stage.write_text(original)
+        (previous / "application/run.log").write_text("substituted")
+        with self.assertRaises(ReleaseError):
+            acceptance.application_reuse(
+                self.source, previous, self.git("rev-parse", "HEAD")
+            )
+        stage.unlink()
+        with self.assertRaises(ReleaseError):
+            acceptance.application_reuse(
+                self.source, previous, self.git("rev-parse", "HEAD")
+            )
 
 
 if __name__ == "__main__":

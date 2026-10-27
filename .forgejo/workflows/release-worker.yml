@@ -68,6 +68,12 @@ jobs:
         if: always() && inputs.phase == 'build'
         run: |
           if docker buildx inspect plamenu-release-worker >/dev/null 2>&1; then
+            docker exec buildx_buildkit_plamenu-release-worker0 sh -c '
+              for name in memory.max memory.peak memory.events memory.swap.max memory.swap.peak; do
+                if test -r /sys/fs/cgroup/$name; then
+                  echo "$name"; cat /sys/fs/cgroup/$name
+                fi
+              done' || true
             docker buildx rm plamenu-release-worker
           fi
           if docker context inspect plamenu-release-daemon >/dev/null 2>&1; then

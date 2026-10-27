@@ -268,13 +268,13 @@ lto = "thin"
 panic = "unwind"
 strip = "debuginfo"
 
-# Shipping profile: spend extra link time deduplicating monomorphized code.
+# Shipping profile: split large crates and use Thin LTO to bound compiler memory.
 # Symbols remain in Cargo's compiler output; packaging strips the one executable
 # shipped in each installation archive and runtime image. Inherit `panic = "unwind"` — worker supervision requires it.
 [profile.deploy]
 inherits = "release"
-lto = "fat"
-codegen-units = 1
+lto = "thin"
+codegen-units = 16
 
 # Optimized local iteration and staging favor compile time over binary size.
 # Keep unwind for worker supervision; qualify performance with this exact profile.

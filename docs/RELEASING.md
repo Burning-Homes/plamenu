@@ -88,10 +88,19 @@ Actual runs also check Docker access, Compose, Buildx, and execution of each
 locally built architecture. Allow sufficient disk
 space for a separate checkout, Cargo output, Docker caches, and release files.
 Native source checks reuse a dedicated Cargo cache across release revisions.
-The default build uses two compilation jobs and preserves Fat LTO; it can need
+The default build uses two compilation jobs, Thin LTO and 16 codegen units; it can need
 several GiB of RAM. `--jobs N` changes compilation concurrency. No CPU model, fixed database port, standing development services, or Codefloe
 account is required for local preparation. Internet access is needed for dependencies and
 container images that are not already cached.
+
+For the 0.7 Fat-LTO-to-Thin-LTO repair, `--reuse-application-from RELEASE_DIRECTORY`
+can accompany `--accept-0.7-exceptions`. It verifies the previous application
+stage and all its hashes, requires unchanged application/dependency/test inputs,
+and permits only the reviewed deploy-profile adjustment. The release report
+identifies the original test revision and retains exclusions and `full_pass=false`.
+Both architecture artifacts are rebuilt and tested; earlier benchmark measurements
+do not qualify the new shipping profile. This option cannot reuse failed or
+incomplete application runs.
 
 For both architectures on one machine, Docker needs emulation for the other
 architecture. Docker Desktop normally includes it; on Linux Docker Engine,

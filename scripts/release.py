@@ -185,6 +185,12 @@ def parser():
         help="Accept only the source-bound, reviewed 0.7 evidence and gaps; never a full pass",
     )
     p.add_argument(
+        "--reuse-application-from",
+        type=Path,
+        metavar="RELEASE_DIRECTORY",
+        help="Reuse verified 0.7 application checks only across the reviewed deploy-profile change",
+    )
+    p.add_argument(
         "--config",
         type=Path,
         default=Path(
@@ -244,6 +250,23 @@ def run(args):
         config_errors.append("missing --accessibility-evidence")
     elif not args.accessibility_evidence.is_file():
         config_errors.append("--accessibility-evidence does not name a regular file")
+    reused_application = None
+    if args.reuse_application_from:
+        if not accepted:
+            config_errors.append(
+                "--reuse-application-from requires --accept-0.7-exceptions"
+            )
+        else:
+            args.reuse_application_from = (
+                args.reuse_application_from.expanduser().resolve()
+            )
+            try:
+                reused_application = acceptance.application_reuse(
+                    origin, args.reuse_application_from, identity["source"]
+                )
+                identity["application_reuse"] = reused_application
+            except (ReleaseError, OSError, ValueError, KeyError) as error:
+                config_errors.append(str(error))
     print(
         f"Plamenu {version}, {identity['source'][:12]}, Linux AMD64 + ARM64", flush=True
     )
@@ -402,10 +425,22 @@ def run(args):
             root,
             "application",
             identity,
-            checks.application,
+            (
+                lambda r, p: acceptance.record_application_reuse(
+                    r,
+                    p,
+                    args.reuse_application_from,
+                    identity["source"],
+                    reused_application,
+                )
+            )
+            if reused_application
+            else checks.application,
             rerun=args.rerun,
             env=cargo_env,
         )
+        if reused_application:
+            statuses["application"]["reused_evidence"] = reused_application
         if accepted:
             statuses["validation-exceptions"] = stage(
                 source,

@@ -3,9 +3,10 @@
 import json
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
-from .core import ReleaseError, digest, fingerprint, write_json
+from .core import ReleaseError, digest, fingerprint, reusable, write_json
 
 POLICY = "release/0.7-validation-exceptions.json"
 # Only release plumbing, documentation prose and the standalone diagnostic may
@@ -111,6 +112,81 @@ def accessibility_status():
         "wcag_conformance": False,
         "reason": "0.7 reviewed browser exclusions and unperformed human verification",
     }
+
+
+def application_reuse(source, previous, revision):
+    """Reuse only a complete 0.7 application run across the reviewed profile change."""
+    previous = Path(previous).resolve()
+    identity = json.loads((previous / "identity.json").read_text())
+    key = fingerprint({"identity": identity, "stage": "application"})
+    if (
+        identity.get("version") != "0.7.0"
+        or not reusable(previous / "application", key)
+        or (previous / "application/reuse.json").exists()
+    ):
+        raise ReleaseError(
+            "Application reuse requires an intact, directly executed 0.7 stage"
+        )
+    old = identity["source"]
+    if subprocess.run(
+        ["git", "merge-base", "--is-ancestor", old, revision], cwd=source, check=False
+    ).returncode:
+        raise ReleaseError("Application reuse source must be an ancestor")
+
+    def manifest(ref):
+        return tomllib.loads(
+            subprocess.check_output(
+                ["git", "show", f"{ref}:Cargo.toml"], cwd=source, text=True
+            )
+        )
+
+    before, after = manifest(old), manifest(revision)
+    for value, expected in ((before, ("fat", 1)), (after, ("thin", 16))):
+        deploy = value.get("profile", {}).get("deploy", {})
+        actual = (deploy.pop("lto", None), deploy.pop("codegen-units", None))
+        if actual != expected:
+            raise ReleaseError(
+                "Application reuse only permits fat/1 to thin/16 deployment settings"
+            )
+    if before != after:
+        raise ReleaseError("Application Cargo inputs changed")
+    changed = subprocess.check_output(
+        ["git", "diff", "--name-only", "--no-renames", old, revision],
+        cwd=source,
+        text=True,
+    ).splitlines()
+    permitted = RELEASE_ONLY - {"accessibility/inventory.json"}
+    permitted |= {"Cargo.toml", ".forgejo/workflows/release-worker.yml"}
+    if any(
+        name not in permitted
+        and not (name.startswith("docs/") and name.endswith(".md"))
+        for name in changed
+    ):
+        raise ReleaseError(
+            "Application, dependency or test inputs changed; cannot reuse application checks"
+        )
+    return {
+        "source_revision": old,
+        "stage_sha256": digest(previous / "application/stage.json"),
+        "identity_sha256": digest(previous / "identity.json"),
+        "execution": "reused; not rerun on the release revision",
+        "scope": "application tests and fresh SQLx metadata; deploy artifacts must be rebuilt and tested",
+        "full_pass": False,
+    }
+
+
+def record_application_reuse(runner, folder, previous, revision, expected):
+    if application_reuse(runner.source, previous, revision) != expected:
+        raise ReleaseError("Application reuse evidence changed after preflight")
+    shutil.copytree(Path(previous) / "application", folder / "previous")
+    shutil.copy2(Path(previous) / "identity.json", folder / "previous-identity.json")
+    # Check the copied bytes as well, without modifying the original record.
+    identity = json.loads((folder / "previous-identity.json").read_text())
+    if not reusable(
+        folder / "previous", fingerprint({"identity": identity, "stage": "application"})
+    ):
+        raise ReleaseError("Application reuse evidence changed while copying")
+    write_json(folder / "reuse.json", expected)
 
 
 DISCLOSURE = (
