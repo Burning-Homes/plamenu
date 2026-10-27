@@ -80,7 +80,11 @@ def validate(source, evidence_root, version, revision):
         "source_revision": revision,
         "full_audit_revision": policy["full_audit_revision"],
         "repair_revision": policy["repair_revision"],
-        "validation_method": "historical full audit plus focused repairs; no final-revision full rerun",
+        "validated_source_revision": policy.get(
+            "validated_source_revision", policy["repair_revision"]
+        ),
+        "supplemental_validation": policy.get("supplemental_validation", []),
+        "validation_method": "historical full audit plus focused repairs and any recorded supplements; no final-revision full rerun",
         "accepted_gaps": policy["accepted_gaps"],
         "policy_sha256": digest(Path(source) / POLICY),
         "evidence_sha256": policy["evidence"],

@@ -5,7 +5,7 @@
   "wcag_conformance": false,
   "full_audit_revision": "aed211330f2606bf55fbec4d38071d5aef4c4bb2",
   "repair_revision": "d6dd6c664f6517b4577b1aefed456cf660427a03",
-  "validated_source_fingerprint": "1089e3d784bfc371462e9f457b95ddb229a17713343cdddaf9900f18f43f5e10",
+  "validated_source_fingerprint": "75b8566ae48de09fff072eb6fa495e30f422dd1298b4321a575b4e66ff98ef33",
   "accepted_gaps": {
     "browser": {
       "excluded": 29,
@@ -45,6 +45,33 @@
     "release-validation-repairs-20261027T044832Z/bench-budget-regrade.log": "67079c7f20b244f9964f36d4a313c2f1e6eb5b0dc612993e97f8ce223ffc7e7f",
     "release-validation-repairs-20261027T044832Z/final-static.json": "efdb6e5e06adaf353c8b06ac6085e7e5375de6e31a7d06e88e933165e1ee13db",
     "release-validation-repairs-20261027T044832Z/postcommit-checks.json": "16fb540dfe6e101479a7fec50694c3b704d52eac1d8f5056b2355d3e36517859",
-    "release-validation-repairs-20261027T044832Z/final-fixture-cleanup.json": "34363effed44521f88a0dfc6a4ff880ec8e39708f617db64339c340f51f89ce4"
-  }
+    "release-validation-repairs-20261027T044832Z/final-fixture-cleanup.json": "34363effed44521f88a0dfc6a4ff880ec8e39708f617db64339c340f51f89ce4",
+    "release-07-crypto-update/results.json": "c4d9ec5086d5e23858d3bbf34afbef8afe03b2511f4e1aa0a0c8957f87e7e353",
+    "release-07-crypto-update/server-crypto.xml": "a172278cf5f4a2aa74140aad936bc8154c25f896c90b8929e9f6672f00af194f",
+    "release-07-crypto-update/federation-crypto.xml": "fb1b8a8b717c83986c617ae750be5f1c93cfab6f8dfc4bb69d3e7b4953d5b642",
+    "release-07-crypto-update/deny.log": "f1a0fca39d4280363937aabd77783990ea6480bd9ca257816de3b68fc8efa845"
+  },
+  "validated_source_revision": "8f1ef3d56233c1f2acc00539e8d8b84e3a571186",
+  "supplemental_validation": [
+    {
+      "source_revision": "8f1ef3d56233c1f2acc00539e8d8b84e3a571186",
+      "lock_sha256": "738d6f57d72ed6d6a449ae02103c09d6cee6ca61eeff3f3a084a9253309921a5",
+      "changes": {
+        "crypto-bigint": "0.7.6 -> 0.7.10",
+        "ctutils": "0.4.5 -> 0.4.6"
+      },
+      "tests": {
+        "server_crypto_and_web_push": 30,
+        "activitypub_and_federation": 272,
+        "failures": 0,
+        "skips": 0,
+        "server_cases_excluded_by_filter": 586
+      },
+      "deny": "passed",
+      "execution": "serial focused runs",
+      "full_pass": false,
+      "full_gates_repeated": false,
+      "benchmarks_remeasured": false
+    }
+  ]
 }

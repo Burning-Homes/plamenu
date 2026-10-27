@@ -30,10 +30,17 @@ Codefloe workers:
 The evidence root must contain the exact records named and hashed in
 `release/0.7-validation-exceptions.json`; an archived copy of that directory
 layout also works. Missing or modified records stop preparation. Application,
-dependency, fixture and test inputs must match the reviewed repair revision;
+dependency, fixture and test inputs must match the reviewed source, including
+the explicitly recorded dependency-validation supplement;
 only the bounded release-plumbing changes, documentation prose and standalone
 media diagnostic are permitted. Changed product inputs require new validation,
 not an automatic extension of this exception.
+
+The recorded supplement updates the yanked `crypto-bigint 0.7.6` to `0.7.10`
+and `ctutils 0.4.5` to `0.4.6`. It binds the updated lockfile and source revision
+to 302 passing focused tests and a passing deny check. The historical audit
+remains unchanged; neither full gates nor timing measurements were repeated
+for that dependency update.
 
 This option applies only to **0.7.0** and cannot be combined with
 `--accessibility-evidence` or `PLAMENU_A11Y_EVIDENCE`. Static and application
