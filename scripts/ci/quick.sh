@@ -9,8 +9,9 @@ python3 scripts/ci/check-static.py
 python3 scripts/update-gate-inventory.py --check-sources
 python3 e2e/tools/federation_coverage.py
 python3 scripts/accessibility-evidence.py matrix
-ruff check e2e
-ruff format --check e2e
+# Match e2e/pyproject.toml even when Ruff falls back to its version's default.
+ruff check --target-version py312 e2e
+ruff format --check --target-version py312 e2e
 cargo deny --locked fetch all
 cargo deny --locked check --deny warnings
 python3 scripts/ci/check-contribution.py

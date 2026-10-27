@@ -5,7 +5,7 @@
   "wcag_conformance": false,
   "full_audit_revision": "aed211330f2606bf55fbec4d38071d5aef4c4bb2",
   "repair_revision": "d6dd6c664f6517b4577b1aefed456cf660427a03",
-  "validated_source_fingerprint": "3eb357427a21d13e6ee4dd0919d4418032dc70a2e57c9f22587e380af4bafd0e",
+  "validated_source_fingerprint": "1089e3d784bfc371462e9f457b95ddb229a17713343cdddaf9900f18f43f5e10",
   "accepted_gaps": {
     "browser": {
       "excluded": 29,

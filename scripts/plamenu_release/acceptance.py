@@ -16,6 +16,7 @@ RELEASE_ONLY = {
     "accessibility/probe-media-runtime.mjs",
     "accessibility/inventory.json",
     "scripts/release.py",
+    "scripts/ci/quick.sh",
     "scripts/plamenu_release/acceptance.py",
     "scripts/tests/test_release.py",
     "scripts/tests/test_release_acceptance.py",
